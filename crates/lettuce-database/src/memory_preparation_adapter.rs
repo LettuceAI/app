@@ -65,11 +65,18 @@ fn verify_durable_identity(
         return Err(DynamicMemoryPreparationPlanError::Conflict);
     }
 
-    let durable_ids = {
+    let end_ordinal = usize::from(plan.first_execution_ordinal)
+        .checked_add(plan.execution_ids.len())
+        .ok_or(DynamicMemoryPreparationPlanError::Conflict)?;
+    if end_ordinal > usize::from(u16::MAX) + 1 {
+        return Err(DynamicMemoryPreparationPlanError::Conflict);
+    }
+    let durable = {
         let mut statement = transaction
             .prepare(
-                "SELECT id FROM tool_executions
+                "SELECT id, ordinal FROM tool_executions
                   WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3
+                    AND ordinal >= ?4 AND ordinal < ?5
                   ORDER BY ordinal",
             )
             .map_err(storage)?;
@@ -79,19 +86,24 @@ fn verify_durable_identity(
                     plan.conversation_id.to_string(),
                     plan.turn_id.to_string(),
                     plan.attempt_id.to_string(),
+                    i64::from(plan.first_execution_ordinal),
+                    i64::try_from(end_ordinal).map_err(storage)?,
                 ],
-                |row| row.get::<_, String>(0),
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
             )
             .map_err(storage)?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(storage)?
     };
-    if durable_ids
-        != plan
-            .execution_ids
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
+    if durable.len() != plan.execution_ids.len()
+        || durable.iter().zip(&plan.execution_ids).enumerate().any(
+            |(offset, ((id, ordinal), expected_id))| {
+                id != &expected_id.to_string()
+                    || *ordinal
+                        != i64::from(plan.first_execution_ordinal)
+                            + i64::try_from(offset).unwrap_or(i64::MAX)
+            },
+        )
     {
         return Err(DynamicMemoryPreparationPlanError::Conflict);
     }
@@ -146,30 +158,37 @@ fn hydrate_verified(
     conversation_id: ConversationId,
     turn_id: GenerationTurnId,
     attempt_id: GenerationAttemptId,
+    first_execution_ordinal: Option<u16>,
 ) -> Result<Option<DynamicMemoryPreparationPlan>, DynamicMemoryPreparationPlanError> {
     let row = transaction
         .query_row(
-            "SELECT job_id, space_id, expected_memory_revision, plan_json, plan_digest
+            "SELECT first_execution_ordinal, job_id, space_id,
+                    expected_memory_revision, plan_json, plan_digest
                FROM dynamic_memory_preparation_plans
-              WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3",
+              WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3
+                AND (?4 IS NULL OR first_execution_ordinal = ?4)
+              ORDER BY first_execution_ordinal DESC
+              LIMIT 1",
             params![
                 conversation_id.to_string(),
                 turn_id.to_string(),
-                attempt_id.to_string()
+                attempt_id.to_string(),
+                first_execution_ordinal.map(i64::from),
             ],
             |row| {
                 Ok((
-                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
                     row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
                 ))
             },
         )
         .optional()
         .map_err(storage)?;
-    let Some((job_id, space_id, expected_revision, document, digest)) = row else {
+    let Some((first_ordinal, job_id, space_id, expected_revision, document, digest)) = row else {
         return Ok(None);
     };
     if blake3::hash(document.as_bytes()).to_hex().as_str() != digest {
@@ -182,6 +201,7 @@ fn hydrate_verified(
     if plan.conversation_id != conversation_id
         || plan.turn_id != turn_id
         || plan.attempt_id != attempt_id
+        || i64::from(plan.first_execution_ordinal) != first_ordinal
         || plan.job_id.to_string() != job_id
         || plan.space_id.to_string() != space_id
         || i64::try_from(plan.expected_memory_revision.get()).ok() != Some(expected_revision)
@@ -200,13 +220,14 @@ fn insert_plan_in(
     transaction
         .execute(
             "INSERT INTO dynamic_memory_preparation_plans (
-                conversation_id, turn_id, attempt_id, job_id, space_id,
+                conversation_id, turn_id, attempt_id, first_execution_ordinal, job_id, space_id,
                 expected_memory_revision, plan_json, plan_digest
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 plan.conversation_id.to_string(),
                 plan.turn_id.to_string(),
                 plan.attempt_id.to_string(),
+                i64::from(plan.first_execution_ordinal),
                 plan.job_id.to_string(),
                 plan.space_id.to_string(),
                 i64::try_from(plan.expected_memory_revision.get()).map_err(storage)?,
@@ -271,6 +292,7 @@ fn remap_plan(
     let mut child = parent.clone();
     child.attempt_id = child_attempt_id;
     child.job_id = child_job_id;
+    child.first_execution_ordinal = 0;
     child.execution_ids = child_ids.to_vec();
     for create in &mut child.creates {
         create.execution_id = remap
@@ -297,11 +319,13 @@ impl DynamicMemoryPreparationRepository for Database {
                 "SELECT EXISTS(
                     SELECT 1 FROM dynamic_memory_preparation_plans
                      WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3
+                       AND first_execution_ordinal = ?4
                  )",
                 params![
                     plan.conversation_id.to_string(),
                     plan.turn_id.to_string(),
                     plan.attempt_id.to_string(),
+                    i64::from(plan.first_execution_ordinal),
                 ],
                 |row| row.get::<_, bool>(0),
             )
@@ -312,6 +336,7 @@ impl DynamicMemoryPreparationRepository for Database {
                 plan.conversation_id,
                 plan.turn_id,
                 plan.attempt_id,
+                Some(plan.first_execution_ordinal),
             )?
             .ok_or(DynamicMemoryPreparationPlanError::Storage)?;
             if stored == plan {
@@ -336,7 +361,7 @@ impl DynamicMemoryPreparationRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(storage)?;
-        let plan = hydrate_verified(&transaction, conversation_id, turn_id, attempt_id)?;
+        let plan = hydrate_verified(&transaction, conversation_id, turn_id, attempt_id, None)?;
         transaction.commit().map_err(storage)?;
         Ok(plan)
     }
@@ -354,8 +379,14 @@ impl DynamicMemoryPreparationRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        let parent = hydrate_verified(&transaction, conversation_id, turn_id, parent_attempt_id)?
-            .ok_or(DynamicMemoryPreparationPlanError::Conflict)?;
+        let parent = hydrate_verified(
+            &transaction,
+            conversation_id,
+            turn_id,
+            parent_attempt_id,
+            None,
+        )?
+        .ok_or(DynamicMemoryPreparationPlanError::Conflict)?;
         let child_identity = transaction
             .query_row(
                 "SELECT parent_attempt_id, status, job_id
@@ -386,7 +417,18 @@ impl DynamicMemoryPreparationRepository for Database {
             return Err(DynamicMemoryPreparationPlanError::Conflict);
         }
         let parent_executions =
-            executions_in(&transaction, conversation_id, turn_id, parent_attempt_id)?;
+            executions_in(&transaction, conversation_id, turn_id, parent_attempt_id)?
+                .into_iter()
+                .filter(|execution| parent.execution_ids.contains(&execution.id))
+                .collect::<Vec<_>>();
+        if parent_executions
+            .iter()
+            .map(|execution| execution.id)
+            .collect::<Vec<_>>()
+            != parent.execution_ids
+        {
+            return Err(DynamicMemoryPreparationPlanError::Conflict);
+        }
         if parent_executions.iter().any(|execution| {
             execution.status != lettuce_conversations::ToolExecutionStatus::Interrupted
         }) {
@@ -395,9 +437,14 @@ impl DynamicMemoryPreparationRepository for Database {
         let existing_child =
             executions_in(&transaction, conversation_id, turn_id, child_attempt_id)?;
         if !existing_child.is_empty() {
-            let stored =
-                hydrate_verified(&transaction, conversation_id, turn_id, child_attempt_id)?
-                    .ok_or(DynamicMemoryPreparationPlanError::Conflict)?;
+            let stored = hydrate_verified(
+                &transaction,
+                conversation_id,
+                turn_id,
+                child_attempt_id,
+                Some(0),
+            )?
+            .ok_or(DynamicMemoryPreparationPlanError::Conflict)?;
             let expected = remap_plan(
                 &parent,
                 child_attempt_id,
@@ -645,6 +692,7 @@ mod tests {
             job_id,
             space_id,
             expected_memory_revision: Revision::INITIAL,
+            first_execution_ordinal: running[0].ordinal,
             policy: policy(),
             duplicate_threshold: score(9_000),
             execution_ids: running.iter().map(|execution| execution.id).collect(),
@@ -759,6 +807,125 @@ mod tests {
             ),
             Err(DynamicMemoryPreparationPlanError::Conflict)
         );
+    }
+
+    #[test]
+    fn preparation_plans_are_immutable_per_round_within_one_attempt() {
+        let fixture = fixture();
+        fixture
+            .database
+            .put_preparation_plan(fixture.plan.clone())
+            .expect("first plan");
+        let first_round = fixture
+            .database
+            .list_tool_executions(
+                fixture.plan.conversation_id,
+                fixture.plan.turn_id,
+                fixture.plan.attempt_id,
+            )
+            .expect("first round");
+        fixture
+            .database
+            .transition_tool_execution_batch(
+                &first_round
+                    .iter()
+                    .map(|execution| ToolExecutionTransition {
+                        id: execution.id,
+                        expected_revision: execution.revision,
+                        next: ToolExecutionStatus::Succeeded,
+                        output: Some(lettuce_conversations::ToolOutput {
+                            value: json!({"status": "settled"}),
+                            is_error: false,
+                        }),
+                        failure: None,
+                    })
+                    .collect::<Vec<_>>(),
+                TimestampMillis::new(5),
+            )
+            .expect("settle first round");
+
+        let definition = dynamic_memory_tool_request()
+            .definitions
+            .into_iter()
+            .find(|definition| definition.name == "done")
+            .expect("done definition");
+        let owner = ToolExecutionOwner {
+            conversation_id: fixture.plan.conversation_id,
+            turn_id: fixture.plan.turn_id,
+            attempt_id: fixture.plan.attempt_id,
+        };
+        let requested = ToolExecution::requested(
+            ToolExecutionId::new(),
+            owner,
+            2,
+            &definition,
+            ProposedToolCall {
+                provider_call_id: Some("call-2".to_owned()),
+                name: "done".to_owned(),
+                arguments: json!({"summary": "finished"}),
+                raw_arguments: None,
+                provider_replay: None,
+            },
+            TimestampMillis::new(6),
+        )
+        .expect("second call");
+        let requested = fixture
+            .database
+            .append_tool_executions(2, &[requested])
+            .expect("append second round");
+        let validated = fixture
+            .database
+            .transition_tool_execution_batch(
+                &[ToolExecutionTransition {
+                    id: requested[0].id,
+                    expected_revision: requested[0].revision,
+                    next: ToolExecutionStatus::Validated,
+                    output: None,
+                    failure: None,
+                }],
+                TimestampMillis::new(7),
+            )
+            .expect("validate second round");
+        let running = fixture
+            .database
+            .transition_tool_execution_batch(
+                &[ToolExecutionTransition {
+                    id: validated[0].id,
+                    expected_revision: validated[0].revision,
+                    next: ToolExecutionStatus::Running,
+                    output: None,
+                    failure: None,
+                }],
+                TimestampMillis::new(8),
+            )
+            .expect("start second round");
+        let mut second = fixture.plan.clone();
+        second.first_execution_ordinal = 2;
+        second.execution_ids = vec![running[0].id];
+        second.creates.clear();
+        fixture
+            .database
+            .put_preparation_plan(second.clone())
+            .expect("second plan");
+
+        assert_eq!(
+            fixture
+                .database
+                .get_preparation_plan(second.conversation_id, second.turn_id, second.attempt_id,)
+                .expect("latest plan"),
+            Some(second)
+        );
+        let count = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT COUNT(*) FROM dynamic_memory_preparation_plans WHERE attempt_id = ?1",
+                [fixture.plan.attempt_id.to_string()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("plan count");
+        assert_eq!(count, 2);
     }
 
     #[test]

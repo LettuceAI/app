@@ -69,6 +69,9 @@ CREATE TABLE dynamic_memory_preparation_plans (
     conversation_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
+    first_execution_ordinal INTEGER NOT NULL CHECK (
+        first_execution_ordinal >= 0 AND first_execution_ordinal <= 65535
+    ),
     job_id TEXT NOT NULL,
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     expected_memory_revision INTEGER NOT NULL CHECK (expected_memory_revision >= 1),
@@ -82,7 +85,7 @@ CREATE TABLE dynamic_memory_preparation_plans (
         AND lower(plan_digest) = plan_digest
         AND plan_digest NOT GLOB '*[^0-9a-f]*'
     ),
-    PRIMARY KEY (conversation_id, turn_id, attempt_id),
+    PRIMARY KEY (conversation_id, turn_id, attempt_id, first_execution_ordinal),
     FOREIGN KEY (conversation_id, turn_id, attempt_id, job_id)
         REFERENCES generation_attempts(conversation_id, turn_id, id, job_id)
         ON DELETE RESTRICT

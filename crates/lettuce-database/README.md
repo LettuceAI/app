@@ -79,11 +79,12 @@ Round settlement can also require an exact memory revision when the reducer
 produces no memory change, so concurrent memory drift cannot commit terminal
 tool outputs derived from stale prepared evidence.
 Migration 9 also stores one immutable versioned dynamic-memory preparation plan
-per generation attempt. Its digest and relational projections are checked on
-every read, while the adapter verifies the attached job, exact ordered durable
-tool executions and create arguments, and unchanged memory revision. An exact
-insert retry returns the stored plan; any changed plan or mutable dependency
-conflicts before recovery can restart the handler.
+per provider round, keyed by generation attempt and first execution ordinal.
+Its digest and relational projections are checked on every read, while the
+adapter verifies the attached job, exact ordered durable round slice and create
+arguments, and unchanged memory revision. Multiple rounds in one attempt retain
+separate evidence; an exact insert retry returns its stored plan, while changed
+bytes or mutable dependencies conflict before recovery can restart the handler.
 Interrupted recovery validates the existing conversation child-attempt link and
 attached child job, then clones the exact parent call payloads under new child
 execution IDs, advances them to running, remaps create preparations, and inserts

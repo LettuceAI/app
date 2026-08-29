@@ -93,6 +93,9 @@ pub struct DynamicMemoryPreparationPlan {
     pub job_id: JobId,
     pub space_id: MemorySpaceId,
     pub expected_memory_revision: Revision,
+    /// First durable execution ordinal in this provider response's call set.
+    /// Together with attempt ownership it is the immutable round identity.
+    pub first_execution_ordinal: u16,
     pub policy: MemoryPolicy,
     pub duplicate_threshold: crate::Score,
     pub execution_ids: Vec<ToolExecutionId>,
@@ -152,12 +155,14 @@ impl DynamicMemoryPreparationPlan {
 
 pub trait DynamicMemoryPreparationRepository: Send + Sync {
     /// Inserts an immutable plan. An exact retry returns the stored plan;
-    /// different bytes for the same attempt conflict.
+    /// different bytes for the same attempt and first ordinal conflict.
     fn put_preparation_plan(
         &self,
         plan: DynamicMemoryPreparationPlan,
     ) -> Result<DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError>;
 
+    /// Returns the latest prepared round in the attempt. Settled older plans
+    /// remain immutable recovery evidence but are not returned here.
     fn get_preparation_plan(
         &self,
         conversation_id: ConversationId,

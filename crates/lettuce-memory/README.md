@@ -39,11 +39,11 @@ tool-transition batch. Infrastructure must check that revision even for a
 no-op reduction and commit both sides or neither; orchestration and provider
 continuation remain application-owned.
 The domain also owns an immutable dynamic-memory preparation-plan port. A plan
-captures its attempt/job and memory revision, policy and duplicate threshold,
-ordered execution IDs, and every create seed, exact source text, embedding
+captures its attempt/job, first execution ordinal and memory revision, policy
+and duplicate threshold, ordered execution IDs, and every create seed, exact source text, embedding
 source/dimensions, and qualified semantic evidence. Exact retries are
-idempotent; changed identity conflicts so interrupted recovery cannot silently
-recompute evidence against a different snapshot.
+idempotent per provider round; changed identity conflicts so interrupted
+recovery cannot silently recompute evidence against a different snapshot.
 The same port exposes one atomic interrupted-parent to immediate-child recovery
 operation. It returns newly identified running child executions plus their
 remapped immutable plan, while preserving exact call arguments and prepared

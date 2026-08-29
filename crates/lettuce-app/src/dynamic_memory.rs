@@ -219,9 +219,10 @@ impl<
         if plan.job_id != handle.id() {
             return Err(DynamicMemoryCoordinatorError::InvalidJobOwnership);
         }
-        let executions =
-            self.repository
-                .list_tool_executions(conversation_id, turn_id, attempt_id)?;
+        let durable = self
+            .repository
+            .list_tool_executions(conversation_id, turn_id, attempt_id)?;
+        let executions = executions_for_plan(&plan, &durable)?;
         validate_round(&executions, ToolExecutionStatus::Running)?;
         if plan.execution_ids
             != executions
@@ -408,6 +409,30 @@ fn prepared_from_plan(
     Ok(prepared)
 }
 
+fn executions_for_plan(
+    plan: &DynamicMemoryPreparationPlan,
+    durable: &[ToolExecution],
+) -> Result<Vec<ToolExecution>, DynamicMemoryCoordinatorError> {
+    let executions = durable
+        .iter()
+        .filter(|execution| {
+            execution.ordinal >= plan.first_execution_ordinal
+                && usize::from(execution.ordinal - plan.first_execution_ordinal)
+                    < plan.execution_ids.len()
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if executions
+        .iter()
+        .map(|execution| execution.id)
+        .collect::<Vec<_>>()
+        != plan.execution_ids
+    {
+        return Err(DynamicMemoryCoordinatorError::InvalidRestartPlan);
+    }
+    Ok(executions)
+}
+
 fn projection_matches_plan(
     projection: &PreparedMemoryProjection,
     space_id: MemorySpaceId,
@@ -455,6 +480,13 @@ fn classify_recovery(
     if executions.is_empty() {
         return Err(DynamicMemoryCoordinatorError::InvalidRound);
     }
+    let first_unsettled = executions
+        .iter()
+        .position(|execution| execution.status != ToolExecutionStatus::Succeeded);
+    let executions = match first_unsettled {
+        Some(index) => executions[index..].to_vec(),
+        None => executions,
+    };
     if executions.iter().all(|execution| {
         matches!(
             execution.status,
@@ -797,6 +829,7 @@ impl<
                 job_id: handle.id(),
                 space_id,
                 expected_memory_revision,
+                first_execution_ordinal: executions[0].ordinal,
                 policy: policy.clone(),
                 duplicate_threshold,
                 execution_ids: executions.iter().map(|execution| execution.id).collect(),
@@ -1490,9 +1523,15 @@ mod tests {
         assert_eq!(
             recovered,
             DynamicMemoryRecovery::TerminalReplay {
-                executions: vec![terminal]
+                executions: vec![terminal.clone()]
             }
         );
+        let next = validated_execution(owner, 1, "done", json!({"summary": "next"}));
+        assert!(matches!(
+            classify_recovery(vec![terminal, next]),
+            Ok(DynamicMemoryRecovery::ValidatedStart { executions })
+                if executions.len() == 1 && executions[0].ordinal == 1
+        ));
     }
 
     #[test]
@@ -1517,6 +1556,7 @@ mod tests {
             job_id: JobId::new(),
             space_id,
             expected_memory_revision: Revision::INITIAL,
+            first_execution_ordinal: execution.ordinal,
             policy: policy(),
             duplicate_threshold: score(9_000),
             execution_ids: vec![execution.id],
