@@ -45,6 +45,14 @@ create proceeds without semantic evidence and leaves rebuildable repair state.
 Cancellation still stops preparation instead of degrading to an unembedded
 write.
 
+The durable coordinator starts every validated execution with one batch CAS.
+For a successful handler round, the optional memory-space CAS and every exact
+typed terminal output commit in one SQLite transaction; a stale execution or
+memory revision rolls back both sides. Handler-level failure can likewise fail
+the whole running round atomically without mutating memory. The earlier
+reducer-only application helper is test-private so production callers cannot
+accidentally bypass settlement.
+
 ## Bundled prompts
 
 The app owns the closed, versioned built-in prompt catalog in

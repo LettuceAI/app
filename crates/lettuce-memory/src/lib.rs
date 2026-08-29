@@ -9,7 +9,10 @@ mod tool;
 pub use model::{
     MemoryCategory, MemoryItem, MemoryPolicy, MemorySpaceSnapshot, MemoryValidationError, Score,
 };
-pub use port::{MemoryChangeSet, MemoryRepository, MemoryRepositoryError};
+pub use port::{
+    DynamicMemoryRoundCommit, DynamicMemoryRoundCommitError, DynamicMemoryRoundCommitResult,
+    DynamicMemoryRoundRepository, MemoryChangeSet, MemoryRepository, MemoryRepositoryError,
+};
 pub use tool::{
     CreateMemoryPreparation, MemoryBatchResult, MemoryToolArguments, MemoryToolCall,
     MemoryToolError, MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,

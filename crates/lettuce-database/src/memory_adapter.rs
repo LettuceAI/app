@@ -44,11 +44,11 @@ fn parse_category(value: &str) -> Result<MemoryCategory, MemoryRepositoryError> 
     }
 }
 
-fn sql_revision(value: Revision) -> Result<i64, MemoryRepositoryError> {
+pub(super) fn sql_revision(value: Revision) -> Result<i64, MemoryRepositoryError> {
     i64::try_from(value.get()).map_err(storage)
 }
 
-fn parse_revision(value: i64) -> Result<Revision, MemoryRepositoryError> {
+pub(super) fn parse_revision(value: i64) -> Result<Revision, MemoryRepositoryError> {
     u64::try_from(value).map(Revision::new).map_err(storage)
 }
 
@@ -63,7 +63,7 @@ fn parse_score(value: i64) -> Result<Score, MemoryRepositoryError> {
         .ok_or_else(|| storage(value))
 }
 
-fn insert_items(
+pub(super) fn insert_items(
     transaction: &Transaction<'_>,
     space_id: MemorySpaceId,
     items: &[MemoryItem],
@@ -99,7 +99,7 @@ fn insert_items(
     Ok(())
 }
 
-fn get_in(
+pub(super) fn get_in(
     transaction: &Transaction<'_>,
     id: MemorySpaceId,
 ) -> Result<Option<MemorySpaceSnapshot>, MemoryRepositoryError> {
@@ -146,6 +146,50 @@ fn get_in(
     Ok(Some(snapshot))
 }
 
+pub(super) fn compare_and_apply_in(
+    transaction: &Transaction<'_>,
+    change: &MemoryChangeSet,
+) -> Result<MemorySpaceSnapshot, MemoryRepositoryError> {
+    change.validate()?;
+    let next_revision = change
+        .expected_revision
+        .next()
+        .map_err(|_| MemoryRepositoryError::Conflict)?;
+    let current_revision = transaction
+        .query_row(
+            "SELECT revision FROM memory_spaces WHERE id = ?1",
+            [change.space_id.to_string()],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(storage)?
+        .ok_or(MemoryRepositoryError::NotFound)?;
+    if parse_revision(current_revision)? != change.expected_revision {
+        return Err(MemoryRepositoryError::Conflict);
+    }
+    transaction
+        .execute(
+            "DELETE FROM memory_items WHERE space_id = ?1",
+            [change.space_id.to_string()],
+        )
+        .map_err(storage)?;
+    insert_items(transaction, change.space_id, &change.items)?;
+    let updated = transaction
+        .execute(
+            "UPDATE memory_spaces SET revision = ?2 WHERE id = ?1 AND revision = ?3",
+            params![
+                change.space_id.to_string(),
+                sql_revision(next_revision)?,
+                sql_revision(change.expected_revision)?,
+            ],
+        )
+        .map_err(storage)?;
+    if updated != 1 {
+        return Err(MemoryRepositoryError::Conflict);
+    }
+    get_in(transaction, change.space_id)?.ok_or(MemoryRepositoryError::NotFound)
+}
+
 impl MemoryRepository for Database {
     fn create(
         &self,
@@ -189,49 +233,11 @@ impl MemoryRepository for Database {
         &self,
         change: MemoryChangeSet,
     ) -> Result<MemorySpaceSnapshot, MemoryRepositoryError> {
-        change.validate()?;
-        let next_revision = change
-            .expected_revision
-            .next()
-            .map_err(|_| MemoryRepositoryError::Conflict)?;
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        let current_revision = transaction
-            .query_row(
-                "SELECT revision FROM memory_spaces WHERE id = ?1",
-                [change.space_id.to_string()],
-                |row| row.get::<_, i64>(0),
-            )
-            .optional()
-            .map_err(storage)?
-            .ok_or(MemoryRepositoryError::NotFound)?;
-        if parse_revision(current_revision)? != change.expected_revision {
-            return Err(MemoryRepositoryError::Conflict);
-        }
-        transaction
-            .execute(
-                "DELETE FROM memory_items WHERE space_id = ?1",
-                [change.space_id.to_string()],
-            )
-            .map_err(storage)?;
-        insert_items(&transaction, change.space_id, &change.items)?;
-        let updated = transaction
-            .execute(
-                "UPDATE memory_spaces SET revision = ?2 WHERE id = ?1 AND revision = ?3",
-                params![
-                    change.space_id.to_string(),
-                    sql_revision(next_revision)?,
-                    sql_revision(change.expected_revision)?,
-                ],
-            )
-            .map_err(storage)?;
-        if updated != 1 {
-            return Err(MemoryRepositoryError::Conflict);
-        }
-        let snapshot =
-            get_in(&transaction, change.space_id)?.ok_or(MemoryRepositoryError::NotFound)?;
+        let snapshot = compare_and_apply_in(&transaction, &change)?;
         transaction.commit().map_err(storage)?;
         Ok(snapshot)
     }

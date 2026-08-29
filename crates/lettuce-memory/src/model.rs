@@ -145,6 +145,8 @@ pub enum MemoryValidationError {
     TooManyItems,
     #[error("memory space revision must be positive")]
     InvalidRevision,
+    #[error("memory space identity does not match")]
+    InvalidSpaceId,
     #[error("memory policy max entries is invalid")]
     InvalidMaxEntries,
     #[error("new memory space must start at revision one")]

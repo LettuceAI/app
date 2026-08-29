@@ -13,6 +13,7 @@ mod group_adapter;
 mod lorebook_adapter;
 mod memory_adapter;
 mod memory_embedding_adapter;
+mod memory_round_adapter;
 mod persona_adapter;
 mod prompt_adapter;
 mod tool_adapter;

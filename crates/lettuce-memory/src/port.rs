@@ -1,6 +1,8 @@
 use lettuce_types::{MemorySpaceId, Revision};
 use serde::{Deserialize, Serialize};
 
+use lettuce_conversations::{ConversationRepositoryError, ToolExecution, ToolExecutionTransition};
+
 use crate::{MemoryItem, MemorySpaceSnapshot, MemoryValidationError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,6 +38,37 @@ pub trait MemoryRepository: Send + Sync {
         &self,
         change: MemoryChangeSet,
     ) -> Result<MemorySpaceSnapshot, MemoryRepositoryError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DynamicMemoryRoundCommit {
+    pub space_id: MemorySpaceId,
+    pub change: Option<MemoryChangeSet>,
+    pub execution_transitions: Vec<ToolExecutionTransition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DynamicMemoryRoundCommitResult {
+    pub snapshot: MemorySpaceSnapshot,
+    pub executions: Vec<ToolExecution>,
+}
+
+pub trait DynamicMemoryRoundRepository: MemoryRepository {
+    /// Atomically commits the optional authoritative memory change and every
+    /// terminal execution transition for one admitted handler round.
+    fn commit_dynamic_memory_round(
+        &self,
+        commit: DynamicMemoryRoundCommit,
+        at: lettuce_types::TimestampMillis,
+    ) -> Result<DynamicMemoryRoundCommitResult, DynamicMemoryRoundCommitError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DynamicMemoryRoundCommitError {
+    #[error("dynamic-memory repository failed: {0}")]
+    Memory(#[from] MemoryRepositoryError),
+    #[error("tool execution repository failed: {0}")]
+    Execution(#[from] ConversationRepositoryError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

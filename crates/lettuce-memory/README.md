@@ -33,5 +33,6 @@ target exists in its current snapshot.
 
 The SQLite `MemoryRepository` implementation and first admitted-round
 application handler are now wired through `lettuce-database` and `lettuce-app`.
-Tool-execution lifecycle transitions and provider continuation remain owned by
-the future conversation coordinator rather than this domain reducer.
+The domain-owned cross-aggregate commit port carries one optional memory change
+plus a complete terminal tool-transition batch. Infrastructure must commit both
+or neither; orchestration and provider continuation remain application-owned.

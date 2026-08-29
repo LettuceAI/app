@@ -1,13 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
-use lettuce_conversations::{ToolExecution, ToolExecutionStatus, ToolOutput};
+use lettuce_conversations::{
+    ToolExecution, ToolExecutionRepository, ToolExecutionStatus, ToolExecutionTransition,
+    ToolFailure, ToolOutput,
+};
 use lettuce_embeddings::{
     EmbeddingDimensions, EmbeddingProjectionError, EmbeddingRequest, MemoryEmbeddingProjection,
     MemoryEmbeddingRepair, MemoryEmbeddingRepository,
 };
 use lettuce_jobs::{Claim, ResourceClass, handle::JobHandle};
 use lettuce_memory::{
-    CreateMemoryPreparation, MemoryBatchResult, MemoryPolicy, MemoryRepository,
+    CreateMemoryPreparation, DynamicMemoryRoundCommit, DynamicMemoryRoundCommitError,
+    DynamicMemoryRoundRepository, MemoryBatchResult, MemoryPolicy, MemoryRepository,
     MemoryRepositoryError, MemorySpaceSnapshot, MemoryToolArguments, MemoryToolCall,
     MemoryToolError, MemoryToolOutcome, MemoryToolReducer,
 };
@@ -44,6 +48,7 @@ pub struct DynamicMemoryRoundResult {
     pub reduction: MemoryBatchResult,
     pub outputs: Vec<(ToolExecutionId, ToolOutput)>,
     pub projection_repairs_pending: Vec<MemoryId>,
+    pub settled_executions: Vec<ToolExecution>,
 }
 
 #[derive(Debug)]
@@ -57,7 +62,8 @@ impl<'a, R: MemoryRepository + MemoryEmbeddingRepository + ?Sized> DynamicMemory
         Self { repository }
     }
 
-    pub fn apply_admitted_round(
+    #[cfg(test)]
+    fn apply_admitted_round(
         &self,
         space_id: MemorySpaceId,
         policy: &MemoryPolicy,
@@ -91,8 +97,186 @@ impl<'a, R: MemoryRepository + MemoryEmbeddingRepository + ?Sized> DynamicMemory
             reduction,
             outputs,
             projection_repairs_pending,
+            settled_executions: Vec::new(),
         })
     }
+}
+
+impl<
+    'a,
+    R: DynamicMemoryRoundRepository + MemoryEmbeddingRepository + ToolExecutionRepository + ?Sized,
+> DynamicMemoryHandler<'a, R>
+{
+    pub fn start_validated_round(
+        &self,
+        executions: &[ToolExecution],
+        at: TimestampMillis,
+    ) -> Result<Vec<ToolExecution>, DynamicMemoryCoordinatorError> {
+        validate_round(executions, ToolExecutionStatus::Validated)?;
+        self.repository
+            .transition_tool_execution_batch(
+                &executions
+                    .iter()
+                    .map(|execution| ToolExecutionTransition {
+                        id: execution.id,
+                        expected_revision: execution.revision,
+                        next: ToolExecutionStatus::Running,
+                        output: None,
+                        failure: None,
+                    })
+                    .collect::<Vec<_>>(),
+                at,
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn settle_running_round(
+        &self,
+        space_id: MemorySpaceId,
+        policy: &MemoryPolicy,
+        executions: &[ToolExecution],
+        prepared_creates: &[PreparedMemoryCreate],
+        at: TimestampMillis,
+    ) -> Result<DynamicMemoryRoundResult, DynamicMemoryCoordinatorError> {
+        validate_round(executions, ToolExecutionStatus::Running)?;
+        let snapshot = self
+            .repository
+            .get(space_id)?
+            .ok_or(MemoryRepositoryError::NotFound)?;
+        let calls = prepare_calls(space_id, executions, prepared_creates)?;
+        let reduction = MemoryToolReducer.reduce(&snapshot, policy, &calls)?;
+        let outputs = reduction
+            .results
+            .iter()
+            .map(|result| {
+                let is_error = matches!(result.outcome, MemoryToolOutcome::Rejected { .. });
+                serde_json::to_value(&result.outcome)
+                    .map(|value| (result.execution_id, ToolOutput { value, is_error }))
+                    .map_err(|_| DynamicMemoryHandlerError::OutputSerialization)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let output_by_id = outputs.iter().cloned().collect::<HashMap<_, _>>();
+        let execution_transitions = executions
+            .iter()
+            .map(|execution| {
+                let output = output_by_id
+                    .get(&execution.id)
+                    .cloned()
+                    .ok_or(DynamicMemoryCoordinatorError::OutputMismatch)?;
+                Ok(ToolExecutionTransition {
+                    id: execution.id,
+                    expected_revision: execution.revision,
+                    next: ToolExecutionStatus::Succeeded,
+                    output: Some(output),
+                    failure: None,
+                })
+            })
+            .collect::<Result<Vec<_>, DynamicMemoryCoordinatorError>>()?;
+        let committed = self.repository.commit_dynamic_memory_round(
+            DynamicMemoryRoundCommit {
+                space_id,
+                change: reduction.change.clone(),
+                execution_transitions,
+            },
+            at,
+        )?;
+        let projection_repairs_pending = persist_created_projections(
+            self.repository,
+            &committed.snapshot,
+            &reduction,
+            prepared_creates,
+        );
+        Ok(DynamicMemoryRoundResult {
+            snapshot: committed.snapshot,
+            reduction,
+            outputs,
+            projection_repairs_pending,
+            settled_executions: committed.executions,
+        })
+    }
+
+    pub fn fail_running_round(
+        &self,
+        space_id: MemorySpaceId,
+        executions: &[ToolExecution],
+        failure: ToolFailure,
+        at: TimestampMillis,
+    ) -> Result<Vec<ToolExecution>, DynamicMemoryCoordinatorError> {
+        validate_round(executions, ToolExecutionStatus::Running)?;
+        self.repository
+            .commit_dynamic_memory_round(
+                DynamicMemoryRoundCommit {
+                    space_id,
+                    change: None,
+                    execution_transitions: executions
+                        .iter()
+                        .map(|execution| ToolExecutionTransition {
+                            id: execution.id,
+                            expected_revision: execution.revision,
+                            next: ToolExecutionStatus::Failed,
+                            output: None,
+                            failure: Some(failure.clone()),
+                        })
+                        .collect(),
+                },
+                at,
+            )
+            .map(|committed| committed.executions)
+            .map_err(Into::into)
+    }
+}
+
+fn validate_round(
+    executions: &[ToolExecution],
+    expected_status: ToolExecutionStatus,
+) -> Result<(), DynamicMemoryCoordinatorError> {
+    if executions.is_empty() {
+        return Err(DynamicMemoryCoordinatorError::InvalidRound);
+    }
+    let owner = (
+        executions[0].conversation_id,
+        executions[0].turn_id,
+        executions[0].attempt_id,
+    );
+    let mut previous = None;
+    let mut ids = HashSet::with_capacity(executions.len());
+    for execution in executions {
+        execution
+            .validate()
+            .map_err(|_| DynamicMemoryCoordinatorError::InvalidRound)?;
+        if execution.status != expected_status
+            || owner
+                != (
+                    execution.conversation_id,
+                    execution.turn_id,
+                    execution.attempt_id,
+                )
+            || previous.is_some_and(|ordinal| execution.ordinal != ordinal + 1)
+            || !ids.insert(execution.id)
+        {
+            return Err(DynamicMemoryCoordinatorError::InvalidRound);
+        }
+        previous = Some(execution.ordinal);
+    }
+    Ok(())
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DynamicMemoryCoordinatorError {
+    #[error("dynamic-memory execution round is invalid")]
+    InvalidRound,
+    #[error("dynamic-memory result does not cover every execution")]
+    OutputMismatch,
+    #[error("dynamic-memory handler failed: {0}")]
+    Handler(#[from] DynamicMemoryHandlerError),
+    #[error("conversation repository failed: {0}")]
+    Conversation(#[from] lettuce_conversations::ConversationRepositoryError),
+    #[error("dynamic-memory round commit failed: {0}")]
+    Commit(#[from] DynamicMemoryRoundCommitError),
+    #[error("dynamic-memory repository failed: {0}")]
+    Repository(#[from] MemoryRepositoryError),
+    #[error("dynamic-memory tool call is invalid: {0}")]
+    Tool(#[from] MemoryToolError),
 }
 
 fn persist_created_projections<R: MemoryEmbeddingRepository + ?Sized>(

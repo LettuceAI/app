@@ -156,7 +156,7 @@ fn hydrate(
     Ok(execution)
 }
 
-fn get_in(
+pub(super) fn get_in(
     transaction: &Transaction<'_>,
     id: ToolExecutionId,
 ) -> Result<ToolExecution, ConversationRepositoryError> {
