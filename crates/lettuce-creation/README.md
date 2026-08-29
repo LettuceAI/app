@@ -22,3 +22,10 @@ revisions, pure target-specific text/scene operations, and explicit review and
 confirmation stages. Direct authored-domain writes, image/media work, provider
 continuation, administrative tools, and frontend events remain outside that
 slice.
+
+Single-entry, keyword, and staged lorebook-generation behavior is pinned in
+`fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`. Generation
+owns durable reviewed proposals; `lettuce-context` remains the only lorebook
+domain owner and final apply must use its expected-revision use cases atomically.
+Process-local job state, permissive free-text tool inference, positional draft
+identity, partial commit, and cancel-by-deletion are not preserved.

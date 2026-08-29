@@ -1,0 +1,253 @@
+{
+  "schemaVersion": 1,
+  "scope": "single_entry_keyword_and_staged_lorebook_generation",
+  "auditedDimensions": [
+    "trigger",
+    "definitions_and_choice",
+    "model_and_profile_resolution",
+    "prompt_and_context",
+    "multiple_calls",
+    "mutation_boundary",
+    "result_replay",
+    "continuation_and_finalization",
+    "events",
+    "cancellation",
+    "retry",
+    "failure",
+    "recovery"
+  ],
+  "workflows": [
+    {
+      "id": "single_entry",
+      "trigger": "explicit request for one draft from selected direct-session messages memories or both",
+      "definitionsAndChoice": "required write_lorebook_entry plus optional no_entry unless force removes it",
+      "modelResolution": "configured text-capable entry-generator model or first credentialed text-capable model",
+      "promptContext": "character persona session target lorebook existing entries direction selected messages selected memories and optional memory summary",
+      "multipleCalls": "write_lorebook_entry wins over an earlier no_entry result",
+      "mutationBoundary": "returns a normalized draft and does not persist the lorebook",
+      "retry": "one native attempt then one configured JSON or XML fallback",
+      "classification": "preserved"
+    },
+    {
+      "id": "keyword_draft",
+      "trigger": "explicit request with nonblank entry content",
+      "definitionsAndChoice": "one required write_lorebook_keywords tool",
+      "modelResolution": "same entry-generator model policy",
+      "promptContext": "title content existing keywords and direction",
+      "mutationBoundary": "returns at most twenty-four case-insensitively deduplicated keywords",
+      "retry": "one native attempt then one configured JSON or XML fallback",
+      "classification": "preserved"
+    },
+    {
+      "id": "staged_generator",
+      "trigger": "explicit nonblank brief plus bounded text markdown or PDF sources",
+      "definitionsAndChoice": "required planner writer and coherence tools in separate workflow stages",
+      "modelResolution": "job override then configured lorebook-generator model then application default",
+      "promptContext": "planner digest outline per-entry source excerpts draft feedback and complete draft set depending on stage",
+      "multipleCalls": "each stage reads the first matching required tool result; drafting runs up to three entry requests concurrently",
+      "mutationBoundary": "in-memory outline drafts revisions and coherence proposals until commit",
+      "finalization": "commit creates or targets one lorebook then inserts every nonblank draft",
+      "classification": "preserved"
+    }
+  ],
+  "boundaryDecisions": [
+    {
+      "dimension": "ownership",
+      "classification": "corrected",
+      "decision": "lettuce-creation owns durable reviewed generation jobs and proposals while lettuce-context owns validated lorebook drafts revisions and atomic mutation use cases"
+    },
+    {
+      "dimension": "job_state",
+      "classification": "corrected",
+      "decision": "replace the process-local registry with durable stage attempts checkpoints errors cancellation and restart recovery"
+    },
+    {
+      "dimension": "stage_validation",
+      "classification": "corrected",
+      "decision": "commands enforce legal stage transitions and stable plan and draft identities"
+    },
+    {
+      "dimension": "finalization",
+      "classification": "corrected",
+      "decision": "commit only explicitly accepted drafts through one expected-revision lorebook change set and one transaction"
+    },
+    {
+      "dimension": "provider_contract",
+      "classification": "corrected",
+      "decision": "remove permissive free-text tool inference and validate native and structured fallback results against exact declarations"
+    },
+    {
+      "dimension": "source_content",
+      "classification": "corrected",
+      "decision": "large sources use protected asset references and bounded extracted snapshots instead of base64 in workflow state or ordinary events"
+    },
+    {
+      "dimension": "cancellation_and_recovery",
+      "classification": "corrected",
+      "decision": "single-entry keyword and staged workflows all settle cancellation and recover durable attempts idempotently"
+    }
+  ],
+  "firstSlice": {
+    "owner": "lettuce-creation",
+    "includes": [
+      "durable staged lorebook-generation state machine",
+      "stable outline and draft proposal identities",
+      "outline review draft review and coherence review transitions",
+      "bounded source snapshot references",
+      "final validated lorebook change-set proposal"
+    ],
+    "excludes": [
+      "provider coordinator implementation",
+      "PDF extraction implementation",
+      "database adapter",
+      "direct lorebook persistence",
+      "frontend events"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "message_source_requires_selected_message",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "message-only generation rejects an empty or unresolved selection"
+    },
+    {
+      "id": "memory_source_requires_memory_or_summary",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "memory-only generation rejects when neither selected memory nor included summary has content"
+    },
+    {
+      "id": "mixed_source_accepts_any_selected_context",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "a selected message memory or included summary is sufficient"
+    },
+    {
+      "id": "selected_messages_belong_to_session",
+      "classification": "preserved",
+      "owner": "conversations",
+      "expected": "message ids from another conversation cannot enter the prompt snapshot"
+    },
+    {
+      "id": "non_force_may_return_no_entry",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "no_entry returns a reason and no draft"
+    },
+    {
+      "id": "force_requires_entry",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "the declared request contains only write_lorebook_entry and absence is failure"
+    },
+    {
+      "id": "entry_requires_nonblank_title_and_content",
+      "classification": "preserved",
+      "owner": "context",
+      "expected": "invalid draft arguments do not produce a proposal"
+    },
+    {
+      "id": "keywords_are_case_insensitively_deduplicated_and_bounded",
+      "classification": "preserved",
+      "owner": "context",
+      "expected": "first spelling wins and no more than twenty-four keywords remain"
+    },
+    {
+      "id": "single_entry_has_no_implicit_persistence",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "generation returns a proposal only"
+    },
+    {
+      "id": "structured_fallback_obeys_exact_request",
+      "classification": "corrected",
+      "owner": "coordinator",
+      "expected": "fallback cannot introduce no_entry in force mode or undeclared operations"
+    },
+    {
+      "id": "source_intake_is_bounded",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "each source is at most fifty megabytes total input is at most two hundred megabytes and extracted excerpts are at most twenty thousand characters"
+    },
+    {
+      "id": "planner_requires_nonempty_outline",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "empty provider outline fails planning"
+    },
+    {
+      "id": "outline_requires_explicit_approval",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "draft records are created only after a nonempty outline is approved"
+    },
+    {
+      "id": "draft_batch_is_bounded_to_three",
+      "classification": "preserved",
+      "owner": "jobs",
+      "expected": "at most three pending or failed entries are requested concurrently"
+    },
+    {
+      "id": "failed_draft_is_retryable",
+      "classification": "preserved",
+      "owner": "jobs",
+      "expected": "a failed entry retains identity and may be selected by the next draft batch"
+    },
+    {
+      "id": "refinement_preserves_revision_history",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "feedback and resulting content append an immutable draft revision"
+    },
+    {
+      "id": "coherence_changes_require_acceptance",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "only selected merge rename or toggle proposals mutate draft proposals; contradiction flags remain review information"
+    },
+    {
+      "id": "workflow_transitions_are_validated",
+      "classification": "corrected",
+      "owner": "creation",
+      "expected": "planning approval drafting refinement coherence and commit commands reject invalid source stages"
+    },
+    {
+      "id": "commit_uses_stable_draft_ids_not_array_positions",
+      "classification": "corrected",
+      "owner": "creation",
+      "expected": "outline edits and parallel completion cannot retarget a draft or coherence change"
+    },
+    {
+      "id": "commit_includes_only_explicitly_accepted_drafts",
+      "classification": "corrected",
+      "owner": "creation",
+      "expected": "pending failed and merely drafted entries are excluded from final apply"
+    },
+    {
+      "id": "commit_is_atomic_and_idempotent",
+      "classification": "corrected",
+      "owner": "context",
+      "expected": "book creation or expected-revision update and all accepted entries commit once or not at all"
+    },
+    {
+      "id": "cancel_keeps_durable_reviewed_work",
+      "classification": "corrected",
+      "owner": "jobs",
+      "expected": "cancellation settles active attempts without deleting the workflow and reviewed proposals"
+    },
+    {
+      "id": "restart_recovers_stage_and_partial_batch",
+      "classification": "corrected",
+      "owner": "jobs",
+      "expected": "completed drafts remain complete and interrupted draft executions resume without duplication"
+    },
+    {
+      "id": "pdf_extraction_and_protected_source_assets",
+      "classification": "deferred",
+      "owner": "creation_sources",
+      "expected": "binary ingestion follows after protected asset and extraction ports exist"
+    }
+  ]
+}
