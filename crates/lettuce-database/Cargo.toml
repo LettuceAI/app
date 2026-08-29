@@ -17,6 +17,7 @@ workspace = true
 blake3.workspace = true
 lettuce-context.workspace = true
 lettuce-conversations.workspace = true
+lettuce-embeddings.workspace = true
 lettuce-jobs.workspace = true
 lettuce-characters.workspace = true
 lettuce-media.workspace = true

@@ -27,3 +27,9 @@ execution, and before publishing output. Apple targets attempt CoreML with a
 logged CPU fallback; the actual legacy Android/non-Apple path remains CPU. NER,
 emotion, router models, download UI, and dynamic-memory orchestration remain
 outside this slice.
+
+Memory projections are rebuildable derived data behind the domain-owned
+`MemoryEmbeddingRepository` port. Ready rows carry exact source text, immutable
+model revision, declared dimensions, finite vectors, and update time; failed
+generation is represented as typed repair-needed state rather than making an
+authoritative memory write depend on ONNX availability.

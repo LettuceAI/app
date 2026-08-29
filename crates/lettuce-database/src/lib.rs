@@ -12,6 +12,7 @@ mod conversation_vertical_slice;
 mod group_adapter;
 mod lorebook_adapter;
 mod memory_adapter;
+mod memory_embedding_adapter;
 mod persona_adapter;
 mod prompt_adapter;
 mod tool_adapter;
@@ -3767,6 +3768,7 @@ mod tests {
                 "lorebooks",
                 "media_assets",
                 "media_blobs",
+                "memory_embedding_projections",
                 "memory_items",
                 "memory_spaces",
                 "model_profiles",

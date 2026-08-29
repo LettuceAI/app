@@ -32,3 +32,32 @@ CREATE TABLE memory_items (
 
 CREATE INDEX memory_items_space_policy_idx
     ON memory_items(space_id, is_pinned DESC, is_cold ASC, last_accessed_at DESC, id ASC);
+
+-- Rebuildable derived data. Rows deliberately reference only the space: the
+-- memory CAS replaces item rows, and projections for unchanged text must not
+-- be rewritten. Reads join live items and exact source text, so deleted or
+-- changed memories cannot contribute stale similarity evidence.
+CREATE TABLE memory_embedding_projections (
+    space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE CASCADE,
+    memory_id TEXT NOT NULL,
+    source_revision TEXT NOT NULL CHECK (
+        length(trim(source_revision)) > 0
+        AND length(CAST(source_revision AS BLOB)) <= 128
+    ),
+    dimensions INTEGER NOT NULL CHECK (dimensions IN (64, 128, 256, 512, 768)),
+    source_text TEXT NOT NULL CHECK (
+        length(trim(source_text)) > 0
+        AND length(CAST(source_text AS BLOB)) <= 16384
+    ),
+    status TEXT NOT NULL CHECK (status IN ('ready', 'repair_needed')),
+    vector BLOB,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (space_id, memory_id, source_revision, dimensions),
+    CHECK (
+        (status = 'ready' AND vector IS NOT NULL AND length(vector) = dimensions * 4)
+        OR (status = 'repair_needed' AND vector IS NULL)
+    )
+) STRICT;
+
+CREATE INDEX memory_embedding_projections_lookup_idx
+    ON memory_embedding_projections(space_id, source_revision, dimensions, status, memory_id);

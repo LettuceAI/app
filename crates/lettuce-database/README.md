@@ -63,7 +63,11 @@ tables are intentionally outside this migration.
 Migration 9 adds revisioned memory spaces and strictly typed ordered memory
 items. The adapter creates spaces atomically and replaces a complete item set
 under one immediate-transaction revision comparison, so a stale or failed
-dynamic-memory round cannot partially alter the stored snapshot.
+dynamic-memory round cannot partially alter the stored snapshot. The same
+migration stores rebuildable ready/repair-needed embedding projections as
+little-endian float BLOBs. Projection reads join exact live memory ID and text;
+stale derived rows cannot affect similarity, while unchanged projections
+survive the complete item-set CAS without rewriting their BLOBs.
 Possession of `Database` is a trusted application-composition capability: ordinary
 conversation repositories and DTOs expose artifact references only and cannot
 export protected bytes. Trusted transfer remains a separate composition-only

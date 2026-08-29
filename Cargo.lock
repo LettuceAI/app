@@ -855,6 +855,7 @@ dependencies = [
  "lettuce-characters",
  "lettuce-context",
  "lettuce-conversations",
+ "lettuce-embeddings",
  "lettuce-jobs",
  "lettuce-media",
  "lettuce-memory",
