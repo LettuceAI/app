@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "scope": "creation_helper_progressive_edits_and_finalization",
+  "auditedDimensions": [
+    "trigger",
+    "definitions_and_choice",
+    "model_and_profile_resolution",
+    "prompt_and_context",
+    "multiple_calls",
+    "mutation_boundary",
+    "result_replay",
+    "continuation_and_finalization",
+    "events",
+    "cancellation",
+    "retry",
+    "failure",
+    "recovery"
+  ],
+  "workflowDecisions": [
+    {
+      "dimension": "trigger",
+      "legacy": "a user message starts one assistant turn in an active create or edit session",
+      "classification": "preserved",
+      "decision": "each submitted message creates a durable workflow turn before inference starts"
+    },
+    {
+      "dimension": "definitions_and_choice",
+      "legacy": "all target-specific tools are declared with auto choice; character persona and lorebook receive different write read image edit and flow tools",
+      "classification": "preserved",
+      "decision": "keep target-specific versioned declarations but validate every call against the exact turn request"
+    },
+    {
+      "dimension": "model_and_profile_resolution",
+      "legacy": "creation-helper model override falls back to the application default and provider-effective streaming is applied",
+      "classification": "preserved"
+    },
+    {
+      "dimension": "prompt_and_context",
+      "legacy": "editable system entries receive target label and a current draft summary; prior visible messages and generated-image metadata are included",
+      "classification": "preserved",
+      "decision": "pin prompt model and authored target revisions while excluding raw content from ordinary diagnostics"
+    },
+    {
+      "dimension": "multiple_calls",
+      "legacy": "calls execute sequentially in provider order; failed calls return errors and later calls still run",
+      "classification": "preserved"
+    },
+    {
+      "dimension": "mutation_boundary",
+      "legacy": "some tools edit only the in-memory draft while persona lorebook media and association tools can mutate durable application state immediately",
+      "classification": "corrected",
+      "decision": "every tool produces a reviewed proposal or leased asset; only explicit finalization invokes authored-domain use cases"
+    },
+    {
+      "dimension": "result_replay",
+      "legacy": "assistant tool calls and per-call JSON results are appended for the next provider iteration",
+      "classification": "preserved",
+      "decision": "use provider-neutral durable executions and adapter-owned replay"
+    },
+    {
+      "dimension": "continuation_and_finalization",
+      "legacy": "the loop stops on no calls or after eight iterations; preview and confirmation set PreviewShown but are not terminal; completion is a separate frontend command",
+      "classification": "corrected",
+      "decision": "record explicit awaiting-review and awaiting-confirmation stages and make final apply a durable idempotent command"
+    },
+    {
+      "dimension": "events",
+      "legacy": "Tauri events expose raw arguments results draft and messages",
+      "classification": "corrected",
+      "decision": "emit sequenced typed job events and proposal references without sensitive content"
+    },
+    {
+      "dimension": "cancellation",
+      "legacy": "cancel aborts only the active provider request and deliberately leaves the session resumable and active",
+      "classification": "preserved",
+      "decision": "distinguish cancel-current-turn from abandon-workflow and persist the settled turn state"
+    },
+    {
+      "dimension": "retry",
+      "legacy": "native provider errors may retry forced choice as auto; configured JSON or XML fallback parses synthetic calls; regeneration removes the last assistant message",
+      "classification": "corrected",
+      "decision": "cap transport retries and make regeneration a new attempt against an immutable prior proposal revision"
+    },
+    {
+      "dimension": "failure",
+      "legacy": "a failed provider turn can lose the newly submitted user message and draft checkpoint while earlier side-effecting tools may remain committed",
+      "classification": "corrected",
+      "decision": "persist input before execution and prohibit authored-state side effects before final apply"
+    },
+    {
+      "dimension": "recovery",
+      "legacy": "session JSON is resumable after completed turns but in-flight iterations and tool effects have no restart-safe checkpoint",
+      "classification": "corrected",
+      "decision": "recover from durable workflow stage turn attempt tool execution and proposal revision"
+    }
+  ],
+  "firstSlice": {
+    "owner": "lettuce-creation",
+    "includes": [
+      "versioned creation target and workflow stages",
+      "durable user turn and immutable draft proposal revisions",
+      "pure target-specific text and scene proposal operations",
+      "ordered operation outcomes",
+      "review and confirmation transitions"
+    ],
+    "excludes": [
+      "direct character persona or lorebook persistence",
+      "image generation and media leases",
+      "provider continuation coordinator",
+      "remote discovery tools",
+      "frontend events"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "user_turn_is_durable_before_inference",
+      "classification": "corrected",
+      "owner": "creation",
+      "expected": "provider failure retains the submitted message and its pre-turn draft revision"
+    },
+    {
+      "id": "edit_session_loads_existing_target",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "edit mode requires target kind and id and starts from a validated authored snapshot"
+    },
+    {
+      "id": "target_specific_tools_only",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "character persona and lorebook turns cannot execute tools outside their declared capability set"
+    },
+    {
+      "id": "unknown_tool_fails_call_round",
+      "classification": "corrected",
+      "owner": "conversations",
+      "expected": "undeclared calls fail exact admission instead of being replayed as an unknown-tool result"
+    },
+    {
+      "id": "multiple_operations_apply_in_provider_order",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "later proposal operations observe earlier successful operations from the same response"
+    },
+    {
+      "id": "failed_operation_does_not_stop_later_calls",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "a typed error result is replayed and later admitted calls still execute"
+    },
+    {
+      "id": "continuation_stops_at_hard_cap",
+      "classification": "preserved",
+      "owner": "coordinator",
+      "expected": "one creation turn performs at most eight provider iterations"
+    },
+    {
+      "id": "preview_is_explicit_review_stage",
+      "classification": "corrected",
+      "owner": "creation",
+      "expected": "preview transitions to awaiting review and cannot silently continue mutating in the same provider loop"
+    },
+    {
+      "id": "confirmation_is_not_final_apply",
+      "classification": "preserved",
+      "owner": "creation",
+      "expected": "requesting confirmation does not commit the target entity"
+    },
+    {
+      "id": "final_apply_uses_expected_target_revision",
+      "classification": "corrected",
+      "owner": "app",
+      "expected": "explicit completion applies one validated proposal through target-domain use cases or reports a revision conflict"
+    },
+    {
+      "id": "lorebook_tools_do_not_write_before_finalization",
+      "classification": "corrected",
+      "owner": "creation",
+      "expected": "entry write edit delete and reorder calls modify only proposal state"
+    },
+    {
+      "id": "persona_delete_does_not_write_before_finalization",
+      "classification": "corrected",
+      "owner": "creation",
+      "expected": "destructive target operations require reviewed impact and explicit final apply"
+    },
+    {
+      "id": "generated_media_is_leased_until_acceptance",
+      "classification": "corrected",
+      "owner": "media",
+      "expected": "generation may produce a proposal asset but cancellation or rejection releases the unaccepted lease"
+    },
+    {
+      "id": "cancel_current_turn_remains_resumable",
+      "classification": "preserved",
+      "owner": "jobs",
+      "expected": "active inference settles cancelled while the creation workflow remains resumable"
+    },
+    {
+      "id": "regeneration_keeps_prior_attempt_history",
+      "classification": "corrected",
+      "owner": "creation",
+      "expected": "a new attempt starts from the chosen prior proposal revision without deleting durable history"
+    },
+    {
+      "id": "structured_fallback_is_bounded_and_validated",
+      "classification": "corrected",
+      "owner": "coordinator",
+      "expected": "JSON or XML fallback calls obey the same exact declarations argument bounds and call limits as native calls"
+    },
+    {
+      "id": "malformed_fallback_is_not_visible_assistant_success",
+      "classification": "corrected",
+      "owner": "coordinator",
+      "expected": "parse failure settles the attempt with a typed error instead of treating protocol text as a user reply"
+    },
+    {
+      "id": "raw_creation_content_is_not_an_ordinary_event",
+      "classification": "corrected",
+      "owner": "jobs",
+      "expected": "events carry ids stages operation names and safe summaries only"
+    },
+    {
+      "id": "image_generation_tools",
+      "classification": "deferred",
+      "owner": "creation_media",
+      "expected": "image generation edit and selection follow after proposal workflow and media lease ports exist"
+    },
+    {
+      "id": "administrative_read_and_delete_tools",
+      "classification": "deferred",
+      "owner": "creation_app",
+      "expected": "model prompt and authored-library queries plus destructive operations follow after permission and review policy"
+    }
+  ]
+}
