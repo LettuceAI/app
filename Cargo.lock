@@ -851,6 +851,7 @@ dependencies = [
 name = "lettuce-database"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "blake3",
  "lettuce-characters",
  "lettuce-context",
@@ -862,6 +863,7 @@ dependencies = [
  "lettuce-models",
  "lettuce-settings",
  "lettuce-types",
+ "lettuce-usage",
  "rusqlite",
  "serde",
  "serde_json",
@@ -1065,7 +1067,10 @@ dependencies = [
 name = "lettuce-usage"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "lettuce-conversations",
  "lettuce-types",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
