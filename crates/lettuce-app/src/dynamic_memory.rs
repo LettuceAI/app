@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use lettuce_conversations::{
     GenerationAttempt, GenerationAttemptStatus, ToolExecution, ToolExecutionRepository,
-    ToolExecutionStatus, ToolExecutionTransition, ToolFailure, ToolOutput,
+    ToolExecutionStatus, ToolExecutionTransition, ToolFailure, ToolFailureCode, ToolOutput,
 };
 use lettuce_embeddings::{
     EmbeddingDimensions, EmbeddingProjectionError, EmbeddingRequest, MemoryEmbeddingProjection,
@@ -42,6 +42,150 @@ pub struct MemoryCreateSeed {
     pub id: MemoryId,
     pub token_count: u32,
     pub created_at: TimestampMillis,
+}
+
+/// Explicit application-owned inputs for executing one newly admitted
+/// continuation round. Seed/token accounting remains a caller dependency;
+/// this executor owns only lifecycle ordering and durable boundaries.
+#[derive(Debug)]
+pub struct DynamicMemoryRoundExecutor<
+    'a,
+    E: MemoryEmbeddingEngine + ?Sized,
+    R: DynamicMemoryRoundRepository
+        + DynamicMemoryPreparationRepository
+        + MemoryEmbeddingRepository
+        + ToolExecutionRepository
+        + ?Sized,
+> {
+    engine: &'a E,
+    repository: &'a R,
+    claim: &'a Claim,
+    space_id: MemorySpaceId,
+    policy: &'a MemoryPolicy,
+    duplicate_threshold: lettuce_memory::Score,
+}
+
+impl<
+    'a,
+    E: MemoryEmbeddingEngine + ?Sized,
+    R: DynamicMemoryRoundRepository
+        + DynamicMemoryPreparationRepository
+        + MemoryEmbeddingRepository
+        + ToolExecutionRepository
+        + ?Sized,
+> DynamicMemoryRoundExecutor<'a, E, R>
+{
+    #[must_use]
+    pub const fn new(
+        engine: &'a E,
+        repository: &'a R,
+        claim: &'a Claim,
+        space_id: MemorySpaceId,
+        policy: &'a MemoryPolicy,
+        duplicate_threshold: lettuce_memory::Score,
+    ) -> Self {
+        Self {
+            engine,
+            repository,
+            claim,
+            space_id,
+            policy,
+            duplicate_threshold,
+        }
+    }
+
+    pub fn execute_admitted_round(
+        &self,
+        executions: &[ToolExecution],
+        seeds: &[MemoryCreateSeed],
+        handle: &JobHandle,
+        at: TimestampMillis,
+    ) -> Result<DynamicMemoryRoundResult, DynamicMemoryRoundExecutionError> {
+        validate_embedding_admission(self.claim, handle)?;
+        if handle.cancellation_token().is_cancelled() {
+            return Err(DynamicMemoryPreparationError::Cancelled.into());
+        }
+        let snapshot = self
+            .repository
+            .get(self.space_id)?
+            .ok_or(MemoryRepositoryError::NotFound)?;
+        let running =
+            DynamicMemoryHandler::new(self.repository).start_validated_round(executions, at)?;
+        let prepared = DynamicMemoryCreatePreparer::new(self.engine, self.repository)
+            .prepare_and_persist_admitted(
+                self.space_id,
+                snapshot.revision,
+                self.policy,
+                &running,
+                seeds,
+                self.duplicate_threshold,
+                self.claim,
+                handle,
+            );
+        let prepared = match prepared {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                if matches!(error, DynamicMemoryPreparationError::Cancelled) {
+                    self.repository.transition_tool_execution_batch(
+                        &running
+                            .iter()
+                            .map(|execution| ToolExecutionTransition {
+                                id: execution.id,
+                                expected_revision: execution.revision,
+                                next: ToolExecutionStatus::Cancelled,
+                                output: None,
+                                failure: None,
+                            })
+                            .collect::<Vec<_>>(),
+                        at,
+                    )?;
+                } else {
+                    let code = if matches!(
+                        error,
+                        DynamicMemoryPreparationError::InvalidExecution
+                            | DynamicMemoryPreparationError::InvalidSeeds
+                            | DynamicMemoryPreparationError::Tool(_)
+                    ) {
+                        ToolFailureCode::InvalidArguments
+                    } else {
+                        ToolFailureCode::Internal
+                    };
+                    DynamicMemoryHandler::new(self.repository).fail_running_round(
+                        self.space_id,
+                        &running,
+                        ToolFailure {
+                            code,
+                            message: None,
+                        },
+                        at,
+                    )?;
+                }
+                return Err(error.into());
+            }
+        };
+        DynamicMemoryHandler::new(self.repository)
+            .settle_planned_round(
+                running[0].conversation_id,
+                running[0].turn_id,
+                running[0].attempt_id,
+                handle,
+                &prepared,
+                at,
+            )
+            .map_err(Into::into)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DynamicMemoryRoundExecutionError {
+    #[error("dynamic-memory continuation preparation failed: {0}")]
+    Preparation(#[from] DynamicMemoryPreparationError),
+    #[error("dynamic-memory continuation lifecycle failed: {0}")]
+    Coordinator(#[from] DynamicMemoryCoordinatorError),
+    #[error("dynamic-memory continuation repository failed: {0}")]
+    Repository(#[from] MemoryRepositoryError),
+    #[error("dynamic-memory continuation execution persistence failed: {0}")]
+    Conversation(#[from] lettuce_conversations::ConversationRepositoryError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1006,8 +1150,9 @@ mod tests {
 
     use super::{
         DynamicMemoryCreatePreparer, DynamicMemoryHandlerError, DynamicMemoryPreparationError,
-        DynamicMemoryRecovery, MemoryCreateSeed, PreparedMemoryCreate, PreparedMemoryProjection,
-        classify_recovery, prepared_from_plan,
+        DynamicMemoryRecovery, DynamicMemoryRoundExecutionError, DynamicMemoryRoundExecutor,
+        MemoryCreateSeed, PreparedMemoryCreate, PreparedMemoryProjection, classify_recovery,
+        prepared_from_plan,
     };
     use crate::{AppBackend, EmbeddingGenerationError, MemoryEmbeddingEngine};
 
@@ -1472,6 +1617,64 @@ mod tests {
             MemoryRepository::get(backend.database(), space_id)
                 .expect("space")
                 .is_some_and(|snapshot| snapshot.items.is_empty())
+        );
+    }
+
+    #[test]
+    fn round_executor_rejects_job_mismatch_before_starting_executions() {
+        let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let space_id = MemorySpaceId::new();
+        MemoryRepository::create(
+            backend.database(),
+            MemorySpaceSnapshot {
+                id: space_id,
+                revision: Revision::INITIAL,
+                items: vec![],
+            },
+        )
+        .expect("space");
+        let execution = validated_execution(
+            owner(),
+            0,
+            "create_memory",
+            json!({"text": "Mira prefers tea", "category": "preference"}),
+        );
+        let (claim, _) = admitted_embedding_job();
+        let wrong_handle = JobHandle::new(JobId::new());
+        let engine = FakeEmbeddingEngine { unavailable: false };
+        let policy = policy();
+        let executor = DynamicMemoryRoundExecutor::new(
+            &engine,
+            backend.database(),
+            &claim,
+            space_id,
+            &policy,
+            score(9_000),
+        );
+
+        assert!(matches!(
+            executor.execute_admitted_round(
+                std::slice::from_ref(&execution),
+                &[MemoryCreateSeed {
+                    execution_id: execution.id,
+                    id: MemoryId::new(),
+                    token_count: 4,
+                    created_at: TimestampMillis::new(4),
+                }],
+                &wrong_handle,
+                TimestampMillis::new(5),
+            ),
+            Err(DynamicMemoryRoundExecutionError::Preparation(
+                DynamicMemoryPreparationError::InvalidAdmission
+            ))
+        ));
+        assert_eq!(execution.status, ToolExecutionStatus::Validated);
+        assert_eq!(
+            MemoryRepository::get(backend.database(), space_id)
+                .expect("space")
+                .expect("stored")
+                .revision,
+            Revision::INITIAL
         );
     }
 

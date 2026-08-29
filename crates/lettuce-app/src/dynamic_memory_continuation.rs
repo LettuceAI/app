@@ -27,6 +27,20 @@ pub enum DynamicMemoryContinuationResult {
     },
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum DynamicMemoryContinuationTerminal {
+    Done { summary: Option<String> },
+    Complete { candidate: InferenceCandidate },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DynamicMemoryContinuationLoopResult {
+    pub terminal: DynamicMemoryContinuationTerminal,
+    /// Every provider response in request order. Kept intact so the later
+    /// usage/finalization boundary can aggregate without inventing counters.
+    pub outcomes: Vec<InferenceOutcome>,
+}
+
 #[derive(Debug)]
 pub struct DynamicMemoryContinuationCoordinator<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
@@ -144,6 +158,91 @@ impl<'a, R: ToolExecutionRepository + ?Sized, I: InferencePort + ?Sized>
             outcome,
         })
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn continue_until_terminal<F>(
+        &self,
+        conversation_id: ConversationId,
+        attempt: &GenerationAttempt,
+        handle: &JobHandle,
+        mut request: InferenceRequest,
+        initial_settled_round: Vec<ToolExecution>,
+        mut completed_rounds: u8,
+        mut total_tool_calls: u16,
+        at: TimestampMillis,
+        mut execute_round: F,
+    ) -> Result<DynamicMemoryContinuationLoopResult, DynamicMemoryContinuationError>
+    where
+        F: FnMut(
+            &[ToolExecution],
+            &JobHandle,
+            TimestampMillis,
+        ) -> Result<
+            crate::DynamicMemoryRoundResult,
+            crate::DynamicMemoryRoundExecutionError,
+        >,
+    {
+        let mut settled_round = initial_settled_round;
+        let mut outcomes = Vec::new();
+        loop {
+            match self
+                .continue_after_settled_round(
+                    conversation_id,
+                    attempt,
+                    handle,
+                    request,
+                    &settled_round,
+                    completed_rounds,
+                    total_tool_calls,
+                    at,
+                )
+                .await?
+            {
+                DynamicMemoryContinuationResult::Done { summary } => {
+                    return Ok(DynamicMemoryContinuationLoopResult {
+                        terminal: DynamicMemoryContinuationTerminal::Done { summary },
+                        outcomes,
+                    });
+                }
+                DynamicMemoryContinuationResult::Complete { candidate, outcome } => {
+                    outcomes.push(outcome);
+                    return Ok(DynamicMemoryContinuationLoopResult {
+                        terminal: DynamicMemoryContinuationTerminal::Complete { candidate },
+                        outcomes,
+                    });
+                }
+                DynamicMemoryContinuationResult::NextRound {
+                    executions,
+                    continued_request,
+                    outcome,
+                } => {
+                    outcomes.push(outcome);
+                    total_tool_calls = total_tool_calls
+                        .checked_add(
+                            u16::try_from(executions.len())
+                                .map_err(|_| DynamicMemoryContinuationError::ToolBudgetExceeded)?,
+                        )
+                        .ok_or(DynamicMemoryContinuationError::ToolBudgetExceeded)?;
+                    completed_rounds = completed_rounds
+                        .checked_add(1)
+                        .ok_or(DynamicMemoryContinuationError::ToolBudgetExceeded)?;
+                    let result = execute_round(&executions, handle, at)?;
+                    if result.settled_executions.len() != executions.len()
+                        || result.settled_executions.iter().zip(&executions).any(
+                            |(settled, admitted)| {
+                                settled.id != admitted.id
+                                    || settled.status != ToolExecutionStatus::Succeeded
+                            },
+                        )
+                    {
+                        return Err(DynamicMemoryContinuationError::InvalidSettledRound);
+                    }
+                    settled_round = result.settled_executions;
+                    request = *continued_request;
+                }
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -252,6 +351,8 @@ pub enum DynamicMemoryContinuationError {
     EmptyCompletion,
     #[error("dynamic-memory done result is invalid")]
     InvalidDoneResult,
+    #[error("dynamic-memory continuation handler returned an invalid settled round")]
+    InvalidSettledRound,
     #[error("dynamic-memory continuation contract is invalid: {0}")]
     Validation(#[from] lettuce_conversations::ValidationError),
     #[error("dynamic-memory continuation inference failed: {0}")]
@@ -260,6 +361,8 @@ pub enum DynamicMemoryContinuationError {
     Conversation(#[from] lettuce_conversations::ConversationServiceError),
     #[error("dynamic-memory continuation repository failed: {0}")]
     Repository(#[from] lettuce_conversations::ConversationRepositoryError),
+    #[error("dynamic-memory continuation round execution failed: {0}")]
+    RoundExecution(#[from] crate::DynamicMemoryRoundExecutionError),
 }
 
 #[cfg(test)]

@@ -89,6 +89,16 @@ Usage recording and conversation finalization, plus per-round immutable memory
 preparation for a newly admitted recursive call set, remain the next coordinator
 slices; this intake does not claim tools are end-to-end complete yet.
 
+Continuation rounds now have an explicit executor that validates the admitted
+job before mutation, snapshots the current memory revision, atomically starts
+the exact validated call set, prepares/persists caller-supplied create seeds
+through the configured embedding engine, and settles through the plan-bound
+handler. The continuation coordinator can repeatedly invoke that injected
+boundary while carrying exact replay context and preserving every provider
+outcome for later usage accounting. Seed IDs and token counts remain explicit
+inputs rather than hidden globals. Terminal usage recording and conversation
+finalization are still separate missing boundaries.
+
 ## Bundled prompts
 
 The app owns the closed, versioned built-in prompt catalog in
