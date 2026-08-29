@@ -85,9 +85,12 @@ either returns one usable text candidate or atomically admits the next declared
 dynamic-memory call set with stable ordinals. It rejects stale durable counts,
 mixed content/tool responses, multiple candidates, cancellation at each network
 boundary, and provider replay that still requires materialized signed blocks.
-Usage recording and conversation finalization, plus per-round immutable memory
-preparation for a newly admitted recursive call set, remain the next coordinator
-slices; this intake does not claim tools are end-to-end complete yet.
+The terminal coordinator now aggregates every provider response, records one
+immutable usage event with the exact resolved model/account revisions, and
+finalizes a usable text candidate through the conversation manager. Exact
+retries reuse both usage and finalization identities. A persisted `done` result
+is exposed as a distinct successful derived-memory terminal and never
+fabricates an assistant message.
 
 Continuation rounds now have an explicit executor that validates the admitted
 job before mutation, snapshots the current memory revision, atomically starts
@@ -95,9 +98,10 @@ the exact validated call set, prepares/persists caller-supplied create seeds
 through the configured embedding engine, and settles through the plan-bound
 handler. The continuation coordinator can repeatedly invoke that injected
 boundary while carrying exact replay context and preserving every provider
-outcome for later usage accounting. Seed IDs and token counts remain explicit
-inputs rather than hidden globals. Terminal usage recording and conversation
-finalization are still separate missing boundaries.
+outcome for terminal usage accounting. Seed IDs and token counts remain
+explicit inputs rather than hidden globals. The remaining acceptance gap is a
+single full two-round database scenario that composes provider intake,
+plan-bound memory mutation, replay, usage, and finalization in one test.
 
 ## Bundled prompts
 

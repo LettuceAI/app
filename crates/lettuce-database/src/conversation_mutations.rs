@@ -121,6 +121,57 @@ fn is_appendable_stage(status: GenerationTurnStatus) -> bool {
     )
 }
 
+fn advance_attempt_stage(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+    stage: GenerationTurnStatus,
+    now: TimestampMillis,
+) -> Result<(), ConversationRepositoryError> {
+    let (next_status, started_at, allowed): (&str, Option<i64>, &[&str]) = match stage {
+        GenerationTurnStatus::Preparing => ("preparing", None, &["created", "preparing"]),
+        GenerationTurnStatus::SelectingSpeaker | GenerationTurnStatus::ContextPrepared => {
+            ("preparing", None, &["preparing"])
+        }
+        GenerationTurnStatus::Running | GenerationTurnStatus::Finalizing => (
+            "running",
+            Some(now.get()),
+            &["created", "preparing", "running"],
+        ),
+        _ => return Err(ConversationRepositoryError::Conflict),
+    };
+    let current: Option<String> = transaction
+        .query_row(
+            "SELECT status FROM generation_attempts WHERE conversation_id = ?1 AND turn_id = ?2 AND id = ?3",
+            params![
+                conversation_id.to_string(),
+                turn_id.to_string(),
+                attempt_id.to_string(),
+            ],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(slice::db)?;
+    let current = current.ok_or(ConversationRepositoryError::NotFound)?;
+    if !allowed.contains(&current.as_str()) {
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    transaction
+        .execute(
+            "UPDATE generation_attempts SET status = ?4, started_at = COALESCE(started_at, ?5) WHERE conversation_id = ?1 AND turn_id = ?2 AND id = ?3",
+            params![
+                conversation_id.to_string(),
+                turn_id.to_string(),
+                attempt_id.to_string(),
+                next_status,
+                started_at,
+            ],
+        )
+        .map_err(kernel::map_constraint)?;
+    Ok(())
+}
+
 fn is_group(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
@@ -2253,6 +2304,16 @@ impl ConversationRepository for Database {
                         ],
                     )
                     .map_err(kernel::map_constraint)?;
+                if let Some(stage) = stage {
+                    advance_attempt_stage(
+                        transaction,
+                        context.conversation_id,
+                        turn_id,
+                        event.attempt_id,
+                        stage,
+                        context.now,
+                    )?;
+                }
                 advance_turn(
                     transaction,
                     context.conversation_id,

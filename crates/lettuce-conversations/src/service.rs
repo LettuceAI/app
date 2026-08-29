@@ -387,24 +387,16 @@ impl<R: ConversationRepository> ConversationManager<R> {
         usage_event_id: lettuce_types::UsageEventId,
         now: TimestampMillis,
     ) -> Result<GenerationFinalizationResult, ConversationServiceError> {
-        if let Some(replay) = &draft.replay {
-            self.repository
-                .artifact_store()
-                .verify_replay(replay)
-                .map_err(ConversationRepositoryError::ArtifactReference)?;
-        }
-        self.repository
-            .finalize_generation(
-                turn_id,
-                attempt_id,
-                expected_conversation_revision,
-                expected_turn_revision,
-                operation,
-                draft,
-                usage_event_id,
-                now,
-            )
-            .map_err(Into::into)
+        ConversationManager::new(&self.repository).finalize_generation_ref(
+            turn_id,
+            attempt_id,
+            expected_conversation_revision,
+            expected_turn_revision,
+            operation,
+            draft,
+            usage_event_id,
+            now,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -590,6 +582,42 @@ impl<R: ConversationRepository> ConversationManager<R> {
         update.command().validate()?;
         self.repository
             .update_settings(update, now)
+            .map_err(Into::into)
+    }
+}
+
+impl<R: ConversationRepository + ?Sized> ConversationManager<&R> {
+    /// Borrowing variant for workflows that share one repository with other
+    /// ports, such as usage recording followed by conversation finalization.
+    #[allow(clippy::too_many_arguments)]
+    pub fn finalize_generation_ref(
+        &self,
+        turn_id: lettuce_types::GenerationTurnId,
+        attempt_id: lettuce_types::GenerationAttemptId,
+        expected_conversation_revision: lettuce_types::Revision,
+        expected_turn_revision: lettuce_types::Revision,
+        operation: &crate::commands::OperationToken,
+        draft: crate::ports::FinalizationDraft,
+        usage_event_id: lettuce_types::UsageEventId,
+        now: TimestampMillis,
+    ) -> Result<GenerationFinalizationResult, ConversationServiceError> {
+        if let Some(replay) = &draft.replay {
+            self.repository
+                .artifact_store()
+                .verify_replay(replay)
+                .map_err(ConversationRepositoryError::ArtifactReference)?;
+        }
+        self.repository
+            .finalize_generation(
+                turn_id,
+                attempt_id,
+                expected_conversation_revision,
+                expected_turn_revision,
+                operation,
+                draft,
+                usage_event_id,
+                now,
+            )
             .map_err(Into::into)
     }
 }

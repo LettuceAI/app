@@ -53,7 +53,10 @@ cannot accidentally coalesce with an earlier attempt. Cancellation is a
 two-step lifecycle: the repository commits `CancellationRequested`, the
 application asks the job runtime to stop, and settlement commits the terminal
 usage-linked `Cancelled` state. Checkpoints are operation-bound and must begin
-at sequence one. Terminal outbox events carry the attempt, usage,
+at sequence one. Runtime-owned stage checkpoints advance the named attempt from
+created to preparing to running in the same transaction as the turn stage, so
+persisted attempt state matches the job state consumed by tool workflows.
+Terminal outbox events carry the attempt, usage,
 message/candidate references where applicable, and bounded memory revision
 references so downstream consumers can be idempotent by turn ID without
 reading conversation internals.

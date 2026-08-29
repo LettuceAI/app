@@ -12,10 +12,14 @@ use lettuce_context::{
     PromptBehaviorVersion, PromptMetadataDraft, PromptPurpose, PromptRepository,
 };
 use lettuce_conversations::{
-    ConversationKind, ConversationReader, CreateConversationPlan, DirectConversationDetails,
-    GroupChatModeSnapshot, GroupConversationDetails, IdempotencyKey, InitialMessageOrigin,
-    MemoryModeSnapshot, MessagePart, MessageRole, ParticipantRole, PromptPurposeSnapshot,
-    SnapshotSelection, SnapshotSource,
+    AttachAttemptJob, ConversationKind, ConversationReader, ConversationRepository,
+    CreateConversationPlan, DirectConversationDetails, GenerationCheckpointEnvelope,
+    GenerationCheckpointEvent, GenerationTurnStatus, GroupChatModeSnapshot,
+    GroupConversationDetails, IdempotencyKey, InferenceCandidate, InferenceOutcome, InferenceUsage,
+    InitialMessageOrigin, MemoryModeSnapshot, MessageDraft, MessagePart, MessageRole,
+    MessageVisibility, OperationToken, OutputPolicy, ParticipantRole, PromptPurposeSnapshot,
+    ResolvedInferenceProfile, SafetyContext, SendConversation, SnapshotSelection, SnapshotSource,
+    ToolPolicy,
 };
 use lettuce_database::Database;
 use lettuce_models::{
@@ -24,8 +28,9 @@ use lettuce_models::{
 };
 use lettuce_settings::{GlobalSettingsStore, SecretOwnerId};
 use lettuce_types::{
-    CharacterId, ConversationStarterId, GroupId, LorebookId, ModelProfileId, PersonaId,
-    ProviderAccountId, Revision, SceneId, SceneVariantId, StarterMessageId, TimestampMillis,
+    CharacterId, ContentHash, ConversationStarterId, GroupId, JobId, LorebookId, ModelProfileId,
+    PersonaId, ProviderAccountId, Revision, SceneId, SceneVariantId, StarterMessageId,
+    TimestampMillis,
 };
 
 use super::planner::ConversationLaunchPlanner;
@@ -1187,6 +1192,246 @@ fn the_app_backend_exposes_the_direct_launch() {
         result.value.conversation.id,
         super::identity::launch_conversation_id(&key("backend-launch"))
     );
+}
+
+#[tokio::test]
+async fn dynamic_memory_terminal_commit_records_usage_and_finalizes_idempotently() {
+    let database = database();
+    let model_id = seed_model(&database, ProviderProtocol::Ollama, "ollama");
+    set_application_default_model(&database, model_id);
+    let character_id = plain_character(&database);
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(character_id, "terminal-finalization"), NOW)
+        .expect("launch");
+    let conversation_id = launched.value.conversation.id;
+    let branch_id = launched.value.conversation.active_branch_id;
+    let user_id = launched
+        .value
+        .conversation
+        .participants
+        .iter()
+        .find(|participant| participant.role == ParticipantRole::User)
+        .expect("user")
+        .id;
+    let model = launched
+        .value
+        .conversation
+        .participants
+        .iter()
+        .find(|participant| participant.role == ParticipantRole::Character)
+        .and_then(|participant| match &participant.model_selection {
+            SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => {
+                Some(model.clone())
+            }
+            SnapshotSelection::Disabled => None,
+        })
+        .expect("resolved model snapshot");
+    let operation = |key: &str| OperationToken {
+        key: IdempotencyKey::new(key).expect("operation key"),
+        request_digest: ContentHash::parse("cd".repeat(32)).expect("digest"),
+    };
+    let started = database
+        .begin_send(
+            &SendConversation {
+                conversation_id,
+                branch_id,
+                expected_revision: launched.value.conversation.revision,
+                operation: operation("terminal-send"),
+                message: MessageDraft {
+                    role: MessageRole::User,
+                    author_participant_id: Some(user_id),
+                    parts: vec![MessagePart::Text {
+                        text: "Remember this.".into(),
+                    }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+                swap_roles: false,
+            },
+            TimestampMillis::new(1_010),
+        )
+        .expect("begin send");
+    let job_id = JobId::new();
+    database
+        .attach_attempt_job(
+            &AttachAttemptJob {
+                conversation_id,
+                turn_id: started.value.turn.id,
+                attempt_id: started.value.attempt.id,
+                expected_revision: started.value.conversation.revision,
+                expected_turn_revision: started.value.turn.revision,
+                operation: operation("terminal-attach"),
+                job_id,
+            },
+            TimestampMillis::new(1_011),
+        )
+        .expect("attach job");
+    let mut turn = ConversationReader::get_turn(&database, started.value.turn.id).expect("turn");
+    for (sequence, status) in [
+        GenerationTurnStatus::Preparing,
+        GenerationTurnStatus::ContextPrepared,
+        GenerationTurnStatus::Running,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let prior_status = turn.status;
+        turn = database
+            .append_event(
+                turn.id,
+                turn.revision,
+                &operation(&format!("terminal-stage-{sequence}")),
+                GenerationCheckpointEnvelope {
+                    turn_id: turn.id,
+                    attempt_id: started.value.attempt.id,
+                    job_id: Some(job_id),
+                    correlation_id: None,
+                    sequence: u64::try_from(sequence + 1).expect("sequence"),
+                    event: GenerationCheckpointEvent::Stage { status },
+                },
+                TimestampMillis::new(1_012 + i64::try_from(sequence).expect("time")),
+            )
+            .unwrap_or_else(|error| {
+                panic!("stage {sequence} from {prior_status:?} failed: {error:?}")
+            })
+            .value;
+    }
+    let attempt = turn.attempts[0].clone();
+    let mut stored_profile = ModelProfileRepository::get(&database, model.source_id)
+        .expect("profile")
+        .expect("profile exists");
+    stored_profile.config.chat_parameters.temperature = None;
+    let account = ProviderAccountRepository::get(&database, model.provider_account_id)
+        .expect("account")
+        .expect("account exists");
+    let profile = ResolvedInferenceProfile {
+        chat_profile: lettuce_models::resolve_chat_profile(
+            &model.expected_chat_identity(),
+            &stored_profile,
+            &account,
+            &lettuce_models::ChatParameterResolutionInput::default(),
+            &lettuce_models::ChatRequirements::default(),
+        )
+        .expect("resolve profile"),
+        tool_policy: ToolPolicy::Allowed,
+        output_policy: OutputPolicy::Plain,
+        safety_policy: SafetyContext::Standard,
+        correlation_id: None,
+    };
+    let result = crate::DynamicMemoryContinuationLoopResult {
+        terminal: crate::DynamicMemoryContinuationTerminal::Complete {
+            candidate: InferenceCandidate {
+                ordinal: 0,
+                parts: vec![MessagePart::Text {
+                    text: "I will remember that.".into(),
+                }],
+                tool_calls: vec![],
+                provider_replay: None,
+            },
+        },
+        outcomes: vec![InferenceOutcome {
+            candidates: vec![],
+            usage: Some(InferenceUsage {
+                input_tokens: 20,
+                output_tokens: 5,
+            }),
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: None,
+            provider_request_id: None,
+            warning_codes: vec![],
+        }],
+    };
+    let aggregate = ConversationReader::get(&database, conversation_id).expect("aggregate");
+    let context = crate::DynamicMemoryTerminalContext {
+        conversation_id,
+        expected_conversation_revision: aggregate.conversation.revision,
+        expected_turn_revision: turn.revision,
+        operation: operation("terminal-finalize"),
+        model,
+        usage_recorded_at: TimestampMillis::new(1_014),
+        finalized_at: TimestampMillis::new(1_015),
+    };
+    assert_eq!(
+        attempt.status,
+        lettuce_conversations::GenerationAttemptStatus::Running
+    );
+    assert_eq!(
+        context.model.source_id,
+        profile.chat_profile.model_profile_id
+    );
+    assert_eq!(
+        context.model.source_revision,
+        profile.chat_profile.model_revision
+    );
+    assert_eq!(
+        context.model.provider_account_id,
+        profile.chat_profile.provider_account_id
+    );
+    assert_eq!(
+        context.model.provider_account_revision,
+        profile.chat_profile.provider_account_revision
+    );
+    assert_eq!(
+        context.model.provider_protocol,
+        profile.chat_profile.provider_protocol
+    );
+    assert_eq!(
+        context.model.external_model_id,
+        profile.chat_profile.external_model_id
+    );
+    let coordinator = crate::DynamicMemoryTerminalCoordinator::new(&database, &database);
+    let done = coordinator
+        .commit(
+            &attempt,
+            &profile,
+            crate::DynamicMemoryContinuationLoopResult {
+                terminal: crate::DynamicMemoryContinuationTerminal::Done {
+                    summary: Some("memory updated".into()),
+                },
+                outcomes: result.outcomes.clone(),
+            },
+            context.clone(),
+        )
+        .await
+        .expect("settle derived memory job");
+    let crate::DynamicMemoryTerminalCommit::DerivedMemoryDone {
+        summary,
+        usage_event_id: done_usage_event_id,
+    } = done
+    else {
+        panic!("expected derived-memory terminal");
+    };
+    assert_eq!(summary.as_deref(), Some("memory updated"));
+    assert_eq!(
+        ConversationReader::get_turn(&database, attempt.turn_id)
+            .expect("turn remains live")
+            .status,
+        GenerationTurnStatus::Running
+    );
+    let first = coordinator
+        .commit(&attempt, &profile, result.clone(), context.clone())
+        .await
+        .expect("finalize");
+    let retry = coordinator
+        .commit(&attempt, &profile, result, context)
+        .await
+        .expect("idempotent retry");
+    let (
+        crate::DynamicMemoryTerminalCommit::ConversationFinalized(first),
+        crate::DynamicMemoryTerminalCommit::ConversationFinalized(retry),
+    ) = (first, retry)
+    else {
+        panic!("expected finalized conversation");
+    };
+    assert_eq!(first.value.candidate.id, retry.value.candidate.id);
+    assert_eq!(first.value.usage_event_id, retry.value.usage_event_id);
+    assert_eq!(first.value.usage_event_id, done_usage_event_id);
+    let usage = lettuce_usage::UsageLedger::get(&database, first.value.usage_event_id)
+        .expect("read usage")
+        .expect("usage exists");
+    assert_eq!(usage.record.attempt_id, attempt.id);
+    assert_eq!(usage.record.model_profile_id, Some(model_id));
 }
 
 #[test]

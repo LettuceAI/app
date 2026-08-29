@@ -1,12 +1,14 @@
 use lettuce_conversations::{
-    ConversationManager, GenerationAttempt, GenerationAttemptStatus, InferenceCandidate,
-    InferenceOutcome, InferencePort, InferenceRequest, MessagePart, PortError, ToolExecution,
-    ToolExecutionOwner, ToolExecutionRepository, ToolExecutionStatus,
-    context_with_settled_tool_round,
+    ConversationManager, ConversationRepository, FinalizationDraft, GenerationAttempt,
+    GenerationAttemptStatus, GenerationCheckpointEvent, GenerationFinalizationResult,
+    InferenceCandidate, InferenceOutcome, InferencePort, InferenceRequest, MessagePart,
+    ModelSelectionSnapshot, OperationKind, OperationToken, PortError, ResolvedInferenceProfile,
+    ToolExecution, ToolExecutionOwner, ToolExecutionRepository, ToolExecutionStatus, UsageOutcome,
+    UsagePort, UsageRecord, context_with_settled_tool_round,
 };
 use lettuce_jobs::handle::JobHandle;
 use lettuce_memory::{MemoryToolOutcome, dynamic_memory_tool_request};
-use lettuce_types::{ConversationId, TimestampMillis};
+use lettuce_types::{ConversationId, Revision, TimestampMillis, UsageEventId};
 
 pub const MAX_DYNAMIC_MEMORY_TOOL_ROUNDS: u8 = 4;
 pub const MAX_DYNAMIC_MEMORY_TOOL_CALLS: u16 = 64;
@@ -39,6 +41,144 @@ pub struct DynamicMemoryContinuationLoopResult {
     /// Every provider response in request order. Kept intact so the later
     /// usage/finalization boundary can aggregate without inventing counters.
     pub outcomes: Vec<InferenceOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DynamicMemoryTerminalContext {
+    pub conversation_id: ConversationId,
+    pub expected_conversation_revision: Revision,
+    pub expected_turn_revision: Revision,
+    pub operation: OperationToken,
+    pub model: ModelSelectionSnapshot,
+    /// This timestamp is part of immutable usage evidence and must be reused
+    /// across finalization retries.
+    pub usage_recorded_at: TimestampMillis,
+    pub finalized_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DynamicMemoryTerminalCommit {
+    DerivedMemoryDone {
+        summary: Option<String>,
+        usage_event_id: UsageEventId,
+    },
+    ConversationFinalized(Box<GenerationFinalizationResult>),
+}
+
+#[derive(Debug)]
+pub struct DynamicMemoryTerminalCoordinator<'a, R: ?Sized, U: ?Sized> {
+    repository: &'a R,
+    usage: &'a U,
+}
+
+impl<'a, R: ConversationRepository + ?Sized, U: UsagePort + ?Sized>
+    DynamicMemoryTerminalCoordinator<'a, R, U>
+{
+    #[must_use]
+    pub const fn new(repository: &'a R, usage: &'a U) -> Self {
+        Self { repository, usage }
+    }
+
+    pub async fn commit(
+        &self,
+        attempt: &GenerationAttempt,
+        profile: &ResolvedInferenceProfile,
+        result: DynamicMemoryContinuationLoopResult,
+        context: DynamicMemoryTerminalContext,
+    ) -> Result<DynamicMemoryTerminalCommit, DynamicMemoryTerminalError> {
+        validate_terminal_identity(attempt, profile, &context)?;
+        validate_terminal_repository(
+            self.repository,
+            attempt,
+            &context,
+            matches!(
+                result.terminal,
+                DynamicMemoryContinuationTerminal::Complete { .. }
+            ),
+        )?;
+        let usage = aggregate_inference_usage(&result.outcomes)?;
+        let usage_event_id = self
+            .usage
+            .record(UsageRecord {
+                turn_id: attempt.turn_id,
+                attempt_id: attempt.id,
+                outcome: UsageOutcome::Succeeded,
+                usage,
+                model_profile_id: Some(profile.chat_profile.model_profile_id),
+                model_revision: Some(profile.chat_profile.model_revision),
+                provider_account_id: Some(profile.chat_profile.provider_account_id),
+                provider_account_revision: Some(profile.chat_profile.provider_account_revision),
+                recorded_at: context.usage_recorded_at,
+            })
+            .await
+            .map_err(DynamicMemoryTerminalError::Usage)?;
+
+        match result.terminal {
+            DynamicMemoryContinuationTerminal::Done { summary } => {
+                Ok(DynamicMemoryTerminalCommit::DerivedMemoryDone {
+                    summary,
+                    usage_event_id,
+                })
+            }
+            DynamicMemoryContinuationTerminal::Complete { candidate } => {
+                let finalized = ConversationManager::new(self.repository).finalize_generation_ref(
+                    attempt.turn_id,
+                    attempt.id,
+                    context.expected_conversation_revision,
+                    context.expected_turn_revision,
+                    &context.operation,
+                    FinalizationDraft {
+                        parts: candidate.parts,
+                        ordinal: candidate.ordinal,
+                        model: context.model,
+                        replay: candidate.provider_replay,
+                        outcome: GenerationCheckpointEvent::Completed,
+                    },
+                    usage_event_id,
+                    context.finalized_at,
+                )?;
+                Ok(DynamicMemoryTerminalCommit::ConversationFinalized(
+                    Box::new(finalized),
+                ))
+            }
+        }
+    }
+}
+
+fn validate_terminal_repository<R: ConversationRepository + ?Sized>(
+    repository: &R,
+    attempt: &GenerationAttempt,
+    context: &DynamicMemoryTerminalContext,
+    can_replay_finalization: bool,
+) -> Result<(), DynamicMemoryTerminalError> {
+    if can_replay_finalization
+        && repository
+            .operation_record(
+                context.conversation_id,
+                OperationKind::Finalize,
+                &context.operation,
+            )?
+            .is_some()
+    {
+        return Ok(());
+    }
+    let aggregate = repository.get(context.conversation_id)?;
+    let turn = repository.get_turn(attempt.turn_id)?;
+    if aggregate.conversation.revision != context.expected_conversation_revision
+        || turn.revision != context.expected_turn_revision
+        || !aggregate
+            .branches
+            .iter()
+            .any(|branch| branch.id == turn.branch_id)
+        || !turn.attempts.iter().any(|stored| {
+            stored.id == attempt.id
+                && stored.job_id == attempt.job_id
+                && stored.status == attempt.status
+        })
+    {
+        return Err(DynamicMemoryTerminalError::InvalidIdentity);
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -276,6 +416,29 @@ pub fn aggregate_inference_usage(
     ))
 }
 
+fn validate_terminal_identity(
+    attempt: &GenerationAttempt,
+    profile: &ResolvedInferenceProfile,
+    context: &DynamicMemoryTerminalContext,
+) -> Result<(), DynamicMemoryTerminalError> {
+    attempt.validate()?;
+    context.model.validate()?;
+    let chat = &profile.chat_profile;
+    if !matches!(
+        attempt.status,
+        GenerationAttemptStatus::Running | GenerationAttemptStatus::Succeeded
+    ) || context.model.source_id != chat.model_profile_id
+        || context.model.source_revision != chat.model_revision
+        || context.model.provider_account_id != chat.provider_account_id
+        || context.model.provider_account_revision != chat.provider_account_revision
+        || context.model.provider_protocol != chat.provider_protocol
+        || context.model.external_model_id != chat.external_model_id
+    {
+        return Err(DynamicMemoryTerminalError::InvalidIdentity);
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn validate_ownership(
     conversation_id: ConversationId,
@@ -396,6 +559,22 @@ pub enum DynamicMemoryContinuationError {
     Repository(#[from] lettuce_conversations::ConversationRepositoryError),
     #[error("dynamic-memory continuation round execution failed: {0}")]
     RoundExecution(#[from] crate::DynamicMemoryRoundExecutionError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DynamicMemoryTerminalError {
+    #[error("dynamic-memory terminal model or attempt identity is invalid")]
+    InvalidIdentity,
+    #[error("dynamic-memory terminal usage recording failed: {0}")]
+    Usage(PortError),
+    #[error("dynamic-memory terminal continuation is invalid: {0}")]
+    Continuation(#[from] DynamicMemoryContinuationError),
+    #[error("dynamic-memory terminal contract is invalid: {0}")]
+    Validation(#[from] lettuce_conversations::ValidationError),
+    #[error("dynamic-memory terminal conversation finalization failed: {0}")]
+    Conversation(#[from] lettuce_conversations::ConversationServiceError),
+    #[error("dynamic-memory terminal repository validation failed: {0}")]
+    Repository(#[from] lettuce_conversations::ConversationRepositoryError),
 }
 
 #[cfg(test)]
