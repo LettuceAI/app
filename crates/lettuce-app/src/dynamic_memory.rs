@@ -876,7 +876,7 @@ mod tests {
         let result = DynamicMemoryCreatePreparer::new(&engine, backend.database())
             .prepare_admitted(
                 space_id,
-                &[execution.clone()],
+                std::slice::from_ref(&execution),
                 &[MemoryCreateSeed {
                     execution_id: execution.id,
                     id: MemoryId::new(),

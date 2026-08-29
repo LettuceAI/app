@@ -1,8 +1,8 @@
-use std::str::FromStr;
+use std::{collections::HashSet, str::FromStr};
 
 use lettuce_conversations::{
     ConversationRepositoryError, ReplayRetention, ToolExecution, ToolExecutionRepository,
-    ToolExecutionStatus, ToolFailure, ToolFailureCode, ToolOutput,
+    ToolExecutionStatus, ToolExecutionTransition, ToolFailure, ToolFailureCode, ToolOutput,
 };
 use lettuce_types::{
     ConversationId, GenerationAttemptId, GenerationTurnId, Revision, TimestampMillis,
@@ -169,6 +169,64 @@ fn get_in(
         .optional()
         .map_err(storage)?
         .ok_or(ConversationRepositoryError::NotFound)
+}
+
+pub(super) fn transition_in(
+    transaction: &Transaction<'_>,
+    transition: &ToolExecutionTransition,
+    at: TimestampMillis,
+) -> Result<ToolExecution, ConversationRepositoryError> {
+    let current = get_in(transaction, transition.id)?;
+    if current.revision != transition.expected_revision {
+        return Err(ConversationRepositoryError::StaleRevision {
+            expected: transition.expected_revision,
+            actual: current.revision,
+        });
+    }
+    let updated = current.transition(
+        transition.next,
+        transition.output.clone(),
+        transition.failure.clone(),
+        at,
+    )?;
+    let output_json = updated
+        .output
+        .as_ref()
+        .map(|value| encode_versioned(value, TOOL_JSON_VERSION).map_err(storage))
+        .transpose()?;
+    let failure_code = updated
+        .failure
+        .as_ref()
+        .map(|failure| failure_name(failure.code));
+    let failure_message = updated
+        .failure
+        .as_ref()
+        .and_then(|failure| failure.message.as_deref());
+    let changed = transaction
+        .execute(
+            "UPDATE tool_executions
+                SET status = ?2, output_json = ?3, failure_code = ?4,
+                    failure_message = ?5, revision = ?6, started_at = ?7,
+                    finished_at = ?8, updated_at = ?9
+              WHERE id = ?1 AND revision = ?10",
+            params![
+                transition.id.to_string(),
+                status_name(updated.status),
+                output_json,
+                failure_code,
+                failure_message,
+                sql_u64(updated.revision.get())?,
+                updated.started_at.map(TimestampMillis::get),
+                updated.finished_at.map(TimestampMillis::get),
+                updated.updated_at.get(),
+                sql_u64(transition.expected_revision.get())?,
+            ],
+        )
+        .map_err(storage)?;
+    if changed != 1 {
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    get_in(transaction, transition.id)
 }
 
 fn validate_new(execution: &ToolExecution) -> Result<(), ConversationRepositoryError> {
@@ -400,52 +458,62 @@ impl ToolExecutionRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        let current = get_in(&transaction, id)?;
-        if current.revision != expected_revision {
-            return Err(ConversationRepositoryError::StaleRevision {
-                expected: expected_revision,
-                actual: current.revision,
-            });
+        let stored = transition_in(
+            &transaction,
+            &ToolExecutionTransition {
+                id,
+                expected_revision,
+                next,
+                output,
+                failure,
+            },
+            at,
+        )?;
+        transaction.commit().map_err(storage)?;
+        Ok(stored)
+    }
+
+    fn transition_tool_execution_batch(
+        &self,
+        transitions: &[ToolExecutionTransition],
+        at: TimestampMillis,
+    ) -> Result<Vec<ToolExecution>, ConversationRepositoryError> {
+        if transitions.is_empty() {
+            return Err(ConversationRepositoryError::Invalid(
+                lettuce_conversations::ValidationError::InvalidValue {
+                    field: "tool_execution_transitions",
+                },
+            ));
         }
-        let updated = current.transition(next, output, failure, at)?;
-        let output_json = updated
-            .output
-            .as_ref()
-            .map(|value| encode_versioned(value, TOOL_JSON_VERSION).map_err(storage))
-            .transpose()?;
-        let failure_code = updated
-            .failure
-            .as_ref()
-            .map(|failure| failure_name(failure.code));
-        let failure_message = updated
-            .failure
-            .as_ref()
-            .and_then(|failure| failure.message.as_deref());
-        let changed = transaction
-            .execute(
-                "UPDATE tool_executions
-                    SET status = ?2, output_json = ?3, failure_code = ?4,
-                        failure_message = ?5, revision = ?6, started_at = ?7,
-                        finished_at = ?8, updated_at = ?9
-                  WHERE id = ?1 AND revision = ?10",
-                params![
-                    id.to_string(),
-                    status_name(updated.status),
-                    output_json,
-                    failure_code,
-                    failure_message,
-                    sql_u64(updated.revision.get())?,
-                    updated.started_at.map(TimestampMillis::get),
-                    updated.finished_at.map(TimestampMillis::get),
-                    updated.updated_at.get(),
-                    sql_u64(expected_revision.get())?,
-                ],
-            )
+        let mut ids = HashSet::with_capacity(transitions.len());
+        if transitions
+            .iter()
+            .any(|transition| !ids.insert(transition.id))
+        {
+            return Err(ConversationRepositoryError::Invalid(
+                lettuce_conversations::ValidationError::Duplicate {
+                    field: "tool_execution_transitions.ids",
+                },
+            ));
+        }
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        if changed != 1 {
-            return Err(ConversationRepositoryError::Conflict);
+        let first = get_in(&transaction, transitions[0].id)?;
+        let owner = (first.conversation_id, first.turn_id, first.attempt_id);
+        let mut stored = Vec::with_capacity(transitions.len());
+        for transition in transitions {
+            let current = get_in(&transaction, transition.id)?;
+            if owner != (current.conversation_id, current.turn_id, current.attempt_id) {
+                return Err(ConversationRepositoryError::Invalid(
+                    lettuce_conversations::ValidationError::InvalidReference {
+                        field: "tool_execution_transitions.owner",
+                    },
+                ));
+            }
+            stored.push(transition_in(&transaction, transition, at)?);
         }
-        let stored = get_in(&transaction, id)?;
         transaction.commit().map_err(storage)?;
         Ok(stored)
     }
@@ -456,7 +524,7 @@ mod tests {
     use lettuce_conversations::{
         ArtifactCodec, ArtifactRetention, ConversationArtifactStore, ProtectedArtifactBytes,
         ReplayArtifactDraft, ToolExecution, ToolExecutionRepository, ToolExecutionStatus,
-        ToolOutput,
+        ToolExecutionTransition, ToolOutput,
     };
     use lettuce_types::{
         ConversationId, GenerationAttemptId, GenerationTurnId, ReplayArtifactId, Revision,
@@ -619,6 +687,68 @@ mod tests {
             ),
             Err(lettuce_conversations::ConversationRepositoryError::StaleRevision { .. })
         ));
+    }
+
+    #[test]
+    fn batch_transition_rolls_back_every_execution_on_one_stale_revision() {
+        let database = Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("test fixture mode");
+        let conversation_id = ConversationId::new();
+        let turn_id = GenerationTurnId::new();
+        let attempt_id = GenerationAttemptId::new();
+        seed_running_attempt(&database, conversation_id, turn_id, attempt_id);
+        let calls = vec![
+            requested(conversation_id, turn_id, attempt_id, 0, "call-1"),
+            requested(conversation_id, turn_id, attempt_id, 1, "call-2"),
+        ];
+        let stored = database
+            .append_tool_executions(0, &calls)
+            .expect("insert round");
+        let validated = database
+            .transition_tool_execution_batch(
+                &stored
+                    .iter()
+                    .map(|execution| ToolExecutionTransition {
+                        id: execution.id,
+                        expected_revision: execution.revision,
+                        next: ToolExecutionStatus::Validated,
+                        output: None,
+                        failure: None,
+                    })
+                    .collect::<Vec<_>>(),
+                TimestampMillis::new(11),
+            )
+            .expect("validate round");
+        let transitions = vec![
+            ToolExecutionTransition {
+                id: validated[0].id,
+                expected_revision: validated[0].revision,
+                next: ToolExecutionStatus::Running,
+                output: None,
+                failure: None,
+            },
+            ToolExecutionTransition {
+                id: validated[1].id,
+                expected_revision: Revision::INITIAL,
+                next: ToolExecutionStatus::Running,
+                output: None,
+                failure: None,
+            },
+        ];
+        assert!(matches!(
+            database.transition_tool_execution_batch(&transitions, TimestampMillis::new(12)),
+            Err(lettuce_conversations::ConversationRepositoryError::StaleRevision { .. })
+        ));
+        assert_eq!(
+            database
+                .list_tool_executions(conversation_id, turn_id, attempt_id)
+                .expect("stored"),
+            validated
+        );
     }
 
     #[test]

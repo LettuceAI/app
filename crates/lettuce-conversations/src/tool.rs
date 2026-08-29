@@ -314,6 +314,15 @@ pub struct ToolExecution {
     pub updated_at: TimestampMillis,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolExecutionTransition {
+    pub id: ToolExecutionId,
+    pub expected_revision: Revision,
+    pub next: ToolExecutionStatus,
+    pub output: Option<ToolOutput>,
+    pub failure: Option<ToolFailure>,
+}
+
 impl ToolExecution {
     pub fn requested(
         id: ToolExecutionId,
@@ -509,6 +518,15 @@ pub trait ToolExecutionRepository: Send + Sync {
         failure: Option<ToolFailure>,
         at: TimestampMillis,
     ) -> Result<ToolExecution, crate::ConversationRepositoryError>;
+
+    /// Transitions one admitted handler round atomically. Every execution must
+    /// have the same conversation/turn/attempt owner and every revision must
+    /// still match, otherwise no execution changes.
+    fn transition_tool_execution_batch(
+        &self,
+        transitions: &[ToolExecutionTransition],
+        at: TimestampMillis,
+    ) -> Result<Vec<ToolExecution>, crate::ConversationRepositoryError>;
 }
 
 pub(crate) fn validate_tool_name(field: &'static str, value: &str) -> Result<(), ValidationError> {

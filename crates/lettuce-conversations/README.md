@@ -115,6 +115,11 @@ operation semantics and atomic memory-space changes belong to `lettuce-memory`,
 while continuation and recovery orchestration belong to `lettuce-app` and
 durable jobs.
 
+One admitted handler round can transition through the repository's typed batch
+CAS. The batch requires one conversation/turn/attempt owner and unique execution
+IDs; a stale revision, invalid transition, or storage failure rolls back every
+execution rather than exposing a partially running or terminal round.
+
 Launch snapshots stay frozen for the conversation lifetime. Current participant
 policy and settings are explicit mutable state; this contract does not derive
 live values from cross-conversation sources.

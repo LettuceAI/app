@@ -15,7 +15,8 @@ use crate::ports::{
 };
 use crate::{
     ProposedToolCall, ToolChoice, ToolExecution, ToolExecutionOwner, ToolExecutionRepository,
-    ToolExecutionStatus, ToolFailure, ToolOutput, ToolRequest, ValidationError,
+    ToolExecutionStatus, ToolExecutionTransition, ToolFailure, ToolOutput, ToolRequest,
+    ValidationError,
 };
 
 /// Thin application-facing façade.  It validates command contracts and
@@ -217,6 +218,16 @@ impl<R: ToolExecutionRepository> ConversationManager<R> {
     ) -> Result<ToolExecution, ConversationServiceError> {
         self.repository
             .transition_tool_execution(id, expected_revision, next, output, failure, now)
+            .map_err(Into::into)
+    }
+
+    pub fn transition_tool_execution_batch(
+        &self,
+        transitions: &[ToolExecutionTransition],
+        now: TimestampMillis,
+    ) -> Result<Vec<ToolExecution>, ConversationServiceError> {
+        self.repository
+            .transition_tool_execution_batch(transitions, now)
             .map_err(Into::into)
     }
 }
@@ -652,6 +663,14 @@ mod tests {
             _failure: Option<ToolFailure>,
             _at: TimestampMillis,
         ) -> Result<ToolExecution, ConversationRepositoryError> {
+            Err(ConversationRepositoryError::Storage)
+        }
+
+        fn transition_tool_execution_batch(
+            &self,
+            _transitions: &[ToolExecutionTransition],
+            _at: TimestampMillis,
+        ) -> Result<Vec<ToolExecution>, ConversationRepositoryError> {
             Err(ConversationRepositoryError::Storage)
         }
     }
