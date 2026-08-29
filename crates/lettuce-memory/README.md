@@ -10,12 +10,19 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
-Foundation scaffolding is active. Implement behavior with tests before exposing new public APIs, and keep compatibility code at explicit application or migration boundaries.
+The first direct/group dynamic-memory slice now provides versioned required
+tool declarations, strict typed arguments and outcomes, a deterministic ordered
+reducer over revisioned memory-space snapshots, and an atomic compare-and-apply
+repository port. It preserves duplicate suppression, low-confidence demotion,
+cycle-start hard-delete limits, pin protection, hot-token budgeting, and
+capacity trimming. The verified scenarios are pinned in
+`fixtures/legacy-import/dynamic-memory-tool-scenarios-v1.json`.
 
-The verified direct/group dynamic-memory tool behavior and approved corrections
-are pinned in
-`fixtures/legacy-import/dynamic-memory-tool-scenarios-v1.json`. The first
-implementation slice is the deterministic core memory-operation reducer and
-atomic repository port. Provider continuation, companion-only
-source/supersession behavior, category-repair generation, and UI events remain
-outside that slice.
+The new contract deliberately replaces ambiguous legacy text or six-digit
+delete targets with stable memory UUIDs, reports missing targets explicitly,
+and applies one validated change set instead of mutating session projections in
+place. Provider continuation, prompt rendering, companion-only source and
+supersession, provider-driven category repair, repository SQL, ONNX embedding
+inference, and UI events remain later slices. ONNX runtime ownership belongs in
+`lettuce-embeddings`; this crate consumes typed duplicate evidence through the
+application coordinator.

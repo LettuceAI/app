@@ -79,6 +79,7 @@ define_id!(LorebookEntryId);
 define_id!(MediaBlobId);
 define_id!(MemoryId);
 define_id!(MemoryRevisionId);
+define_id!(MemorySpaceId);
 define_id!(MessageId);
 define_id!(MessageRevisionId);
 define_id!(ModelProfileId);
