@@ -629,6 +629,52 @@ pub trait ToolExecutionRepository: Send + Sync {
     ) -> Result<Vec<ToolExecution>, crate::ConversationRepositoryError>;
 }
 
+impl<T: ToolExecutionRepository + ?Sized> ToolExecutionRepository for &T {
+    fn append_tool_executions(
+        &self,
+        expected_next_ordinal: u16,
+        executions: &[ToolExecution],
+    ) -> Result<Vec<ToolExecution>, crate::ConversationRepositoryError> {
+        (**self).append_tool_executions(expected_next_ordinal, executions)
+    }
+
+    fn get_tool_execution(
+        &self,
+        id: ToolExecutionId,
+    ) -> Result<ToolExecution, crate::ConversationRepositoryError> {
+        (**self).get_tool_execution(id)
+    }
+
+    fn list_tool_executions(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+    ) -> Result<Vec<ToolExecution>, crate::ConversationRepositoryError> {
+        (**self).list_tool_executions(conversation_id, turn_id, attempt_id)
+    }
+
+    fn transition_tool_execution(
+        &self,
+        id: ToolExecutionId,
+        expected_revision: Revision,
+        next: ToolExecutionStatus,
+        output: Option<ToolOutput>,
+        failure: Option<ToolFailure>,
+        at: TimestampMillis,
+    ) -> Result<ToolExecution, crate::ConversationRepositoryError> {
+        (**self).transition_tool_execution(id, expected_revision, next, output, failure, at)
+    }
+
+    fn transition_tool_execution_batch(
+        &self,
+        transitions: &[ToolExecutionTransition],
+        at: TimestampMillis,
+    ) -> Result<Vec<ToolExecution>, crate::ConversationRepositoryError> {
+        (**self).transition_tool_execution_batch(transitions, at)
+    }
+}
+
 pub(crate) fn validate_tool_name(field: &'static str, value: &str) -> Result<(), ValidationError> {
     validate_text(field, value, MAX_TOOL_NAME_BYTES, false)?;
     if !value

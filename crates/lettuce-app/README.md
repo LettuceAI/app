@@ -77,6 +77,18 @@ coordinator asks storage to atomically remap the verified parent calls and
 preparations into new child execution IDs. Exact retries return the same child
 round; parent evidence and terminal execution rows remain untouched.
 
+The first provider-continuation intake replays one exact settled round into the
+provider-neutral context under the same running attempt and attached job. A
+persisted `done` result stops without another request; otherwise the coordinator
+enforces four rounds and 64 total calls, runs the existing inference port, and
+either returns one usable text candidate or atomically admits the next declared
+dynamic-memory call set with stable ordinals. It rejects stale durable counts,
+mixed content/tool responses, multiple candidates, cancellation at each network
+boundary, and provider replay that still requires materialized signed blocks.
+Usage recording and conversation finalization, plus per-round immutable memory
+preparation for a newly admitted recursive call set, remain the next coordinator
+slices; this intake does not claim tools are end-to-end complete yet.
+
 ## Bundled prompts
 
 The app owns the closed, versioned built-in prompt catalog in
