@@ -216,6 +216,106 @@ impl TranscriptToolResult {
     }
 }
 
+/// Appends one fully settled execution round as native-provider-neutral
+/// assistant calls followed by matching user results. The original context is
+/// never mutated when any execution or transcript invariant fails.
+pub fn context_with_settled_tool_round(
+    context: &crate::ProviderNeutralContext,
+    executions: &[ToolExecution],
+) -> Result<crate::ProviderNeutralContext, ValidationError> {
+    context.validate()?;
+    if executions.is_empty() {
+        return Err(ValidationError::InvalidValue {
+            field: "tool_continuation.executions",
+        });
+    }
+    let unresolved = context
+        .messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .fold(
+            (
+                std::collections::HashSet::new(),
+                std::collections::HashSet::new(),
+            ),
+            |mut state, part| {
+                match part {
+                    crate::ProviderContextPart::ToolCall(call) => {
+                        state.0.insert(call.execution_id);
+                    }
+                    crate::ProviderContextPart::ToolResult(result) => {
+                        state.1.insert(result.execution_id);
+                    }
+                    crate::ProviderContextPart::Text { .. }
+                    | crate::ProviderContextPart::MediaAsset { .. } => {}
+                }
+                state
+            },
+        );
+    if unresolved.0 != unresolved.1 {
+        return Err(ValidationError::InvalidReference {
+            field: "tool_continuation.open_round",
+        });
+    }
+    let owner = (
+        executions[0].conversation_id,
+        executions[0].turn_id,
+        executions[0].attempt_id,
+    );
+    let mut previous_ordinal = None;
+    let mut ids = std::collections::HashSet::with_capacity(executions.len());
+    let mut calls = Vec::with_capacity(executions.len());
+    let mut results = Vec::with_capacity(executions.len());
+    for execution in executions {
+        execution.validate()?;
+        if execution.status != ToolExecutionStatus::Succeeded
+            || owner
+                != (
+                    execution.conversation_id,
+                    execution.turn_id,
+                    execution.attempt_id,
+                )
+            || previous_ordinal.is_some_and(|ordinal| execution.ordinal != ordinal + 1)
+            || !ids.insert(execution.id)
+        {
+            return Err(ValidationError::Invariant {
+                field: "tool_continuation.execution_round",
+            });
+        }
+        let output = execution.output.clone().ok_or(ValidationError::Invariant {
+            field: "tool_continuation.output",
+        })?;
+        calls.push(crate::ProviderContextPart::ToolCall(TranscriptToolCall {
+            execution_id: execution.id,
+            provider_call_id: execution.provider_call_id.clone(),
+            name: execution.definition_name.clone(),
+            arguments: execution.arguments.clone(),
+            raw_arguments: execution.raw_arguments.clone(),
+            provider_replay: execution.provider_replay.clone(),
+        }));
+        results.push(crate::ProviderContextPart::ToolResult(
+            TranscriptToolResult {
+                execution_id: execution.id,
+                provider_call_id: execution.provider_call_id.clone(),
+                name: execution.definition_name.clone(),
+                output,
+            },
+        ));
+        previous_ordinal = Some(execution.ordinal);
+    }
+    let mut continued = context.clone();
+    continued.messages.push(crate::ProviderNeutralMessage {
+        role: crate::MessageRole::Assistant,
+        parts: calls,
+    });
+    continued.messages.push(crate::ProviderNeutralMessage {
+        role: crate::MessageRole::User,
+        parts: results,
+    });
+    continued.validate()?;
+    Ok(continued)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolExecutionStatus {
@@ -593,6 +693,51 @@ mod tests {
         }
     }
 
+    fn settled_execution(owner: ToolExecutionOwner, ordinal: u16) -> ToolExecution {
+        let requested = ToolExecution::requested(
+            ToolExecutionId::new(),
+            owner,
+            ordinal,
+            &definition("create_memory"),
+            ProposedToolCall {
+                provider_call_id: Some(format!("call-{ordinal}")),
+                name: "create_memory".to_owned(),
+                arguments: json!({"text": format!("memory-{ordinal}")}),
+                raw_arguments: None,
+                provider_replay: None,
+            },
+            TimestampMillis::new(1),
+        )
+        .expect("requested");
+        let validated = requested
+            .transition(
+                ToolExecutionStatus::Validated,
+                None,
+                None,
+                TimestampMillis::new(2),
+            )
+            .expect("validated");
+        let running = validated
+            .transition(
+                ToolExecutionStatus::Running,
+                None,
+                None,
+                TimestampMillis::new(3),
+            )
+            .expect("running");
+        running
+            .transition(
+                ToolExecutionStatus::Succeeded,
+                Some(ToolOutput {
+                    value: json!({"created": ordinal}),
+                    is_error: false,
+                }),
+                None,
+                TimestampMillis::new(4),
+            )
+            .expect("settled")
+    }
+
     #[test]
     fn request_requires_unique_valid_names_and_a_declared_named_choice() {
         let request = ToolRequest {
@@ -762,5 +907,66 @@ mod tests {
             orphan.validate(),
             Err(ValidationError::InvalidReference { .. })
         ));
+    }
+
+    #[test]
+    fn settled_round_appends_exact_calls_then_results_without_mutating_source() {
+        let context = crate::ProviderNeutralContext {
+            messages: vec![crate::ProviderNeutralMessage {
+                role: crate::MessageRole::User,
+                parts: vec![crate::ProviderContextPart::Text {
+                    text: "remember this".to_owned(),
+                }],
+            }],
+            attributions: crate::ContextAttributions::default(),
+            budget: crate::ContextBudgetReport::default(),
+        };
+        let owner = ToolExecutionOwner {
+            conversation_id: lettuce_types::ConversationId::new(),
+            turn_id: lettuce_types::GenerationTurnId::new(),
+            attempt_id: lettuce_types::GenerationAttemptId::new(),
+        };
+        let executions = vec![settled_execution(owner, 4), settled_execution(owner, 5)];
+        let continued =
+            context_with_settled_tool_round(&context, &executions).expect("continued context");
+        assert_eq!(context.messages.len(), 1);
+        assert_eq!(continued.messages.len(), 3);
+        assert!(continued.messages[1].parts.iter().zip(&executions).all(
+            |(part, execution)| matches!(part, crate::ProviderContextPart::ToolCall(call)
+                if call.execution_id == execution.id
+                    && call.provider_call_id == execution.provider_call_id
+                    && call.arguments == execution.arguments)
+        ));
+        assert!(continued.messages[2].parts.iter().zip(&executions).all(
+            |(part, execution)| matches!(part, crate::ProviderContextPart::ToolResult(result)
+                if result.execution_id == execution.id
+                    && result.output == execution.output.clone().expect("output"))
+        ));
+    }
+
+    #[test]
+    fn continuation_rejects_unsettled_or_noncontiguous_rounds() {
+        let context = crate::ProviderNeutralContext {
+            messages: vec![],
+            attributions: crate::ContextAttributions::default(),
+            budget: crate::ContextBudgetReport::default(),
+        };
+        let owner = ToolExecutionOwner {
+            conversation_id: lettuce_types::ConversationId::new(),
+            turn_id: lettuce_types::GenerationTurnId::new(),
+            attempt_id: lettuce_types::GenerationAttemptId::new(),
+        };
+        let mut unsettled = settled_execution(owner, 0);
+        unsettled.status = ToolExecutionStatus::Running;
+        unsettled.output = None;
+        unsettled.finished_at = None;
+        assert!(context_with_settled_tool_round(&context, &[unsettled]).is_err());
+        assert!(
+            context_with_settled_tool_round(
+                &context,
+                &[settled_execution(owner, 0), settled_execution(owner, 2)]
+            )
+            .is_err()
+        );
     }
 }
