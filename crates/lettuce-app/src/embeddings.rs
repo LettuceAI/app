@@ -9,6 +9,7 @@ use lettuce_types::MemoryId;
 
 #[derive(Debug)]
 pub struct EmbeddingService {
+    source_revision: String,
     runtime: Mutex<OnnxEmbeddingRuntime>,
 }
 
@@ -18,10 +19,17 @@ impl EmbeddingService {
         runtime_link: &OnnxRuntimeLink,
     ) -> Result<Self, EmbeddingServiceError> {
         let artifacts = manifest.verify()?;
+        let source_revision = artifacts.source_revision.clone();
         let runtime = OnnxEmbeddingRuntime::load(artifacts, runtime_link)?;
         Ok(Self {
+            source_revision,
             runtime: Mutex::new(runtime),
         })
+    }
+
+    #[must_use]
+    pub fn source_revision(&self) -> &str {
+        &self.source_revision
     }
 
     pub fn embed(
@@ -64,6 +72,47 @@ impl EmbeddingService {
                 })
             })
     }
+}
+
+pub trait MemoryEmbeddingEngine: Send + Sync {
+    fn source_revision(&self) -> &str;
+
+    fn embed_memory(
+        &self,
+        request: &EmbeddingRequest,
+        cancellation: &CancellationToken,
+    ) -> Result<EmbeddingVector, EmbeddingGenerationError>;
+}
+
+impl MemoryEmbeddingEngine for EmbeddingService {
+    fn source_revision(&self) -> &str {
+        self.source_revision()
+    }
+
+    fn embed_memory(
+        &self,
+        request: &EmbeddingRequest,
+        cancellation: &CancellationToken,
+    ) -> Result<EmbeddingVector, EmbeddingGenerationError> {
+        self.embed(request, cancellation).map_err(|error| {
+            if matches!(
+                error,
+                EmbeddingServiceError::Runtime(EmbeddingError::Cancelled)
+            ) {
+                EmbeddingGenerationError::Cancelled
+            } else {
+                EmbeddingGenerationError::Unavailable
+            }
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum EmbeddingGenerationError {
+    #[error("embedding generation was cancelled")]
+    Cancelled,
+    #[error("embedding generation is unavailable")]
+    Unavailable,
 }
 
 #[cfg(test)]

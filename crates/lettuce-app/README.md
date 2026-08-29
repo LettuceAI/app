@@ -36,6 +36,15 @@ request-scoped inference with a `lettuce-jobs` cancellation token. Hosts remain
 responsible for scheduling this synchronous CPU/model-load work on the job
 worker rather than a UI or async-runtime thread.
 
+Dynamic-memory create preparation requires a claimed job carrying model-load,
+disk-read, and CPU resources. It embeds candidates at 128 dimensions, compares
+only live exact-revision projections, supplies qualified duplicate evidence to
+the reducer, and persists a projection only after the memory CAS confirms the
+item survived. ONNX unavailability does not discard authoritative memory: the
+create proceeds without semantic evidence and leaves rebuildable repair state.
+Cancellation still stops preparation instead of degrading to an unembedded
+write.
+
 ## Bundled prompts
 
 The app owns the closed, versioned built-in prompt catalog in

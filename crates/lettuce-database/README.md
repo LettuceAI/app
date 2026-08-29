@@ -67,7 +67,9 @@ dynamic-memory round cannot partially alter the stored snapshot. The same
 migration stores rebuildable ready/repair-needed embedding projections as
 little-endian float BLOBs. Projection reads join exact live memory ID and text;
 stale derived rows cannot affect similarity, while unchanged projections
-survive the complete item-set CAS without rewriting their BLOBs.
+survive the complete item-set CAS without rewriting their BLOBs. Repair queries
+also synthesize work for live items with no matching projection, closing the
+crash window between authoritative memory commit and derived-data persistence.
 Possession of `Database` is a trusted application-composition capability: ordinary
 conversation repositories and DTOs expose artifact references only and cannot
 export protected bytes. Trusted transfer remains a separate composition-only

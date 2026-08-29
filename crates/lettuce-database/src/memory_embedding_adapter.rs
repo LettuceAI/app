@@ -91,6 +91,48 @@ impl MemoryEmbeddingRepository for Database {
         Ok(projections)
     }
 
+    fn list_repairs(
+        &self,
+        space_id: MemorySpaceId,
+        source_revision: &str,
+        requested_dimensions: EmbeddingDimensions,
+    ) -> Result<Vec<MemoryEmbeddingRepair>, EmbeddingProjectionError> {
+        let connection = self.connection().map_err(storage)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT i.id, i.text, ?3, COALESCE(p.updated_at, i.last_accessed_at)
+                   FROM memory_items i
+                   LEFT JOIN memory_embedding_projections p
+                     ON p.space_id = i.space_id AND p.memory_id = i.id AND p.source_text = i.text
+                    AND p.source_revision = ?2 AND p.dimensions = ?3
+                  WHERE i.space_id = ?1 AND (p.status IS NULL OR p.status = 'repair_needed')
+                  ORDER BY i.ordinal",
+            )
+            .map_err(storage)?;
+        let mut rows = statement
+            .query(params![
+                space_id.to_string(),
+                source_revision,
+                i64::try_from(requested_dimensions.get()).map_err(storage)?,
+            ])
+            .map_err(storage)?;
+        let mut repairs = Vec::new();
+        while let Some(row) = rows.next().map_err(storage)? {
+            let repair = MemoryEmbeddingRepair {
+                space_id,
+                memory_id: MemoryId::from_str(&row.get::<_, String>(0).map_err(storage)?)
+                    .map_err(storage)?,
+                source_text: row.get(1).map_err(storage)?,
+                source_revision: source_revision.to_owned(),
+                dimensions: dimensions(row.get(2).map_err(storage)?)?,
+                updated_at: TimestampMillis::new(row.get(3).map_err(storage)?),
+            };
+            repair.validate()?;
+            repairs.push(repair);
+        }
+        Ok(repairs)
+    }
+
     fn put_ready(
         &self,
         projection: MemoryEmbeddingProjection,
@@ -193,6 +235,13 @@ mod tests {
                 items: vec![memory.clone()],
             })
             .expect("space");
+        assert_eq!(
+            database
+                .list_repairs(space_id, "v4", EmbeddingDimensions::D128)
+                .expect("implicit repair")
+                .len(),
+            1
+        );
         database
             .put_ready(MemoryEmbeddingProjection {
                 space_id,
@@ -219,6 +268,12 @@ mod tests {
             .expect("list");
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].memory_id, memory_id);
+        assert!(
+            database
+                .list_repairs(space_id, "v4", EmbeddingDimensions::D128)
+                .expect("repairs")
+                .is_empty()
+        );
     }
 
     #[test]

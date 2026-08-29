@@ -64,6 +64,13 @@ pub trait MemoryEmbeddingRepository: Send + Sync {
         dimensions: EmbeddingDimensions,
     ) -> Result<Vec<MemoryEmbeddingProjection>, EmbeddingProjectionError>;
 
+    fn list_repairs(
+        &self,
+        space_id: MemorySpaceId,
+        source_revision: &str,
+        dimensions: EmbeddingDimensions,
+    ) -> Result<Vec<MemoryEmbeddingRepair>, EmbeddingProjectionError>;
+
     fn put_ready(
         &self,
         projection: MemoryEmbeddingProjection,

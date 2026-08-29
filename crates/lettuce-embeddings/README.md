@@ -25,8 +25,8 @@ Inference declares model-load, disk-read, and CPU job resources and cooperates
 with cancellation before tokenization, before execution, during ONNX graph
 execution, and before publishing output. Apple targets attempt CoreML with a
 logged CPU fallback; the actual legacy Android/non-Apple path remains CPU. NER,
-emotion, router models, download UI, and dynamic-memory orchestration remain
-outside this slice.
+emotion, router models, download UI, and retrieval ranking remain outside this
+slice.
 
 Memory projections are rebuildable derived data behind the domain-owned
 `MemoryEmbeddingRepository` port. Ready rows carry exact source text, immutable
