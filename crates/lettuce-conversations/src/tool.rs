@@ -282,6 +282,14 @@ impl ToolFailure {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolExecutionOwner {
+    pub conversation_id: ConversationId,
+    pub turn_id: GenerationTurnId,
+    pub attempt_id: GenerationAttemptId,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ToolExecution {
@@ -307,6 +315,46 @@ pub struct ToolExecution {
 }
 
 impl ToolExecution {
+    pub fn requested(
+        id: ToolExecutionId,
+        owner: ToolExecutionOwner,
+        ordinal: u16,
+        definition: &ToolDefinition,
+        call: ProposedToolCall,
+        at: TimestampMillis,
+    ) -> Result<Self, ValidationError> {
+        definition.validate()?;
+        call.validate()?;
+        if call.name != definition.name {
+            return Err(ValidationError::InvalidReference {
+                field: "tool_execution.definition",
+            });
+        }
+        let execution = Self {
+            id,
+            conversation_id: owner.conversation_id,
+            turn_id: owner.turn_id,
+            attempt_id: owner.attempt_id,
+            ordinal,
+            definition_name: definition.name.clone(),
+            definition_version: definition.version,
+            provider_call_id: call.provider_call_id,
+            arguments: call.arguments,
+            raw_arguments: call.raw_arguments,
+            provider_replay: call.provider_replay,
+            status: ToolExecutionStatus::Requested,
+            output: None,
+            failure: None,
+            revision: Revision::INITIAL,
+            requested_at: at,
+            started_at: None,
+            finished_at: None,
+            updated_at: at,
+        };
+        execution.validate()?;
+        Ok(execution)
+    }
+
     pub fn validate(&self) -> Result<(), ValidationError> {
         validate_tool_name("tool_execution.definition_name", &self.definition_name)?;
         validate_provider_call_id(self.provider_call_id.as_deref())?;
@@ -431,10 +479,14 @@ impl ToolExecution {
 }
 
 pub trait ToolExecutionRepository: Send + Sync {
-    fn insert_tool_execution(
+    /// Appends one provider response's ordered call set atomically and returns
+    /// the stored executions in the same order. The expected ordinal prevents
+    /// concurrent continuation or recovery workers from interleaving rounds.
+    fn append_tool_executions(
         &self,
-        execution: &ToolExecution,
-    ) -> Result<ToolExecution, crate::ConversationRepositoryError>;
+        expected_next_ordinal: u16,
+        executions: &[ToolExecution],
+    ) -> Result<Vec<ToolExecution>, crate::ConversationRepositoryError>;
 
     fn get_tool_execution(
         &self,
@@ -582,6 +634,65 @@ mod tests {
         assert!(matches!(
             call.validate(),
             Err(ValidationError::Invariant { .. })
+        ));
+    }
+
+    #[test]
+    fn requested_execution_copies_the_declared_handler_version_and_wire_replay() {
+        let definition = ToolDefinition {
+            version: 7,
+            ..definition("create_memory")
+        };
+        let call = ProposedToolCall {
+            provider_call_id: Some("call-1".to_owned()),
+            name: "create_memory".to_owned(),
+            arguments: json!({"content": "one"}),
+            raw_arguments: Some(r#"{"content":"one"}"#.to_owned()),
+            provider_replay: None,
+        };
+        let execution = ToolExecution::requested(
+            ToolExecutionId::new(),
+            ToolExecutionOwner {
+                conversation_id: ConversationId::new(),
+                turn_id: GenerationTurnId::new(),
+                attempt_id: GenerationAttemptId::new(),
+            },
+            2,
+            &definition,
+            call,
+            TimestampMillis::new(10),
+        )
+        .expect("requested execution");
+
+        assert_eq!(execution.definition_version, 7);
+        assert_eq!(execution.ordinal, 2);
+        assert_eq!(execution.status, ToolExecutionStatus::Requested);
+        assert_eq!(execution.revision, Revision::INITIAL);
+    }
+
+    #[test]
+    fn requested_execution_rejects_a_mismatched_definition() {
+        let call = ProposedToolCall {
+            provider_call_id: None,
+            name: "delete_memory".to_owned(),
+            arguments: json!({"id": "one"}),
+            raw_arguments: None,
+            provider_replay: None,
+        };
+        assert!(matches!(
+            ToolExecution::requested(
+                ToolExecutionId::new(),
+                ToolExecutionOwner {
+                    conversation_id: ConversationId::new(),
+                    turn_id: GenerationTurnId::new(),
+                    attempt_id: GenerationAttemptId::new(),
+                },
+                0,
+                &definition("create_memory"),
+                call,
+                TimestampMillis::new(10),
+            ),
+            Err(ValidationError::InvalidReference { .. })
         ));
     }
 

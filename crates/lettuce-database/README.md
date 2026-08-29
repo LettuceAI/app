@@ -36,7 +36,10 @@ conversation/turn/attempt that requested them. Tool request identity and input
 are immutable, provider call IDs are unique within an attempt, state changes use
 revision CAS, and terminal states cannot regress. Provider replay references use
 the existing protected replay-artifact store rather than leaking opaque replay
-data into ordinary rows. Durable history is restrict-owned and composite foreign keys
+data into ordinary rows. Multi-call provider responses are inserted in one
+immediate transaction, so an ordinal or provider-ID collision cannot leave a
+partially durable handler round. Each later tool round compare-and-appends at
+the expected attempt ordinal. Durable history is restrict-owned and composite foreign keys
 keep every child scoped to its conversation and turn. Snapshot and provider
 replay bytes are held in separate private artifact tables; ordinary conversation
 rows store references and the artifact store verifies immutable metadata and

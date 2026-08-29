@@ -15,6 +15,12 @@ provider JSON. Application code persists a provider proposal before execution;
 message parts keep only the resulting execution ID. Terminal executions cannot
 regress, and provider call IDs are separate from the stable application ID so
 providers without native IDs do not force fabricated wire identities.
+`ConversationManager` validates a provider call set against the exact declared
+request, assigns stable wire ordinals and handler versions, and persists the
+whole set atomically before any handler starts. Undeclared calls, named-choice
+mismatches, duplicate provider IDs, and over-limit sets fail before storage.
+Later continuation rounds append after prior executions with an expected-next
+ordinal, so a recovery worker cannot interleave a second copy of the round.
 
 ## Status
 
@@ -95,12 +101,12 @@ same validated authored scene/starter graph used to create the protected
 artifacts. IPC callers do not construct initial timelines, and the database
 creator only persists and revalidates the prepared plan atomically.
 
-Tool execution is currently a horizontal contract only. Providers still reject
-tool-bearing requests until their family-specific declaration, transcript,
-buffered-response, and streaming codecs land. The application coordinator and
-legacy memory/creation/companion/lorebook workflow migrations are separate
-usable slices; arbitrary shell, filesystem, plugin, and general-chat tools are
-not implied by this contract.
+Tool execution is currently a horizontal contract only. Remote OpenAI-envelope,
+Anthropic, Gemini, and Ollama adapters have family-specific declaration,
+transcript, buffered-response, and streaming codecs. The application
+coordinator and legacy memory/creation/companion/lorebook handler migrations are
+separate usable slices; arbitrary shell, filesystem, plugin, and general-chat
+tools are not implied by this contract.
 
 Launch snapshots stay frozen for the conversation lifetime. Current participant
 policy and settings are explicit mutable state; this contract does not derive

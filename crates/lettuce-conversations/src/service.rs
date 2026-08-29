@@ -13,6 +13,10 @@ use crate::ports::{
     RestoreConversationResult, SelectBranchResult, SettingsResult, TimelinePage,
     TombstoneMessageResult, UpdateMessageFlagsResult,
 };
+use crate::{
+    ProposedToolCall, ToolChoice, ToolExecution, ToolExecutionOwner, ToolExecutionRepository,
+    ToolExecutionStatus, ToolFailure, ToolOutput, ToolRequest, ValidationError,
+};
 
 /// Thin application-facing façade.  It validates command contracts and
 /// delegates atomic mutations to the repository; provider execution belongs
@@ -151,6 +155,130 @@ impl<R: ConversationCreator> ConversationManager<R> {
     ) -> Result<CreateConversationResult, ConversationServiceError> {
         self.repository.create(launch, now).map_err(Into::into)
     }
+}
+
+impl<R: ToolExecutionRepository> ConversationManager<R> {
+    pub fn request_tool_executions(
+        &self,
+        owner: ToolExecutionOwner,
+        request: &ToolRequest,
+        calls: Vec<ProposedToolCall>,
+        now: TimestampMillis,
+    ) -> Result<Vec<ToolExecution>, ConversationServiceError> {
+        let mut executions = plan_tool_executions(owner, request, calls, now)?;
+        if executions.is_empty() {
+            return Ok(Vec::new());
+        }
+        let existing = self.repository.list_tool_executions(
+            owner.conversation_id,
+            owner.turn_id,
+            owner.attempt_id,
+        )?;
+        let next_ordinal =
+            u16::try_from(existing.len()).map_err(|_| ValidationError::OutOfBounds {
+                field: "tool_execution.ordinal",
+            })?;
+        for (offset, execution) in executions.iter_mut().enumerate() {
+            execution.ordinal = next_ordinal
+                .checked_add(
+                    u16::try_from(offset).map_err(|_| ValidationError::OutOfBounds {
+                        field: "tool_execution.ordinal",
+                    })?,
+                )
+                .ok_or(ValidationError::OutOfBounds {
+                    field: "tool_execution.ordinal",
+                })?;
+        }
+        self.repository
+            .append_tool_executions(next_ordinal, &executions)
+            .map_err(Into::into)
+    }
+
+    pub fn tool_executions(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: lettuce_types::GenerationTurnId,
+        attempt_id: lettuce_types::GenerationAttemptId,
+    ) -> Result<Vec<ToolExecution>, ConversationServiceError> {
+        self.repository
+            .list_tool_executions(conversation_id, turn_id, attempt_id)
+            .map_err(Into::into)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn transition_tool_execution(
+        &self,
+        id: lettuce_types::ToolExecutionId,
+        expected_revision: lettuce_types::Revision,
+        next: ToolExecutionStatus,
+        output: Option<ToolOutput>,
+        failure: Option<ToolFailure>,
+        now: TimestampMillis,
+    ) -> Result<ToolExecution, ConversationServiceError> {
+        self.repository
+            .transition_tool_execution(id, expected_revision, next, output, failure, now)
+            .map_err(Into::into)
+    }
+}
+
+fn plan_tool_executions(
+    owner: ToolExecutionOwner,
+    request: &ToolRequest,
+    calls: Vec<ProposedToolCall>,
+    now: TimestampMillis,
+) -> Result<Vec<ToolExecution>, ConversationServiceError> {
+    request.validate()?;
+    if calls.len() > crate::MAX_TOOL_CALLS_PER_RESPONSE {
+        return Err(ValidationError::TooMany {
+            field: "tool_executions",
+            max: crate::MAX_TOOL_CALLS_PER_RESPONSE,
+        }
+        .into());
+    }
+    if calls.is_empty() && !matches!(request.choice, ToolChoice::Auto) {
+        return Err(ValidationError::InvalidValue {
+            field: "tool_executions.required",
+        }
+        .into());
+    }
+    let mut provider_call_ids = std::collections::HashSet::new();
+    let mut executions = Vec::with_capacity(calls.len());
+    for (ordinal, call) in calls.into_iter().enumerate() {
+        call.validate()?;
+        let definition = request
+            .definitions
+            .iter()
+            .find(|definition| definition.name == call.name)
+            .ok_or(ValidationError::InvalidReference {
+                field: "tool_execution.definition",
+            })?;
+        if matches!(&request.choice, ToolChoice::Named { name } if *name != call.name) {
+            return Err(ValidationError::InvalidReference {
+                field: "tool_execution.choice",
+            }
+            .into());
+        }
+        if let Some(provider_call_id) = call.provider_call_id.as_deref()
+            && !provider_call_ids.insert(provider_call_id.to_owned())
+        {
+            return Err(ValidationError::Duplicate {
+                field: "tool_execution.provider_call_id",
+            }
+            .into());
+        }
+        let ordinal = u16::try_from(ordinal).map_err(|_| ValidationError::OutOfBounds {
+            field: "tool_execution.ordinal",
+        })?;
+        executions.push(ToolExecution::requested(
+            lettuce_types::ToolExecutionId::new(),
+            owner,
+            ordinal,
+            definition,
+            call,
+            now,
+        )?);
+    }
+    Ok(executions)
 }
 
 impl<R: ConversationRepository> ConversationManager<R> {
@@ -458,8 +586,75 @@ impl<R: ConversationRepository> ConversationManager<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+    use std::sync::Mutex;
 
     struct ReaderOnly;
+
+    #[derive(Default)]
+    struct ToolRepository {
+        executions: Mutex<Vec<ToolExecution>>,
+    }
+
+    impl ToolExecutionRepository for ToolRepository {
+        fn append_tool_executions(
+            &self,
+            expected_next_ordinal: u16,
+            executions: &[ToolExecution],
+        ) -> Result<Vec<ToolExecution>, ConversationRepositoryError> {
+            let mut stored = self.executions.lock().expect("tool repository");
+            if stored.len() != usize::from(expected_next_ordinal) {
+                return Err(ConversationRepositoryError::Conflict);
+            }
+            stored.extend_from_slice(executions);
+            Ok(executions.to_vec())
+        }
+
+        fn get_tool_execution(
+            &self,
+            id: lettuce_types::ToolExecutionId,
+        ) -> Result<ToolExecution, ConversationRepositoryError> {
+            self.executions
+                .lock()
+                .expect("tool repository")
+                .iter()
+                .find(|execution| execution.id == id)
+                .cloned()
+                .ok_or(ConversationRepositoryError::NotFound)
+        }
+
+        fn list_tool_executions(
+            &self,
+            conversation_id: ConversationId,
+            turn_id: lettuce_types::GenerationTurnId,
+            attempt_id: lettuce_types::GenerationAttemptId,
+        ) -> Result<Vec<ToolExecution>, ConversationRepositoryError> {
+            Ok(self
+                .executions
+                .lock()
+                .expect("tool repository")
+                .iter()
+                .filter(|execution| {
+                    execution.conversation_id == conversation_id
+                        && execution.turn_id == turn_id
+                        && execution.attempt_id == attempt_id
+                })
+                .cloned()
+                .collect())
+        }
+
+        fn transition_tool_execution(
+            &self,
+            _id: lettuce_types::ToolExecutionId,
+            _expected_revision: lettuce_types::Revision,
+            _next: ToolExecutionStatus,
+            _output: Option<ToolOutput>,
+            _failure: Option<ToolFailure>,
+            _at: TimestampMillis,
+        ) -> Result<ToolExecution, ConversationRepositoryError> {
+            Err(ConversationRepositoryError::Storage)
+        }
+    }
 
     impl ConversationReader for ReaderOnly {
         fn get(
@@ -561,6 +756,160 @@ mod tests {
             result,
             Err(ConversationServiceError::Repository(
                 ConversationRepositoryError::Storage
+            ))
+        ));
+    }
+
+    #[test]
+    fn manager_persists_a_provider_tool_call_set_with_stable_ordinals() {
+        let manager = ConversationManager::new(ToolRepository::default());
+        let conversation_id = ConversationId::new();
+        let turn_id = lettuce_types::GenerationTurnId::new();
+        let attempt_id = lettuce_types::GenerationAttemptId::new();
+        let owner = ToolExecutionOwner {
+            conversation_id,
+            turn_id,
+            attempt_id,
+        };
+        let request = ToolRequest {
+            definitions: vec![
+                crate::ToolDefinition {
+                    name: "create_memory".to_owned(),
+                    description: None,
+                    parameters: json!({"type": "object"}),
+                    version: 3,
+                },
+                crate::ToolDefinition {
+                    name: "pin_memory".to_owned(),
+                    description: None,
+                    parameters: json!({"type": "object"}),
+                    version: 2,
+                },
+            ],
+            choice: ToolChoice::Auto,
+        };
+        let calls = vec![
+            ProposedToolCall {
+                provider_call_id: Some("call-1".to_owned()),
+                name: "create_memory".to_owned(),
+                arguments: json!({"content": "one"}),
+                raw_arguments: None,
+                provider_replay: None,
+            },
+            ProposedToolCall {
+                provider_call_id: Some("call-2".to_owned()),
+                name: "pin_memory".to_owned(),
+                arguments: json!({"id": "one"}),
+                raw_arguments: None,
+                provider_replay: None,
+            },
+        ];
+
+        let stored = manager
+            .request_tool_executions(owner, &request, calls, TimestampMillis::new(10))
+            .expect("tool executions");
+
+        assert_eq!(stored.len(), 2);
+        assert_eq!(stored[0].ordinal, 0);
+        assert_eq!(stored[0].definition_version, 3);
+        assert_eq!(stored[1].ordinal, 1);
+        assert_eq!(stored[1].definition_version, 2);
+        let next_round = manager
+            .request_tool_executions(
+                owner,
+                &request,
+                vec![ProposedToolCall {
+                    provider_call_id: Some("call-3".to_owned()),
+                    name: "create_memory".to_owned(),
+                    arguments: json!({"content": "two"}),
+                    raw_arguments: None,
+                    provider_replay: None,
+                }],
+                TimestampMillis::new(20),
+            )
+            .expect("next tool round");
+        assert_eq!(next_round[0].ordinal, 2);
+        assert_eq!(
+            manager
+                .tool_executions(conversation_id, turn_id, attempt_id)
+                .expect("stored calls"),
+            [stored, next_round].concat()
+        );
+    }
+
+    #[test]
+    fn manager_rejects_undeclared_and_named_choice_mismatched_calls_before_storage() {
+        let manager = ConversationManager::new(ToolRepository::default());
+        let request = ToolRequest {
+            definitions: vec![crate::ToolDefinition {
+                name: "create_memory".to_owned(),
+                description: None,
+                parameters: json!({"type": "object"}),
+                version: 1,
+            }],
+            choice: ToolChoice::Named {
+                name: "create_memory".to_owned(),
+            },
+        };
+        let result = manager.request_tool_executions(
+            ToolExecutionOwner {
+                conversation_id: ConversationId::new(),
+                turn_id: lettuce_types::GenerationTurnId::new(),
+                attempt_id: lettuce_types::GenerationAttemptId::new(),
+            },
+            &request,
+            vec![ProposedToolCall {
+                provider_call_id: None,
+                name: "delete_memory".to_owned(),
+                arguments: json!({"id": "one"}),
+                raw_arguments: None,
+                provider_replay: None,
+            }],
+            TimestampMillis::new(10),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ConversationServiceError::Invalid(
+                ValidationError::InvalidReference { .. }
+            ))
+        ));
+        assert!(
+            manager
+                .repository()
+                .executions
+                .lock()
+                .expect("tool repository")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn manager_requires_a_call_for_required_tool_choice() {
+        let manager = ConversationManager::new(ToolRepository::default());
+        let request = ToolRequest {
+            definitions: vec![crate::ToolDefinition {
+                name: "create_memory".to_owned(),
+                description: None,
+                parameters: json!({"type": "object"}),
+                version: 1,
+            }],
+            choice: ToolChoice::Required,
+        };
+
+        assert!(matches!(
+            manager.request_tool_executions(
+                ToolExecutionOwner {
+                    conversation_id: ConversationId::new(),
+                    turn_id: lettuce_types::GenerationTurnId::new(),
+                    attempt_id: lettuce_types::GenerationAttemptId::new(),
+                },
+                &request,
+                Vec::new(),
+                TimestampMillis::new(10),
+            ),
+            Err(ConversationServiceError::Invalid(
+                ValidationError::InvalidValue { .. }
             ))
         ));
     }

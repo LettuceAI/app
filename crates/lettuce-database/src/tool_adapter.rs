@@ -171,83 +171,173 @@ fn get_in(
         .ok_or(ConversationRepositoryError::NotFound)
 }
 
-impl ToolExecutionRepository for Database {
-    fn insert_tool_execution(
-        &self,
-        execution: &ToolExecution,
-    ) -> Result<ToolExecution, ConversationRepositoryError> {
-        execution.validate()?;
-        if execution.status != ToolExecutionStatus::Requested
-            || execution.revision != Revision::INITIAL
+fn validate_new(execution: &ToolExecution) -> Result<(), ConversationRepositoryError> {
+    execution.validate()?;
+    if execution.status != ToolExecutionStatus::Requested || execution.revision != Revision::INITIAL
+    {
+        return Err(ConversationRepositoryError::Invalid(
+            lettuce_conversations::ValidationError::Invariant {
+                field: "tool_execution.new",
+            },
+        ));
+    }
+    if execution
+        .provider_replay
+        .as_ref()
+        .is_some_and(|reference| reference.retention != ReplayRetention::Conversation)
+    {
+        return Err(ConversationRepositoryError::Invalid(
+            lettuce_conversations::ValidationError::InvalidReference {
+                field: "tool_execution.provider_replay",
+            },
+        ));
+    }
+    Ok(())
+}
+
+fn validate_new_batch(executions: &[ToolExecution]) -> Result<(), ConversationRepositoryError> {
+    let Some(first) = executions.first() else {
+        return Err(ConversationRepositoryError::Invalid(
+            lettuce_conversations::ValidationError::InvalidValue {
+                field: "tool_executions",
+            },
+        ));
+    };
+    if executions.len() > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE {
+        return Err(ConversationRepositoryError::Invalid(
+            lettuce_conversations::ValidationError::TooMany {
+                field: "tool_executions",
+                max: lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE,
+            },
+        ));
+    }
+    let mut ids = std::collections::HashSet::new();
+    let mut provider_call_ids = std::collections::HashSet::new();
+    for (offset, execution) in executions.iter().enumerate() {
+        validate_new(execution)?;
+        let expected_ordinal = usize::from(first.ordinal).checked_add(offset).ok_or(
+            ConversationRepositoryError::Invalid(
+                lettuce_conversations::ValidationError::OutOfBounds {
+                    field: "tool_executions.ordinal",
+                },
+            ),
+        )?;
+        if execution.conversation_id != first.conversation_id
+            || execution.turn_id != first.turn_id
+            || execution.attempt_id != first.attempt_id
+            || execution.requested_at != first.requested_at
+            || usize::from(execution.ordinal) != expected_ordinal
         {
             return Err(ConversationRepositoryError::Invalid(
                 lettuce_conversations::ValidationError::Invariant {
-                    field: "tool_execution.new",
+                    field: "tool_executions.batch",
                 },
             ));
         }
-        if execution
-            .provider_replay
-            .as_ref()
-            .is_some_and(|reference| reference.retention != ReplayRetention::Conversation)
+        if !ids.insert(execution.id)
+            || execution
+                .provider_call_id
+                .as_deref()
+                .is_some_and(|id| !provider_call_ids.insert(id))
         {
             return Err(ConversationRepositoryError::Invalid(
-                lettuce_conversations::ValidationError::InvalidReference {
-                    field: "tool_execution.provider_replay",
+                lettuce_conversations::ValidationError::Duplicate {
+                    field: "tool_executions.identity",
                 },
             ));
         }
-        let arguments =
-            encode_versioned(&execution.arguments, TOOL_JSON_VERSION).map_err(storage)?;
-        let (replay_id, replay_retention) = execution
-            .provider_replay
-            .as_ref()
-            .map(|reference| {
-                (
-                    Some(reference.artifact_id.to_string()),
-                    Some("conversation"),
-                )
-            })
-            .unwrap_or((None, None));
+    }
+    Ok(())
+}
+
+fn insert_in(
+    transaction: &Transaction<'_>,
+    execution: &ToolExecution,
+) -> Result<ToolExecution, ConversationRepositoryError> {
+    let arguments = encode_versioned(&execution.arguments, TOOL_JSON_VERSION).map_err(storage)?;
+    let (replay_id, replay_retention) = execution
+        .provider_replay
+        .as_ref()
+        .map(|reference| {
+            (
+                Some(reference.artifact_id.to_string()),
+                Some("conversation"),
+            )
+        })
+        .unwrap_or((None, None));
+    transaction
+        .execute(
+            "INSERT INTO tool_executions (
+                conversation_id, turn_id, attempt_id, id, ordinal,
+                definition_name, definition_version, provider_call_id,
+                arguments_json, raw_arguments, provider_replay_artifact_id,
+                provider_replay_retention, status, output_json, failure_code,
+                failure_message, revision, requested_at, started_at,
+                finished_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                       ?11, ?12, 'requested', NULL, NULL, NULL, 1, ?13,
+                       NULL, NULL, ?13)",
+            params![
+                execution.conversation_id.to_string(),
+                execution.turn_id.to_string(),
+                execution.attempt_id.to_string(),
+                execution.id.to_string(),
+                i64::from(execution.ordinal),
+                execution.definition_name,
+                i64::from(execution.definition_version),
+                execution.provider_call_id,
+                arguments,
+                execution.raw_arguments,
+                replay_id,
+                replay_retention,
+                execution.requested_at.get(),
+            ],
+        )
+        .map_err(|error| match error.sqlite_error_code() {
+            Some(rusqlite::ErrorCode::ConstraintViolation) => ConversationRepositoryError::Conflict,
+            _ => ConversationRepositoryError::Storage,
+        })?;
+    get_in(transaction, execution.id)
+}
+
+impl ToolExecutionRepository for Database {
+    fn append_tool_executions(
+        &self,
+        expected_next_ordinal: u16,
+        executions: &[ToolExecution],
+    ) -> Result<Vec<ToolExecution>, ConversationRepositoryError> {
+        validate_new_batch(executions)?;
+        if executions[0].ordinal != expected_next_ordinal {
+            return Err(ConversationRepositoryError::Invalid(
+                lettuce_conversations::ValidationError::Invariant {
+                    field: "tool_executions.expected_ordinal",
+                },
+            ));
+        }
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        transaction
-            .execute(
-                "INSERT INTO tool_executions (
-                    conversation_id, turn_id, attempt_id, id, ordinal,
-                    definition_name, definition_version, provider_call_id,
-                    arguments_json, raw_arguments, provider_replay_artifact_id,
-                    provider_replay_retention, status, output_json, failure_code,
-                    failure_message, revision, requested_at, started_at,
-                    finished_at, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
-                           ?11, ?12, 'requested', NULL, NULL, NULL, 1, ?13,
-                           NULL, NULL, ?13)",
+        let actual_next_ordinal = transaction
+            .query_row(
+                "SELECT coalesce(max(ordinal) + 1, 0)
+                   FROM tool_executions
+                  WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3",
                 params![
-                    execution.conversation_id.to_string(),
-                    execution.turn_id.to_string(),
-                    execution.attempt_id.to_string(),
-                    execution.id.to_string(),
-                    i64::from(execution.ordinal),
-                    execution.definition_name,
-                    i64::from(execution.definition_version),
-                    execution.provider_call_id,
-                    arguments,
-                    execution.raw_arguments,
-                    replay_id,
-                    replay_retention,
-                    execution.requested_at.get(),
+                    executions[0].conversation_id.to_string(),
+                    executions[0].turn_id.to_string(),
+                    executions[0].attempt_id.to_string(),
                 ],
+                |row| row.get::<_, i64>(0),
             )
-            .map_err(|error| match error.sqlite_error_code() {
-                Some(rusqlite::ErrorCode::ConstraintViolation) => {
-                    ConversationRepositoryError::Conflict
-                }
-                _ => ConversationRepositoryError::Storage,
-            })?;
-        let stored = get_in(&transaction, execution.id)?;
+            .map_err(storage)?;
+        if actual_next_ordinal != i64::from(expected_next_ordinal) {
+            return Err(ConversationRepositoryError::Conflict);
+        }
+        let mut stored = Vec::with_capacity(executions.len());
+        for execution in executions {
+            stored.push(insert_in(&transaction, execution)?);
+        }
         transaction.commit().map_err(storage)?;
         Ok(stored)
     }
@@ -432,6 +522,16 @@ mod tests {
             .expect("running attempt");
     }
 
+    fn insert_one(
+        database: &Database,
+        execution: &ToolExecution,
+    ) -> Result<ToolExecution, lettuce_conversations::ConversationRepositoryError> {
+        database
+            .append_tool_executions(execution.ordinal, std::slice::from_ref(execution))?
+            .pop()
+            .ok_or(lettuce_conversations::ConversationRepositoryError::Storage)
+    }
+
     #[test]
     fn persists_and_cas_transitions_a_tool_execution() {
         let database = Database::open_in_memory().expect("database");
@@ -445,9 +545,7 @@ mod tests {
         let attempt_id = GenerationAttemptId::new();
         seed_running_attempt(&database, conversation_id, turn_id, attempt_id);
         let execution = requested(conversation_id, turn_id, attempt_id, 0, "call-1");
-        let stored = database
-            .insert_tool_execution(&execution)
-            .expect("insert execution");
+        let stored = insert_one(&database, &execution).expect("insert execution");
         assert_eq!(stored, execution);
 
         let validated = database
@@ -535,25 +633,96 @@ mod tests {
         let turn_id = GenerationTurnId::new();
         let attempt_id = GenerationAttemptId::new();
         seed_running_attempt(&database, conversation_id, turn_id, attempt_id);
-        database
-            .insert_tool_execution(&requested(
-                conversation_id,
-                turn_id,
-                attempt_id,
-                0,
-                "same-call",
-            ))
-            .expect("first call");
+        insert_one(
+            &database,
+            &requested(conversation_id, turn_id, attempt_id, 0, "same-call"),
+        )
+        .expect("first call");
         assert!(matches!(
-            database.insert_tool_execution(&requested(
-                conversation_id,
-                turn_id,
-                attempt_id,
-                1,
-                "same-call",
-            )),
+            insert_one(
+                &database,
+                &requested(conversation_id, turn_id, attempt_id, 1, "same-call")
+            ),
             Err(lettuce_conversations::ConversationRepositoryError::Conflict)
         ));
+    }
+
+    #[test]
+    fn rolls_back_the_whole_tool_call_batch_on_a_collision() {
+        let database = Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("test fixture mode");
+        let conversation_id = ConversationId::new();
+        let turn_id = GenerationTurnId::new();
+        let attempt_id = GenerationAttemptId::new();
+        seed_running_attempt(&database, conversation_id, turn_id, attempt_id);
+        let existing = requested(conversation_id, turn_id, attempt_id, 0, "same-call");
+        insert_one(&database, &existing).expect("existing call");
+        let calls = vec![
+            requested(conversation_id, turn_id, attempt_id, 1, "new-call"),
+            requested(conversation_id, turn_id, attempt_id, 2, "same-call"),
+        ];
+
+        assert!(matches!(
+            database.append_tool_executions(1, &calls),
+            Err(lettuce_conversations::ConversationRepositoryError::Conflict)
+        ));
+        assert_eq!(
+            database
+                .list_tool_executions(conversation_id, turn_id, attempt_id)
+                .expect("attempt executions"),
+            vec![existing]
+        );
+    }
+
+    #[test]
+    fn continuation_rounds_compare_and_append_after_prior_calls() {
+        let database = Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("test fixture mode");
+        let conversation_id = ConversationId::new();
+        let turn_id = GenerationTurnId::new();
+        let attempt_id = GenerationAttemptId::new();
+        seed_running_attempt(&database, conversation_id, turn_id, attempt_id);
+        let first = requested(conversation_id, turn_id, attempt_id, 0, "call-1");
+        insert_one(&database, &first).expect("first round");
+        let next = vec![
+            requested(conversation_id, turn_id, attempt_id, 1, "call-2"),
+            requested(conversation_id, turn_id, attempt_id, 2, "call-3"),
+        ];
+
+        assert_eq!(
+            database
+                .append_tool_executions(1, &next)
+                .expect("continuation round"),
+            next
+        );
+        assert!(matches!(
+            database.append_tool_executions(
+                1,
+                std::slice::from_ref(&requested(
+                    conversation_id,
+                    turn_id,
+                    attempt_id,
+                    1,
+                    "stale-call",
+                )),
+            ),
+            Err(lettuce_conversations::ConversationRepositoryError::Conflict)
+        ));
+        assert_eq!(
+            database
+                .list_tool_executions(conversation_id, turn_id, attempt_id)
+                .expect("attempt executions")
+                .len(),
+            3
+        );
     }
 
     #[test]
@@ -567,7 +736,7 @@ mod tests {
             "orphan-call",
         );
         assert!(matches!(
-            database.insert_tool_execution(&execution),
+            insert_one(&database, &execution),
             Err(lettuce_conversations::ConversationRepositoryError::Conflict)
         ));
     }
@@ -600,9 +769,7 @@ mod tests {
         seed_running_attempt(&database, conversation_id, turn_id, attempt_id);
         let mut execution = requested(conversation_id, turn_id, attempt_id, 0, "call-with-replay");
         execution.provider_replay = Some(replay.clone());
-        database
-            .insert_tool_execution(&execution)
-            .expect("execution");
+        insert_one(&database, &execution).expect("execution");
         database
             .cleanup_orphan_replay(artifact_id)
             .expect("referenced cleanup is a no-op");
