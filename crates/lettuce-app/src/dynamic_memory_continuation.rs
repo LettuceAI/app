@@ -11,13 +11,14 @@ use lettuce_types::{ConversationId, TimestampMillis};
 pub const MAX_DYNAMIC_MEMORY_TOOL_ROUNDS: u8 = 4;
 pub const MAX_DYNAMIC_MEMORY_TOOL_CALLS: u16 = 64;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DynamicMemoryContinuationResult {
     Done {
         summary: Option<String>,
     },
     NextRound {
         executions: Vec<ToolExecution>,
+        continued_request: Box<InferenceRequest>,
         outcome: InferenceOutcome,
     },
     Complete {
@@ -126,6 +127,7 @@ impl<'a, R: ToolExecutionRepository + ?Sized, I: InferencePort + ?Sized>
             )?;
             return Ok(DynamicMemoryContinuationResult::NextRound {
                 executions,
+                continued_request: Box::new(request),
                 outcome,
             });
         }
