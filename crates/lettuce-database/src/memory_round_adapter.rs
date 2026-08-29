@@ -42,6 +42,15 @@ impl DynamicMemoryRoundRepository for Database {
             )
             .into());
         }
+        if commit.change.as_ref().is_some_and(|change| {
+            commit.expected_memory_revision.is_some()
+                && commit.expected_memory_revision != Some(change.expected_revision)
+        }) {
+            return Err(MemoryRepositoryError::Invalid(
+                lettuce_memory::MemoryValidationError::InvalidRevision,
+            )
+            .into());
+        }
         let mut ids = HashSet::with_capacity(commit.execution_transitions.len());
         if commit
             .execution_transitions
@@ -61,6 +70,13 @@ impl DynamicMemoryRoundRepository for Database {
             .map_err(memory_storage)?;
         let first = tool_adapter::get_in(&transaction, commit.execution_transitions[0].id)?;
         let owner = (first.conversation_id, first.turn_id, first.attempt_id);
+        let current_snapshot = memory_adapter::get_in(&transaction, commit.space_id)?
+            .ok_or(MemoryRepositoryError::NotFound)?;
+        if let Some(expected) = commit.expected_memory_revision
+            && current_snapshot.revision != expected
+        {
+            return Err(MemoryRepositoryError::Conflict.into());
+        }
         let mut executions = Vec::with_capacity(commit.execution_transitions.len());
         for transition in &commit.execution_transitions {
             let current = tool_adapter::get_in(&transaction, transition.id)?;
@@ -76,8 +92,7 @@ impl DynamicMemoryRoundRepository for Database {
         }
         let snapshot = match &commit.change {
             Some(change) => memory_adapter::compare_and_apply_in(&transaction, change)?,
-            None => memory_adapter::get_in(&transaction, commit.space_id)?
-                .ok_or(MemoryRepositoryError::NotFound)?,
+            None => current_snapshot,
         };
         transaction.commit().map_err(memory_storage)?;
         Ok(DynamicMemoryRoundCommitResult {
@@ -240,6 +255,7 @@ mod tests {
             .commit_dynamic_memory_round(
                 DynamicMemoryRoundCommit {
                     space_id,
+                    expected_memory_revision: Some(Revision::INITIAL),
                     change: Some(MemoryChangeSet {
                         space_id,
                         expected_revision: Revision::INITIAL,
@@ -278,6 +294,7 @@ mod tests {
                 .commit_dynamic_memory_round(
                     DynamicMemoryRoundCommit {
                         space_id,
+                        expected_memory_revision: Some(Revision::INITIAL),
                         change: Some(MemoryChangeSet {
                             space_id,
                             expected_revision: Revision::INITIAL,
@@ -300,5 +317,46 @@ mod tests {
                 .expect("executions"),
             running
         );
+    }
+
+    #[test]
+    fn no_op_settlement_still_checks_planned_memory_revision() {
+        let database = Database::open_in_memory().expect("database");
+        let space_id = MemorySpaceId::new();
+        database
+            .create(MemorySpaceSnapshot {
+                id: space_id,
+                revision: Revision::INITIAL,
+                items: vec![],
+            })
+            .expect("space");
+        let running = running_round(&database);
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE memory_spaces SET revision = 2 WHERE id = ?1",
+                [space_id.to_string()],
+            )
+            .expect("advance memory");
+        assert!(matches!(
+            database.commit_dynamic_memory_round(
+                DynamicMemoryRoundCommit {
+                    space_id,
+                    expected_memory_revision: Some(Revision::INITIAL),
+                    change: None,
+                    execution_transitions: terminal(&running),
+                },
+                TimestampMillis::new(4),
+            ),
+            Err(lettuce_memory::DynamicMemoryRoundCommitError::Memory(
+                lettuce_memory::MemoryRepositoryError::Conflict
+            ))
+        ));
+        assert!(running.iter().all(|execution| {
+            database
+                .get_tool_execution(execution.id)
+                .is_ok_and(|stored| stored.status == ToolExecutionStatus::Running)
+        }));
     }
 }

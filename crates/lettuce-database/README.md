@@ -75,6 +75,9 @@ stale derived rows cannot affect similarity, while unchanged projections
 survive the complete item-set CAS without rewriting their BLOBs. Repair queries
 also synthesize work for live items with no matching projection, closing the
 crash window between authoritative memory commit and derived-data persistence.
+Round settlement can also require an exact memory revision when the reducer
+produces no memory change, so concurrent memory drift cannot commit terminal
+tool outputs derived from stale prepared evidence.
 Migration 9 also stores one immutable versioned dynamic-memory preparation plan
 per generation attempt. Its digest and relational projections are checked on
 every read, while the adapter verifies the attached job, exact ordered durable

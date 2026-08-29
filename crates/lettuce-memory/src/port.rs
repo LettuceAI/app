@@ -51,6 +51,9 @@ pub trait MemoryRepository: Send + Sync {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DynamicMemoryRoundCommit {
     pub space_id: MemorySpaceId,
+    /// When present, terminal outputs settle only if authoritative memory is
+    /// still at this revision, including rounds whose reduction is a no-op.
+    pub expected_memory_revision: Option<Revision>,
     pub change: Option<MemoryChangeSet>,
     pub execution_transitions: Vec<ToolExecutionTransition>,
 }

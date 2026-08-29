@@ -136,9 +136,10 @@ impl<
             .map_err(Into::into)
     }
 
-    pub fn settle_running_round(
+    fn settle_running_round_inner(
         &self,
         space_id: MemorySpaceId,
+        expected_memory_revision: lettuce_types::Revision,
         policy: &MemoryPolicy,
         executions: &[ToolExecution],
         prepared_creates: &[PreparedMemoryCreate],
@@ -181,6 +182,7 @@ impl<
         let committed = self.repository.commit_dynamic_memory_round(
             DynamicMemoryRoundCommit {
                 space_id,
+                expected_memory_revision: Some(expected_memory_revision),
                 change: reduction.change.clone(),
                 execution_transitions,
             },
@@ -201,6 +203,52 @@ impl<
         })
     }
 
+    pub fn settle_planned_round(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: lettuce_types::GenerationTurnId,
+        attempt_id: lettuce_types::GenerationAttemptId,
+        handle: &JobHandle,
+        cached_prepared_creates: &[PreparedMemoryCreate],
+        at: TimestampMillis,
+    ) -> Result<DynamicMemoryRoundResult, DynamicMemoryCoordinatorError> {
+        let plan = self
+            .repository
+            .get_preparation_plan(conversation_id, turn_id, attempt_id)?
+            .ok_or(DynamicMemoryCoordinatorError::RestartPlanUnavailable)?;
+        if plan.job_id != handle.id() {
+            return Err(DynamicMemoryCoordinatorError::InvalidJobOwnership);
+        }
+        let executions =
+            self.repository
+                .list_tool_executions(conversation_id, turn_id, attempt_id)?;
+        validate_round(&executions, ToolExecutionStatus::Running)?;
+        if plan.execution_ids
+            != executions
+                .iter()
+                .map(|execution| execution.id)
+                .collect::<Vec<_>>()
+        {
+            return Err(DynamicMemoryCoordinatorError::InvalidRestartPlan);
+        }
+        let snapshot = self
+            .repository
+            .get(plan.space_id)?
+            .ok_or(MemoryRepositoryError::NotFound)?;
+        if snapshot.revision != plan.expected_memory_revision {
+            return Err(DynamicMemoryCoordinatorError::InvalidRestartPlan);
+        }
+        let prepared = prepared_from_plan(&plan, cached_prepared_creates)?;
+        self.settle_running_round_inner(
+            plan.space_id,
+            plan.expected_memory_revision,
+            &plan.policy,
+            &executions,
+            &prepared,
+            at,
+        )
+    }
+
     pub fn fail_running_round(
         &self,
         space_id: MemorySpaceId,
@@ -213,6 +261,7 @@ impl<
             .commit_dynamic_memory_round(
                 DynamicMemoryRoundCommit {
                     space_id,
+                    expected_memory_revision: None,
                     change: None,
                     execution_transitions: executions
                         .iter()
@@ -295,6 +344,91 @@ impl<
                 at,
             )
             .map_err(Into::into)
+    }
+}
+
+const fn embedding_dimensions(value: u16) -> Option<EmbeddingDimensions> {
+    match value {
+        64 => Some(EmbeddingDimensions::D64),
+        128 => Some(EmbeddingDimensions::D128),
+        256 => Some(EmbeddingDimensions::D256),
+        512 => Some(EmbeddingDimensions::D512),
+        768 => Some(EmbeddingDimensions::D768),
+        _ => None,
+    }
+}
+
+fn prepared_from_plan(
+    plan: &DynamicMemoryPreparationPlan,
+    cached: &[PreparedMemoryCreate],
+) -> Result<Vec<PreparedMemoryCreate>, DynamicMemoryCoordinatorError> {
+    let cached_count = cached.len();
+    let mut cached = cached
+        .iter()
+        .map(|prepared| (prepared.execution_id, prepared))
+        .collect::<HashMap<_, _>>();
+    if cached.len() != cached_count {
+        return Err(DynamicMemoryCoordinatorError::InvalidRestartPlan);
+    }
+    let prepared = plan
+        .creates
+        .iter()
+        .map(|create| {
+            let dimensions = embedding_dimensions(create.embedding_dimensions)
+                .ok_or(DynamicMemoryCoordinatorError::InvalidRestartPlan)?;
+            if let Some(cached) = cached.remove(&create.execution_id) {
+                if cached.preparation != create.preparation
+                    || !cached.projection.as_ref().is_some_and(|projection| {
+                        projection_matches_plan(projection, plan.space_id, create, dimensions)
+                    })
+                {
+                    return Err(DynamicMemoryCoordinatorError::InvalidRestartPlan);
+                }
+                return Ok(cached.clone());
+            }
+            Ok(PreparedMemoryCreate {
+                execution_id: create.execution_id,
+                preparation: create.preparation.clone(),
+                projection: Some(PreparedMemoryProjection::RepairNeeded(
+                    MemoryEmbeddingRepair {
+                        space_id: plan.space_id,
+                        memory_id: create.preparation.id,
+                        source_text: create.source_text.clone(),
+                        source_revision: create.embedding_source_revision.clone(),
+                        dimensions,
+                        updated_at: create.preparation.created_at,
+                    },
+                )),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if !cached.is_empty() {
+        return Err(DynamicMemoryCoordinatorError::InvalidRestartPlan);
+    }
+    Ok(prepared)
+}
+
+fn projection_matches_plan(
+    projection: &PreparedMemoryProjection,
+    space_id: MemorySpaceId,
+    create: &PersistedMemoryCreatePreparation,
+    dimensions: EmbeddingDimensions,
+) -> bool {
+    match projection {
+        PreparedMemoryProjection::Ready(projection) => {
+            projection.space_id == space_id
+                && projection.memory_id == create.preparation.id
+                && projection.source_text == create.source_text
+                && projection.vector.source_revision == create.embedding_source_revision
+                && projection.dimensions == dimensions
+        }
+        PreparedMemoryProjection::RepairNeeded(repair) => {
+            repair.space_id == space_id
+                && repair.memory_id == create.preparation.id
+                && repair.source_text == create.source_text
+                && repair.source_revision == create.embedding_source_revision
+                && repair.dimensions == dimensions
+        }
     }
 }
 
@@ -827,8 +961,9 @@ mod tests {
         ResourceClass, WorkerId, handle::CancellationToken, handle::JobHandle,
     };
     use lettuce_memory::{
-        CreateMemoryPreparation, MemoryCategory, MemoryItem, MemoryPolicy, MemoryRepository,
-        MemorySpaceSnapshot, MemoryToolOutcome, Score, dynamic_memory_tool_request,
+        CreateMemoryPreparation, DynamicMemoryPreparationPlan, MemoryCategory, MemoryItem,
+        MemoryPolicy, MemoryRepository, MemorySpaceSnapshot, MemoryToolOutcome,
+        PersistedMemoryCreatePreparation, Score, dynamic_memory_tool_request,
     };
     use lettuce_types::{
         ConversationId, GenerationAttemptId, GenerationTurnId, JobId, MemoryId, MemorySpaceId,
@@ -838,7 +973,8 @@ mod tests {
 
     use super::{
         DynamicMemoryCreatePreparer, DynamicMemoryHandlerError, DynamicMemoryPreparationError,
-        DynamicMemoryRecovery, MemoryCreateSeed, PreparedMemoryCreate, classify_recovery,
+        DynamicMemoryRecovery, MemoryCreateSeed, PreparedMemoryCreate, PreparedMemoryProjection,
+        classify_recovery, prepared_from_plan,
     };
     use crate::{AppBackend, EmbeddingGenerationError, MemoryEmbeddingEngine};
 
@@ -1357,5 +1493,73 @@ mod tests {
                 executions: vec![terminal]
             }
         );
+    }
+
+    #[test]
+    fn planned_settlement_accepts_only_matching_cached_projection() {
+        let execution = running_execution(
+            owner(),
+            0,
+            "create_memory",
+            json!({"text": "Mira prefers tea", "category": "preference"}),
+        );
+        let space_id = MemorySpaceId::new();
+        let preparation = CreateMemoryPreparation {
+            id: MemoryId::new(),
+            token_count: 4,
+            created_at: TimestampMillis::new(4),
+            semantic_duplicate: None,
+        };
+        let plan = DynamicMemoryPreparationPlan {
+            conversation_id: execution.conversation_id,
+            turn_id: execution.turn_id,
+            attempt_id: execution.attempt_id,
+            job_id: JobId::new(),
+            space_id,
+            expected_memory_revision: Revision::INITIAL,
+            policy: policy(),
+            duplicate_threshold: score(9_000),
+            execution_ids: vec![execution.id],
+            creates: vec![PersistedMemoryCreatePreparation {
+                execution_id: execution.id,
+                source_text: "Mira prefers tea".to_owned(),
+                preparation: preparation.clone(),
+                embedding_source_revision: "v4-test".to_owned(),
+                embedding_dimensions: 128,
+            }],
+        };
+        let cached = PreparedMemoryCreate {
+            execution_id: execution.id,
+            preparation,
+            projection: Some(PreparedMemoryProjection::Ready(MemoryEmbeddingProjection {
+                space_id,
+                memory_id: plan.creates[0].preparation.id,
+                source_text: "Mira prefers tea".to_owned(),
+                vector: EmbeddingVector {
+                    source_revision: "v4-test".to_owned(),
+                    values: vec![0.0; 128],
+                },
+                dimensions: EmbeddingDimensions::D128,
+                updated_at: TimestampMillis::new(4),
+            })),
+        };
+        assert!(matches!(
+            prepared_from_plan(&plan, std::slice::from_ref(&cached)),
+            Ok(prepared)
+                if matches!(prepared[0].projection, Some(PreparedMemoryProjection::Ready(_)))
+        ));
+        assert!(matches!(
+            prepared_from_plan(&plan, &[]),
+            Ok(prepared)
+                if matches!(prepared[0].projection, Some(PreparedMemoryProjection::RepairNeeded(_)))
+        ));
+        let mut changed = cached;
+        if let Some(PreparedMemoryProjection::Ready(projection)) = &mut changed.projection {
+            projection.vector.source_revision = "different".to_owned();
+        }
+        assert!(matches!(
+            prepared_from_plan(&plan, &[changed]),
+            Err(super::DynamicMemoryCoordinatorError::InvalidRestartPlan)
+        ));
     }
 }

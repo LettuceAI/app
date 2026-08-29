@@ -49,6 +49,13 @@ evidence, source text, embedding source/dimensions, policy, memory revision,
 and attempt/job ownership are all bound together.
 
 The durable coordinator starts every validated execution with one batch CAS.
+Production settlement reloads the immutable plan and exact running executions;
+caller-supplied policies or preparations cannot bypass that boundary. It uses
+the planned memory revision and policy, reconstructs create preparation and
+repair metadata without rerunning ONNX or semantic search, then reduces once.
+A same-process ready projection may be reused only when every identity, source,
+dimension, and preparation field matches the plan; otherwise recovery records
+repair work instead of trusting caller data.
 For a successful handler round, the optional memory-space CAS and every exact
 typed terminal output commit in one SQLite transaction; a stale execution or
 memory revision rolls back both sides. Handler-level failure can likewise fail

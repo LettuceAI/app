@@ -34,8 +34,10 @@ target exists in its current snapshot.
 The SQLite `MemoryRepository` implementation and first admitted-round
 application handler are now wired through `lettuce-database` and `lettuce-app`.
 The domain-owned cross-aggregate commit port carries one optional memory change
-plus a complete terminal tool-transition batch. Infrastructure must commit both
-or neither; orchestration and provider continuation remain application-owned.
+plus an optional planned-memory revision and a complete terminal
+tool-transition batch. Infrastructure must check that revision even for a
+no-op reduction and commit both sides or neither; orchestration and provider
+continuation remain application-owned.
 The domain also owns an immutable dynamic-memory preparation-plan port. A plan
 captures its attempt/job and memory revision, policy and duplicate threshold,
 ordered execution IDs, and every create seed, exact source text, embedding
