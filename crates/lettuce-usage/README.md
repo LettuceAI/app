@@ -10,4 +10,10 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
-Foundation scaffolding is active. Implement behavior with tests before exposing new public APIs, and keep compatibility code at explicit application or migration boundaries.
+The first domain port records one immutable terminal text-inference event. An
+exact retry for the same generation attempt returns the original event while
+changed counters, outcome, provenance, or timestamp conflict. Provider-missing
+counters remain an explicit unavailable reason; the ledger never invents zero
+usage. SQLite persistence lives in `lettuce-database`. Pricing snapshots, cost
+calculation, adjustments, summaries, and non-text modalities remain later
+slices.

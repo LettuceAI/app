@@ -94,6 +94,13 @@ Possession of `Database` is a trusted application-composition capability: ordina
 conversation repositories and DTOs expose artifact references only and cannot
 export protected bytes. Trusted transfer remains a separate composition-only
 capability.
+
+Migration 10 owns the append-only usage ledger. The adapter derives conversation
+ownership from the durable generation attempt, records known token counters or
+one explicit unavailable reason with immutable model/provider revisions, and
+implements the conversation `UsagePort`. Exact retries for one attempt return
+the original usage ID; changed evidence conflicts, and SQL triggers reject
+updates or deletes.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

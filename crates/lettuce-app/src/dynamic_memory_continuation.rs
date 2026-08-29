@@ -167,6 +167,7 @@ impl<'a, R: ToolExecutionRepository + ?Sized, I: InferencePort + ?Sized>
         handle: &JobHandle,
         mut request: InferenceRequest,
         initial_settled_round: Vec<ToolExecution>,
+        mut outcomes: Vec<InferenceOutcome>,
         mut completed_rounds: u8,
         mut total_tool_calls: u16,
         at: TimestampMillis,
@@ -183,7 +184,6 @@ impl<'a, R: ToolExecutionRepository + ?Sized, I: InferencePort + ?Sized>
         >,
     {
         let mut settled_round = initial_settled_round;
-        let mut outcomes = Vec::new();
         loop {
             match self
                 .continue_after_settled_round(
@@ -243,6 +243,37 @@ impl<'a, R: ToolExecutionRepository + ?Sized, I: InferencePort + ?Sized>
             }
         }
     }
+}
+
+pub fn aggregate_inference_usage(
+    outcomes: &[InferenceOutcome],
+) -> Result<lettuce_conversations::UsageCounters, DynamicMemoryContinuationError> {
+    if outcomes.is_empty() {
+        return Ok(lettuce_conversations::UsageCounters::Unavailable(
+            lettuce_conversations::UsageUnavailableReason::NotAdmitted,
+        ));
+    }
+    let mut input_tokens = 0u64;
+    let mut output_tokens = 0u64;
+    for outcome in outcomes {
+        let Some(usage) = &outcome.usage else {
+            return Ok(lettuce_conversations::UsageCounters::Unavailable(
+                lettuce_conversations::UsageUnavailableReason::ProviderOmitted,
+            ));
+        };
+        input_tokens = input_tokens
+            .checked_add(usage.input_tokens)
+            .ok_or(DynamicMemoryContinuationError::UsageOverflow)?;
+        output_tokens = output_tokens
+            .checked_add(usage.output_tokens)
+            .ok_or(DynamicMemoryContinuationError::UsageOverflow)?;
+    }
+    Ok(lettuce_conversations::UsageCounters::Known(
+        lettuce_conversations::InferenceUsage {
+            input_tokens,
+            output_tokens,
+        },
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -353,6 +384,8 @@ pub enum DynamicMemoryContinuationError {
     InvalidDoneResult,
     #[error("dynamic-memory continuation handler returned an invalid settled round")]
     InvalidSettledRound,
+    #[error("dynamic-memory continuation usage counters overflowed")]
+    UsageOverflow,
     #[error("dynamic-memory continuation contract is invalid: {0}")]
     Validation(#[from] lettuce_conversations::ValidationError),
     #[error("dynamic-memory continuation inference failed: {0}")]
@@ -497,5 +530,47 @@ mod tests {
     fn continuation_limits_are_small_and_explicit() {
         assert_eq!(MAX_DYNAMIC_MEMORY_TOOL_ROUNDS, 4);
         assert_eq!(MAX_DYNAMIC_MEMORY_TOOL_CALLS, 64);
+    }
+
+    #[test]
+    fn usage_aggregation_never_invents_missing_provider_counters() {
+        let outcome = |usage| InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: vec![MessagePart::Text {
+                    text: "ok".to_owned(),
+                }],
+                tool_calls: vec![],
+                provider_replay: None,
+            }],
+            usage,
+            finish_reason: FinishReason::Stop,
+            provider_finish_reason: None,
+            provider_request_id: None,
+            warning_codes: vec![],
+        };
+        assert_eq!(
+            aggregate_inference_usage(&[
+                outcome(Some(InferenceUsage {
+                    input_tokens: 10,
+                    output_tokens: 2,
+                })),
+                outcome(Some(InferenceUsage {
+                    input_tokens: 7,
+                    output_tokens: 3,
+                })),
+            ])
+            .expect("aggregate"),
+            lettuce_conversations::UsageCounters::Known(InferenceUsage {
+                input_tokens: 17,
+                output_tokens: 5,
+            })
+        );
+        assert_eq!(
+            aggregate_inference_usage(&[outcome(None)]).expect("unavailable"),
+            lettuce_conversations::UsageCounters::Unavailable(
+                lettuce_conversations::UsageUnavailableReason::ProviderOmitted
+            )
+        );
     }
 }

@@ -1,7 +1,31 @@
-//! Usage ledger, pricing snapshots, and cost calculation.
-//!
-//! The intended ownership, boundaries, migration path, and acceptance gates are
-//! specified in the crate PLAN.md. This crate starts behavior-empty so the
-//! legacy monolith cannot leak in through premature compatibility APIs.
+//! Immutable usage ledger contracts. Pricing and cost calculation follow in
+//! later slices without changing recorded provider evidence.
 
 #![deny(unsafe_op_in_unsafe_fn)]
+
+use lettuce_conversations::UsageRecord;
+use lettuce_types::UsageEventId;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsageEvent {
+    pub id: UsageEventId,
+    pub record: UsageRecord,
+}
+
+pub trait UsageLedger: Send + Sync {
+    /// Appends one immutable terminal event. An exact retry for the same
+    /// turn/attempt returns the original event; changed evidence conflicts.
+    fn record(&self, record: UsageRecord) -> Result<UsageEvent, UsageLedgerError>;
+
+    fn get(&self, id: UsageEventId) -> Result<Option<UsageEvent>, UsageLedgerError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum UsageLedgerError {
+    #[error("usage event is invalid")]
+    Invalid,
+    #[error("usage event conflicts with immutable evidence")]
+    Conflict,
+    #[error("usage ledger storage failed")]
+    Storage,
+}

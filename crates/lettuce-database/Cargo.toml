@@ -14,6 +14,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+async-trait.workspace = true
 blake3.workspace = true
 lettuce-context.workspace = true
 lettuce-conversations.workspace = true
@@ -25,6 +26,7 @@ lettuce-memory.workspace = true
 lettuce-models.workspace = true
 lettuce-settings.workspace = true
 lettuce-types.workspace = true
+lettuce-usage.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true

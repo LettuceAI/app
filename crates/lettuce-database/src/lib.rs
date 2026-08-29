@@ -18,6 +18,7 @@ mod memory_round_adapter;
 mod persona_adapter;
 mod prompt_adapter;
 mod tool_adapter;
+mod usage_adapter;
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
 
@@ -83,6 +84,11 @@ const MIGRATION_8: Migration = Migration {
 const MIGRATION_9: Migration = Migration {
     id: 9,
     sql: include_str!("../migrations/0009_memory.sql"),
+};
+
+const MIGRATION_10: Migration = Migration {
+    id: 10,
+    sql: include_str!("../migrations/0010_usage.sql"),
 };
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -181,6 +187,7 @@ impl Database {
                 MIGRATION_7,
                 MIGRATION_8,
                 MIGRATION_9,
+                MIGRATION_10,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -204,6 +211,7 @@ impl Database {
                 MIGRATION_7,
                 MIGRATION_8,
                 MIGRATION_9,
+                MIGRATION_10,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -1682,7 +1690,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 9);
+        assert_eq!(count, 10);
 
         let changed = Migration {
             id: 1,
@@ -1753,7 +1761,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            10
         );
         let conversation_tables: i64 = connection
             .query_row(
@@ -1976,7 +1984,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            10
         );
         for column in [
             "target_kind",
@@ -3332,7 +3340,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            10
         );
         drop(connection);
         drop(database);
@@ -3382,7 +3390,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            10
         );
         drop(connection);
         drop(database);
@@ -3414,7 +3422,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(migration_count, 9);
+        assert_eq!(migration_count, 10);
         for table in [
             "groups",
             "group_members",
@@ -3463,7 +3471,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 9);
+        assert_eq!(count, 10);
         for table in [
             "prompt_documents",
             "prompt_entries",
@@ -3491,7 +3499,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            10
         );
         drop(connection);
         drop(reopened);
@@ -3527,7 +3535,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            10
         );
         let column: i64 = connection
             .query_row(
@@ -3554,7 +3562,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            10
         );
         drop(connection);
         drop(reopened);
@@ -3603,7 +3611,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            9
+            10
         );
         drop(connection);
         drop(database);
@@ -3790,6 +3798,7 @@ mod tests {
                 "starter_messages",
                 "tool_executions",
                 "turn_lorebooks",
+                "usage_events",
             ]
         );
     }
