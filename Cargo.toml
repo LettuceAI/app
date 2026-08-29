@@ -66,3 +66,5 @@ unicode-normalization = "0.1"
 zeroize = "1"
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "backup"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots"] }
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dynamic", "half", "ndarray"] }
+tokenizers = { version = "0.20", default-features = false, features = ["unstable_wasm"] }

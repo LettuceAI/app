@@ -13,5 +13,5 @@ pub use port::{MemoryChangeSet, MemoryRepository, MemoryRepositoryError};
 pub use tool::{
     CreateMemoryPreparation, MemoryBatchResult, MemoryToolArguments, MemoryToolCall,
     MemoryToolError, MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
-    SoftDeleteReason, dynamic_memory_tool_request,
+    SemanticDuplicateEvidence, SoftDeleteReason, dynamic_memory_tool_request,
 };

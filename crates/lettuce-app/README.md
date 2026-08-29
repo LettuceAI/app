@@ -30,6 +30,12 @@ snapshot, and compare-and-applies at most one change. It returns ordered typed
 provider-neutral outputs for the conversation coordinator to settle durably;
 continuation and job recovery remain later coordinator work.
 
+The composition layer can also verify an installed embedding manifest through
+`lettuce-model-hub`, load one serialized ONNX embedding runtime, and execute
+request-scoped inference with a `lettuce-jobs` cancellation token. Hosts remain
+responsible for scheduling this synchronous CPU/model-load work on the job
+worker rather than a UI or async-runtime thread.
+
 ## Bundled prompts
 
 The app owns the closed, versioned built-in prompt catalog in

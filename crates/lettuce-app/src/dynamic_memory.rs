@@ -10,7 +10,7 @@ use lettuce_types::{MemorySpaceId, ToolExecutionId};
 
 const TOOL_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedMemoryCreate {
     pub execution_id: ToolExecutionId,
     pub preparation: CreateMemoryPreparation,
@@ -85,7 +85,7 @@ fn prepare_calls(
     let mut execution_ids = HashSet::with_capacity(executions.len());
     let mut preparations = prepared_creates
         .iter()
-        .map(|prepared| (prepared.execution_id, prepared.preparation))
+        .map(|prepared| (prepared.execution_id, prepared.preparation.clone()))
         .collect::<HashMap<_, _>>();
     if preparations.len() != prepared_creates.len() {
         return Err(DynamicMemoryHandlerError::DuplicatePreparation);
@@ -283,7 +283,7 @@ mod tests {
                         id: memory_id,
                         token_count: 4,
                         created_at: TimestampMillis::new(4),
-                        semantic_duplicate_of: None,
+                        semantic_duplicate: None,
                     },
                 }],
             )

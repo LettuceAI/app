@@ -12,4 +12,11 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
-Foundation scaffolding is active. Implement behavior with tests before exposing new public APIs, and keep compatibility code at explicit application or migration boundaries.
+The first installed-artifact contract verifies the Lettuce embedding v4 model
+and tokenizer as regular bounded files against an immutable source identity,
+byte size, and BLAKE3 digest before exposing runtime paths. The legacy download
+used an unpinned Hugging Face `main` URL; new installs must persist an immutable
+revision and verified hashes instead of treating filenames as identity.
+The audited v4 upstream revision is
+`8fe12dc548f75865bfb120593fd5a514e9186ca0`; its model config declares 2,048
+trained positions and 768 native dimensions.

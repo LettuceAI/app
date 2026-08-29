@@ -223,15 +223,34 @@ fn parse_id(
         .map_err(|_| MemoryToolError::InvalidField(key))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateMemoryPreparation {
     pub id: MemoryId,
     pub token_count: u32,
     pub created_at: TimestampMillis,
-    /// Optional semantic duplicate evidence supplied by a pinned embedding
-    /// policy. The reducer verifies that the referenced item is still present.
-    pub semantic_duplicate_of: Option<MemoryId>,
+    /// Optional qualified evidence supplied by the embedding coordinator. The
+    /// reducer verifies both its policy qualification and live target.
+    pub semantic_duplicate: Option<SemanticDuplicateEvidence>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SemanticDuplicateEvidence {
+    pub existing_id: MemoryId,
+    pub source_revision: String,
+    pub dimensions: u16,
+    pub cosine_score: Score,
+    pub threshold: Score,
+}
+
+impl SemanticDuplicateEvidence {
+    fn is_qualified(&self) -> bool {
+        !self.source_revision.trim().is_empty()
+            && self.source_revision.len() <= 128
+            && matches!(self.dimensions, 64 | 128 | 256 | 512 | 768)
+            && self.cosine_score >= self.threshold
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -254,6 +273,7 @@ pub enum SoftDeleteReason {
 pub enum MemoryToolRejection {
     CreateNotPrepared,
     PreparedIdAlreadyExists,
+    InvalidSemanticDuplicateEvidence,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -336,7 +356,7 @@ impl MemoryToolReducer {
                         text,
                         category,
                         important,
-                    } => apply_create(&mut items, text, *category, *important, call.create),
+                    } => apply_create(&mut items, text, *category, *important, call.create.clone()),
                     MemoryToolArguments::DeleteMemory { id, confidence } => apply_delete(
                         &mut items,
                         *id,
@@ -399,7 +419,16 @@ fn apply_create(
             reason: MemoryToolRejection::PreparedIdAlreadyExists,
         };
     }
-    if let Some(existing_id) = duplicate_id(text, preparation.semantic_duplicate_of, items) {
+    if preparation
+        .semantic_duplicate
+        .as_ref()
+        .is_some_and(|evidence| !evidence.is_qualified())
+    {
+        return MemoryToolOutcome::Rejected {
+            reason: MemoryToolRejection::InvalidSemanticDuplicateEvidence,
+        };
+    }
+    if let Some(existing_id) = duplicate_id(text, preparation.semantic_duplicate.as_ref(), items) {
         return MemoryToolOutcome::DuplicateSkipped { existing_id };
     }
 
@@ -423,12 +452,12 @@ fn apply_create(
 
 fn duplicate_id(
     candidate: &str,
-    semantic_duplicate_of: Option<MemoryId>,
+    semantic_duplicate: Option<&SemanticDuplicateEvidence>,
     items: &[MemoryItem],
 ) -> Option<MemoryId> {
-    if let Some(id) = semantic_duplicate_of {
-        if items.iter().any(|item| item.id == id) {
-            return Some(id);
+    if let Some(evidence) = semantic_duplicate {
+        if items.iter().any(|item| item.id == evidence.existing_id) {
+            return Some(evidence.existing_id);
         }
     }
     let normalized_candidate = normalize_text(candidate);
@@ -741,7 +770,7 @@ mod tests {
             id: create_id,
             token_count: 5,
             created_at: TimestampMillis::new(2),
-            semantic_duplicate_of: None,
+            semantic_duplicate: None,
         });
         let result = MemoryToolReducer.reduce(&state, &policy(), &[first]);
         let result = match result {
@@ -763,10 +792,50 @@ mod tests {
             id: MemoryId::new(),
             token_count: 5,
             created_at: TimestampMillis::new(2),
-            semantic_duplicate_of: Some(existing_id),
+            semantic_duplicate: Some(super::SemanticDuplicateEvidence {
+                existing_id,
+                source_revision: "v4-test".to_owned(),
+                dimensions: 768,
+                cosine_score: score(9_500),
+                threshold: score(9_000),
+            }),
         });
         let result = MemoryToolReducer.reduce(&state, &policy(), &[semantic]);
         assert!(result.is_ok_and(|result| result.change.is_none()));
+    }
+
+    #[test]
+    fn create_rejects_unqualified_semantic_duplicate_evidence() {
+        let existing = item("existing", 4, 1, false);
+        let mut create = call(MemoryToolArguments::CreateMemory {
+            text: "different memory".to_owned(),
+            category: MemoryCategory::Other,
+            important: false,
+        });
+        create.create = Some(CreateMemoryPreparation {
+            id: MemoryId::new(),
+            token_count: 3,
+            created_at: TimestampMillis::new(2),
+            semantic_duplicate: Some(super::SemanticDuplicateEvidence {
+                existing_id: existing.id,
+                source_revision: "v4-test".to_owned(),
+                dimensions: 768,
+                cosine_score: score(8_000),
+                threshold: score(9_000),
+            }),
+        });
+        let result = match MemoryToolReducer.reduce(&snapshot(vec![existing]), &policy(), &[create])
+        {
+            Ok(result) => result,
+            Err(error) => panic!("reduction failed: {error}"),
+        };
+        assert!(matches!(
+            result.results[0].outcome,
+            MemoryToolOutcome::Rejected {
+                reason: super::MemoryToolRejection::InvalidSemanticDuplicateEvidence
+            }
+        ));
+        assert!(result.change.is_none());
     }
 
     #[test]

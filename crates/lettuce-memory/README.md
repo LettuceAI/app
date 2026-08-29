@@ -26,6 +26,10 @@ supersession, provider-driven category repair, repository SQL, ONNX embedding
 inference, and UI events remain later slices. ONNX runtime ownership belongs in
 `lettuce-embeddings`; this crate consumes typed duplicate evidence through the
 application coordinator.
+Semantic duplicate hints are qualified typed evidence: stable target ID,
+embedding source revision, supported dimension count, cosine score, and applied
+threshold. The reducer rejects unqualified evidence and still verifies that the
+target exists in its current snapshot.
 
 The SQLite `MemoryRepository` implementation and first admitted-round
 application handler are now wired through `lettuce-database` and `lettuce-app`.
