@@ -121,6 +121,10 @@ insert transaction and records a separate strongly referenced immutable
 character receipt. Character root, scenes, and receipt commit together; a
 failed graph insert or duplicate destination leaves neither partial children
 nor a receipt.
+Confirmed new-lorebook apply shares the complete lorebook aggregate insert
+transaction and adds a strongly referenced immutable lorebook receipt. Root,
+ordered entries, and receipt are one commit; exact retries never regenerate
+entry identities.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

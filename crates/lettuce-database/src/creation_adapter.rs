@@ -5,18 +5,23 @@ use lettuce_characters::{
     CharacterProvenance, CreateCharacterPlan, Persona, PersonaDraftUpdate,
     RepositoryError as AuthoredRepositoryError, Scene, SceneDocumentV1, SceneOwner, ScenePart,
 };
+use lettuce_context::{
+    DetectionPolicy, KeywordMatchMode, LifecycleStatus as LorebookLifecycleStatus, Lorebook,
+    LorebookBehaviorVersion, LorebookDetails, LorebookEntry, LorebookRepositoryError,
+};
 use lettuce_creation::{
-    AdmittedCreationToolCall, ConfirmedCharacterApply, ConfirmedPersonaApply,
-    ConfirmedPersonaRevisionApply, CreationApplyReceipt, CreationApplyRepository,
-    CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptRecovery,
-    CreationAttemptRepository, CreationAttemptStatus, CreationAttemptSuccess,
-    CreationAttemptSuccessSettlement, CreationCharacterApplyReceipt, CreationInferenceAttempt,
-    CreationInferenceRound, CreationOperationOutcome, CreationProposal, CreationRepositoryError,
-    CreationRoundFinishReason, CreationStage, CreationTarget, CreationTargetKind,
-    CreationToolCallEvidence, CreationTurn, CreationTurnAttemptAdmission, CreationWorkflow,
-    CreationWorkflowRepository, NewCreationAttempt, NewCreationAttemptRecovery,
-    NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt, NewCreationWorkflow,
-    creation_tool_request, reduce_creation_tool_calls, validate_creation_tool_calls,
+    AdmittedCreationToolCall, ConfirmedCharacterApply, ConfirmedLorebookApply,
+    ConfirmedPersonaApply, ConfirmedPersonaRevisionApply, CreationApplyReceipt,
+    CreationApplyRepository, CreationAttemptFailureCode, CreationAttemptOwner,
+    CreationAttemptRecovery, CreationAttemptRepository, CreationAttemptStatus,
+    CreationAttemptSuccess, CreationAttemptSuccessSettlement, CreationCharacterApplyReceipt,
+    CreationInferenceAttempt, CreationInferenceRound, CreationLorebookApplyReceipt,
+    CreationOperationOutcome, CreationProposal, CreationRepositoryError, CreationRoundFinishReason,
+    CreationStage, CreationTarget, CreationTargetKind, CreationToolCallEvidence, CreationTurn,
+    CreationTurnAttemptAdmission, CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt,
+    NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt,
+    NewCreationWorkflow, creation_tool_request, reduce_creation_tool_calls,
+    validate_creation_tool_calls,
 };
 use lettuce_types::{
     CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, JobId, Revision,
@@ -151,6 +156,17 @@ fn authored_error(error: AuthoredRepositoryError) -> CreationRepositoryError {
     }
 }
 
+fn lorebook_error(error: LorebookRepositoryError) -> CreationRepositoryError {
+    match error {
+        LorebookRepositoryError::NotFound | LorebookRepositoryError::EntryNotFound => {
+            CreationRepositoryError::NotFound
+        }
+        LorebookRepositoryError::Conflict => CreationRepositoryError::Conflict,
+        LorebookRepositoryError::Invalid(_) => CreationRepositoryError::Invalid,
+        LorebookRepositoryError::Failure(_) => CreationRepositoryError::Storage,
+    }
+}
+
 fn load_apply_receipt(
     connection: &Connection,
     workflow_id: CreationWorkflowId,
@@ -236,6 +252,52 @@ fn insert_character_apply_receipt(
                 receipt.proposal_id.to_string(),
                 receipt.character_id.to_string(),
                 sql_u64(receipt.character_revision.get())?,
+                receipt.applied_at.get(),
+            ],
+        )
+        .map_err(storage)?;
+    Ok(())
+}
+
+fn load_lorebook_apply_receipt(
+    connection: &Connection,
+    workflow_id: CreationWorkflowId,
+) -> Result<Option<CreationLorebookApplyReceipt>, CreationRepositoryError> {
+    connection
+        .query_row(
+            "SELECT workflow_revision,proposal_id,lorebook_id,lorebook_revision,applied_at \
+             FROM creation_lorebook_apply_receipts WHERE workflow_id=?1",
+            [workflow_id.to_string()],
+            |row| {
+                Ok(CreationLorebookApplyReceipt {
+                    workflow_id,
+                    workflow_revision: revision(row.get(0)?)?,
+                    proposal_id: parse_id(row.get(1)?)?,
+                    lorebook_id: parse_id(row.get(2)?)?,
+                    lorebook_revision: revision(row.get(3)?)?,
+                    applied_at: TimestampMillis::new(row.get(4)?),
+                })
+            },
+        )
+        .optional()
+        .map_err(storage)
+}
+
+fn insert_lorebook_apply_receipt(
+    transaction: &Transaction<'_>,
+    receipt: &CreationLorebookApplyReceipt,
+) -> Result<(), CreationRepositoryError> {
+    transaction
+        .execute(
+            "INSERT INTO creation_lorebook_apply_receipts \
+             (workflow_id,workflow_revision,proposal_id,lorebook_id,lorebook_revision,applied_at) \
+             VALUES (?1,?2,?3,?4,?5,?6)",
+            params![
+                receipt.workflow_id.to_string(),
+                sql_u64(receipt.workflow_revision.get())?,
+                receipt.proposal_id.to_string(),
+                receipt.lorebook_id.to_string(),
+                sql_u64(receipt.lorebook_revision.get())?,
                 receipt.applied_at.get(),
             ],
         )
@@ -821,6 +883,99 @@ impl CreationApplyRepository for Database {
             applied_at: request.now,
         };
         insert_character_apply_receipt(&transaction, &receipt)?;
+        transaction.commit().map_err(storage)?;
+        Ok(receipt)
+    }
+
+    fn apply_new_lorebook(
+        &self,
+        request: ConfirmedLorebookApply,
+    ) -> Result<CreationLorebookApplyReceipt, CreationRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        if let Some(receipt) = load_lorebook_apply_receipt(&transaction, request.workflow_id)? {
+            let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+            if workflow.target == CreationTarget::NewLorebook
+                && receipt.workflow_revision == request.expected_workflow_revision
+                && receipt.proposal_id == request.proposal_id
+                && receipt.lorebook_id == request.destination_lorebook_id
+            {
+                transaction.commit().map_err(storage)?;
+                return Ok(receipt);
+            }
+            return Err(CreationRepositoryError::Conflict);
+        }
+
+        let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+        if workflow.target != CreationTarget::NewLorebook
+            || workflow.stage != CreationStage::AwaitingConfirmation
+            || workflow.revision != request.expected_workflow_revision
+            || workflow.current_proposal_id != request.proposal_id
+            || request.now.get() < workflow.updated_at.get()
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let proposal = load_proposal_conn(&transaction, request.proposal_id)?;
+        let (Some(name), draft_entries) = (match proposal.draft {
+            lettuce_creation::CreationDraft::Lorebook {
+                name,
+                description: _,
+                entries,
+            } => (name, entries),
+            _ => return Err(CreationRepositoryError::Conflict),
+        }) else {
+            return Err(CreationRepositoryError::Invalid);
+        };
+        let entries = draft_entries
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, draft)| {
+                Ok(LorebookEntry {
+                    id: draft.id,
+                    lorebook_id: request.destination_lorebook_id,
+                    title: draft.title,
+                    enabled: true,
+                    always_active: true,
+                    keywords: Vec::new(),
+                    case_sensitive: false,
+                    match_mode: KeywordMatchMode::Literal,
+                    content: draft.content,
+                    priority: 0,
+                    ordinal: u32::try_from(ordinal)
+                        .map_err(|_| CreationRepositoryError::Invalid)?,
+                    revision: Revision::INITIAL,
+                    created_at: request.now,
+                    updated_at: request.now,
+                })
+            })
+            .collect::<Result<Vec<_>, CreationRepositoryError>>()?;
+        let details = LorebookDetails {
+            book: Lorebook {
+                id: request.destination_lorebook_id,
+                status: LorebookLifecycleStatus::Active,
+                name,
+                detection_policy: DetectionPolicy::RecentMessageWindow,
+                icon_asset_id: None,
+                behavior_version: LorebookBehaviorVersion::LegacyV1,
+                revision: Revision::INITIAL,
+                created_at: request.now,
+                updated_at: request.now,
+            },
+            entries,
+        };
+        let details = crate::lorebook_adapter::insert_lorebook_details(&transaction, &details)
+            .map_err(lorebook_error)?;
+        let receipt = CreationLorebookApplyReceipt {
+            workflow_id: request.workflow_id,
+            workflow_revision: request.expected_workflow_revision,
+            proposal_id: request.proposal_id,
+            lorebook_id: details.book.id,
+            lorebook_revision: details.book.revision,
+            applied_at: request.now,
+        };
+        insert_lorebook_apply_receipt(&transaction, &receipt)?;
         transaction.commit().map_err(storage)?;
         Ok(receipt)
     }
@@ -1902,18 +2057,19 @@ mod tests {
         ProtectedArtifactBytes, ReplayArtifactDraft, ReplayArtifactRef,
     };
     use lettuce_creation::{
-        AdmittedCreationToolCall, ConfirmedCharacterApply, ConfirmedPersonaApply,
-        ConfirmedPersonaRevisionApply, CreationApplyRepository, CreationAttemptOwner,
-        CreationAttemptRepository, CreationAttemptStatus, CreationDraft, CreationOperation,
-        CreationOperationError, CreationRepositoryError, CreationRoundFinishReason, CreationScene,
-        CreationStage, CreationTarget, CreationToolApply, CreationWorkflow,
-        CreationWorkflowRepository, NewCreationAttempt, NewCreationInferenceRound,
-        NewCreationToolCall, NewCreationTurn, NewCreationWorkflow, apply_creation_tool_calls,
+        AdmittedCreationToolCall, ConfirmedCharacterApply, ConfirmedLorebookApply,
+        ConfirmedPersonaApply, ConfirmedPersonaRevisionApply, CreationApplyRepository,
+        CreationAttemptOwner, CreationAttemptRepository, CreationAttemptStatus, CreationDraft,
+        CreationLorebookEntry, CreationOperation, CreationOperationError, CreationRepositoryError,
+        CreationRoundFinishReason, CreationScene, CreationStage, CreationTarget, CreationToolApply,
+        CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt,
+        NewCreationInferenceRound, NewCreationToolCall, NewCreationTurn, NewCreationWorkflow,
+        apply_creation_tool_calls,
     };
     use lettuce_types::{
         AssetId, CharacterId, CreationProposalId, CreationTurnId, CreationWorkflowId,
-        GenerationAttemptId, JobId, MediaBlobId, ModelArtifactId, PersonaId, ReplayArtifactId,
-        Revision, SceneId, TimestampMillis, ToolExecutionId,
+        GenerationAttemptId, JobId, LorebookEntryId, LorebookId, MediaBlobId, ModelArtifactId,
+        PersonaId, ReplayArtifactId, Revision, SceneId, TimestampMillis, ToolExecutionId,
     };
 
     use lettuce_characters::{
@@ -1921,6 +2077,9 @@ mod tests {
         CharacterRepository, Crop, ImageRecommendation, LifecycleStatus, Persona,
         PersonaArchiveRequest, PersonaDraftUpdate, PersonaMedia, PersonaMediaLink,
         PersonaMediaSlot, PersonaRepository, ScenePart,
+    };
+    use lettuce_context::{
+        DetectionPolicy, KeywordMatchMode, LorebookBehaviorVersion, LorebookRepository,
     };
 
     use crate::Database;
@@ -2883,6 +3042,295 @@ mod tests {
             connection
                 .query_row(
                     "SELECT count(*) FROM creation_character_apply_receipts WHERE workflow_id=?1",
+                    [duplicate.id.to_string()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("receipt count"),
+            0
+        );
+    }
+
+    #[test]
+    fn confirmed_new_lorebook_apply_commits_ordered_always_active_entries_and_retries() {
+        let database = Database::open_in_memory().expect("database");
+        let first_entry_id = LorebookEntryId::new();
+        let second_entry_id = LorebookEntryId::new();
+        let (workflow, proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewLorebook,
+            CreationDraft::Lorebook {
+                name: Some("Harbor lore".into()),
+                description: Some("Proposal-only summary".into()),
+                entries: vec![
+                    CreationLorebookEntry {
+                        id: first_entry_id,
+                        title: "Old lighthouse".into(),
+                        content: "The lighthouse has been dark for twenty years.".into(),
+                    },
+                    CreationLorebookEntry {
+                        id: second_entry_id,
+                        title: "Harbor master".into(),
+                        content: "Mara records every ship that enters.".into(),
+                    },
+                ],
+            },
+            10,
+        );
+        let lorebook_id = LorebookId::new();
+        let request = ConfirmedLorebookApply {
+            workflow_id: workflow.id,
+            expected_workflow_revision: workflow.revision,
+            proposal_id,
+            destination_lorebook_id: lorebook_id,
+            now: TimestampMillis::new(15),
+        };
+        let receipt = database
+            .apply_new_lorebook(request.clone())
+            .expect("apply lorebook");
+        assert_eq!(receipt.lorebook_id, lorebook_id);
+        assert_eq!(receipt.lorebook_revision, Revision::INITIAL);
+        let details = LorebookRepository::get(&database, lorebook_id)
+            .expect("load lorebook")
+            .expect("lorebook exists");
+        assert_eq!(details.book.name, "Harbor lore");
+        assert_eq!(
+            details.book.detection_policy,
+            DetectionPolicy::RecentMessageWindow
+        );
+        assert_eq!(
+            details.book.behavior_version,
+            LorebookBehaviorVersion::LegacyV1
+        );
+        assert_eq!(details.book.icon_asset_id, None);
+        assert_eq!(
+            details
+                .entries
+                .iter()
+                .map(|entry| (
+                    entry.id,
+                    entry.ordinal,
+                    entry.title.as_str(),
+                    entry.content.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    first_entry_id,
+                    0,
+                    "Old lighthouse",
+                    "The lighthouse has been dark for twenty years."
+                ),
+                (
+                    second_entry_id,
+                    1,
+                    "Harbor master",
+                    "Mara records every ship that enters."
+                ),
+            ]
+        );
+        assert!(details.entries.iter().all(|entry| {
+            entry.enabled
+                && entry.always_active
+                && entry.keywords.is_empty()
+                && !entry.case_sensitive
+                && entry.match_mode == KeywordMatchMode::Literal
+                && entry.priority == 0
+                && entry.revision == Revision::INITIAL
+        }));
+
+        let mut retry = request.clone();
+        retry.now = TimestampMillis::new(99);
+        assert_eq!(
+            database.apply_new_lorebook(retry).expect("exact retry"),
+            receipt
+        );
+        let mut changed_destination = request.clone();
+        changed_destination.destination_lorebook_id = LorebookId::new();
+        assert_eq!(
+            database.apply_new_lorebook(changed_destination),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let mut changed_proposal = request.clone();
+        changed_proposal.proposal_id = CreationProposalId::new();
+        assert_eq!(
+            database.apply_new_lorebook(changed_proposal),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let mut changed_revision = request.clone();
+        changed_revision.expected_workflow_revision =
+            Revision::new(request.expected_workflow_revision.get() + 1);
+        assert_eq!(
+            database.apply_new_lorebook(changed_revision),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let connection = database.connection().expect("database lock");
+        assert!(
+            connection
+                .execute(
+                    "UPDATE creation_lorebook_apply_receipts SET applied_at=100 WHERE workflow_id=?1",
+                    [workflow.id.to_string()],
+                )
+                .is_err()
+        );
+        assert!(
+            connection
+                .execute(
+                    "DELETE FROM creation_lorebook_apply_receipts WHERE workflow_id=?1",
+                    [workflow.id.to_string()],
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn new_lorebook_apply_rejects_invalid_state_and_accepts_empty_entries() {
+        let database = Database::open_in_memory().expect("database");
+        let duplicate_entry_id = LorebookEntryId::new();
+        assert_eq!(
+            database.create_workflow(NewCreationWorkflow {
+                id: CreationWorkflowId::new(),
+                initial_proposal_id: CreationProposalId::new(),
+                target: CreationTarget::NewLorebook,
+                initial_draft: CreationDraft::Lorebook {
+                    name: Some("Duplicate entries".into()),
+                    description: None,
+                    entries: vec![
+                        CreationLorebookEntry {
+                            id: duplicate_entry_id,
+                            title: "First".into(),
+                            content: "First content".into(),
+                        },
+                        CreationLorebookEntry {
+                            id: duplicate_entry_id,
+                            title: "Second".into(),
+                            content: "Second content".into(),
+                        },
+                    ],
+                },
+                now: TimestampMillis::new(1),
+            }),
+            Err(CreationRepositoryError::Invalid)
+        );
+
+        let drafting_proposal_id = CreationProposalId::new();
+        let drafting = database
+            .create_workflow(NewCreationWorkflow {
+                id: CreationWorkflowId::new(),
+                initial_proposal_id: drafting_proposal_id,
+                target: CreationTarget::NewLorebook,
+                initial_draft: CreationDraft::Lorebook {
+                    name: Some("Drafting".into()),
+                    description: None,
+                    entries: Vec::new(),
+                },
+                now: TimestampMillis::new(2),
+            })
+            .expect("drafting workflow");
+        assert_eq!(
+            database.apply_new_lorebook(ConfirmedLorebookApply {
+                workflow_id: drafting.id,
+                expected_workflow_revision: drafting.revision,
+                proposal_id: drafting_proposal_id,
+                destination_lorebook_id: LorebookId::new(),
+                now: TimestampMillis::new(3),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
+
+        let (wrong_target, wrong_target_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewPersona,
+            CreationDraft::Persona {
+                name: Some("Wrong target".into()),
+                description: Some("Not a lorebook".into()),
+            },
+            10,
+        );
+        assert_eq!(
+            database.apply_new_lorebook(ConfirmedLorebookApply {
+                workflow_id: wrong_target.id,
+                expected_workflow_revision: wrong_target.revision,
+                proposal_id: wrong_target_proposal_id,
+                destination_lorebook_id: LorebookId::new(),
+                now: TimestampMillis::new(15),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
+
+        let (incomplete, incomplete_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewLorebook,
+            CreationDraft::Lorebook {
+                name: None,
+                description: Some("Summary".into()),
+                entries: Vec::new(),
+            },
+            20,
+        );
+        assert_eq!(
+            database.apply_new_lorebook(ConfirmedLorebookApply {
+                workflow_id: incomplete.id,
+                expected_workflow_revision: incomplete.revision,
+                proposal_id: incomplete_proposal_id,
+                destination_lorebook_id: LorebookId::new(),
+                now: TimestampMillis::new(25),
+            }),
+            Err(CreationRepositoryError::Invalid)
+        );
+
+        let (empty, empty_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewLorebook,
+            CreationDraft::Lorebook {
+                name: Some("Empty lorebook".into()),
+                description: None,
+                entries: Vec::new(),
+            },
+            30,
+        );
+        let empty_id = LorebookId::new();
+        database
+            .apply_new_lorebook(ConfirmedLorebookApply {
+                workflow_id: empty.id,
+                expected_workflow_revision: empty.revision,
+                proposal_id: empty_proposal_id,
+                destination_lorebook_id: empty_id,
+                now: TimestampMillis::new(35),
+            })
+            .expect("apply empty lorebook");
+        assert!(
+            LorebookRepository::get(&database, empty_id)
+                .expect("load empty")
+                .expect("empty lorebook exists")
+                .entries
+                .is_empty()
+        );
+
+        let (duplicate, duplicate_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewLorebook,
+            CreationDraft::Lorebook {
+                name: Some("Duplicate destination".into()),
+                description: None,
+                entries: Vec::new(),
+            },
+            40,
+        );
+        assert_eq!(
+            database.apply_new_lorebook(ConfirmedLorebookApply {
+                workflow_id: duplicate.id,
+                expected_workflow_revision: duplicate.revision,
+                proposal_id: duplicate_proposal_id,
+                destination_lorebook_id: empty_id,
+                now: TimestampMillis::new(45),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let connection = database.connection().expect("database lock");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM creation_lorebook_apply_receipts WHERE workflow_id=?1",
                     [duplicate.id.to_string()],
                     |row| row.get::<_, i64>(0),
                 )

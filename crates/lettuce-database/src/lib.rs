@@ -3778,6 +3778,7 @@ mod tests {
                 "creation_character_apply_receipts",
                 "creation_inference_attempts",
                 "creation_inference_rounds",
+                "creation_lorebook_apply_receipts",
                 "creation_proposals",
                 "creation_turns",
                 "creation_workflows",

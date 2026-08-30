@@ -143,6 +143,8 @@ callers do not coordinate persona mutation and receipt persistence themselves.
 The confirmed new-character use case follows the same boundary and delegates
 the complete character graph plus receipt transaction to the creation apply
 port.
+Confirmed new-lorebook finalization is exposed through the same application
+boundary and delegates its ordered aggregate plus receipt commit atomically.
 
 ## Bundled prompts
 

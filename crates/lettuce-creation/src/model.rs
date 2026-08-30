@@ -277,6 +277,15 @@ pub struct ConfirmedCharacterApply {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfirmedLorebookApply {
+    pub workflow_id: CreationWorkflowId,
+    pub expected_workflow_revision: Revision,
+    pub proposal_id: CreationProposalId,
+    pub destination_lorebook_id: LorebookId,
+    pub now: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreationApplyReceipt {
     pub workflow_id: CreationWorkflowId,
     pub workflow_revision: Revision,
@@ -293,5 +302,15 @@ pub struct CreationCharacterApplyReceipt {
     pub proposal_id: CreationProposalId,
     pub character_id: CharacterId,
     pub character_revision: Revision,
+    pub applied_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreationLorebookApplyReceipt {
+    pub workflow_id: CreationWorkflowId,
+    pub workflow_revision: Revision,
+    pub proposal_id: CreationProposalId,
+    pub lorebook_id: LorebookId,
+    pub lorebook_revision: Revision,
     pub applied_at: TimestampMillis,
 }

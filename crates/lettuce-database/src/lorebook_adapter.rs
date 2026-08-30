@@ -448,6 +448,39 @@ fn normalize_entry_metadata(
     Ok(())
 }
 
+pub(crate) fn insert_lorebook_details(
+    tx: &Transaction<'_>,
+    details: &LorebookDetails,
+) -> Result<LorebookDetails, LorebookRepositoryError> {
+    validate_entries_for_book(details)?;
+    verify_icon(tx, details.book.icon_asset_id)?;
+    if load_details(tx, details.book.id)
+        .map_err(db_error)?
+        .is_some()
+    {
+        return Err(LorebookRepositoryError::Conflict);
+    }
+    tx.execute(
+        "INSERT INTO lorebooks (id,status,name,detection_policy,icon_asset_id,icon_blob_kind,behavior_version,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,'image',?6,?7,?8,?9)",
+        params![
+            details.book.id.to_string(),
+            status_name(details.book.status),
+            details.book.name,
+            detection_policy_name(details.book.detection_policy),
+            details.book.icon_asset_id.map(|id| id.to_string()),
+            behavior_name(details.book.behavior_version),
+            sql_revision(details.book.revision)?,
+            details.book.created_at.get(),
+            details.book.updated_at.get(),
+        ],
+    )
+    .map_err(db_error)?;
+    for entry in &details.entries {
+        insert_entry(tx, entry)?;
+    }
+    load_required(tx, details.book.id)
+}
+
 impl LorebookRepository for Database {
     fn create(
         &self,
@@ -476,30 +509,13 @@ impl LorebookRepository for Database {
         }
         let mut details = probe;
         details.entries = child_entries;
-        validate_entries_for_book(&details)?;
         let mut connection = self
             .connection()
             .map_err(|_| failure("database lock unavailable"))?;
-        verify_icon(&connection, details.book.icon_asset_id)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        tx.execute(
-            "INSERT INTO lorebooks (id,status,name,detection_policy,icon_asset_id,icon_blob_kind,behavior_version,revision,created_at,updated_at) VALUES (?1,'active',?2,?3,?4,'image',?5,1,?6,?6)",
-            params![
-                details.book.id.to_string(),
-                details.book.name,
-                detection_policy_name(details.book.detection_policy),
-                details.book.icon_asset_id.map(|id| id.to_string()),
-                behavior_name(details.book.behavior_version),
-                now.get(),
-            ],
-        )
-        .map_err(db_error)?;
-        for entry in &details.entries {
-            insert_entry(&tx, entry)?;
-        }
-        let loaded = load_required(&tx, details.book.id)?;
+        let loaded = insert_lorebook_details(&tx, &details)?;
         tx.commit().map_err(db_error)?;
         Ok(loaded)
     }
