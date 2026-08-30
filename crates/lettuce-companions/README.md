@@ -13,9 +13,14 @@ The public surface is intentionally small. Business invariants belong in domain 
 Foundation scaffolding is active. Implement behavior with tests before exposing new public APIs, and keep compatibility code at explicit application or migration boundaries.
 
 The verified companion growth, consolidation, and Soul-writer behavior is
-pinned in `fixtures/legacy-import/companion-tool-scenarios-v1.json`. The first
-implementation slice is the pure typed Soul/growth policy: category mutability,
-confidence and weight gates, semantic-slot supersession, locked-fact
-protection, and atomic consolidation change sets. Provider calls, prompt
+pinned in `fixtures/legacy-import/companion-tool-scenarios-v1.json`. The pure
+typed Soul/growth policy is active: it carries forward the legacy category
+mutability table, exact `0.55`/`0.70`/`0.85`/`1.0` confidence thresholds,
+confidence/weight clamping, validity rule, semantic-slot supersession, locked
+protection, twelve-active-fact consolidation threshold, and forty-item
+superseded-history bound. The typed boundary deliberately makes a proposed
+growth or consolidation change set atomic at one expected revision. Legacy's
+sixteen-item limit remains a fresh-memory coordinator input limit and is not
+misapplied to the number of proposed Soul facts. Provider calls, prompt
 rendering, job coordination, database adapters, and frontend events remain
-outside that slice.
+outside this slice.
