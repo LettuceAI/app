@@ -260,6 +260,39 @@ fn insert_facts(
     Ok(())
 }
 
+pub(crate) fn create_in(
+    tx: &Transaction<'_>,
+    owner: SoulOwner,
+    state: &SoulState,
+    now: TimestampMillis,
+) -> Result<(), SoulRepositoryError> {
+    validate_state(state).map_err(SoulRepositoryError::Invalid)?;
+    if state.revision != Revision::INITIAL {
+        return Err(SoulRepositoryError::Invalid(SoulPolicyError::InvalidFact));
+    }
+    let character_id = owner.character_id();
+    let inserted = tx
+        .execute(
+            "INSERT OR IGNORE INTO companion_soul_states (character_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
+            params![character_id.to_string(), sql_revision(state.revision)?, now.get()],
+        )
+        .map_err(failure)?;
+    if inserted != 1 {
+        let created_at = tx
+            .query_row(
+                "SELECT created_at FROM companion_soul_states WHERE character_id = ?1",
+                [character_id.to_string()],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(corrupt)?;
+        if created_at == now.get() && get_in(tx, owner)?.as_ref() == Some(state) {
+            return Ok(());
+        }
+        return Err(SoulRepositoryError::AlreadyExists);
+    }
+    insert_facts(tx, character_id, &state.facts)
+}
+
 fn put_hash_part(hasher: &mut blake3::Hasher, bytes: &[u8]) {
     hasher.update(&(bytes.len() as u64).to_le_bytes());
     hasher.update(bytes);
@@ -360,23 +393,11 @@ impl SoulRepository for Database {
         state: SoulState,
         now: TimestampMillis,
     ) -> Result<SoulState, SoulRepositoryError> {
-        validate_state(&state).map_err(SoulRepositoryError::Invalid)?;
-        if state.revision != Revision::INITIAL {
-            return Err(SoulRepositoryError::Invalid(SoulPolicyError::InvalidFact));
-        }
         let mut connection = self.connection().map_err(failure)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(failure)?;
-        let character_id = owner.character_id();
-        let inserted = tx.execute(
-            "INSERT OR IGNORE INTO companion_soul_states (character_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
-            params![character_id.to_string(), sql_revision(state.revision)?, now.get()],
-        ).map_err(failure)?;
-        if inserted != 1 {
-            return Err(SoulRepositoryError::AlreadyExists);
-        }
-        insert_facts(&tx, character_id, &state.facts)?;
+        create_in(&tx, owner, &state, now)?;
         tx.commit().map_err(failure)?;
         Ok(state)
     }
@@ -517,6 +538,14 @@ mod tests {
         database
             .create(owner(character_id), empty(), TimestampMillis::new(1))
             .expect("create");
+        assert_eq!(
+            database.create(owner(character_id), empty(), TimestampMillis::new(1)),
+            Ok(empty())
+        );
+        assert_eq!(
+            database.create(owner(character_id), empty(), TimestampMillis::new(2)),
+            Err(SoulRepositoryError::AlreadyExists)
+        );
         let initial = database
             .get(owner(character_id))
             .expect("get")

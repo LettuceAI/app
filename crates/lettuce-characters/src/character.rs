@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 
+use lettuce_companions::{CompanionSoulConfig, initial_soul_state};
 use lettuce_types::{
     AssetId, CharacterId, ConversationStarterId, ModelArtifactId, ModelProfileId, PromptDocumentId,
     Revision, SceneId, TimestampMillis, VoiceProfileId,
@@ -139,7 +140,7 @@ impl ImageRecommendation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CharacterDefaults {
     pub interaction_mode: InteractionMode,
@@ -152,6 +153,8 @@ pub struct CharacterDefaults {
     pub group_roleplay_prompt_id: Option<PromptDocumentId>,
     pub voice: Option<VoicePreference>,
     pub voice_autoplay: bool,
+    #[serde(default)]
+    pub companion_soul: Option<CompanionSoulConfig>,
 }
 
 impl Default for CharacterDefaults {
@@ -167,6 +170,7 @@ impl Default for CharacterDefaults {
             group_roleplay_prompt_id: None,
             voice: None,
             voice_autoplay: false,
+            companion_soul: None,
         }
     }
 }
@@ -175,6 +179,21 @@ impl CharacterDefaults {
     pub fn validate(&self) -> Result<(), ValidationError> {
         if let Some(VoicePreference::UnresolvedLegacy(locator)) = &self.voice {
             locator.validate()?;
+        }
+        if let Some(config) = &self.companion_soul {
+            for value in config.soul.values() {
+                validate_text("character.companion_soul.identity", value)?;
+            }
+            initial_soul_state(Some(config), TimestampMillis::new(1)).map_err(|_| {
+                ValidationError::Invariant {
+                    field: "character.companion_soul.authored_facts",
+                }
+            })?;
+        }
+        if self.interaction_mode != InteractionMode::Companion && self.companion_soul.is_some() {
+            return Err(ValidationError::Invariant {
+                field: "character.companion_soul.mode",
+            });
         }
         Ok(())
     }
@@ -320,8 +339,10 @@ mod tests {
         Character, CharacterDefaults, CharacterMedia, CharacterMediaLink, CharacterMediaSlot,
         CharacterProfile, CharacterProvenance, ImageRecommendation,
     };
+    use crate::InteractionMode;
     use crate::ValidationError;
     use crate::presentation::CharacterPresentationV1;
+    use lettuce_companions::CompanionSoulConfig;
     use lettuce_types::{AssetId, CharacterId, ModelArtifactId, Revision, TimestampMillis};
 
     fn profile() -> CharacterProfile {
@@ -435,5 +456,16 @@ mod tests {
                 field: "character.timestamps"
             })
         ));
+    }
+
+    #[test]
+    fn companion_soul_config_requires_companion_mode() {
+        let mut defaults = CharacterDefaults {
+            companion_soul: Some(CompanionSoulConfig::default()),
+            ..CharacterDefaults::default()
+        };
+        assert!(defaults.validate().is_err());
+        defaults.interaction_mode = InteractionMode::Companion;
+        assert!(defaults.validate().is_ok());
     }
 }

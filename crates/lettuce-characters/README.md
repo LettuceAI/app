@@ -78,3 +78,10 @@ read.
 Persistence, migrations, media ingestion/GC, transfer compatibility envelopes,
 prompt rendering, lorebook matching, conversations, and Tauri commands remain
 outside this crate.
+
+Companion characters may own a typed authored Soul configuration in their
+existing versioned defaults document. Roleplay characters reject that config.
+The character aggregate owns the twelve authored identity fields while the
+`lettuce-companions` domain owns fact normalization and live Soul invariants;
+runtime emotion, relationship, memory, and prompting configuration remain
+outside this authored slice.

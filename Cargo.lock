@@ -791,6 +791,7 @@ dependencies = [
 name = "lettuce-characters"
 version = "0.1.0"
 dependencies = [
+ "lettuce-companions",
  "lettuce-types",
  "serde",
  "serde_json",
@@ -802,6 +803,9 @@ name = "lettuce-companions"
 version = "0.1.0"
 dependencies = [
  "lettuce-types",
+ "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]

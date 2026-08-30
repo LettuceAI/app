@@ -17,6 +17,7 @@ use lettuce_characters::{
     SceneVariantDraftUpdate, Selection, StarterMessage, StarterRepository, StarterRole,
     UnresolvedLegacyReference, WidgetImageSource, WidgetNode,
 };
+use lettuce_companions::{SoulOwner, initial_soul_state};
 use lettuce_types::{
     AssetId, CharacterId, ConversationStarterId, LorebookId, Page, PageRequest, PromptDocumentId,
     Revision, SceneAssetLinkId, SceneId, SceneVariantId, StarterMessageId, TimestampMillis,
@@ -917,6 +918,20 @@ pub(crate) fn insert_character_plan(
         return Err(RepositoryError::AlreadyExists);
     }
     insert_character(tx, &plan.character)?;
+    if plan.character.defaults.interaction_mode == lettuce_characters::InteractionMode::Companion {
+        let state = initial_soul_state(
+            plan.character.defaults.companion_soul.as_ref(),
+            plan.character.created_at,
+        )
+        .map_err(|_| RepositoryError::Storage)?;
+        crate::soul_adapter::create_in(
+            tx,
+            SoulOwner::Character(plan.character.id),
+            &state,
+            plan.character.created_at,
+        )
+        .map_err(|_| RepositoryError::Storage)?;
+    }
     replace_character_media(tx, plan.character.id, &plan.character.media)?;
     insert_character_presentation_refs(tx, plan.character.id, &plan.character.presentation)?;
     for scene in &plan.scenes {
@@ -3072,6 +3087,10 @@ mod smoke_tests {
     use lettuce_characters::{
         CharacterMedia, CharacterPresentationV1, CharacterProvenance, ScenePart,
     };
+    use lettuce_companions::{
+        CompanionSoulConfig, CompanionSoulIdentity, SoulCategory, SoulFact, SoulFactKind,
+        SoulFactPolicy, SoulRepository,
+    };
     use lettuce_models::{ModelProfileRepository, ModelRepositoryError};
     use lettuce_types::{PageLimit, PageRequest};
 
@@ -3095,6 +3114,166 @@ mod smoke_tests {
             )
             .expect("asset");
         asset_id
+    }
+
+    fn companion_plan(character_id: CharacterId) -> CreateCharacterPlan {
+        let companion_soul = CompanionSoulConfig {
+            soul: CompanionSoulIdentity {
+                essence: "Quietly determined".into(),
+                traits: "Patient and observant".into(),
+                backstory: "Moved to the coast".into(),
+                appearance: "Weathered coat".into(),
+                goals: "Build a home".into(),
+                likes: "Rain".into(),
+                voice: "Low and measured".into(),
+                relational_style: "Earns trust slowly".into(),
+                vulnerabilities: "Fears dependence".into(),
+                fears: "Being forgotten".into(),
+                habits: "Counts doorways".into(),
+                boundaries: "Needs solitude".into(),
+            },
+            authored_facts: [
+                SoulCategory::Essence,
+                SoulCategory::Traits,
+                SoulCategory::Backstory,
+                SoulCategory::Appearance,
+                SoulCategory::Goals,
+                SoulCategory::Likes,
+                SoulCategory::Voice,
+                SoulCategory::RelationalStyle,
+                SoulCategory::Vulnerabilities,
+                SoulCategory::Fears,
+                SoulCategory::Habits,
+                SoulCategory::Boundaries,
+            ]
+            .into_iter()
+            .map(|category| SoulFact {
+                id: String::new(),
+                category,
+                value: category.as_str().to_owned(),
+                kind: SoulFactKind::Authored,
+                policy: if category == SoulCategory::Backstory {
+                    SoulFactPolicy::Historical
+                } else {
+                    SoulFactPolicy::Adaptive
+                },
+                slot: category.as_str().to_owned(),
+                confidence: 1.0,
+                evidence_count: 1,
+                weight: 1.0,
+                valid_from: TimestampMillis::UNIX_EPOCH,
+                valid_until: None,
+                locked: false,
+                source_memory_ids: Vec::new(),
+                created_at: TimestampMillis::UNIX_EPOCH,
+                supersedes: Vec::new(),
+                superseded_by: None,
+                superseded_at: None,
+            })
+            .collect(),
+        };
+        let character = Character::new(
+            character_id,
+            CharacterProfile {
+                name: "Companion Ada".into(),
+                nickname: None,
+                description: None,
+                definition: Some("A companion".into()),
+                design_description: None,
+            },
+            CharacterProvenance::default(),
+            CharacterDefaults {
+                interaction_mode: lettuce_characters::InteractionMode::Companion,
+                companion_soul: Some(companion_soul),
+                ..CharacterDefaults::default()
+            },
+            CharacterPresentationV1::default(),
+            None,
+            CharacterMedia::default(),
+            TimestampMillis::new(7),
+        )
+        .expect("companion character");
+        CreateCharacterPlan {
+            character,
+            scenes: Vec::new(),
+            variants: Vec::new(),
+            starters: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn companion_character_create_seeds_authored_soul_atomically() {
+        let database = Database::open_in_memory().expect("database");
+        let character_id = CharacterId::new();
+        let plan = companion_plan(character_id);
+        CharacterRepository::create(&database, plan.clone()).expect("create");
+        let loaded = CharacterRepository::get(&database, character_id)
+            .expect("get character")
+            .expect("character");
+        assert_eq!(
+            loaded.character.defaults.companion_soul,
+            plan.character.defaults.companion_soul
+        );
+        let state = SoulRepository::get(&database, SoulOwner::Character(character_id))
+            .expect("get soul")
+            .expect("soul");
+        assert_eq!(state.revision, Revision::INITIAL);
+        assert_eq!(state.facts.len(), 12);
+        assert!(state.facts.iter().all(|fact| {
+            fact.created_at == TimestampMillis::new(7) && fact.valid_from == TimestampMillis::new(7)
+        }));
+        assert!(
+            state
+                .facts
+                .iter()
+                .find(|fact| fact.category == SoulCategory::Backstory)
+                .expect("backstory")
+                .locked
+        );
+    }
+
+    #[test]
+    fn roleplay_character_create_does_not_seed_soul_state() {
+        let database = Database::open_in_memory().expect("database");
+        let character_id = CharacterId::new();
+        let mut plan = companion_plan(character_id);
+        plan.character.defaults.interaction_mode = lettuce_characters::InteractionMode::Roleplay;
+        plan.character.defaults.companion_soul = None;
+        CharacterRepository::create(&database, plan).expect("create");
+        assert_eq!(
+            SoulRepository::get(&database, SoulOwner::Character(character_id)).expect("get soul"),
+            None
+        );
+    }
+
+    #[test]
+    fn authored_soul_failure_rolls_back_character_root() {
+        let database = Database::open_in_memory().expect("database");
+        let character_id = CharacterId::new();
+        {
+            let connection = database.connection().expect("connection");
+            connection
+                .execute_batch(
+                    "CREATE TRIGGER reject_authored_soul
+                     BEFORE INSERT ON companion_soul_facts
+                     BEGIN
+                         SELECT RAISE(ABORT, 'reject authored soul');
+                     END;",
+                )
+                .expect("trigger");
+        }
+        assert_eq!(
+            CharacterRepository::create(&database, companion_plan(character_id)),
+            Err(RepositoryError::Storage)
+        );
+        assert_eq!(
+            CharacterRepository::get(&database, character_id).expect("get character"),
+            None
+        );
+        assert_eq!(
+            SoulRepository::get(&database, SoulOwner::Character(character_id)).expect("get soul"),
+            None
+        );
     }
 
     fn graph_fixture(

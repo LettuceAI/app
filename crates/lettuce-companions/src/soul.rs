@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
 use lettuce_types::{CharacterId, OperationRecordId, Revision, TimestampMillis};
+use serde::{Deserialize, Serialize};
 
 pub const CONSOLIDATION_THRESHOLD: usize = 12;
 pub const MAX_SUPERSEDED_HISTORY: usize = 40;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum SoulCategory {
     Essence,
     Traits,
@@ -89,14 +91,16 @@ impl SoulCategory {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SoulFactPolicy {
     Current,
     Adaptive,
     Historical,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SoulFactKind {
     Add,
     Adjust,
@@ -104,25 +108,138 @@ pub enum SoulFactKind {
     Consolidated,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SoulFact {
     pub id: String,
     pub category: SoulCategory,
     pub value: String,
+    #[serde(default = "authored_fact_kind")]
     pub kind: SoulFactKind,
     pub policy: SoulFactPolicy,
     pub slot: String,
+    #[serde(default = "full_strength")]
     pub confidence: f64,
+    #[serde(default = "one_evidence")]
     pub evidence_count: u32,
+    #[serde(default = "full_strength")]
     pub weight: f64,
+    #[serde(default = "epoch")]
     pub valid_from: TimestampMillis,
+    #[serde(default)]
     pub valid_until: Option<TimestampMillis>,
+    #[serde(default)]
     pub locked: bool,
+    #[serde(default)]
     pub source_memory_ids: Vec<String>,
+    #[serde(default = "epoch")]
     pub created_at: TimestampMillis,
+    #[serde(default)]
     pub supersedes: Vec<String>,
+    #[serde(default)]
     pub superseded_by: Option<String>,
+    #[serde(default)]
     pub superseded_at: Option<TimestampMillis>,
+}
+
+const fn authored_fact_kind() -> SoulFactKind {
+    SoulFactKind::Authored
+}
+
+const fn full_strength() -> f64 {
+    1.0
+}
+
+const fn one_evidence() -> u32 {
+    1
+}
+
+const fn epoch() -> TimestampMillis {
+    TimestampMillis::UNIX_EPOCH
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct CompanionSoulIdentity {
+    pub essence: String,
+    pub traits: String,
+    pub backstory: String,
+    pub appearance: String,
+    pub goals: String,
+    pub likes: String,
+    pub voice: String,
+    pub relational_style: String,
+    pub vulnerabilities: String,
+    pub fears: String,
+    pub habits: String,
+    pub boundaries: String,
+}
+
+impl CompanionSoulIdentity {
+    pub fn values(&self) -> impl Iterator<Item = &str> {
+        [
+            self.essence.as_str(),
+            self.traits.as_str(),
+            self.backstory.as_str(),
+            self.appearance.as_str(),
+            self.goals.as_str(),
+            self.likes.as_str(),
+            self.voice.as_str(),
+            self.relational_style.as_str(),
+            self.vulnerabilities.as_str(),
+            self.fears.as_str(),
+            self.habits.as_str(),
+            self.boundaries.as_str(),
+        ]
+        .into_iter()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CompanionSoulConfig {
+    #[serde(default)]
+    pub soul: CompanionSoulIdentity,
+    #[serde(default)]
+    pub authored_facts: Vec<SoulFact>,
+}
+
+pub fn initial_soul_state(
+    config: Option<&CompanionSoulConfig>,
+    now: TimestampMillis,
+) -> Result<SoulState, SoulPolicyError> {
+    let mut facts = config
+        .map(|config| config.authored_facts.clone())
+        .unwrap_or_default();
+    for fact in &mut facts {
+        if fact.id.trim().is_empty() {
+            fact.id = uuid::Uuid::new_v4().to_string();
+        }
+        fact.confidence = fact.confidence.clamp(0.0, 1.0);
+        fact.weight = fact.weight.clamp(0.0, 1.0);
+        if fact.slot.trim().is_empty() {
+            fact.slot = fact.category.as_str().to_owned();
+        }
+        if fact.evidence_count == 0 {
+            fact.evidence_count = u32::try_from(fact.source_memory_ids.len())
+                .map_err(|_| SoulPolicyError::InvalidFact)?;
+        }
+        if fact.created_at == TimestampMillis::UNIX_EPOCH {
+            fact.created_at = now;
+        }
+        if fact.valid_from == TimestampMillis::UNIX_EPOCH {
+            fact.valid_from = fact.created_at;
+        }
+        if fact.policy == SoulFactPolicy::Historical {
+            fact.locked = true;
+        }
+    }
+    let state = SoulState {
+        revision: Revision::INITIAL,
+        facts,
+    };
+    validate_state(&state)?;
+    Ok(state)
 }
 
 impl SoulFact {
@@ -253,9 +370,11 @@ pub fn validate_state(state: &SoulState) -> Result<(), SoulPolicyError> {
             || !(0.0..=1.0).contains(&fact.confidence)
             || !fact.weight.is_finite()
             || !(0.0..=1.0).contains(&fact.weight)
+            || fact.valid_from.get() < 0
+            || fact.created_at.get() < 0
             || fact
                 .valid_until
-                .is_some_and(|until| until.get() <= fact.valid_from.get())
+                .is_some_and(|until| until.get() < 0 || until.get() <= fact.valid_from.get())
             || !ids.insert(fact.id.as_str())
             || fact.source_memory_ids.iter().any(|id| id.trim().is_empty())
             || fact.supersedes.iter().any(|id| id.trim().is_empty())
@@ -590,6 +709,100 @@ mod tests {
         .expect("fact");
         value.locked = locked;
         value
+    }
+
+    #[test]
+    fn initial_state_copies_legacy_authored_fact_normalization() {
+        let config = CompanionSoulConfig {
+            soul: CompanionSoulIdentity {
+                essence: "Steady".into(),
+                fears: "Being forgotten".into(),
+                ..CompanionSoulIdentity::default()
+            },
+            authored_facts: vec![SoulFact {
+                id: String::new(),
+                category: SoulCategory::Backstory,
+                value: "Moved to the coast".into(),
+                kind: SoulFactKind::Authored,
+                policy: SoulFactPolicy::Historical,
+                slot: String::new(),
+                confidence: 2.0,
+                evidence_count: 0,
+                weight: -1.0,
+                valid_from: TimestampMillis::UNIX_EPOCH,
+                valid_until: None,
+                locked: false,
+                source_memory_ids: vec!["memory-a".into()],
+                created_at: TimestampMillis::UNIX_EPOCH,
+                supersedes: Vec::new(),
+                superseded_by: None,
+                superseded_at: None,
+            }],
+        };
+        let state = initial_soul_state(Some(&config), TimestampMillis::new(42)).expect("state");
+        assert_eq!(state.revision, Revision::INITIAL);
+        assert_eq!(state.facts.len(), 1);
+        let fact = &state.facts[0];
+        assert!(!fact.id.is_empty());
+        assert_eq!(fact.slot, "backstory");
+        assert_eq!(fact.confidence, 1.0);
+        assert_eq!(fact.weight, 0.0);
+        assert_eq!(fact.evidence_count, 1);
+        assert_eq!(fact.created_at, TimestampMillis::new(42));
+        assert_eq!(fact.valid_from, TimestampMillis::new(42));
+        assert!(fact.locked);
+    }
+
+    #[test]
+    fn initial_state_without_authored_config_is_empty() {
+        assert_eq!(
+            initial_soul_state(None, TimestampMillis::new(42)),
+            Ok(SoulState {
+                revision: Revision::INITIAL,
+                facts: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn authored_config_uses_legacy_camel_case_field_names() {
+        let config = CompanionSoulConfig {
+            soul: CompanionSoulIdentity {
+                relational_style: "Slow trust".into(),
+                ..CompanionSoulIdentity::default()
+            },
+            authored_facts: vec![fact(
+                "authored",
+                SoulCategory::RelationalStyle,
+                "trust",
+                false,
+            )],
+        };
+        let value = serde_json::to_value(&config).expect("serialize");
+        assert_eq!(value["soul"]["relationalStyle"], "Slow trust");
+        assert!(value.get("authoredFacts").is_some());
+        assert_eq!(
+            value["authoredFacts"][0]["sourceMemoryIds"],
+            serde_json::json!([])
+        );
+        assert_eq!(value["authoredFacts"][0]["category"], "relationalStyle");
+
+        let decoded: CompanionSoulConfig = serde_json::from_value(serde_json::json!({
+            "soul": { "relationalStyle": "Slow trust" },
+            "authoredFacts": [{
+                "id": "legacy",
+                "category": "backstory",
+                "value": "Moved to the coast",
+                "policy": "historical",
+                "slot": "coast-move"
+            }]
+        }))
+        .expect("legacy-shaped config");
+        assert_eq!(decoded.soul.relational_style, "Slow trust");
+        assert_eq!(decoded.authored_facts[0].kind, SoulFactKind::Authored);
+        assert_eq!(decoded.authored_facts[0].confidence, 1.0);
+        assert_eq!(decoded.authored_facts[0].evidence_count, 1);
+        assert_eq!(decoded.authored_facts[0].weight, 1.0);
     }
 
     #[test]

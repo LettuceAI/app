@@ -141,6 +141,12 @@ under immediate-transaction revision CAS, rewrites the bounded state, advances
 the root, and inserts an immutable operation receipt atomically. Exact retries
 return the original receipt; changed operation reuse, stale revisions, foreign
 owners, malformed rows, and partial writes fail closed.
+Creating a companion character now seeds its initial character-owned Soul root
+and normalized authored facts inside the same character aggregate transaction.
+An authored-fact failure rolls back the character and Soul rows together;
+roleplay character creation writes no Soul root. Exact initial-state retries
+through the Soul repository return the existing typed state only when state
+and creation timestamp match.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

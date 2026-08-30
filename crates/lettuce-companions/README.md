@@ -34,3 +34,13 @@ inside one immediate transaction, bounds superseded history to forty entries,
 and records immutable idempotency receipts. Session, persona, relationship,
 prompt, provider, and frontend coordination remain outside this persistence
 slice.
+
+Authored companion Soul configuration keeps all twelve legacy identity text
+categories and typed authored facts. Initial durable state copies the legacy
+`normalize_for_storage` order directly: generate a UUID for a blank ID, clamp
+confidence and weight, default a blank slot to its category, derive a zero
+evidence count from source IDs, fill zero creation/valid-from timestamps, and
+lock historical facts. The serialized config retains legacy camel-case field
+names. Baseline affect, regulation, relationship defaults, memory, prompting,
+time awareness, and their runtime formulas remain deferred rather than being
+reconstructed in this slice.
