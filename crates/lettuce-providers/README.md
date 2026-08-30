@@ -30,6 +30,11 @@ rejected. `RemoteProviders` also exposes `list_models` (legacy
 (legacy `verify_provider_api_key` probes), and every provider file carries a
 `DESCRIPTOR` (catalog metadata, key requirement, parameter/reasoning/caching
 support, extra-body allowlist) served through `provider_descriptors()`.
+Descriptors report native tool translation for all four remote wire families,
+but keep structured output and signed tool replay false until those adapter
+boundaries exist. Reasoning-with-tools is advertised only by reasoning-capable
+OpenAI-envelope adapters; Anthropic, Gemini, and Ollama remain false for the
+explicit replay limitations below.
 
 Streaming uses bounded byte framing and provider-specific normalization for
 OpenAI SSE, Anthropic Messages SSE, Gemini SSE, and Ollama NDJSON. It preserves

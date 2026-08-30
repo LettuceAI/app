@@ -17,3 +17,6 @@ future generated frontend boundary.
 
 Prompt-cache catalog metadata includes the exact typed retention choices for
 each configurable provider; frontend code does not infer provider wire values.
+Provider descriptors separately expose native tool translation, structured
+output, signed tool replay, and reasoning-with-tools support so callers do not
+infer unsafe feature combinations from a protocol name or a model capability.

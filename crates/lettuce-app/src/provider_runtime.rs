@@ -81,6 +81,10 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
                     },
                     auth_header: descriptor.auth_header.to_owned(),
                     streaming: descriptor.streaming,
+                    tools: descriptor.supports_tools(),
+                    structured_output: descriptor.supports_structured_output(),
+                    signed_tool_replay: descriptor.supports_signed_tool_replay(),
+                    reasoning_with_tools: descriptor.supports_reasoning_with_tools(),
                     lists_models: descriptor.lists_models,
                     verifies_key: descriptor.verifies_key,
                     reasoning: match descriptor.reasoning {
@@ -257,6 +261,10 @@ mod tests {
             ProviderProtocolContract::OpenAiCompatible
         );
         assert!(openrouter.parameters.context_length);
+        assert!(openrouter.tools);
+        assert!(!openrouter.structured_output);
+        assert!(!openrouter.signed_tool_replay);
+        assert!(openrouter.reasoning_with_tools);
         assert!(openrouter.extra_body_keys.contains(&"provider".to_owned()));
         assert_eq!(
             openrouter.prompt_cache_retentions,
@@ -276,6 +284,30 @@ mod tests {
                 PromptCacheRetentionContract::FiveMinutes,
                 PromptCacheRetentionContract::OneHour,
             ]
+        );
+        assert!(gemini.tools);
+        assert!(!gemini.reasoning_with_tools);
+        assert!(!gemini.signed_tool_replay);
+        let anthropic = catalog
+            .providers
+            .iter()
+            .find(|provider| provider.kind == "anthropic")
+            .expect("anthropic");
+        assert!(anthropic.tools);
+        assert!(!anthropic.reasoning_with_tools);
+        assert!(!anthropic.signed_tool_replay);
+        let ollama = catalog
+            .providers
+            .iter()
+            .find(|provider| provider.kind == "ollama")
+            .expect("ollama");
+        assert!(ollama.tools);
+        assert!(!ollama.reasoning_with_tools);
+        assert!(
+            catalog
+                .providers
+                .iter()
+                .all(|provider| !provider.structured_output && !provider.signed_tool_replay)
         );
         assert!(catalog.providers.iter().all(|provider| {
             !provider

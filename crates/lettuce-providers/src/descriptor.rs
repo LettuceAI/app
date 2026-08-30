@@ -28,6 +28,37 @@ pub struct ProviderDescriptor {
     pub extra_body_keys: &'static [&'static str],
 }
 
+impl ProviderDescriptor {
+    /// Capabilities of the committed wire adapter, independent of whether a
+    /// particular remote model advertises the matching model capability.
+    #[must_use]
+    pub const fn supports_tools(self) -> bool {
+        matches!(
+            self.protocol,
+            ProviderProtocol::OpenAiCompatible
+                | ProviderProtocol::Anthropic
+                | ProviderProtocol::Gemini
+                | ProviderProtocol::Ollama
+        )
+    }
+
+    #[must_use]
+    pub const fn supports_structured_output(self) -> bool {
+        false
+    }
+
+    #[must_use]
+    pub const fn supports_signed_tool_replay(self) -> bool {
+        false
+    }
+
+    #[must_use]
+    pub const fn supports_reasoning_with_tools(self) -> bool {
+        matches!(self.protocol, ProviderProtocol::OpenAiCompatible)
+            && !matches!(self.reasoning, ReasoningSupport::None)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApiKeyRequirement {
     Required,
