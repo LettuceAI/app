@@ -154,7 +154,8 @@ fn empty_parameters() -> Value {
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AdmittedCreationToolCall {
     pub definition_version: u32,
     pub call: ProposedToolCall,
@@ -191,6 +192,30 @@ pub fn reduce_creation_tool_calls(
     calls: &[AdmittedCreationToolCall],
     now: TimestampMillis,
 ) -> Result<CreationToolBatch, CreationToolContractError> {
+    let operations = validate_and_parse_creation_tool_calls(base, proposal_id, calls)?;
+    let proposal = base.apply(proposal_id, turn_id, operations, now)?;
+    let outputs = proposal
+        .outcomes
+        .iter()
+        .zip(calls)
+        .map(|(outcome, call)| output_for_outcome(&call.call.name, outcome))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(CreationToolBatch { proposal, outputs })
+}
+
+pub fn validate_creation_tool_calls(
+    base: &CreationProposal,
+    proposal_id: CreationProposalId,
+    calls: &[AdmittedCreationToolCall],
+) -> Result<(), CreationToolContractError> {
+    validate_and_parse_creation_tool_calls(base, proposal_id, calls).map(|_| ())
+}
+
+fn validate_and_parse_creation_tool_calls(
+    base: &CreationProposal,
+    proposal_id: CreationProposalId,
+    calls: &[AdmittedCreationToolCall],
+) -> Result<Vec<CreationOperation>, CreationToolContractError> {
     let request = creation_tool_request(base.draft.kind(), base.stage)
         .ok_or(CreationToolContractError::ToolsUnavailable)?;
     request
@@ -226,14 +251,7 @@ pub fn reduce_creation_tool_calls(
             ordinal,
         )?);
     }
-    let proposal = base.apply(proposal_id, turn_id, operations, now)?;
-    let outputs = proposal
-        .outcomes
-        .iter()
-        .zip(calls)
-        .map(|(outcome, call)| output_for_outcome(&call.call.name, outcome))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(CreationToolBatch { proposal, outputs })
+    Ok(operations)
 }
 
 pub fn apply_creation_tool_calls(

@@ -1,8 +1,49 @@
-use lettuce_types::{CreationProposalId, CreationWorkflowId, Revision};
+use lettuce_types::{
+    CreationProposalId, CreationWorkflowId, GenerationAttemptId, Revision, TimestampMillis,
+};
 
 use crate::{
-    CreationProposal, CreationTurn, CreationWorkflow, NewCreationTurn, NewCreationWorkflow,
+    CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptStatus,
+    CreationInferenceAttempt, CreationProposal, CreationToolCallEvidence, CreationTurn,
+    CreationWorkflow, NewCreationAttempt, NewCreationToolCall, NewCreationTurn,
+    NewCreationWorkflow,
 };
+
+pub trait CreationAttemptRepository: Send + Sync {
+    fn create_creation_attempt(
+        &self,
+        attempt: NewCreationAttempt,
+    ) -> Result<CreationInferenceAttempt, CreationRepositoryError>;
+
+    fn load_creation_attempt(
+        &self,
+        id: GenerationAttemptId,
+    ) -> Result<CreationInferenceAttempt, CreationRepositoryError>;
+
+    fn transition_creation_attempt(
+        &self,
+        id: GenerationAttemptId,
+        expected_revision: Revision,
+        next: CreationAttemptStatus,
+        failure: Option<CreationAttemptFailureCode>,
+        at: TimestampMillis,
+    ) -> Result<CreationInferenceAttempt, CreationRepositoryError>;
+
+    fn admit_creation_tool_calls(
+        &self,
+        owner: CreationAttemptOwner,
+        attempt_id: GenerationAttemptId,
+        expected_next_ordinal: u16,
+        calls: &[NewCreationToolCall],
+        at: TimestampMillis,
+    ) -> Result<Vec<CreationToolCallEvidence>, CreationRepositoryError>;
+
+    fn list_creation_tool_calls(
+        &self,
+        owner: CreationAttemptOwner,
+        attempt_id: GenerationAttemptId,
+    ) -> Result<Vec<CreationToolCallEvidence>, CreationRepositoryError>;
+}
 
 pub trait CreationWorkflowRepository: Send + Sync {
     fn create_workflow(

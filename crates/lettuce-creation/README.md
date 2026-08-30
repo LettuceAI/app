@@ -38,6 +38,16 @@ Application-generated scene and lorebook-entry IDs are deterministic across an
 exact proposal retry, and the repository CAS commits the proposal before any
 later provider-continuation work.
 
+Creation turns also own durable inference attempts before provider dispatch.
+Each attempt pins its immutable base and planned proposal identities, retry
+parent, target/stage-specific tool request, ordinal, lifecycle, and failure
+state. Native calls are admitted atomically in provider order before reduction,
+including their exact definition version, provider identity, arguments, raw
+arguments, and protected replay reference. Exact retries return the stored
+evidence; stale bases, changed retries, cross-turn owners, undeclared tools,
+version drift, and duplicate identities fail closed. Provider dispatch and
+recursive continuation remain a later application-coordination slice.
+
 Single-entry, keyword, and staged lorebook-generation behavior is pinned in
 `fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`. Generation
 owns durable reviewed proposals; `lettuce-context` remains the only lorebook

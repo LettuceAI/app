@@ -1,16 +1,22 @@
 use std::str::FromStr;
 
 use lettuce_creation::{
+    AdmittedCreationToolCall, CreationAttemptFailureCode, CreationAttemptOwner,
+    CreationAttemptRepository, CreationAttemptStatus, CreationInferenceAttempt,
     CreationOperationOutcome, CreationProposal, CreationRepositoryError, CreationStage,
-    CreationTurn, CreationWorkflow, CreationWorkflowRepository, NewCreationTurn,
-    NewCreationWorkflow,
+    CreationTargetKind, CreationToolCallEvidence, CreationTurn, CreationWorkflow,
+    CreationWorkflowRepository, NewCreationAttempt, NewCreationToolCall, NewCreationTurn,
+    NewCreationWorkflow, creation_tool_request, validate_creation_tool_calls,
 };
 use lettuce_types::{
-    CreationProposalId, CreationTurnId, CreationWorkflowId, Revision, TimestampMillis,
+    CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, Revision,
+    TimestampMillis,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
-use crate::Database;
+use crate::{Database, conversation_query, decode_versioned, encode_versioned};
+
+const CREATION_JSON_VERSION: u32 = 1;
 
 fn storage(_: impl std::fmt::Debug) -> CreationRepositoryError {
     CreationRepositoryError::Storage
@@ -37,6 +43,67 @@ fn parse_stage(value: &str) -> rusqlite::Result<CreationStage> {
         "drafting" => Ok(CreationStage::Drafting),
         "awaiting_review" => Ok(CreationStage::AwaitingReview),
         "awaiting_confirmation" => Ok(CreationStage::AwaitingConfirmation),
+        _ => Err(rusqlite::Error::InvalidQuery),
+    }
+}
+
+fn target_name(target: CreationTargetKind) -> &'static str {
+    match target {
+        CreationTargetKind::Character => "character",
+        CreationTargetKind::Persona => "persona",
+        CreationTargetKind::Lorebook => "lorebook",
+    }
+}
+
+fn parse_target(value: &str) -> rusqlite::Result<CreationTargetKind> {
+    match value {
+        "character" => Ok(CreationTargetKind::Character),
+        "persona" => Ok(CreationTargetKind::Persona),
+        "lorebook" => Ok(CreationTargetKind::Lorebook),
+        _ => Err(rusqlite::Error::InvalidQuery),
+    }
+}
+
+fn attempt_status_name(status: CreationAttemptStatus) -> &'static str {
+    match status {
+        CreationAttemptStatus::Created => "created",
+        CreationAttemptStatus::Running => "running",
+        CreationAttemptStatus::Succeeded => "succeeded",
+        CreationAttemptStatus::Failed => "failed",
+        CreationAttemptStatus::Cancelled => "cancelled",
+        CreationAttemptStatus::Interrupted => "interrupted",
+    }
+}
+
+fn parse_attempt_status(value: &str) -> rusqlite::Result<CreationAttemptStatus> {
+    match value {
+        "created" => Ok(CreationAttemptStatus::Created),
+        "running" => Ok(CreationAttemptStatus::Running),
+        "succeeded" => Ok(CreationAttemptStatus::Succeeded),
+        "failed" => Ok(CreationAttemptStatus::Failed),
+        "cancelled" => Ok(CreationAttemptStatus::Cancelled),
+        "interrupted" => Ok(CreationAttemptStatus::Interrupted),
+        _ => Err(rusqlite::Error::InvalidQuery),
+    }
+}
+
+fn attempt_failure_name(failure: CreationAttemptFailureCode) -> &'static str {
+    match failure {
+        CreationAttemptFailureCode::ProviderUnavailable => "provider_unavailable",
+        CreationAttemptFailureCode::ProviderRejected => "provider_rejected",
+        CreationAttemptFailureCode::EmptyResponse => "empty_response",
+        CreationAttemptFailureCode::TimedOut => "timed_out",
+        CreationAttemptFailureCode::Internal => "internal",
+    }
+}
+
+fn parse_attempt_failure(value: &str) -> rusqlite::Result<CreationAttemptFailureCode> {
+    match value {
+        "provider_unavailable" => Ok(CreationAttemptFailureCode::ProviderUnavailable),
+        "provider_rejected" => Ok(CreationAttemptFailureCode::ProviderRejected),
+        "empty_response" => Ok(CreationAttemptFailureCode::EmptyResponse),
+        "timed_out" => Ok(CreationAttemptFailureCode::TimedOut),
+        "internal" => Ok(CreationAttemptFailureCode::Internal),
         _ => Err(rusqlite::Error::InvalidQuery),
     }
 }
@@ -199,6 +266,114 @@ fn insert_proposal(
         )
         .map_err(storage)?;
     Ok(())
+}
+
+fn load_attempt_conn(
+    connection: &Connection,
+    id: GenerationAttemptId,
+) -> Result<CreationInferenceAttempt, CreationRepositoryError> {
+    let attempt = connection
+        .query_row(
+            "SELECT workflow_id,turn_id,ordinal,retry_parent_id,base_proposal_id,\
+                    planned_proposal_id,target,stage,tool_request_json,status,failure,revision,\
+                    created_at,started_at,finished_at,updated_at \
+             FROM creation_inference_attempts WHERE id=?1",
+            [id.to_string()],
+            |row| {
+                Ok(CreationInferenceAttempt {
+                    id,
+                    workflow_id: parse_id(row.get(0)?)?,
+                    turn_id: parse_id(row.get(1)?)?,
+                    ordinal: u16::try_from(row.get::<_, i64>(2)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    retry_parent_id: row.get::<_, Option<String>>(3)?.map(parse_id).transpose()?,
+                    base_proposal_id: parse_id(row.get(4)?)?,
+                    planned_proposal_id: parse_id(row.get(5)?)?,
+                    target: parse_target(&row.get::<_, String>(6)?)?,
+                    stage: parse_stage(&row.get::<_, String>(7)?)?,
+                    tool_request: decode_versioned(
+                        &row.get::<_, String>(8)?,
+                        CREATION_JSON_VERSION,
+                    )
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    status: parse_attempt_status(&row.get::<_, String>(9)?)?,
+                    failure: row
+                        .get::<_, Option<String>>(10)?
+                        .map(|value| parse_attempt_failure(&value))
+                        .transpose()?,
+                    revision: revision(row.get(11)?)?,
+                    created_at: TimestampMillis::new(row.get(12)?),
+                    started_at: row.get::<_, Option<i64>>(13)?.map(TimestampMillis::new),
+                    finished_at: row.get::<_, Option<i64>>(14)?.map(TimestampMillis::new),
+                    updated_at: TimestampMillis::new(row.get(15)?),
+                })
+            },
+        )
+        .optional()
+        .map_err(storage)?
+        .ok_or(CreationRepositoryError::NotFound)?;
+    attempt
+        .validate()
+        .map_err(|_| CreationRepositoryError::Invalid)?;
+    Ok(attempt)
+}
+
+fn list_calls_in(
+    transaction: &Transaction<'_>,
+    owner: CreationAttemptOwner,
+    attempt_id: GenerationAttemptId,
+) -> Result<Vec<CreationToolCallEvidence>, CreationRepositoryError> {
+    let mut statement = transaction
+        .prepare(
+            "SELECT id,ordinal,definition_name,definition_version,provider_call_id,\
+                    arguments_json,raw_arguments,provider_replay_artifact_id,\
+                    provider_replay_retention,admitted_at \
+             FROM creation_admitted_tool_calls \
+             WHERE workflow_id=?1 AND turn_id=?2 AND attempt_id=?3 ORDER BY ordinal",
+        )
+        .map_err(storage)?;
+    let rows = statement
+        .query_map(
+            params![
+                owner.workflow_id.to_string(),
+                owner.turn_id.to_string(),
+                attempt_id.to_string()
+            ],
+            |row| {
+                let replay = conversation_query::replay_ref(transaction, row.get(7)?, row.get(8)?)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                Ok(CreationToolCallEvidence {
+                    id: parse_id(row.get(0)?)?,
+                    workflow_id: owner.workflow_id,
+                    turn_id: owner.turn_id,
+                    attempt_id,
+                    ordinal: u16::try_from(row.get::<_, i64>(1)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    definition_version: u32::try_from(row.get::<_, i64>(3)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    call: lettuce_conversations::ProposedToolCall {
+                        provider_call_id: row.get(4)?,
+                        name: row.get(2)?,
+                        arguments: decode_versioned(
+                            &row.get::<_, String>(5)?,
+                            CREATION_JSON_VERSION,
+                        )
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        raw_arguments: row.get(6)?,
+                        provider_replay: replay,
+                    },
+                    admitted_at: TimestampMillis::new(row.get(9)?),
+                })
+            },
+        )
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage)?;
+    for call in &rows {
+        call.validate()
+            .map_err(|_| CreationRepositoryError::Invalid)?;
+    }
+    Ok(rows)
 }
 
 impl CreationWorkflowRepository for Database {
@@ -432,16 +607,346 @@ impl CreationWorkflowRepository for Database {
     }
 }
 
+impl CreationAttemptRepository for Database {
+    fn create_creation_attempt(
+        &self,
+        input: NewCreationAttempt,
+    ) -> Result<CreationInferenceAttempt, CreationRepositoryError> {
+        if input.base_proposal_id == input.planned_proposal_id {
+            return Err(CreationRepositoryError::Invalid);
+        }
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        match load_attempt_conn(&transaction, input.id) {
+            Ok(existing) => {
+                if existing.workflow_id == input.owner.workflow_id
+                    && existing.turn_id == input.owner.turn_id
+                    && existing.base_proposal_id == input.base_proposal_id
+                    && existing.planned_proposal_id == input.planned_proposal_id
+                    && existing.retry_parent_id == input.retry_parent_id
+                    && existing.created_at == input.now
+                {
+                    transaction.commit().map_err(storage)?;
+                    return Ok(existing);
+                }
+                return Err(CreationRepositoryError::Conflict);
+            }
+            Err(CreationRepositoryError::NotFound) => {}
+            Err(error) => return Err(error),
+        }
+        let workflow = load_workflow_conn(&transaction, input.owner.workflow_id)?;
+        let turn = load_turn_conn(&transaction, input.owner.turn_id)?;
+        let base = load_proposal_conn(&transaction, input.base_proposal_id)?;
+        if workflow.current_proposal_id != input.base_proposal_id
+            || turn.workflow_id != input.owner.workflow_id
+            || turn.base_proposal_id != input.base_proposal_id
+            || base.stage != workflow.stage
+            || base.draft.kind() != workflow.target.kind()
+            || input.now < turn.created_at
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let tool_request = creation_tool_request(workflow.target.kind(), workflow.stage)
+            .ok_or(CreationRepositoryError::Conflict)?;
+        tool_request
+            .validate()
+            .map_err(|_| CreationRepositoryError::Invalid)?;
+        let actual_next: i64 = transaction
+            .query_row(
+                "SELECT coalesce(max(ordinal) + 1, 0) FROM creation_inference_attempts \
+                 WHERE workflow_id=?1 AND turn_id=?2",
+                params![
+                    input.owner.workflow_id.to_string(),
+                    input.owner.turn_id.to_string()
+                ],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        let ordinal = u16::try_from(actual_next).map_err(|_| CreationRepositoryError::Storage)?;
+        match input.retry_parent_id {
+            None if ordinal == 0 => {}
+            Some(parent_id) if ordinal > 0 => {
+                let parent = load_attempt_conn(&transaction, parent_id)?;
+                if parent.workflow_id != input.owner.workflow_id
+                    || parent.turn_id != input.owner.turn_id
+                    || parent.ordinal.checked_add(1) != Some(ordinal)
+                    || !matches!(
+                        parent.status,
+                        CreationAttemptStatus::Failed
+                            | CreationAttemptStatus::Cancelled
+                            | CreationAttemptStatus::Interrupted
+                    )
+                    || parent.base_proposal_id != input.base_proposal_id
+                    || parent.target != workflow.target.kind()
+                    || parent.stage != workflow.stage
+                    || parent.tool_request != tool_request
+                {
+                    return Err(CreationRepositoryError::Conflict);
+                }
+            }
+            _ => return Err(CreationRepositoryError::Conflict),
+        }
+        transaction
+            .execute(
+                "INSERT INTO creation_inference_attempts \
+                 (workflow_id,turn_id,id,ordinal,retry_parent_id,base_proposal_id,\
+                  planned_proposal_id,target,stage,tool_request_json,status,failure,revision,\
+                  created_at,started_at,finished_at,updated_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'created',NULL,1,?11,NULL,NULL,?11)",
+                params![
+                    input.owner.workflow_id.to_string(),
+                    input.owner.turn_id.to_string(),
+                    input.id.to_string(),
+                    i64::from(ordinal),
+                    input.retry_parent_id.map(|id| id.to_string()),
+                    input.base_proposal_id.to_string(),
+                    input.planned_proposal_id.to_string(),
+                    target_name(workflow.target.kind()),
+                    stage_name(workflow.stage),
+                    encode_versioned(&tool_request, CREATION_JSON_VERSION)
+                        .map_err(|_| CreationRepositoryError::Invalid)?,
+                    input.now.get(),
+                ],
+            )
+            .map_err(|error| match error.sqlite_error_code() {
+                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
+                _ => CreationRepositoryError::Storage,
+            })?;
+        let attempt = load_attempt_conn(&transaction, input.id)?;
+        transaction.commit().map_err(storage)?;
+        Ok(attempt)
+    }
+
+    fn load_creation_attempt(
+        &self,
+        id: GenerationAttemptId,
+    ) -> Result<CreationInferenceAttempt, CreationRepositoryError> {
+        load_attempt_conn(&*self.connection().map_err(storage)?, id)
+    }
+
+    fn transition_creation_attempt(
+        &self,
+        id: GenerationAttemptId,
+        expected_revision: Revision,
+        next: CreationAttemptStatus,
+        failure: Option<CreationAttemptFailureCode>,
+        at: TimestampMillis,
+    ) -> Result<CreationInferenceAttempt, CreationRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let current = load_attempt_conn(&transaction, id)?;
+        if current.revision != expected_revision {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let updated = current
+            .transition(next, failure, at)
+            .map_err(|_| CreationRepositoryError::Invalid)?;
+        let changed = transaction
+            .execute(
+                "UPDATE creation_inference_attempts \
+                 SET status=?2,failure=?3,revision=?4,started_at=?5,finished_at=?6,updated_at=?7 \
+                 WHERE id=?1 AND revision=?8",
+                params![
+                    id.to_string(),
+                    attempt_status_name(updated.status),
+                    updated.failure.map(attempt_failure_name),
+                    sql_u64(updated.revision.get())?,
+                    updated.started_at.map(TimestampMillis::get),
+                    updated.finished_at.map(TimestampMillis::get),
+                    updated.updated_at.get(),
+                    sql_u64(expected_revision.get())?,
+                ],
+            )
+            .map_err(storage)?;
+        if changed != 1 {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let stored = load_attempt_conn(&transaction, id)?;
+        transaction.commit().map_err(storage)?;
+        Ok(stored)
+    }
+
+    fn admit_creation_tool_calls(
+        &self,
+        owner: CreationAttemptOwner,
+        attempt_id: GenerationAttemptId,
+        expected_next_ordinal: u16,
+        calls: &[NewCreationToolCall],
+        at: TimestampMillis,
+    ) -> Result<Vec<CreationToolCallEvidence>, CreationRepositoryError> {
+        if calls.is_empty() || calls.len() > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE {
+            return Err(CreationRepositoryError::Invalid);
+        }
+        let mut ids = std::collections::HashSet::new();
+        if calls.iter().any(|call| !ids.insert(call.id)) {
+            return Err(CreationRepositoryError::Invalid);
+        }
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let attempt = load_attempt_conn(&transaction, attempt_id)?;
+        if attempt.workflow_id != owner.workflow_id || attempt.turn_id != owner.turn_id {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        if calls.iter().any(|call| {
+            call.call.provider_replay.as_ref().is_some_and(|reference| {
+                reference.retention != lettuce_conversations::ReplayRetention::Conversation
+            })
+        }) {
+            return Err(CreationRepositoryError::Invalid);
+        }
+        let requested = calls
+            .iter()
+            .enumerate()
+            .map(|(offset, call)| {
+                let offset = u16::try_from(offset).map_err(|_| CreationRepositoryError::Invalid)?;
+                let ordinal = expected_next_ordinal
+                    .checked_add(offset)
+                    .ok_or(CreationRepositoryError::Invalid)?;
+                let evidence = CreationToolCallEvidence {
+                    id: call.id,
+                    workflow_id: owner.workflow_id,
+                    turn_id: owner.turn_id,
+                    attempt_id,
+                    ordinal,
+                    definition_version: call.definition_version,
+                    call: call.call.clone(),
+                    admitted_at: at,
+                };
+                evidence
+                    .validate()
+                    .map_err(|_| CreationRepositoryError::Invalid)?;
+                Ok(evidence)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let existing = list_calls_in(&transaction, owner, attempt_id)?;
+        let actual_next =
+            u16::try_from(existing.len()).map_err(|_| CreationRepositoryError::Storage)?;
+        if actual_next != expected_next_ordinal {
+            let start = usize::from(expected_next_ordinal);
+            let end = start
+                .checked_add(requested.len())
+                .ok_or(CreationRepositoryError::Invalid)?;
+            if existing.get(start..end) == Some(requested.as_slice()) {
+                transaction.commit().map_err(storage)?;
+                return Ok(requested);
+            }
+            return Err(CreationRepositoryError::Conflict);
+        }
+        if attempt.status != CreationAttemptStatus::Running || at < attempt.updated_at {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let workflow = load_workflow_conn(&transaction, owner.workflow_id)?;
+        let turn = load_turn_conn(&transaction, owner.turn_id)?;
+        if workflow.current_proposal_id != attempt.base_proposal_id
+            || workflow.stage != attempt.stage
+            || turn.base_proposal_id != attempt.base_proposal_id
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let base = load_proposal_conn(&transaction, attempt.base_proposal_id)?;
+        let admitted = calls
+            .iter()
+            .map(|call| AdmittedCreationToolCall {
+                definition_version: call.definition_version,
+                call: call.call.clone(),
+            })
+            .collect::<Vec<_>>();
+        validate_creation_tool_calls(&base, attempt.planned_proposal_id, &admitted)
+            .map_err(|_| CreationRepositoryError::Invalid)?;
+        for evidence in &requested {
+            let (replay_id, replay_retention) = evidence
+                .call
+                .provider_replay
+                .as_ref()
+                .map(|reference| {
+                    (
+                        Some(reference.artifact_id.to_string()),
+                        Some("conversation"),
+                    )
+                })
+                .unwrap_or((None, None));
+            transaction
+                .execute(
+                    "INSERT INTO creation_admitted_tool_calls \
+                     (workflow_id,turn_id,attempt_id,id,ordinal,definition_name,definition_version,\
+                      provider_call_id,arguments_json,raw_arguments,provider_replay_artifact_id,\
+                      provider_replay_retention,admitted_at) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                    params![
+                        evidence.workflow_id.to_string(),
+                        evidence.turn_id.to_string(),
+                        evidence.attempt_id.to_string(),
+                        evidence.id.to_string(),
+                        i64::from(evidence.ordinal),
+                        evidence.call.name,
+                        i64::from(evidence.definition_version),
+                        evidence.call.provider_call_id,
+                        encode_versioned(&evidence.call.arguments, CREATION_JSON_VERSION)
+                            .map_err(|_| CreationRepositoryError::Invalid)?,
+                        evidence.call.raw_arguments,
+                        replay_id,
+                        replay_retention,
+                        evidence.admitted_at.get(),
+                    ],
+                )
+                .map_err(|error| match error.sqlite_error_code() {
+                    Some(rusqlite::ErrorCode::ConstraintViolation) => {
+                        CreationRepositoryError::Conflict
+                    }
+                    _ => CreationRepositoryError::Storage,
+                })?;
+        }
+        let stored = list_calls_in(&transaction, owner, attempt_id)?;
+        let start = usize::from(expected_next_ordinal);
+        let admitted = stored[start..].to_vec();
+        if admitted != requested {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        transaction.commit().map_err(storage)?;
+        Ok(admitted)
+    }
+
+    fn list_creation_tool_calls(
+        &self,
+        owner: CreationAttemptOwner,
+        attempt_id: GenerationAttemptId,
+    ) -> Result<Vec<CreationToolCallEvidence>, CreationRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
+        let attempt = load_attempt_conn(&transaction, attempt_id)?;
+        if attempt.workflow_id != owner.workflow_id || attempt.turn_id != owner.turn_id {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let calls = list_calls_in(&transaction, owner, attempt_id)?;
+        transaction.commit().map_err(storage)?;
+        Ok(calls)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use lettuce_conversations::ProposedToolCall;
+    use lettuce_conversations::{
+        ArtifactCodec, ArtifactRetention, ConversationArtifactStore, ProposedToolCall,
+        ProtectedArtifactBytes, ReplayArtifactDraft,
+    };
     use lettuce_creation::{
-        AdmittedCreationToolCall, CreationDraft, CreationOperation, CreationOperationError,
-        CreationStage, CreationTarget, CreationToolApply, CreationWorkflowRepository,
-        NewCreationTurn, NewCreationWorkflow, apply_creation_tool_calls,
+        AdmittedCreationToolCall, CreationAttemptOwner, CreationAttemptRepository,
+        CreationAttemptStatus, CreationDraft, CreationOperation, CreationOperationError,
+        CreationRepositoryError, CreationStage, CreationTarget, CreationToolApply,
+        CreationWorkflowRepository, NewCreationAttempt, NewCreationToolCall, NewCreationTurn,
+        NewCreationWorkflow, apply_creation_tool_calls,
     };
     use lettuce_types::{
-        CreationProposalId, CreationTurnId, CreationWorkflowId, Revision, SceneId, TimestampMillis,
+        CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId,
+        ReplayArtifactId, Revision, SceneId, TimestampMillis, ToolExecutionId,
     };
 
     use crate::Database;
@@ -451,6 +956,20 @@ mod tests {
             definition_version: 1,
             call: ProposedToolCall {
                 provider_call_id: Some(format!("call-{name}")),
+                name: name.to_owned(),
+                arguments,
+                raw_arguments: None,
+                provider_replay: None,
+            },
+        }
+    }
+
+    fn new_call(name: &str, arguments: serde_json::Value) -> NewCreationToolCall {
+        NewCreationToolCall {
+            id: ToolExecutionId::new(),
+            definition_version: 1,
+            call: ProposedToolCall {
+                provider_call_id: Some(format!("provider-{}", ToolExecutionId::new())),
                 name: name.to_owned(),
                 arguments,
                 raw_arguments: None,
@@ -718,5 +1237,284 @@ mod tests {
         )
         .expect("exact tool retry");
         assert_eq!(retry, committed);
+    }
+
+    #[test]
+    fn creation_attempts_admit_exact_calls_before_reduction_and_retry_safely() {
+        let database = Database::open_in_memory().expect("database");
+        let workflow_id = CreationWorkflowId::new();
+        let initial_id = CreationProposalId::new();
+        let workflow = database
+            .create_workflow(NewCreationWorkflow {
+                id: workflow_id,
+                initial_proposal_id: initial_id,
+                target: CreationTarget::NewPersona,
+                initial_draft: CreationDraft::Persona {
+                    name: None,
+                    description: None,
+                },
+                now: TimestampMillis::new(1),
+            })
+            .expect("workflow");
+        let turn = database
+            .record_user_turn(NewCreationTurn {
+                id: CreationTurnId::new(),
+                workflow_id,
+                base_proposal_id: initial_id,
+                user_message: "Create a cartographer".to_owned(),
+                now: TimestampMillis::new(2),
+            })
+            .expect("turn");
+        let owner = CreationAttemptOwner {
+            workflow_id,
+            turn_id: turn.id,
+        };
+        let parent_id = GenerationAttemptId::new();
+        let parent_input = NewCreationAttempt {
+            id: parent_id,
+            owner,
+            base_proposal_id: initial_id,
+            planned_proposal_id: CreationProposalId::new(),
+            retry_parent_id: None,
+            now: TimestampMillis::new(3),
+        };
+        let parent = database
+            .create_creation_attempt(parent_input.clone())
+            .expect("attempt");
+        assert_eq!(
+            database
+                .create_creation_attempt(parent_input.clone())
+                .expect("exact attempt retry"),
+            parent
+        );
+        let mut changed_attempt = parent_input;
+        changed_attempt.planned_proposal_id = CreationProposalId::new();
+        assert_eq!(
+            database.create_creation_attempt(changed_attempt),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let parent = database
+            .transition_creation_attempt(
+                parent_id,
+                parent.revision,
+                CreationAttemptStatus::Running,
+                None,
+                TimestampMillis::new(4),
+            )
+            .expect("run parent");
+
+        let replay_id = ReplayArtifactId::new();
+        let replay_bytes = ProtectedArtifactBytes::new(b"{\"thought\":\"signed\"}".to_vec())
+            .expect("replay bytes");
+        let replay = database
+            .put_replay(ReplayArtifactDraft {
+                artifact_id: replay_id,
+                digest: replay_bytes.digest(),
+                schema_version: 1,
+                byte_size: u64::try_from(replay_bytes.len()).expect("size"),
+                codec: ArtifactCodec::Json,
+                retention: ArtifactRetention::Conversation,
+                bytes: replay_bytes,
+            })
+            .expect("replay");
+        let mut parent_calls = vec![
+            new_call(
+                "set_persona_name",
+                serde_json::json!({"name": "Cartographer"}),
+            ),
+            new_call(
+                "set_persona_description",
+                serde_json::json!({"description": "Maps difficult paths."}),
+            ),
+        ];
+        parent_calls[0].call.raw_arguments = Some("{\"name\":\"Cartographer\"}".to_owned());
+        parent_calls[0].call.provider_replay = Some(replay.clone());
+        let admitted = database
+            .admit_creation_tool_calls(owner, parent_id, 0, &parent_calls, TimestampMillis::new(5))
+            .expect("admit calls");
+        assert_eq!(admitted.len(), 2);
+        assert_eq!(admitted[0].call.provider_replay, Some(replay.clone()));
+        assert_eq!(
+            database
+                .admit_creation_tool_calls(
+                    owner,
+                    parent_id,
+                    0,
+                    &parent_calls,
+                    TimestampMillis::new(5),
+                )
+                .expect("exact call retry"),
+            admitted
+        );
+        let mut changed_calls = parent_calls.clone();
+        changed_calls[1].call.arguments = serde_json::json!({"description": "Changed retry."});
+        assert_eq!(
+            database.admit_creation_tool_calls(
+                owner,
+                parent_id,
+                0,
+                &changed_calls,
+                TimestampMillis::new(5),
+            ),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let mut duplicate_provider = parent_calls.clone();
+        duplicate_provider[1].call.provider_call_id =
+            duplicate_provider[0].call.provider_call_id.clone();
+        assert_eq!(
+            database.admit_creation_tool_calls(
+                owner,
+                parent_id,
+                2,
+                &duplicate_provider,
+                TimestampMillis::new(6),
+            ),
+            Err(CreationRepositoryError::Invalid)
+        );
+        let mut wrong_version = vec![new_call(
+            "set_persona_name",
+            serde_json::json!({"name": "Other"}),
+        )];
+        wrong_version[0].definition_version = 2;
+        assert_eq!(
+            database.admit_creation_tool_calls(
+                owner,
+                parent_id,
+                2,
+                &wrong_version,
+                TimestampMillis::new(6),
+            ),
+            Err(CreationRepositoryError::Invalid)
+        );
+        assert_eq!(
+            database.admit_creation_tool_calls(
+                CreationAttemptOwner {
+                    workflow_id,
+                    turn_id: CreationTurnId::new(),
+                },
+                parent_id,
+                2,
+                &[new_call("show_preview", serde_json::json!({}))],
+                TimestampMillis::new(6),
+            ),
+            Err(CreationRepositoryError::Conflict)
+        );
+        database
+            .cleanup_orphan_replay(replay_id)
+            .expect("referenced replay is retained");
+        database.verify_replay(&replay).expect("replay remains");
+
+        let cancelled = database
+            .transition_creation_attempt(
+                parent_id,
+                parent.revision,
+                CreationAttemptStatus::Cancelled,
+                None,
+                TimestampMillis::new(6),
+            )
+            .expect("cancel parent");
+        assert_eq!(cancelled.status, CreationAttemptStatus::Cancelled);
+        let child_id = GenerationAttemptId::new();
+        let child = database
+            .create_creation_attempt(NewCreationAttempt {
+                id: child_id,
+                owner,
+                base_proposal_id: initial_id,
+                planned_proposal_id: CreationProposalId::new(),
+                retry_parent_id: Some(parent_id),
+                now: TimestampMillis::new(7),
+            })
+            .expect("retry child");
+        assert_eq!(child.ordinal, 1);
+        let child = database
+            .transition_creation_attempt(
+                child_id,
+                child.revision,
+                CreationAttemptStatus::Running,
+                None,
+                TimestampMillis::new(8),
+            )
+            .expect("run child");
+        let child_calls = vec![
+            new_call(
+                "set_persona_name",
+                serde_json::json!({"name": "Cartographer"}),
+            ),
+            new_call("show_preview", serde_json::json!({})),
+        ];
+        let child_evidence = database
+            .admit_creation_tool_calls(owner, child_id, 0, &child_calls, TimestampMillis::new(9))
+            .expect("admit child calls");
+        let committed = apply_creation_tool_calls(
+            &database,
+            CreationToolApply {
+                workflow_id,
+                expected_workflow_revision: workflow.revision,
+                base_proposal_id: initial_id,
+                proposal_id: child.planned_proposal_id,
+                turn_id: turn.id,
+                calls: child_evidence
+                    .iter()
+                    .map(|evidence| AdmittedCreationToolCall {
+                        definition_version: evidence.definition_version,
+                        call: evidence.call.clone(),
+                    })
+                    .collect(),
+                now: TimestampMillis::new(10),
+            },
+        )
+        .expect("reduce admitted child calls");
+        assert_eq!(committed.workflow.stage, CreationStage::AwaitingReview);
+        assert_eq!(
+            database
+                .admit_creation_tool_calls(
+                    owner,
+                    child_id,
+                    0,
+                    &child_calls,
+                    TimestampMillis::new(9),
+                )
+                .expect("exact admission retry survives base advancement"),
+            child_evidence
+        );
+        assert_eq!(
+            database.admit_creation_tool_calls(
+                owner,
+                child_id,
+                2,
+                &[new_call("show_preview", serde_json::json!({}))],
+                TimestampMillis::new(11),
+            ),
+            Err(CreationRepositoryError::Conflict),
+            "workflow advancement makes the attempt base stale"
+        );
+        let succeeded = database
+            .transition_creation_attempt(
+                child_id,
+                child.revision,
+                CreationAttemptStatus::Succeeded,
+                None,
+                TimestampMillis::new(11),
+            )
+            .expect("finish child");
+        assert_eq!(succeeded.status, CreationAttemptStatus::Succeeded);
+
+        let connection = database.connection().expect("database lock");
+        assert!(
+            connection
+                .execute(
+                    "UPDATE creation_admitted_tool_calls SET definition_version=2 WHERE id=?1",
+                    [child_evidence[0].id.to_string()],
+                )
+                .is_err()
+        );
+        assert!(
+            connection
+                .execute(
+                    "UPDATE creation_inference_attempts SET base_proposal_id=?2 WHERE id=?1",
+                    [child_id.to_string(), CreationProposalId::new().to_string()],
+                )
+                .is_err()
+        );
     }
 }
