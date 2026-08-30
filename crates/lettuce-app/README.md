@@ -97,11 +97,12 @@ job before mutation, snapshots the current memory revision, atomically starts
 the exact validated call set, prepares/persists caller-supplied create seeds
 through the configured embedding engine, and settles through the plan-bound
 handler. The continuation coordinator can repeatedly invoke that injected
-boundary while carrying exact replay context and preserving every provider
-outcome for terminal usage accounting. Seed IDs and token counts remain
-explicit inputs rather than hidden globals. The remaining acceptance gap is a
-single full two-round database scenario that composes provider intake,
-plan-bound memory mutation, replay, usage, and finalization in one test.
+boundary after parsing and durably validating each newly admitted call set,
+while carrying exact replay context and preserving every provider outcome for
+terminal usage accounting. Seed IDs and token counts remain explicit inputs
+rather than hidden globals. A full SQLite scenario composes two tool rounds,
+two immutable preparation plans, one authoritative memory mutation, exact
+provider replay ordering, aggregated usage, and idempotent finalization.
 
 ## Bundled prompts
 

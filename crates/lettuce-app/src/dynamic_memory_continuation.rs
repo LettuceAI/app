@@ -7,7 +7,7 @@ use lettuce_conversations::{
     UsagePort, UsageRecord, context_with_settled_tool_round,
 };
 use lettuce_jobs::handle::JobHandle;
-use lettuce_memory::{MemoryToolOutcome, dynamic_memory_tool_request};
+use lettuce_memory::{MemoryToolArguments, MemoryToolOutcome, dynamic_memory_tool_request};
 use lettuce_types::{ConversationId, Revision, TimestampMillis, UsageEventId};
 
 pub const MAX_DYNAMIC_MEMORY_TOOL_ROUNDS: u8 = 4;
@@ -366,9 +366,10 @@ impl<'a, R: ToolExecutionRepository + ?Sized, I: InferencePort + ?Sized>
                     completed_rounds = completed_rounds
                         .checked_add(1)
                         .ok_or(DynamicMemoryContinuationError::ToolBudgetExceeded)?;
-                    let result = execute_round(&executions, handle, at)?;
-                    if result.settled_executions.len() != executions.len()
-                        || result.settled_executions.iter().zip(&executions).any(
+                    let validated = validate_admitted_round(self.repository, &executions, at)?;
+                    let result = execute_round(&validated, handle, at)?;
+                    if result.settled_executions.len() != validated.len()
+                        || result.settled_executions.iter().zip(&validated).any(
                             |(settled, admitted)| {
                                 settled.id != admitted.id
                                     || settled.status != ToolExecutionStatus::Succeeded
@@ -383,6 +384,38 @@ impl<'a, R: ToolExecutionRepository + ?Sized, I: InferencePort + ?Sized>
             }
         }
     }
+}
+
+fn validate_admitted_round<R: ToolExecutionRepository + ?Sized>(
+    repository: &R,
+    executions: &[ToolExecution],
+    at: TimestampMillis,
+) -> Result<Vec<ToolExecution>, DynamicMemoryContinuationError> {
+    if executions.is_empty()
+        || executions
+            .iter()
+            .any(|execution| execution.status != ToolExecutionStatus::Requested)
+    {
+        return Err(DynamicMemoryContinuationError::InvalidAdmittedRound);
+    }
+    for execution in executions {
+        MemoryToolArguments::parse(&execution.definition_name, &execution.arguments)?;
+    }
+    repository
+        .transition_tool_execution_batch(
+            &executions
+                .iter()
+                .map(|execution| lettuce_conversations::ToolExecutionTransition {
+                    id: execution.id,
+                    expected_revision: execution.revision,
+                    next: ToolExecutionStatus::Validated,
+                    output: None,
+                    failure: None,
+                })
+                .collect::<Vec<_>>(),
+            at,
+        )
+        .map_err(Into::into)
 }
 
 pub fn aggregate_inference_usage(
@@ -547,6 +580,8 @@ pub enum DynamicMemoryContinuationError {
     InvalidDoneResult,
     #[error("dynamic-memory continuation handler returned an invalid settled round")]
     InvalidSettledRound,
+    #[error("dynamic-memory continuation admitted an invalid tool round")]
+    InvalidAdmittedRound,
     #[error("dynamic-memory continuation usage counters overflowed")]
     UsageOverflow,
     #[error("dynamic-memory continuation contract is invalid: {0}")]
@@ -559,6 +594,8 @@ pub enum DynamicMemoryContinuationError {
     Repository(#[from] lettuce_conversations::ConversationRepositoryError),
     #[error("dynamic-memory continuation round execution failed: {0}")]
     RoundExecution(#[from] crate::DynamicMemoryRoundExecutionError),
+    #[error("dynamic-memory continuation tool call is invalid: {0}")]
+    Tool(#[from] lettuce_memory::MemoryToolError),
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -15,22 +15,32 @@ use lettuce_conversations::{
     AttachAttemptJob, ConversationKind, ConversationReader, ConversationRepository,
     CreateConversationPlan, DirectConversationDetails, GenerationCheckpointEnvelope,
     GenerationCheckpointEvent, GenerationTurnStatus, GroupChatModeSnapshot,
-    GroupConversationDetails, IdempotencyKey, InferenceCandidate, InferenceOutcome, InferenceUsage,
-    InitialMessageOrigin, MemoryModeSnapshot, MessageDraft, MessagePart, MessageRole,
-    MessageVisibility, OperationToken, OutputPolicy, ParticipantRole, PromptPurposeSnapshot,
+    GroupConversationDetails, IdempotencyKey, InferenceCandidate, InferenceOutcome, InferencePort,
+    InferenceRequest, InferenceUsage, InitialMessageOrigin, MemoryModeSnapshot, MessageDraft,
+    MessagePart, MessageRole, MessageVisibility, OperationToken, OutputPolicy, ParticipantRole,
+    PortError, PromptPurposeSnapshot, ProposedToolCall, ProviderContextPart,
     ResolvedInferenceProfile, SafetyContext, SendConversation, SnapshotSelection, SnapshotSource,
-    ToolPolicy,
+    ToolExecutionRepository, ToolExecutionStatus, ToolExecutionTransition, ToolPolicy,
 };
 use lettuce_database::Database;
+use lettuce_embeddings::{EmbeddingRequest, EmbeddingVector};
+use lettuce_jobs::{
+    AttemptNo, CancellationPolicy, Claim, ClaimRef, LeaseId, OutcomeRef, RecoveryPolicy,
+    ResourceClass, WorkerId, handle::CancellationToken, handle::JobHandle,
+};
+use lettuce_memory::{
+    DynamicMemoryPreparationRepository, MemoryPolicy as DynamicMemoryPolicy, MemoryRepository,
+    MemorySpaceSnapshot, Score, dynamic_memory_tool_request,
+};
 use lettuce_models::{
     ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository, ProviderAccount,
     ProviderAccountRepository, ProviderConfig, ProviderProtocol,
 };
 use lettuce_settings::{GlobalSettingsStore, SecretOwnerId};
 use lettuce_types::{
-    CharacterId, ContentHash, ConversationStarterId, GroupId, JobId, LorebookId, ModelProfileId,
-    PersonaId, ProviderAccountId, Revision, SceneId, SceneVariantId, StarterMessageId,
-    TimestampMillis,
+    CharacterId, ContentHash, ConversationStarterId, GroupId, JobId, LorebookId, MemoryId,
+    MemorySpaceId, ModelProfileId, PersonaId, ProviderAccountId, Revision, SceneId, SceneVariantId,
+    StarterMessageId, TimestampMillis,
 };
 
 use super::planner::ConversationLaunchPlanner;
@@ -42,6 +52,47 @@ use super::request::{
 use crate::{AppBackend, BuiltInPromptId, ConversationLaunchError};
 
 const NOW: TimestampMillis = TimestampMillis::new(1_000);
+
+struct ScenarioEmbeddingEngine;
+
+impl crate::MemoryEmbeddingEngine for ScenarioEmbeddingEngine {
+    fn source_revision(&self) -> &str {
+        "scenario-v1"
+    }
+
+    fn embed_memory(
+        &self,
+        request: &EmbeddingRequest,
+        cancellation: &CancellationToken,
+    ) -> Result<EmbeddingVector, crate::EmbeddingGenerationError> {
+        if cancellation.is_cancelled() {
+            return Err(crate::EmbeddingGenerationError::Cancelled);
+        }
+        let mut values = vec![0.0; request.dimensions.get()];
+        values[0] = 1.0;
+        Ok(EmbeddingVector {
+            source_revision: self.source_revision().into(),
+            values,
+        })
+    }
+}
+
+struct ScriptedInference {
+    outcomes: Mutex<VecDeque<InferenceOutcome>>,
+    requests: Mutex<Vec<InferenceRequest>>,
+}
+
+#[async_trait::async_trait]
+impl InferencePort for ScriptedInference {
+    async fn run(&self, request: InferenceRequest) -> Result<InferenceOutcome, PortError> {
+        self.requests.lock().expect("requests").push(request);
+        self.outcomes
+            .lock()
+            .expect("outcomes")
+            .pop_front()
+            .ok_or(PortError::Empty)
+    }
+}
 
 fn database() -> Database {
     Database::open_in_memory().expect("open database")
@@ -1195,7 +1246,7 @@ fn the_app_backend_exposes_the_direct_launch() {
 }
 
 #[tokio::test]
-async fn dynamic_memory_terminal_commit_records_usage_and_finalizes_idempotently() {
+async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
     let database = database();
     let model_id = seed_model(&database, ProviderProtocol::Ollama, "ollama");
     set_application_default_model(&database, model_id);
@@ -1319,29 +1370,246 @@ async fn dynamic_memory_terminal_commit_records_usage_and_finalizes_idempotently
         safety_policy: SafetyContext::Standard,
         correlation_id: None,
     };
-    let result = crate::DynamicMemoryContinuationLoopResult {
-        terminal: crate::DynamicMemoryContinuationTerminal::Complete {
-            candidate: InferenceCandidate {
-                ordinal: 0,
-                parts: vec![MessagePart::Text {
-                    text: "I will remember that.".into(),
-                }],
-                tool_calls: vec![],
-                provider_replay: None,
-            },
+    let space_id = MemorySpaceId::new();
+    MemoryRepository::create(
+        &database,
+        MemorySpaceSnapshot {
+            id: space_id,
+            revision: Revision::INITIAL,
+            items: vec![],
         },
-        outcomes: vec![InferenceOutcome {
-            candidates: vec![],
-            usage: Some(InferenceUsage {
-                input_tokens: 20,
-                output_tokens: 5,
-            }),
-            finish_reason: lettuce_conversations::FinishReason::Stop,
-            provider_finish_reason: None,
-            provider_request_id: None,
-            warning_codes: vec![],
-        }],
+    )
+    .expect("memory space");
+    let memory_id = MemoryId::new();
+    let owner = lettuce_conversations::ToolExecutionOwner {
+        conversation_id,
+        turn_id: attempt.turn_id,
+        attempt_id: attempt.id,
     };
+    let initial_outcome = InferenceOutcome {
+        candidates: vec![InferenceCandidate {
+            ordinal: 0,
+            parts: vec![],
+            tool_calls: vec![ProposedToolCall {
+                provider_call_id: Some("initial-create".into()),
+                name: "create_memory".into(),
+                arguments: serde_json::json!({
+                    "text": "Mira prefers tea",
+                    "category": "preference"
+                }),
+                raw_arguments: None,
+                provider_replay: None,
+            }],
+            provider_replay: None,
+        }],
+        usage: Some(InferenceUsage {
+            input_tokens: 20,
+            output_tokens: 5,
+        }),
+        finish_reason: lettuce_conversations::FinishReason::Stop,
+        provider_finish_reason: None,
+        provider_request_id: Some("provider-initial".into()),
+        warning_codes: vec![],
+    };
+    let initial_requested = lettuce_conversations::ConversationManager::new(&database)
+        .request_tool_executions(
+            owner,
+            &dynamic_memory_tool_request(),
+            initial_outcome.candidates[0].tool_calls.clone(),
+            TimestampMillis::new(1_014),
+        )
+        .expect("admit initial round");
+    let initial_validated = ToolExecutionRepository::transition_tool_execution_batch(
+        &database,
+        &initial_requested
+            .iter()
+            .map(|execution| ToolExecutionTransition {
+                id: execution.id,
+                expected_revision: execution.revision,
+                next: ToolExecutionStatus::Validated,
+                output: None,
+                failure: None,
+            })
+            .collect::<Vec<_>>(),
+        TimestampMillis::new(1_015),
+    )
+    .expect("validate initial round");
+    let claim = Claim {
+        claim: ClaimRef {
+            job_id,
+            worker_id: WorkerId::new(),
+            attempt: AttemptNo::new(1),
+            lease_id: LeaseId::new(),
+        },
+        lease_expires_at: TimestampMillis::new(2_000),
+        input_ref: OutcomeRef::MemoryRun(memory_id),
+        recovery_policy: RecoveryPolicy::Restart,
+        cancellation_policy: CancellationPolicy::Cooperative,
+        resources: vec![
+            ResourceClass::ModelLoad,
+            ResourceClass::DiskRead,
+            ResourceClass::Cpu,
+        ],
+    };
+    let handle = JobHandle::new(job_id);
+    let policy = DynamicMemoryPolicy {
+        max_entries: 10,
+        hot_token_budget: 100,
+        cold_threshold: Score::from_basis_points(2_000).expect("score"),
+        delete_confidence_default: Score::from_basis_points(5_000).expect("score"),
+        max_hard_delete_ratio_per_cycle: Score::from_basis_points(5_000).expect("score"),
+    };
+    let engine = ScenarioEmbeddingEngine;
+    let executor = crate::DynamicMemoryRoundExecutor::new(
+        &engine,
+        &database,
+        &claim,
+        space_id,
+        &policy,
+        Score::from_basis_points(9_000).expect("score"),
+    );
+    let initial_round = executor
+        .execute_admitted_round(
+            &initial_validated,
+            &[crate::MemoryCreateSeed {
+                execution_id: initial_validated[0].id,
+                id: memory_id,
+                token_count: 4,
+                created_at: TimestampMillis::new(1_016),
+            }],
+            &handle,
+            TimestampMillis::new(1_017),
+        )
+        .expect("execute initial round");
+    let missing_memory = MemoryId::new();
+    let scripted = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([
+            InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: vec![],
+                    tool_calls: vec![ProposedToolCall {
+                        provider_call_id: Some("second-pin".into()),
+                        name: "pin_memory".into(),
+                        arguments: serde_json::json!({"id": missing_memory}),
+                        raw_arguments: None,
+                        provider_replay: None,
+                    }],
+                    provider_replay: None,
+                }],
+                usage: Some(InferenceUsage {
+                    input_tokens: 7,
+                    output_tokens: 2,
+                }),
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None,
+                provider_request_id: Some("provider-second".into()),
+                warning_codes: vec![],
+            },
+            InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: vec![MessagePart::Text {
+                        text: "I will remember that.".into(),
+                    }],
+                    tool_calls: vec![],
+                    provider_replay: None,
+                }],
+                usage: Some(InferenceUsage {
+                    input_tokens: 5,
+                    output_tokens: 3,
+                }),
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None,
+                provider_request_id: Some("provider-final".into()),
+                warning_codes: vec![],
+            },
+        ])),
+        requests: Mutex::new(vec![]),
+    };
+    let inference_request = InferenceRequest {
+        turn_id: attempt.turn_id,
+        attempt_id: attempt.id,
+        operation: lettuce_conversations::GenerationOperation::Send,
+        profile: profile.clone(),
+        context: lettuce_conversations::ProviderNeutralContext {
+            messages: vec![lettuce_conversations::ProviderNeutralMessage {
+                role: MessageRole::User,
+                parts: vec![ProviderContextPart::Text {
+                    text: "Remember this.".into(),
+                }],
+            }],
+            attributions: lettuce_conversations::ContextAttributions::default(),
+            budget: lettuce_conversations::ContextBudgetReport::default(),
+        },
+        cancellation: Some(job_id),
+        stream_sink: None,
+        media_grants: vec![],
+        tools: Some(dynamic_memory_tool_request()),
+    };
+    let continuation = crate::DynamicMemoryContinuationCoordinator::new(&database, &scripted);
+    let result = continuation
+        .continue_until_terminal(
+            conversation_id,
+            &attempt,
+            &handle,
+            inference_request,
+            initial_round.settled_executions,
+            vec![initial_outcome],
+            1,
+            1,
+            TimestampMillis::new(1_018),
+            |executions, handle, at| {
+                assert_eq!(executions.len(), 1);
+                assert_eq!(executions[0].definition_name, "pin_memory");
+                executor.execute_admitted_round(executions, &[], handle, at)
+            },
+        )
+        .await
+        .expect("continue two rounds");
+    assert!(matches!(
+        result.terminal,
+        crate::DynamicMemoryContinuationTerminal::Complete { .. }
+    ));
+    assert_eq!(result.outcomes.len(), 3);
+    let replay_counts = {
+        let requests = scripted.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 2);
+        requests
+            .iter()
+            .map(|request| {
+                request
+                    .context
+                    .messages
+                    .iter()
+                    .flat_map(|message| &message.parts)
+                    .filter(|part| {
+                        matches!(
+                            part,
+                            ProviderContextPart::ToolCall(_) | ProviderContextPart::ToolResult(_)
+                        )
+                    })
+                    .count()
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(replay_counts, vec![2, 4]);
+    let stored_memory = MemoryRepository::get(&database, space_id)
+        .expect("memory")
+        .expect("memory exists");
+    assert_eq!(stored_memory.revision, Revision::new(2));
+    assert_eq!(stored_memory.items.len(), 1);
+    assert_eq!(stored_memory.items[0].id, memory_id);
+    let latest_plan = DynamicMemoryPreparationRepository::get_preparation_plan(
+        &database,
+        conversation_id,
+        attempt.turn_id,
+        attempt.id,
+    )
+    .expect("latest plan")
+    .expect("plan exists");
+    assert_eq!(latest_plan.first_execution_ordinal, 1);
+    assert!(latest_plan.creates.is_empty());
     let aggregate = ConversationReader::get(&database, conversation_id).expect("aggregate");
     let context = crate::DynamicMemoryTerminalContext {
         conversation_id,
@@ -1432,6 +1700,13 @@ async fn dynamic_memory_terminal_commit_records_usage_and_finalizes_idempotently
         .expect("usage exists");
     assert_eq!(usage.record.attempt_id, attempt.id);
     assert_eq!(usage.record.model_profile_id, Some(model_id));
+    assert_eq!(
+        usage.record.usage,
+        lettuce_conversations::UsageCounters::Known(InferenceUsage {
+            input_tokens: 32,
+            output_tokens: 10,
+        })
+    );
 }
 
 #[test]
@@ -3521,3 +3796,5 @@ fn the_app_backend_exposes_the_group_launch() {
         super::identity::launch_conversation_id(&key("backend-group-launch"))
     );
 }
+use std::collections::VecDeque;
+use std::sync::Mutex;

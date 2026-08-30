@@ -125,6 +125,7 @@ fn verify_durable_identity(
                 !matches!(
                     execution.status,
                     lettuce_conversations::ToolExecutionStatus::Running
+                        | lettuce_conversations::ToolExecutionStatus::Succeeded
                         | lettuce_conversations::ToolExecutionStatus::Interrupted
                 )
             }
