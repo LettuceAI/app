@@ -7,7 +7,7 @@ use std::{
 use lettuce_types::ContentHash;
 use serde::{Deserialize, Serialize};
 
-const MAX_SOURCE_REVISION_BYTES: usize = 128;
+pub(crate) const MAX_SOURCE_REVISION_BYTES: usize = 128;
 const MAX_EMBEDDING_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,7 +76,7 @@ impl InstalledEmbeddingManifest {
     }
 }
 
-fn verify_artifact(artifact: &InstalledModelArtifact) -> Result<(), ModelArtifactError> {
+pub(crate) fn verify_artifact(artifact: &InstalledModelArtifact) -> Result<(), ModelArtifactError> {
     if artifact.byte_size == 0 || artifact.byte_size > MAX_EMBEDDING_FILE_BYTES {
         return Err(ModelArtifactError::InvalidManifest);
     }

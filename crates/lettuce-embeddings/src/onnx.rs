@@ -250,7 +250,7 @@ impl OnnxEmbeddingRuntime {
     }
 }
 
-fn spawn_canceller(
+pub(crate) fn spawn_canceller(
     run_options: Arc<RunOptions>,
     finished: Arc<AtomicBool>,
     cancellation: CancellationToken,
@@ -277,7 +277,7 @@ fn l2_normalize(values: &mut [f32]) -> Result<(), EmbeddingError> {
     Ok(())
 }
 
-fn initialize_onnx_runtime(runtime: &OnnxRuntimeLink) -> Result<(), EmbeddingError> {
+pub(crate) fn initialize_onnx_runtime(runtime: &OnnxRuntimeLink) -> Result<(), EmbeddingError> {
     let result = match runtime {
         OnnxRuntimeLink::Dynamic(path) => {
             let path = path.to_str().ok_or(EmbeddingError::RuntimeUnavailable)?;
@@ -293,7 +293,7 @@ fn initialize_onnx_runtime(runtime: &OnnxRuntimeLink) -> Result<(), EmbeddingErr
 }
 
 #[cfg(any(target_os = "ios", target_os = "macos"))]
-fn configure_execution_provider(
+pub(crate) fn configure_execution_provider(
     builder: ort::session::builder::SessionBuilder,
     model_path: &Path,
 ) -> Result<ort::session::builder::SessionBuilder, EmbeddingError> {
@@ -325,7 +325,7 @@ fn configure_execution_provider(
 }
 
 #[cfg(not(any(target_os = "ios", target_os = "macos")))]
-fn configure_execution_provider(
+pub(crate) fn configure_execution_provider(
     builder: ort::session::builder::SessionBuilder,
     _model_path: &Path,
 ) -> Result<ort::session::builder::SessionBuilder, EmbeddingError> {

@@ -2,8 +2,10 @@
 //!
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod emotion;
 mod onnx;
 mod projection;
 
+pub use emotion::*;
 pub use onnx::*;
 pub use projection::*;

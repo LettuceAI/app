@@ -20,3 +20,8 @@ revision and verified hashes instead of treating filenames as identity.
 The audited v4 upstream revision is
 `8fe12dc548f75865bfb120593fd5a514e9186ca0`; its model config declares 2,048
 trained positions and 768 native dimensions.
+
+The companion-emotion installed contract separately verifies the exact model,
+tokenizer, and config triplet used by the GoEmotions auxiliary classifier. It
+also requires an immutable source revision before exposing paths to the runtime;
+model loading and config interpretation remain owned by `lettuce-embeddings`.

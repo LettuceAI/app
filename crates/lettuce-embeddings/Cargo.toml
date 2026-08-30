@@ -14,10 +14,13 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+lettuce-companions.workspace = true
 lettuce-jobs.workspace = true
 lettuce-model-hub.workspace = true
 lettuce-types.workspace = true
 ort.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokenizers.workspace = true
 tracing.workspace = true
