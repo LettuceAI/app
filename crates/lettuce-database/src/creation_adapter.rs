@@ -3,9 +3,9 @@ use std::str::FromStr;
 use lettuce_creation::{
     AdmittedCreationToolCall, CreationAttemptFailureCode, CreationAttemptOwner,
     CreationAttemptRepository, CreationAttemptStatus, CreationInferenceAttempt,
-    CreationOperationOutcome, CreationProposal, CreationRepositoryError, CreationStage,
-    CreationTargetKind, CreationToolCallEvidence, CreationTurn, CreationWorkflow,
-    CreationWorkflowRepository, NewCreationAttempt, NewCreationToolCall, NewCreationTurn,
+    CreationInferenceRound, CreationOperationOutcome, CreationProposal, CreationRepositoryError,
+    CreationStage, CreationTargetKind, CreationToolCallEvidence, CreationTurn, CreationWorkflow,
+    CreationWorkflowRepository, NewCreationAttempt, NewCreationInferenceRound, NewCreationTurn,
     NewCreationWorkflow, creation_tool_request, validate_creation_tool_calls,
 };
 use lettuce_types::{
@@ -325,7 +325,7 @@ fn list_calls_in(
 ) -> Result<Vec<CreationToolCallEvidence>, CreationRepositoryError> {
     let mut statement = transaction
         .prepare(
-            "SELECT id,ordinal,definition_name,definition_version,provider_call_id,\
+            "SELECT id,round_ordinal,ordinal,definition_name,definition_version,provider_call_id,\
                     arguments_json,raw_arguments,provider_replay_artifact_id,\
                     provider_replay_retention,admitted_at \
              FROM creation_admitted_tool_calls \
@@ -340,29 +340,31 @@ fn list_calls_in(
                 attempt_id.to_string()
             ],
             |row| {
-                let replay = conversation_query::replay_ref(transaction, row.get(7)?, row.get(8)?)
+                let replay = conversation_query::replay_ref(transaction, row.get(8)?, row.get(9)?)
                     .map_err(|_| rusqlite::Error::InvalidQuery)?;
                 Ok(CreationToolCallEvidence {
                     id: parse_id(row.get(0)?)?,
                     workflow_id: owner.workflow_id,
                     turn_id: owner.turn_id,
                     attempt_id,
-                    ordinal: u16::try_from(row.get::<_, i64>(1)?)
+                    round_ordinal: u8::try_from(row.get::<_, i64>(1)?)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    definition_version: u32::try_from(row.get::<_, i64>(3)?)
+                    ordinal: u16::try_from(row.get::<_, i64>(2)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    definition_version: u32::try_from(row.get::<_, i64>(4)?)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     call: lettuce_conversations::ProposedToolCall {
-                        provider_call_id: row.get(4)?,
-                        name: row.get(2)?,
+                        provider_call_id: row.get(5)?,
+                        name: row.get(3)?,
                         arguments: decode_versioned(
-                            &row.get::<_, String>(5)?,
+                            &row.get::<_, String>(6)?,
                             CREATION_JSON_VERSION,
                         )
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                        raw_arguments: row.get(6)?,
+                        raw_arguments: row.get(7)?,
                         provider_replay: replay,
                     },
-                    admitted_at: TimestampMillis::new(row.get(9)?),
+                    admitted_at: TimestampMillis::new(row.get(10)?),
                 })
             },
         )
@@ -374,6 +376,73 @@ fn list_calls_in(
             .map_err(|_| CreationRepositoryError::Invalid)?;
     }
     Ok(rows)
+}
+
+fn list_rounds_in(
+    transaction: &Transaction<'_>,
+    owner: CreationAttemptOwner,
+    attempt_id: GenerationAttemptId,
+) -> Result<Vec<CreationInferenceRound>, CreationRepositoryError> {
+    let calls = list_calls_in(transaction, owner, attempt_id)?;
+    let mut statement = transaction
+        .prepare(
+            "SELECT ordinal,first_call_ordinal,call_count,parts_json,\
+                    provider_replay_artifact_id,provider_replay_retention,admitted_at \
+             FROM creation_inference_rounds \
+             WHERE workflow_id=?1 AND turn_id=?2 AND attempt_id=?3 ORDER BY ordinal",
+        )
+        .map_err(storage)?;
+    let rounds = statement
+        .query_map(
+            params![
+                owner.workflow_id.to_string(),
+                owner.turn_id.to_string(),
+                attempt_id.to_string()
+            ],
+            |row| {
+                let ordinal = u8::try_from(row.get::<_, i64>(0)?)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let first_call_ordinal = u16::try_from(row.get::<_, i64>(1)?)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let call_count = usize::try_from(row.get::<_, i64>(2)?)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let start = usize::from(first_call_ordinal);
+                let end = start
+                    .checked_add(call_count)
+                    .ok_or(rusqlite::Error::InvalidQuery)?;
+                let round_calls = calls
+                    .get(start..end)
+                    .ok_or(rusqlite::Error::InvalidQuery)?
+                    .to_vec();
+                if round_calls.iter().any(|call| call.round_ordinal != ordinal) {
+                    return Err(rusqlite::Error::InvalidQuery);
+                }
+                let provider_replay =
+                    conversation_query::replay_ref(transaction, row.get(4)?, row.get(5)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                Ok(CreationInferenceRound {
+                    workflow_id: owner.workflow_id,
+                    turn_id: owner.turn_id,
+                    attempt_id,
+                    ordinal,
+                    first_call_ordinal,
+                    parts: decode_versioned(&row.get::<_, String>(3)?, CREATION_JSON_VERSION)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    provider_replay,
+                    calls: round_calls,
+                    admitted_at: TimestampMillis::new(row.get(6)?),
+                })
+            },
+        )
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage)?;
+    for round in &rounds {
+        round
+            .validate()
+            .map_err(|_| CreationRepositoryError::Invalid)?;
+    }
+    Ok(rounds)
 }
 
 impl CreationWorkflowRepository for Database {
@@ -770,19 +839,18 @@ impl CreationAttemptRepository for Database {
         Ok(stored)
     }
 
-    fn admit_creation_tool_calls(
+    fn admit_creation_inference_round(
         &self,
         owner: CreationAttemptOwner,
         attempt_id: GenerationAttemptId,
+        expected_round_ordinal: u8,
         expected_next_ordinal: u16,
-        calls: &[NewCreationToolCall],
-        at: TimestampMillis,
-    ) -> Result<Vec<CreationToolCallEvidence>, CreationRepositoryError> {
-        if calls.is_empty() || calls.len() > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE {
-            return Err(CreationRepositoryError::Invalid);
-        }
-        let mut ids = std::collections::HashSet::new();
-        if calls.iter().any(|call| !ids.insert(call.id)) {
+        round: NewCreationInferenceRound,
+    ) -> Result<CreationInferenceRound, CreationRepositoryError> {
+        round
+            .validate()
+            .map_err(|_| CreationRepositoryError::Invalid)?;
+        if round.ordinal != expected_round_ordinal {
             return Err(CreationRepositoryError::Invalid);
         }
         let mut connection = self.connection().map_err(storage)?;
@@ -793,14 +861,8 @@ impl CreationAttemptRepository for Database {
         if attempt.workflow_id != owner.workflow_id || attempt.turn_id != owner.turn_id {
             return Err(CreationRepositoryError::Conflict);
         }
-        if calls.iter().any(|call| {
-            call.call.provider_replay.as_ref().is_some_and(|reference| {
-                reference.retention != lettuce_conversations::ReplayRetention::Conversation
-            })
-        }) {
-            return Err(CreationRepositoryError::Invalid);
-        }
-        let requested = calls
+        let requested_calls = round
+            .calls
             .iter()
             .enumerate()
             .map(|(offset, call)| {
@@ -813,10 +875,11 @@ impl CreationAttemptRepository for Database {
                     workflow_id: owner.workflow_id,
                     turn_id: owner.turn_id,
                     attempt_id,
+                    round_ordinal: round.ordinal,
                     ordinal,
                     definition_version: call.definition_version,
                     call: call.call.clone(),
-                    admitted_at: at,
+                    admitted_at: round.admitted_at,
                 };
                 evidence
                     .validate()
@@ -824,21 +887,35 @@ impl CreationAttemptRepository for Database {
                 Ok(evidence)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let existing = list_calls_in(&transaction, owner, attempt_id)?;
-        let actual_next =
-            u16::try_from(existing.len()).map_err(|_| CreationRepositoryError::Storage)?;
-        if actual_next != expected_next_ordinal {
-            let start = usize::from(expected_next_ordinal);
-            let end = start
-                .checked_add(requested.len())
-                .ok_or(CreationRepositoryError::Invalid)?;
-            if existing.get(start..end) == Some(requested.as_slice()) {
+        let requested = CreationInferenceRound {
+            workflow_id: owner.workflow_id,
+            turn_id: owner.turn_id,
+            attempt_id,
+            ordinal: round.ordinal,
+            first_call_ordinal: expected_next_ordinal,
+            parts: round.parts,
+            provider_replay: round.provider_replay,
+            calls: requested_calls,
+            admitted_at: round.admitted_at,
+        };
+        requested
+            .validate()
+            .map_err(|_| CreationRepositoryError::Invalid)?;
+        let existing_rounds = list_rounds_in(&transaction, owner, attempt_id)?;
+        if existing_rounds.len() != usize::from(expected_round_ordinal) {
+            if existing_rounds.get(usize::from(expected_round_ordinal)) == Some(&requested) {
                 transaction.commit().map_err(storage)?;
                 return Ok(requested);
             }
             return Err(CreationRepositoryError::Conflict);
         }
-        if attempt.status != CreationAttemptStatus::Running || at < attempt.updated_at {
+        let existing_calls = list_calls_in(&transaction, owner, attempt_id)?;
+        let actual_next =
+            u16::try_from(existing_calls.len()).map_err(|_| CreationRepositoryError::Storage)?;
+        if actual_next != expected_next_ordinal
+            || attempt.status != CreationAttemptStatus::Running
+            || requested.admitted_at < attempt.updated_at
+        {
             return Err(CreationRepositoryError::Conflict);
         }
         let workflow = load_workflow_conn(&transaction, owner.workflow_id)?;
@@ -850,16 +927,54 @@ impl CreationAttemptRepository for Database {
             return Err(CreationRepositoryError::Conflict);
         }
         let base = load_proposal_conn(&transaction, attempt.base_proposal_id)?;
-        let admitted = calls
+        let admitted = existing_calls
             .iter()
+            .chain(&requested.calls)
             .map(|call| AdmittedCreationToolCall {
                 definition_version: call.definition_version,
                 call: call.call.clone(),
             })
             .collect::<Vec<_>>();
-        validate_creation_tool_calls(&base, attempt.planned_proposal_id, &admitted)
-            .map_err(|_| CreationRepositoryError::Invalid)?;
-        for evidence in &requested {
+        if !admitted.is_empty() {
+            validate_creation_tool_calls(&base, attempt.planned_proposal_id, &admitted)
+                .map_err(|_| CreationRepositoryError::Invalid)?;
+        }
+        let (round_replay_id, round_replay_retention) = requested
+            .provider_replay
+            .as_ref()
+            .map(|reference| {
+                (
+                    Some(reference.artifact_id.to_string()),
+                    Some("conversation"),
+                )
+            })
+            .unwrap_or((None, None));
+        transaction
+            .execute(
+                "INSERT INTO creation_inference_rounds \
+                 (workflow_id,turn_id,attempt_id,ordinal,first_call_ordinal,call_count,parts_json,\
+                  provider_replay_artifact_id,provider_replay_retention,admitted_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                params![
+                    requested.workflow_id.to_string(),
+                    requested.turn_id.to_string(),
+                    requested.attempt_id.to_string(),
+                    i64::from(requested.ordinal),
+                    i64::from(requested.first_call_ordinal),
+                    i64::try_from(requested.calls.len())
+                        .map_err(|_| CreationRepositoryError::Invalid)?,
+                    encode_versioned(&requested.parts, CREATION_JSON_VERSION)
+                        .map_err(|_| CreationRepositoryError::Invalid)?,
+                    round_replay_id,
+                    round_replay_retention,
+                    requested.admitted_at.get(),
+                ],
+            )
+            .map_err(|error| match error.sqlite_error_code() {
+                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
+                _ => CreationRepositoryError::Storage,
+            })?;
+        for evidence in &requested.calls {
             let (replay_id, replay_retention) = evidence
                 .call
                 .provider_replay
@@ -874,14 +989,15 @@ impl CreationAttemptRepository for Database {
             transaction
                 .execute(
                     "INSERT INTO creation_admitted_tool_calls \
-                     (workflow_id,turn_id,attempt_id,id,ordinal,definition_name,definition_version,\
+                     (workflow_id,turn_id,attempt_id,round_ordinal,id,ordinal,definition_name,definition_version,\
                       provider_call_id,arguments_json,raw_arguments,provider_replay_artifact_id,\
                       provider_replay_retention,admitted_at) \
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
                     params![
                         evidence.workflow_id.to_string(),
                         evidence.turn_id.to_string(),
                         evidence.attempt_id.to_string(),
+                        i64::from(evidence.round_ordinal),
                         evidence.id.to_string(),
                         i64::from(evidence.ordinal),
                         evidence.call.name,
@@ -902,14 +1018,34 @@ impl CreationAttemptRepository for Database {
                     _ => CreationRepositoryError::Storage,
                 })?;
         }
-        let stored = list_calls_in(&transaction, owner, attempt_id)?;
-        let start = usize::from(expected_next_ordinal);
-        let admitted = stored[start..].to_vec();
+        let stored = list_rounds_in(&transaction, owner, attempt_id)?;
+        let admitted = stored
+            .last()
+            .cloned()
+            .ok_or(CreationRepositoryError::Storage)?;
         if admitted != requested {
             return Err(CreationRepositoryError::Conflict);
         }
         transaction.commit().map_err(storage)?;
         Ok(admitted)
+    }
+
+    fn list_creation_inference_rounds(
+        &self,
+        owner: CreationAttemptOwner,
+        attempt_id: GenerationAttemptId,
+    ) -> Result<Vec<CreationInferenceRound>, CreationRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
+        let attempt = load_attempt_conn(&transaction, attempt_id)?;
+        if attempt.workflow_id != owner.workflow_id || attempt.turn_id != owner.turn_id {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let rounds = list_rounds_in(&transaction, owner, attempt_id)?;
+        transaction.commit().map_err(storage)?;
+        Ok(rounds)
     }
 
     fn list_creation_tool_calls(
@@ -934,15 +1070,15 @@ impl CreationAttemptRepository for Database {
 #[cfg(test)]
 mod tests {
     use lettuce_conversations::{
-        ArtifactCodec, ArtifactRetention, ConversationArtifactStore, ProposedToolCall,
-        ProtectedArtifactBytes, ReplayArtifactDraft,
+        ArtifactCodec, ArtifactRetention, ConversationArtifactStore, MessagePart, ProposedToolCall,
+        ProtectedArtifactBytes, ReplayArtifactDraft, ReplayArtifactRef,
     };
     use lettuce_creation::{
         AdmittedCreationToolCall, CreationAttemptOwner, CreationAttemptRepository,
         CreationAttemptStatus, CreationDraft, CreationOperation, CreationOperationError,
         CreationRepositoryError, CreationStage, CreationTarget, CreationToolApply,
-        CreationWorkflowRepository, NewCreationAttempt, NewCreationToolCall, NewCreationTurn,
-        NewCreationWorkflow, apply_creation_tool_calls,
+        CreationWorkflowRepository, NewCreationAttempt, NewCreationInferenceRound,
+        NewCreationToolCall, NewCreationTurn, NewCreationWorkflow, apply_creation_tool_calls,
     };
     use lettuce_types::{
         CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId,
@@ -975,6 +1111,27 @@ mod tests {
                 raw_arguments: None,
                 provider_replay: None,
             },
+        }
+    }
+
+    fn new_round(
+        ordinal: u8,
+        mut calls: Vec<NewCreationToolCall>,
+        text: Option<&str>,
+        replay: Option<ReplayArtifactRef>,
+        admitted_at: TimestampMillis,
+    ) -> NewCreationInferenceRound {
+        for call in &mut calls {
+            call.call.provider_replay = replay.clone();
+        }
+        NewCreationInferenceRound {
+            ordinal,
+            parts: text
+                .map(|text| vec![MessagePart::Text { text: text.into() }])
+                .unwrap_or_default(),
+            provider_replay: replay,
+            calls,
+            admitted_at,
         }
     }
 
@@ -1328,33 +1485,40 @@ mod tests {
             ),
         ];
         parent_calls[0].call.raw_arguments = Some("{\"name\":\"Cartographer\"}".to_owned());
-        parent_calls[0].call.provider_replay = Some(replay.clone());
+        let parent_round = new_round(
+            0,
+            parent_calls.clone(),
+            Some("I will draft that."),
+            Some(replay.clone()),
+            TimestampMillis::new(5),
+        );
         let admitted = database
-            .admit_creation_tool_calls(owner, parent_id, 0, &parent_calls, TimestampMillis::new(5))
-            .expect("admit calls");
-        assert_eq!(admitted.len(), 2);
-        assert_eq!(admitted[0].call.provider_replay, Some(replay.clone()));
+            .admit_creation_inference_round(owner, parent_id, 0, 0, parent_round.clone())
+            .expect("admit round");
+        assert_eq!(admitted.calls.len(), 2);
+        assert_eq!(admitted.parts.len(), 1);
+        assert_eq!(admitted.calls[0].call.provider_replay, Some(replay.clone()));
         assert_eq!(
             database
-                .admit_creation_tool_calls(
-                    owner,
-                    parent_id,
-                    0,
-                    &parent_calls,
-                    TimestampMillis::new(5),
-                )
-                .expect("exact call retry"),
+                .admit_creation_inference_round(owner, parent_id, 0, 0, parent_round.clone())
+                .expect("exact round retry"),
             admitted
         );
         let mut changed_calls = parent_calls.clone();
         changed_calls[1].call.arguments = serde_json::json!({"description": "Changed retry."});
         assert_eq!(
-            database.admit_creation_tool_calls(
+            database.admit_creation_inference_round(
                 owner,
                 parent_id,
                 0,
-                &changed_calls,
-                TimestampMillis::new(5),
+                0,
+                new_round(
+                    0,
+                    changed_calls,
+                    Some("I will draft that."),
+                    Some(replay.clone()),
+                    TimestampMillis::new(5),
+                ),
             ),
             Err(CreationRepositoryError::Conflict)
         );
@@ -1362,12 +1526,12 @@ mod tests {
         duplicate_provider[1].call.provider_call_id =
             duplicate_provider[0].call.provider_call_id.clone();
         assert_eq!(
-            database.admit_creation_tool_calls(
+            database.admit_creation_inference_round(
                 owner,
                 parent_id,
+                1,
                 2,
-                &duplicate_provider,
-                TimestampMillis::new(6),
+                new_round(1, duplicate_provider, None, None, TimestampMillis::new(6)),
             ),
             Err(CreationRepositoryError::Invalid)
         );
@@ -1377,25 +1541,31 @@ mod tests {
         )];
         wrong_version[0].definition_version = 2;
         assert_eq!(
-            database.admit_creation_tool_calls(
+            database.admit_creation_inference_round(
                 owner,
                 parent_id,
+                1,
                 2,
-                &wrong_version,
-                TimestampMillis::new(6),
+                new_round(1, wrong_version, None, None, TimestampMillis::new(6)),
             ),
             Err(CreationRepositoryError::Invalid)
         );
         assert_eq!(
-            database.admit_creation_tool_calls(
+            database.admit_creation_inference_round(
                 CreationAttemptOwner {
                     workflow_id,
                     turn_id: CreationTurnId::new(),
                 },
                 parent_id,
+                1,
                 2,
-                &[new_call("show_preview", serde_json::json!({}))],
-                TimestampMillis::new(6),
+                new_round(
+                    1,
+                    vec![new_call("show_preview", serde_json::json!({}))],
+                    None,
+                    None,
+                    TimestampMillis::new(6),
+                ),
             ),
             Err(CreationRepositoryError::Conflict)
         );
@@ -1442,9 +1612,39 @@ mod tests {
             ),
             new_call("show_preview", serde_json::json!({})),
         ];
-        let child_evidence = database
-            .admit_creation_tool_calls(owner, child_id, 0, &child_calls, TimestampMillis::new(9))
-            .expect("admit child calls");
+        let child_round = new_round(
+            0,
+            child_calls.clone(),
+            Some("Here is the draft."),
+            None,
+            TimestampMillis::new(9),
+        );
+        let child_round = database
+            .admit_creation_inference_round(owner, child_id, 0, 0, child_round.clone())
+            .expect("admit child round");
+        let child_evidence = child_round.calls.clone();
+        let terminal_round = database
+            .admit_creation_inference_round(
+                owner,
+                child_id,
+                1,
+                2,
+                new_round(
+                    1,
+                    Vec::new(),
+                    Some("Review it when ready."),
+                    None,
+                    TimestampMillis::new(10),
+                ),
+            )
+            .expect("admit text-only terminal round");
+        assert!(terminal_round.calls.is_empty());
+        assert_eq!(
+            database
+                .list_creation_inference_rounds(owner, child_id)
+                .expect("round history"),
+            vec![child_round.clone(), terminal_round]
+        );
         let committed = apply_creation_tool_calls(
             &database,
             CreationToolApply {
@@ -1460,30 +1660,42 @@ mod tests {
                         call: evidence.call.clone(),
                     })
                     .collect(),
-                now: TimestampMillis::new(10),
+                now: TimestampMillis::new(11),
             },
         )
         .expect("reduce admitted child calls");
         assert_eq!(committed.workflow.stage, CreationStage::AwaitingReview);
         assert_eq!(
             database
-                .admit_creation_tool_calls(
+                .admit_creation_inference_round(
                     owner,
                     child_id,
                     0,
-                    &child_calls,
-                    TimestampMillis::new(9),
+                    0,
+                    new_round(
+                        0,
+                        child_calls,
+                        Some("Here is the draft."),
+                        None,
+                        TimestampMillis::new(9),
+                    ),
                 )
                 .expect("exact admission retry survives base advancement"),
-            child_evidence
+            child_round
         );
         assert_eq!(
-            database.admit_creation_tool_calls(
+            database.admit_creation_inference_round(
                 owner,
                 child_id,
                 2,
-                &[new_call("show_preview", serde_json::json!({}))],
-                TimestampMillis::new(11),
+                2,
+                new_round(
+                    2,
+                    vec![new_call("show_preview", serde_json::json!({}))],
+                    None,
+                    None,
+                    TimestampMillis::new(12),
+                ),
             ),
             Err(CreationRepositoryError::Conflict),
             "workflow advancement makes the attempt base stale"
@@ -1494,7 +1706,7 @@ mod tests {
                 child.revision,
                 CreationAttemptStatus::Succeeded,
                 None,
-                TimestampMillis::new(11),
+                TimestampMillis::new(12),
             )
             .expect("finish child");
         assert_eq!(succeeded.status, CreationAttemptStatus::Succeeded);
@@ -1505,6 +1717,15 @@ mod tests {
                 .execute(
                     "UPDATE creation_admitted_tool_calls SET definition_version=2 WHERE id=?1",
                     [child_evidence[0].id.to_string()],
+                )
+                .is_err()
+        );
+        assert!(
+            connection
+                .execute(
+                    "UPDATE creation_inference_rounds SET call_count=0 \
+                     WHERE attempt_id=?1 AND ordinal=0",
+                    [child_id.to_string()],
                 )
                 .is_err()
         );

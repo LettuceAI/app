@@ -1,4 +1,6 @@
-use lettuce_conversations::{ProposedToolCall, ToolRequest};
+use lettuce_conversations::{
+    MessagePart, ProposedToolCall, ReplayArtifactRef, ReplayRetention, ToolRequest,
+};
 use lettuce_types::{
     CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, Revision,
     TimestampMillis, ToolExecutionId,
@@ -177,12 +179,123 @@ pub struct NewCreationToolCall {
     pub call: ProposedToolCall,
 }
 
+pub const MAX_CREATION_INFERENCE_ROUNDS: u8 = 8;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewCreationInferenceRound {
+    pub ordinal: u8,
+    pub parts: Vec<MessagePart>,
+    pub provider_replay: Option<ReplayArtifactRef>,
+    pub calls: Vec<NewCreationToolCall>,
+    pub admitted_at: TimestampMillis,
+}
+
+impl NewCreationInferenceRound {
+    pub fn validate(&self) -> Result<(), CreationAttemptError> {
+        if self.ordinal >= MAX_CREATION_INFERENCE_ROUNDS
+            || (self.parts.is_empty() && self.calls.is_empty())
+            || self.parts.len() > 64
+            || self.calls.len() > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE
+        {
+            return Err(CreationAttemptError::InvalidRound);
+        }
+        for part in &self.parts {
+            part.validate()
+                .map_err(|_| CreationAttemptError::InvalidRound)?;
+            if !matches!(
+                part,
+                MessagePart::Text { .. } | MessagePart::ReasoningSummary { .. }
+            ) {
+                return Err(CreationAttemptError::InvalidRound);
+            }
+        }
+        if let Some(replay) = &self.provider_replay {
+            replay
+                .validate()
+                .map_err(|_| CreationAttemptError::InvalidRound)?;
+            if replay.retention != ReplayRetention::Conversation {
+                return Err(CreationAttemptError::InvalidRound);
+            }
+        }
+        let mut ids = std::collections::HashSet::new();
+        let mut provider_ids = std::collections::HashSet::new();
+        for call in &self.calls {
+            call.call
+                .validate()
+                .map_err(|_| CreationAttemptError::InvalidCall)?;
+            if call.definition_version == 0
+                || !ids.insert(call.id)
+                || call
+                    .call
+                    .provider_call_id
+                    .as_deref()
+                    .is_some_and(|id| !provider_ids.insert(id))
+                || call.call.provider_replay.as_ref() != self.provider_replay.as_ref()
+            {
+                return Err(CreationAttemptError::InvalidCall);
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreationInferenceRound {
+    pub workflow_id: CreationWorkflowId,
+    pub turn_id: CreationTurnId,
+    pub attempt_id: GenerationAttemptId,
+    pub ordinal: u8,
+    pub first_call_ordinal: u16,
+    pub parts: Vec<MessagePart>,
+    pub provider_replay: Option<ReplayArtifactRef>,
+    pub calls: Vec<CreationToolCallEvidence>,
+    pub admitted_at: TimestampMillis,
+}
+
+impl CreationInferenceRound {
+    pub fn validate(&self) -> Result<(), CreationAttemptError> {
+        NewCreationInferenceRound {
+            ordinal: self.ordinal,
+            parts: self.parts.clone(),
+            provider_replay: self.provider_replay.clone(),
+            calls: self
+                .calls
+                .iter()
+                .map(|call| NewCreationToolCall {
+                    id: call.id,
+                    definition_version: call.definition_version,
+                    call: call.call.clone(),
+                })
+                .collect(),
+            admitted_at: self.admitted_at,
+        }
+        .validate()?;
+        for (offset, call) in self.calls.iter().enumerate() {
+            let expected = self
+                .first_call_ordinal
+                .checked_add(u16::try_from(offset).map_err(|_| CreationAttemptError::InvalidRound)?)
+                .ok_or(CreationAttemptError::InvalidRound)?;
+            if call.workflow_id != self.workflow_id
+                || call.turn_id != self.turn_id
+                || call.attempt_id != self.attempt_id
+                || call.round_ordinal != self.ordinal
+                || call.ordinal != expected
+                || call.admitted_at != self.admitted_at
+            {
+                return Err(CreationAttemptError::InvalidRound);
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreationToolCallEvidence {
     pub id: ToolExecutionId,
     pub workflow_id: CreationWorkflowId,
     pub turn_id: CreationTurnId,
     pub attempt_id: GenerationAttemptId,
+    pub round_ordinal: u8,
     pub ordinal: u16,
     pub definition_version: u32,
     pub call: ProposedToolCall,
@@ -213,6 +326,8 @@ pub enum CreationAttemptError {
     InvalidTransition,
     #[error("creation tool call is invalid")]
     InvalidCall,
+    #[error("creation inference round is invalid")]
+    InvalidRound,
 }
 
 #[cfg(test)]

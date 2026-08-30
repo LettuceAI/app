@@ -101,10 +101,41 @@ CREATE TABLE creation_inference_attempts (
     CHECK (started_at IS NULL OR finished_at IS NULL OR started_at <= finished_at)
 ) STRICT;
 
+CREATE TABLE creation_inference_rounds (
+    workflow_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0 AND ordinal < 8),
+    first_call_ordinal INTEGER NOT NULL CHECK (first_call_ordinal >= 0 AND first_call_ordinal <= 64),
+    call_count INTEGER NOT NULL CHECK (call_count >= 0 AND call_count <= 64),
+    parts_json TEXT NOT NULL CHECK (
+        json_valid(parts_json)
+        AND json_extract(parts_json, '$.format_version') = 1
+        AND json_type(parts_json, '$.value') = 'array'
+        AND json_array_length(json_extract(parts_json, '$.value')) <= 64
+    ),
+    provider_replay_artifact_id TEXT,
+    provider_replay_retention TEXT CHECK (
+        provider_replay_retention IS NULL OR provider_replay_retention = 'conversation'
+    ),
+    admitted_at INTEGER NOT NULL,
+    PRIMARY KEY (workflow_id, turn_id, attempt_id, ordinal),
+    FOREIGN KEY (workflow_id, turn_id, attempt_id)
+        REFERENCES creation_inference_attempts(workflow_id, turn_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (provider_replay_artifact_id, provider_replay_retention)
+        REFERENCES conversation_replay_artifacts(artifact_id, retention) ON DELETE RESTRICT,
+    CHECK (call_count > 0 OR json_array_length(json_extract(parts_json, '$.value')) > 0),
+    CHECK (first_call_ordinal + call_count <= 64),
+    CHECK ((provider_replay_artifact_id IS NULL) = (provider_replay_retention IS NULL))
+) STRICT;
+CREATE INDEX creation_inference_rounds_attempt_idx
+    ON creation_inference_rounds(workflow_id, turn_id, attempt_id, ordinal);
+
 CREATE TABLE creation_admitted_tool_calls (
     workflow_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
+    round_ordinal INTEGER NOT NULL CHECK (round_ordinal >= 0 AND round_ordinal < 8),
     id TEXT NOT NULL,
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0 AND ordinal < 64),
     definition_name TEXT NOT NULL CHECK (
@@ -139,6 +170,9 @@ CREATE TABLE creation_admitted_tool_calls (
     UNIQUE (workflow_id, turn_id, attempt_id, ordinal),
     FOREIGN KEY (workflow_id, turn_id, attempt_id)
         REFERENCES creation_inference_attempts(workflow_id, turn_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (workflow_id, turn_id, attempt_id, round_ordinal)
+        REFERENCES creation_inference_rounds(workflow_id, turn_id, attempt_id, ordinal)
+        ON DELETE RESTRICT,
     FOREIGN KEY (provider_replay_artifact_id, provider_replay_retention)
         REFERENCES conversation_replay_artifacts(artifact_id, retention) ON DELETE RESTRICT,
     CHECK ((provider_replay_artifact_id IS NULL) = (provider_replay_retention IS NULL))
@@ -147,7 +181,7 @@ CREATE UNIQUE INDEX creation_admitted_tool_calls_provider_id_uq
     ON creation_admitted_tool_calls(workflow_id, turn_id, attempt_id, provider_call_id)
     WHERE provider_call_id IS NOT NULL;
 CREATE INDEX creation_admitted_tool_calls_attempt_idx
-    ON creation_admitted_tool_calls(workflow_id, turn_id, attempt_id, ordinal);
+    ON creation_admitted_tool_calls(workflow_id, turn_id, attempt_id, round_ordinal, ordinal);
 
 CREATE TRIGGER creation_attempt_retry_guard
 BEFORE INSERT ON creation_inference_attempts
@@ -231,6 +265,50 @@ WHEN NOT EXISTS (
       AND turn.base_proposal_id = attempt.base_proposal_id
 )
 BEGIN SELECT RAISE(ABORT, 'creation call requires a live non-stale attempt'); END;
+
+CREATE TRIGGER creation_round_live_attempt_guard
+BEFORE INSERT ON creation_inference_rounds
+WHEN NOT EXISTS (
+    SELECT 1
+    FROM creation_inference_attempts attempt
+    JOIN creation_workflows workflow ON workflow.id = attempt.workflow_id
+    JOIN creation_turns turn
+      ON turn.workflow_id = attempt.workflow_id AND turn.id = attempt.turn_id
+    WHERE attempt.workflow_id = NEW.workflow_id
+      AND attempt.turn_id = NEW.turn_id
+      AND attempt.id = NEW.attempt_id
+      AND attempt.status = 'running'
+      AND workflow.current_proposal_id = attempt.base_proposal_id
+      AND workflow.stage = attempt.stage
+      AND turn.base_proposal_id = attempt.base_proposal_id
+)
+BEGIN SELECT RAISE(ABORT, 'creation round requires a live non-stale attempt'); END;
+
+CREATE TRIGGER creation_round_ordinal_guard
+BEFORE INSERT ON creation_inference_rounds
+WHEN NEW.ordinal != (
+    SELECT coalesce(max(ordinal) + 1, 0)
+    FROM creation_inference_rounds
+    WHERE workflow_id = NEW.workflow_id
+      AND turn_id = NEW.turn_id
+      AND attempt_id = NEW.attempt_id
+)
+OR NEW.first_call_ordinal != (
+    SELECT coalesce(sum(call_count), 0)
+    FROM creation_inference_rounds
+    WHERE workflow_id = NEW.workflow_id
+      AND turn_id = NEW.turn_id
+      AND attempt_id = NEW.attempt_id
+)
+BEGIN SELECT RAISE(ABORT, 'creation round ordinal mismatch'); END;
+
+CREATE TRIGGER creation_round_immutable_update
+BEFORE UPDATE ON creation_inference_rounds
+BEGIN SELECT RAISE(ABORT, 'creation inference round is immutable'); END;
+
+CREATE TRIGGER creation_round_immutable_delete
+BEFORE DELETE ON creation_inference_rounds
+BEGIN SELECT RAISE(ABORT, 'creation inference round cannot be deleted'); END;
 
 CREATE TRIGGER creation_tool_call_contract_guard
 BEFORE INSERT ON creation_admitted_tool_calls

@@ -10,7 +10,9 @@ mod tool;
 
 pub use attempt::{
     CreationAttemptError, CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptStatus,
-    CreationInferenceAttempt, CreationToolCallEvidence, NewCreationAttempt, NewCreationToolCall,
+    CreationInferenceAttempt, CreationInferenceRound, CreationToolCallEvidence,
+    MAX_CREATION_INFERENCE_ROUNDS, NewCreationAttempt, NewCreationInferenceRound,
+    NewCreationToolCall,
 };
 pub use model::{
     CreationDraft, CreationLorebookEntry, CreationScene, CreationStage, CreationTarget,

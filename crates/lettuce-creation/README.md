@@ -48,6 +48,12 @@ evidence; stale bases, changed retries, cross-turn owners, undeclared tools,
 version drift, and duplicate identities fail closed. Provider dispatch and
 recursive continuation remain a later application-coordination slice.
 
+Each attempt additionally checkpoints up to eight immutable provider-response
+rounds. Round evidence preserves mixed visible text/reasoning, candidate replay,
+and the exact contiguous call range, including text-only terminal responses.
+This makes batch ownership and continuation recovery explicit instead of
+guessing round boundaries from timestamps or a flat call list.
+
 Single-entry, keyword, and staged lorebook-generation behavior is pinned in
 `fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`. Generation
 owns durable reviewed proposals; `lettuce-context` remains the only lorebook

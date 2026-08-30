@@ -4,8 +4,8 @@ use lettuce_types::{
 
 use crate::{
     CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptStatus,
-    CreationInferenceAttempt, CreationProposal, CreationToolCallEvidence, CreationTurn,
-    CreationWorkflow, NewCreationAttempt, NewCreationToolCall, NewCreationTurn,
+    CreationInferenceAttempt, CreationInferenceRound, CreationProposal, CreationToolCallEvidence,
+    CreationTurn, CreationWorkflow, NewCreationAttempt, NewCreationInferenceRound, NewCreationTurn,
     NewCreationWorkflow,
 };
 
@@ -29,14 +29,20 @@ pub trait CreationAttemptRepository: Send + Sync {
         at: TimestampMillis,
     ) -> Result<CreationInferenceAttempt, CreationRepositoryError>;
 
-    fn admit_creation_tool_calls(
+    fn admit_creation_inference_round(
         &self,
         owner: CreationAttemptOwner,
         attempt_id: GenerationAttemptId,
+        expected_round_ordinal: u8,
         expected_next_ordinal: u16,
-        calls: &[NewCreationToolCall],
-        at: TimestampMillis,
-    ) -> Result<Vec<CreationToolCallEvidence>, CreationRepositoryError>;
+        round: NewCreationInferenceRound,
+    ) -> Result<CreationInferenceRound, CreationRepositoryError>;
+
+    fn list_creation_inference_rounds(
+        &self,
+        owner: CreationAttemptOwner,
+        attempt_id: GenerationAttemptId,
+    ) -> Result<Vec<CreationInferenceRound>, CreationRepositoryError>;
 
     fn list_creation_tool_calls(
         &self,
