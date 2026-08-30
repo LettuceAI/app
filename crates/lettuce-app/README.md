@@ -63,9 +63,15 @@ and the terminal coordinator now assigns authoritative added/updated memory IDs
 to each coalesced effect through its exact user/assistant source window. It
 copies the legacy largest-delta summary selection, percent rounding, wording,
 pluralization, and three-part cap; no-op success is ready, terminal failures use
-bounded stable reasons, and exact settlement replay is idempotent. Durable
-post-turn job admission, debounce/coalescing, and restart discovery remain the
-next application slice.
+bounded stable reasons, and exact settlement replay is idempotent. Processing
+effects can now be rediscovered from SQLite in stable order and coalesced per
+conversation into background `MemoryExtraction` jobs. The batch's logical
+idempotency key is derived from its ordered durable effect identities, so
+duplicate discovery reuses one runtime job and a fresh in-memory job store after
+restart rebuilds the same logical batch. Empty discovery is the
+non-companion/dynamic-memory-disabled no-op. Worker execution/debounce and
+binding admission to host startup/finalization remain the next application
+slice; the generic job store itself is still only an in-memory reference store.
 
 The first direct/group dynamic-memory handler path accepts an already admitted
 and running ordered tool round, validates the exact v1 feature contract, joins

@@ -8,6 +8,7 @@
 
 mod built_in_prompts;
 mod companion_memory_effect;
+mod companion_memory_job;
 mod companion_turn;
 mod composition;
 mod context_assembler;
@@ -21,6 +22,7 @@ mod provider_runtime;
 
 pub use built_in_prompts::*;
 pub use companion_memory_effect::*;
+pub use companion_memory_job::*;
 pub use companion_turn::*;
 pub use composition::*;
 pub use context_assembler::*;

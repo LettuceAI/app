@@ -224,6 +224,14 @@ pub trait CompanionTurnEffectRepository: Send + Sync {
         assistant_message_id: MessageId,
     ) -> Result<Option<CompanionTurnEffect>, CompanionTurnEffectRepositoryError>;
 
+    /// Returns durable pending work in stable conversation/time/effect order.
+    /// Processing effects are the restart-safe queue authority; runtime job
+    /// stores may be rebuilt from this list after process loss.
+    fn list_processing(
+        &self,
+        limit: u16,
+    ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError>;
+
     fn settle(
         &self,
         effect_id: CompanionEffectId,

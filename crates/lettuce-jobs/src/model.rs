@@ -896,6 +896,8 @@ pub struct JobSnapshot {
     pub id: JobId,
     pub kind: JobKind,
     pub subject: JobSubject,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<IdempotencyKey>,
     pub state: JobState,
     pub stage: StageSnapshot,
     pub progress: ProgressSnapshot,

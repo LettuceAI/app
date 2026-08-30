@@ -23,6 +23,10 @@ The crate now provides the domain-independent foundation:
 - policy, recovery, retention, handle and resource-admission vocabulary for
   later database/application adapters.
 
+Snapshots retain the optional caller idempotency key so application schedulers
+can distinguish an exact active logical batch from newly arrived work for the
+same subject without opening the store's private specification record.
+
 Request handles expose a cloneable cancellation token with both an atomic
 instant check and an async notification, allowing executors to interrupt
 blocked I/O without polling.

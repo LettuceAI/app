@@ -323,6 +323,21 @@ mod tests {
                 .cloned())
         }
 
+        fn list_processing(
+            &self,
+            limit: u16,
+        ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
+            Ok(self
+                .effects
+                .lock()
+                .expect("effects")
+                .values()
+                .filter(|effect| effect.status == CompanionTurnEffectStatus::Processing)
+                .take(usize::from(limit))
+                .cloned()
+                .collect())
+        }
+
         fn settle(
             &self,
             effect_id: CompanionEffectId,

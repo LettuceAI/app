@@ -319,6 +319,7 @@ impl InMemoryJobStore {
             id,
             kind: spec.kind,
             subject: spec.subject.clone(),
+            idempotency_key: spec.idempotency_key.clone(),
             state: JobState::Queued,
             stage: StageSnapshot::default(),
             progress: ProgressSnapshot::default(),
@@ -1305,6 +1306,10 @@ mod tests {
         assert!(first.created);
         assert!(!second.created);
         assert_eq!(first.job.id, second.job.id);
+        assert_eq!(
+            first.job.idempotency_key.as_ref().map(|key| key.as_str()),
+            Some("same")
+        );
         let events = store.events_since(first.job.id, None, 10).expect("events");
         assert_eq!(events[0].seq, EventSeq::FIRST);
         assert!(matches!(events[0].event, JobEvent::Created { .. }));

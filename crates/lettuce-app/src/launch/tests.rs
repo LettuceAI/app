@@ -902,6 +902,14 @@ fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     .expect("processing effect");
     assert_eq!(effect.status, CompanionTurnEffectStatus::Processing);
     assert_eq!(effect.user_message_id, Some(user_message_id));
+    assert_eq!(
+        CompanionTurnEffectRepository::list_processing(&database, 512)
+            .expect("list processing effects")
+            .iter()
+            .map(|effect| effect.id)
+            .collect::<Vec<_>>(),
+        [effect.id]
+    );
     let replay = database
         .finalize_generation(
             turn_id,
@@ -957,6 +965,11 @@ fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .len(),
         2
     );
+    assert!(
+        CompanionTurnEffectRepository::list_processing(&database, 512)
+            .expect("ready effect is not pending")
+            .is_empty()
+    );
 
     let current = ConversationReader::get(&database, conversation.id)
         .expect("conversation after reply")
@@ -1004,6 +1017,14 @@ fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         continued_effect.seed,
         lettuce_companions::CompanionTurnEffectSeed::default()
     );
+    assert_eq!(
+        CompanionTurnEffectRepository::list_processing(&database, 512)
+            .expect("list continuation effect")
+            .iter()
+            .map(|effect| effect.id)
+            .collect::<Vec<_>>(),
+        [continued_effect.id]
+    );
     let failed = CompanionTurnEffectRepository::settle(
         &database,
         continued_effect.id,
@@ -1024,6 +1045,11 @@ fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     )
     .expect("replay failed effect");
     assert_eq!(failed_replay, failed);
+    assert!(
+        CompanionTurnEffectRepository::list_processing(&database, 512)
+            .expect("failed effect is not pending")
+            .is_empty()
+    );
     assert_eq!(
         CompanionTurnEffectRepository::settle(
             &database,

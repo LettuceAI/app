@@ -106,5 +106,10 @@ Failure or cancellation before finalization discards the seed, and exact send
 or finalization replay does not duplicate an effect.
 The application terminal coordinator now settles coalesced effects from
 authoritative before/after memory snapshots and exact source-message IDs while
-copying the legacy summary formula. Durable post-turn scheduling and recovery
-discovery remain application-owned follow-up work.
+copying the legacy summary formula. Worker execution remains application-owned
+follow-up work.
+
+The repository can list bounded processing effects in stable
+conversation/time/effect order. Those normalized rows are the durable pending
+queue authority; runtime worker jobs can be reconstructed after process loss
+without storing a second copy of the turn seed or source identities.
