@@ -7,12 +7,13 @@ use lettuce_conversations::{
 };
 use lettuce_creation::{
     AdmittedCreationToolCall, CreationAttemptFailureCode, CreationAttemptOwner,
-    CreationAttemptRepository, CreationAttemptStatus, CreationInferenceAttempt,
-    CreationInferenceRound, CreationProposal, CreationRepositoryError, CreationRoundFinishReason,
-    CreationToolApply, CreationToolCommit, CreationTurnAttemptAdmission, CreationWorkflow,
-    CreationWorkflowRepository, MAX_CREATION_INFERENCE_ROUNDS, NewCreationInferenceRound,
-    NewCreationToolCall, NewCreationTurnAttempt, apply_creation_tool_calls,
-    creation_inference_profile_fingerprint, reduce_creation_tool_calls,
+    CreationAttemptRecovery, CreationAttemptRepository, CreationAttemptStatus,
+    CreationAttemptSuccessSettlement, CreationInferenceAttempt, CreationInferenceRound,
+    CreationProposal, CreationRepositoryError, CreationRoundFinishReason,
+    CreationTurnAttemptAdmission, CreationWorkflow, CreationWorkflowRepository,
+    MAX_CREATION_INFERENCE_ROUNDS, NewCreationAttemptRecovery, NewCreationInferenceRound,
+    NewCreationToolCall, NewCreationTurnAttempt, creation_inference_profile_fingerprint,
+    reduce_creation_tool_calls,
 };
 use lettuce_jobs::handle::JobHandle;
 use lettuce_types::{
@@ -50,6 +51,40 @@ pub fn admit_creation_turn_dispatch<R: CreationAttemptRepository + ?Sized>(
             planned_proposal_id: request.planned_proposal_id,
             user_message: request.user_message,
             job_id: handle.id(),
+            profile_fingerprint,
+            now: request.now,
+        })
+        .map_err(Into::into)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreationRecoveryDispatchRequest {
+    pub workflow_id: CreationWorkflowId,
+    pub turn_id: CreationTurnId,
+    pub parent_attempt_id: GenerationAttemptId,
+    pub child_attempt_id: GenerationAttemptId,
+    pub planned_proposal_id: CreationProposalId,
+    pub profile: ResolvedInferenceProfile,
+    pub now: TimestampMillis,
+}
+
+pub fn recover_creation_dispatch<R: CreationAttemptRepository + ?Sized>(
+    repository: &R,
+    request: CreationRecoveryDispatchRequest,
+    child_handle: &JobHandle,
+) -> Result<CreationAttemptRecovery, CreationContinuationError> {
+    let profile_fingerprint = creation_inference_profile_fingerprint(&request.profile)
+        .map_err(|_| CreationContinuationError::InvalidProfile)?;
+    repository
+        .recover_creation_attempt(NewCreationAttemptRecovery {
+            owner: CreationAttemptOwner {
+                workflow_id: request.workflow_id,
+                turn_id: request.turn_id,
+            },
+            parent_attempt_id: request.parent_attempt_id,
+            child_attempt_id: request.child_attempt_id,
+            planned_proposal_id: request.planned_proposal_id,
+            job_id: child_handle.id(),
             profile_fingerprint,
             now: request.now,
         })
@@ -286,36 +321,37 @@ impl<
             .last()
             .map(|round| round.admitted_at)
             .ok_or(CreationContinuationError::InvalidRoundHistory)?;
-        let (workflow, proposal) = if calls.is_empty() {
-            (workflow, None)
+        let proposal = if calls.is_empty() {
+            None
         } else {
-            let CreationToolCommit {
-                workflow, proposal, ..
-            } = apply_creation_tool_calls(
-                self.repository,
-                CreationToolApply {
-                    workflow_id: attempt.workflow_id,
-                    expected_workflow_revision: workflow.revision,
-                    base_proposal_id: attempt.base_proposal_id,
-                    proposal_id: attempt.planned_proposal_id,
-                    turn_id: attempt.turn_id,
-                    calls,
-                    now: finished_at,
-                },
-            )?;
-            (workflow, Some(proposal))
+            Some(
+                reduce_creation_tool_calls(
+                    &self.repository.load_proposal(attempt.base_proposal_id)?,
+                    attempt.planned_proposal_id,
+                    attempt.turn_id,
+                    &calls,
+                    finished_at,
+                )?
+                .proposal,
+            )
         };
-        let attempt = self.repository.transition_creation_attempt(
-            attempt.id,
-            attempt.revision,
-            CreationAttemptStatus::Succeeded,
-            None,
-            finished_at,
-        )?;
+        let settled =
+            self.repository
+                .settle_creation_attempt_success(CreationAttemptSuccessSettlement {
+                    owner: CreationAttemptOwner {
+                        workflow_id: attempt.workflow_id,
+                        turn_id: attempt.turn_id,
+                    },
+                    attempt_id: attempt.id,
+                    expected_attempt_revision: attempt.revision,
+                    expected_workflow_revision: workflow.revision,
+                    proposal,
+                    now: finished_at,
+                })?;
         Ok(CreationContinuationResult {
-            attempt,
-            workflow,
-            proposal,
+            attempt: settled.attempt,
+            workflow: settled.workflow,
+            proposal: settled.proposal,
             visible_parts,
             usage: aggregate_round_usage(&rounds)?,
             rounds,
@@ -692,7 +728,11 @@ pub enum CreationContinuationError {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::VecDeque, sync::Mutex};
+    use std::{
+        collections::VecDeque,
+        sync::{Arc, Barrier, Mutex},
+        thread,
+    };
 
     use super::*;
     use async_trait::async_trait;
@@ -971,6 +1011,37 @@ mod tests {
             );
         }
 
+        let settlement = CreationAttemptSuccessSettlement {
+            owner: CreationAttemptOwner {
+                workflow_id: result.attempt.workflow_id,
+                turn_id: result.attempt.turn_id,
+            },
+            attempt_id: result.attempt.id,
+            expected_attempt_revision: Revision::new(
+                result
+                    .attempt
+                    .revision
+                    .get()
+                    .checked_sub(1)
+                    .expect("pre-settlement revision"),
+            ),
+            expected_workflow_revision: Revision::INITIAL,
+            proposal: result.proposal.clone(),
+            now: result.attempt.finished_at.expect("finished"),
+        };
+        let settlement_replay = database
+            .settle_creation_attempt_success(settlement.clone())
+            .expect("exact atomic settlement replay");
+        assert_eq!(settlement_replay.attempt, result.attempt);
+        assert_eq!(settlement_replay.workflow, result.workflow);
+        assert_eq!(settlement_replay.proposal, result.proposal);
+        let mut changed_settlement = settlement;
+        changed_settlement.expected_workflow_revision = result.workflow.revision;
+        assert_eq!(
+            database.settle_creation_attempt_success(changed_settlement),
+            Err(CreationRepositoryError::Conflict)
+        );
+
         let replay = CreationContinuationCoordinator::new(&database, &inference)
             .run(
                 attempt_id,
@@ -1060,6 +1131,207 @@ mod tests {
             database.load_turn(rolled_back_turn_id),
             Err(CreationRepositoryError::NotFound)
         );
+    }
+
+    #[test]
+    fn interrupted_attempt_recovers_into_an_empty_bound_child() {
+        let database = Database::open_in_memory().expect("database");
+        let workflow_id = CreationWorkflowId::new();
+        let base_proposal_id = CreationProposalId::new();
+        let workflow = database
+            .create_workflow(NewCreationWorkflow {
+                id: workflow_id,
+                initial_proposal_id: base_proposal_id,
+                target: CreationTarget::NewPersona,
+                initial_draft: CreationDraft::Persona {
+                    name: None,
+                    description: None,
+                },
+                now: TimestampMillis::new(1),
+            })
+            .expect("workflow");
+        let parent_handle = JobHandle::new(JobId::new());
+        let profile = profile();
+        let admitted = admit_creation_turn_dispatch(
+            &database,
+            CreationTurnDispatchRequest {
+                workflow_id,
+                expected_workflow_revision: workflow.revision,
+                base_proposal_id,
+                turn_id: CreationTurnId::new(),
+                attempt_id: GenerationAttemptId::new(),
+                planned_proposal_id: CreationProposalId::new(),
+                user_message: "Create a navigator".into(),
+                profile: profile.clone(),
+                now: TimestampMillis::new(2),
+            },
+            &parent_handle,
+        )
+        .expect("admission");
+        let parent = database
+            .transition_creation_attempt(
+                admitted.attempt.id,
+                admitted.attempt.revision,
+                CreationAttemptStatus::Running,
+                None,
+                TimestampMillis::new(3),
+            )
+            .expect("running");
+        let owner = CreationAttemptOwner {
+            workflow_id,
+            turn_id: admitted.turn.id,
+        };
+        database
+            .admit_creation_inference_round(
+                owner,
+                parent.id,
+                0,
+                0,
+                NewCreationInferenceRound {
+                    ordinal: 0,
+                    parts: Vec::new(),
+                    provider_replay: None,
+                    usage: Some(InferenceUsage {
+                        input_tokens: 4,
+                        output_tokens: 1,
+                    }),
+                    finish_reason: CreationRoundFinishReason::Stop,
+                    provider_request_id: Some("partial-request".into()),
+                    calls: vec![NewCreationToolCall {
+                        id: lettuce_types::ToolExecutionId::new(),
+                        definition_version: 1,
+                        call: tool_call(
+                            "set_persona_name",
+                            serde_json::json!({"name": "Navigator"}),
+                            "partial-call",
+                        ),
+                    }],
+                    admitted_at: TimestampMillis::new(4),
+                },
+            )
+            .expect("partial round");
+        let child_handle = JobHandle::new(JobId::new());
+        let recovery_request = CreationRecoveryDispatchRequest {
+            workflow_id,
+            turn_id: admitted.turn.id,
+            parent_attempt_id: parent.id,
+            child_attempt_id: GenerationAttemptId::new(),
+            planned_proposal_id: CreationProposalId::new(),
+            profile,
+            now: TimestampMillis::new(5),
+        };
+        assert!(matches!(
+            recover_creation_dispatch(&database, recovery_request.clone(), &parent_handle),
+            Err(CreationContinuationError::Repository(
+                CreationRepositoryError::Conflict
+            ))
+        ));
+        let mut changed_profile = recovery_request.clone();
+        changed_profile.profile = self::profile();
+        assert!(matches!(
+            recover_creation_dispatch(&database, changed_profile, &child_handle),
+            Err(CreationContinuationError::Repository(
+                CreationRepositoryError::Conflict
+            ))
+        ));
+        assert_eq!(
+            database
+                .load_creation_attempt(parent.id)
+                .expect("parent remains running")
+                .status,
+            CreationAttemptStatus::Running
+        );
+        let recovered =
+            recover_creation_dispatch(&database, recovery_request.clone(), &child_handle)
+                .expect("recovery");
+        assert_eq!(recovered.parent.status, CreationAttemptStatus::Interrupted);
+        assert_eq!(recovered.child.status, CreationAttemptStatus::Created);
+        assert_eq!(recovered.child.retry_parent_id, Some(parent.id));
+        assert_eq!(
+            database
+                .list_creation_inference_rounds(owner, parent.id)
+                .expect("parent rounds")
+                .len(),
+            1
+        );
+        assert!(
+            database
+                .list_creation_inference_rounds(owner, recovered.child.id)
+                .expect("child rounds")
+                .is_empty()
+        );
+        assert_eq!(
+            recover_creation_dispatch(&database, recovery_request, &child_handle)
+                .expect("exact recovery replay"),
+            recovered
+        );
+    }
+
+    #[test]
+    fn concurrent_interrupted_recovery_converges_on_one_child() {
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-creation-recovery-{}.db",
+            GenerationAttemptId::new()
+        ));
+        let setup_database = Database::open(&path).expect("setup database");
+        let parent_handle = JobHandle::new(JobId::new());
+        let profile = profile();
+        let parent_id = setup(&setup_database, &parent_handle, &profile);
+        let parent = setup_database
+            .load_creation_attempt(parent_id)
+            .expect("parent");
+        let parent = setup_database
+            .transition_creation_attempt(
+                parent.id,
+                parent.revision,
+                CreationAttemptStatus::Running,
+                None,
+                TimestampMillis::new(4),
+            )
+            .expect("running parent");
+        drop(setup_database);
+
+        let recovery = NewCreationAttemptRecovery {
+            owner: CreationAttemptOwner {
+                workflow_id: parent.workflow_id,
+                turn_id: parent.turn_id,
+            },
+            parent_attempt_id: parent.id,
+            child_attempt_id: GenerationAttemptId::new(),
+            planned_proposal_id: CreationProposalId::new(),
+            job_id: JobId::new(),
+            profile_fingerprint: parent.profile_fingerprint,
+            now: TimestampMillis::new(5),
+        };
+        let first = Database::open(&path).expect("first database");
+        let second = Database::open(&path).expect("second database");
+        let barrier = Arc::new(Barrier::new(2));
+        let first_barrier = Arc::clone(&barrier);
+        let first_recovery = recovery.clone();
+        let first_thread = thread::spawn(move || {
+            first_barrier.wait();
+            first.recover_creation_attempt(first_recovery)
+        });
+        let second_barrier = Arc::clone(&barrier);
+        let second_thread = thread::spawn(move || {
+            second_barrier.wait();
+            second.recover_creation_attempt(recovery)
+        });
+        let first_result = first_thread
+            .join()
+            .expect("first thread")
+            .expect("first recovery");
+        let second_result = second_thread
+            .join()
+            .expect("second thread")
+            .expect("second recovery");
+        assert_eq!(first_result, second_result);
+        assert_eq!(
+            first_result.parent.status,
+            CreationAttemptStatus::Interrupted
+        );
+        assert_eq!(first_result.child.status, CreationAttemptStatus::Created);
+        let _ = std::fs::remove_file(path);
     }
 
     #[tokio::test]

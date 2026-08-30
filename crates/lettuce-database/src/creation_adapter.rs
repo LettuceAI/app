@@ -2,12 +2,14 @@ use std::str::FromStr;
 
 use lettuce_creation::{
     AdmittedCreationToolCall, CreationAttemptFailureCode, CreationAttemptOwner,
-    CreationAttemptRepository, CreationAttemptStatus, CreationInferenceAttempt,
+    CreationAttemptRecovery, CreationAttemptRepository, CreationAttemptStatus,
+    CreationAttemptSuccess, CreationAttemptSuccessSettlement, CreationInferenceAttempt,
     CreationInferenceRound, CreationOperationOutcome, CreationProposal, CreationRepositoryError,
     CreationRoundFinishReason, CreationStage, CreationTargetKind, CreationToolCallEvidence,
     CreationTurn, CreationTurnAttemptAdmission, CreationWorkflow, CreationWorkflowRepository,
-    NewCreationAttempt, NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt,
-    NewCreationWorkflow, creation_tool_request, validate_creation_tool_calls,
+    NewCreationAttempt, NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationTurn,
+    NewCreationTurnAttempt, NewCreationWorkflow, creation_tool_request, reduce_creation_tool_calls,
+    validate_creation_tool_calls,
 };
 use lettuce_types::{
     CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, JobId, Revision,
@@ -942,6 +944,304 @@ impl CreationAttemptRepository for Database {
         let attempt = load_attempt_conn(&transaction, input.id)?;
         transaction.commit().map_err(storage)?;
         Ok(attempt)
+    }
+
+    fn recover_creation_attempt(
+        &self,
+        input: NewCreationAttemptRecovery,
+    ) -> Result<CreationAttemptRecovery, CreationRepositoryError> {
+        if input.parent_attempt_id == input.child_attempt_id {
+            return Err(CreationRepositoryError::Invalid);
+        }
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let parent = load_attempt_conn(&transaction, input.parent_attempt_id)?;
+        if parent.workflow_id != input.owner.workflow_id
+            || parent.turn_id != input.owner.turn_id
+            || parent.profile_fingerprint != input.profile_fingerprint
+            || parent.job_id == input.job_id
+            || parent.base_proposal_id == input.planned_proposal_id
+            || parent.planned_proposal_id == input.planned_proposal_id
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        match load_attempt_conn(&transaction, input.child_attempt_id) {
+            Ok(child) => {
+                if parent.status == CreationAttemptStatus::Interrupted
+                    && parent.finished_at == Some(input.now)
+                    && child.workflow_id == parent.workflow_id
+                    && child.turn_id == parent.turn_id
+                    && child.retry_parent_id == Some(parent.id)
+                    && child.ordinal
+                        == parent
+                            .ordinal
+                            .checked_add(1)
+                            .ok_or(CreationRepositoryError::Storage)?
+                    && child.base_proposal_id == parent.base_proposal_id
+                    && child.planned_proposal_id == input.planned_proposal_id
+                    && child.job_id == input.job_id
+                    && child.profile_fingerprint == parent.profile_fingerprint
+                    && child.workflow_revision == parent.workflow_revision
+                    && child.status == CreationAttemptStatus::Created
+                    && child.created_at == input.now
+                    && list_rounds_in(&transaction, input.owner, child.id)?.is_empty()
+                {
+                    transaction.commit().map_err(storage)?;
+                    return Ok(CreationAttemptRecovery { parent, child });
+                }
+                return Err(CreationRepositoryError::Conflict);
+            }
+            Err(CreationRepositoryError::NotFound) => {}
+            Err(error) => return Err(error),
+        }
+        if parent.status != CreationAttemptStatus::Running || input.now < parent.updated_at {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let workflow = load_workflow_conn(&transaction, parent.workflow_id)?;
+        if workflow.current_proposal_id != parent.base_proposal_id
+            || workflow.stage != parent.stage
+            || workflow.revision != parent.workflow_revision
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let actual_next: i64 = transaction
+            .query_row(
+                "SELECT coalesce(max(ordinal) + 1, 0) FROM creation_inference_attempts \
+                 WHERE workflow_id=?1 AND turn_id=?2",
+                params![parent.workflow_id.to_string(), parent.turn_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        let child_ordinal = parent
+            .ordinal
+            .checked_add(1)
+            .ok_or(CreationRepositoryError::Storage)?;
+        if u16::try_from(actual_next).map_err(|_| CreationRepositoryError::Storage)?
+            != child_ordinal
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let interrupted = parent
+            .transition(CreationAttemptStatus::Interrupted, None, input.now)
+            .map_err(|_| CreationRepositoryError::Conflict)?;
+        let changed = transaction
+            .execute(
+                "UPDATE creation_inference_attempts \
+                 SET status='interrupted',failure=NULL,revision=?2,finished_at=?3,updated_at=?3 \
+                 WHERE id=?1 AND revision=?4 AND status='running'",
+                params![
+                    parent.id.to_string(),
+                    sql_u64(interrupted.revision.get())?,
+                    input.now.get(),
+                    sql_u64(parent.revision.get())?,
+                ],
+            )
+            .map_err(storage)?;
+        if changed != 1 {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        transaction
+            .execute(
+                "INSERT INTO creation_inference_attempts \
+                 (workflow_id,turn_id,id,ordinal,retry_parent_id,base_proposal_id,\
+                  planned_proposal_id,target,stage,tool_request_json,job_id,profile_fingerprint,\
+                  workflow_revision,status,failure,revision,created_at,started_at,finished_at,updated_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'created',NULL,1,?14,NULL,NULL,?14)",
+                params![
+                    parent.workflow_id.to_string(),
+                    parent.turn_id.to_string(),
+                    input.child_attempt_id.to_string(),
+                    i64::from(child_ordinal),
+                    parent.id.to_string(),
+                    parent.base_proposal_id.to_string(),
+                    input.planned_proposal_id.to_string(),
+                    target_name(parent.target),
+                    stage_name(parent.stage),
+                    encode_versioned(&parent.tool_request, CREATION_JSON_VERSION)
+                        .map_err(|_| CreationRepositoryError::Invalid)?,
+                    input.job_id.to_string(),
+                    input.profile_fingerprint.as_slice(),
+                    sql_u64(parent.workflow_revision.get())?,
+                    input.now.get(),
+                ],
+            )
+            .map_err(|error| match error.sqlite_error_code() {
+                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
+                _ => CreationRepositoryError::Storage,
+            })?;
+        let parent = load_attempt_conn(&transaction, parent.id)?;
+        let child = load_attempt_conn(&transaction, input.child_attempt_id)?;
+        transaction.commit().map_err(storage)?;
+        Ok(CreationAttemptRecovery { parent, child })
+    }
+
+    fn settle_creation_attempt_success(
+        &self,
+        input: CreationAttemptSuccessSettlement,
+    ) -> Result<CreationAttemptSuccess, CreationRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let attempt = load_attempt_conn(&transaction, input.attempt_id)?;
+        if attempt.workflow_id != input.owner.workflow_id || attempt.turn_id != input.owner.turn_id
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        if attempt.status == CreationAttemptStatus::Succeeded {
+            if attempt.revision
+                != input
+                    .expected_attempt_revision
+                    .next()
+                    .map_err(|_| CreationRepositoryError::Storage)?
+                || attempt.finished_at != Some(input.now)
+            {
+                return Err(CreationRepositoryError::Conflict);
+            }
+            let proposal = match input.proposal {
+                Some(expected) => {
+                    let stored = load_proposal_conn(&transaction, attempt.planned_proposal_id)?;
+                    if stored != expected {
+                        return Err(CreationRepositoryError::Conflict);
+                    }
+                    Some(stored)
+                }
+                None => {
+                    if !list_calls_in(&transaction, input.owner, attempt.id)?.is_empty() {
+                        return Err(CreationRepositoryError::Conflict);
+                    }
+                    None
+                }
+            };
+            let workflow = load_workflow_conn(&transaction, attempt.workflow_id)?;
+            let expected_stored_revision = if proposal.is_some() {
+                input
+                    .expected_workflow_revision
+                    .next()
+                    .map_err(|_| CreationRepositoryError::Storage)?
+            } else {
+                input.expected_workflow_revision
+            };
+            if workflow.revision != expected_stored_revision
+                || proposal.as_ref().is_some_and(|proposal| {
+                    workflow.current_proposal_id != proposal.id || workflow.stage != proposal.stage
+                })
+                || proposal.is_none()
+                    && (workflow.current_proposal_id != attempt.base_proposal_id
+                        || workflow.stage != attempt.stage)
+            {
+                return Err(CreationRepositoryError::Conflict);
+            }
+            transaction.commit().map_err(storage)?;
+            return Ok(CreationAttemptSuccess {
+                attempt,
+                workflow,
+                proposal,
+            });
+        }
+        if attempt.status != CreationAttemptStatus::Running
+            || attempt.revision != input.expected_attempt_revision
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let rounds = list_rounds_in(&transaction, input.owner, attempt.id)?;
+        let last = rounds.last().ok_or(CreationRepositoryError::Conflict)?;
+        if last.admitted_at != input.now {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let calls = list_calls_in(&transaction, input.owner, attempt.id)?;
+        let workflow = load_workflow_conn(&transaction, attempt.workflow_id)?;
+        if workflow.revision != input.expected_workflow_revision
+            || workflow.current_proposal_id != attempt.base_proposal_id
+            || workflow.stage != attempt.stage
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let proposal = match input.proposal {
+            Some(proposal) => {
+                let admitted = calls
+                    .iter()
+                    .map(|evidence| AdmittedCreationToolCall {
+                        definition_version: evidence.definition_version,
+                        call: evidence.call.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                let base = load_proposal_conn(&transaction, attempt.base_proposal_id)?;
+                let derived = reduce_creation_tool_calls(
+                    &base,
+                    attempt.planned_proposal_id,
+                    attempt.turn_id,
+                    &admitted,
+                    input.now,
+                )
+                .map_err(|_| CreationRepositoryError::Invalid)?
+                .proposal;
+                if proposal != derived
+                    || (proposal.stage == attempt.stage && !last.calls.is_empty())
+                {
+                    return Err(CreationRepositoryError::Conflict);
+                }
+                insert_proposal(&transaction, attempt.workflow_id, &proposal)?;
+                let next_revision = workflow
+                    .revision
+                    .next()
+                    .map_err(|_| CreationRepositoryError::Storage)?;
+                let changed = transaction
+                    .execute(
+                        "UPDATE creation_workflows SET stage=?2,current_proposal_id=?3,revision=?4,updated_at=?5 \
+                         WHERE id=?1 AND revision=?6 AND current_proposal_id=?7",
+                        params![
+                            workflow.id.to_string(),
+                            stage_name(proposal.stage),
+                            proposal.id.to_string(),
+                            sql_u64(next_revision.get())?,
+                            input.now.get(),
+                            sql_u64(workflow.revision.get())?,
+                            attempt.base_proposal_id.to_string(),
+                        ],
+                    )
+                    .map_err(storage)?;
+                if changed != 1 {
+                    return Err(CreationRepositoryError::Conflict);
+                }
+                Some(proposal)
+            }
+            None => {
+                if !calls.is_empty() || !last.calls.is_empty() {
+                    return Err(CreationRepositoryError::Conflict);
+                }
+                None
+            }
+        };
+        let succeeded = attempt
+            .transition(CreationAttemptStatus::Succeeded, None, input.now)
+            .map_err(|_| CreationRepositoryError::Conflict)?;
+        let changed = transaction
+            .execute(
+                "UPDATE creation_inference_attempts \
+                 SET status='succeeded',failure=NULL,revision=?2,finished_at=?3,updated_at=?3 \
+                 WHERE id=?1 AND revision=?4 AND status='running'",
+                params![
+                    attempt.id.to_string(),
+                    sql_u64(succeeded.revision.get())?,
+                    input.now.get(),
+                    sql_u64(attempt.revision.get())?,
+                ],
+            )
+            .map_err(storage)?;
+        if changed != 1 {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let attempt = load_attempt_conn(&transaction, attempt.id)?;
+        let workflow = load_workflow_conn(&transaction, attempt.workflow_id)?;
+        transaction.commit().map_err(storage)?;
+        Ok(CreationAttemptSuccess {
+            attempt,
+            workflow,
+            proposal,
+        })
     }
 
     fn load_creation_attempt(

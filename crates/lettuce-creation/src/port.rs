@@ -3,10 +3,12 @@ use lettuce_types::{
 };
 
 use crate::{
-    CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptStatus,
+    CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptRecovery,
+    CreationAttemptStatus, CreationAttemptSuccess, CreationAttemptSuccessSettlement,
     CreationInferenceAttempt, CreationInferenceRound, CreationProposal, CreationToolCallEvidence,
     CreationTurn, CreationTurnAttemptAdmission, CreationWorkflow, NewCreationAttempt,
-    NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt, NewCreationWorkflow,
+    NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt,
+    NewCreationWorkflow,
 };
 
 pub trait CreationAttemptRepository: Send + Sync {
@@ -19,6 +21,16 @@ pub trait CreationAttemptRepository: Send + Sync {
         &self,
         attempt: NewCreationAttempt,
     ) -> Result<CreationInferenceAttempt, CreationRepositoryError>;
+
+    fn recover_creation_attempt(
+        &self,
+        recovery: NewCreationAttemptRecovery,
+    ) -> Result<CreationAttemptRecovery, CreationRepositoryError>;
+
+    fn settle_creation_attempt_success(
+        &self,
+        settlement: CreationAttemptSuccessSettlement,
+    ) -> Result<CreationAttemptSuccess, CreationRepositoryError>;
 
     fn load_creation_attempt(
         &self,

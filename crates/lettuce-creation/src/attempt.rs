@@ -105,6 +105,40 @@ pub struct CreationTurnAttemptAdmission {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewCreationAttemptRecovery {
+    pub owner: CreationAttemptOwner,
+    pub parent_attempt_id: GenerationAttemptId,
+    pub child_attempt_id: GenerationAttemptId,
+    pub planned_proposal_id: CreationProposalId,
+    pub job_id: JobId,
+    pub profile_fingerprint: CreationInferenceProfileFingerprint,
+    pub now: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreationAttemptRecovery {
+    pub parent: CreationInferenceAttempt,
+    pub child: CreationInferenceAttempt,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreationAttemptSuccessSettlement {
+    pub owner: CreationAttemptOwner,
+    pub attempt_id: GenerationAttemptId,
+    pub expected_attempt_revision: Revision,
+    pub expected_workflow_revision: Revision,
+    pub proposal: Option<crate::CreationProposal>,
+    pub now: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreationAttemptSuccess {
+    pub attempt: CreationInferenceAttempt,
+    pub workflow: crate::CreationWorkflow,
+    pub proposal: Option<crate::CreationProposal>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreationInferenceAttempt {
     pub id: GenerationAttemptId,
     pub workflow_id: CreationWorkflowId,

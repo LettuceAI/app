@@ -59,7 +59,10 @@ Remote provider dispatch and recursive continuation are active through the
 `lettuce-app` coordinator. User-turn/first-attempt admission is one atomic port
 operation bound to the exact workflow revision; it never exposes a durable turn
 without its dispatch attempt. The explicit interrupted-parent recovery contract
-remains a later slice.
+preserves parent evidence and admits an empty immediate child atomically; retry
+children never inherit a partial provider sequence. Successful terminal
+settlement likewise advances the proposal workflow and attempt together through
+one repository operation.
 
 Single-entry, keyword, and staged lorebook-generation behavior is pinned in
 `fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`. Generation

@@ -9,11 +9,13 @@ mod proposal;
 mod tool;
 
 pub use attempt::{
-    CreationAttemptError, CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptStatus,
-    CreationInferenceAttempt, CreationInferenceProfileFingerprint, CreationInferenceRound,
-    CreationRoundFinishReason, CreationToolCallEvidence, CreationTurnAttemptAdmission,
-    MAX_CREATION_INFERENCE_ROUNDS, NewCreationAttempt, NewCreationInferenceRound,
-    NewCreationToolCall, NewCreationTurnAttempt, creation_inference_profile_fingerprint,
+    CreationAttemptError, CreationAttemptFailureCode, CreationAttemptOwner,
+    CreationAttemptRecovery, CreationAttemptStatus, CreationAttemptSuccess,
+    CreationAttemptSuccessSettlement, CreationInferenceAttempt,
+    CreationInferenceProfileFingerprint, CreationInferenceRound, CreationRoundFinishReason,
+    CreationToolCallEvidence, CreationTurnAttemptAdmission, MAX_CREATION_INFERENCE_ROUNDS,
+    NewCreationAttempt, NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationToolCall,
+    NewCreationTurnAttempt, creation_inference_profile_fingerprint,
 };
 pub use model::{
     CreationDraft, CreationLorebookEntry, CreationScene, CreationStage, CreationTarget,

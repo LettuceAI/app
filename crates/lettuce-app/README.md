@@ -130,6 +130,14 @@ and base proposal. Exact request replay returns the original pair; changed
 identity or content, stale workflow state, and a job collision roll back without
 leaving a turn that has no attempt.
 
+Interrupted creation recovery is an atomic parent/child boundary. It preserves
+the parent's partial rounds and calls for audit, settles that running parent as
+interrupted, and creates an empty immediate child with the same base/profile
+binding, a new planned proposal, and a distinct job. Partial provider rounds are
+not transplanted into a new request. Successful continuation settlement now
+commits the exact reduced proposal, workflow advance, and attempt success in one
+SQLite transaction, closing the proposal-committed/running-attempt crash window.
+
 ## Bundled prompts
 
 The app owns the closed, versioned built-in prompt catalog in
