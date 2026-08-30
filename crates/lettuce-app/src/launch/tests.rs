@@ -7,7 +7,8 @@ use lettuce_characters::{
 };
 use lettuce_companions::{
     CompanionConversationSender, CompanionStateOwner, CompanionStateReplacement,
-    CompanionStateRepository, CompanionTurnInput, PreparedCompanionSend, apply_turn,
+    CompanionStateRepository, CompanionTurnInput, EmotionClassification, EmotionLabelScore,
+    PreparedCompanionSend, apply_turn,
 };
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
@@ -53,7 +54,10 @@ use super::request::{
     DirectConversationLaunchRequest, DirectUserParticipant, GroupConversationLaunchRequest,
     LaunchSelection,
 };
-use crate::{AppBackend, BuiltInPromptId, ConversationLaunchError};
+use crate::{
+    AppBackend, BuiltInPromptId, CompanionEmotionEngine, CompanionEmotionGenerationError,
+    CompanionTurnCoordinator, ConversationLaunchError,
+};
 
 const NOW: TimestampMillis = TimestampMillis::new(1_000);
 
@@ -119,6 +123,37 @@ fn request(character_id: CharacterId, operation_key: &str) -> DirectConversation
         starter: LaunchSelection::Inherit,
         persona: LaunchSelection::Inherit,
         operation_key: key(operation_key),
+    }
+}
+
+fn direct_send_command(
+    conversation: &lettuce_conversations::Conversation,
+    operation_key: &str,
+    text: &str,
+) -> SendConversation {
+    let user_id = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.role == ParticipantRole::User)
+        .expect("user")
+        .id;
+    SendConversation {
+        conversation_id: conversation.id,
+        branch_id: conversation.active_branch_id,
+        expected_revision: conversation.revision,
+        operation: OperationToken {
+            key: key(operation_key),
+            request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+        },
+        message: MessageDraft {
+            role: MessageRole::User,
+            author_participant_id: Some(user_id),
+            parts: vec![MessagePart::Text { text: text.into() }],
+            visibility: MessageVisibility::Visible,
+            pinned: false,
+            scene_edited: false,
+        },
+        swap_roles: false,
     }
 }
 
@@ -643,6 +678,181 @@ fn companion_send_commits_user_turn_and_state_once() {
     );
     assert_eq!(stored.state.active_signals, ["emotion:love"]);
     assert_eq!(stored.state.relationship_state.interaction_count, 1);
+}
+
+struct ScenarioEmotionEngine {
+    result: Result<Option<EmotionClassification>, CompanionEmotionGenerationError>,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl ScenarioEmotionEngine {
+    fn new(result: Result<Option<EmotionClassification>, CompanionEmotionGenerationError>) -> Self {
+        Self {
+            result,
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    fn calls(&self) -> usize {
+        self.calls.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl CompanionEmotionEngine for ScenarioEmotionEngine {
+    fn classify_emotion(
+        &self,
+        _: &str,
+        _: &CancellationToken,
+    ) -> Result<Option<EmotionClassification>, CompanionEmotionGenerationError> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.result.clone()
+    }
+}
+
+#[test]
+fn companion_turn_coordinator_classifies_once_and_replays_without_state_drift() {
+    let database = database();
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(character_id, "coordinator-launch"), NOW)
+        .expect("launch");
+    let command = direct_send_command(
+        &launched.value.conversation,
+        "coordinator-send",
+        "I love spending time with you.",
+    );
+    let engine = ScenarioEmotionEngine::new(Ok(Some(EmotionClassification {
+        labels: vec![EmotionLabelScore {
+            label: "love".into(),
+            score: 1.0,
+        }],
+        confidence: 1.0,
+    })));
+    let coordinator = CompanionTurnCoordinator::new(&database, Some(&engine));
+    let first = coordinator
+        .begin_send(
+            &command,
+            TimestampMillis::new(NOW.get() + 10),
+            &CancellationToken::new(),
+        )
+        .expect("send");
+    let replay = coordinator
+        .begin_send(
+            &command,
+            TimestampMillis::new(NOW.get() + 99),
+            &CancellationToken::new(),
+        )
+        .expect("replay");
+    assert_eq!(engine.calls(), 1);
+    assert_eq!(replay.operation, first.operation);
+    let mut changed = command.clone();
+    changed.operation.request_digest = ContentHash::parse("cd".repeat(32)).expect("digest");
+    assert!(matches!(
+        coordinator.begin_send(
+            &changed,
+            TimestampMillis::new(NOW.get() + 100),
+            &CancellationToken::new(),
+        ),
+        Err(crate::CompanionTurnError::Conversation(
+            lettuce_conversations::ConversationRepositoryError::Conflict
+        ))
+    ));
+    assert_eq!(engine.calls(), 1);
+
+    let state = CompanionStateRepository::get(
+        &database,
+        CompanionStateOwner {
+            conversation_id: launched.value.conversation.id,
+            character_id,
+            persona_id: None,
+        },
+    )
+    .expect("state")
+    .expect("companion state");
+    assert_eq!(state.state.active_signals, ["emotion:love"]);
+    assert_eq!(state.state.relationship_state.interaction_count, 1);
+}
+
+#[test]
+fn companion_turn_coordinator_uses_neutral_fallback_and_bypasses_roleplay() {
+    let database = database();
+    let companion_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let companion = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(companion_id, "fallback-launch"), NOW)
+        .expect("companion launch");
+    let unavailable = ScenarioEmotionEngine::new(Err(CompanionEmotionGenerationError::Unavailable));
+    CompanionTurnCoordinator::new(&database, Some(&unavailable))
+        .begin_send(
+            &direct_send_command(
+                &companion.value.conversation,
+                "fallback-send",
+                "ordinary message",
+            ),
+            TimestampMillis::new(NOW.get() + 10),
+            &CancellationToken::new(),
+        )
+        .expect("fallback send");
+    let state = CompanionStateRepository::get(
+        &database,
+        CompanionStateOwner {
+            conversation_id: companion.value.conversation.id,
+            character_id: companion_id,
+            persona_id: None,
+        },
+    )
+    .expect("state")
+    .expect("companion state");
+    assert_eq!(state.state.emotional_state.confidence, 0.2);
+    assert!(state.state.active_signals.is_empty());
+
+    let cancelled_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let cancelled = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(cancelled_id, "cancelled-launch"), NOW)
+        .expect("cancelled launch");
+    let cancelled_engine =
+        ScenarioEmotionEngine::new(Err(CompanionEmotionGenerationError::Cancelled));
+    assert!(matches!(
+        CompanionTurnCoordinator::new(&database, Some(&cancelled_engine)).begin_send(
+            &direct_send_command(&cancelled.value.conversation, "cancelled-send", "hello"),
+            TimestampMillis::new(NOW.get() + 11),
+            &CancellationToken::new(),
+        ),
+        Err(crate::CompanionTurnError::Cancelled)
+    ));
+    assert_eq!(
+        ConversationReader::get(&database, cancelled.value.conversation.id)
+            .expect("cancelled conversation")
+            .conversation
+            .revision,
+        Revision::INITIAL
+    );
+
+    let roleplay_id = plain_character(&database);
+    let roleplay = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(roleplay_id, "roleplay-bypass-launch"), NOW)
+        .expect("roleplay launch");
+    let engine = ScenarioEmotionEngine::new(Err(CompanionEmotionGenerationError::Cancelled));
+    CompanionTurnCoordinator::new(&database, Some(&engine))
+        .begin_send(
+            &direct_send_command(
+                &roleplay.value.conversation,
+                "roleplay-bypass-send",
+                "hello",
+            ),
+            TimestampMillis::new(NOW.get() + 11),
+            &CancellationToken::new(),
+        )
+        .expect("roleplay send");
+    assert_eq!(engine.calls(), 0);
 }
 
 #[test]

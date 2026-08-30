@@ -7,6 +7,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod built_in_prompts;
+mod companion_turn;
 mod composition;
 mod context_assembler;
 mod creation_apply;
@@ -18,6 +19,7 @@ mod launch;
 mod provider_runtime;
 
 pub use built_in_prompts::*;
+pub use companion_turn::*;
 pub use composition::*;
 pub use context_assembler::*;
 pub use creation_apply::*;

@@ -78,5 +78,5 @@ write boundary needed by turn coordination: a prepared state replacement is
 validated against the same conversation as the user send, and storage commits
 the message, generation turn/attempt, dual-scope companion state, operation,
 and outbox together. Exact conversation-operation replay does not reapply the
-state transition. Classification and transition preparation remain application
-work rather than storage behavior.
+state transition. Classification and transition preparation are application
+work rather than storage behavior and are now wired for direct user sends.

@@ -29,8 +29,18 @@ persona scope in a non-serializable prepared launch, and the database commits
 the conversation graph, artifacts, operation/outbox, fresh session emotion,
 and carried character/persona relationship in one transaction. Exact launch
 retries revalidate the initial-state request without resetting relationship
-continuity. Group companions and companion turn/classifier/prompt orchestration
-remain deferred.
+continuity. Group companions, companion prompt construction, assistant-turn
+effects, and growth scheduling remain deferred.
+
+Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
+companion from its normalized runtime state, resolves the stored direct
+character/persona owner, reads the current authored companion config like the
+legacy completion flow, classifies ordered user text through a narrow engine
+capability, applies the copied pure signal and turn math, then submits the
+atomic prepared companion send. Blank, missing, and unavailable classification
+use the legacy neutral update; cancellation stops before persistence. Exact
+send replay bypasses classification and never reapplies state. Roleplay and
+group sends retain the ordinary conversation repository path.
 
 The first direct/group dynamic-memory handler path accepts an already admitted
 and running ordered tool round, validates the exact v1 feature contract, joins

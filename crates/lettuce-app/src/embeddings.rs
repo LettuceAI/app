@@ -1,11 +1,16 @@
 use std::sync::Mutex;
 
 use lettuce_embeddings::{
-    EmbeddingError, EmbeddingRequest, EmbeddingVector, OnnxEmbeddingRuntime, OnnxRuntimeLink,
+    EmbeddingError, EmbeddingRequest, EmbeddingVector, EmotionClassifierError,
+    OnnxEmbeddingRuntime, OnnxEmotionClassifier, OnnxRuntimeLink,
 };
 use lettuce_jobs::handle::CancellationToken;
-use lettuce_model_hub::{InstalledEmbeddingManifest, ModelArtifactError};
+use lettuce_model_hub::{
+    InstalledCompanionEmotionManifest, InstalledEmbeddingManifest, ModelArtifactError,
+};
 use lettuce_types::MemoryId;
+
+use lettuce_companions::EmotionClassification;
 
 #[derive(Debug)]
 pub struct EmbeddingService {
@@ -113,6 +118,68 @@ pub enum EmbeddingGenerationError {
     Cancelled,
     #[error("embedding generation is unavailable")]
     Unavailable,
+}
+
+#[derive(Debug)]
+pub struct CompanionEmotionService {
+    runtime: Mutex<OnnxEmotionClassifier>,
+}
+
+impl CompanionEmotionService {
+    pub fn load(
+        manifest: &InstalledCompanionEmotionManifest,
+        runtime_link: &OnnxRuntimeLink,
+    ) -> Result<Self, CompanionEmotionServiceError> {
+        let artifacts = manifest.verify()?;
+        let runtime = OnnxEmotionClassifier::load(artifacts, runtime_link)?;
+        Ok(Self {
+            runtime: Mutex::new(runtime),
+        })
+    }
+}
+
+pub trait CompanionEmotionEngine: Send + Sync {
+    fn classify_emotion(
+        &self,
+        text: &str,
+        cancellation: &CancellationToken,
+    ) -> Result<Option<EmotionClassification>, CompanionEmotionGenerationError>;
+}
+
+impl CompanionEmotionEngine for CompanionEmotionService {
+    fn classify_emotion(
+        &self,
+        text: &str,
+        cancellation: &CancellationToken,
+    ) -> Result<Option<EmotionClassification>, CompanionEmotionGenerationError> {
+        self.runtime
+            .lock()
+            .map_err(|_| CompanionEmotionGenerationError::Unavailable)?
+            .classify(text, cancellation)
+            .map_err(|error| {
+                if matches!(error, EmotionClassifierError::Cancelled) {
+                    CompanionEmotionGenerationError::Cancelled
+                } else {
+                    CompanionEmotionGenerationError::Unavailable
+                }
+            })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum CompanionEmotionGenerationError {
+    #[error("companion emotion classification was cancelled")]
+    Cancelled,
+    #[error("companion emotion classification is unavailable")]
+    Unavailable,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CompanionEmotionServiceError {
+    #[error("companion emotion artifacts are unavailable: {0}")]
+    Artifacts(#[from] ModelArtifactError),
+    #[error("companion emotion runtime failed: {0}")]
+    Runtime(#[from] EmotionClassifierError),
 }
 
 #[cfg(test)]
