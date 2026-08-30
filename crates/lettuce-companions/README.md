@@ -24,3 +24,13 @@ sixteen-item limit remains a fresh-memory coordinator input limit and is not
 misapplied to the number of proposed Soul facts. Provider calls, prompt
 rendering, job coordination, database adapters, and frontend events remain
 outside this slice.
+
+Durable Soul state is character-owned, matching legacy continuity: companion
+Soul growth is shared across that character's sessions regardless of the
+separate shared-memory setting. `SoulRepository` owns create/load and atomic
+expected-revision change-set application. The SQLite adapter stores facts and
+their source/supersession lists in normalized tables, applies the pure policy
+inside one immediate transaction, bounds superseded history to forty entries,
+and records immutable idempotency receipts. Session, persona, relationship,
+prompt, provider, and frontend coordination remain outside this persistence
+slice.

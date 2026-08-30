@@ -17,6 +17,7 @@ workspace = true
 async-trait.workspace = true
 blake3.workspace = true
 lettuce-context.workspace = true
+lettuce-companions.workspace = true
 lettuce-conversations.workspace = true
 lettuce-creation.workspace = true
 lettuce-embeddings.workspace = true

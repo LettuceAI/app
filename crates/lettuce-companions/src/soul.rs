@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use lettuce_types::{Revision, TimestampMillis};
+use lettuce_types::{CharacterId, OperationRecordId, Revision, TimestampMillis};
 
 pub const CONSOLIDATION_THRESHOLD: usize = 12;
 pub const MAX_SUPERSEDED_HISTORY: usize = 40;
@@ -145,6 +145,22 @@ pub struct SoulState {
     pub facts: Vec<SoulFact>,
 }
 
+/// Durable Soul continuity follows the legacy character-wide ownership rule.
+/// It is intentionally not session- or persona-scoped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SoulOwner {
+    Character(CharacterId),
+}
+
+impl SoulOwner {
+    #[must_use]
+    pub const fn character_id(self) -> CharacterId {
+        match self {
+            Self::Character(id) => id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProposedSoulFact {
     pub id: String,
@@ -177,6 +193,44 @@ pub struct SoulChangeSet {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoulApplyReceipt {
+    pub operation_id: OperationRecordId,
+    pub owner: SoulOwner,
+    pub expected_revision: Revision,
+    pub resulting_revision: Revision,
+    pub applied_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SoulRepositoryError {
+    NotFound,
+    AlreadyExists,
+    Conflict,
+    Invalid(SoulPolicyError),
+    OperationMismatch,
+    Corrupt,
+    Failure,
+}
+
+pub trait SoulRepository: Send + Sync {
+    fn create(
+        &self,
+        owner: SoulOwner,
+        state: SoulState,
+        now: TimestampMillis,
+    ) -> Result<SoulState, SoulRepositoryError>;
+
+    fn get(&self, owner: SoulOwner) -> Result<Option<SoulState>, SoulRepositoryError>;
+
+    fn apply(
+        &self,
+        owner: SoulOwner,
+        operation_id: OperationRecordId,
+        change_set: SoulChangeSet,
+    ) -> Result<SoulApplyReceipt, SoulRepositoryError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SoulPolicyError {
     StaleRevision,
     InvalidFact,
@@ -184,6 +238,37 @@ pub enum SoulPolicyError {
     InvalidSupersession,
     LockedFact,
     ConsolidationNotReady,
+}
+
+pub fn validate_state(state: &SoulState) -> Result<(), SoulPolicyError> {
+    if state.revision.get() == 0 {
+        return Err(SoulPolicyError::InvalidFact);
+    }
+    let mut ids = HashSet::new();
+    for fact in &state.facts {
+        if fact.id.trim().is_empty()
+            || fact.value.trim().is_empty()
+            || fact.slot.trim().is_empty()
+            || !fact.confidence.is_finite()
+            || !(0.0..=1.0).contains(&fact.confidence)
+            || !fact.weight.is_finite()
+            || !(0.0..=1.0).contains(&fact.weight)
+            || fact
+                .valid_until
+                .is_some_and(|until| until.get() <= fact.valid_from.get())
+            || !ids.insert(fact.id.as_str())
+            || fact.source_memory_ids.iter().any(|id| id.trim().is_empty())
+            || fact.supersedes.iter().any(|id| id.trim().is_empty())
+            || fact.superseded_by.is_some() != fact.superseded_at.is_some()
+            || fact
+                .superseded_by
+                .as_deref()
+                .is_some_and(|id| id.trim().is_empty())
+        {
+            return Err(SoulPolicyError::InvalidFact);
+        }
+    }
+    Ok(())
 }
 
 pub fn normalize_authored_fact(
@@ -256,6 +341,7 @@ pub fn prepare_growth_change_set(
     proposals: Vec<ProposedSoulFact>,
     now: TimestampMillis,
 ) -> Result<SoulChangeSet, SoulPolicyError> {
+    validate_state(state)?;
     if state.revision != expected_revision {
         return Err(SoulPolicyError::StaleRevision);
     }
@@ -269,6 +355,7 @@ pub fn prepare_consolidation_change_set(
     retire_ids: Vec<String>,
     now: TimestampMillis,
 ) -> Result<SoulChangeSet, SoulPolicyError> {
+    validate_state(state)?;
     if state.revision != expected_revision {
         return Err(SoulPolicyError::StaleRevision);
     }
@@ -420,8 +507,21 @@ pub fn apply_change_set(
     state: &SoulState,
     change_set: &SoulChangeSet,
 ) -> Result<SoulState, SoulPolicyError> {
+    validate_state(state)?;
     if state.revision != change_set.expected_revision {
         return Err(SoulPolicyError::StaleRevision);
+    }
+    if change_set.resulting_revision
+        != change_set
+            .expected_revision
+            .next()
+            .map_err(|_| SoulPolicyError::InvalidFact)?
+        || change_set
+            .additions
+            .iter()
+            .any(|fact| fact.created_at != change_set.applied_at)
+    {
+        return Err(SoulPolicyError::InvalidFact);
     }
     let mut facts = state.facts.clone();
     for supersession in &change_set.supersessions {
@@ -449,10 +549,12 @@ pub fn apply_change_set(
             }
         });
     }
-    Ok(SoulState {
+    let state = SoulState {
         revision: change_set.resulting_revision,
         facts,
-    })
+    };
+    validate_state(&state)?;
+    Ok(state)
 }
 
 #[cfg(test)]
@@ -710,6 +812,7 @@ mod tests {
             .map(|index| {
                 let mut value = fact(&format!("old-{index}"), SoulCategory::Likes, "food", false);
                 value.superseded_by = Some("prior".into());
+                value.superseded_at = Some(TimestampMillis::new(2));
                 value
             })
             .collect::<Vec<_>>();

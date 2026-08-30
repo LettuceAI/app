@@ -860,6 +860,7 @@ dependencies = [
  "async-trait",
  "blake3",
  "lettuce-characters",
+ "lettuce-companions",
  "lettuce-context",
  "lettuce-conversations",
  "lettuce-creation",

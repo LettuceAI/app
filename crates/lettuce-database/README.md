@@ -134,6 +134,13 @@ Existing-character apply similarly uses one character-owned profile/scene CAS
 transaction and the immutable character receipt. The adapter preserves the
 unreviewed graph, rejects dependent scene removal, and commits profile, ordered
 scenes, one root revision bump, and receipt together.
+Migration 12 owns character-scoped companion Soul state. Facts, ordered source
+memory IDs, and supersession evidence are normalized rather than mirrored into
+a JSON authority. The domain-owned adapter applies one typed `SoulChangeSet`
+under immediate-transaction revision CAS, rewrites the bounded state, advances
+the root, and inserts an immutable operation receipt atomically. Exact retries
+return the original receipt; changed operation reuse, stale revisions, foreign
+owners, malformed rows, and partial writes fail closed.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.
