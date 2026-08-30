@@ -3131,6 +3131,7 @@ mod smoke_tests {
                 fears: "Being forgotten".into(),
                 habits: "Counts doorways".into(),
                 boundaries: "Needs solitude".into(),
+                ..CompanionSoulIdentity::default()
             },
             authored_facts: [
                 SoulCategory::Essence,
@@ -3171,6 +3172,7 @@ mod smoke_tests {
                 superseded_at: None,
             })
             .collect(),
+            relationship_defaults: lettuce_companions::RelationshipDefaults::default(),
         };
         let character = Character::new(
             character_id,

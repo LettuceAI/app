@@ -41,6 +41,14 @@ categories and typed authored facts. Initial durable state copies the legacy
 confidence and weight, default a blank slot to its category, derive a zero
 evidence count from source IDs, fill zero creation/valid-from timestamps, and
 lock historical facts. The serialized config retains legacy camel-case field
-names. Baseline affect, regulation, relationship defaults, memory, prompting,
-time awareness, and their runtime formulas remain deferred rather than being
-reconstructed in this slice.
+names.
+
+Pure typed emotion and relationship state copies the legacy defaults and math
+directly: baseline affect, regulation style, expressed/blocked affect,
+45-minute exponential decay, volatility scaling, momentum interpolation,
+passive tension/stability recovery, and the distinct closeness/trust/affection
+bipolar damage and recovery constants. Authored configuration owns the exact
+baseline affect, regulation style, and relationship defaults consumed by these
+helpers. This slice remains pure domain behavior: session/persona storage,
+signal classification, prompt rendering, provider/job coordination, launch,
+and frontend events remain deferred.

@@ -184,6 +184,21 @@ impl CharacterDefaults {
             for value in config.soul.values() {
                 validate_text("character.companion_soul.identity", value)?;
             }
+            if !config.soul.baseline_affect.is_unit() {
+                return Err(ValidationError::InvalidValue {
+                    field: "character.companion_soul.baseline_affect",
+                });
+            }
+            if !config.soul.regulation_style.is_unit() {
+                return Err(ValidationError::InvalidValue {
+                    field: "character.companion_soul.regulation_style",
+                });
+            }
+            if !config.relationship_defaults.is_valid() {
+                return Err(ValidationError::InvalidValue {
+                    field: "character.companion_soul.relationship_defaults",
+                });
+            }
             initial_soul_state(Some(config), TimestampMillis::new(1)).map_err(|_| {
                 ValidationError::Invariant {
                     field: "character.companion_soul.authored_facts",
@@ -467,5 +482,47 @@ mod tests {
         assert!(defaults.validate().is_err());
         defaults.interaction_mode = InteractionMode::Companion;
         assert!(defaults.validate().is_ok());
+    }
+
+    #[test]
+    fn companion_soul_config_rejects_invalid_runtime_math_inputs() {
+        let mut defaults = CharacterDefaults {
+            interaction_mode: InteractionMode::Companion,
+            companion_soul: Some(CompanionSoulConfig::default()),
+            ..CharacterDefaults::default()
+        };
+        defaults
+            .companion_soul
+            .as_mut()
+            .expect("companion config")
+            .soul
+            .baseline_affect
+            .warmth = f64::NAN;
+        assert!(matches!(
+            defaults.validate(),
+            Err(ValidationError::InvalidValue {
+                field: "character.companion_soul.baseline_affect"
+            })
+        ));
+
+        let config = defaults.companion_soul.as_mut().expect("companion config");
+        config.soul.baseline_affect.warmth = 0.5;
+        config.soul.regulation_style.volatility = 1.1;
+        assert!(matches!(
+            defaults.validate(),
+            Err(ValidationError::InvalidValue {
+                field: "character.companion_soul.regulation_style"
+            })
+        ));
+
+        let config = defaults.companion_soul.as_mut().expect("companion config");
+        config.soul.regulation_style.volatility = 0.25;
+        config.relationship_defaults.trust = -1.1;
+        assert!(matches!(
+            defaults.validate(),
+            Err(ValidationError::InvalidValue {
+                field: "character.companion_soul.relationship_defaults"
+            })
+        ));
     }
 }

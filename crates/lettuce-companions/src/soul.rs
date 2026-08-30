@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use lettuce_types::{CharacterId, OperationRecordId, Revision, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
+use crate::state::{EmotionVector, RegulationStyle, RelationshipDefaults};
+
 pub const CONSOLIDATION_THRESHOLD: usize = 12;
 pub const MAX_SUPERSEDED_HISTORY: usize = 40;
 
@@ -158,7 +160,7 @@ const fn epoch() -> TimestampMillis {
     TimestampMillis::UNIX_EPOCH
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct CompanionSoulIdentity {
     pub essence: String,
@@ -173,6 +175,40 @@ pub struct CompanionSoulIdentity {
     pub fears: String,
     pub habits: String,
     pub boundaries: String,
+    pub baseline_affect: EmotionVector,
+    pub regulation_style: RegulationStyle,
+}
+
+impl Default for CompanionSoulIdentity {
+    fn default() -> Self {
+        Self {
+            essence: String::new(),
+            traits: String::new(),
+            backstory: String::new(),
+            appearance: String::new(),
+            goals: String::new(),
+            likes: String::new(),
+            voice: String::new(),
+            relational_style: String::new(),
+            vulnerabilities: String::new(),
+            fears: String::new(),
+            habits: String::new(),
+            boundaries: String::new(),
+            baseline_affect: EmotionVector {
+                warmth: 0.45,
+                trust: 0.35,
+                calm: 0.65,
+                vulnerability: 0.2,
+                longing: 0.15,
+                hurt: 0.05,
+                tension: 0.1,
+                irritation: 0.05,
+                affection_intensity: 0.25,
+                reassurance_need: 0.15,
+            },
+            regulation_style: RegulationStyle::default(),
+        }
+    }
 }
 
 impl CompanionSoulIdentity {
@@ -202,6 +238,8 @@ pub struct CompanionSoulConfig {
     pub soul: CompanionSoulIdentity,
     #[serde(default)]
     pub authored_facts: Vec<SoulFact>,
+    #[serde(default)]
+    pub relationship_defaults: RelationshipDefaults,
 }
 
 pub fn initial_soul_state(
@@ -738,6 +776,7 @@ mod tests {
                 superseded_by: None,
                 superseded_at: None,
             }],
+            relationship_defaults: RelationshipDefaults::default(),
         };
         let state = initial_soul_state(Some(&config), TimestampMillis::new(42)).expect("state");
         assert_eq!(state.revision, Revision::INITIAL);
@@ -777,6 +816,7 @@ mod tests {
                 "trust",
                 false,
             )],
+            relationship_defaults: RelationshipDefaults::default(),
         };
         let value = serde_json::to_value(&config).expect("serialize");
         assert_eq!(value["soul"]["relationalStyle"], "Slow trust");
