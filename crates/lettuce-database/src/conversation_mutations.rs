@@ -1849,6 +1849,101 @@ impl Database {
     }
 }
 
+pub(crate) fn begin_send_with_hook<F>(
+    database: &Database,
+    command: &SendConversation,
+    now: TimestampMillis,
+    hook: F,
+) -> Result<SendConversationResult, ConversationRepositoryError>
+where
+    F: FnOnce(
+        &Transaction<'_>,
+        GenerationTurnId,
+        MessageId,
+    ) -> Result<(), ConversationRepositoryError>,
+{
+    command
+        .validate()
+        .map_err(ConversationRepositoryError::Invalid)?;
+    let turn_key = turn_key(OperationKind::Send, &command.operation)?;
+    kernel::run_mutation(
+        database,
+        command.conversation_id,
+        OperationKind::Send,
+        &command.operation,
+        now,
+        |transaction, context| {
+            let conversation = kernel::cas_conversation(
+                transaction,
+                context.conversation_id,
+                command.expected_revision,
+            )?;
+            kernel::require_active(&conversation)?;
+            require_active_branch(transaction, context.conversation_id, command.branch_id)?;
+            require_no_live_turn(transaction, context.conversation_id)?;
+            require_speaker_shape(
+                transaction,
+                context.conversation_id,
+                None,
+                command.swap_roles,
+            )?;
+            let parent_message_id =
+                branch_parent(transaction, context.conversation_id, command.branch_id)?;
+            let (message_id, revision_id) =
+                insert_user_message(transaction, command, parent_message_id, context.now)?;
+            let turn_id = GenerationTurnId::new();
+            insert_turn(
+                transaction,
+                &TurnDraft {
+                    conversation_id: context.conversation_id,
+                    turn_id,
+                    branch_id: command.branch_id,
+                    operation: GenerationOperation::Send,
+                    input: GenerationInput::UserMessage { message_id },
+                    target: GenerationTarget::NewAssistant {
+                        message_id: MessageId::new(),
+                        parent_message_id: Some(message_id),
+                    },
+                    idempotency_key: turn_key,
+                    guidance: None,
+                    model_override: None,
+                    forced_speaker: None,
+                    swap_roles: command.swap_roles,
+                },
+                context.now,
+            )?;
+            insert_first_attempt(transaction, context.conversation_id, turn_id)?;
+            hook(transaction, turn_id, message_id)?;
+            let revision =
+                kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+            let value = begin_generation(transaction, context.conversation_id, turn_id)?;
+            Ok(kernel::Staged {
+                value,
+                result: OperationResultRef::Turn(turn_id),
+                events: vec![kernel::StagedEvent {
+                    conversation_revision: revision,
+                    at: context.now,
+                    event: lettuce_conversations::ConversationOutboxEvent::MessageCommitted {
+                        conversation_id: context.conversation_id,
+                        branch_id: command.branch_id,
+                        message_id,
+                        revision_id: Some(revision_id),
+                        candidate_id: None,
+                        at: context.now,
+                    },
+                }],
+            })
+        },
+        |transaction, operation| {
+            begin_generation(
+                transaction,
+                command.conversation_id,
+                replayed_turn(operation)?,
+            )
+        },
+    )
+}
+
 /// Every port method is implemented here; the kernel owns the shared
 /// transaction, idempotency and outbox order they all run through.
 impl ConversationRepository for Database {
@@ -1861,85 +1956,7 @@ impl ConversationRepository for Database {
         command: &SendConversation,
         now: TimestampMillis,
     ) -> Result<SendConversationResult, ConversationRepositoryError> {
-        command
-            .validate()
-            .map_err(ConversationRepositoryError::Invalid)?;
-        let turn_key = turn_key(OperationKind::Send, &command.operation)?;
-        kernel::run_mutation(
-            self,
-            command.conversation_id,
-            OperationKind::Send,
-            &command.operation,
-            now,
-            |transaction, context| {
-                let conversation = kernel::cas_conversation(
-                    transaction,
-                    context.conversation_id,
-                    command.expected_revision,
-                )?;
-                kernel::require_active(&conversation)?;
-                require_active_branch(transaction, context.conversation_id, command.branch_id)?;
-                require_no_live_turn(transaction, context.conversation_id)?;
-                require_speaker_shape(
-                    transaction,
-                    context.conversation_id,
-                    None,
-                    command.swap_roles,
-                )?;
-                let parent_message_id =
-                    branch_parent(transaction, context.conversation_id, command.branch_id)?;
-                let (message_id, revision_id) =
-                    insert_user_message(transaction, command, parent_message_id, context.now)?;
-                let turn_id = GenerationTurnId::new();
-                insert_turn(
-                    transaction,
-                    &TurnDraft {
-                        conversation_id: context.conversation_id,
-                        turn_id,
-                        branch_id: command.branch_id,
-                        operation: GenerationOperation::Send,
-                        input: GenerationInput::UserMessage { message_id },
-                        target: GenerationTarget::NewAssistant {
-                            message_id: MessageId::new(),
-                            parent_message_id: Some(message_id),
-                        },
-                        idempotency_key: turn_key,
-                        guidance: None,
-                        model_override: None,
-                        forced_speaker: None,
-                        swap_roles: command.swap_roles,
-                    },
-                    context.now,
-                )?;
-                insert_first_attempt(transaction, context.conversation_id, turn_id)?;
-                let revision =
-                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
-                let value = begin_generation(transaction, context.conversation_id, turn_id)?;
-                Ok(kernel::Staged {
-                    value,
-                    result: OperationResultRef::Turn(turn_id),
-                    events: vec![kernel::StagedEvent {
-                        conversation_revision: revision,
-                        at: context.now,
-                        event: lettuce_conversations::ConversationOutboxEvent::MessageCommitted {
-                            conversation_id: context.conversation_id,
-                            branch_id: command.branch_id,
-                            message_id,
-                            revision_id: Some(revision_id),
-                            candidate_id: None,
-                            at: context.now,
-                        },
-                    }],
-                })
-            },
-            |transaction, operation| {
-                begin_generation(
-                    transaction,
-                    command.conversation_id,
-                    replayed_turn(operation)?,
-                )
-            },
-        )
+        begin_send_with_hook(self, command, now, |_, _, _| Ok(()))
     }
 
     fn begin_continue(
@@ -5086,6 +5103,37 @@ mod tests {
                 .parts,
             command.message.parts
         );
+    }
+
+    #[test]
+    fn send_hook_failure_rolls_back_message_turn_attempt_and_operation() {
+        let fixture = direct_fixture();
+        let command = send_command(&fixture, "send-hook-failure", "cd", text("hello"));
+        let result = begin_send_with_hook(
+            fixture.database.as_ref(),
+            &command,
+            TimestampMillis::new(20),
+            |_, _, _| Err(ConversationRepositoryError::Storage),
+        );
+        assert_eq!(result, Err(ConversationRepositoryError::Storage));
+        assert_eq!(conversation_revision(&fixture), Revision::INITIAL);
+
+        let connection = fixture.database.connection().expect("connection");
+        for (table, expected) in [
+            ("conversation_messages", 0),
+            ("conversation_message_revisions", 0),
+            ("conversation_turns", 0),
+            ("generation_attempts", 0),
+            ("conversation_operations", 1),
+            ("conversation_outbox", 1),
+        ] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("count");
+            assert_eq!(count, expected, "unexpected rows in {table}");
+        }
     }
 
     #[test]

@@ -159,6 +159,11 @@ The companion prepared-launch adapter now seeds those rows inside the existing
 conversation creation transaction. A state-seed failure rolls back the entire
 conversation launch, and replay validates the same frozen initial-state hash
 before returning the already committed conversation.
+Prepared companion sends reuse the conversation send transaction: the user
+message, generation turn/attempt, companion session and relationship revisions,
+operation, and outbox commit together. A stale state CAS or hook failure rolls
+the entire send back, while exact operation replay returns the existing turn
+without applying the state transition twice.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

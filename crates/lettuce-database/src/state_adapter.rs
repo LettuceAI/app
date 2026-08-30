@@ -2,10 +2,11 @@ use std::str::FromStr;
 
 use blake3::Hasher;
 use lettuce_companions::{
-    CompanionConversationCreator, CompanionLaunchRepositoryError, CompanionRuntimeState,
-    CompanionStateApplyReceipt, CompanionStateOwner, CompanionStateReplacement,
-    CompanionStateRepository, CompanionStateRepositoryError, CompanionStateSnapshot, EmotionVector,
-    EmotionalState, PreparedCompanionLaunch, RelationshipState, validate_runtime_state,
+    CompanionConversationCreator, CompanionConversationSender, CompanionLaunchRepositoryError,
+    CompanionRuntimeState, CompanionSendRepositoryError, CompanionStateApplyReceipt,
+    CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
+    CompanionStateRepositoryError, CompanionStateSnapshot, EmotionVector, EmotionalState,
+    PreparedCompanionLaunch, PreparedCompanionSend, RelationshipState, validate_runtime_state,
 };
 use lettuce_types::{
     CharacterId, ConversationId, OperationRecordId, PersonaId, Revision, TimestampMillis,
@@ -491,6 +492,74 @@ pub(crate) fn create_in(
     get_in(tx, owner)?.ok_or(Error::Corrupt)
 }
 
+pub(crate) fn replace_in(
+    tx: &Transaction<'_>,
+    owner: CompanionStateOwner,
+    replacement: &CompanionStateReplacement,
+) -> Result<(Revision, Revision), Error> {
+    validate_runtime_state(&replacement.state)?;
+    let current = get_in(tx, owner)?.ok_or(Error::NotFound)?;
+    if current.session_revision != replacement.expected_session_revision
+        || current.relationship_revision != replacement.expected_relationship_revision
+    {
+        return Err(Error::Conflict);
+    }
+    let next_session = current.session_revision.next().map_err(corrupt)?;
+    let next_relationship = current.relationship_revision.next().map_err(corrupt)?;
+    let relationship = &replacement.state.relationship_state;
+    let key = persona_key(owner);
+    let relationship_updated = tx
+        .execute(
+            "UPDATE companion_relationship_states SET
+               closeness = ?3, trust = ?4, affection = ?5, tension = ?6, stability = ?7,
+               interaction_count = ?8, last_interaction_at = ?9, revision = ?10, updated_at = ?11
+             WHERE character_id = ?1 AND persona_key = ?2 AND revision = ?12",
+            params![
+                owner.character_id.to_string(),
+                key,
+                relationship.closeness,
+                relationship.trust,
+                relationship.affection,
+                relationship.tension,
+                relationship.stability,
+                i64::from(relationship.interaction_count),
+                relationship.last_interaction_at.get(),
+                sql_revision(next_relationship)?,
+                replacement.applied_at.get(),
+                sql_revision(current.relationship_revision)?
+            ],
+        )
+        .map_err(failure)?;
+    let emotional = &replacement.state.emotional_state;
+    let session_updated = tx
+        .execute(
+            "UPDATE companion_session_states SET confidence = ?2, emotional_updated_at = ?3,
+               state_updated_at = ?4, revision = ?5, updated_at = ?6
+             WHERE conversation_id = ?1 AND revision = ?7",
+            params![
+                owner.conversation_id.to_string(),
+                emotional.confidence,
+                emotional.updated_at.get(),
+                replacement.state.updated_at.get(),
+                sql_revision(next_session)?,
+                replacement.applied_at.get(),
+                sql_revision(current.session_revision)?
+            ],
+        )
+        .map_err(failure)?;
+    if relationship_updated != 1 || session_updated != 1 {
+        return Err(Error::Conflict);
+    }
+    replace_vectors(tx, owner.conversation_id, emotional)?;
+    replace_signals(
+        tx,
+        owner.conversation_id,
+        emotional,
+        &replacement.state.active_signals,
+    )?;
+    Ok((next_session, next_relationship))
+}
+
 impl CompanionStateRepository for Database {
     fn create(
         &self,
@@ -542,58 +611,8 @@ impl CompanionStateRepository for Database {
             }
             return Err(Error::OperationMismatch);
         }
-        let current = get_in(&tx, owner)?.ok_or(Error::NotFound)?;
-        if current.session_revision != replacement.expected_session_revision
-            || current.relationship_revision != replacement.expected_relationship_revision
-        {
-            return Err(Error::Conflict);
-        }
-        let next_session = current.session_revision.next().map_err(corrupt)?;
-        let next_relationship = current.relationship_revision.next().map_err(corrupt)?;
-        let relationship = &replacement.state.relationship_state;
+        let (next_session, next_relationship) = replace_in(&tx, owner, &replacement)?;
         let key = persona_key(owner);
-        let relationship_updated = tx
-            .execute(
-                "UPDATE companion_relationship_states SET
-                   closeness = ?3, trust = ?4, affection = ?5, tension = ?6, stability = ?7,
-                   interaction_count = ?8, last_interaction_at = ?9, revision = ?10, updated_at = ?11
-                 WHERE character_id = ?1 AND persona_key = ?2 AND revision = ?12",
-                params![
-                    owner.character_id.to_string(), key, relationship.closeness, relationship.trust,
-                    relationship.affection, relationship.tension, relationship.stability,
-                    i64::from(relationship.interaction_count), relationship.last_interaction_at.get(),
-                    sql_revision(next_relationship)?, replacement.applied_at.get(),
-                    sql_revision(current.relationship_revision)?
-                ],
-            )
-            .map_err(failure)?;
-        let emotional = &replacement.state.emotional_state;
-        let session_updated = tx
-            .execute(
-                "UPDATE companion_session_states SET confidence = ?2, emotional_updated_at = ?3,
-                   state_updated_at = ?4, revision = ?5, updated_at = ?6
-                 WHERE conversation_id = ?1 AND revision = ?7",
-                params![
-                    owner.conversation_id.to_string(),
-                    emotional.confidence,
-                    emotional.updated_at.get(),
-                    replacement.state.updated_at.get(),
-                    sql_revision(next_session)?,
-                    replacement.applied_at.get(),
-                    sql_revision(current.session_revision)?
-                ],
-            )
-            .map_err(failure)?;
-        if relationship_updated != 1 || session_updated != 1 {
-            return Err(Error::Conflict);
-        }
-        replace_vectors(&tx, owner.conversation_id, emotional)?;
-        replace_signals(
-            &tx,
-            owner.conversation_id,
-            emotional,
-            &replacement.state.active_signals,
-        )?;
         tx.execute(
             "INSERT INTO companion_state_apply_receipts (
                operation_id, conversation_id, character_id, persona_key,
@@ -606,9 +625,9 @@ impl CompanionStateRepository for Database {
                 owner.conversation_id.to_string(),
                 owner.character_id.to_string(),
                 key,
-                sql_revision(current.session_revision)?,
+                sql_revision(replacement.expected_session_revision)?,
                 sql_revision(next_session)?,
-                sql_revision(current.relationship_revision)?,
+                sql_revision(replacement.expected_relationship_revision)?,
                 sql_revision(next_relationship)?,
                 replacement.applied_at.get(),
                 hash.as_slice()
@@ -618,9 +637,9 @@ impl CompanionStateRepository for Database {
         let receipt = CompanionStateApplyReceipt {
             operation_id,
             owner,
-            expected_session_revision: current.session_revision,
+            expected_session_revision: replacement.expected_session_revision,
             resulting_session_revision: next_session,
-            expected_relationship_revision: current.relationship_revision,
+            expected_relationship_revision: replacement.expected_relationship_revision,
             resulting_relationship_revision: next_relationship,
             applied_at: replacement.applied_at,
         };
@@ -643,6 +662,22 @@ impl CompanionConversationCreator for Database {
                 .map_err(conversation_state_error)
         })
         .map_err(CompanionLaunchRepositoryError::Conversation)
+    }
+}
+
+impl CompanionConversationSender for Database {
+    fn begin_companion_send(
+        &self,
+        prepared: PreparedCompanionSend,
+        now: TimestampMillis,
+    ) -> Result<lettuce_conversations::SendConversationResult, CompanionSendRepositoryError> {
+        let (command, owner, replacement) = prepared.into_parts();
+        crate::conversation_mutations::begin_send_with_hook(self, &command, now, |tx, _, _| {
+            replace_in(tx, owner, &replacement)
+                .map(|_| ())
+                .map_err(conversation_state_error)
+        })
+        .map_err(CompanionSendRepositoryError::Conversation)
     }
 }
 

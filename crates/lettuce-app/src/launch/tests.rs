@@ -6,7 +6,8 @@ use lettuce_characters::{
     SceneDocumentV1, SceneOwner, ScenePart, SceneVariant, Selection, StarterMessage, StarterRole,
 };
 use lettuce_companions::{
-    CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
+    CompanionConversationSender, CompanionStateOwner, CompanionStateReplacement,
+    CompanionStateRepository, CompanionTurnInput, PreparedCompanionSend, apply_turn,
 };
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
@@ -531,6 +532,117 @@ fn companion_character_launch_seeds_normalized_runtime_state() {
     .expect("next companion state");
     assert_eq!(next_state.state.relationship_state.trust, 0.9);
     assert_eq!(next_state.state.emotional_state.felt.warmth, 0.8);
+}
+
+#[test]
+fn companion_send_commits_user_turn_and_state_once() {
+    let database = database();
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(character_id, "companion-send-launch"), NOW)
+        .expect("launch companion");
+    let conversation = &launched.value.conversation;
+    let owner = CompanionStateOwner {
+        conversation_id: conversation.id,
+        character_id,
+        persona_id: None,
+    };
+    let state = CompanionStateRepository::get(&database, owner)
+        .expect("load state")
+        .expect("state");
+    let config = lettuce_companions::CompanionSoulConfig::default();
+    let transition = apply_turn(
+        &state.state,
+        &config.soul.baseline_affect,
+        &config.soul.regulation_style,
+        &config.relationship_defaults,
+        &CompanionTurnInput {
+            signals: vec!["emotion:love".into()],
+            emotion_delta: lettuce_companions::EmotionVector {
+                warmth: 0.1,
+                ..Default::default()
+            },
+            relationship_delta: lettuce_companions::RelationshipDelta {
+                affection: 0.05,
+                ..Default::default()
+            },
+            confidence: 0.8,
+            now: TimestampMillis::new(NOW.get() + 10),
+        },
+    );
+    let user_id = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.role == ParticipantRole::User)
+        .expect("user")
+        .id;
+    let command = SendConversation {
+        conversation_id: conversation.id,
+        branch_id: conversation.active_branch_id,
+        expected_revision: conversation.revision,
+        operation: OperationToken {
+            key: key("companion-send"),
+            request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+        },
+        message: MessageDraft {
+            role: MessageRole::User,
+            author_participant_id: Some(user_id),
+            parts: vec![MessagePart::Text {
+                text: "I love spending time with you.".into(),
+            }],
+            visibility: MessageVisibility::Visible,
+            pinned: false,
+            scene_edited: false,
+        },
+        swap_roles: false,
+    };
+    let replacement = CompanionStateReplacement {
+        expected_session_revision: state.session_revision,
+        expected_relationship_revision: state.relationship_revision,
+        state: transition.current,
+        applied_at: TimestampMillis::new(NOW.get() + 10),
+    };
+    let prepare = || {
+        PreparedCompanionSend::new(command.clone(), owner, replacement.clone())
+            .expect("prepared send")
+    };
+    let sent = CompanionConversationSender::begin_companion_send(
+        &database,
+        prepare(),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send");
+    let replay = CompanionConversationSender::begin_companion_send(
+        &database,
+        prepare(),
+        TimestampMillis::new(NOW.get() + 99),
+    )
+    .expect("replay");
+    assert_eq!(replay.operation, sent.operation);
+    assert_eq!(replay.value.turn.id, sent.value.turn.id);
+
+    let stored = CompanionStateRepository::get(&database, owner)
+        .expect("reload state")
+        .expect("stored state");
+    assert_eq!(
+        stored.session_revision,
+        state
+            .session_revision
+            .next()
+            .expect("next session revision")
+    );
+    assert_eq!(
+        stored.relationship_revision,
+        state
+            .relationship_revision
+            .next()
+            .expect("next relationship revision")
+    );
+    assert_eq!(stored.state.active_signals, ["emotion:love"]);
+    assert_eq!(stored.state.relationship_state.interaction_count, 1);
 }
 
 #[test]

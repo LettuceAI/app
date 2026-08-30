@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use lettuce_conversations::{
     ConversationKind, ConversationRepositoryError, CreateConversationResult,
-    PreparedConversationLaunch,
+    PreparedConversationLaunch, SendConversation, SendConversationResult,
 };
 
 const DECAY_MINUTES: f64 = 45.0;
@@ -443,6 +443,65 @@ pub trait CompanionConversationCreator: Send + Sync {
         launch: PreparedCompanionLaunch,
         now: TimestampMillis,
     ) -> Result<CreateConversationResult, CompanionLaunchRepositoryError>;
+}
+
+#[derive(Debug)]
+pub struct PreparedCompanionSend {
+    command: SendConversation,
+    owner: CompanionStateOwner,
+    replacement: CompanionStateReplacement,
+}
+
+impl PreparedCompanionSend {
+    pub fn new(
+        command: SendConversation,
+        owner: CompanionStateOwner,
+        replacement: CompanionStateReplacement,
+    ) -> Result<Self, CompanionSendRepositoryError> {
+        command
+            .validate()
+            .map_err(|_| CompanionSendRepositoryError::Invalid)?;
+        if command.conversation_id != owner.conversation_id
+            || validate_runtime_state(&replacement.state).is_err()
+        {
+            return Err(CompanionSendRepositoryError::Invalid);
+        }
+        Ok(Self {
+            command,
+            owner,
+            replacement,
+        })
+    }
+
+    #[must_use]
+    pub fn command(&self) -> &SendConversation {
+        &self.command
+    }
+
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        SendConversation,
+        CompanionStateOwner,
+        CompanionStateReplacement,
+    ) {
+        (self.command, self.owner, self.replacement)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompanionSendRepositoryError {
+    Conversation(ConversationRepositoryError),
+    Invalid,
+}
+
+pub trait CompanionConversationSender: Send + Sync {
+    fn begin_companion_send(
+        &self,
+        prepared: PreparedCompanionSend,
+        now: TimestampMillis,
+    ) -> Result<SendConversationResult, CompanionSendRepositoryError>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

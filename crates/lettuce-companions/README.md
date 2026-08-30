@@ -68,5 +68,15 @@ directly: only the first eight scored labels are considered, per-label
 thresholds remain `0.18`/`0.22`/`0.55`, grouped signal names are deduplicated
 while their numeric effects still accumulate, and the exact emotion,
 relationship, confidence, clamping, and unavailable-model fallback values are
-preserved. ONNX tokenization/model execution, prompt rendering, provider/job
-coordination, companion turn wiring, and frontend events remain deferred.
+preserved. Verified ONNX tokenization/model execution now lives behind the
+auxiliary-analysis boundary in `lettuce-embeddings`; model discovery, prompt
+rendering, provider/job coordination, companion turn wiring, and frontend
+events remain deferred.
+
+`PreparedCompanionSend` and `CompanionConversationSender` provide the atomic
+write boundary needed by turn coordination: a prepared state replacement is
+validated against the same conversation as the user send, and storage commits
+the message, generation turn/attempt, dual-scope companion state, operation,
+and outbox together. Exact conversation-operation replay does not reapply the
+state transition. Classification and transition preparation remain application
+work rather than storage behavior.
