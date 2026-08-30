@@ -106,6 +106,19 @@ rather than hidden globals. A full SQLite scenario composes two tool rounds,
 two immutable preparation plans, one authoritative memory mutation, exact
 provider replay ordering, aggregated usage, and idempotent finalization.
 
+Native creation inference now has its own bounded application coordinator. It
+builds each request from the durable turn, base proposal, attempt-owned tool
+contract, and resolved provider profile; dispatches through the shared
+`InferencePort`; and admits mixed assistant text/reasoning plus native calls as
+immutable creation rounds. Each admitted round preserves usage, provider finish
+metadata, request identity, and replay evidence. Recovery reconstructs the
+cumulative proposal and exact call/result continuation without redispatching
+completed rounds. A text-only response stops without fabricating a proposal;
+tool-driven completion appends exactly one planned proposal; cancellation and
+provider failures settle the attempt; and eight non-terminal rounds fail with
+a durable round-limit code. Host commands and frontend surfaces remain a later
+slice.
+
 ## Bundled prompts
 
 The app owns the closed, versioned built-in prompt catalog in

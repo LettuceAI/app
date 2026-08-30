@@ -4,9 +4,10 @@ use lettuce_creation::{
     AdmittedCreationToolCall, CreationAttemptFailureCode, CreationAttemptOwner,
     CreationAttemptRepository, CreationAttemptStatus, CreationInferenceAttempt,
     CreationInferenceRound, CreationOperationOutcome, CreationProposal, CreationRepositoryError,
-    CreationStage, CreationTargetKind, CreationToolCallEvidence, CreationTurn, CreationWorkflow,
-    CreationWorkflowRepository, NewCreationAttempt, NewCreationInferenceRound, NewCreationTurn,
-    NewCreationWorkflow, creation_tool_request, validate_creation_tool_calls,
+    CreationRoundFinishReason, CreationStage, CreationTargetKind, CreationToolCallEvidence,
+    CreationTurn, CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt,
+    NewCreationInferenceRound, NewCreationTurn, NewCreationWorkflow, creation_tool_request,
+    validate_creation_tool_calls,
 };
 use lettuce_types::{
     CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, Revision,
@@ -93,6 +94,7 @@ fn attempt_failure_name(failure: CreationAttemptFailureCode) -> &'static str {
         CreationAttemptFailureCode::ProviderRejected => "provider_rejected",
         CreationAttemptFailureCode::EmptyResponse => "empty_response",
         CreationAttemptFailureCode::TimedOut => "timed_out",
+        CreationAttemptFailureCode::RoundLimit => "round_limit",
         CreationAttemptFailureCode::Internal => "internal",
     }
 }
@@ -103,6 +105,7 @@ fn parse_attempt_failure(value: &str) -> rusqlite::Result<CreationAttemptFailure
         "provider_rejected" => Ok(CreationAttemptFailureCode::ProviderRejected),
         "empty_response" => Ok(CreationAttemptFailureCode::EmptyResponse),
         "timed_out" => Ok(CreationAttemptFailureCode::TimedOut),
+        "round_limit" => Ok(CreationAttemptFailureCode::RoundLimit),
         "internal" => Ok(CreationAttemptFailureCode::Internal),
         _ => Err(rusqlite::Error::InvalidQuery),
     }
@@ -387,7 +390,8 @@ fn list_rounds_in(
     let mut statement = transaction
         .prepare(
             "SELECT ordinal,first_call_ordinal,call_count,parts_json,\
-                    provider_replay_artifact_id,provider_replay_retention,admitted_at \
+                    provider_replay_artifact_id,provider_replay_retention,input_tokens,\
+                    output_tokens,finish_reason,provider_request_id,admitted_at \
              FROM creation_inference_rounds \
              WHERE workflow_id=?1 AND turn_id=?2 AND attempt_id=?3 ORDER BY ordinal",
         )
@@ -429,8 +433,26 @@ fn list_rounds_in(
                     parts: decode_versioned(&row.get::<_, String>(3)?, CREATION_JSON_VERSION)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     provider_replay,
+                    usage: match (row.get::<_, Option<i64>>(6)?, row.get::<_, Option<i64>>(7)?) {
+                        (Some(input_tokens), Some(output_tokens)) => {
+                            Some(lettuce_conversations::InferenceUsage {
+                                input_tokens: u64::try_from(input_tokens)
+                                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                                output_tokens: u64::try_from(output_tokens)
+                                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                            })
+                        }
+                        (None, None) => None,
+                        _ => return Err(rusqlite::Error::InvalidQuery),
+                    },
+                    finish_reason: match row.get::<_, String>(8)?.as_str() {
+                        "stop" => CreationRoundFinishReason::Stop,
+                        "length" => CreationRoundFinishReason::Length,
+                        _ => return Err(rusqlite::Error::InvalidQuery),
+                    },
+                    provider_request_id: row.get(9)?,
                     calls: round_calls,
-                    admitted_at: TimestampMillis::new(row.get(6)?),
+                    admitted_at: TimestampMillis::new(row.get(10)?),
                 })
             },
         )
@@ -511,6 +533,10 @@ impl CreationWorkflowRepository for Database {
         id: CreationProposalId,
     ) -> Result<CreationProposal, CreationRepositoryError> {
         load_proposal_conn(&*self.connection().map_err(storage)?, id)
+    }
+
+    fn load_turn(&self, id: CreationTurnId) -> Result<CreationTurn, CreationRepositoryError> {
+        load_turn_conn(&*self.connection().map_err(storage)?, id)
     }
 
     fn record_user_turn(
@@ -895,6 +921,9 @@ impl CreationAttemptRepository for Database {
             first_call_ordinal: expected_next_ordinal,
             parts: round.parts,
             provider_replay: round.provider_replay,
+            usage: round.usage,
+            finish_reason: round.finish_reason,
+            provider_request_id: round.provider_request_id,
             calls: requested_calls,
             admitted_at: round.admitted_at,
         };
@@ -949,12 +978,24 @@ impl CreationAttemptRepository for Database {
                 )
             })
             .unwrap_or((None, None));
+        let (input_tokens, output_tokens) = requested
+            .usage
+            .as_ref()
+            .map(|usage| {
+                Ok((
+                    Some(sql_u64(usage.input_tokens)?),
+                    Some(sql_u64(usage.output_tokens)?),
+                ))
+            })
+            .transpose()?
+            .unwrap_or((None, None));
         transaction
             .execute(
                 "INSERT INTO creation_inference_rounds \
                  (workflow_id,turn_id,attempt_id,ordinal,first_call_ordinal,call_count,parts_json,\
-                  provider_replay_artifact_id,provider_replay_retention,admitted_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                  provider_replay_artifact_id,provider_replay_retention,input_tokens,output_tokens,\
+                  finish_reason,provider_request_id,admitted_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
                 params![
                     requested.workflow_id.to_string(),
                     requested.turn_id.to_string(),
@@ -967,6 +1008,13 @@ impl CreationAttemptRepository for Database {
                         .map_err(|_| CreationRepositoryError::Invalid)?,
                     round_replay_id,
                     round_replay_retention,
+                    input_tokens,
+                    output_tokens,
+                    match requested.finish_reason {
+                        CreationRoundFinishReason::Stop => "stop",
+                        CreationRoundFinishReason::Length => "length",
+                    },
+                    requested.provider_request_id.as_deref(),
                     requested.admitted_at.get(),
                 ],
             )
@@ -1076,9 +1124,10 @@ mod tests {
     use lettuce_creation::{
         AdmittedCreationToolCall, CreationAttemptOwner, CreationAttemptRepository,
         CreationAttemptStatus, CreationDraft, CreationOperation, CreationOperationError,
-        CreationRepositoryError, CreationStage, CreationTarget, CreationToolApply,
-        CreationWorkflowRepository, NewCreationAttempt, NewCreationInferenceRound,
-        NewCreationToolCall, NewCreationTurn, NewCreationWorkflow, apply_creation_tool_calls,
+        CreationRepositoryError, CreationRoundFinishReason, CreationStage, CreationTarget,
+        CreationToolApply, CreationWorkflowRepository, NewCreationAttempt,
+        NewCreationInferenceRound, NewCreationToolCall, NewCreationTurn, NewCreationWorkflow,
+        apply_creation_tool_calls,
     };
     use lettuce_types::{
         CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId,
@@ -1130,6 +1179,12 @@ mod tests {
                 .map(|text| vec![MessagePart::Text { text: text.into() }])
                 .unwrap_or_default(),
             provider_replay: replay,
+            usage: Some(lettuce_conversations::InferenceUsage {
+                input_tokens: 10 + u64::from(ordinal),
+                output_tokens: 2 + u64::from(ordinal),
+            }),
+            finish_reason: CreationRoundFinishReason::Stop,
+            provider_request_id: Some(format!("request-{ordinal}")),
             calls,
             admitted_at,
         }

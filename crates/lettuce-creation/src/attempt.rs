@@ -1,5 +1,5 @@
 use lettuce_conversations::{
-    MessagePart, ProposedToolCall, ReplayArtifactRef, ReplayRetention, ToolRequest,
+    InferenceUsage, MessagePart, ProposedToolCall, ReplayArtifactRef, ReplayRetention, ToolRequest,
 };
 use lettuce_types::{
     CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, Revision,
@@ -49,6 +49,7 @@ pub enum CreationAttemptFailureCode {
     ProviderRejected,
     EmptyResponse,
     TimedOut,
+    RoundLimit,
     Internal,
 }
 
@@ -181,11 +182,20 @@ pub struct NewCreationToolCall {
 
 pub const MAX_CREATION_INFERENCE_ROUNDS: u8 = 8;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreationRoundFinishReason {
+    Stop,
+    Length,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewCreationInferenceRound {
     pub ordinal: u8,
     pub parts: Vec<MessagePart>,
     pub provider_replay: Option<ReplayArtifactRef>,
+    pub usage: Option<InferenceUsage>,
+    pub finish_reason: CreationRoundFinishReason,
+    pub provider_request_id: Option<String>,
     pub calls: Vec<NewCreationToolCall>,
     pub admitted_at: TimestampMillis,
 }
@@ -196,6 +206,13 @@ impl NewCreationInferenceRound {
             || (self.parts.is_empty() && self.calls.is_empty())
             || self.parts.len() > 64
             || self.calls.len() > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE
+        {
+            return Err(CreationAttemptError::InvalidRound);
+        }
+        if self
+            .provider_request_id
+            .as_ref()
+            .is_some_and(|id| id.trim().is_empty() || id.len() > 256)
         {
             return Err(CreationAttemptError::InvalidRound);
         }
@@ -248,6 +265,9 @@ pub struct CreationInferenceRound {
     pub first_call_ordinal: u16,
     pub parts: Vec<MessagePart>,
     pub provider_replay: Option<ReplayArtifactRef>,
+    pub usage: Option<InferenceUsage>,
+    pub finish_reason: CreationRoundFinishReason,
+    pub provider_request_id: Option<String>,
     pub calls: Vec<CreationToolCallEvidence>,
     pub admitted_at: TimestampMillis,
 }
@@ -258,6 +278,9 @@ impl CreationInferenceRound {
             ordinal: self.ordinal,
             parts: self.parts.clone(),
             provider_replay: self.provider_replay.clone(),
+            usage: self.usage.clone(),
+            finish_reason: self.finish_reason,
+            provider_request_id: self.provider_request_id.clone(),
             calls: self
                 .calls
                 .iter()
@@ -270,6 +293,12 @@ impl CreationInferenceRound {
             admitted_at: self.admitted_at,
         }
         .validate()?;
+        if usize::from(self.first_call_ordinal)
+            .checked_add(self.calls.len())
+            .is_none_or(|count| count > crate::proposal::MAX_CREATION_OPERATIONS)
+        {
+            return Err(CreationAttemptError::InvalidRound);
+        }
         for (offset, call) in self.calls.iter().enumerate() {
             let expected = self
                 .first_call_ordinal
@@ -307,9 +336,7 @@ impl CreationToolCallEvidence {
         self.call
             .validate()
             .map_err(|_| CreationAttemptError::InvalidCall)?;
-        if self.definition_version == 0
-            || usize::from(self.ordinal) >= lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE
-        {
+        if self.definition_version == 0 {
             return Err(CreationAttemptError::InvalidCall);
         }
         Ok(())

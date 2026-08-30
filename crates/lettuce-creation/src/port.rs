@@ -67,6 +67,11 @@ pub trait CreationWorkflowRepository: Send + Sync {
         id: CreationProposalId,
     ) -> Result<CreationProposal, CreationRepositoryError>;
 
+    fn load_turn(
+        &self,
+        id: lettuce_types::CreationTurnId,
+    ) -> Result<CreationTurn, CreationRepositoryError>;
+
     fn record_user_turn(
         &self,
         turn: NewCreationTurn,

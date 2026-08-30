@@ -69,7 +69,8 @@ CREATE TABLE creation_inference_attempts (
     ),
     failure TEXT CHECK (
         failure IS NULL OR failure IN (
-            'provider_unavailable', 'provider_rejected', 'empty_response', 'timed_out', 'internal'
+            'provider_unavailable', 'provider_rejected', 'empty_response', 'timed_out',
+            'round_limit', 'internal'
         )
     ),
     revision INTEGER NOT NULL CHECK (revision >= 1),
@@ -118,6 +119,13 @@ CREATE TABLE creation_inference_rounds (
     provider_replay_retention TEXT CHECK (
         provider_replay_retention IS NULL OR provider_replay_retention = 'conversation'
     ),
+    input_tokens INTEGER CHECK (input_tokens IS NULL OR input_tokens >= 0),
+    output_tokens INTEGER CHECK (output_tokens IS NULL OR output_tokens >= 0),
+    finish_reason TEXT NOT NULL CHECK (finish_reason IN ('stop', 'length')),
+    provider_request_id TEXT CHECK (
+        provider_request_id IS NULL OR
+        (length(trim(provider_request_id)) > 0 AND length(CAST(provider_request_id AS BLOB)) <= 256)
+    ),
     admitted_at INTEGER NOT NULL,
     PRIMARY KEY (workflow_id, turn_id, attempt_id, ordinal),
     FOREIGN KEY (workflow_id, turn_id, attempt_id)
@@ -126,6 +134,7 @@ CREATE TABLE creation_inference_rounds (
         REFERENCES conversation_replay_artifacts(artifact_id, retention) ON DELETE RESTRICT,
     CHECK (call_count > 0 OR json_array_length(json_extract(parts_json, '$.value')) > 0),
     CHECK (first_call_ordinal + call_count <= 64),
+    CHECK ((input_tokens IS NULL) = (output_tokens IS NULL)),
     CHECK ((provider_replay_artifact_id IS NULL) = (provider_replay_retention IS NULL))
 ) STRICT;
 CREATE INDEX creation_inference_rounds_attempt_idx

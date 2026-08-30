@@ -9,6 +9,7 @@
 mod built_in_prompts;
 mod composition;
 mod context_assembler;
+mod creation_continuation;
 mod dynamic_memory;
 mod dynamic_memory_continuation;
 mod embeddings;
@@ -18,6 +19,7 @@ mod provider_runtime;
 pub use built_in_prompts::*;
 pub use composition::*;
 pub use context_assembler::*;
+pub use creation_continuation::*;
 pub use dynamic_memory::*;
 pub use dynamic_memory_continuation::*;
 pub use embeddings::*;
