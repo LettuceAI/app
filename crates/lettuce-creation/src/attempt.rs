@@ -85,6 +85,26 @@ pub struct NewCreationAttempt {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewCreationTurnAttempt {
+    pub workflow_id: CreationWorkflowId,
+    pub expected_workflow_revision: Revision,
+    pub base_proposal_id: CreationProposalId,
+    pub turn_id: CreationTurnId,
+    pub attempt_id: GenerationAttemptId,
+    pub planned_proposal_id: CreationProposalId,
+    pub user_message: String,
+    pub job_id: JobId,
+    pub profile_fingerprint: CreationInferenceProfileFingerprint,
+    pub now: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreationTurnAttemptAdmission {
+    pub turn: crate::CreationTurn,
+    pub attempt: CreationInferenceAttempt,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreationInferenceAttempt {
     pub id: GenerationAttemptId,
     pub workflow_id: CreationWorkflowId,
@@ -98,6 +118,7 @@ pub struct CreationInferenceAttempt {
     pub tool_request: ToolRequest,
     pub job_id: JobId,
     pub profile_fingerprint: CreationInferenceProfileFingerprint,
+    pub workflow_revision: Revision,
     pub status: CreationAttemptStatus,
     pub failure: Option<CreationAttemptFailureCode>,
     pub revision: Revision,
@@ -400,6 +421,7 @@ mod tests {
             .expect("tools"),
             job_id: JobId::new(),
             profile_fingerprint: [7; 32],
+            workflow_revision: Revision::INITIAL,
             status: CreationAttemptStatus::Created,
             failure: None,
             revision: Revision::INITIAL,

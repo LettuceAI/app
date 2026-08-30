@@ -5,11 +5,16 @@ use lettuce_types::{
 use crate::{
     CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptStatus,
     CreationInferenceAttempt, CreationInferenceRound, CreationProposal, CreationToolCallEvidence,
-    CreationTurn, CreationWorkflow, NewCreationAttempt, NewCreationInferenceRound, NewCreationTurn,
-    NewCreationWorkflow,
+    CreationTurn, CreationTurnAttemptAdmission, CreationWorkflow, NewCreationAttempt,
+    NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt, NewCreationWorkflow,
 };
 
 pub trait CreationAttemptRepository: Send + Sync {
+    fn admit_creation_turn_attempt(
+        &self,
+        admission: NewCreationTurnAttempt,
+    ) -> Result<CreationTurnAttemptAdmission, CreationRepositoryError>;
+
     fn create_creation_attempt(
         &self,
         attempt: NewCreationAttempt,

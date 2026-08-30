@@ -5,9 +5,9 @@ use lettuce_creation::{
     CreationAttemptRepository, CreationAttemptStatus, CreationInferenceAttempt,
     CreationInferenceRound, CreationOperationOutcome, CreationProposal, CreationRepositoryError,
     CreationRoundFinishReason, CreationStage, CreationTargetKind, CreationToolCallEvidence,
-    CreationTurn, CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt,
-    NewCreationInferenceRound, NewCreationTurn, NewCreationWorkflow, creation_tool_request,
-    validate_creation_tool_calls,
+    CreationTurn, CreationTurnAttemptAdmission, CreationWorkflow, CreationWorkflowRepository,
+    NewCreationAttempt, NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt,
+    NewCreationWorkflow, creation_tool_request, validate_creation_tool_calls,
 };
 use lettuce_types::{
     CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, JobId, Revision,
@@ -283,7 +283,7 @@ fn load_attempt_conn(
         .query_row(
             "SELECT workflow_id,turn_id,ordinal,retry_parent_id,base_proposal_id,\
                     planned_proposal_id,target,stage,tool_request_json,job_id,profile_fingerprint,\
-                    status,failure,revision,created_at,started_at,finished_at,updated_at \
+                    workflow_revision,status,failure,revision,created_at,started_at,finished_at,updated_at \
              FROM creation_inference_attempts WHERE id=?1",
             [id.to_string()],
             |row| {
@@ -305,16 +305,17 @@ fn load_attempt_conn(
                     .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     job_id: parse_id::<JobId>(row.get(9)?)?,
                     profile_fingerprint: profile_fingerprint(row.get(10)?)?,
-                    status: parse_attempt_status(&row.get::<_, String>(11)?)?,
+                    workflow_revision: revision(row.get(11)?)?,
+                    status: parse_attempt_status(&row.get::<_, String>(12)?)?,
                     failure: row
-                        .get::<_, Option<String>>(12)?
+                        .get::<_, Option<String>>(13)?
                         .map(|value| parse_attempt_failure(&value))
                         .transpose()?,
-                    revision: revision(row.get(13)?)?,
-                    created_at: TimestampMillis::new(row.get(14)?),
-                    started_at: row.get::<_, Option<i64>>(15)?.map(TimestampMillis::new),
-                    finished_at: row.get::<_, Option<i64>>(16)?.map(TimestampMillis::new),
-                    updated_at: TimestampMillis::new(row.get(17)?),
+                    revision: revision(row.get(14)?)?,
+                    created_at: TimestampMillis::new(row.get(15)?),
+                    started_at: row.get::<_, Option<i64>>(16)?.map(TimestampMillis::new),
+                    finished_at: row.get::<_, Option<i64>>(17)?.map(TimestampMillis::new),
+                    updated_at: TimestampMillis::new(row.get(18)?),
                 })
             },
         )
@@ -709,6 +710,121 @@ impl CreationWorkflowRepository for Database {
 }
 
 impl CreationAttemptRepository for Database {
+    fn admit_creation_turn_attempt(
+        &self,
+        input: NewCreationTurnAttempt,
+    ) -> Result<CreationTurnAttemptAdmission, CreationRepositoryError> {
+        NewCreationTurn {
+            id: input.turn_id,
+            workflow_id: input.workflow_id,
+            base_proposal_id: input.base_proposal_id,
+            user_message: input.user_message.clone(),
+            now: input.now,
+        }
+        .validate()
+        .map_err(|_| CreationRepositoryError::Invalid)?;
+        if input.base_proposal_id == input.planned_proposal_id {
+            return Err(CreationRepositoryError::Invalid);
+        }
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        match load_attempt_conn(&transaction, input.attempt_id) {
+            Ok(attempt) => {
+                let turn = load_turn_conn(&transaction, input.turn_id)?;
+                if turn.workflow_id == input.workflow_id
+                    && turn.base_proposal_id == input.base_proposal_id
+                    && turn.user_message == input.user_message
+                    && turn.created_at == input.now
+                    && attempt.workflow_id == input.workflow_id
+                    && attempt.turn_id == input.turn_id
+                    && attempt.ordinal == 0
+                    && attempt.retry_parent_id.is_none()
+                    && attempt.base_proposal_id == input.base_proposal_id
+                    && attempt.planned_proposal_id == input.planned_proposal_id
+                    && attempt.job_id == input.job_id
+                    && attempt.profile_fingerprint == input.profile_fingerprint
+                    && attempt.workflow_revision == input.expected_workflow_revision
+                    && attempt.created_at == input.now
+                {
+                    transaction.commit().map_err(storage)?;
+                    return Ok(CreationTurnAttemptAdmission { turn, attempt });
+                }
+                return Err(CreationRepositoryError::Conflict);
+            }
+            Err(CreationRepositoryError::NotFound) => {}
+            Err(error) => return Err(error),
+        }
+        match load_turn_conn(&transaction, input.turn_id) {
+            Ok(_) => return Err(CreationRepositoryError::Conflict),
+            Err(CreationRepositoryError::NotFound) => {}
+            Err(error) => return Err(error),
+        }
+        let workflow = load_workflow_conn(&transaction, input.workflow_id)?;
+        let base = load_proposal_conn(&transaction, input.base_proposal_id)?;
+        if workflow.revision != input.expected_workflow_revision
+            || workflow.current_proposal_id != input.base_proposal_id
+            || workflow.stage != base.stage
+            || workflow.target.kind() != base.draft.kind()
+            || input.now < workflow.updated_at
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let tool_request = creation_tool_request(workflow.target.kind(), workflow.stage)
+            .ok_or(CreationRepositoryError::Conflict)?;
+        let turn_ordinal = next_ordinal(&transaction, "creation_turns", input.workflow_id)?;
+        transaction
+            .execute(
+                "INSERT INTO creation_turns \
+                 (id,workflow_id,ordinal,base_proposal_id,user_message,created_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6)",
+                params![
+                    input.turn_id.to_string(),
+                    input.workflow_id.to_string(),
+                    i64::from(turn_ordinal),
+                    input.base_proposal_id.to_string(),
+                    input.user_message,
+                    input.now.get(),
+                ],
+            )
+            .map_err(|error| match error.sqlite_error_code() {
+                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
+                _ => CreationRepositoryError::Storage,
+            })?;
+        transaction
+            .execute(
+                "INSERT INTO creation_inference_attempts \
+                 (workflow_id,turn_id,id,ordinal,retry_parent_id,base_proposal_id,\
+                  planned_proposal_id,target,stage,tool_request_json,job_id,profile_fingerprint,\
+                  workflow_revision,status,failure,revision,created_at,started_at,finished_at,updated_at) \
+                 VALUES (?1,?2,?3,0,NULL,?4,?5,?6,?7,?8,?9,?10,?11,'created',NULL,1,?12,NULL,NULL,?12)",
+                params![
+                    input.workflow_id.to_string(),
+                    input.turn_id.to_string(),
+                    input.attempt_id.to_string(),
+                    input.base_proposal_id.to_string(),
+                    input.planned_proposal_id.to_string(),
+                    target_name(workflow.target.kind()),
+                    stage_name(workflow.stage),
+                    encode_versioned(&tool_request, CREATION_JSON_VERSION)
+                        .map_err(|_| CreationRepositoryError::Invalid)?,
+                    input.job_id.to_string(),
+                    input.profile_fingerprint.as_slice(),
+                    sql_u64(input.expected_workflow_revision.get())?,
+                    input.now.get(),
+                ],
+            )
+            .map_err(|error| match error.sqlite_error_code() {
+                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
+                _ => CreationRepositoryError::Storage,
+            })?;
+        let turn = load_turn_conn(&transaction, input.turn_id)?;
+        let attempt = load_attempt_conn(&transaction, input.attempt_id)?;
+        transaction.commit().map_err(storage)?;
+        Ok(CreationTurnAttemptAdmission { turn, attempt })
+    }
+
     fn create_creation_attempt(
         &self,
         input: NewCreationAttempt,
@@ -787,6 +903,7 @@ impl CreationAttemptRepository for Database {
                     || parent.tool_request != tool_request
                     || parent.profile_fingerprint != input.profile_fingerprint
                     || parent.job_id == input.job_id
+                    || parent.workflow_revision != workflow.revision
                 {
                     return Err(CreationRepositoryError::Conflict);
                 }
@@ -798,8 +915,8 @@ impl CreationAttemptRepository for Database {
                 "INSERT INTO creation_inference_attempts \
                  (workflow_id,turn_id,id,ordinal,retry_parent_id,base_proposal_id,\
                   planned_proposal_id,target,stage,tool_request_json,job_id,profile_fingerprint,\
-                  status,failure,revision,created_at,started_at,finished_at,updated_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'created',NULL,1,?13,NULL,NULL,?13)",
+                  workflow_revision,status,failure,revision,created_at,started_at,finished_at,updated_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'created',NULL,1,?14,NULL,NULL,?14)",
                 params![
                     input.owner.workflow_id.to_string(),
                     input.owner.turn_id.to_string(),
@@ -814,6 +931,7 @@ impl CreationAttemptRepository for Database {
                         .map_err(|_| CreationRepositoryError::Invalid)?,
                     input.job_id.to_string(),
                     input.profile_fingerprint.as_slice(),
+                    sql_u64(workflow.revision.get())?,
                     input.now.get(),
                 ],
             )

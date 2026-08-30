@@ -56,8 +56,10 @@ This makes batch ownership and continuation recovery explicit instead of
 guessing round boundaries from timestamps or a flat call list.
 
 Remote provider dispatch and recursive continuation are active through the
-`lettuce-app` coordinator. Application-level atomic turn/attempt admission and
-the explicit interrupted-parent recovery contract remain later slices.
+`lettuce-app` coordinator. User-turn/first-attempt admission is one atomic port
+operation bound to the exact workflow revision; it never exposes a durable turn
+without its dispatch attempt. The explicit interrupted-parent recovery contract
+remains a later slice.
 
 Single-entry, keyword, and staged lorebook-generation behavior is pinned in
 `fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`. Generation

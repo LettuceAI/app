@@ -9,12 +9,52 @@ use lettuce_creation::{
     AdmittedCreationToolCall, CreationAttemptFailureCode, CreationAttemptOwner,
     CreationAttemptRepository, CreationAttemptStatus, CreationInferenceAttempt,
     CreationInferenceRound, CreationProposal, CreationRepositoryError, CreationRoundFinishReason,
-    CreationToolApply, CreationToolCommit, CreationWorkflow, CreationWorkflowRepository,
-    MAX_CREATION_INFERENCE_ROUNDS, NewCreationInferenceRound, NewCreationToolCall,
-    apply_creation_tool_calls, creation_inference_profile_fingerprint, reduce_creation_tool_calls,
+    CreationToolApply, CreationToolCommit, CreationTurnAttemptAdmission, CreationWorkflow,
+    CreationWorkflowRepository, MAX_CREATION_INFERENCE_ROUNDS, NewCreationInferenceRound,
+    NewCreationToolCall, NewCreationTurnAttempt, apply_creation_tool_calls,
+    creation_inference_profile_fingerprint, reduce_creation_tool_calls,
 };
 use lettuce_jobs::handle::JobHandle;
-use lettuce_types::{GenerationAttemptId, GenerationTurnId, RequestId, TimestampMillis};
+use lettuce_types::{
+    CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, GenerationTurnId,
+    RequestId, Revision, TimestampMillis,
+};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreationTurnDispatchRequest {
+    pub workflow_id: CreationWorkflowId,
+    pub expected_workflow_revision: Revision,
+    pub base_proposal_id: CreationProposalId,
+    pub turn_id: CreationTurnId,
+    pub attempt_id: GenerationAttemptId,
+    pub planned_proposal_id: CreationProposalId,
+    pub user_message: String,
+    pub profile: ResolvedInferenceProfile,
+    pub now: TimestampMillis,
+}
+
+pub fn admit_creation_turn_dispatch<R: CreationAttemptRepository + ?Sized>(
+    repository: &R,
+    request: CreationTurnDispatchRequest,
+    handle: &JobHandle,
+) -> Result<CreationTurnAttemptAdmission, CreationContinuationError> {
+    let profile_fingerprint = creation_inference_profile_fingerprint(&request.profile)
+        .map_err(|_| CreationContinuationError::InvalidProfile)?;
+    repository
+        .admit_creation_turn_attempt(NewCreationTurnAttempt {
+            workflow_id: request.workflow_id,
+            expected_workflow_revision: request.expected_workflow_revision,
+            base_proposal_id: request.base_proposal_id,
+            turn_id: request.turn_id,
+            attempt_id: request.attempt_id,
+            planned_proposal_id: request.planned_proposal_id,
+            user_message: request.user_message,
+            job_id: handle.id(),
+            profile_fingerprint,
+            now: request.now,
+        })
+        .map_err(Into::into)
+}
 
 #[derive(Debug)]
 pub struct CreationContinuationCoordinator<'a, R: ?Sized, I: ?Sized> {
@@ -944,6 +984,82 @@ mod tests {
         assert_eq!(replay.proposal, result.proposal);
         assert_eq!(replay.rounds, result.rounds);
         assert_eq!(inference.requests.lock().expect("requests").len(), 2);
+    }
+
+    #[test]
+    fn turn_and_first_attempt_admit_atomically_and_replay_exactly() {
+        let database = Database::open_in_memory().expect("database");
+        let workflow_id = CreationWorkflowId::new();
+        let base_proposal_id = CreationProposalId::new();
+        let workflow = database
+            .create_workflow(NewCreationWorkflow {
+                id: workflow_id,
+                initial_proposal_id: base_proposal_id,
+                target: CreationTarget::NewPersona,
+                initial_draft: CreationDraft::Persona {
+                    name: None,
+                    description: None,
+                },
+                now: TimestampMillis::new(1),
+            })
+            .expect("workflow");
+        let handle = JobHandle::new(JobId::new());
+        let request = CreationTurnDispatchRequest {
+            workflow_id,
+            expected_workflow_revision: workflow.revision,
+            base_proposal_id,
+            turn_id: CreationTurnId::new(),
+            attempt_id: GenerationAttemptId::new(),
+            planned_proposal_id: CreationProposalId::new(),
+            user_message: "Create a navigator".into(),
+            profile: profile(),
+            now: TimestampMillis::new(2),
+        };
+        let admitted = admit_creation_turn_dispatch(&database, request.clone(), &handle)
+            .expect("atomic admission");
+        assert_eq!(
+            admit_creation_turn_dispatch(&database, request.clone(), &handle)
+                .expect("exact replay"),
+            admitted
+        );
+        let mut changed = request.clone();
+        changed.user_message = "Changed retry".into();
+        assert!(matches!(
+            admit_creation_turn_dispatch(&database, changed, &handle),
+            Err(CreationContinuationError::Repository(
+                CreationRepositoryError::Conflict
+            ))
+        ));
+        let mut changed_revision = request.clone();
+        changed_revision.expected_workflow_revision = Revision::new(
+            request
+                .expected_workflow_revision
+                .get()
+                .checked_add(1)
+                .expect("revision"),
+        );
+        assert!(matches!(
+            admit_creation_turn_dispatch(&database, changed_revision, &handle),
+            Err(CreationContinuationError::Repository(
+                CreationRepositoryError::Conflict
+            ))
+        ));
+
+        let rolled_back_turn_id = CreationTurnId::new();
+        let mut reused_job = request;
+        reused_job.turn_id = rolled_back_turn_id;
+        reused_job.attempt_id = GenerationAttemptId::new();
+        reused_job.planned_proposal_id = CreationProposalId::new();
+        assert!(matches!(
+            admit_creation_turn_dispatch(&database, reused_job, &handle),
+            Err(CreationContinuationError::Repository(
+                CreationRepositoryError::Conflict
+            ))
+        ));
+        assert_eq!(
+            database.load_turn(rolled_back_turn_id),
+            Err(CreationRepositoryError::NotFound)
+        );
     }
 
     #[tokio::test]

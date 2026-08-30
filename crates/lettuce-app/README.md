@@ -124,6 +124,12 @@ BLAKE3 fingerprint of the complete resolved inference profile. A stale caller,
 reused retry job, or profile drift is rejected before the attempt starts or any
 provider request is sent.
 
+The creation admission use case records one user turn and its first bound
+attempt in a single repository transaction against the exact workflow revision
+and base proposal. Exact request replay returns the original pair; changed
+identity or content, stale workflow state, and a job collision roll back without
+leaving a turn that has no attempt.
+
 ## Bundled prompts
 
 The app owns the closed, versioned built-in prompt catalog in
