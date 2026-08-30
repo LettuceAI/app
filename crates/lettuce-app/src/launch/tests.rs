@@ -17,15 +17,16 @@ use lettuce_context::{
     PromptBehaviorVersion, PromptMetadataDraft, PromptPurpose, PromptRepository,
 };
 use lettuce_conversations::{
-    AttachAttemptJob, ConversationKind, ConversationReader, ConversationRepository,
-    CreateConversationPlan, DirectConversationDetails, GenerationCheckpointEnvelope,
-    GenerationCheckpointEvent, GenerationTurnStatus, GroupChatModeSnapshot,
-    GroupConversationDetails, IdempotencyKey, InferenceCandidate, InferenceOutcome, InferencePort,
-    InferenceRequest, InferenceUsage, InitialMessageOrigin, MemoryModeSnapshot, MessageDraft,
-    MessagePart, MessageRole, MessageVisibility, OperationToken, OutputPolicy, ParticipantRole,
-    PortError, PromptPurposeSnapshot, ProposedToolCall, ProviderContextPart,
-    ResolvedInferenceProfile, SafetyContext, SendConversation, SnapshotSelection, SnapshotSource,
-    ToolExecutionRepository, ToolExecutionStatus, ToolExecutionTransition, ToolPolicy,
+    AttachAttemptJob, ContextAssembler, ContextRequest, ConversationCreator, ConversationKind,
+    ConversationReader, ConversationRepository, CreateConversationPlan, DirectConversationDetails,
+    GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationInput, GenerationTurnStatus,
+    GroupChatModeSnapshot, GroupConversationDetails, IdempotencyKey, InferenceCandidate,
+    InferenceOutcome, InferencePort, InferenceRequest, InferenceUsage, InitialMessageOrigin,
+    MemoryModeSnapshot, MessageDraft, MessagePart, MessageRole, MessageVisibility, OperationToken,
+    OutputPolicy, ParticipantRole, PortError, PromptPurposeSnapshot, ProposedToolCall,
+    ProviderContextPart, ResolvedInferenceProfile, SafetyContext, SendConversation,
+    SnapshotSelection, SnapshotSource, ToolExecutionRepository, ToolExecutionStatus,
+    ToolExecutionTransition, ToolPolicy,
 };
 use lettuce_database::Database;
 use lettuce_embeddings::{EmbeddingRequest, EmbeddingVector};
@@ -55,8 +56,8 @@ use super::request::{
     LaunchSelection,
 };
 use crate::{
-    AppBackend, BuiltInPromptId, CompanionEmotionEngine, CompanionEmotionGenerationError,
-    CompanionTurnCoordinator, ConversationLaunchError,
+    AppBackend, BuiltInPromptId, BuiltInPromptService, CompanionEmotionEngine,
+    CompanionEmotionGenerationError, CompanionTurnCoordinator, ConversationLaunchError,
 };
 
 const NOW: TimestampMillis = TimestampMillis::new(1_000);
@@ -104,6 +105,15 @@ impl InferencePort for ScriptedInference {
 
 fn database() -> Database {
     Database::open_in_memory().expect("open database")
+}
+
+fn database_with_builtins() -> Database {
+    let database = database();
+    BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(TimestampMillis::new(1))
+        .expect("bootstrap prompts");
+    database
 }
 
 fn key(value: &str) -> IdempotencyKey {
@@ -154,6 +164,39 @@ fn direct_send_command(
             scene_edited: false,
         },
         swap_roles: false,
+    }
+}
+
+fn context_request_for(
+    database: &Database,
+    conversation_id: lettuce_types::ConversationId,
+    source_message_id: lettuce_types::MessageId,
+) -> ContextRequest {
+    let aggregate = ConversationReader::get(database, conversation_id).expect("conversation");
+    let branch_id = aggregate.conversation.active_branch_id;
+    ContextRequest {
+        conversation_id,
+        branch_id,
+        branch_path: vec![branch_id],
+        source_message_id,
+        operation: lettuce_conversations::GenerationOperation::Send,
+        swap_roles: false,
+        guidance: None,
+        window: lettuce_conversations::ContextWindowPolicy::default(),
+        selected_speaker: None,
+        capabilities: lettuce_models::ModelCapabilities::default(),
+        safety: SafetyContext::Standard,
+        prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
+        prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
+        memory: None,
+        timeline: ConversationReader::timeline_page(
+            database,
+            conversation_id,
+            branch_id,
+            &lettuce_types::PageRequest::default(),
+        )
+        .expect("timeline")
+        .items,
     }
 }
 
@@ -500,7 +543,7 @@ fn archived_character_is_rejected() {
 
 #[test]
 fn companion_character_launch_seeds_normalized_runtime_state() {
-    let database = database();
+    let database = database_with_builtins();
     let persona_id = seed_persona(&database, "Mira");
     let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
         defaults.interaction_mode = InteractionMode::Companion;
@@ -571,7 +614,7 @@ fn companion_character_launch_seeds_normalized_runtime_state() {
 
 #[test]
 fn companion_send_commits_user_turn_and_state_once() {
-    let database = database();
+    let database = database_with_builtins();
     let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
         defaults.interaction_mode = InteractionMode::Companion;
         defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
@@ -711,7 +754,7 @@ impl CompanionEmotionEngine for ScenarioEmotionEngine {
 
 #[test]
 fn companion_turn_coordinator_classifies_once_and_replays_without_state_drift() {
-    let database = database();
+    let database = database_with_builtins();
     let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
         defaults.interaction_mode = InteractionMode::Companion;
         defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
@@ -778,7 +821,7 @@ fn companion_turn_coordinator_classifies_once_and_replays_without_state_drift() 
 
 #[test]
 fn companion_turn_coordinator_uses_neutral_fallback_and_bypasses_roleplay() {
-    let database = database();
+    let database = database_with_builtins();
     let companion_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
         defaults.interaction_mode = InteractionMode::Companion;
         defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
@@ -853,6 +896,102 @@ fn companion_turn_coordinator_uses_neutral_fallback_and_bypasses_roleplay() {
         )
         .expect("roleplay send");
     assert_eq!(engine.calls(), 0);
+}
+
+#[tokio::test]
+async fn companion_context_assembles_live_prompt_state_deterministically() {
+    let database = database_with_builtins();
+    let persona_id = seed_persona(&database, "Mira");
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        let mut config = lettuce_companions::CompanionSoulConfig::default();
+        config.soul.essence = "Quietly steadfast".into();
+        config.prompting.style_notes = "warm but reserved".into();
+        defaults.companion_soul = Some(config);
+    });
+    let mut launch = request(character_id, "companion-context-launch");
+    launch.persona = LaunchSelection::Explicit(persona_id);
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&launch, NOW)
+        .expect("launch companion");
+    let sent = CompanionTurnCoordinator::<_, ScenarioEmotionEngine>::new(&database, None)
+        .begin_send(
+            &direct_send_command(
+                &launched.value.conversation,
+                "companion-context-send",
+                "Stay with me.",
+            ),
+            TimestampMillis::new(NOW.get() + 10),
+            &CancellationToken::new(),
+        )
+        .expect("send companion message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let request = context_request_for(&database, launched.value.conversation.id, source_message_id);
+    let assembler = crate::ConversationContextAssembler::new(&database);
+    let first = assembler
+        .assemble(request.clone())
+        .await
+        .expect("assemble companion context");
+    let replay = assembler
+        .assemble(request)
+        .await
+        .expect("reassemble companion context");
+    assert_eq!(replay, first);
+    let text = first
+        .messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .filter_map(|part| match part {
+            ProviderContextPart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains(
+        "The following relationship and emotional state describes Ada's live relationship with Mira"
+    ));
+    assert!(text.contains("Soul essence: Quietly steadfast."));
+    assert!(text.contains("Companion style notes: warm but reserved."));
+    assert!(text.contains("Stay with me."));
+    assert!(first.attributions.prompt.is_some());
+}
+
+#[tokio::test]
+async fn companion_context_fails_closed_when_runtime_state_is_missing() {
+    let database = database_with_builtins();
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let prepared = ConversationLaunchPlanner::new(&database)
+        .prepare_direct(&request(character_id, "companion-context-missing-state"))
+        .expect("prepare companion launch");
+    let launched = ConversationCreator::create(&database, prepared, NOW)
+        .expect("create without companion state");
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(
+            &launched.value.conversation,
+            "companion-context-missing-state-send",
+            "Hello.",
+        ),
+        TimestampMillis::new(NOW.get() + 1),
+    )
+    .expect("send");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let request = context_request_for(&database, launched.value.conversation.id, source_message_id);
+    assert_eq!(
+        crate::ConversationContextAssembler::new(&database)
+            .assemble(request)
+            .await,
+        Err(lettuce_conversations::ContextAssemblyError::ConversationUnavailable)
+    );
 }
 
 #[test]
@@ -1394,6 +1533,48 @@ fn prompt_precedence_prefers_the_starter_and_rejects_a_wrong_purpose() {
             .expect_err("wrong purpose"),
         ConversationLaunchError::PromptWrongPurpose { prompt_id: wrong }
     );
+}
+
+#[test]
+fn companion_prompt_prefers_authored_config_and_falls_back_to_built_in() {
+    let database = database_with_builtins();
+    let built_in = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(NOW)
+        .expect("prompt ids")
+        .get(BuiltInPromptId::Companion);
+    let authored = seed_prompt(
+        &database,
+        "Companion override",
+        PromptPurpose::CompanionChat,
+    );
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        let mut config = lettuce_companions::CompanionSoulConfig::default();
+        config.prompting.prompt_template_id = Some(authored);
+        defaults.companion_soul = Some(config);
+    });
+    match &direct_details(&plan_for(
+        &database,
+        &request(character_id, "companion-authored-prompt"),
+    ))
+    .prompt
+    {
+        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, authored),
+        other => panic!("expected inherited companion prompt, got {other:?}"),
+    }
+
+    PromptRepository::archive(&database, authored, Revision::INITIAL, NOW)
+        .expect("archive companion prompt");
+    match &direct_details(&plan_for(
+        &database,
+        &request(character_id, "companion-archived-prompt"),
+    ))
+    .prompt
+    {
+        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, built_in),
+        other => panic!("expected built-in companion prompt, got {other:?}"),
+    }
 }
 
 #[test]

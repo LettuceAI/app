@@ -8,6 +8,11 @@
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
+use lettuce_characters::{CharacterRepository, PersonaRepository};
+use lettuce_companions::{
+    CompanionPromptStateInput, CompanionStateOwner, CompanionStateRepository, SoulOwner,
+    SoulRepository, render_prompt_state,
+};
 use lettuce_context::{
     DetectionPolicy, KeywordMatchMode, LorebookSnapshotActivationEntry,
     LorebookSnapshotActivationSource, PromptBehaviorVersion, PromptConditionContext, PromptEntry,
@@ -22,7 +27,7 @@ use lettuce_conversations::{
     ConversationReader, ConversationSnapshotMaterializer, EffectiveConversationSettings,
     GenerationOperation, LorebookAttribution, MessagePart, MessageRenderSource, MessageRole,
     PromptAttribution, ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage,
-    SnapshotDocumentBody, SnapshotDocumentKind, TimelineItem,
+    SnapshotDocumentBody, SnapshotDocumentKind, SnapshotSelection, TimelineItem,
 };
 use lettuce_conversations::{
     CharacterSnapshotBodyV1, ConversationParticipant, LorebookLaunchSnapshot,
@@ -30,30 +35,30 @@ use lettuce_conversations::{
     PromptEntryPayloadV1, PromptEntryPositionV1, PromptEntryRoleV1, PromptLaunchSnapshot,
     PromptSnapshotBodyV1, SceneLaunchSnapshot, ScenePartV1, SceneSnapshotBodyV1,
 };
-use lettuce_types::{ConversationId, ConversationParticipantId, MessageId};
+use lettuce_types::{ConversationId, ConversationParticipantId, MessageId, TimestampMillis};
 
-/// Concrete context assembly service.  Both dependencies are domain ports;
+/// Concrete context assembly service. Its dependency is a set of domain ports;
 /// this type deliberately has no database, provider, model, or memory port.
 #[derive(Debug)]
-pub struct ConversationContextAssembler<R, M> {
-    reader: R,
-    materializer: M,
+pub struct ConversationContextAssembler<'a, S> {
+    sources: &'a S,
 }
 
-impl<R, M> ConversationContextAssembler<R, M> {
-    pub fn new(reader: R, materializer: M) -> Self {
-        Self {
-            reader,
-            materializer,
-        }
+impl<'a, S> ConversationContextAssembler<'a, S> {
+    pub fn new(sources: &'a S) -> Self {
+        Self { sources }
     }
 }
 
 #[async_trait]
-impl<R, M> lettuce_conversations::ContextAssembler for ConversationContextAssembler<R, M>
+impl<S> lettuce_conversations::ContextAssembler for ConversationContextAssembler<'_, S>
 where
-    R: ConversationReader,
-    M: ConversationSnapshotMaterializer,
+    S: ConversationReader
+        + ConversationSnapshotMaterializer
+        + CharacterRepository
+        + PersonaRepository
+        + SoulRepository
+        + CompanionStateRepository,
 {
     async fn assemble(
         &self,
@@ -62,9 +67,7 @@ where
         request
             .validate()
             .map_err(|_| ContextAssemblyError::InvalidRequest)?;
-        let aggregate = self
-            .reader
-            .get(request.conversation_id)
+        let aggregate = ConversationReader::get(self.sources, request.conversation_id)
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
         validate_aggregate_and_path(&aggregate, &request)?;
         validate_timeline_items(&request)?;
@@ -91,7 +94,7 @@ where
         })?;
 
         let snapshot = SnapshotBundle::load(
-            &self.materializer,
+            self.sources,
             &aggregate,
             request.conversation_id,
             &settings,
@@ -103,6 +106,8 @@ where
         let (selected_window, omitted_messages, scene_timeline) =
             select_timeline(&aggregate, &request)?;
         let (scene, scene_direction) = snapshot.scene_values(&scene_timeline)?;
+        let companion_state =
+            self.companion_prompt_state(&aggregate, &snapshot, source_effective_time(&request)?)?;
 
         let recent_text = selected_window
             .iter()
@@ -150,6 +155,7 @@ where
                     &scene_direction,
                     &recent_text,
                     selected_window.len(),
+                    companion_state.is_some(),
                 ),
                 values: prompt_values(
                     &aggregate,
@@ -160,10 +166,13 @@ where
                     &lorebook_text,
                     &request,
                     request.swap_roles,
+                    companion_state.as_deref(),
                 ),
             };
-            let rendered = render_prompt_snapshot(&document, &render_context)
-                .map_err(|_| ContextAssemblyError::PromptRender)?;
+            let rendered = render_prompt_snapshot(&document, &render_context).map_err(|error| {
+                tracing::warn!(?error, "prompt snapshot rendering failed");
+                ContextAssemblyError::PromptRender
+            })?;
             (Some((reference.clone(), document)), rendered)
         } else {
             (None, Default::default())
@@ -310,6 +319,81 @@ where
         context.validate().map_err(map_output_validation)?;
         Ok(context)
     }
+}
+
+impl<S> ConversationContextAssembler<'_, S>
+where
+    S: CharacterRepository + PersonaRepository + SoulRepository + CompanionStateRepository,
+{
+    fn companion_prompt_state(
+        &self,
+        aggregate: &ConversationAggregate,
+        snapshot: &SnapshotBundle,
+        effective_at: TimestampMillis,
+    ) -> Result<Option<String>, ContextAssemblyError> {
+        let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
+            return Ok(None);
+        };
+        if snapshot.characters.first().is_none_or(|(_, character)| {
+            character.interaction_mode != lettuce_conversations::InteractionModeV1::Companion
+        }) {
+            return Ok(None);
+        }
+        let character = CharacterRepository::get(self.sources, details.character.source_id)
+            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+            .ok_or(ContextAssemblyError::ConversationUnavailable)?;
+        let config = character
+            .character
+            .defaults
+            .companion_soul
+            .unwrap_or_default();
+        let persona_id = match &details.persona {
+            SnapshotSelection::Inherited(persona) | SnapshotSelection::Explicit(persona) => {
+                Some(persona.source_id)
+            }
+            SnapshotSelection::Disabled => None,
+        };
+        let state = CompanionStateRepository::get(
+            self.sources,
+            CompanionStateOwner {
+                conversation_id: aggregate.conversation.id,
+                character_id: character.character.id,
+                persona_id,
+            },
+        )
+        .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+        .ok_or(ContextAssemblyError::ConversationUnavailable)?;
+        let soul = SoulRepository::get(self.sources, SoulOwner::Character(character.character.id))
+            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+            .ok_or(ContextAssemblyError::ConversationUnavailable)?;
+        let partner_name = persona_id
+            .map(|id| PersonaRepository::get(self.sources, id))
+            .transpose()
+            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+            .flatten()
+            .map(|persona| persona.title);
+        Ok(Some(render_prompt_state(&CompanionPromptStateInput {
+            character_name: &character.character.profile.name,
+            partner_name: partner_name.as_deref(),
+            soul: &config.soul,
+            soul_state: &soul,
+            runtime_state: &state.state,
+            style_notes: &config.prompting.style_notes,
+            continuity_episode: 0,
+            effective_at,
+        })))
+    }
+}
+
+fn source_effective_time(
+    request: &ContextRequest,
+) -> Result<TimestampMillis, ContextAssemblyError> {
+    request
+        .timeline
+        .iter()
+        .find(|item| item.message.id == request.source_message_id)
+        .map(|item| item.message.effective_time)
+        .ok_or(ContextAssemblyError::InvalidTimeline)
 }
 
 fn author_note_attribution_name(
@@ -1313,6 +1397,7 @@ fn prompt_conditions(
     scene_direction: &str,
     recent_text: &[String],
     selected_message_count: usize,
+    companion_mode_enabled: bool,
 ) -> PromptConditionContext {
     let runtime = &request.prompt_runtime;
     let character = selected_character(snapshot, request);
@@ -1383,7 +1468,7 @@ fn prompt_conditions(
         vision_enabled: request.capabilities.input_modalities.image
             == lettuce_models::CapabilityStatus::Supported,
         time_awareness_enabled: runtime.time_awareness_enabled,
-        companion_mode_enabled: runtime.companion_mode_enabled,
+        companion_mode_enabled: companion_mode_enabled || runtime.companion_mode_enabled,
     }
 }
 
@@ -1397,6 +1482,7 @@ fn prompt_values(
     lorebook_text: &str,
     request: &ContextRequest,
     swap_roles: bool,
+    companion_state: Option<&str>,
 ) -> PromptRenderValues {
     let character = selected_character(snapshot, request);
     let user = aggregate
@@ -1537,7 +1623,9 @@ fn prompt_values(
     for (variable, value) in [
         (
             PromptVariable::CompanionState,
-            request.prompt_values.companion_state.clone(),
+            companion_state
+                .map(str::to_owned)
+                .or_else(|| request.prompt_values.companion_state.clone()),
         ),
         (
             PromptVariable::ScheduledNotes,
@@ -1589,15 +1677,17 @@ fn prompt_values(
             values.purpose_values.insert(variable, value);
         }
     }
-    values.purpose_values.insert(
-        PromptVariable::GroupCharacters,
-        snapshot
-            .characters
-            .iter()
-            .map(|(_, body)| body.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", "),
-    );
+    if aggregate.conversation.kind.is_group() {
+        values.purpose_values.insert(
+            PromptVariable::GroupCharacters,
+            snapshot
+                .characters
+                .iter()
+                .map(|(_, body)| body.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+    }
     values
 }
 

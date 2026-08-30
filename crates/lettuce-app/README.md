@@ -42,6 +42,18 @@ use the legacy neutral update; cancellation stops before persistence. Exact
 send replay bypasses classification and never reapplies state. Roleplay and
 group sends retain the ordinary conversation repository path.
 
+Direct companion launch now selects the authored nested companion prompt
+template after any explicit starter template and otherwise falls back to the
+bundled companion prompt; a missing or archived inherited companion template
+also falls back without borrowing the ordinary direct-chat prompt. Context
+assembly reads the current authored Soul/prompting config, character-owned
+Soul state, conversation/persona-scoped runtime state, and current persona
+name, then renders the legacy prompt-state block at the source message's
+effective clock through the existing typed `companion_state` placeholder.
+Roleplay and group assembly do not read companion state. Missing or corrupt
+companion state fails assembly closed, and the composition root exposes the
+fully wired assembler over the shared database ports.
+
 The first direct/group dynamic-memory handler path accepts an already admitted
 and running ordered tool round, validates the exact v1 feature contract, joins
 precomputed create metadata, reduces it against one stored memory-space

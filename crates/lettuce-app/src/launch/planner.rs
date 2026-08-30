@@ -216,7 +216,7 @@ where
         }
         let persona = self.resolve_persona(request.persona)?;
         let companion_persona_id = persona.value().map(|value| value.id);
-        let prompt = self.resolve_prompt(&defaults, starter)?;
+        let prompt = self.resolve_prompt(&defaults, companion_config.as_ref(), starter)?;
 
         let character_bindings = CharacterLorebookBindingRepository::list_character_bindings(
             self.sources,
@@ -645,32 +645,57 @@ where
     fn resolve_prompt(
         &self,
         defaults: &lettuce_characters::CharacterDefaults,
+        companion: Option<&lettuce_companions::CompanionSoulConfig>,
         starter: Selected<&ConversationStarter>,
     ) -> Result<Selected<PromptDocument>, ConversationLaunchError> {
+        let purpose = if companion.is_some() {
+            PromptPurpose::CompanionChat
+        } else {
+            PromptPurpose::DirectChat
+        };
         let choice: Selected<PromptDocumentId> =
             match starter.value().and_then(|value| value.prompt_id) {
                 Some(id) => Selected::Explicit(id),
-                None => match defaults.direct_prompt_id {
-                    Some(id) => Selected::Inherited(id),
-                    None => Selected::Disabled,
+                None => match companion {
+                    Some(config) => match config.prompting.prompt_template_id {
+                        Some(id) => Selected::Inherited(id),
+                        None => {
+                            return Ok(Selected::Inherited(self.built_in_prompt(
+                                BuiltInPromptId::Companion,
+                                PromptPurpose::CompanionChat,
+                            )?));
+                        }
+                    },
+                    None => match defaults.direct_prompt_id {
+                        Some(id) => Selected::Inherited(id),
+                        None => Selected::Disabled,
+                    },
                 },
             };
         let Some(prompt_id) = choice.value().copied() else {
             return Ok(Selected::Disabled);
         };
         let authored = matches!(choice, Selected::Explicit(_));
-        let document = match PromptRepository::lookup_exact(
-            self.sources,
-            prompt_id,
-            PromptPurpose::DirectChat,
-        )
-        .map_err(LaunchSourceError::Prompt)?
+        let document = match PromptRepository::lookup_exact(self.sources, prompt_id, purpose)
+            .map_err(LaunchSourceError::Prompt)?
         {
+            PromptLookupResult::Missing if companion.is_some() && !authored => {
+                return Ok(Selected::Inherited(self.built_in_prompt(
+                    BuiltInPromptId::Companion,
+                    PromptPurpose::CompanionChat,
+                )?));
+            }
             PromptLookupResult::Missing => {
                 return Err(ConversationLaunchError::PromptNotFound { prompt_id });
             }
             PromptLookupResult::Archived { .. } if authored => {
                 return Err(ConversationLaunchError::PromptArchived { prompt_id });
+            }
+            PromptLookupResult::Archived { .. } if companion.is_some() => {
+                return Ok(Selected::Inherited(self.built_in_prompt(
+                    BuiltInPromptId::Companion,
+                    PromptPurpose::CompanionChat,
+                )?));
             }
             PromptLookupResult::Archived { .. } => return Ok(Selected::Disabled),
             PromptLookupResult::PurposeMismatch { .. } => {
@@ -679,6 +704,42 @@ where
             PromptLookupResult::Available { document } => document,
         };
         Ok(choice.with(document))
+    }
+
+    /// Scans the purpose-filtered library for the bundled document, which is
+    /// identified by its stored provenance key rather than by a caller-supplied
+    /// identity.
+    fn built_in_prompt(
+        &self,
+        built_in: BuiltInPromptId,
+        purpose: PromptPurpose,
+    ) -> Result<PromptDocument, ConversationLaunchError> {
+        let mut cursor = None;
+        loop {
+            let page = PromptRepository::page(
+                self.sources,
+                PromptLibraryQuery {
+                    page: PageRequest {
+                        cursor,
+                        limit: lettuce_types::PageLimit::default(),
+                    },
+                    status: LifecycleFilter::Active,
+                    purpose: Some(purpose),
+                },
+            )
+            .map_err(LaunchSourceError::Prompt)?;
+            if let Some(document) = page
+                .items
+                .into_iter()
+                .find(|document| is_built_in(document, built_in))
+            {
+                return Ok(document);
+            }
+            match page.next_cursor {
+                Some(next) => cursor = Some(next),
+                None => return Err(ConversationLaunchError::BuiltInPromptMissing { purpose }),
+            }
+        }
     }
 
     /// Books reached through bindings mirror context resolution and drop out
@@ -1353,42 +1414,6 @@ where
             }
         }
         Ok(resolved)
-    }
-
-    /// Scans the purpose-filtered library for the bundled document, which is
-    /// identified by its stored provenance key rather than by a caller-supplied
-    /// identity.
-    fn built_in_prompt(
-        &self,
-        built_in: BuiltInPromptId,
-        purpose: PromptPurpose,
-    ) -> Result<PromptDocument, ConversationLaunchError> {
-        let mut cursor = None;
-        loop {
-            let page = PromptRepository::page(
-                self.sources,
-                PromptLibraryQuery {
-                    page: PageRequest {
-                        cursor,
-                        limit: lettuce_types::PageLimit::default(),
-                    },
-                    status: LifecycleFilter::Active,
-                    purpose: Some(purpose),
-                },
-            )
-            .map_err(LaunchSourceError::Prompt)?;
-            if let Some(document) = page
-                .items
-                .into_iter()
-                .find(|document| is_built_in(document, built_in))
-            {
-                return Ok(document);
-            }
-            match page.next_cursor {
-                Some(next) => cursor = Some(next),
-                None => return Err(ConversationLaunchError::BuiltInPromptMissing { purpose }),
-            }
-        }
     }
 
     /// A group launch request only says inherit, explicit, or off. Inherit
