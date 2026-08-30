@@ -50,7 +50,9 @@ use std::{fmt, sync::Arc};
 use anthropic_messages::AnthropicWireProvider;
 use async_trait::async_trait;
 use gemini_generate::GeminiWireProvider;
-use lettuce_conversations::{InferenceOutcome, InferencePort, InferenceRequest, PortError};
+use lettuce_conversations::{
+    InferenceOutcome, InferencePort, InferenceRequest, PortError, ProviderReplayArtifactPort,
+};
 use lettuce_inference::{InferenceRuntime, InferenceRuntimePort};
 use lettuce_models::{ProviderAccount, ProviderProtocol};
 use lettuce_network::JsonClient;
@@ -64,6 +66,7 @@ pub struct RemoteProviders<S: ?Sized> {
     secret_store: Arc<S>,
     network: Arc<JsonClient>,
     runtime: Arc<dyn InferenceRuntimePort>,
+    replay_artifacts: Option<Arc<dyn ProviderReplayArtifactPort>>,
     gemini_cache: gemini_cache::GeminiCache,
 }
 
@@ -169,10 +172,20 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
         network: Arc<JsonClient>,
         runtime: Arc<dyn InferenceRuntimePort>,
     ) -> Self {
+        Self::with_runtime_and_replay(secret_store, network, runtime, None)
+    }
+
+    pub fn with_runtime_and_replay(
+        secret_store: Arc<S>,
+        network: Arc<JsonClient>,
+        runtime: Arc<dyn InferenceRuntimePort>,
+        replay_artifacts: Option<Arc<dyn ProviderReplayArtifactPort>>,
+    ) -> Self {
         Self {
             secret_store,
             network,
             runtime,
+            replay_artifacts,
             gemini_cache: gemini_cache::GeminiCache::default(),
         }
     }
@@ -202,6 +215,7 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
                     &*self.secret_store,
                     &self.network,
                     &*self.runtime,
+                    self.replay_artifacts.as_deref(),
                     request,
                 )
                 .await

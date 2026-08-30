@@ -49,13 +49,15 @@ impl ProviderDescriptor {
 
     #[must_use]
     pub const fn supports_signed_tool_replay(self) -> bool {
-        false
+        matches!(self.protocol, ProviderProtocol::Anthropic)
     }
 
     #[must_use]
     pub const fn supports_reasoning_with_tools(self) -> bool {
-        matches!(self.protocol, ProviderProtocol::OpenAiCompatible)
-            && !matches!(self.reasoning, ReasoningSupport::None)
+        matches!(
+            self.protocol,
+            ProviderProtocol::OpenAiCompatible | ProviderProtocol::Anthropic
+        ) && !matches!(self.reasoning, ReasoningSupport::None)
     }
 }
 

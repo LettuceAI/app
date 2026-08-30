@@ -45,9 +45,14 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
         let inference_runtime = Arc::new(InferenceRuntime::default());
         let runtime_port: Arc<dyn InferenceRuntimePort> = inference_runtime.clone();
         Ok(Self {
-            database,
+            database: database.clone(),
             inference_runtime,
-            remote: RemoteProviders::with_runtime(secret_store, network, runtime_port),
+            remote: RemoteProviders::with_runtime_and_replay(
+                secret_store,
+                network,
+                runtime_port,
+                Some(database.clone()),
+            ),
         })
     }
 
@@ -294,8 +299,8 @@ mod tests {
             .find(|provider| provider.kind == "anthropic")
             .expect("anthropic");
         assert!(anthropic.tools);
-        assert!(!anthropic.reasoning_with_tools);
-        assert!(!anthropic.signed_tool_replay);
+        assert!(anthropic.reasoning_with_tools);
+        assert!(anthropic.signed_tool_replay);
         let ollama = catalog
             .providers
             .iter()
@@ -307,7 +312,14 @@ mod tests {
             catalog
                 .providers
                 .iter()
-                .all(|provider| !provider.structured_output && !provider.signed_tool_replay)
+                .all(|provider| !provider.structured_output)
+        );
+        assert!(
+            catalog
+                .providers
+                .iter()
+                .filter(|provider| provider.signed_tool_replay)
+                .all(|provider| provider.protocol == ProviderProtocolContract::Anthropic)
         );
         assert!(catalog.providers.iter().all(|provider| {
             !provider

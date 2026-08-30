@@ -2,9 +2,9 @@ use lettuce_conversations::{
     ConversationManager, ConversationRepository, FinalizationDraft, GenerationAttempt,
     GenerationAttemptStatus, GenerationCheckpointEvent, GenerationFinalizationResult,
     InferenceCandidate, InferenceOutcome, InferencePort, InferenceRequest, MessagePart,
-    ModelSelectionSnapshot, OperationKind, OperationToken, PortError, ResolvedInferenceProfile,
-    ToolExecution, ToolExecutionOwner, ToolExecutionRepository, ToolExecutionStatus, UsageOutcome,
-    UsagePort, UsageRecord, context_with_settled_tool_round,
+    ModelSelectionSnapshot, OperationKind, OperationToken, PortError, ProviderReplayArtifactPort,
+    ResolvedInferenceProfile, ToolExecution, ToolExecutionOwner, ToolExecutionRepository,
+    ToolExecutionStatus, UsageOutcome, UsagePort, UsageRecord, context_with_settled_tool_round,
 };
 use lettuce_jobs::handle::JobHandle;
 use lettuce_memory::{MemoryToolArguments, MemoryToolOutcome, dynamic_memory_tool_request};
@@ -187,8 +187,11 @@ pub struct DynamicMemoryContinuationCoordinator<'a, R: ?Sized, I: ?Sized> {
     inference: &'a I,
 }
 
-impl<'a, R: ToolExecutionRepository + ?Sized, I: InferencePort + ?Sized>
-    DynamicMemoryContinuationCoordinator<'a, R, I>
+impl<
+    'a,
+    R: ToolExecutionRepository + ProviderReplayArtifactPort + ?Sized,
+    I: InferencePort + ?Sized,
+> DynamicMemoryContinuationCoordinator<'a, R, I>
 {
     #[must_use]
     pub const fn new(repository: &'a R, inference: &'a I) -> Self {
@@ -243,17 +246,39 @@ impl<'a, R: ToolExecutionRepository + ?Sized, I: InferencePort + ?Sized>
         request.validate()?;
         let outcome = self.inference.run(request.clone()).await?;
         if handle.cancellation_token().is_cancelled() {
+            cleanup_provider_replays(self.repository, &outcome)?;
             return Err(DynamicMemoryContinuationError::Cancelled);
         }
-        outcome.validate()?;
-        let candidate = single_candidate(&outcome)?;
+        if let Err(error) = outcome.validate() {
+            cleanup_provider_replays(self.repository, &outcome)?;
+            return Err(error.into());
+        }
+        let candidate = match single_candidate(&outcome) {
+            Ok(candidate) => candidate,
+            Err(error) => {
+                cleanup_provider_replays(self.repository, &outcome)?;
+                return Err(error);
+            }
+        };
 
         if !candidate.tool_calls.is_empty() {
-            if !candidate.parts.is_empty() {
+            if !candidate.parts.is_empty()
+                && (candidate.provider_replay.is_none()
+                    || candidate
+                        .parts
+                        .iter()
+                        .any(|part| !matches!(part, MessagePart::ReasoningSummary { .. })))
+            {
+                cleanup_provider_replays(self.repository, &outcome)?;
                 return Err(DynamicMemoryContinuationError::MixedToolAndContent);
             }
-            if candidate.provider_replay.is_some() {
-                return Err(DynamicMemoryContinuationError::UnsupportedSignedReplay);
+            if candidate
+                .tool_calls
+                .iter()
+                .any(|call| call.provider_replay.as_ref() != candidate.provider_replay.as_ref())
+            {
+                cleanup_provider_replays(self.repository, &outcome)?;
+                return Err(DynamicMemoryContinuationError::InvalidSignedReplay);
             }
             let next_total = total_tool_calls
                 .checked_add(
@@ -264,21 +289,29 @@ impl<'a, R: ToolExecutionRepository + ?Sized, I: InferencePort + ?Sized>
             if completed_rounds >= MAX_DYNAMIC_MEMORY_TOOL_ROUNDS
                 || next_total > MAX_DYNAMIC_MEMORY_TOOL_CALLS
             {
+                cleanup_provider_replays(self.repository, &outcome)?;
                 return Err(DynamicMemoryContinuationError::ToolBudgetExceeded);
             }
-            let executions = ConversationManager::new(self.repository).request_tool_executions(
-                ToolExecutionOwner {
-                    conversation_id,
-                    turn_id: attempt.turn_id,
-                    attempt_id: attempt.id,
-                },
-                request
-                    .tools
-                    .as_ref()
-                    .ok_or(DynamicMemoryContinuationError::InvalidRequest)?,
-                candidate.tool_calls.clone(),
-                at,
-            )?;
+            let executions = match ConversationManager::new(self.repository)
+                .request_tool_executions(
+                    ToolExecutionOwner {
+                        conversation_id,
+                        turn_id: attempt.turn_id,
+                        attempt_id: attempt.id,
+                    },
+                    request
+                        .tools
+                        .as_ref()
+                        .ok_or(DynamicMemoryContinuationError::InvalidRequest)?,
+                    candidate.tool_calls.clone(),
+                    at,
+                ) {
+                Ok(executions) => executions,
+                Err(error) => {
+                    cleanup_provider_replays(self.repository, &outcome)?;
+                    return Err(error.into());
+                }
+            };
             return Ok(DynamicMemoryContinuationResult::NextRound {
                 executions,
                 continued_request: Box::new(request),
@@ -291,6 +324,7 @@ impl<'a, R: ToolExecutionRepository + ?Sized, I: InferencePort + ?Sized>
             .iter()
             .any(|part| matches!(part, MessagePart::Text { text } if !text.trim().is_empty()))
         {
+            cleanup_provider_replays(self.repository, &outcome)?;
             return Err(DynamicMemoryContinuationError::EmptyCompletion);
         }
         Ok(DynamicMemoryContinuationResult::Complete {
@@ -384,6 +418,29 @@ impl<'a, R: ToolExecutionRepository + ?Sized, I: InferencePort + ?Sized>
             }
         }
     }
+}
+
+fn cleanup_provider_replays<A: ProviderReplayArtifactPort + ?Sized>(
+    artifacts: &A,
+    outcome: &InferenceOutcome,
+) -> Result<(), DynamicMemoryContinuationError> {
+    let mut artifact_ids = std::collections::BTreeSet::new();
+    for candidate in &outcome.candidates {
+        if let Some(reference) = &candidate.provider_replay {
+            artifact_ids.insert(reference.artifact_id);
+        }
+        artifact_ids.extend(
+            candidate
+                .tool_calls
+                .iter()
+                .filter_map(|call| call.provider_replay.as_ref())
+                .map(|reference| reference.artifact_id),
+        );
+    }
+    for artifact_id in artifact_ids {
+        artifacts.cleanup_orphan_provider_replay(artifact_id)?;
+    }
+    Ok(())
 }
 
 fn validate_admitted_round<R: ToolExecutionRepository + ?Sized>(
@@ -570,8 +627,8 @@ pub enum DynamicMemoryContinuationError {
     MultipleCandidates,
     #[error("dynamic-memory continuation mixed tool calls with content")]
     MixedToolAndContent,
-    #[error("dynamic-memory continuation requires unsupported signed replay")]
-    UnsupportedSignedReplay,
+    #[error("dynamic-memory continuation signed replay identity is invalid")]
+    InvalidSignedReplay,
     #[error("dynamic-memory continuation exceeded its tool budget")]
     ToolBudgetExceeded,
     #[error("dynamic-memory continuation returned no usable text")]
@@ -596,6 +653,8 @@ pub enum DynamicMemoryContinuationError {
     RoundExecution(#[from] crate::DynamicMemoryRoundExecutionError),
     #[error("dynamic-memory continuation tool call is invalid: {0}")]
     Tool(#[from] lettuce_memory::MemoryToolError),
+    #[error("dynamic-memory continuation replay artifact failed: {0}")]
+    Artifact(#[from] lettuce_conversations::ArtifactError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -617,7 +676,9 @@ pub enum DynamicMemoryTerminalError {
 #[cfg(test)]
 mod tests {
     use lettuce_conversations::{
-        FinishReason, InferenceUsage, InferenceWarningCode, ToolExecutionOwner, ToolOutput,
+        ArtifactCodec, ArtifactRetention, ConversationArtifactStore, FinishReason, InferenceUsage,
+        InferenceWarningCode, ProtectedArtifactBytes, ProviderReplayArtifactPort,
+        ReplayArtifactDraft, ToolExecutionOwner, ToolOutput,
     };
     use lettuce_memory::MemoryToolArguments;
     use lettuce_types::{GenerationAttemptId, GenerationTurnId, ToolExecutionId};
@@ -740,6 +801,48 @@ mod tests {
             single_candidate(&failed),
             Err(DynamicMemoryContinuationError::ProviderFailed)
         ));
+    }
+
+    #[test]
+    fn rejected_provider_outcome_cleans_one_shared_replay_artifact() {
+        let database = lettuce_database::Database::open_in_memory().expect("database");
+        let bytes = ProtectedArtifactBytes::new(b"signed replay".to_vec()).expect("bytes");
+        let reference = database
+            .stage_provider_replay(ReplayArtifactDraft {
+                artifact_id: lettuce_types::ReplayArtifactId::new(),
+                digest: bytes.digest(),
+                schema_version: 1,
+                byte_size: u64::try_from(bytes.len()).expect("size"),
+                codec: ArtifactCodec::Json,
+                retention: ArtifactRetention::Conversation,
+                bytes,
+            })
+            .expect("stage replay");
+        let outcome = InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: Vec::new(),
+                tool_calls: vec![lettuce_conversations::ProposedToolCall {
+                    provider_call_id: Some("toolu-1".to_owned()),
+                    name: "done".to_owned(),
+                    arguments: serde_json::json!({}),
+                    raw_arguments: None,
+                    provider_replay: Some(reference.clone()),
+                }],
+                provider_replay: Some(reference.clone()),
+            }],
+            usage: None,
+            finish_reason: FinishReason::Stop,
+            provider_finish_reason: Some("tool_use".to_owned()),
+            provider_request_id: None,
+            warning_codes: Vec::new(),
+        };
+
+        cleanup_provider_replays(&database, &outcome).expect("cleanup");
+        assert_eq!(
+            database.verify_replay(&reference),
+            Err(lettuce_conversations::ArtifactError::NotFound)
+        );
     }
 
     #[test]

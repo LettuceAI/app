@@ -14,14 +14,28 @@ use crate::stream_normalize::{
 };
 
 pub(crate) async fn consume_stream(
-    mut response: JsonResponseStream,
+    response: JsonResponseStream,
     format: StreamFormat,
     protocol: StreamProtocol,
     runtime: &dyn InferenceRuntimePort,
     request: &InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
+    let (outcome, _) =
+        consume_stream_with_anthropic_replay(response, format, protocol, runtime, request).await?;
+    Ok(outcome)
+}
+
+pub(crate) async fn consume_stream_with_anthropic_replay(
+    mut response: JsonResponseStream,
+    format: StreamFormat,
+    protocol: StreamProtocol,
+    runtime: &dyn InferenceRuntimePort,
+    request: &InferenceRequest,
+) -> Result<(InferenceOutcome, Option<Vec<u8>>), AdapterError> {
     if !(200..300).contains(&response.status) {
-        return read_error_response(response, runtime, request.cancellation).await;
+        return read_error_response(response, runtime, request.cancellation)
+            .await
+            .map(|outcome| (outcome, None));
     }
     let mut framer = StreamFramer::new(format);
     let provider_request_id = response.request_id.clone();
@@ -43,14 +57,14 @@ pub(crate) async fn consume_stream(
         }
     }
     framer.finish().map_err(map_framing)?;
-    let (tail, outcome) = normalizer
-        .finish()
+    let completion = normalizer
+        .finish_with_anthropic_replay()
         .map_err(|error| map_normalize(error, provider_request_id))?;
-    for delta in tail {
+    for delta in completion.tail {
         sequence = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
         emit(runtime, request, sequence, delta).await?;
     }
-    Ok(outcome)
+    Ok((completion.outcome, completion.anthropic_replay))
 }
 
 pub(crate) async fn await_cancelable<T, F>(

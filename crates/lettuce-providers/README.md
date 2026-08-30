@@ -30,11 +30,10 @@ rejected. `RemoteProviders` also exposes `list_models` (legacy
 (legacy `verify_provider_api_key` probes), and every provider file carries a
 `DESCRIPTOR` (catalog metadata, key requirement, parameter/reasoning/caching
 support, extra-body allowlist) served through `provider_descriptors()`.
-Descriptors report native tool translation for all four remote wire families,
-but keep structured output and signed tool replay false until those adapter
-boundaries exist. Reasoning-with-tools is advertised only by reasoning-capable
-OpenAI-envelope adapters; Anthropic, Gemini, and Ollama remain false for the
-explicit replay limitations below.
+Descriptors report native tool translation for all four remote wire families
+and keep structured output false. Anthropic now advertises signed tool replay
+and reasoning-with-tools alongside reasoning-capable OpenAI-envelope adapters;
+Gemini and Ollama remain false for the explicit replay limitations below.
 
 Streaming uses bounded byte framing and provider-specific normalization for
 OpenAI SSE, Anthropic Messages SSE, Gemini SSE, and Ollama NDJSON. It preserves
@@ -66,8 +65,13 @@ Anthropic and custom Anthropic use their native tool definitions, choices,
 input fragments. This intentionally corrects the legacy follow-up path, which
 declared Anthropic tools but replayed OpenAI-shaped calls and results that the
 Anthropic adapter then discarded. Prompt caching covers the system, final tool
-definition, and final user text. Extended thinking with tools remains rejected
-until signed thinking replay artifacts can be materialized without data loss.
+definition, and final user text. Extended-thinking tool rounds store one
+conversation-retained native assistant-block document behind an opaque replay
+reference. Buffered responses retain the exact content-array bytes; SSE
+reconstructs one bounded canonical native array including thinking signatures.
+Continuation validates the artifact against every call and embeds the stored
+JSON unchanged. Malformed signatures, changed calls, tampered artifacts, and
+unavailable replay storage fail closed.
 Gemini and Gemini Express use native function declarations, AUTO/ANY/named
 choices, grouped `functionCall`/`functionResponse` transcript parts, buffered
 calls, and bounded SSE calls. Missing provider call IDs remain absent instead
@@ -82,7 +86,7 @@ API has no tool-choice field, so only Auto is supported; Required/named choice
 and reasoning-plus-tools remain rejected rather than approximated or replayed
 lossily.
 
-Deferred horizontals: materialized replay artifacts, media input,
+Deferred horizontals: Gemini thought-signature replay, media input,
 custom-provider reasoning schema, and structured output.
 
 Explicit prompt caching is executable for Anthropic, custom Anthropic, and

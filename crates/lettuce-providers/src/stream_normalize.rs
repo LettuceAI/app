@@ -27,6 +27,12 @@ pub(crate) enum StreamDelta {
     Reasoning(String),
 }
 
+pub(crate) struct StreamCompletion {
+    pub tail: Vec<StreamDelta>,
+    pub outcome: InferenceOutcome,
+    pub anthropic_replay: Option<Vec<u8>>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum StreamNormalizeError {
     #[error("provider stream contains malformed JSON")]
@@ -61,7 +67,9 @@ pub(crate) struct StreamNormalizer {
     provider_request_id: Option<String>,
     openai_tool_calls: BTreeMap<u64, PendingOpenAiToolCall>,
     anthropic_tool_calls: BTreeMap<u64, PendingAnthropicToolCall>,
+    anthropic_replay_blocks: BTreeMap<u64, AnthropicReplayBlock>,
     anthropic_server_tool_blocks: BTreeSet<u64>,
+    anthropic_unreplayable_block: bool,
     gemini_tool_calls: Vec<ProposedToolCall>,
     ollama_tool_calls: Vec<ProposedToolCall>,
     gemini_has_thought_signature: bool,
@@ -86,6 +94,24 @@ struct PendingAnthropicToolCall {
     closed: bool,
 }
 
+#[derive(Debug)]
+enum AnthropicReplayBlock {
+    Thinking {
+        thinking: String,
+        signature: String,
+        closed: bool,
+    },
+    RedactedThinking {
+        data: String,
+        closed: bool,
+    },
+    Text {
+        text: String,
+        closed: bool,
+    },
+    ToolUse,
+}
+
 impl StreamNormalizer {
     pub(crate) fn new(protocol: StreamProtocol, provider_request_id: Option<String>) -> Self {
         Self {
@@ -101,7 +127,9 @@ impl StreamNormalizer {
             provider_request_id,
             openai_tool_calls: BTreeMap::new(),
             anthropic_tool_calls: BTreeMap::new(),
+            anthropic_replay_blocks: BTreeMap::new(),
             anthropic_server_tool_blocks: BTreeSet::new(),
+            anthropic_unreplayable_block: false,
             gemini_tool_calls: Vec::new(),
             ollama_tool_calls: Vec::new(),
             gemini_has_thought_signature: false,
@@ -126,9 +154,17 @@ impl StreamNormalizer {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn finish(
-        mut self,
+        self,
     ) -> Result<(Vec<StreamDelta>, InferenceOutcome), StreamNormalizeError> {
+        let completion = self.finish_with_anthropic_replay()?;
+        Ok((completion.tail, completion.outcome))
+    }
+
+    pub(crate) fn finish_with_anthropic_replay(
+        mut self,
+    ) -> Result<StreamCompletion, StreamNormalizeError> {
         if !self.terminal {
             return Err(StreamNormalizeError::PrematureEof);
         }
@@ -138,6 +174,13 @@ impl StreamNormalizer {
         if !self.anthropic_server_tool_blocks.is_empty() {
             return Err(StreamNormalizeError::MalformedJson);
         }
+        let anthropic_replay = if self.protocol == StreamProtocol::Anthropic
+            && !self.anthropic_tool_calls.is_empty()
+        {
+            self.build_anthropic_replay()?
+        } else {
+            None
+        };
         let tool_calls = match self.protocol {
             StreamProtocol::OpenAi => {
                 finish_openai_tool_calls(std::mem::take(&mut self.openai_tool_calls))?
@@ -218,7 +261,82 @@ impl StreamNormalizer {
         outcome
             .validate()
             .map_err(|_| StreamNormalizeError::MalformedJson)?;
-        Ok((tail, outcome))
+        Ok(StreamCompletion {
+            tail,
+            outcome,
+            anthropic_replay,
+        })
+    }
+
+    fn build_anthropic_replay(&self) -> Result<Option<Vec<u8>>, StreamNormalizeError> {
+        let mut has_signed_thinking = false;
+        let mut blocks = Vec::with_capacity(self.anthropic_replay_blocks.len());
+        for (index, block) in &self.anthropic_replay_blocks {
+            let value = match block {
+                AnthropicReplayBlock::Thinking {
+                    thinking,
+                    signature,
+                    closed,
+                } => {
+                    if !closed || thinking.is_empty() || signature.is_empty() {
+                        return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    has_signed_thinking = true;
+                    serde_json::json!({
+                        "type": "thinking",
+                        "thinking": thinking,
+                        "signature": signature,
+                    })
+                }
+                AnthropicReplayBlock::RedactedThinking { data, closed } => {
+                    if !closed || data.is_empty() {
+                        return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    has_signed_thinking = true;
+                    serde_json::json!({"type": "redacted_thinking", "data": data})
+                }
+                AnthropicReplayBlock::Text { text, closed } => {
+                    if !closed {
+                        return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    serde_json::json!({"type": "text", "text": text})
+                }
+                AnthropicReplayBlock::ToolUse => {
+                    let pending = self
+                        .anthropic_tool_calls
+                        .get(index)
+                        .ok_or(StreamNormalizeError::MalformedJson)?;
+                    if !pending.closed {
+                        return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    let input = if pending.partial_json.is_empty() {
+                        pending.initial_input.clone()
+                    } else {
+                        serde_json::from_str::<Value>(&pending.partial_json)
+                            .map_err(|_| StreamNormalizeError::MalformedJson)?
+                    };
+                    if !input.is_object() {
+                        return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    serde_json::json!({
+                        "type": "tool_use",
+                        "id": pending.id,
+                        "name": pending.name,
+                        "input": input,
+                    })
+                }
+            };
+            blocks.push(value);
+        }
+        if !has_signed_thinking {
+            return Ok(None);
+        }
+        if self.anthropic_unreplayable_block {
+            return Err(StreamNormalizeError::MalformedJson);
+        }
+        serde_json::to_vec(&blocks)
+            .map(Some)
+            .map_err(|_| StreamNormalizeError::MalformedJson)
     }
 
     fn consume_openai(
@@ -376,6 +494,16 @@ impl StreamNormalizer {
                         {
                             let split = self.thinking.feed(text);
                             self.append_split(split, &mut deltas)?;
+                            if let Some(AnthropicReplayBlock::Text {
+                                text: replay_text,
+                                closed: false,
+                            }) = value
+                                .get("index")
+                                .and_then(Value::as_u64)
+                                .and_then(|index| self.anthropic_replay_blocks.get_mut(&index))
+                            {
+                                replay_text.push_str(text);
+                            }
                         }
                     }
                     Some("thinking_delta") => {
@@ -384,6 +512,17 @@ impl StreamNormalizer {
                             .and_then(Value::as_str)
                         {
                             self.append_reasoning(reasoning, &mut deltas)?;
+                            if let Some(AnthropicReplayBlock::Thinking {
+                                thinking,
+                                closed: false,
+                                ..
+                            }) = value
+                                .get("index")
+                                .and_then(Value::as_u64)
+                                .and_then(|index| self.anthropic_replay_blocks.get_mut(&index))
+                            {
+                                thinking.push_str(reasoning);
+                            }
                         }
                     }
                     Some("input_json_delta") => {
@@ -416,7 +555,30 @@ impl StreamNormalizer {
                         }
                         pending.partial_json.push_str(partial);
                     }
-                    Some("signature_delta") | None => {}
+                    Some("signature_delta") => {
+                        let signature = delta
+                            .and_then(|delta| delta.get("signature"))
+                            .and_then(Value::as_str)
+                            .ok_or(StreamNormalizeError::MalformedJson)?;
+                        let index = anthropic_index(&value)?;
+                        let Some(AnthropicReplayBlock::Thinking {
+                            signature: replay_signature,
+                            closed: false,
+                            ..
+                        }) = self.anthropic_replay_blocks.get_mut(&index)
+                        else {
+                            return Err(StreamNormalizeError::MalformedJson);
+                        };
+                        if replay_signature.len().saturating_add(signature.len())
+                            > MAX_REASONING_BYTES
+                        {
+                            return Err(StreamNormalizeError::OutputTooLarge {
+                                field: "thinking_signature",
+                            });
+                        }
+                        replay_signature.push_str(signature);
+                    }
+                    None => {}
                     Some(_) => self.push_warning(InferenceWarningCode::ProviderDegraded),
                 }
             }
@@ -445,6 +607,7 @@ impl StreamNormalizer {
                     if self.anthropic_tool_calls.len() >= MAX_TOOL_CALLS_PER_RESPONSE
                         || self.anthropic_tool_calls.contains_key(&index)
                         || self.anthropic_server_tool_blocks.contains(&index)
+                        || self.anthropic_replay_blocks.contains_key(&index)
                     {
                         return Err(StreamNormalizeError::MalformedJson);
                     }
@@ -467,6 +630,8 @@ impl StreamNormalizer {
                             closed: false,
                         },
                     );
+                    self.anthropic_replay_blocks
+                        .insert(index, AnthropicReplayBlock::ToolUse);
                 } else if block.get("type").and_then(Value::as_str) == Some("server_tool_use") {
                     let index = anthropic_index(&value)?;
                     if self.anthropic_server_tool_blocks.len() >= MAX_TOOL_CALLS_PER_RESPONSE
@@ -475,7 +640,48 @@ impl StreamNormalizer {
                     {
                         return Err(StreamNormalizeError::MalformedJson);
                     }
+                    self.anthropic_unreplayable_block = true;
                     self.push_warning(InferenceWarningCode::ProviderDegraded);
+                } else {
+                    let index = anthropic_index(&value)?;
+                    if self.anthropic_replay_blocks.contains_key(&index)
+                        || self.anthropic_tool_calls.contains_key(&index)
+                        || self.anthropic_server_tool_blocks.contains(&index)
+                    {
+                        return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    let replay = match block.get("type").and_then(Value::as_str) {
+                        Some("thinking") => AnthropicReplayBlock::Thinking {
+                            thinking: block
+                                .get("thinking")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned(),
+                            signature: block
+                                .get("signature")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned(),
+                            closed: false,
+                        },
+                        Some("redacted_thinking") => AnthropicReplayBlock::RedactedThinking {
+                            data: required_nonempty(block, "data")?,
+                            closed: false,
+                        },
+                        Some("text") => AnthropicReplayBlock::Text {
+                            text: block
+                                .get("text")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned(),
+                            closed: false,
+                        },
+                        Some(_) | None => {
+                            self.anthropic_unreplayable_block = true;
+                            return Ok(deltas);
+                        }
+                    };
+                    self.anthropic_replay_blocks.insert(index, replay);
                 }
             }
             Some("content_block_stop") => {
@@ -487,6 +693,20 @@ impl StreamNormalizer {
                     pending.closed = true;
                 } else {
                     self.anthropic_server_tool_blocks.remove(&index);
+                    match self.anthropic_replay_blocks.get_mut(&index) {
+                        Some(
+                            AnthropicReplayBlock::Thinking { closed, .. }
+                            | AnthropicReplayBlock::RedactedThinking { closed, .. }
+                            | AnthropicReplayBlock::Text { closed, .. },
+                        ) if !*closed => {
+                            *closed = true;
+                        }
+                        Some(AnthropicReplayBlock::ToolUse) => {
+                            return Err(StreamNormalizeError::MalformedJson);
+                        }
+                        Some(_) => return Err(StreamNormalizeError::MalformedJson),
+                        None => {}
+                    }
                 }
             }
             Some("ping") | None => {}
@@ -1277,6 +1497,52 @@ mod tests {
         assert_eq!(call.raw_arguments.as_deref(), Some(r#"{"content":"one"}"#));
         assert!(outcome.warning_codes.is_empty());
         assert_eq!(outcome.usage.unwrap().output_tokens, 4);
+    }
+
+    #[test]
+    fn anthropic_stream_reconstructs_signed_native_replay_blocks() {
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::Anthropic, None);
+        normalizer.consume(&event("content_block_start", r#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}"#)).unwrap();
+        normalizer.consume(&event("content_block_delta", r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"why"}}"#)).unwrap();
+        normalizer.consume(&event("content_block_delta", r#"{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"opaque"}}"#)).unwrap();
+        normalizer
+            .consume(&event(
+                "content_block_stop",
+                r#"{"type":"content_block_stop","index":0}"#,
+            ))
+            .unwrap();
+        normalizer.consume(&event("content_block_start", r#"{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu-1","name":"create_memory","input":{}}}"#)).unwrap();
+        normalizer.consume(&event("content_block_delta", r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"content\":\"one\"}"}}"#)).unwrap();
+        normalizer
+            .consume(&event(
+                "content_block_stop",
+                r#"{"type":"content_block_stop","index":1}"#,
+            ))
+            .unwrap();
+        normalizer
+            .consume(&event(
+                "message_delta",
+                r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"}}"#,
+            ))
+            .unwrap();
+        normalizer
+            .consume(&event("message_stop", r#"{"type":"message_stop"}"#))
+            .unwrap();
+
+        let completion = normalizer
+            .finish_with_anthropic_replay()
+            .expect("signed replay");
+        assert_eq!(completion.outcome.candidates[0].tool_calls.len(), 1);
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(
+                &completion.anthropic_replay.expect("replay bytes")
+            )
+            .expect("replay json"),
+            serde_json::json!([
+                {"type": "thinking", "thinking": "why", "signature": "opaque"},
+                {"type": "tool_use", "id": "toolu-1", "name": "create_memory", "input": {"content": "one"}}
+            ])
+        );
     }
 
     #[test]

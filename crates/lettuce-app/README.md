@@ -84,7 +84,9 @@ enforces four rounds and 64 total calls, runs the existing inference port, and
 either returns one usable text candidate or atomically admits the next declared
 dynamic-memory call set with stable ordinals. It rejects stale durable counts,
 mixed content/tool responses, multiple candidates, cancellation at each network
-boundary, and provider replay that still requires materialized signed blocks.
+boundary. Signed provider replay must use one coherent candidate/call artifact
+identity; rejected or cancelled pre-admission outcomes clean staged orphans,
+while successful call admission retains the artifact through durable tool rows.
 The terminal coordinator now aggregates every provider response, records one
 immutable usage event with the exact resolved model/account revisions, and
 finalizes a usable text candidate through the conversation manager. Exact
