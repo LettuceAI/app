@@ -61,5 +61,12 @@ updates; exact operation retries return an immutable receipt. Branches inside
 one conversation naturally retain that conversation's immediate emotional
 state. `PreparedCompanionLaunch` and `CompanionConversationCreator` now let the
 application freeze that initial state and let storage commit it atomically with
-a direct conversation. Signal classification, prompt rendering, provider/job
+a direct conversation.
+
+The pure emotion-classifier reducer copies the legacy GoEmotions behavior
+directly: only the first eight scored labels are considered, per-label
+thresholds remain `0.18`/`0.22`/`0.55`, grouped signal names are deduplicated
+while their numeric effects still accumulate, and the exact emotion,
+relationship, confidence, clamping, and unavailable-model fallback values are
+preserved. ONNX tokenization/model execution, prompt rendering, provider/job
 coordination, companion turn wiring, and frontend events remain deferred.
