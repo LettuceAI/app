@@ -125,6 +125,11 @@ Confirmed new-lorebook apply shares the complete lorebook aggregate insert
 transaction and adds a strongly referenced immutable lorebook receipt. Root,
 ordered entries, and receipt are one commit; exact retries never regenerate
 entry identities.
+Existing-lorebook apply reuses the complete aggregate CAS writer and the same
+typed receipt table. It reconciles reviewed entry IDs in one transaction,
+preserves hidden policy fields for retained entries, permits sequential
+workflows against later root revisions, and rolls back root, children, and
+receipt together on any collision or validation failure.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

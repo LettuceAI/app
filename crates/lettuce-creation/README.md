@@ -79,7 +79,7 @@ contract, retaining proposal scene IDs, text, direction, and order. The
 resulting graph deliberately starts with default character policies and empty
 provenance, presentation customizations, media, variants, and starters. The
 complete graph and its character-specific immutable receipt commit atomically;
-existing-character and existing-lorebook applies remain later slices.
+existing-character apply remains a later slice.
 
 Confirmed new-lorebook finalization is active through the normal lorebook
 aggregate path. It preserves the confirmed root name and exact entry IDs,
@@ -89,8 +89,17 @@ proposal context and is not fabricated into durable content. Creation-helper
 entries have no keyword-policy fields, so finalization makes them explicitly
 enabled and always-active with empty keywords, literal matching, case-insensitive
 matching, and priority zero; this avoids persisting inert entries while keeping
-all hidden policy defaults deterministic. Existing-lorebook apply remains a
-later slice.
+all hidden policy defaults deterministic.
+
+Confirmed existing-lorebook finalization is also active and revision-pinned.
+It preserves root lifecycle, detection, icon, behavior, identity, and creation
+time while applying the reviewed name and complete entry graph in one root CAS.
+Retained proposal entry IDs keep their activation, keyword, matching, priority,
+and creation metadata; reviewed title/content/order changes bump only affected
+entry revisions. New IDs use the explicit new-lorebook defaults, and omitted
+IDs are removed because the confirmed proposal is authoritative. This
+deliberately corrects the legacy helper, which preloaded only the root name and
+silently discarded every reviewed lorebook entry at final apply.
 
 Single-entry, keyword, and staged lorebook-generation behavior is pinned in
 `fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`. Generation

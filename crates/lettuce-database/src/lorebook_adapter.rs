@@ -281,7 +281,7 @@ fn load_details(
     Ok(Some(details))
 }
 
-fn load_required(
+pub(crate) fn load_required(
     connection: &Connection,
     id: LorebookId,
 ) -> Result<LorebookDetails, LorebookRepositoryError> {
@@ -473,6 +473,32 @@ pub(crate) fn insert_lorebook_details(
             details.book.created_at.get(),
             details.book.updated_at.get(),
         ],
+    )
+    .map_err(db_error)?;
+    for entry in &details.entries {
+        insert_entry(tx, entry)?;
+    }
+    load_required(tx, details.book.id)
+}
+
+pub(crate) fn replace_lorebook_details(
+    tx: &Transaction<'_>,
+    expected_revision: Revision,
+    details: &LorebookDetails,
+) -> Result<LorebookDetails, LorebookRepositoryError> {
+    let current = load_required(tx, details.book.id)?;
+    if current.book.revision != expected_revision
+        || details.book.revision != bump_revision(expected_revision)?
+        || details.book.created_at != current.book.created_at
+    {
+        return Err(LorebookRepositoryError::Conflict);
+    }
+    validate_entries_for_book(details)?;
+    verify_icon(tx, details.book.icon_asset_id)?;
+    write_book_head(tx, &details.book, expected_revision)?;
+    tx.execute(
+        "DELETE FROM lorebook_entries WHERE lorebook_id=?1",
+        [details.book.id.to_string()],
     )
     .map_err(db_error)?;
     for entry in &details.entries {
@@ -707,17 +733,7 @@ impl LorebookRepository for Database {
             ..current.book
         };
         let proposed = LorebookDetails { book, entries };
-        validate_entries_for_book(&proposed)?;
-        write_book_head(&tx, &proposed.book, expected_revision)?;
-        tx.execute(
-            "DELETE FROM lorebook_entries WHERE lorebook_id=?1",
-            [id.to_string()],
-        )
-        .map_err(db_error)?;
-        for entry in &proposed.entries {
-            insert_entry(&tx, entry)?;
-        }
-        let loaded = load_required(&tx, id)?;
+        let loaded = replace_lorebook_details(&tx, expected_revision, &proposed)?;
         tx.commit().map_err(db_error)?;
         Ok(LorebookMutationResult {
             book_revision: loaded.book.revision,

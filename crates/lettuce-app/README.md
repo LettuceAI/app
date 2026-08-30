@@ -145,6 +145,8 @@ the complete character graph plus receipt transaction to the creation apply
 port.
 Confirmed new-lorebook finalization is exposed through the same application
 boundary and delegates its ordered aggregate plus receipt commit atomically.
+The revision-pinned existing-lorebook use case uses that boundary as well, so
+callers never coordinate root CAS, entry reconciliation, and receipt storage.
 
 ## Bundled prompts
 

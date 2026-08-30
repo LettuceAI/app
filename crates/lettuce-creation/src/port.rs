@@ -3,14 +3,14 @@ use lettuce_types::{
 };
 
 use crate::{
-    ConfirmedCharacterApply, ConfirmedLorebookApply, ConfirmedPersonaApply,
-    ConfirmedPersonaRevisionApply, CreationApplyReceipt, CreationAttemptFailureCode,
-    CreationAttemptOwner, CreationAttemptRecovery, CreationAttemptStatus, CreationAttemptSuccess,
-    CreationAttemptSuccessSettlement, CreationCharacterApplyReceipt, CreationInferenceAttempt,
-    CreationInferenceRound, CreationLorebookApplyReceipt, CreationProposal,
-    CreationToolCallEvidence, CreationTurn, CreationTurnAttemptAdmission, CreationWorkflow,
-    NewCreationAttempt, NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationTurn,
-    NewCreationTurnAttempt, NewCreationWorkflow,
+    ConfirmedCharacterApply, ConfirmedLorebookApply, ConfirmedLorebookRevisionApply,
+    ConfirmedPersonaApply, ConfirmedPersonaRevisionApply, CreationApplyReceipt,
+    CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptRecovery,
+    CreationAttemptStatus, CreationAttemptSuccess, CreationAttemptSuccessSettlement,
+    CreationCharacterApplyReceipt, CreationInferenceAttempt, CreationInferenceRound,
+    CreationLorebookApplyReceipt, CreationProposal, CreationToolCallEvidence, CreationTurn,
+    CreationTurnAttemptAdmission, CreationWorkflow, NewCreationAttempt, NewCreationAttemptRecovery,
+    NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt, NewCreationWorkflow,
 };
 
 pub trait CreationApplyRepository: Send + Sync {
@@ -32,6 +32,11 @@ pub trait CreationApplyRepository: Send + Sync {
     fn apply_new_lorebook(
         &self,
         request: ConfirmedLorebookApply,
+    ) -> Result<CreationLorebookApplyReceipt, CreationRepositoryError>;
+
+    fn apply_existing_lorebook(
+        &self,
+        request: ConfirmedLorebookRevisionApply,
     ) -> Result<CreationLorebookApplyReceipt, CreationRepositoryError>;
 }
 
