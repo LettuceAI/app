@@ -19,6 +19,7 @@ mod memory_round_adapter;
 mod persona_adapter;
 mod prompt_adapter;
 mod soul_adapter;
+mod state_adapter;
 mod tool_adapter;
 mod usage_adapter;
 
@@ -101,6 +102,11 @@ const MIGRATION_11: Migration = Migration {
 const MIGRATION_12: Migration = Migration {
     id: 12,
     sql: include_str!("../migrations/0012_companion_soul.sql"),
+};
+
+const MIGRATION_13: Migration = Migration {
+    id: 13,
+    sql: include_str!("../migrations/0013_companion_state.sql"),
 };
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -202,6 +208,7 @@ impl Database {
                 MIGRATION_10,
                 MIGRATION_11,
                 MIGRATION_12,
+                MIGRATION_13,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -228,6 +235,7 @@ impl Database {
                 MIGRATION_10,
                 MIGRATION_11,
                 MIGRATION_12,
+                MIGRATION_13,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -1706,7 +1714,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 12);
+        assert_eq!(count, 13);
 
         let changed = Migration {
             id: 1,
@@ -1777,7 +1785,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            12
+            13
         );
         let conversation_tables: i64 = connection
             .query_row(
@@ -2000,7 +2008,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            12
+            13
         );
         for column in [
             "target_kind",
@@ -3356,7 +3364,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            12
+            13
         );
         drop(connection);
         drop(database);
@@ -3406,7 +3414,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            12
+            13
         );
         drop(connection);
         drop(database);
@@ -3438,7 +3446,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(migration_count, 12);
+        assert_eq!(migration_count, 13);
         for table in [
             "groups",
             "group_members",
@@ -3487,7 +3495,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 12);
+        assert_eq!(count, 13);
         for table in [
             "prompt_documents",
             "prompt_entries",
@@ -3515,7 +3523,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            12
+            13
         );
         drop(connection);
         drop(reopened);
@@ -3551,7 +3559,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            12
+            13
         );
         let column: i64 = connection
             .query_row(
@@ -3578,7 +3586,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            12
+            13
         );
         drop(connection);
         drop(reopened);
@@ -3627,7 +3635,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            12
+            13
         );
         drop(connection);
         drop(database);
@@ -3765,11 +3773,16 @@ mod tests {
                 "character_media",
                 "character_presentation_asset_refs",
                 "characters",
+                "companion_emotion_vectors",
+                "companion_relationship_states",
+                "companion_session_states",
                 "companion_soul_apply_receipts",
                 "companion_soul_fact_sources",
                 "companion_soul_fact_supersedes",
                 "companion_soul_facts",
                 "companion_soul_states",
+                "companion_state_apply_receipts",
+                "companion_state_signals",
                 "conversation_branches",
                 "conversation_initial_message_origins",
                 "conversation_message_candidates",

@@ -1,4 +1,6 @@
-use lettuce_types::TimestampMillis;
+use lettuce_types::{
+    CharacterId, ConversationId, OperationRecordId, PersonaId, Revision, TimestampMillis,
+};
 use serde::{Deserialize, Serialize};
 
 const DECAY_MINUTES: f64 = 45.0;
@@ -313,6 +315,72 @@ pub struct CompanionTurnTransition {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompanionStateOwner {
+    pub conversation_id: ConversationId,
+    pub character_id: CharacterId,
+    pub persona_id: Option<PersonaId>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompanionStateSnapshot {
+    pub owner: CompanionStateOwner,
+    pub session_revision: Revision,
+    pub relationship_revision: Revision,
+    pub state: CompanionRuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompanionStateReplacement {
+    pub expected_session_revision: Revision,
+    pub expected_relationship_revision: Revision,
+    pub state: CompanionRuntimeState,
+    pub applied_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompanionStateApplyReceipt {
+    pub operation_id: OperationRecordId,
+    pub owner: CompanionStateOwner,
+    pub expected_session_revision: Revision,
+    pub resulting_session_revision: Revision,
+    pub expected_relationship_revision: Revision,
+    pub resulting_relationship_revision: Revision,
+    pub applied_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompanionStateRepositoryError {
+    NotFound,
+    AlreadyExists,
+    Conflict,
+    Invalid,
+    OperationMismatch,
+    Corrupt,
+    Failure,
+}
+
+pub trait CompanionStateRepository: Send + Sync {
+    fn create(
+        &self,
+        owner: CompanionStateOwner,
+        initial: CompanionRuntimeState,
+        now: TimestampMillis,
+    ) -> Result<CompanionStateSnapshot, CompanionStateRepositoryError>;
+
+    fn get(
+        &self,
+        owner: CompanionStateOwner,
+    ) -> Result<Option<CompanionStateSnapshot>, CompanionStateRepositoryError>;
+
+    fn replace(
+        &self,
+        owner: CompanionStateOwner,
+        operation_id: OperationRecordId,
+        replacement: CompanionStateReplacement,
+    ) -> Result<CompanionStateApplyReceipt, CompanionStateRepositoryError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelationshipAxis {
     Closeness,
     Trust,
@@ -552,6 +620,61 @@ pub fn apply_turn(
     }
 }
 
+pub fn validate_runtime_state(
+    state: &CompanionRuntimeState,
+) -> Result<(), CompanionStateRepositoryError> {
+    let emotional = &state.emotional_state;
+    let relationship = &state.relationship_state;
+    if !emotional.felt.is_unit()
+        || !emotional.expressed.is_unit()
+        || !emotional.blocked.is_unit()
+        || !is_signed_vector(&emotional.momentum)
+        || !unit(emotional.confidence)
+        || !signed(relationship.closeness)
+        || !signed(relationship.trust)
+        || !signed(relationship.affection)
+        || !unit(relationship.tension)
+        || !unit(relationship.stability)
+        || emotional.updated_at > state.updated_at
+        || emotional
+            .active_drivers
+            .iter()
+            .any(|value| value.trim().is_empty())
+        || state
+            .active_signals
+            .iter()
+            .any(|value| value.trim().is_empty())
+    {
+        return Err(CompanionStateRepositoryError::Invalid);
+    }
+    Ok(())
+}
+
+fn is_signed_vector(value: &EmotionVector) -> bool {
+    [
+        value.warmth,
+        value.trust,
+        value.calm,
+        value.vulnerability,
+        value.longing,
+        value.hurt,
+        value.tension,
+        value.irritation,
+        value.affection_intensity,
+        value.reassurance_need,
+    ]
+    .into_iter()
+    .all(signed)
+}
+
+fn unit(value: f64) -> bool {
+    value.is_finite() && (0.0..=1.0).contains(&value)
+}
+
+fn signed(value: f64) -> bool {
+    value.is_finite() && (-1.0..=1.0).contains(&value)
+}
+
 fn clamp01(value: f64) -> f64 {
     value.clamp(0.0, 1.0)
 }
@@ -715,6 +838,22 @@ mod tests {
         assert_eq!(
             transition.effect_baseline.updated_at,
             TimestampMillis::UNIX_EPOCH
+        );
+    }
+
+    #[test]
+    fn runtime_validation_distinguishes_signed_momentum_from_unit_state() {
+        let mut state = initial_runtime_state(
+            &baseline(),
+            &RegulationStyle::default(),
+            &RelationshipDefaults::default(),
+        );
+        state.emotional_state.momentum.hurt = -0.4;
+        assert_eq!(validate_runtime_state(&state), Ok(()));
+        state.emotional_state.felt.hurt = -0.1;
+        assert_eq!(
+            validate_runtime_state(&state),
+            Err(CompanionStateRepositoryError::Invalid)
         );
     }
 }

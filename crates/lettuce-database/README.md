@@ -147,6 +147,14 @@ An authored-fact failure rolls back the character and Soul rows together;
 roleplay character creation writes no Soul root. Exact initial-state retries
 through the Soul repository return the existing typed state only when state
 and creation timestamp match.
+Migration 13 owns normalized companion runtime state. Four emotional vectors
+and ordered driver/active signals are conversation-local; relationship axes,
+tension, stability, interaction count, and last interaction are keyed by the
+companion character plus persona/default scope. Creating another conversation
+for the same scope keeps its fresh emotion but hydrates the existing
+relationship, regardless of dynamic-memory sharing. Atomic dual-revision CAS
+updates both scopes and records an immutable request hash/receipt; stale writes,
+changed retries, corrupt rows, and partial vector/signal writes fail closed.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

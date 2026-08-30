@@ -49,6 +49,15 @@ directly: baseline affect, regulation style, expressed/blocked affect,
 passive tension/stability recovery, and the distinct closeness/trust/affection
 bipolar damage and recovery constants. Authored configuration owns the exact
 baseline affect, regulation style, and relationship defaults consumed by these
-helpers. This slice remains pure domain behavior: session/persona storage,
-signal classification, prompt rendering, provider/job coordination, launch,
-and frontend events remain deferred.
+helpers.
+
+`CompanionStateRepository` separates durable ownership the same way as legacy:
+immediate emotional state and signals belong to one conversation, while the
+relationship belongs to the companion character plus the selected persona (or
+the explicit default-persona scope). Relationship continuity is independent of
+the dynamic-memory sharing flag. Both revisions advance in one atomic replace,
+so concurrent sessions for one character/persona cannot lose relationship
+updates; exact operation retries return an immutable receipt. Branches inside
+one conversation naturally retain that conversation's immediate emotional
+state. Signal classification, prompt rendering, provider/job coordination,
+companion launch/turn wiring, and frontend events remain deferred.
