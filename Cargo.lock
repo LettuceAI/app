@@ -802,6 +802,7 @@ dependencies = [
 name = "lettuce-companions"
 version = "0.1.0"
 dependencies = [
+ "lettuce-conversations",
  "lettuce-types",
  "serde",
  "serde_json",

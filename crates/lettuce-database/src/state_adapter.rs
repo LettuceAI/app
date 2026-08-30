@@ -2,10 +2,10 @@ use std::str::FromStr;
 
 use blake3::Hasher;
 use lettuce_companions::{
-    CompanionRuntimeState, CompanionStateApplyReceipt, CompanionStateOwner,
-    CompanionStateReplacement, CompanionStateRepository, CompanionStateRepositoryError,
-    CompanionStateSnapshot, EmotionVector, EmotionalState, RelationshipState,
-    validate_runtime_state,
+    CompanionConversationCreator, CompanionLaunchRepositoryError, CompanionRuntimeState,
+    CompanionStateApplyReceipt, CompanionStateOwner, CompanionStateReplacement,
+    CompanionStateRepository, CompanionStateRepositoryError, CompanionStateSnapshot, EmotionVector,
+    EmotionalState, PreparedCompanionLaunch, RelationshipState, validate_runtime_state,
 };
 use lettuce_types::{
     CharacterId, ConversationId, OperationRecordId, PersonaId, Revision, TimestampMillis,
@@ -15,6 +15,15 @@ use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use crate::Database;
 
 type Error = CompanionStateRepositoryError;
+
+fn conversation_state_error(error: Error) -> lettuce_conversations::ConversationRepositoryError {
+    match error {
+        Error::AlreadyExists | Error::Conflict | Error::OperationMismatch => {
+            lettuce_conversations::ConversationRepositoryError::Conflict
+        }
+        _ => lettuce_conversations::ConversationRepositoryError::Storage,
+    }
+}
 
 fn failure(_: impl std::fmt::Debug) -> Error {
     Error::Failure
@@ -389,6 +398,99 @@ fn load_receipt(
     .transpose()
 }
 
+pub(crate) fn create_in(
+    tx: &Transaction<'_>,
+    owner: CompanionStateOwner,
+    initial: &CompanionRuntimeState,
+    now: TimestampMillis,
+) -> Result<CompanionStateSnapshot, Error> {
+    validate_runtime_state(initial)?;
+    let initial_hash = state_hash(initial);
+    let valid_owner = tx
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM conversations AS conversation
+               JOIN conversation_participants AS participant
+                 ON participant.conversation_id = conversation.id
+               WHERE conversation.id = ?1 AND conversation.kind = 'direct'
+                 AND participant.role = 'character'
+                 AND participant.source_kind = 'character' AND participant.source_id = ?2
+             )",
+            params![
+                owner.conversation_id.to_string(),
+                owner.character_id.to_string()
+            ],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(corrupt)?;
+    if !valid_owner {
+        return Err(Error::Invalid);
+    }
+    if let Some(existing) = get_in(tx, owner)? {
+        let stored_hash = tx
+            .query_row(
+                "SELECT initial_hash FROM companion_session_states WHERE conversation_id = ?1",
+                [owner.conversation_id.to_string()],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .map_err(corrupt)?;
+        return if stored_hash.as_slice() == initial_hash {
+            Ok(existing)
+        } else {
+            Err(Error::AlreadyExists)
+        };
+    }
+    let key = persona_key(owner);
+    let relationship = &initial.relationship_state;
+    tx.execute(
+        "INSERT OR IGNORE INTO companion_relationship_states (
+           character_id, persona_key, persona_id, closeness, trust, affection, tension,
+           stability, interaction_count, last_interaction_at, revision, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11, ?11)",
+        params![
+            owner.character_id.to_string(),
+            key,
+            owner.persona_id.map(|id| id.to_string()),
+            relationship.closeness,
+            relationship.trust,
+            relationship.affection,
+            relationship.tension,
+            relationship.stability,
+            i64::from(relationship.interaction_count),
+            relationship.last_interaction_at.get(),
+            now.get()
+        ],
+    )
+    .map_err(failure)?;
+    let emotional = &initial.emotional_state;
+    tx.execute(
+        "INSERT INTO companion_session_states (
+           conversation_id, character_id, persona_key, persona_id, initial_hash, confidence,
+           emotional_updated_at, state_updated_at, revision, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?9)",
+        params![
+            owner.conversation_id.to_string(),
+            owner.character_id.to_string(),
+            key,
+            owner.persona_id.map(|id| id.to_string()),
+            initial_hash.as_slice(),
+            emotional.confidence,
+            emotional.updated_at.get(),
+            initial.updated_at.get(),
+            now.get()
+        ],
+    )
+    .map_err(failure)?;
+    replace_vectors(tx, owner.conversation_id, emotional)?;
+    replace_signals(
+        tx,
+        owner.conversation_id,
+        emotional,
+        &initial.active_signals,
+    )?;
+    get_in(tx, owner)?.ok_or(Error::Corrupt)
+}
+
 impl CompanionStateRepository for Database {
     fn create(
         &self,
@@ -396,101 +498,11 @@ impl CompanionStateRepository for Database {
         initial: CompanionRuntimeState,
         now: TimestampMillis,
     ) -> Result<CompanionStateSnapshot, Error> {
-        validate_runtime_state(&initial)?;
-        let initial_hash = state_hash(&initial);
         let mut connection = self.connection().map_err(failure)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(failure)?;
-        let valid_owner = tx
-            .query_row(
-                "SELECT EXISTS(
-                   SELECT 1 FROM conversations AS conversation
-                   JOIN conversation_participants AS participant
-                     ON participant.conversation_id = conversation.id
-                   WHERE conversation.id = ?1 AND conversation.kind = 'direct'
-                     AND participant.role = 'character'
-                     AND participant.source_kind = 'character' AND participant.source_id = ?2
-                 )",
-                params![
-                    owner.conversation_id.to_string(),
-                    owner.character_id.to_string()
-                ],
-                |row| row.get::<_, bool>(0),
-            )
-            .map_err(corrupt)?;
-        if !valid_owner {
-            return Err(Error::Invalid);
-        }
-        if let Some(existing) = get_in(&tx, owner)? {
-            let stored_hash = tx
-                .query_row(
-                    "SELECT initial_hash FROM companion_session_states WHERE conversation_id = ?1",
-                    [owner.conversation_id.to_string()],
-                    |row| row.get::<_, Vec<u8>>(0),
-                )
-                .map_err(corrupt)?;
-            if stored_hash.as_slice() != initial_hash {
-                return Err(Error::AlreadyExists);
-            }
-            tx.commit().map_err(failure)?;
-            return Ok(existing);
-        }
-        let key = persona_key(owner);
-        let relationship = &initial.relationship_state;
-        tx.execute(
-            "INSERT OR IGNORE INTO companion_relationship_states (
-               character_id, persona_key, persona_id, closeness, trust, affection, tension,
-               stability, interaction_count, last_interaction_at, revision, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11, ?11)",
-            params![
-                owner.character_id.to_string(),
-                key,
-                owner.persona_id.map(|id| id.to_string()),
-                relationship.closeness,
-                relationship.trust,
-                relationship.affection,
-                relationship.tension,
-                relationship.stability,
-                i64::from(relationship.interaction_count),
-                relationship.last_interaction_at.get(),
-                now.get()
-            ],
-        )
-        .map_err(failure)?;
-        let emotional = &initial.emotional_state;
-        tx.execute(
-            "INSERT INTO companion_session_states (
-               conversation_id, character_id, persona_key, persona_id, initial_hash, confidence,
-               emotional_updated_at, state_updated_at, revision, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?9)",
-            params![
-                owner.conversation_id.to_string(),
-                owner.character_id.to_string(),
-                key,
-                owner.persona_id.map(|id| id.to_string()),
-                initial_hash.as_slice(),
-                emotional.confidence,
-                emotional.updated_at.get(),
-                initial.updated_at.get(),
-                now.get()
-            ],
-        )
-        .map_err(|error| {
-            if error.to_string().contains("UNIQUE constraint failed") {
-                Error::AlreadyExists
-            } else {
-                failure(error)
-            }
-        })?;
-        replace_vectors(&tx, owner.conversation_id, emotional)?;
-        replace_signals(
-            &tx,
-            owner.conversation_id,
-            emotional,
-            &initial.active_signals,
-        )?;
-        let snapshot = get_in(&tx, owner)?.ok_or(Error::Corrupt)?;
+        let snapshot = create_in(&tx, owner, &initial, now)?;
         tx.commit().map_err(failure)?;
         Ok(snapshot)
     }
@@ -614,6 +626,23 @@ impl CompanionStateRepository for Database {
         };
         tx.commit().map_err(failure)?;
         Ok(receipt)
+    }
+}
+
+impl CompanionConversationCreator for Database {
+    fn create_companion_conversation(
+        &self,
+        launch: PreparedCompanionLaunch,
+        now: TimestampMillis,
+    ) -> Result<lettuce_conversations::CreateConversationResult, CompanionLaunchRepositoryError>
+    {
+        let (conversation, owner, initial) = launch.into_parts();
+        crate::conversation_creator::create_with_hook(self, conversation, now, |tx, _| {
+            create_in(tx, owner, &initial, now)
+                .map(|_| ())
+                .map_err(conversation_state_error)
+        })
+        .map_err(CompanionLaunchRepositoryError::Conversation)
     }
 }
 

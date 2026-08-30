@@ -155,6 +155,10 @@ for the same scope keeps its fresh emotion but hydrates the existing
 relationship, regardless of dynamic-memory sharing. Atomic dual-revision CAS
 updates both scopes and records an immutable request hash/receipt; stale writes,
 changed retries, corrupt rows, and partial vector/signal writes fail closed.
+The companion prepared-launch adapter now seeds those rows inside the existing
+conversation creation transaction. A state-seed failure rolls back the entire
+conversation launch, and replay validates the same frozen initial-state hash
+before returning the already committed conversation.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

@@ -23,6 +23,15 @@ and exposes the matching `InferenceRuntime`, so later generation workflows can
 register bounded stream receivers and cancellation tokens against the same
 runtime used by the provider adapters.
 
+Direct companion launch is now a usable storage-initialization path. The
+planner freezes the validated authored companion defaults and effective
+persona scope in a non-serializable prepared launch, and the database commits
+the conversation graph, artifacts, operation/outbox, fresh session emotion,
+and carried character/persona relationship in one transaction. Exact launch
+retries revalidate the initial-state request without resetting relationship
+continuity. Group companions and companion turn/classifier/prompt orchestration
+remain deferred.
+
 The first direct/group dynamic-memory handler path accepts an already admitted
 and running ordered tool round, validates the exact v1 feature contract, joins
 precomputed create metadata, reduces it against one stored memory-space

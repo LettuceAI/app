@@ -5,6 +5,9 @@ use lettuce_characters::{
     InteractionMode, LifecycleStatus, MemoryPolicy, Persona, PersonaRepository, Scene,
     SceneDocumentV1, SceneOwner, ScenePart, SceneVariant, Selection, StarterMessage, StarterRole,
 };
+use lettuce_companions::{
+    CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
+};
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
     GroupLorebookBindingRepository, LorebookBehaviorVersion, LorebookBindingCreate,
@@ -39,8 +42,8 @@ use lettuce_models::{
 use lettuce_settings::{GlobalSettingsStore, SecretOwnerId};
 use lettuce_types::{
     CharacterId, ContentHash, ConversationStarterId, GroupId, JobId, LorebookId, MemoryId,
-    MemorySpaceId, ModelProfileId, PersonaId, ProviderAccountId, Revision, SceneId, SceneVariantId,
-    StarterMessageId, TimestampMillis,
+    MemorySpaceId, ModelProfileId, OperationRecordId, PersonaId, ProviderAccountId, Revision,
+    SceneId, SceneVariantId, StarterMessageId, TimestampMillis,
 };
 
 use super::planner::ConversationLaunchPlanner;
@@ -460,17 +463,74 @@ fn archived_character_is_rejected() {
 }
 
 #[test]
-fn companion_character_is_unsupported() {
+fn companion_character_launch_seeds_normalized_runtime_state() {
     let database = database();
+    let persona_id = seed_persona(&database, "Mira");
     let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
         defaults.interaction_mode = InteractionMode::Companion;
+        let mut config = lettuce_companions::CompanionSoulConfig::default();
+        config.soul.baseline_affect.warmth = 0.8;
+        config.relationship_defaults.trust = 0.6;
+        defaults.companion_soul = Some(config);
     });
+    let mut initial_request = request(character_id, "companion");
+    initial_request.persona = LaunchSelection::Explicit(persona_id);
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&initial_request, NOW)
+        .expect("launch companion");
+    let retried = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&initial_request, NOW)
+        .expect("retry companion launch");
     assert_eq!(
-        ConversationLaunchPlanner::new(&database)
-            .prepare_direct(&request(character_id, "companion"))
-            .expect_err("companion"),
-        ConversationLaunchError::CompanionUnsupported { character_id }
+        retried.value.conversation.id,
+        launched.value.conversation.id
     );
+    let state = CompanionStateRepository::get(
+        &database,
+        CompanionStateOwner {
+            conversation_id: launched.value.conversation.id,
+            character_id,
+            persona_id: Some(persona_id),
+        },
+    )
+    .expect("load state")
+    .expect("companion state");
+    assert_eq!(state.state.relationship_state.trust, 0.6);
+    assert_eq!(state.state.emotional_state.felt.warmth, 0.8);
+
+    let mut evolved = state.state.clone();
+    evolved.relationship_state.trust = 0.9;
+    evolved.emotional_state.felt.warmth = 0.1;
+    CompanionStateRepository::replace(
+        &database,
+        state.owner,
+        OperationRecordId::new(),
+        CompanionStateReplacement {
+            expected_session_revision: state.session_revision,
+            expected_relationship_revision: state.relationship_revision,
+            state: evolved,
+            applied_at: TimestampMillis::new(NOW.get() + 1),
+        },
+    )
+    .expect("evolve companion state");
+
+    let mut next_request = request(character_id, "companion-next");
+    next_request.persona = LaunchSelection::Explicit(persona_id);
+    let next = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&next_request, TimestampMillis::new(NOW.get() + 2))
+        .expect("launch next companion session");
+    let next_state = CompanionStateRepository::get(
+        &database,
+        CompanionStateOwner {
+            conversation_id: next.value.conversation.id,
+            character_id,
+            persona_id: Some(persona_id),
+        },
+    )
+    .expect("load next state")
+    .expect("next companion state");
+    assert_eq!(next_state.state.relationship_state.trust, 0.9);
+    assert_eq!(next_state.state.emotional_state.felt.warmth, 0.8);
 }
 
 #[test]

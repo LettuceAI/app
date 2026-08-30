@@ -2,6 +2,10 @@ use lettuce_characters::{
     CharacterRepository, ConversationStarter, GroupDetails, GroupProfile, GroupRepository, Persona,
     PersonaRepository, Scene, SceneOwner, StarterRole,
 };
+use lettuce_companions::{
+    CompanionConversationCreator, CompanionLaunchRepositoryError, CompanionStateOwner,
+    PreparedCompanionLaunch, initial_runtime_state,
+};
 use lettuce_context::{
     CharacterLorebookBindingRepository, GroupLorebookBindingRepository, LifecycleFilter,
     LorebookBinding, LorebookDetails, LorebookRepository, PersonaLorebookBindingRepository,
@@ -56,6 +60,8 @@ pub trait DirectLaunchSources:
     + ModelProfileRepository
     + ProviderAccountRepository
     + GlobalSettingsStore
+    + ConversationCreator
+    + CompanionConversationCreator
 {
 }
 
@@ -69,6 +75,8 @@ impl<T> DirectLaunchSources for T where
         + ModelProfileRepository
         + ProviderAccountRepository
         + GlobalSettingsStore
+        + ConversationCreator
+        + CompanionConversationCreator
 {
 }
 
@@ -90,7 +98,7 @@ pub struct ConversationLaunchPlanner<'a, S> {
 
 impl<'a, S> ConversationLaunchPlanner<'a, S>
 where
-    S: DirectLaunchSources + ConversationCreator,
+    S: DirectLaunchSources,
 {
     #[must_use]
     pub const fn new(sources: &'a S) -> Self {
@@ -102,12 +110,27 @@ where
         request: &DirectConversationLaunchRequest,
         now: TimestampMillis,
     ) -> Result<CreateConversationResult, ConversationLaunchError> {
-        let launch = match self.prepare_direct(request) {
+        let (launch, companion) = match self.prepare_direct_parts(request) {
             Ok(launch) => launch,
             Err(error) => {
                 return Err(self.already_launched_or(&request.operation_key, error));
             }
         };
+        if let Some((owner, initial)) = companion {
+            let launch = PreparedCompanionLaunch::new(launch, owner, initial)
+                .map_err(LaunchSourceError::Companion)?;
+            return CompanionConversationCreator::create_companion_conversation(
+                self.sources,
+                launch,
+                now,
+            )
+            .map_err(|error| match error {
+                CompanionLaunchRepositoryError::Conversation(
+                    ConversationRepositoryError::Conflict,
+                ) => ConversationLaunchError::CreateConflict,
+                other => LaunchSourceError::Companion(other).into(),
+            });
+        }
         ConversationCreator::create(self.sources, launch, now).map_err(|error| match error {
             ConversationRepositoryError::Conflict => ConversationLaunchError::CreateConflict,
             other => LaunchSourceError::Conversation(other).into(),
@@ -132,6 +155,22 @@ where
         &self,
         request: &DirectConversationLaunchRequest,
     ) -> Result<PreparedConversationLaunch, ConversationLaunchError> {
+        self.prepare_direct_parts(request).map(|value| value.0)
+    }
+
+    fn prepare_direct_parts(
+        &self,
+        request: &DirectConversationLaunchRequest,
+    ) -> Result<
+        (
+            PreparedConversationLaunch,
+            Option<(
+                CompanionStateOwner,
+                lettuce_companions::CompanionRuntimeState,
+            )>,
+        ),
+        ConversationLaunchError,
+    > {
         if request.format_version != DIRECT_LAUNCH_REQUEST_FORMAT_V1 {
             return Err(ConversationLaunchError::InvalidRequest {
                 field: "format_version",
@@ -153,11 +192,14 @@ where
                 character_id: request.character_id,
             });
         }
-        if policy::is_companion(&character.character.defaults) {
-            return Err(ConversationLaunchError::CompanionUnsupported {
-                character_id: request.character_id,
-            });
-        }
+        let companion_config = policy::is_companion(&character.character.defaults).then(|| {
+            character
+                .character
+                .defaults
+                .companion_soul
+                .clone()
+                .unwrap_or_default()
+        });
         let defaults = character.character.defaults.clone();
 
         let starter = self.resolve_starter(request, &character)?;
@@ -173,6 +215,7 @@ where
             });
         }
         let persona = self.resolve_persona(request.persona)?;
+        let companion_persona_id = persona.value().map(|value| value.id);
         let prompt = self.resolve_prompt(&defaults, starter)?;
 
         let character_bindings = CharacterLorebookBindingRepository::list_character_bindings(
@@ -456,7 +499,22 @@ where
                 request_digest,
             },
         };
-        Ok(PreparedConversationLaunch::new(plan, drafts)?)
+        let launch = PreparedConversationLaunch::new(plan, drafts)?;
+        let companion = companion_config.map(|config| {
+            (
+                CompanionStateOwner {
+                    conversation_id,
+                    character_id: request.character_id,
+                    persona_id: companion_persona_id,
+                },
+                initial_runtime_state(
+                    &config.soul.baseline_affect,
+                    &config.soul.regulation_style,
+                    &config.relationship_defaults,
+                ),
+            )
+        });
+        Ok((launch, companion))
     }
 
     fn resolve_starter<'d>(

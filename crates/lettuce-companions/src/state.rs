@@ -3,6 +3,11 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
+use lettuce_conversations::{
+    ConversationKind, ConversationRepositoryError, CreateConversationResult,
+    PreparedConversationLaunch,
+};
+
 const DECAY_MINUTES: f64 = 45.0;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -378,6 +383,66 @@ pub trait CompanionStateRepository: Send + Sync {
         operation_id: OperationRecordId,
         replacement: CompanionStateReplacement,
     ) -> Result<CompanionStateApplyReceipt, CompanionStateRepositoryError>;
+}
+
+#[derive(Debug)]
+pub struct PreparedCompanionLaunch {
+    conversation: PreparedConversationLaunch,
+    owner: CompanionStateOwner,
+    initial: CompanionRuntimeState,
+}
+
+impl PreparedCompanionLaunch {
+    pub fn new(
+        conversation: PreparedConversationLaunch,
+        owner: CompanionStateOwner,
+        initial: CompanionRuntimeState,
+    ) -> Result<Self, CompanionLaunchRepositoryError> {
+        let plan = conversation.plan();
+        let character_matches = matches!(&plan.kind, ConversationKind::Direct(details)
+            if details.character.source_id == owner.character_id)
+            && plan.conversation_id == owner.conversation_id;
+        if !character_matches {
+            return Err(CompanionLaunchRepositoryError::Invalid);
+        }
+        validate_runtime_state(&initial).map_err(|_| CompanionLaunchRepositoryError::Invalid)?;
+        Ok(Self {
+            conversation,
+            owner,
+            initial,
+        })
+    }
+
+    #[must_use]
+    pub fn conversation(&self) -> &PreparedConversationLaunch {
+        &self.conversation
+    }
+
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        PreparedConversationLaunch,
+        CompanionStateOwner,
+        CompanionRuntimeState,
+    ) {
+        (self.conversation, self.owner, self.initial)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompanionLaunchRepositoryError {
+    Conversation(ConversationRepositoryError),
+    State(CompanionStateRepositoryError),
+    Invalid,
+}
+
+pub trait CompanionConversationCreator: Send + Sync {
+    fn create_companion_conversation(
+        &self,
+        launch: PreparedCompanionLaunch,
+        now: TimestampMillis,
+    ) -> Result<CreateConversationResult, CompanionLaunchRepositoryError>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

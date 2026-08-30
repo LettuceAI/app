@@ -59,5 +59,7 @@ the dynamic-memory sharing flag. Both revisions advance in one atomic replace,
 so concurrent sessions for one character/persona cannot lose relationship
 updates; exact operation retries return an immutable receipt. Branches inside
 one conversation naturally retain that conversation's immediate emotional
-state. Signal classification, prompt rendering, provider/job coordination,
-companion launch/turn wiring, and frontend events remain deferred.
+state. `PreparedCompanionLaunch` and `CompanionConversationCreator` now let the
+application freeze that initial state and let storage commit it atomically with
+a direct conversation. Signal classification, prompt rendering, provider/job
+coordination, companion turn wiring, and frontend events remain deferred.

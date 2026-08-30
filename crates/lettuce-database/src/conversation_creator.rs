@@ -422,43 +422,49 @@ fn read_creation_outbox(
     Ok(record.clone())
 }
 
-impl ConversationCreator for Database {
-    fn create(
-        &self,
-        launch: PreparedConversationLaunch,
-        now: TimestampMillis,
-    ) -> Result<lettuce_conversations::CreateConversationResult, ConversationRepositoryError> {
-        launch
-            .plan()
-            .validate()
-            .map_err(ConversationRepositoryError::Invalid)?;
-        let plan_id = launch.plan().conversation_id;
-        let token = launch.plan().operation.clone();
-        let mut connection = self
-            .connection()
-            .map_err(|_| ConversationRepositoryError::Storage)?;
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(conversation_vertical_slice::db)?;
+pub(crate) fn create_with_hook<F>(
+    database: &Database,
+    launch: PreparedConversationLaunch,
+    now: TimestampMillis,
+    mut hook: F,
+) -> Result<lettuce_conversations::CreateConversationResult, ConversationRepositoryError>
+where
+    F: FnMut(
+        &Transaction<'_>,
+        &lettuce_conversations::CreateConversationPlan,
+    ) -> Result<(), ConversationRepositoryError>,
+{
+    launch
+        .plan()
+        .validate()
+        .map_err(ConversationRepositoryError::Invalid)?;
+    let plan_id = launch.plan().conversation_id;
+    let token = launch.plan().operation.clone();
+    let mut connection = database
+        .connection()
+        .map_err(|_| ConversationRepositoryError::Storage)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(conversation_vertical_slice::db)?;
 
-        if let Some(operation) = read_operation(&transaction, plan_id, &token)? {
-            if operation.operation.request_digest != token.request_digest {
-                return Err(ConversationRepositoryError::Conflict);
-            }
-            let aggregate =
-                conversation_vertical_slice::hydrate_conversation(&transaction, plan_id, || {})?;
-            let outbox = read_creation_outbox(&transaction, plan_id, operation.id)?;
-            let ConversationOutboxEvent::ConversationCreated {
-                conversation_id,
-                root_branch_id: _,
-                head_message_id: _,
-                initial_message_count,
-                at,
-            } = &outbox.event
-            else {
-                return Err(ConversationRepositoryError::Storage);
-            };
-            if *conversation_id != plan_id
+    if let Some(operation) = read_operation(&transaction, plan_id, &token)? {
+        if operation.operation.request_digest != token.request_digest {
+            return Err(ConversationRepositoryError::Conflict);
+        }
+        let aggregate =
+            conversation_vertical_slice::hydrate_conversation(&transaction, plan_id, || {})?;
+        let outbox = read_creation_outbox(&transaction, plan_id, operation.id)?;
+        let ConversationOutboxEvent::ConversationCreated {
+            conversation_id,
+            root_branch_id: _,
+            head_message_id: _,
+            initial_message_count,
+            at,
+        } = &outbox.event
+        else {
+            return Err(ConversationRepositoryError::Storage);
+        };
+        if *conversation_id != plan_id
                 || outbox.operation_record_id != operation.id
                 || outbox.sequence != 1
                 || outbox.conversation_revision != Revision::INITIAL
@@ -476,73 +482,78 @@ impl ConversationCreator for Database {
             {
                 return Err(ConversationRepositoryError::Storage);
             }
-            conversation_query::validate_outbox_event_timestamp(&outbox)?;
-            conversation_query::validate_outbox_event(&transaction, &outbox)?;
-            conversation_query::validate_outbox_event_exact(&transaction, &outbox)?;
-            transaction
-                .commit()
-                .map_err(conversation_vertical_slice::db)?;
-            return Ok(lettuce_conversations::MutationCommit {
-                value: aggregate,
-                operation,
-                outbox: vec![outbox],
-            });
-        }
-        if transaction
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
-                [plan_id.to_string()],
-                |row| row.get::<_, bool>(0),
-            )
-            .map_err(conversation_vertical_slice::db)?
-        {
-            return Err(ConversationRepositoryError::Conflict);
-        }
+        conversation_query::validate_outbox_event_timestamp(&outbox)?;
+        conversation_query::validate_outbox_event(&transaction, &outbox)?;
+        conversation_query::validate_outbox_event_exact(&transaction, &outbox)?;
+        hook(&transaction, launch.plan())?;
+        transaction
+            .commit()
+            .map_err(conversation_vertical_slice::db)?;
+        return Ok(lettuce_conversations::MutationCommit {
+            value: aggregate,
+            operation,
+            outbox: vec![outbox],
+        });
+    }
+    if transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
+            [plan_id.to_string()],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(conversation_vertical_slice::db)?
+    {
+        return Err(ConversationRepositoryError::Conflict);
+    }
 
-        let (plan, drafts) = launch.into_parts();
-        let expected = expected_snapshot_refs(&plan)?;
-        let staged = stage_artifacts(&transaction, drafts, now)?;
-        if staged != expected {
-            return Err(ConversationRepositoryError::ArtifactReference(
-                lettuce_conversations::ArtifactError::InvalidReference(
-                    lettuce_conversations::ValidationError::InvalidReference {
-                        field: "conversation.snapshot_references",
-                    },
-                ),
-            ));
-        }
-        preflight_media(&transaction, &plan)?;
+    let (plan, drafts) = launch.into_parts();
+    let expected = expected_snapshot_refs(&plan)?;
+    let staged = stage_artifacts(&transaction, drafts, now)?;
+    if staged != expected {
+        return Err(ConversationRepositoryError::ArtifactReference(
+            lettuce_conversations::ArtifactError::InvalidReference(
+                lettuce_conversations::ValidationError::InvalidReference {
+                    field: "conversation.snapshot_references",
+                },
+            ),
+        ));
+    }
+    preflight_media(&transaction, &plan)?;
 
-        let root_branch_id = ConversationBranchId::new();
-        let aggregate = make_aggregate(&plan, root_branch_id, now)?;
-        conversation_vertical_slice::save_conversation(&transaction, &aggregate.conversation)?;
-        conversation_vertical_slice::save_branch(&transaction, &aggregate.branches[0])?;
-        for reference in expected.values() {
-            transaction
+    let root_branch_id = ConversationBranchId::new();
+    let aggregate = make_aggregate(&plan, root_branch_id, now)?;
+    conversation_vertical_slice::save_conversation(&transaction, &aggregate.conversation)?;
+    conversation_vertical_slice::save_branch(&transaction, &aggregate.branches[0])?;
+    for reference in expected.values() {
+        transaction
                 .execute(
                     "INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
                     params![plan.conversation_id.to_string(), reference.artifact_id.to_string()],
                 )
                 .map_err(conversation_vertical_slice::db)?;
-        }
-        let head_message_id = persist_initial_timeline(&transaction, &plan, root_branch_id, now)?;
-        let (operation, outbox) = persist_operation_and_outbox(
-            &transaction,
-            &plan,
-            root_branch_id,
-            head_message_id,
-            now,
-        )?;
-        let aggregate =
-            hydrate_and_validate(&transaction, &plan, root_branch_id, &operation, &outbox)?;
-        transaction
-            .commit()
-            .map_err(conversation_vertical_slice::db)?;
-        Ok(lettuce_conversations::MutationCommit {
-            value: aggregate,
-            operation,
-            outbox: vec![outbox],
-        })
+    }
+    let head_message_id = persist_initial_timeline(&transaction, &plan, root_branch_id, now)?;
+    hook(&transaction, &plan)?;
+    let (operation, outbox) =
+        persist_operation_and_outbox(&transaction, &plan, root_branch_id, head_message_id, now)?;
+    let aggregate = hydrate_and_validate(&transaction, &plan, root_branch_id, &operation, &outbox)?;
+    transaction
+        .commit()
+        .map_err(conversation_vertical_slice::db)?;
+    Ok(lettuce_conversations::MutationCommit {
+        value: aggregate,
+        operation,
+        outbox: vec![outbox],
+    })
+}
+
+impl ConversationCreator for Database {
+    fn create(
+        &self,
+        launch: PreparedConversationLaunch,
+        now: TimestampMillis,
+    ) -> Result<lettuce_conversations::CreateConversationResult, ConversationRepositoryError> {
+        create_with_hook(self, launch, now, |_, _| Ok(()))
     }
 }
 
@@ -977,6 +988,37 @@ mod tests {
             "conversation_message_revisions",
             "conversation_initial_message_origins",
             "revision_media_refs",
+            "conversation_snapshot_artifacts",
+            "conversation_snapshot_refs",
+            "conversation_operations",
+            "conversation_outbox",
+        ] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("rollback count");
+            assert_eq!(count, 0, "rows leaked in {table}");
+        }
+    }
+
+    #[test]
+    fn create_rolls_back_entire_launch_when_domain_hook_fails() {
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = ConversationId::new();
+        let result = create_with_hook(
+            &database,
+            prepared(conversation_id, CharacterId::new()),
+            TimestampMillis::new(10),
+            |_, _| Err(ConversationRepositoryError::Storage),
+        );
+        assert_eq!(result, Err(ConversationRepositoryError::Storage));
+
+        let connection = database.connection().expect("connection");
+        for table in [
+            "conversations",
+            "conversation_participants",
+            "conversation_branches",
             "conversation_snapshot_artifacts",
             "conversation_snapshot_refs",
             "conversation_operations",

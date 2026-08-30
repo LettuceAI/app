@@ -33,6 +33,8 @@ pub enum LaunchSourceError {
     Settings(GlobalSettingsStoreError),
     #[error("conversation repository failed: {0}")]
     Conversation(ConversationRepositoryError),
+    #[error("companion launch repository failed: {0:?}")]
+    Companion(lettuce_companions::CompanionLaunchRepositoryError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -43,8 +45,6 @@ pub enum ConversationLaunchError {
     CharacterNotFound { character_id: CharacterId },
     #[error("character {character_id} is archived")]
     CharacterArchived { character_id: CharacterId },
-    #[error("character {character_id} runs in companion mode, which cannot be launched yet")]
-    CompanionUnsupported { character_id: CharacterId },
     #[error("group {group_id} was not found")]
     GroupNotFound { group_id: GroupId },
     #[error("group {group_id} is archived")]
