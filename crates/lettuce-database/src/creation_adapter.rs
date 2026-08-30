@@ -1,17 +1,17 @@
 use std::str::FromStr;
 
-use lettuce_characters::{Persona, RepositoryError as PersonaRepositoryError};
+use lettuce_characters::{Persona, PersonaDraftUpdate, RepositoryError as PersonaRepositoryError};
 use lettuce_creation::{
-    AdmittedCreationToolCall, ConfirmedPersonaApply, CreationApplyReceipt, CreationApplyRepository,
-    CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptRecovery,
-    CreationAttemptRepository, CreationAttemptStatus, CreationAttemptSuccess,
-    CreationAttemptSuccessSettlement, CreationInferenceAttempt, CreationInferenceRound,
-    CreationOperationOutcome, CreationProposal, CreationRepositoryError, CreationRoundFinishReason,
-    CreationStage, CreationTarget, CreationTargetKind, CreationToolCallEvidence, CreationTurn,
-    CreationTurnAttemptAdmission, CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt,
-    NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt,
-    NewCreationWorkflow, creation_tool_request, reduce_creation_tool_calls,
-    validate_creation_tool_calls,
+    AdmittedCreationToolCall, ConfirmedPersonaApply, ConfirmedPersonaRevisionApply,
+    CreationApplyReceipt, CreationApplyRepository, CreationAttemptFailureCode,
+    CreationAttemptOwner, CreationAttemptRecovery, CreationAttemptRepository,
+    CreationAttemptStatus, CreationAttemptSuccess, CreationAttemptSuccessSettlement,
+    CreationInferenceAttempt, CreationInferenceRound, CreationOperationOutcome, CreationProposal,
+    CreationRepositoryError, CreationRoundFinishReason, CreationStage, CreationTarget,
+    CreationTargetKind, CreationToolCallEvidence, CreationTurn, CreationTurnAttemptAdmission,
+    CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt, NewCreationAttemptRecovery,
+    NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt, NewCreationWorkflow,
+    creation_tool_request, reduce_creation_tool_calls, validate_creation_tool_calls,
 };
 use lettuce_types::{
     CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, JobId, Revision,
@@ -137,7 +137,10 @@ fn sql_u64(value: u64) -> Result<i64, CreationRepositoryError> {
 
 fn persona_error(error: PersonaRepositoryError) -> CreationRepositoryError {
     match error {
-        PersonaRepositoryError::AlreadyExists => CreationRepositoryError::Conflict,
+        PersonaRepositoryError::NotFound => CreationRepositoryError::NotFound,
+        PersonaRepositoryError::AlreadyExists
+        | PersonaRepositoryError::StaleRevision { .. }
+        | PersonaRepositoryError::Archived => CreationRepositoryError::Conflict,
         PersonaRepositoryError::Invalid(_) => CreationRepositoryError::Invalid,
         _ => CreationRepositoryError::Storage,
     }
@@ -165,6 +168,28 @@ fn load_apply_receipt(
         )
         .optional()
         .map_err(storage)
+}
+
+fn insert_apply_receipt(
+    transaction: &Transaction<'_>,
+    receipt: &CreationApplyReceipt,
+) -> Result<(), CreationRepositoryError> {
+    transaction
+        .execute(
+            "INSERT INTO creation_apply_receipts \
+             (workflow_id,workflow_revision,proposal_id,persona_id,persona_revision,applied_at) \
+             VALUES (?1,?2,?3,?4,?5,?6)",
+            params![
+                receipt.workflow_id.to_string(),
+                sql_u64(receipt.workflow_revision.get())?,
+                receipt.proposal_id.to_string(),
+                receipt.persona_id.to_string(),
+                sql_u64(receipt.persona_revision.get())?,
+                receipt.applied_at.get(),
+            ],
+        )
+        .map_err(storage)?;
+    Ok(())
 }
 
 fn load_workflow_conn(
@@ -563,21 +588,85 @@ impl CreationApplyRepository for Database {
             persona_revision: persona.revision,
             applied_at: request.now,
         };
-        transaction
-            .execute(
-                "INSERT INTO creation_apply_receipts \
-                 (workflow_id,workflow_revision,proposal_id,persona_id,persona_revision,applied_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6)",
-                params![
-                    receipt.workflow_id.to_string(),
-                    sql_u64(receipt.workflow_revision.get())?,
-                    receipt.proposal_id.to_string(),
-                    receipt.persona_id.to_string(),
-                    sql_u64(receipt.persona_revision.get())?,
-                    receipt.applied_at.get(),
-                ],
-            )
+        insert_apply_receipt(&transaction, &receipt)?;
+        transaction.commit().map_err(storage)?;
+        Ok(receipt)
+    }
+
+    fn apply_existing_persona(
+        &self,
+        request: ConfirmedPersonaRevisionApply,
+    ) -> Result<CreationApplyReceipt, CreationRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
+        let expected_target = CreationTarget::ExistingPersona {
+            id: request.persona_id,
+            revision: request.expected_persona_revision,
+        };
+        if let Some(receipt) = load_apply_receipt(&transaction, request.workflow_id)? {
+            let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+            let expected_result_revision = request
+                .expected_persona_revision
+                .next()
+                .map_err(|_| CreationRepositoryError::Invalid)?;
+            if workflow.target == expected_target
+                && receipt.workflow_revision == request.expected_workflow_revision
+                && receipt.proposal_id == request.proposal_id
+                && receipt.persona_id == request.persona_id
+                && receipt.persona_revision == expected_result_revision
+            {
+                transaction.commit().map_err(storage)?;
+                return Ok(receipt);
+            }
+            return Err(CreationRepositoryError::Conflict);
+        }
+
+        let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+        if workflow.target != expected_target
+            || workflow.stage != CreationStage::AwaitingConfirmation
+            || workflow.revision != request.expected_workflow_revision
+            || workflow.current_proposal_id != request.proposal_id
+            || request.now.get() < workflow.updated_at.get()
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let proposal = load_proposal_conn(&transaction, request.proposal_id)?;
+        let (Some(title), Some(description)) = (match proposal.draft {
+            lettuce_creation::CreationDraft::Persona { name, description } => (name, description),
+            _ => return Err(CreationRepositoryError::Conflict),
+        }) else {
+            return Err(CreationRepositoryError::Invalid);
+        };
+        let current = crate::persona_adapter::get_persona(&transaction, request.persona_id)
+            .map_err(persona_error)?
+            .ok_or(CreationRepositoryError::NotFound)?;
+        let draft = PersonaDraftUpdate {
+            title,
+            description,
+            nickname: current.nickname,
+            design_description: current.design_description,
+            avatar_crop: current.avatar_crop,
+            image_recommendation: current.image_recommendation,
+        };
+        let persona = crate::persona_adapter::revise_persona(
+            &transaction,
+            request.persona_id,
+            request.expected_persona_revision,
+            draft,
+            request.now,
+        )
+        .map_err(persona_error)?;
+        let receipt = CreationApplyReceipt {
+            workflow_id: request.workflow_id,
+            workflow_revision: request.expected_workflow_revision,
+            proposal_id: request.proposal_id,
+            persona_id: persona.id,
+            persona_revision: persona.revision,
+            applied_at: request.now,
+        };
+        insert_apply_receipt(&transaction, &receipt)?;
         transaction.commit().map_err(storage)?;
         Ok(receipt)
     }
@@ -1659,20 +1748,24 @@ mod tests {
         ProtectedArtifactBytes, ReplayArtifactDraft, ReplayArtifactRef,
     };
     use lettuce_creation::{
-        AdmittedCreationToolCall, ConfirmedPersonaApply, CreationApplyRepository,
-        CreationAttemptOwner, CreationAttemptRepository, CreationAttemptStatus, CreationDraft,
-        CreationOperation, CreationOperationError, CreationRepositoryError,
-        CreationRoundFinishReason, CreationStage, CreationTarget, CreationToolApply,
-        CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt,
+        AdmittedCreationToolCall, ConfirmedPersonaApply, ConfirmedPersonaRevisionApply,
+        CreationApplyRepository, CreationAttemptOwner, CreationAttemptRepository,
+        CreationAttemptStatus, CreationDraft, CreationOperation, CreationOperationError,
+        CreationRepositoryError, CreationRoundFinishReason, CreationStage, CreationTarget,
+        CreationToolApply, CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt,
         NewCreationInferenceRound, NewCreationToolCall, NewCreationTurn, NewCreationWorkflow,
         apply_creation_tool_calls,
     };
     use lettuce_types::{
-        CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, JobId,
-        PersonaId, ReplayArtifactId, Revision, SceneId, TimestampMillis, ToolExecutionId,
+        AssetId, CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId,
+        JobId, MediaBlobId, ModelArtifactId, PersonaId, ReplayArtifactId, Revision, SceneId,
+        TimestampMillis, ToolExecutionId,
     };
 
-    use lettuce_characters::PersonaRepository;
+    use lettuce_characters::{
+        Crop, ImageRecommendation, LifecycleStatus, Persona, PersonaArchiveRequest,
+        PersonaDraftUpdate, PersonaMedia, PersonaMediaLink, PersonaMediaSlot, PersonaRepository,
+    };
 
     use crate::Database;
 
@@ -1790,6 +1883,55 @@ mod tests {
             .append_proposal(workflow_id, reviewed.revision, confirmation.clone())
             .expect("append confirmation proposal");
         (workflow, confirmation.id)
+    }
+
+    fn image_asset(database: &Database, marker: u8) -> AssetId {
+        let blob_id = MediaBlobId::new();
+        let asset_id = AssetId::new();
+        let connection = database.connection().expect("database lock");
+        connection
+            .execute(
+                "INSERT INTO media_blobs \
+                 (id,content_hash,kind,mime_type,byte_size,width,height,validation_version,state,created_at,updated_at) \
+                 VALUES (?1,?2,'image','image/png',1,1,1,1,'ready',1,1)",
+                rusqlite::params![blob_id.to_string(), format!("{marker:02x}").repeat(32)],
+            )
+            .expect("insert image blob");
+        connection
+            .execute(
+                "INSERT INTO media_assets \
+                 (id,blob_id,blob_kind,kind,origin,retention,provenance_json,revision,created_at,updated_at) \
+                 VALUES (?1,?2,'image','illustration','upload','library','{}',1,1,1)",
+                rusqlite::params![asset_id.to_string(), blob_id.to_string()],
+            )
+            .expect("insert image asset");
+        asset_id
+    }
+
+    fn rich_persona(database: &Database, title: &str) -> Persona {
+        let mut persona = Persona::new(
+            PersonaId::new(),
+            title.into(),
+            "Original description".into(),
+            TimestampMillis::new(1),
+        )
+        .expect("persona");
+        persona.nickname = Some("Nick".into());
+        persona.design_description = Some("Original design".into());
+        persona.avatar_crop = Some(Crop::new(0.2, 0.3, 1.2).expect("crop"));
+        persona.image_recommendation = Some(ImageRecommendation {
+            artifact_id: Some(ModelArtifactId::new()),
+            unresolved_legacy_name: None,
+            strength: 0.8,
+        });
+        persona.media = PersonaMedia {
+            links: vec![PersonaMediaLink {
+                asset_id: image_asset(database, title.as_bytes()[0]),
+                slot: PersonaMediaSlot::Avatar,
+                ordinal: 0,
+            }],
+        };
+        PersonaRepository::create(database, persona).expect("create persona")
     }
 
     #[test]
@@ -1997,6 +2139,314 @@ mod tests {
                 now: TimestampMillis::new(45),
             }),
             Err(CreationRepositoryError::Conflict)
+        );
+    }
+
+    #[test]
+    fn confirmed_existing_persona_apply_preserves_owned_fields_and_retries_exactly() {
+        let database = Database::open_in_memory().expect("database");
+        let original = rich_persona(&database, "Original");
+        let default = PersonaRepository::set_default(
+            &database,
+            original.id,
+            Revision::INITIAL,
+            TimestampMillis::new(2),
+        )
+        .expect("set default");
+        let (workflow, proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::ExistingPersona {
+                id: original.id,
+                revision: original.revision,
+            },
+            CreationDraft::Persona {
+                name: Some("Revised".into()),
+                description: Some("Revised description".into()),
+            },
+            10,
+        );
+        let request = ConfirmedPersonaRevisionApply {
+            workflow_id: workflow.id,
+            expected_workflow_revision: workflow.revision,
+            proposal_id,
+            persona_id: original.id,
+            expected_persona_revision: original.revision,
+            now: TimestampMillis::new(15),
+        };
+        let receipt = database
+            .apply_existing_persona(request.clone())
+            .expect("apply existing persona");
+        assert_eq!(receipt.persona_revision, Revision::new(2));
+        let revised = PersonaRepository::get(&database, original.id)
+            .expect("load persona")
+            .expect("persona exists");
+        assert_eq!(revised.title, "Revised");
+        assert_eq!(revised.description, "Revised description");
+        assert_eq!(revised.nickname, original.nickname);
+        assert_eq!(revised.design_description, original.design_description);
+        assert_eq!(revised.avatar_crop, original.avatar_crop);
+        assert_eq!(revised.image_recommendation, original.image_recommendation);
+        assert_eq!(revised.media, original.media);
+        assert_eq!(revised.status, LifecycleStatus::Active);
+        assert_eq!(revised.created_at, original.created_at);
+        assert_eq!(
+            PersonaRepository::get_default_snapshot(&database)
+                .expect("default snapshot")
+                .state,
+            default
+        );
+
+        let mut retry = request.clone();
+        retry.now = TimestampMillis::new(99);
+        assert_eq!(
+            database
+                .apply_existing_persona(retry)
+                .expect("exact retry after revision advancement"),
+            receipt
+        );
+        assert_eq!(
+            PersonaRepository::get(&database, original.id)
+                .expect("load after retry")
+                .expect("persona exists")
+                .revision,
+            Revision::new(2)
+        );
+        let mut changed_target = request.clone();
+        changed_target.persona_id = PersonaId::new();
+        assert_eq!(
+            database.apply_existing_persona(changed_target),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let mut stale_proposal = request.clone();
+        stale_proposal.proposal_id = CreationProposalId::new();
+        assert_eq!(
+            database.apply_existing_persona(stale_proposal),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let mut stale_workflow = request.clone();
+        stale_workflow.expected_workflow_revision =
+            Revision::new(request.expected_workflow_revision.get() + 1);
+        assert_eq!(
+            database.apply_existing_persona(stale_workflow),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let mut stale_target_revision = request.clone();
+        stale_target_revision.expected_persona_revision = Revision::new(2);
+        assert_eq!(
+            database.apply_existing_persona(stale_target_revision),
+            Err(CreationRepositoryError::Conflict)
+        );
+
+        let (second_workflow, second_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::ExistingPersona {
+                id: revised.id,
+                revision: revised.revision,
+            },
+            CreationDraft::Persona {
+                name: Some("Revised again".into()),
+                description: Some("Second revision".into()),
+            },
+            100,
+        );
+        let second_receipt = database
+            .apply_existing_persona(ConfirmedPersonaRevisionApply {
+                workflow_id: second_workflow.id,
+                expected_workflow_revision: second_workflow.revision,
+                proposal_id: second_proposal_id,
+                persona_id: revised.id,
+                expected_persona_revision: revised.revision,
+                now: TimestampMillis::new(105),
+            })
+            .expect("apply second workflow");
+        assert_eq!(second_receipt.persona_revision, Revision::new(3));
+        let connection = database.connection().expect("database lock");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM creation_apply_receipts WHERE persona_id=?1",
+                    [original.id.to_string()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("receipt count"),
+            2
+        );
+    }
+
+    #[test]
+    fn existing_persona_apply_rejects_stale_archived_missing_and_incomplete_targets() {
+        let database = Database::open_in_memory().expect("database");
+        let stale = rich_persona(&database, "Stale");
+        let drafting_proposal_id = CreationProposalId::new();
+        let drafting = database
+            .create_workflow(NewCreationWorkflow {
+                id: CreationWorkflowId::new(),
+                initial_proposal_id: drafting_proposal_id,
+                target: CreationTarget::ExistingPersona {
+                    id: stale.id,
+                    revision: stale.revision,
+                },
+                initial_draft: CreationDraft::Persona {
+                    name: Some("Drafting".into()),
+                    description: Some("Not confirmed".into()),
+                },
+                now: TimestampMillis::new(2),
+            })
+            .expect("drafting workflow");
+        assert_eq!(
+            database.apply_existing_persona(ConfirmedPersonaRevisionApply {
+                workflow_id: drafting.id,
+                expected_workflow_revision: drafting.revision,
+                proposal_id: drafting_proposal_id,
+                persona_id: stale.id,
+                expected_persona_revision: stale.revision,
+                now: TimestampMillis::new(3),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let (wrong_target, wrong_target_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewPersona,
+            CreationDraft::Persona {
+                name: Some("Wrong target".into()),
+                description: Some("Not an existing target".into()),
+            },
+            4,
+        );
+        assert_eq!(
+            database.apply_existing_persona(ConfirmedPersonaRevisionApply {
+                workflow_id: wrong_target.id,
+                expected_workflow_revision: wrong_target.revision,
+                proposal_id: wrong_target_proposal_id,
+                persona_id: stale.id,
+                expected_persona_revision: stale.revision,
+                now: TimestampMillis::new(9),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let (stale_workflow, stale_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::ExistingPersona {
+                id: stale.id,
+                revision: stale.revision,
+            },
+            CreationDraft::Persona {
+                name: Some("Stale edit".into()),
+                description: Some("Should conflict".into()),
+            },
+            10,
+        );
+        PersonaRepository::revise(
+            &database,
+            stale.id,
+            stale.revision,
+            PersonaDraftUpdate {
+                title: stale.title.clone(),
+                description: stale.description.clone(),
+                nickname: stale.nickname.clone(),
+                design_description: stale.design_description.clone(),
+                avatar_crop: stale.avatar_crop,
+                image_recommendation: stale.image_recommendation.clone(),
+            },
+            TimestampMillis::new(15),
+        )
+        .expect("advance persona");
+        assert_eq!(
+            database.apply_existing_persona(ConfirmedPersonaRevisionApply {
+                workflow_id: stale_workflow.id,
+                expected_workflow_revision: stale_workflow.revision,
+                proposal_id: stale_proposal_id,
+                persona_id: stale.id,
+                expected_persona_revision: stale.revision,
+                now: TimestampMillis::new(16),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
+
+        let archived = rich_persona(&database, "Archived");
+        let archived = PersonaRepository::archive(
+            &database,
+            PersonaArchiveRequest {
+                persona_id: archived.id,
+                expected_persona_revision: archived.revision,
+                expected_default_revision: None,
+                now: TimestampMillis::new(20),
+            },
+        )
+        .expect("archive persona")
+        .persona;
+        let (archived_workflow, archived_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::ExistingPersona {
+                id: archived.id,
+                revision: archived.revision,
+            },
+            CreationDraft::Persona {
+                name: Some("Archived edit".into()),
+                description: Some("Should conflict".into()),
+            },
+            30,
+        );
+        assert_eq!(
+            database.apply_existing_persona(ConfirmedPersonaRevisionApply {
+                workflow_id: archived_workflow.id,
+                expected_workflow_revision: archived_workflow.revision,
+                proposal_id: archived_proposal_id,
+                persona_id: archived.id,
+                expected_persona_revision: archived.revision,
+                now: TimestampMillis::new(35),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
+
+        let missing_id = PersonaId::new();
+        let (missing_workflow, missing_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::ExistingPersona {
+                id: missing_id,
+                revision: Revision::INITIAL,
+            },
+            CreationDraft::Persona {
+                name: Some("Missing".into()),
+                description: Some("Missing persona".into()),
+            },
+            40,
+        );
+        assert_eq!(
+            database.apply_existing_persona(ConfirmedPersonaRevisionApply {
+                workflow_id: missing_workflow.id,
+                expected_workflow_revision: missing_workflow.revision,
+                proposal_id: missing_proposal_id,
+                persona_id: missing_id,
+                expected_persona_revision: Revision::INITIAL,
+                now: TimestampMillis::new(45),
+            }),
+            Err(CreationRepositoryError::NotFound)
+        );
+
+        let incomplete = rich_persona(&database, "Incomplete");
+        let (incomplete_workflow, incomplete_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::ExistingPersona {
+                id: incomplete.id,
+                revision: incomplete.revision,
+            },
+            CreationDraft::Persona {
+                name: Some("Incomplete edit".into()),
+                description: None,
+            },
+            50,
+        );
+        assert_eq!(
+            database.apply_existing_persona(ConfirmedPersonaRevisionApply {
+                workflow_id: incomplete_workflow.id,
+                expected_workflow_revision: incomplete_workflow.revision,
+                proposal_id: incomplete_proposal_id,
+                persona_id: incomplete.id,
+                expected_persona_revision: incomplete.revision,
+                now: TimestampMillis::new(55),
+            }),
+            Err(CreationRepositoryError::Invalid)
         );
     }
 

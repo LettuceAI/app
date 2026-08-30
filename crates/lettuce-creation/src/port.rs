@@ -3,18 +3,24 @@ use lettuce_types::{
 };
 
 use crate::{
-    ConfirmedPersonaApply, CreationApplyReceipt, CreationAttemptFailureCode, CreationAttemptOwner,
-    CreationAttemptRecovery, CreationAttemptStatus, CreationAttemptSuccess,
-    CreationAttemptSuccessSettlement, CreationInferenceAttempt, CreationInferenceRound,
-    CreationProposal, CreationToolCallEvidence, CreationTurn, CreationTurnAttemptAdmission,
-    CreationWorkflow, NewCreationAttempt, NewCreationAttemptRecovery, NewCreationInferenceRound,
-    NewCreationTurn, NewCreationTurnAttempt, NewCreationWorkflow,
+    ConfirmedPersonaApply, ConfirmedPersonaRevisionApply, CreationApplyReceipt,
+    CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptRecovery,
+    CreationAttemptStatus, CreationAttemptSuccess, CreationAttemptSuccessSettlement,
+    CreationInferenceAttempt, CreationInferenceRound, CreationProposal, CreationToolCallEvidence,
+    CreationTurn, CreationTurnAttemptAdmission, CreationWorkflow, NewCreationAttempt,
+    NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt,
+    NewCreationWorkflow,
 };
 
 pub trait CreationApplyRepository: Send + Sync {
     fn apply_new_persona(
         &self,
         request: ConfirmedPersonaApply,
+    ) -> Result<CreationApplyReceipt, CreationRepositoryError>;
+
+    fn apply_existing_persona(
+        &self,
+        request: ConfirmedPersonaRevisionApply,
     ) -> Result<CreationApplyReceipt, CreationRepositoryError>;
 }
 

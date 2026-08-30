@@ -64,14 +64,15 @@ children never inherit a partial provider sequence. Successful terminal
 settlement likewise advances the proposal workflow and attempt together through
 one repository operation.
 
-Confirmed new-persona finalization is now an explicit application-coordinated
-authored-domain apply. It accepts only the exact current `NewPersona` proposal
-at `AwaitingConfirmation`, maps the complete draft through the normal persona
-create invariants, and atomically persists the persona with an immutable apply
-receipt. The receipt binds workflow revision, proposal, destination persona,
-and resulting persona revision, so crash retries return the original result
-while stale or changed commands conflict. Existing-persona edits and the other
-creation targets remain later slices.
+Confirmed persona finalization is now an explicit application-coordinated
+authored-domain apply. New-persona workflows map complete confirmed drafts
+through the normal create invariants. Existing-persona workflows additionally
+pin the authored revision and revise only name/description while preserving all
+other authored fields, media, lifecycle, identity, timestamps, and default
+selection. Both mutations atomically persist an immutable workflow receipt, so
+crash retries return the original result after the persona revision advances
+while stale or changed commands conflict. Other creation targets remain later
+slices.
 
 Single-entry, keyword, and staged lorebook-generation behavior is pinned in
 `fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`. Generation

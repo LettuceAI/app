@@ -293,6 +293,13 @@ fn load_persona(
     Ok(Some(persona))
 }
 
+pub(crate) fn get_persona(
+    connection: &Connection,
+    id: PersonaId,
+) -> Result<Option<Persona>, RepositoryError> {
+    load_persona(connection, id).map_err(db_error)
+}
+
 fn read_default(connection: &Connection) -> Result<PersonaDefaultState, rusqlite::Error> {
     let state = connection
         .query_row(
@@ -434,6 +441,62 @@ pub(crate) fn insert_persona(
     .map_err(db_error)?;
     replace_media(tx, persona.id, &media)?;
     load_persona(tx, persona.id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::Storage)
+}
+
+pub(crate) fn revise_persona(
+    tx: &Transaction<'_>,
+    id: PersonaId,
+    expected_revision: Revision,
+    draft: PersonaDraftUpdate,
+    now: TimestampMillis,
+) -> Result<Persona, RepositoryError> {
+    draft.validate()?;
+    ensure_active(tx, id, expected_revision)?;
+    let next = expected_revision
+        .next()
+        .map_err(|_| RepositoryError::Storage)?;
+    let crop = draft
+        .avatar_crop
+        .as_ref()
+        .map(|value| encode(value, CROP_VERSION))
+        .transpose()?;
+    let recommendation = draft
+        .image_recommendation
+        .as_ref()
+        .map(|value| encode(value, RECOMMENDATION_VERSION))
+        .transpose()?;
+    let changed = tx
+        .execute(
+            "UPDATE personas SET title=?2,normalized_title=?3,nickname=?4,normalized_nickname=?5,description=?6,design_description=?7,avatar_crop_json=?8,image_recommendation_json=?9,revision=?10,updated_at=?11 WHERE id=?1 AND revision=?12",
+            params![
+                id.to_string(),
+                draft.title,
+                canonical_title(&draft.title),
+                draft.nickname,
+                draft.nickname.as_deref().map(canonical_title),
+                draft.description,
+                draft.design_description,
+                crop,
+                recommendation,
+                sql_u64(next.get())?,
+                now.get(),
+                sql_u64(expected_revision.get())?
+            ],
+        )
+        .map_err(db_error)?;
+    if changed == 0 {
+        let actual = persona_row(tx, id)
+            .map_err(db_error)?
+            .ok_or(RepositoryError::NotFound)?
+            .revision;
+        return Err(RepositoryError::StaleRevision {
+            expected: expected_revision,
+            actual,
+        });
+    }
+    load_persona(tx, id)
         .map_err(db_error)?
         .ok_or(RepositoryError::Storage)
 }
@@ -641,57 +704,11 @@ impl PersonaRepository for Database {
         draft: PersonaDraftUpdate,
         now: TimestampMillis,
     ) -> Result<Persona, RepositoryError> {
-        draft.validate()?;
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        ensure_active(&tx, id, expected_revision)?;
-        let next = expected_revision
-            .next()
-            .map_err(|_| RepositoryError::Storage)?;
-        let crop = draft
-            .avatar_crop
-            .as_ref()
-            .map(|value| encode(value, CROP_VERSION))
-            .transpose()?;
-        let recommendation = draft
-            .image_recommendation
-            .as_ref()
-            .map(|value| encode(value, RECOMMENDATION_VERSION))
-            .transpose()?;
-        let changed = tx
-            .execute(
-            "UPDATE personas SET title=?2,normalized_title=?3,nickname=?4,normalized_nickname=?5,description=?6,design_description=?7,avatar_crop_json=?8,image_recommendation_json=?9,revision=?10,updated_at=?11 WHERE id=?1 AND revision=?12",
-            params![
-                id.to_string(),
-                draft.title,
-                canonical_title(&draft.title),
-                draft.nickname,
-                draft.nickname.as_deref().map(canonical_title),
-                draft.description,
-                draft.design_description,
-                crop,
-                recommendation,
-                sql_u64(next.get())?,
-                now.get(),
-                sql_u64(expected_revision.get())?
-            ],
-            )
-            .map_err(db_error)?;
-        if changed == 0 {
-            let actual = persona_row(&tx, id)
-                .map_err(db_error)?
-                .ok_or(RepositoryError::NotFound)?
-                .revision;
-            return Err(RepositoryError::StaleRevision {
-                expected: expected_revision,
-                actual,
-            });
-        }
-        let persona = load_persona(&tx, id)
-            .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?;
+        let persona = revise_persona(&tx, id, expected_revision, draft, now)?;
         tx.commit().map_err(db_error)?;
         Ok(persona)
     }

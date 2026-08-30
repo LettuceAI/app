@@ -110,10 +110,12 @@ ordered proposal lineage. Workflow stage/current-proposal changes use revision
 CAS and ownership/lineage triggers; exact retries are idempotent, while stale
 base proposals and changed identities conflict. The adapter implements the
 `lettuce-creation` port. Confirmed new-persona apply is the first deliberate
-authored-domain write: it reuses the persona create path and commits the persona
-plus an immutable workflow/proposal/destination receipt in one transaction.
-Other creation targets still cannot write character, persona, or lorebook
-tables.
+authored-domain write: new and existing persona applies reuse the persona create
+and revise paths and commit the persona plus an immutable
+workflow/proposal/destination receipt in one transaction. Receipt identity is
+per workflow, allowing later distinct workflows to revise the same persona
+through fresh authored CAS tokens. Other creation targets still cannot write
+character, persona, or lorebook tables.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

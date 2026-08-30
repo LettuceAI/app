@@ -53,7 +53,7 @@ CREATE TABLE creation_apply_receipts (
     workflow_id TEXT PRIMARY KEY,
     workflow_revision INTEGER NOT NULL CHECK (workflow_revision >= 1),
     proposal_id TEXT NOT NULL UNIQUE,
-    persona_id TEXT NOT NULL UNIQUE,
+    persona_id TEXT NOT NULL,
     persona_revision INTEGER NOT NULL CHECK (persona_revision >= 1),
     applied_at INTEGER NOT NULL,
     FOREIGN KEY (workflow_id) REFERENCES creation_workflows(id) ON DELETE RESTRICT,
