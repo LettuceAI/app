@@ -48,7 +48,10 @@ restrict-owned and composite foreign keys
 keep every child scoped to its conversation and turn. Snapshot and provider
 replay bytes are held in separate private artifact tables; ordinary conversation
 rows store references and the artifact store verifies immutable metadata and
-payload digests before reads or trusted transfer. The database currently exposes
+payload digests before reads or trusted transfer. A separate narrow provider
+replay port materializes only fully matched protected references for exact
+provider-native continuation; raw bytes remain outside repositories and DTOs.
+The database currently exposes
 an internal normalized create/read slice while the complete conversation
 repository mutation port is still being implemented.
 Initial scene and starter messages use normalized source rows tied to both the

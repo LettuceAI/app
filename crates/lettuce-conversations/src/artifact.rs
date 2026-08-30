@@ -62,7 +62,7 @@ impl ProtectedArtifactBytes {
         content_hash(self.0.as_slice())
     }
 
-    /// Consumes the protected value for a concrete artifact-store adapter.
+    /// Consumes the protected value for a trusted artifact or provider adapter.
     /// There is intentionally no borrowing/read-back API: ordinary domain,
     /// repository, backup, and IPC code cannot inspect payload bytes.
     pub fn into_store_bytes(self) -> Vec<u8> {
@@ -526,6 +526,28 @@ pub trait ConversationArtifactStore: Send + Sync {
     fn put_replay(&self, draft: ReplayArtifactDraft) -> Result<ReplayArtifactRef, ArtifactError>;
     fn verify_replay(&self, reference: &ReplayArtifactRef) -> Result<(), ArtifactError>;
     fn cleanup_orphan_replay(&self, artifact_id: ReplayArtifactId) -> Result<(), ArtifactError>;
+}
+
+/// Narrow trusted capability used by provider adapters that must persist and
+/// later reconstruct exact provider-native replay payloads.
+///
+/// This port is deliberately separate from [`ConversationArtifactStore`] and
+/// ordinary conversation repositories. Implementations must validate the full
+/// immutable reference before returning protected bytes, and callers must not
+/// place those bytes in rows, DTOs, logs, or debug output.
+pub trait ProviderReplayArtifactPort: Send + Sync {
+    fn stage_provider_replay(
+        &self,
+        draft: ReplayArtifactDraft,
+    ) -> Result<ReplayArtifactRef, ArtifactError>;
+    fn materialize_provider_replay(
+        &self,
+        reference: &ReplayArtifactRef,
+    ) -> Result<ProtectedArtifactBytes, ArtifactError>;
+    fn cleanup_orphan_provider_replay(
+        &self,
+        artifact_id: ReplayArtifactId,
+    ) -> Result<(), ArtifactError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

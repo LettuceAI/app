@@ -12,10 +12,10 @@ use lettuce_conversations::{
     CharacterSnapshotBodyV1, ConversationArtifactStore, ConversationArtifactTransferPort,
     ConversationSnapshotMaterializer, LorebookLaunchSnapshot, LorebookSnapshotBodyV1,
     PersonaLaunchSnapshot, PersonaSnapshotBodyV1, PromptLaunchSnapshot, PromptSnapshotBodyV1,
-    ProtectedSnapshotRef, ReplayArtifactDraft, ReplayArtifactRef, ReplayCodec, ReplayRetention,
-    SNAPSHOT_DOCUMENT_FORMAT_V1, SceneLaunchSnapshot, SceneSnapshotBodyV1, SnapshotArtifactDraft,
-    SnapshotDocumentBody, SnapshotSource, TrustedArtifactDescriptor, TrustedArtifactSink,
-    decode_snapshot_document,
+    ProtectedArtifactBytes, ProtectedSnapshotRef, ProviderReplayArtifactPort, ReplayArtifactDraft,
+    ReplayArtifactRef, ReplayCodec, ReplayRetention, SNAPSHOT_DOCUMENT_FORMAT_V1,
+    SceneLaunchSnapshot, SceneSnapshotBodyV1, SnapshotArtifactDraft, SnapshotDocumentBody,
+    SnapshotSource, TrustedArtifactDescriptor, TrustedArtifactSink, decode_snapshot_document,
 };
 use lettuce_types::{ContentHash, ConversationId, ReplayArtifactId, Revision, SnapshotArtifactId};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
@@ -666,6 +666,86 @@ impl ConversationArtifactStore for Database {
     }
 }
 
+impl ProviderReplayArtifactPort for Database {
+    fn stage_provider_replay(
+        &self,
+        draft: ReplayArtifactDraft,
+    ) -> Result<ReplayArtifactRef, ArtifactError> {
+        if draft.retention != ArtifactRetention::Conversation {
+            return Err(ArtifactError::InvalidReference(
+                lettuce_conversations::ValidationError::InvalidValue {
+                    field: "provider_replay.retention",
+                },
+            ));
+        }
+        ConversationArtifactStore::put_replay(self, draft)
+    }
+
+    fn materialize_provider_replay(
+        &self,
+        reference: &ReplayArtifactRef,
+    ) -> Result<ProtectedArtifactBytes, ArtifactError> {
+        reference
+            .validate()
+            .map_err(ArtifactError::InvalidReference)?;
+        if reference.retention != ReplayRetention::Conversation {
+            return Err(ArtifactError::InvalidReference(
+                lettuce_conversations::ValidationError::InvalidValue {
+                    field: "provider_replay.retention",
+                },
+            ));
+        }
+        let connection = self.connection().map_err(|_| ArtifactError::Storage)?;
+        let row: Option<(String, i64, i64, String, String, Vec<u8>)> = connection
+            .query_row(
+                "SELECT digest, schema_version, byte_size, codec, retention, bytes FROM conversation_replay_artifacts WHERE artifact_id = ?1",
+                [reference.artifact_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+            )
+            .optional()
+            .map_err(db_error)?;
+        let Some((digest, schema, size, codec, retention, bytes)) = row else {
+            return Err(ArtifactError::NotFound);
+        };
+        if schema < 1 || size < 1 {
+            return Err(ArtifactError::Storage);
+        }
+        let stored_digest = ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?;
+        let expected_codec = match reference.codec {
+            ReplayCodec::Json => ArtifactCodec::Json,
+            ReplayCodec::Cbor => ArtifactCodec::Cbor,
+            ReplayCodec::Binary => ArtifactCodec::Binary,
+        };
+        let expected_retention = match reference.retention {
+            ReplayRetention::Conversation => ArtifactRetention::Conversation,
+            ReplayRetention::Ephemeral => ArtifactRetention::Ephemeral,
+        };
+        if codec_from_name(&codec)? != expected_codec
+            || retention_from_name(&retention)? != expected_retention
+            || digest != reference.digest.as_str()
+            || schema != i64::from(reference.schema_version)
+            || size != sql_u64(reference.byte_size)?
+        {
+            return Err(ArtifactError::ImmutableConflict);
+        }
+        let bytes = ProtectedArtifactBytes::new(bytes)?;
+        if u64::try_from(bytes.len()).map_err(|_| ArtifactError::Storage)? != reference.byte_size {
+            return Err(ArtifactError::SizeMismatch);
+        }
+        if bytes.digest() != stored_digest {
+            return Err(ArtifactError::DigestMismatch);
+        }
+        Ok(bytes)
+    }
+
+    fn cleanup_orphan_provider_replay(
+        &self,
+        artifact_id: ReplayArtifactId,
+    ) -> Result<(), ArtifactError> {
+        ConversationArtifactStore::cleanup_orphan_replay(self, artifact_id)
+    }
+}
+
 impl ConversationArtifactTransferPort for Database {
     fn export_snapshot(
         &self,
@@ -798,9 +878,9 @@ mod tests {
         InteractionModeV1, LorebookBehaviorVersionV1, LorebookLaunchSnapshot,
         LorebookSnapshotBodyV1, MemoryPolicyV1, PersonaLaunchSnapshot, PersonaSnapshotBodyV1,
         PromptBehaviorVersionV1, PromptLaunchSnapshot, PromptPurposeSnapshot, PromptPurposeV1,
-        PromptSnapshotBodyV1, ProtectedArtifactBytes, SceneLaunchSnapshot, SceneOwnerV1,
-        SceneSnapshotBodyV1, SnapshotDocumentBody, SnapshotEnvelopeV1, SnapshotSource,
-        TrustedArtifactDescriptor, build_snapshot_draft,
+        PromptSnapshotBodyV1, SceneLaunchSnapshot, SceneOwnerV1, SceneSnapshotBodyV1,
+        SnapshotDocumentBody, SnapshotEnvelopeV1, SnapshotSource, TrustedArtifactDescriptor,
+        build_snapshot_draft,
     };
     use lettuce_types::{
         CharacterId, ConversationBranchId, ConversationId, LorebookId, PersonaId, PromptDocumentId,
@@ -1249,6 +1329,71 @@ mod tests {
             Err(ArtifactError::ImmutableConflict)
         ));
         database.verify_replay(&first).expect("verify");
+    }
+
+    #[test]
+    fn provider_replay_port_materializes_exact_conversation_retained_bytes() {
+        let database = Database::open_in_memory().expect("database");
+        let id = ReplayArtifactId::new();
+        let payload = br#"[{"type":"thinking","thinking":"private","signature":"opaque"}]"#;
+        let reference = database
+            .stage_provider_replay(replay_draft(id, payload))
+            .expect("stage replay");
+        assert_eq!(reference.retention, ReplayRetention::Conversation);
+        assert_eq!(
+            database
+                .stage_provider_replay(replay_draft(id, payload))
+                .expect("stable retry"),
+            reference
+        );
+
+        let materialized = database
+            .materialize_provider_replay(&reference)
+            .expect("materialize replay");
+        let debug = format!("{materialized:?}");
+        assert!(!debug.contains("private"));
+        assert!(!debug.contains("opaque"));
+        assert_eq!(materialized.into_store_bytes(), payload);
+
+        let mut wrong_retention = reference;
+        wrong_retention.retention = ReplayRetention::Ephemeral;
+        assert!(matches!(
+            database.materialize_provider_replay(&wrong_retention),
+            Err(ArtifactError::InvalidReference(_))
+        ));
+    }
+
+    #[test]
+    fn provider_replay_port_rejects_tampered_payload_before_materialization() {
+        let database = Database::open_in_memory().expect("database");
+        let id = ReplayArtifactId::new();
+        let reference = database
+            .stage_provider_replay(replay_draft(id, b"signed replay"))
+            .expect("stage replay");
+        let connection = database.connection().expect("lock");
+        connection
+            .execute(
+                "UPDATE conversation_replay_artifacts SET bytes = ?1 WHERE artifact_id = ?2",
+                params![b"tamper replay".as_slice(), id.to_string()],
+            )
+            .expect("tamper");
+        drop(connection);
+
+        assert!(matches!(
+            database.materialize_provider_replay(&reference),
+            Err(ArtifactError::DigestMismatch | ArtifactError::SizeMismatch)
+        ));
+    }
+
+    #[test]
+    fn provider_replay_port_rejects_ephemeral_staging() {
+        let database = Database::open_in_memory().expect("database");
+        let mut draft = replay_draft(ReplayArtifactId::new(), b"ephemeral replay");
+        draft.retention = ArtifactRetention::Ephemeral;
+        assert!(matches!(
+            database.stage_provider_replay(draft),
+            Err(ArtifactError::InvalidReference(_))
+        ));
     }
 
     #[test]

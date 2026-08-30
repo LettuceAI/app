@@ -47,6 +47,11 @@ backup exports reuse conversation-retained references rather than creating a
 second retention identity. Ordinary repositories and IPC never carry raw
 artifact bytes.
 
+Provider-native signed replay uses the separate
+`ProviderReplayArtifactPort`. It can stage, verify, and materialize exact
+protected replay bytes for a trusted provider adapter without adding read-back
+to ordinary conversation repositories or serializable contracts.
+
 Generation attempts own their scheduler idempotency keys and optional job IDs.
 Attaching a job is a separate CAS mutation, so retries and recovery children
 cannot accidentally coalesce with an earlier attempt. Cancellation is a
