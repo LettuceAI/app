@@ -2,10 +2,12 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod prompt;
 mod signals;
 mod soul;
 mod state;
 
+pub use prompt::*;
 pub use signals::*;
 pub use soul::*;
 pub use state::*;

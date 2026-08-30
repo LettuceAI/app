@@ -80,3 +80,11 @@ the message, generation turn/attempt, dual-scope companion state, operation,
 and outbox together. Exact conversation-operation replay does not reapply the
 state transition. Classification and transition preparation are application
 work rather than storage behavior and are now wired for direct user sends.
+
+The pure prompt-state renderer copies legacy output byte-for-byte: relationship
+bands, top expressed/blocked dimensions, interaction and continuity wording,
+all twelve authored Soul categories, effective durable facts ordered by
+clamped weight-times-confidence, style notes, active signals, and regulation
+branches. It accepts typed state and an explicit effective clock. Context
+assembler insertion, companion prompt-template selection, scheduled notes, and
+time-awareness clock resolution remain later application slices.
