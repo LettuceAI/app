@@ -74,6 +74,31 @@ BEGIN
     SELECT RAISE(ABORT, 'creation apply receipts are immutable');
 END;
 
+CREATE TABLE creation_character_apply_receipts (
+    workflow_id TEXT PRIMARY KEY,
+    workflow_revision INTEGER NOT NULL CHECK (workflow_revision >= 1),
+    proposal_id TEXT NOT NULL UNIQUE,
+    character_id TEXT NOT NULL,
+    character_revision INTEGER NOT NULL CHECK (character_revision >= 1),
+    applied_at INTEGER NOT NULL,
+    FOREIGN KEY (workflow_id) REFERENCES creation_workflows(id) ON DELETE RESTRICT,
+    FOREIGN KEY (workflow_id, proposal_id)
+        REFERENCES creation_proposals(workflow_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE TRIGGER creation_character_apply_receipts_immutable_update
+BEFORE UPDATE ON creation_character_apply_receipts
+BEGIN
+    SELECT RAISE(ABORT, 'creation character apply receipts are immutable');
+END;
+
+CREATE TRIGGER creation_character_apply_receipts_immutable_delete
+BEFORE DELETE ON creation_character_apply_receipts
+BEGIN
+    SELECT RAISE(ABORT, 'creation character apply receipts are immutable');
+END;
+
 CREATE TABLE creation_inference_attempts (
     workflow_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,

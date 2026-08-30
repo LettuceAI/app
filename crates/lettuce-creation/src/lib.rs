@@ -18,9 +18,10 @@ pub use attempt::{
     NewCreationTurnAttempt, creation_inference_profile_fingerprint,
 };
 pub use model::{
-    ConfirmedPersonaApply, ConfirmedPersonaRevisionApply, CreationApplyReceipt, CreationDraft,
-    CreationLorebookEntry, CreationScene, CreationStage, CreationTarget, CreationTargetKind,
-    CreationTurn, CreationWorkflow, NewCreationTurn, NewCreationWorkflow,
+    ConfirmedCharacterApply, ConfirmedPersonaApply, ConfirmedPersonaRevisionApply,
+    CreationApplyReceipt, CreationCharacterApplyReceipt, CreationDraft, CreationLorebookEntry,
+    CreationScene, CreationStage, CreationTarget, CreationTargetKind, CreationTurn,
+    CreationWorkflow, NewCreationTurn, NewCreationWorkflow,
 };
 pub use port::{
     CreationApplyRepository, CreationAttemptRepository, CreationRepositoryError,

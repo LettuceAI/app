@@ -116,6 +116,11 @@ workflow/proposal/destination receipt in one transaction. Receipt identity is
 per workflow, allowing later distinct workflows to revise the same persona
 through fresh authored CAS tokens. Other creation targets still cannot write
 character, persona, or lorebook tables.
+Confirmed new-character apply likewise reuses the complete character-plan
+insert transaction and records a separate strongly referenced immutable
+character receipt. Character root, scenes, and receipt commit together; a
+failed graph insert or duplicate destination leaves neither partial children
+nor a receipt.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

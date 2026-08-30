@@ -140,6 +140,9 @@ SQLite transaction, closing the proposal-committed/running-attempt crash window.
 Confirmed new- and existing-persona commands are also exposed through
 application use cases and delegate to one creation-owned atomic apply port;
 callers do not coordinate persona mutation and receipt persistence themselves.
+The confirmed new-character use case follows the same boundary and delegates
+the complete character graph plus receipt transaction to the creation apply
+port.
 
 ## Bundled prompts
 

@@ -3,13 +3,13 @@ use lettuce_types::{
 };
 
 use crate::{
-    ConfirmedPersonaApply, ConfirmedPersonaRevisionApply, CreationApplyReceipt,
-    CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptRecovery,
-    CreationAttemptStatus, CreationAttemptSuccess, CreationAttemptSuccessSettlement,
-    CreationInferenceAttempt, CreationInferenceRound, CreationProposal, CreationToolCallEvidence,
-    CreationTurn, CreationTurnAttemptAdmission, CreationWorkflow, NewCreationAttempt,
-    NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt,
-    NewCreationWorkflow,
+    ConfirmedCharacterApply, ConfirmedPersonaApply, ConfirmedPersonaRevisionApply,
+    CreationApplyReceipt, CreationAttemptFailureCode, CreationAttemptOwner,
+    CreationAttemptRecovery, CreationAttemptStatus, CreationAttemptSuccess,
+    CreationAttemptSuccessSettlement, CreationCharacterApplyReceipt, CreationInferenceAttempt,
+    CreationInferenceRound, CreationProposal, CreationToolCallEvidence, CreationTurn,
+    CreationTurnAttemptAdmission, CreationWorkflow, NewCreationAttempt, NewCreationAttemptRecovery,
+    NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt, NewCreationWorkflow,
 };
 
 pub trait CreationApplyRepository: Send + Sync {
@@ -22,6 +22,11 @@ pub trait CreationApplyRepository: Send + Sync {
         &self,
         request: ConfirmedPersonaRevisionApply,
     ) -> Result<CreationApplyReceipt, CreationRepositoryError>;
+
+    fn apply_new_character(
+        &self,
+        request: ConfirmedCharacterApply,
+    ) -> Result<CreationCharacterApplyReceipt, CreationRepositoryError>;
 }
 
 pub trait CreationAttemptRepository: Send + Sync {

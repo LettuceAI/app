@@ -904,38 +904,45 @@ fn insert_starter(
     Ok(())
 }
 
+pub(crate) fn insert_character_plan(
+    tx: &Transaction<'_>,
+    plan: &CreateCharacterPlan,
+) -> Result<lettuce_characters::CharacterDetails, RepositoryError> {
+    plan.validate()?;
+    validate_plan_assets(tx, plan)?;
+    if character_row(tx, plan.character.id)
+        .map_err(db_error)?
+        .is_some()
+    {
+        return Err(RepositoryError::AlreadyExists);
+    }
+    insert_character(tx, &plan.character)?;
+    replace_character_media(tx, plan.character.id, &plan.character.media)?;
+    insert_character_presentation_refs(tx, plan.character.id, &plan.character.presentation)?;
+    for scene in &plan.scenes {
+        insert_scene(tx, plan.character.id, scene)?;
+    }
+    for variant in &plan.variants {
+        insert_variant(tx, plan.character.id, variant)?;
+    }
+    for starter in &plan.starters {
+        insert_starter(tx, plan.character.id, starter)?;
+    }
+    load_details(tx, plan.character.id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::Storage)
+}
+
 impl CharacterRepository for Database {
     fn create(
         &self,
         plan: CreateCharacterPlan,
     ) -> Result<lettuce_characters::CharacterDetails, RepositoryError> {
-        plan.validate()?;
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
-        validate_plan_assets(&connection, &plan)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        if character_row(&tx, plan.character.id)
-            .map_err(db_error)?
-            .is_some()
-        {
-            return Err(RepositoryError::AlreadyExists);
-        }
-        insert_character(&tx, &plan.character)?;
-        replace_character_media(&tx, plan.character.id, &plan.character.media)?;
-        insert_character_presentation_refs(&tx, plan.character.id, &plan.character.presentation)?;
-        for scene in &plan.scenes {
-            insert_scene(&tx, plan.character.id, scene)?;
-        }
-        for variant in &plan.variants {
-            insert_variant(&tx, plan.character.id, variant)?;
-        }
-        for starter in &plan.starters {
-            insert_starter(&tx, plan.character.id, starter)?;
-        }
-        let details = load_details(&tx, plan.character.id)
-            .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?;
+        let details = insert_character_plan(&tx, &plan)?;
         tx.commit().map_err(db_error)?;
         Ok(details)
     }

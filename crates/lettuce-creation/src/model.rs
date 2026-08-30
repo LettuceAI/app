@@ -268,11 +268,30 @@ pub struct ConfirmedPersonaRevisionApply {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfirmedCharacterApply {
+    pub workflow_id: CreationWorkflowId,
+    pub expected_workflow_revision: Revision,
+    pub proposal_id: CreationProposalId,
+    pub destination_character_id: CharacterId,
+    pub now: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreationApplyReceipt {
     pub workflow_id: CreationWorkflowId,
     pub workflow_revision: Revision,
     pub proposal_id: CreationProposalId,
     pub persona_id: PersonaId,
     pub persona_revision: Revision,
+    pub applied_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreationCharacterApplyReceipt {
+    pub workflow_id: CreationWorkflowId,
+    pub workflow_revision: Revision,
+    pub proposal_id: CreationProposalId,
+    pub character_id: CharacterId,
+    pub character_revision: Revision,
     pub applied_at: TimestampMillis,
 }

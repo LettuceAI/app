@@ -1,15 +1,20 @@
 use std::str::FromStr;
 
-use lettuce_characters::{Persona, PersonaDraftUpdate, RepositoryError as PersonaRepositoryError};
+use lettuce_characters::{
+    Character, CharacterDefaults, CharacterMedia, CharacterPresentationV1, CharacterProfile,
+    CharacterProvenance, CreateCharacterPlan, Persona, PersonaDraftUpdate,
+    RepositoryError as AuthoredRepositoryError, Scene, SceneDocumentV1, SceneOwner, ScenePart,
+};
 use lettuce_creation::{
-    AdmittedCreationToolCall, ConfirmedPersonaApply, ConfirmedPersonaRevisionApply,
-    CreationApplyReceipt, CreationApplyRepository, CreationAttemptFailureCode,
-    CreationAttemptOwner, CreationAttemptRecovery, CreationAttemptRepository,
-    CreationAttemptStatus, CreationAttemptSuccess, CreationAttemptSuccessSettlement,
-    CreationInferenceAttempt, CreationInferenceRound, CreationOperationOutcome, CreationProposal,
-    CreationRepositoryError, CreationRoundFinishReason, CreationStage, CreationTarget,
-    CreationTargetKind, CreationToolCallEvidence, CreationTurn, CreationTurnAttemptAdmission,
-    CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt, NewCreationAttemptRecovery,
+    AdmittedCreationToolCall, ConfirmedCharacterApply, ConfirmedPersonaApply,
+    ConfirmedPersonaRevisionApply, CreationApplyReceipt, CreationApplyRepository,
+    CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptRecovery,
+    CreationAttemptRepository, CreationAttemptStatus, CreationAttemptSuccess,
+    CreationAttemptSuccessSettlement, CreationCharacterApplyReceipt, CreationInferenceAttempt,
+    CreationInferenceRound, CreationOperationOutcome, CreationProposal, CreationRepositoryError,
+    CreationRoundFinishReason, CreationStage, CreationTarget, CreationTargetKind,
+    CreationToolCallEvidence, CreationTurn, CreationTurnAttemptAdmission, CreationWorkflow,
+    CreationWorkflowRepository, NewCreationAttempt, NewCreationAttemptRecovery,
     NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt, NewCreationWorkflow,
     creation_tool_request, reduce_creation_tool_calls, validate_creation_tool_calls,
 };
@@ -135,13 +140,13 @@ fn sql_u64(value: u64) -> Result<i64, CreationRepositoryError> {
     i64::try_from(value).map_err(|_| CreationRepositoryError::Storage)
 }
 
-fn persona_error(error: PersonaRepositoryError) -> CreationRepositoryError {
+fn authored_error(error: AuthoredRepositoryError) -> CreationRepositoryError {
     match error {
-        PersonaRepositoryError::NotFound => CreationRepositoryError::NotFound,
-        PersonaRepositoryError::AlreadyExists
-        | PersonaRepositoryError::StaleRevision { .. }
-        | PersonaRepositoryError::Archived => CreationRepositoryError::Conflict,
-        PersonaRepositoryError::Invalid(_) => CreationRepositoryError::Invalid,
+        AuthoredRepositoryError::NotFound => CreationRepositoryError::NotFound,
+        AuthoredRepositoryError::AlreadyExists
+        | AuthoredRepositoryError::StaleRevision { .. }
+        | AuthoredRepositoryError::Archived => CreationRepositoryError::Conflict,
+        AuthoredRepositoryError::Invalid(_) => CreationRepositoryError::Invalid,
         _ => CreationRepositoryError::Storage,
     }
 }
@@ -185,6 +190,52 @@ fn insert_apply_receipt(
                 receipt.proposal_id.to_string(),
                 receipt.persona_id.to_string(),
                 sql_u64(receipt.persona_revision.get())?,
+                receipt.applied_at.get(),
+            ],
+        )
+        .map_err(storage)?;
+    Ok(())
+}
+
+fn load_character_apply_receipt(
+    connection: &Connection,
+    workflow_id: CreationWorkflowId,
+) -> Result<Option<CreationCharacterApplyReceipt>, CreationRepositoryError> {
+    connection
+        .query_row(
+            "SELECT workflow_revision,proposal_id,character_id,character_revision,applied_at \
+             FROM creation_character_apply_receipts WHERE workflow_id=?1",
+            [workflow_id.to_string()],
+            |row| {
+                Ok(CreationCharacterApplyReceipt {
+                    workflow_id,
+                    workflow_revision: revision(row.get(0)?)?,
+                    proposal_id: parse_id(row.get(1)?)?,
+                    character_id: parse_id(row.get(2)?)?,
+                    character_revision: revision(row.get(3)?)?,
+                    applied_at: TimestampMillis::new(row.get(4)?),
+                })
+            },
+        )
+        .optional()
+        .map_err(storage)
+}
+
+fn insert_character_apply_receipt(
+    transaction: &Transaction<'_>,
+    receipt: &CreationCharacterApplyReceipt,
+) -> Result<(), CreationRepositoryError> {
+    transaction
+        .execute(
+            "INSERT INTO creation_character_apply_receipts \
+             (workflow_id,workflow_revision,proposal_id,character_id,character_revision,applied_at) \
+             VALUES (?1,?2,?3,?4,?5,?6)",
+            params![
+                receipt.workflow_id.to_string(),
+                sql_u64(receipt.workflow_revision.get())?,
+                receipt.proposal_id.to_string(),
+                receipt.character_id.to_string(),
+                sql_u64(receipt.character_revision.get())?,
                 receipt.applied_at.get(),
             ],
         )
@@ -578,8 +629,8 @@ impl CreationApplyRepository for Database {
             request.now,
         )
         .map_err(|_| CreationRepositoryError::Invalid)?;
-        let persona =
-            crate::persona_adapter::insert_persona(&transaction, persona).map_err(persona_error)?;
+        let persona = crate::persona_adapter::insert_persona(&transaction, persona)
+            .map_err(authored_error)?;
         let receipt = CreationApplyReceipt {
             workflow_id: request.workflow_id,
             workflow_revision: request.expected_workflow_revision,
@@ -640,7 +691,7 @@ impl CreationApplyRepository for Database {
             return Err(CreationRepositoryError::Invalid);
         };
         let current = crate::persona_adapter::get_persona(&transaction, request.persona_id)
-            .map_err(persona_error)?
+            .map_err(authored_error)?
             .ok_or(CreationRepositoryError::NotFound)?;
         let draft = PersonaDraftUpdate {
             title,
@@ -657,7 +708,7 @@ impl CreationApplyRepository for Database {
             draft,
             request.now,
         )
-        .map_err(persona_error)?;
+        .map_err(authored_error)?;
         let receipt = CreationApplyReceipt {
             workflow_id: request.workflow_id,
             workflow_revision: request.expected_workflow_revision,
@@ -667,6 +718,109 @@ impl CreationApplyRepository for Database {
             applied_at: request.now,
         };
         insert_apply_receipt(&transaction, &receipt)?;
+        transaction.commit().map_err(storage)?;
+        Ok(receipt)
+    }
+
+    fn apply_new_character(
+        &self,
+        request: ConfirmedCharacterApply,
+    ) -> Result<CreationCharacterApplyReceipt, CreationRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        if let Some(receipt) = load_character_apply_receipt(&transaction, request.workflow_id)? {
+            let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+            if workflow.target == CreationTarget::NewCharacter
+                && receipt.workflow_revision == request.expected_workflow_revision
+                && receipt.proposal_id == request.proposal_id
+                && receipt.character_id == request.destination_character_id
+            {
+                transaction.commit().map_err(storage)?;
+                return Ok(receipt);
+            }
+            return Err(CreationRepositoryError::Conflict);
+        }
+
+        let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+        if workflow.target != CreationTarget::NewCharacter
+            || workflow.stage != CreationStage::AwaitingConfirmation
+            || workflow.revision != request.expected_workflow_revision
+            || workflow.current_proposal_id != request.proposal_id
+            || request.now.get() < workflow.updated_at.get()
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let proposal = load_proposal_conn(&transaction, request.proposal_id)?;
+        let (Some(name), Some(definition), draft_scenes) = (match proposal.draft {
+            lettuce_creation::CreationDraft::Character {
+                name,
+                definition,
+                scenes,
+            } => (name, definition, scenes),
+            _ => return Err(CreationRepositoryError::Conflict),
+        }) else {
+            return Err(CreationRepositoryError::Invalid);
+        };
+        let character = Character::new(
+            request.destination_character_id,
+            CharacterProfile {
+                name,
+                nickname: None,
+                description: None,
+                definition: Some(definition),
+                design_description: None,
+            },
+            CharacterProvenance::default(),
+            CharacterDefaults::default(),
+            CharacterPresentationV1::default(),
+            None,
+            CharacterMedia::default(),
+            request.now,
+        )
+        .map_err(|_| CreationRepositoryError::Invalid)?;
+        let scenes = draft_scenes
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, draft)| {
+                let mut scene = Scene::new(
+                    draft.id,
+                    SceneOwner::Character(request.destination_character_id),
+                    u32::try_from(ordinal).map_err(|_| CreationRepositoryError::Invalid)?,
+                    SceneDocumentV1::new(vec![ScenePart::Text {
+                        text: draft.content,
+                    }])
+                    .map_err(|_| CreationRepositoryError::Invalid)?,
+                    request.now,
+                )
+                .map_err(|_| CreationRepositoryError::Invalid)?;
+                scene.direction = draft.direction;
+                scene
+                    .validate()
+                    .map_err(|_| CreationRepositoryError::Invalid)?;
+                Ok(scene)
+            })
+            .collect::<Result<Vec<_>, CreationRepositoryError>>()?;
+        let details = crate::character_adapter::insert_character_plan(
+            &transaction,
+            &CreateCharacterPlan {
+                character,
+                scenes,
+                variants: Vec::new(),
+                starters: Vec::new(),
+            },
+        )
+        .map_err(authored_error)?;
+        let receipt = CreationCharacterApplyReceipt {
+            workflow_id: request.workflow_id,
+            workflow_revision: request.expected_workflow_revision,
+            proposal_id: request.proposal_id,
+            character_id: details.character.id,
+            character_revision: details.character.revision,
+            applied_at: request.now,
+        };
+        insert_character_apply_receipt(&transaction, &receipt)?;
         transaction.commit().map_err(storage)?;
         Ok(receipt)
     }
@@ -1748,23 +1902,25 @@ mod tests {
         ProtectedArtifactBytes, ReplayArtifactDraft, ReplayArtifactRef,
     };
     use lettuce_creation::{
-        AdmittedCreationToolCall, ConfirmedPersonaApply, ConfirmedPersonaRevisionApply,
-        CreationApplyRepository, CreationAttemptOwner, CreationAttemptRepository,
-        CreationAttemptStatus, CreationDraft, CreationOperation, CreationOperationError,
-        CreationRepositoryError, CreationRoundFinishReason, CreationStage, CreationTarget,
-        CreationToolApply, CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt,
-        NewCreationInferenceRound, NewCreationToolCall, NewCreationTurn, NewCreationWorkflow,
-        apply_creation_tool_calls,
+        AdmittedCreationToolCall, ConfirmedCharacterApply, ConfirmedPersonaApply,
+        ConfirmedPersonaRevisionApply, CreationApplyRepository, CreationAttemptOwner,
+        CreationAttemptRepository, CreationAttemptStatus, CreationDraft, CreationOperation,
+        CreationOperationError, CreationRepositoryError, CreationRoundFinishReason, CreationScene,
+        CreationStage, CreationTarget, CreationToolApply, CreationWorkflow,
+        CreationWorkflowRepository, NewCreationAttempt, NewCreationInferenceRound,
+        NewCreationToolCall, NewCreationTurn, NewCreationWorkflow, apply_creation_tool_calls,
     };
     use lettuce_types::{
-        AssetId, CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId,
-        JobId, MediaBlobId, ModelArtifactId, PersonaId, ReplayArtifactId, Revision, SceneId,
-        TimestampMillis, ToolExecutionId,
+        AssetId, CharacterId, CreationProposalId, CreationTurnId, CreationWorkflowId,
+        GenerationAttemptId, JobId, MediaBlobId, ModelArtifactId, PersonaId, ReplayArtifactId,
+        Revision, SceneId, TimestampMillis, ToolExecutionId,
     };
 
     use lettuce_characters::{
-        Crop, ImageRecommendation, LifecycleStatus, Persona, PersonaArchiveRequest,
-        PersonaDraftUpdate, PersonaMedia, PersonaMediaLink, PersonaMediaSlot, PersonaRepository,
+        CharacterDefaults, CharacterMedia, CharacterPresentationV1, CharacterProvenance,
+        CharacterRepository, Crop, ImageRecommendation, LifecycleStatus, Persona,
+        PersonaArchiveRequest, PersonaDraftUpdate, PersonaMedia, PersonaMediaLink,
+        PersonaMediaSlot, PersonaRepository, ScenePart,
     };
 
     use crate::Database;
@@ -2447,6 +2603,291 @@ mod tests {
                 now: TimestampMillis::new(55),
             }),
             Err(CreationRepositoryError::Invalid)
+        );
+    }
+
+    #[test]
+    fn confirmed_new_character_apply_commits_the_exact_minimal_graph_and_retries() {
+        let database = Database::open_in_memory().expect("database");
+        let first_scene_id = SceneId::new();
+        let second_scene_id = SceneId::new();
+        let (workflow, proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewCharacter,
+            CreationDraft::Character {
+                name: Some("Aster".into()),
+                definition: Some("A quiet navigator with a precise voice.".into()),
+                scenes: vec![
+                    CreationScene {
+                        id: first_scene_id,
+                        content: "The observatory is silent.".into(),
+                        direction: Some("Speak softly".into()),
+                    },
+                    CreationScene {
+                        id: second_scene_id,
+                        content: "Dawn reaches the harbor.".into(),
+                        direction: None,
+                    },
+                ],
+            },
+            10,
+        );
+        let character_id = CharacterId::new();
+        let request = ConfirmedCharacterApply {
+            workflow_id: workflow.id,
+            expected_workflow_revision: workflow.revision,
+            proposal_id,
+            destination_character_id: character_id,
+            now: TimestampMillis::new(15),
+        };
+        let receipt = database
+            .apply_new_character(request.clone())
+            .expect("apply character");
+        assert_eq!(receipt.character_id, character_id);
+        assert_eq!(receipt.character_revision, Revision::INITIAL);
+        let details = CharacterRepository::get(&database, character_id)
+            .expect("load character")
+            .expect("character exists");
+        assert_eq!(details.character.profile.name, "Aster");
+        assert_eq!(
+            details.character.profile.definition.as_deref(),
+            Some("A quiet navigator with a precise voice.")
+        );
+        assert_eq!(details.character.profile.description, None);
+        assert_eq!(details.character.provenance, CharacterProvenance::default());
+        assert_eq!(details.character.defaults, CharacterDefaults::default());
+        assert_eq!(
+            details.character.presentation,
+            CharacterPresentationV1::default()
+        );
+        assert_eq!(details.character.media, CharacterMedia::default());
+        assert_eq!(details.character.image_recommendation, None);
+        assert!(details.variants.is_empty());
+        assert!(details.starters.is_empty());
+        assert_eq!(
+            details
+                .scenes
+                .iter()
+                .map(|scene| (scene.id, scene.ordinal, scene.direction.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                (first_scene_id, 0, Some("Speak softly")),
+                (second_scene_id, 1, None),
+            ]
+        );
+        assert_eq!(
+            details.scenes[0].content.parts,
+            vec![ScenePart::Text {
+                text: "The observatory is silent.".into()
+            }]
+        );
+        assert_eq!(
+            details.scenes[1].content.parts,
+            vec![ScenePart::Text {
+                text: "Dawn reaches the harbor.".into()
+            }]
+        );
+
+        let mut retry = request.clone();
+        retry.now = TimestampMillis::new(99);
+        assert_eq!(
+            database.apply_new_character(retry).expect("exact retry"),
+            receipt
+        );
+        let mut changed_destination = request.clone();
+        changed_destination.destination_character_id = CharacterId::new();
+        assert_eq!(
+            database.apply_new_character(changed_destination),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let mut changed_proposal = request.clone();
+        changed_proposal.proposal_id = CreationProposalId::new();
+        assert_eq!(
+            database.apply_new_character(changed_proposal),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let mut changed_revision = request.clone();
+        changed_revision.expected_workflow_revision =
+            Revision::new(request.expected_workflow_revision.get() + 1);
+        assert_eq!(
+            database.apply_new_character(changed_revision),
+            Err(CreationRepositoryError::Conflict)
+        );
+
+        let connection = database.connection().expect("database lock");
+        assert!(
+            connection
+                .execute(
+                    "UPDATE creation_character_apply_receipts SET applied_at=100 WHERE workflow_id=?1",
+                    [workflow.id.to_string()],
+                )
+                .is_err()
+        );
+        assert!(
+            connection
+                .execute(
+                    "DELETE FROM creation_character_apply_receipts WHERE workflow_id=?1",
+                    [workflow.id.to_string()],
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn new_character_apply_rejects_invalid_state_and_accepts_an_empty_optional_graph() {
+        let database = Database::open_in_memory().expect("database");
+        let duplicate_scene_id = SceneId::new();
+        assert_eq!(
+            database.create_workflow(NewCreationWorkflow {
+                id: CreationWorkflowId::new(),
+                initial_proposal_id: CreationProposalId::new(),
+                target: CreationTarget::NewCharacter,
+                initial_draft: CreationDraft::Character {
+                    name: Some("Duplicate scenes".into()),
+                    definition: Some("Invalid graph".into()),
+                    scenes: vec![
+                        CreationScene {
+                            id: duplicate_scene_id,
+                            content: "First".into(),
+                            direction: None,
+                        },
+                        CreationScene {
+                            id: duplicate_scene_id,
+                            content: "Second".into(),
+                            direction: None,
+                        },
+                    ],
+                },
+                now: TimestampMillis::new(1),
+            }),
+            Err(CreationRepositoryError::Invalid)
+        );
+
+        let drafting_proposal_id = CreationProposalId::new();
+        let drafting = database
+            .create_workflow(NewCreationWorkflow {
+                id: CreationWorkflowId::new(),
+                initial_proposal_id: drafting_proposal_id,
+                target: CreationTarget::NewCharacter,
+                initial_draft: CreationDraft::Character {
+                    name: Some("Drafting".into()),
+                    definition: Some("Not confirmed".into()),
+                    scenes: Vec::new(),
+                },
+                now: TimestampMillis::new(2),
+            })
+            .expect("drafting workflow");
+        assert_eq!(
+            database.apply_new_character(ConfirmedCharacterApply {
+                workflow_id: drafting.id,
+                expected_workflow_revision: drafting.revision,
+                proposal_id: drafting_proposal_id,
+                destination_character_id: CharacterId::new(),
+                now: TimestampMillis::new(3),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
+
+        let (wrong_target, wrong_target_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewPersona,
+            CreationDraft::Persona {
+                name: Some("Wrong target".into()),
+                description: Some("Not a character".into()),
+            },
+            10,
+        );
+        assert_eq!(
+            database.apply_new_character(ConfirmedCharacterApply {
+                workflow_id: wrong_target.id,
+                expected_workflow_revision: wrong_target.revision,
+                proposal_id: wrong_target_proposal_id,
+                destination_character_id: CharacterId::new(),
+                now: TimestampMillis::new(15),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
+
+        for (name, definition) in [(None, Some("Definition")), (Some("Name"), None)] {
+            let (incomplete, incomplete_proposal_id) = confirmed_workflow(
+                &database,
+                CreationTarget::NewCharacter,
+                CreationDraft::Character {
+                    name: name.map(str::to_owned),
+                    definition: definition.map(str::to_owned),
+                    scenes: Vec::new(),
+                },
+                20,
+            );
+            assert_eq!(
+                database.apply_new_character(ConfirmedCharacterApply {
+                    workflow_id: incomplete.id,
+                    expected_workflow_revision: incomplete.revision,
+                    proposal_id: incomplete_proposal_id,
+                    destination_character_id: CharacterId::new(),
+                    now: TimestampMillis::new(25),
+                }),
+                Err(CreationRepositoryError::Invalid)
+            );
+        }
+
+        let (empty, empty_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewCharacter,
+            CreationDraft::Character {
+                name: Some("Minimal".into()),
+                definition: Some("A complete minimal character.".into()),
+                scenes: Vec::new(),
+            },
+            30,
+        );
+        let minimal_id = CharacterId::new();
+        database
+            .apply_new_character(ConfirmedCharacterApply {
+                workflow_id: empty.id,
+                expected_workflow_revision: empty.revision,
+                proposal_id: empty_proposal_id,
+                destination_character_id: minimal_id,
+                now: TimestampMillis::new(35),
+            })
+            .expect("apply minimal character");
+        let minimal = CharacterRepository::get(&database, minimal_id)
+            .expect("load minimal")
+            .expect("minimal character exists");
+        assert!(minimal.scenes.is_empty());
+        assert!(minimal.variants.is_empty());
+        assert!(minimal.starters.is_empty());
+
+        let (duplicate, duplicate_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewCharacter,
+            CreationDraft::Character {
+                name: Some("Duplicate destination".into()),
+                definition: Some("Must roll back".into()),
+                scenes: Vec::new(),
+            },
+            40,
+        );
+        assert_eq!(
+            database.apply_new_character(ConfirmedCharacterApply {
+                workflow_id: duplicate.id,
+                expected_workflow_revision: duplicate.revision,
+                proposal_id: duplicate_proposal_id,
+                destination_character_id: minimal_id,
+                now: TimestampMillis::new(45),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let connection = database.connection().expect("database lock");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM creation_character_apply_receipts WHERE workflow_id=?1",
+                    [duplicate.id.to_string()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("receipt count"),
+            0
         );
     }
 

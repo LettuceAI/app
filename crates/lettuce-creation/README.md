@@ -71,8 +71,15 @@ pin the authored revision and revise only name/description while preserving all
 other authored fields, media, lifecycle, identity, timestamps, and default
 selection. Both mutations atomically persist an immutable workflow receipt, so
 crash retries return the original result after the persona revision advances
-while stale or changed commands conflict. Other creation targets remain later
-slices.
+while stale or changed commands conflict.
+
+Confirmed new-character finalization is also active. A complete name and
+definition plus the ordered draft scenes map into the normal character-plan
+contract, retaining proposal scene IDs, text, direction, and order. The
+resulting graph deliberately starts with default character policies and empty
+provenance, presentation customizations, media, variants, and starters. The
+complete graph and its character-specific immutable receipt commit atomically;
+existing-character and lorebook applies remain later slices.
 
 Single-entry, keyword, and staged lorebook-generation behavior is pinned in
 `fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`. Generation
