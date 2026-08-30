@@ -10,7 +10,7 @@ use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use crate::Database;
 
 const SELECT_ITEM: &str = "
-    SELECT id, text, category, token_count, is_cold, is_pinned,
+    SELECT id, text, category, source_message_id, token_count, is_cold, is_pinned,
            importance, persistence_importance, prompt_importance, volatility,
            access_count, created_at, last_accessed_at
       FROM memory_items
@@ -72,16 +72,17 @@ pub(super) fn insert_items(
         transaction
             .execute(
                 "INSERT INTO memory_items (
-                    space_id, id, ordinal, text, category, token_count, is_cold, is_pinned,
+                    space_id, id, ordinal, text, category, source_message_id, token_count, is_cold, is_pinned,
                     importance, persistence_importance, prompt_importance, volatility,
                     access_count, created_at, last_accessed_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     space_id.to_string(),
                     item.id.to_string(),
                     i64::try_from(ordinal).map_err(storage)?,
                     item.text,
                     category_name(item.category),
+                    item.source_message_id.map(|id| id.to_string()),
                     i64::from(item.token_count),
                     item.is_cold,
                     item.is_pinned,
@@ -123,16 +124,21 @@ pub(super) fn get_in(
                 id: parse_id(row.get::<_, String>(0).map_err(storage)?)?,
                 text: row.get(1).map_err(storage)?,
                 category: parse_category(&row.get::<_, String>(2).map_err(storage)?)?,
-                token_count: row.get(3).map_err(storage)?,
-                is_cold: row.get(4).map_err(storage)?,
-                is_pinned: row.get(5).map_err(storage)?,
-                importance: parse_score(row.get(6).map_err(storage)?)?,
-                persistence_importance: parse_score(row.get(7).map_err(storage)?)?,
-                prompt_importance: parse_score(row.get(8).map_err(storage)?)?,
-                volatility: parse_score(row.get(9).map_err(storage)?)?,
-                access_count: row.get(10).map_err(storage)?,
-                created_at: TimestampMillis::new(row.get(11).map_err(storage)?),
-                last_accessed_at: TimestampMillis::new(row.get(12).map_err(storage)?),
+                source_message_id: row
+                    .get::<_, Option<String>>(3)
+                    .map_err(storage)?
+                    .map(parse_id)
+                    .transpose()?,
+                token_count: row.get(4).map_err(storage)?,
+                is_cold: row.get(5).map_err(storage)?,
+                is_pinned: row.get(6).map_err(storage)?,
+                importance: parse_score(row.get(7).map_err(storage)?)?,
+                persistence_importance: parse_score(row.get(8).map_err(storage)?)?,
+                prompt_importance: parse_score(row.get(9).map_err(storage)?)?,
+                volatility: parse_score(row.get(10).map_err(storage)?)?,
+                access_count: row.get(11).map_err(storage)?,
+                created_at: TimestampMillis::new(row.get(12).map_err(storage)?),
+                last_accessed_at: TimestampMillis::new(row.get(13).map_err(storage)?),
             });
         }
         items
@@ -249,7 +255,7 @@ mod tests {
         MemoryCategory, MemoryChangeSet, MemoryItem, MemoryRepository, MemoryRepositoryError,
         MemorySpaceSnapshot, Score,
     };
-    use lettuce_types::{MemoryId, MemorySpaceId, Revision, TimestampMillis};
+    use lettuce_types::{MemoryId, MemorySpaceId, MessageId, Revision, TimestampMillis};
 
     use super::Database;
 
@@ -258,6 +264,7 @@ mod tests {
             id,
             text: text.to_owned(),
             category: MemoryCategory::Other,
+            source_message_id: None,
             token_count: 3,
             is_cold: false,
             is_pinned: false,
@@ -283,7 +290,8 @@ mod tests {
     fn creates_reads_and_cas_replaces_a_memory_space() {
         let database = Database::open_in_memory().expect("database");
         let space_id = MemorySpaceId::new();
-        let first = item(MemoryId::new(), "first");
+        let mut first = item(MemoryId::new(), "first");
+        first.source_message_id = Some(MessageId::new());
         let created = database
             .create(snapshot(space_id, vec![first.clone()]))
             .expect("create");

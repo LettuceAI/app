@@ -15,6 +15,7 @@ CREATE TABLE memory_items (
         'character_trait', 'relationship', 'plot_event',
         'world_detail', 'preference', 'other'
     )),
+    source_message_id TEXT,
     token_count INTEGER NOT NULL CHECK (token_count BETWEEN 0 AND 4294967295),
     is_cold INTEGER NOT NULL CHECK (is_cold IN (0, 1)),
     is_pinned INTEGER NOT NULL CHECK (is_pinned IN (0, 1)),

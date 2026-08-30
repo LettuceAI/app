@@ -1231,6 +1231,7 @@ mod tests {
             id,
             text: text.to_owned(),
             category: MemoryCategory::Other,
+            source_message_id: None,
             token_count: 3,
             is_cold: false,
             is_pinned: false,

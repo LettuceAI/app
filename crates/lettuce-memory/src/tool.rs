@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use lettuce_conversations::{ToolChoice, ToolDefinition, ToolRequest};
-use lettuce_types::{MemoryId, TimestampMillis, ToolExecutionId};
+use lettuce_types::{MemoryId, MessageId, TimestampMillis, ToolExecutionId};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -28,7 +28,12 @@ pub fn dynamic_memory_tool_request() -> ToolRequest {
                             "type": "string",
                             "enum": ["character_trait", "relationship", "plot_event", "world_detail", "preference", "other"]
                         },
-                        "important": { "type": "boolean" }
+                        "important": { "type": "boolean" },
+                        "source_message_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "ID from the transcript message where this fact or event occurred."
+                        }
                     },
                     "required": ["text", "category"],
                     "additionalProperties": false
@@ -95,6 +100,7 @@ pub enum MemoryToolArguments {
         text: String,
         category: MemoryCategory,
         important: bool,
+        source_message_id: Option<MessageId>,
     },
     DeleteMemory {
         id: MemoryId,
@@ -118,7 +124,10 @@ impl MemoryToolArguments {
             .ok_or(MemoryToolError::ArgumentsMustBeObject)?;
         match name {
             "create_memory" => {
-                ensure_keys(object, &["text", "category", "important"])?;
+                ensure_keys(
+                    object,
+                    &["text", "category", "important", "source_message_id"],
+                )?;
                 let text = required_string(object, "text")?;
                 validate_memory_text(&text)?;
                 let category = match required_string(object, "category")?.as_str() {
@@ -139,10 +148,21 @@ impl MemoryToolArguments {
                     })
                     .transpose()?
                     .unwrap_or(false);
+                let source_message_id = object
+                    .get("source_message_id")
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .ok_or(MemoryToolError::InvalidField("source_message_id"))?
+                            .parse()
+                            .map_err(|_| MemoryToolError::InvalidField("source_message_id"))
+                    })
+                    .transpose()?;
                 Ok(Self::CreateMemory {
                     text: text.trim().to_string(),
                     category,
                     important,
+                    source_message_id,
                 })
             }
             "delete_memory" => {
@@ -356,7 +376,15 @@ impl MemoryToolReducer {
                         text,
                         category,
                         important,
-                    } => apply_create(&mut items, text, *category, *important, call.create.clone()),
+                        source_message_id,
+                    } => apply_create(
+                        &mut items,
+                        text,
+                        *category,
+                        *important,
+                        *source_message_id,
+                        call.create.clone(),
+                    ),
                     MemoryToolArguments::DeleteMemory { id, confidence } => apply_delete(
                         &mut items,
                         *id,
@@ -407,6 +435,7 @@ fn apply_create(
     text: &str,
     category: MemoryCategory,
     important: bool,
+    source_message_id: Option<MessageId>,
     preparation: Option<CreateMemoryPreparation>,
 ) -> MemoryToolOutcome {
     let Some(preparation) = preparation else {
@@ -436,6 +465,7 @@ fn apply_create(
         id: preparation.id,
         text: text.to_string(),
         category,
+        source_message_id,
         token_count: preparation.token_count,
         is_cold: false,
         is_pinned: important,
@@ -664,7 +694,9 @@ pub enum MemoryToolError {
 mod tests {
     use std::collections::HashSet;
 
-    use lettuce_types::{MemoryId, MemorySpaceId, Revision, TimestampMillis, ToolExecutionId};
+    use lettuce_types::{
+        MemoryId, MemorySpaceId, MessageId, Revision, TimestampMillis, ToolExecutionId,
+    };
     use serde_json::{Value, json};
 
     use super::{
@@ -695,6 +727,7 @@ mod tests {
             id: MemoryId::new(),
             text: text.to_string(),
             category: MemoryCategory::Other,
+            source_message_id: None,
             token_count: tokens,
             is_cold: false,
             is_pinned: pinned,
@@ -753,6 +786,54 @@ mod tests {
             })
         );
         assert!(MemoryToolArguments::parse("delete_memory", &json!({ "text": "legacy" })).is_err());
+
+        let source_message_id = MessageId::new();
+        assert_eq!(
+            MemoryToolArguments::parse(
+                "create_memory",
+                &json!({
+                    "text": "Mira made a promise.",
+                    "category": "relationship",
+                    "source_message_id": source_message_id,
+                }),
+            ),
+            Ok(MemoryToolArguments::CreateMemory {
+                text: "Mira made a promise.".to_owned(),
+                category: MemoryCategory::Relationship,
+                important: false,
+                source_message_id: Some(source_message_id),
+            })
+        );
+    }
+
+    #[test]
+    fn create_preserves_source_message_attribution() {
+        let source_message_id = MessageId::new();
+        let created_id = MemoryId::new();
+        let mut create = call(MemoryToolArguments::CreateMemory {
+            text: "Mira made a promise.".to_owned(),
+            category: MemoryCategory::Relationship,
+            important: false,
+            source_message_id: Some(source_message_id),
+        });
+        create.create = Some(CreateMemoryPreparation {
+            id: created_id,
+            token_count: 4,
+            created_at: TimestampMillis::new(2),
+            semantic_duplicate: None,
+        });
+
+        let result = MemoryToolReducer
+            .reduce(&snapshot(vec![]), &policy(), &[create])
+            .expect("reduce attributed create");
+        let stored = result
+            .change
+            .expect("create change")
+            .items
+            .into_iter()
+            .find(|item| item.id == created_id)
+            .expect("created memory");
+        assert_eq!(stored.source_message_id, Some(source_message_id));
     }
 
     #[test]
@@ -765,6 +846,7 @@ mod tests {
             text: "mira likes the old harbor".to_string(),
             category: MemoryCategory::Preference,
             important: false,
+            source_message_id: None,
         });
         first.create = Some(CreateMemoryPreparation {
             id: create_id,
@@ -787,6 +869,7 @@ mod tests {
             text: "She enjoys visiting the docks".to_string(),
             category: MemoryCategory::Preference,
             important: false,
+            source_message_id: None,
         });
         semantic.create = Some(CreateMemoryPreparation {
             id: MemoryId::new(),
@@ -811,6 +894,7 @@ mod tests {
             text: "different memory".to_owned(),
             category: MemoryCategory::Other,
             important: false,
+            source_message_id: None,
         });
         create.create = Some(CreateMemoryPreparation {
             id: MemoryId::new(),

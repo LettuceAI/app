@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use lettuce_types::{MemoryId, MemorySpaceId, Revision, TimestampMillis};
+use lettuce_types::{MemoryId, MemorySpaceId, MessageId, Revision, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_MEMORY_TEXT_BYTES: usize = 16 * 1024;
@@ -61,6 +61,7 @@ pub struct MemoryItem {
     pub id: MemoryId,
     pub text: String,
     pub category: MemoryCategory,
+    pub source_message_id: Option<MessageId>,
     pub token_count: u32,
     pub is_cold: bool,
     pub is_pinned: bool,

@@ -17,13 +17,17 @@ repository port. It preserves duplicate suppression, low-confidence demotion,
 cycle-start hard-delete limits, pin protection, hot-token budgeting, and
 capacity trimming. The verified scenarios are pinned in
 `fixtures/legacy-import/dynamic-memory-tool-scenarios-v1.json`.
+Create calls also preserve the model-selected transcript message ID on the
+authoritative memory item. This source identity is optional for the shared
+direct/group tool contract and is the attribution boundary used by companion
+post-turn effect settlement when several turns are coalesced into one cycle.
 
 The new contract deliberately replaces ambiguous legacy text or six-digit
 delete targets with stable memory UUIDs, reports missing targets explicitly,
 and applies one validated change set instead of mutating session projections in
-place. Provider continuation, prompt rendering, companion-only source and
-supersession, provider-driven category repair, repository SQL, ONNX embedding
-inference, and UI events remain later slices. ONNX runtime ownership belongs in
+place. Companion-required source validation and supersession, provider-driven
+category repair, and UI events remain later slices. ONNX inference runtime
+ownership belongs in
 `lettuce-embeddings`; this crate consumes typed duplicate evidence through the
 application coordinator.
 Semantic duplicate hints are qualified typed evidence: stable target ID,
