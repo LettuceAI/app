@@ -104,6 +104,12 @@ one explicit unavailable reason with immutable model/provider revisions, and
 implements the conversation `UsagePort`. Exact retries for one attempt return
 the original usage ID; changed evidence conflicts, and SQL triggers reject
 updates or deletes.
+Migration 11 owns creation-helper proposal state. It persists the target and its
+expected authored revision, user turns before inference, and an immutable
+ordered proposal lineage. Workflow stage/current-proposal changes use revision
+CAS and ownership/lineage triggers; exact retries are idempotent, while stale
+base proposals and changed identities conflict. The adapter implements the
+`lettuce-creation` port without writing character, persona, or lorebook tables.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

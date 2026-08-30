@@ -845,6 +845,9 @@ name = "lettuce-creation"
 version = "0.1.0"
 dependencies = [
  "lettuce-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -856,6 +859,7 @@ dependencies = [
  "lettuce-characters",
  "lettuce-context",
  "lettuce-conversations",
+ "lettuce-creation",
  "lettuce-embeddings",
  "lettuce-jobs",
  "lettuce-media",
