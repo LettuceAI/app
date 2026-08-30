@@ -104,3 +104,7 @@ Dynamic-memory companion continuations retain the legacy zero-delta seed and
 no user-message owner.
 Failure or cancellation before finalization discards the seed, and exact send
 or finalization replay does not duplicate an effect.
+The application terminal coordinator now settles coalesced effects from
+authoritative before/after memory snapshots and exact source-message IDs while
+copying the legacy summary formula. Durable post-turn scheduling and recovery
+discovery remain application-owned follow-up work.

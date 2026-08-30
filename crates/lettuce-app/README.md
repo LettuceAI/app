@@ -59,7 +59,13 @@ with the admitted turn and creates the visible processing effect atomically
 with assistant finalization; companion continuation uses the legacy zero-delta
 seed without a user-message owner, and exact replay cannot duplicate it. Typed
 ready/failed settlement is available for post-turn dynamic-memory coordination,
-while scheduling that post-turn job remains a later application slice.
+and the terminal coordinator now assigns authoritative added/updated memory IDs
+to each coalesced effect through its exact user/assistant source window. It
+copies the legacy largest-delta summary selection, percent rounding, wording,
+pluralization, and three-part cap; no-op success is ready, terminal failures use
+bounded stable reasons, and exact settlement replay is idempotent. Durable
+post-turn job admission, debounce/coalescing, and restart discovery remain the
+next application slice.
 
 The first direct/group dynamic-memory handler path accepts an already admitted
 and running ordered tool round, validates the exact v1 feature contract, joins
