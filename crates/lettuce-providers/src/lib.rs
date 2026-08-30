@@ -228,6 +228,7 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
                     &*self.secret_store,
                     &self.network,
                     &*self.runtime,
+                    self.replay_artifacts.as_deref(),
                     request,
                 )
                 .await
@@ -245,16 +246,17 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
 
 #[cfg(test)]
 mod integration_tests {
-    use std::sync::{Arc, Mutex};
+    use std::{collections::HashMap, sync::{Arc, Mutex}};
 
     use crate::{KeyVerification, ProviderRequestError, RemoteProviders};
     use async_trait::async_trait;
     use lettuce_conversations::{
         ContextAttributions, ContextBudgetReport, GenerationOperation, GenerationStreamEvent,
         InferenceOutcome, InferencePort, InferenceRequest, MessagePart, MessageRole, OutputPolicy,
-        ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage,
-        ResolvedInferenceProfile, SafetyContext, ToolChoice, ToolDefinition, ToolPolicy,
-        ToolRequest,
+        ProtectedArtifactBytes, ProviderContextPart, ProviderNeutralContext,
+        ProviderNeutralMessage, ProviderReplayArtifactPort, ReplayArtifactDraft,
+        ReplayArtifactRef, ResolvedInferenceProfile, SafetyContext, ToolChoice, ToolDefinition,
+        ToolPolicy, ToolRequest,
     };
     use lettuce_inference::{InferenceRuntime, InferenceRuntimePort};
     use lettuce_jobs::handle::JobHandle;
@@ -281,6 +283,56 @@ mod integration_tests {
     struct RecordingSecretStore {
         inner: InMemorySecretStore,
         loads: Arc<Mutex<Vec<SecretPurpose>>>,
+    }
+
+    #[derive(Default)]
+    struct MemoryReplayPort {
+        artifacts: Mutex<HashMap<lettuce_types::ReplayArtifactId, (ReplayArtifactRef, Vec<u8>)>>,
+    }
+
+    impl ProviderReplayArtifactPort for MemoryReplayPort {
+        fn stage_provider_replay(
+            &self,
+            draft: ReplayArtifactDraft,
+        ) -> Result<ReplayArtifactRef, lettuce_conversations::ArtifactError> {
+            draft.validate()?;
+            let reference = draft.reference();
+            let bytes = draft.bytes.into_store_bytes();
+            let mut artifacts = self.artifacts.lock().expect("artifact lock");
+            if let Some((stored, stored_bytes)) = artifacts.get(&reference.artifact_id) {
+                if stored != &reference || stored_bytes != &bytes {
+                    return Err(lettuce_conversations::ArtifactError::ImmutableConflict);
+                }
+                return Ok(stored.clone());
+            }
+            artifacts.insert(reference.artifact_id, (reference.clone(), bytes));
+            Ok(reference)
+        }
+
+        fn materialize_provider_replay(
+            &self,
+            reference: &ReplayArtifactRef,
+        ) -> Result<ProtectedArtifactBytes, lettuce_conversations::ArtifactError> {
+            let artifacts = self.artifacts.lock().expect("artifact lock");
+            let (stored, bytes) = artifacts
+                .get(&reference.artifact_id)
+                .ok_or(lettuce_conversations::ArtifactError::NotFound)?;
+            if stored != reference {
+                return Err(lettuce_conversations::ArtifactError::ImmutableConflict);
+            }
+            ProtectedArtifactBytes::new(bytes.clone())
+        }
+
+        fn cleanup_orphan_provider_replay(
+            &self,
+            artifact_id: lettuce_types::ReplayArtifactId,
+        ) -> Result<(), lettuce_conversations::ArtifactError> {
+            self.artifacts
+                .lock()
+                .expect("artifact lock")
+                .remove(&artifact_id);
+            Ok(())
+        }
     }
 
     impl RecordingSecretStore {
@@ -464,10 +516,13 @@ mod integration_tests {
             .expect("store key");
         let runtime = Arc::new(InferenceRuntime::default());
         let runtime_port: Arc<dyn InferenceRuntimePort> = runtime.clone();
-        let adapter = RemoteProviders::with_runtime(
+        let replay_port: Arc<dyn ProviderReplayArtifactPort> =
+            Arc::new(MemoryReplayPort::default());
+        let adapter = RemoteProviders::with_runtime_and_replay(
             store,
             Arc::new(JsonClient::new().expect("client")),
             runtime_port,
+            Some(replay_port),
         );
         let sink_id = RequestId::new();
         let mut receiver = runtime.register_stream(sink_id).expect("register stream");
@@ -479,6 +534,19 @@ mod integration_tests {
             owner,
         ));
         inference.profile.chat_profile.provider_protocol = protocol;
+        if protocol == ProviderProtocol::Gemini {
+            inference.profile.chat_profile.capabilities.tools = CapabilityStatus::Supported;
+            inference.profile.tool_policy = ToolPolicy::Allowed;
+            inference.tools = Some(ToolRequest {
+                definitions: vec![ToolDefinition {
+                    name: "lookup_weather".to_owned(),
+                    description: None,
+                    parameters: serde_json::json!({"type": "object"}),
+                    version: 1,
+                }],
+                choice: ToolChoice::Auto,
+            });
+        }
         inference.stream_sink = Some(sink_id);
         let outcome = adapter.run(inference).await.expect("stream outcome");
         runtime
@@ -816,24 +884,35 @@ mod integration_tests {
 
     #[tokio::test]
     async fn gemini_stream_uses_sse_query_and_preserves_thought_parts() {
-        let payload = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"why\",\"thought\":true},{\"text\":\"answer\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":2,\"candidatesTokenCount\":1}}\n\n";
-        let (request, outcome, events) =
-            run_stream_fixture("gemini", ProviderProtocol::Gemini, "/v1", payload).await;
-        assert!(request.starts_with(
-            "POST /v1beta/models/test-model:streamGenerateContent?alt=sse HTTP/1.1\r\n"
-        ));
-        assert_eq!(
-            events,
-            vec![
-                GenerationStreamEvent::ReasoningDelta {
+        let payload = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"why\",\"thought\":true,\"thoughtSignature\":\"opaque\"},{\"functionCall\":{\"id\":\"call-1\",\"name\":\"lookup_weather\",\"args\":{}},\"thoughtSignature\":\"call-signature\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":2,\"candidatesTokenCount\":1}}\n\n";
+        for (kind, path) in [
+            (
+                "gemini",
+                "POST /v1beta/models/test-model:streamGenerateContent?alt=sse HTTP/1.1\r\n",
+            ),
+            (
+                "gemini-agent-platform-express",
+                "POST /v1beta1/publishers/google/models/test-model:streamGenerateContent?alt=sse HTTP/1.1\r\n",
+            ),
+        ] {
+            let (request, outcome, events) =
+                run_stream_fixture(kind, ProviderProtocol::Gemini, "/v1", payload).await;
+            assert!(request.starts_with(path), "{kind}: {request}");
+            assert_eq!(
+                events,
+                vec![GenerationStreamEvent::ReasoningDelta {
                     text: "why".to_owned()
-                },
-                GenerationStreamEvent::TextDelta {
-                    text: "answer".to_owned()
-                }
-            ]
-        );
-        assert_eq!(outcome.usage.expect("usage").output_tokens, 1);
+                }]
+            );
+            assert_eq!(outcome.usage.expect("usage").output_tokens, 1);
+            let candidate = &outcome.candidates[0];
+            assert!(candidate.provider_replay.is_some());
+            assert_eq!(candidate.tool_calls.len(), 1);
+            assert_eq!(
+                candidate.tool_calls[0].provider_replay,
+                candidate.provider_replay
+            );
+        }
     }
 
     #[tokio::test]
@@ -1906,7 +1985,7 @@ mod integration_tests {
     #[tokio::test]
     async fn gemini_tool_request_runs_through_standard_and_express_boundaries() {
         let reply = http_json(
-            r#"{"candidates":[{"content":{"parts":[{"text":"checking"},{"functionCall":{"id":"call-1","name":"lookup_weather","args":{"city":"Istanbul"}}}],"role":"model"},"finishReason":"STOP"}]}"#,
+            r#"{"candidates":[{"content":{"parts":[{"text":"checking","thought":true,"thoughtSignature":"opaque-thought"},{"functionCall":{"id":"call-1","name":"lookup_weather","args":{"city":"Istanbul"}},"thoughtSignature":"opaque-call"}],"role":"model"},"finishReason":"STOP"}]}"#,
         );
         for (kind, suffix, path) in [
             ("gemini", "/v1", "/v1beta/models/test-model:generateContent"),
@@ -1928,7 +2007,14 @@ mod integration_tests {
                 .await
                 .expect("store key");
             let (endpoint, captured) = test_server(reply.clone()).await;
-            let adapter = RemoteProviders::new(store, Arc::new(JsonClient::new().expect("client")));
+            let replay_artifacts = Arc::new(MemoryReplayPort::default());
+            let replay_port: Arc<dyn ProviderReplayArtifactPort> = replay_artifacts.clone();
+            let adapter = RemoteProviders::with_runtime_and_replay(
+                store,
+                Arc::new(JsonClient::new().expect("client")),
+                Arc::new(InferenceRuntime::default()),
+                Some(replay_port),
+            );
             let mut resolved = profile(
                 kind,
                 format!("{endpoint}{suffix}"),
@@ -1959,6 +2045,16 @@ mod integration_tests {
             let call = &outcome.candidates[0].tool_calls[0];
             assert_eq!(call.provider_call_id.as_deref(), Some("call-1"));
             assert_eq!(call.arguments, serde_json::json!({"city":"Istanbul"}));
+            let reference = outcome.candidates[0]
+                .provider_replay
+                .as_ref()
+                .expect("signed replay");
+            assert_eq!(call.provider_replay.as_ref(), Some(reference));
+            assert!(
+                replay_artifacts
+                    .materialize_provider_replay(reference)
+                    .is_ok()
+            );
 
             let captured = captured_request(captured.await.expect("request"));
             assert_eq!(captured.request_line, format!("POST {path} HTTP/1.1"));

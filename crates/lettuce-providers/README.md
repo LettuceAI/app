@@ -31,9 +31,10 @@ rejected. `RemoteProviders` also exposes `list_models` (legacy
 `DESCRIPTOR` (catalog metadata, key requirement, parameter/reasoning/caching
 support, extra-body allowlist) served through `provider_descriptors()`.
 Descriptors report native tool translation for all four remote wire families
-and keep structured output false. Anthropic now advertises signed tool replay
-and reasoning-with-tools alongside reasoning-capable OpenAI-envelope adapters;
-Gemini and Ollama remain false for the explicit replay limitations below.
+and keep structured output false. Anthropic and Gemini now advertise signed
+tool replay and reasoning-with-tools alongside reasoning-capable
+OpenAI-envelope adapters; Ollama remains false for the explicit replay
+limitations below.
 
 Streaming uses bounded byte framing and provider-specific normalization for
 OpenAI SSE, Anthropic Messages SSE, Gemini SSE, and Ollama NDJSON. It preserves
@@ -77,17 +78,20 @@ choices, grouped `functionCall`/`functionResponse` transcript parts, buffered
 calls, and bounded SSE calls. Missing provider call IDs remain absent instead
 of being fabricated. Standard Gemini explicit-cache resources own both tool
 definitions and tool choice; a missing resource retry restores the clean
-uncached request. Gemini 3 tools, reasoning-plus-tools, signed call responses,
-and signed replay references remain rejected until replay artifact bytes can be
-materialized exactly. Ollama HTTP uses native function definitions and ordered
+uncached request. Signed Gemini function-call rounds retain the exact buffered
+native assistant `parts` array or the bounded canonical SSE parts sequence,
+including each `thoughtSignature`. Continuation verifies ordered call
+ID/name/arguments against the materialized artifact and embeds its JSON
+unchanged. Standard Gemini and Agent Platform Express share this boundary;
+unsigned Gemini behavior is unchanged. Ollama HTTP uses native function definitions and ordered
 assistant-call/tool-result replay, parses buffered calls, and accumulates atomic
 calls across NDJSON chunks without fabricating missing provider IDs. Its native
 API has no tool-choice field, so only Auto is supported; Required/named choice
 and reasoning-plus-tools remain rejected rather than approximated or replayed
 lossily.
 
-Deferred horizontals: Gemini thought-signature replay, media input,
-custom-provider reasoning schema, and structured output.
+Deferred horizontals: media input, custom-provider reasoning schema, and
+structured output.
 
 Explicit prompt caching is executable for Anthropic, custom Anthropic, and
 OpenRouter through typed cache-control annotations, and for OpenAI through its

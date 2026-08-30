@@ -49,14 +49,19 @@ impl ProviderDescriptor {
 
     #[must_use]
     pub const fn supports_signed_tool_replay(self) -> bool {
-        matches!(self.protocol, ProviderProtocol::Anthropic)
+        matches!(
+            self.protocol,
+            ProviderProtocol::Anthropic | ProviderProtocol::Gemini
+        )
     }
 
     #[must_use]
     pub const fn supports_reasoning_with_tools(self) -> bool {
         matches!(
             self.protocol,
-            ProviderProtocol::OpenAiCompatible | ProviderProtocol::Anthropic
+            ProviderProtocol::OpenAiCompatible
+                | ProviderProtocol::Anthropic
+                | ProviderProtocol::Gemini
         ) && !matches!(self.reasoning, ReasoningSupport::None)
     }
 }

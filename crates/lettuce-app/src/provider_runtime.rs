@@ -291,8 +291,8 @@ mod tests {
             ]
         );
         assert!(gemini.tools);
-        assert!(!gemini.reasoning_with_tools);
-        assert!(!gemini.signed_tool_replay);
+        assert!(gemini.reasoning_with_tools);
+        assert!(gemini.signed_tool_replay);
         let anthropic = catalog
             .providers
             .iter()
@@ -319,7 +319,10 @@ mod tests {
                 .providers
                 .iter()
                 .filter(|provider| provider.signed_tool_replay)
-                .all(|provider| provider.protocol == ProviderProtocolContract::Anthropic)
+                .all(|provider| matches!(
+                    provider.protocol,
+                    ProviderProtocolContract::Anthropic | ProviderProtocolContract::Gemini
+                ))
         );
         assert!(catalog.providers.iter().all(|provider| {
             !provider

@@ -1,9 +1,11 @@
 use std::borrow::Cow;
 
 use lettuce_conversations::{
-    FinishReason, InferenceCandidate, InferenceOutcome, InferenceRequest, InferenceUsage,
-    InferenceWarningCode, MAX_TOOL_CALLS_PER_RESPONSE, MessagePart, MessageRole, ProposedToolCall,
-    ProviderContextPart, ProviderNeutralContext, ToolChoice, ToolRequest,
+    ArtifactCodec, ArtifactRetention, FinishReason, InferenceCandidate, InferenceOutcome,
+    InferenceRequest, InferenceUsage, InferenceWarningCode, MAX_TOOL_CALLS_PER_RESPONSE,
+    MessagePart, MessageRole, ProposedToolCall, ProtectedArtifactBytes, ProviderContextPart,
+    ProviderNeutralContext, ProviderReplayArtifactPort, ReplayArtifactDraft, ReplayArtifactRef,
+    ToolChoice, ToolRequest,
 };
 use lettuce_inference::InferenceRuntimePort;
 use lettuce_models::{
@@ -16,6 +18,8 @@ use lettuce_network::{
 };
 use lettuce_settings::{HeaderName, SecretStore};
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
+use uuid::Uuid;
 
 use crate::common::{
     AdapterError, AuthPlan, Credentials, RemoteModel, decode_json, generation_policy, load_auth,
@@ -120,6 +124,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     secret_store: &S,
     network: &JsonClient,
     runtime: &dyn InferenceRuntimePort,
+    replay_artifacts: Option<&dyn ProviderReplayArtifactPort>,
     request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request_with_tools(&request)?;
@@ -128,7 +133,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         return Err(AdapterError::Rejected);
     }
     provider.validate_parameters(&profile.parameters)?;
-    validate_tool_features(profile, request.tools.as_ref())?;
+    validate_tool_features(profile, request.tools.as_ref(), replay_artifacts.is_some())?;
     let endpoint = profile
         .endpoint
         .as_deref()
@@ -140,7 +145,12 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     if streaming && (!profile.streaming_enabled || !provider.descriptor().streaming) {
         return Err(AdapterError::Rejected);
     }
-    let uncached = build_request(profile, &request.context, request.tools.as_ref())?;
+    let uncached = build_request(
+        profile,
+        &request.context,
+        request.tools.as_ref(),
+        replay_artifacts,
+    )?;
     let prepared = crate::streaming::await_cancelable(
         runtime,
         request.cancellation,
@@ -194,7 +204,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
             )
             .await?;
         }
-        let outcome = crate::streaming::consume_stream(
+        let (outcome, replay) = crate::streaming::consume_stream_with_provider_replay(
             response,
             crate::stream_framing::StreamFormat::Sse,
             crate::stream_normalize::StreamProtocol::Gemini,
@@ -202,7 +212,26 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
             &request,
         )
         .await?;
-        return validate_tool_outcome(&request, outcome);
+        let has_tool_calls = outcome
+            .candidates
+            .iter()
+            .any(|candidate| !candidate.tool_calls.is_empty());
+        let outcome = if has_tool_calls && (requires_signed_replay(profile) || replay.is_some()) {
+            let replay = replay.ok_or(AdapterError::MalformedResponse)?;
+            let raw = RawValue::from_string(
+                String::from_utf8(replay).map_err(|_| AdapterError::MalformedResponse)?,
+            )
+            .map_err(|_| AdapterError::MalformedResponse)?;
+            attach_gemini_replay(
+                outcome,
+                replay_artifacts.ok_or(AdapterError::Rejected)?,
+                request.attempt_id,
+                &raw,
+            )?
+        } else {
+            outcome
+        };
+        return validate_tool_outcome_with_cleanup(&request, outcome, replay_artifacts);
     }
     let mut response = crate::streaming::await_cancelable(
         runtime,
@@ -234,12 +263,28 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         )
         .await?;
     }
-    validate_tool_outcome(&request, parse_response(response)?)
+    let outcome = parse_response_with_replay(
+        response,
+        replay_artifacts,
+        request.attempt_id,
+        requires_signed_replay(profile),
+    )?;
+    validate_tool_outcome_with_cleanup(&request, outcome, replay_artifacts)
+}
+
+fn requires_signed_replay(profile: &ResolvedChatProfile) -> bool {
+    profile.parameters.reasoning_mode == Some(ReasoningMode::Enabled)
+        || profile
+            .external_model_id
+            .trim()
+            .to_ascii_lowercase()
+            .contains("gemini-3")
 }
 
 fn validate_tool_features(
     profile: &ResolvedChatProfile,
     tools: Option<&ToolRequest>,
+    signed_replay_available: bool,
 ) -> Result<(), AdapterError> {
     if tools.is_none() {
         return Ok(());
@@ -247,16 +292,49 @@ fn validate_tool_features(
     if profile.capabilities.tools == CapabilityStatus::Unsupported {
         return Err(AdapterError::Rejected);
     }
-    // A signed Gemini function-call part must be replayed byte-for-byte. The
-    // provider replay artifact is not materialized at this adapter boundary yet.
-    if profile.parameters.reasoning_mode == Some(ReasoningMode::Enabled)
-        || profile
-            .external_model_id
-            .trim()
-            .to_ascii_lowercase()
-            .contains("gemini-3")
-    {
+    if requires_signed_replay(profile) && !signed_replay_available {
         return Err(AdapterError::Rejected);
+    }
+    Ok(())
+}
+
+fn validate_tool_outcome_with_cleanup(
+    request: &InferenceRequest,
+    outcome: InferenceOutcome,
+    replay_artifacts: Option<&dyn ProviderReplayArtifactPort>,
+) -> Result<InferenceOutcome, AdapterError> {
+    match validate_tool_outcome(request, outcome.clone()) {
+        Ok(outcome) => Ok(outcome),
+        Err(error) => {
+            if let Some(replay_artifacts) = replay_artifacts {
+                cleanup_outcome_replays(replay_artifacts, &outcome)?;
+            }
+            Err(error)
+        }
+    }
+}
+
+fn cleanup_outcome_replays(
+    replay_artifacts: &dyn ProviderReplayArtifactPort,
+    outcome: &InferenceOutcome,
+) -> Result<(), AdapterError> {
+    let mut artifact_ids = std::collections::BTreeSet::new();
+    for candidate in &outcome.candidates {
+        if let Some(reference) = &candidate.provider_replay {
+            artifact_ids.insert(reference.artifact_id);
+        }
+        artifact_ids.extend(
+            candidate
+                .tool_calls
+                .iter()
+                .filter_map(|call| call.provider_replay.as_ref())
+                .map(|reference| reference.artifact_id),
+        );
+    }
+    for artifact_id in artifact_ids {
+        replay_artifacts
+            .cleanup_orphan_provider_replay(artifact_id)
+            .map_err(|_| AdapterError::Transport)?;
     }
     Ok(())
 }
@@ -405,11 +483,48 @@ fn build_request(
     profile: &ResolvedChatProfile,
     context: &ProviderNeutralContext,
     tools: Option<&ToolRequest>,
+    replay_artifacts: Option<&dyn ProviderReplayArtifactPort>,
 ) -> Result<GenerateRequest, AdapterError> {
     let mut system_chunks: Vec<String> = Vec::new();
     let mut contents: Vec<Content> = Vec::new();
     let mut expected_results: Option<Vec<lettuce_types::ToolExecutionId>> = None;
     for message in &context.messages {
+        let replay_refs = message
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                ProviderContextPart::ToolCall(call) => call.provider_replay.as_ref(),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if let Some(reference) = replay_refs.first() {
+            if message.role != MessageRole::Assistant
+                || expected_results.is_some()
+                || replay_refs.len() != message.parts.len()
+                || replay_refs.iter().any(|other| *other != *reference)
+            {
+                return Err(AdapterError::Rejected);
+            }
+            let calls = message
+                .parts
+                .iter()
+                .filter_map(|part| match part {
+                    ProviderContextPart::ToolCall(call) => Some(call),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let replay = materialize_gemini_replay(
+                replay_artifacts.ok_or(AdapterError::Rejected)?,
+                reference,
+                &calls,
+            )?;
+            expected_results = Some(calls.iter().map(|call| call.execution_id).collect());
+            contents.push(Content {
+                role: "model",
+                parts: ContentParts::Replay(replay),
+            });
+            continue;
+        }
         let mut parts = Vec::new();
         let mut call_ids = Vec::new();
         let mut call_provider_ids = Vec::new();
@@ -421,7 +536,7 @@ fn build_request(
                 }
                 ProviderContextPart::Text { .. } => {}
                 ProviderContextPart::ToolCall(call) => {
-                    if message.role != MessageRole::Assistant || call.provider_replay.is_some() {
+                    if message.role != MessageRole::Assistant {
                         return Err(AdapterError::Rejected);
                     }
                     call_ids.push(call.execution_id);
@@ -506,7 +621,7 @@ fn build_request(
             } else {
                 "user"
             },
-            parts,
+            parts: ContentParts::Blocks(parts),
         });
     }
     if expected_results.is_some() {
@@ -520,9 +635,9 @@ fn build_request(
         contents,
         system_instruction: (!system_chunks.is_empty()).then(|| Content {
             role: "user",
-            parts: vec![ContentPart::Text {
+            parts: ContentParts::Blocks(vec![ContentPart::Text {
                 text: system_chunks.join("\n\n"),
-            }],
+            }]),
         }),
         generation_config: GenerationConfig {
             temperature: parameters.temperature,
@@ -583,7 +698,151 @@ fn encode_request(request: &GenerateRequest) -> Result<Vec<u8>, AdapterError> {
     Ok(body)
 }
 
-fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterError> {
+fn validate_gemini_replay_parts(
+    parts: &[CandidatePart],
+    calls: &[(Option<String>, String, serde_json::Value)],
+) -> Result<(), AdapterError> {
+    let mut has_signature = false;
+    let mut replay_calls = Vec::new();
+    for part in parts {
+        if (part.text.is_some() && part.function_call.is_some())
+            || part.function_response.is_some()
+            || part.server_tool_call.is_some()
+            || part.server_tool_response.is_some()
+        {
+            return Err(AdapterError::MalformedResponse);
+        }
+        if let Some(signature) = &part.thought_signature {
+            if signature.is_empty() {
+                return Err(AdapterError::MalformedResponse);
+            }
+            has_signature = true;
+        }
+        if let Some(call) = &part.function_call {
+            let name = call
+                .name
+                .as_deref()
+                .filter(|name| !name.is_empty())
+                .ok_or(AdapterError::MalformedResponse)?;
+            let arguments = call
+                .args
+                .as_ref()
+                .filter(|arguments| arguments.is_object())
+                .ok_or(AdapterError::MalformedResponse)?;
+            if call.id.as_deref().is_some_and(str::is_empty) {
+                return Err(AdapterError::MalformedResponse);
+            }
+            replay_calls.push((call.id.as_deref(), name, arguments));
+        }
+    }
+    if !has_signature || replay_calls.len() != calls.len() {
+        return Err(AdapterError::MalformedResponse);
+    }
+    for ((id, name, arguments), call) in replay_calls.into_iter().zip(calls) {
+        if call.0.as_deref() != id || call.1 != name || &call.2 != arguments {
+            return Err(AdapterError::MalformedResponse);
+        }
+    }
+    Ok(())
+}
+
+fn materialize_gemini_replay(
+    replay_artifacts: &dyn ProviderReplayArtifactPort,
+    reference: &ReplayArtifactRef,
+    calls: &[&lettuce_conversations::TranscriptToolCall],
+) -> Result<Box<RawValue>, AdapterError> {
+    let bytes = replay_artifacts
+        .materialize_provider_replay(reference)
+        .map_err(|_| AdapterError::Rejected)?;
+    let raw = RawValue::from_string(
+        String::from_utf8(bytes.into_store_bytes()).map_err(|_| AdapterError::Rejected)?,
+    )
+    .map_err(|_| AdapterError::Rejected)?;
+    let parts: Vec<CandidatePart> =
+        serde_json::from_str(raw.get()).map_err(|_| AdapterError::Rejected)?;
+    let calls = calls
+        .iter()
+        .map(|call| {
+            (
+                call.provider_call_id.clone(),
+                call.name.clone(),
+                call.arguments.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    validate_gemini_replay_parts(&parts, &calls).map_err(|_| AdapterError::Rejected)?;
+    Ok(raw)
+}
+
+fn stage_gemini_replay(
+    replay_artifacts: &dyn ProviderReplayArtifactPort,
+    attempt_id: lettuce_types::GenerationAttemptId,
+    raw: &RawValue,
+) -> Result<ReplayArtifactRef, AdapterError> {
+    let bytes = ProtectedArtifactBytes::new(raw.get().as_bytes().to_vec())
+        .map_err(|_| AdapterError::MalformedResponse)?;
+    let digest = bytes.digest();
+    let artifact_id = lettuce_types::ReplayArtifactId::from_uuid(Uuid::new_v5(
+        &attempt_id.as_uuid(),
+        format!("gemini-thought-v1:{}", digest.as_str()).as_bytes(),
+    ));
+    replay_artifacts
+        .stage_provider_replay(ReplayArtifactDraft {
+            artifact_id,
+            digest,
+            schema_version: 1,
+            byte_size: u64::try_from(bytes.len()).map_err(|_| AdapterError::MalformedResponse)?,
+            codec: ArtifactCodec::Json,
+            retention: ArtifactRetention::Conversation,
+            bytes,
+        })
+        .map_err(|_| AdapterError::Transport)
+}
+
+fn attach_gemini_replay(
+    mut outcome: InferenceOutcome,
+    replay_artifacts: &dyn ProviderReplayArtifactPort,
+    attempt_id: lettuce_types::GenerationAttemptId,
+    raw: &RawValue,
+) -> Result<InferenceOutcome, AdapterError> {
+    let candidate = outcome
+        .candidates
+        .get_mut(0)
+        .ok_or(AdapterError::MalformedResponse)?;
+    if candidate.tool_calls.is_empty() {
+        return Err(AdapterError::MalformedResponse);
+    }
+    let parts: Vec<CandidatePart> =
+        serde_json::from_str(raw.get()).map_err(|_| AdapterError::MalformedResponse)?;
+    let calls = candidate
+        .tool_calls
+        .iter()
+        .map(|call| {
+            (
+                call.provider_call_id.clone(),
+                call.name.clone(),
+                call.arguments.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    validate_gemini_replay_parts(&parts, &calls)?;
+    let reference = stage_gemini_replay(replay_artifacts, attempt_id, raw)?;
+    for call in &mut candidate.tool_calls {
+        call.provider_replay = Some(reference.clone());
+    }
+    candidate.provider_replay = Some(reference);
+    outcome
+        .validate()
+        .map_err(|_| AdapterError::MalformedResponse)?;
+    Ok(outcome)
+}
+
+fn parse_response_with_replay(
+    response: JsonResponse,
+    replay_artifacts: Option<&dyn ProviderReplayArtifactPort>,
+    attempt_id: lettuce_types::GenerationAttemptId,
+    signed_replay_required: bool,
+) -> Result<InferenceOutcome, AdapterError> {
     if let Some(error) = AdapterError::from_response(&response) {
         return Err(error);
     }
@@ -610,24 +869,15 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             .map_err(|_| AdapterError::MalformedResponse)?;
         let mut text = String::new();
         let mut reasoning = String::new();
-        let parts = candidate
+        let raw_parts = candidate
             .content
-            .map(|content| content.parts)
-            .unwrap_or_default();
+            .and_then(|content| content.parts)
+            .unwrap_or_else(|| RawValue::from_string("[]".to_owned()).expect("valid empty array"));
+        let parts: Vec<CandidatePart> =
+            serde_json::from_str(raw_parts.get()).map_err(|_| AdapterError::MalformedResponse)?;
         let has_function_calls = parts.iter().any(|part| part.function_call.is_some());
-        if has_function_calls
-            && parts.iter().any(|part| {
-                part.thought_signature
-                    .as_deref()
-                    .is_some_and(|signature| !signature.is_empty())
-            })
-        {
-            // Signed parts cannot be returned as executable calls until the
-            // replay artifact bytes can be materialized for the next round.
-            return Err(AdapterError::MalformedResponse);
-        }
         let mut tool_calls = Vec::new();
-        for part in parts {
+        for part in &parts {
             if (part.text.is_some() && part.function_call.is_some())
                 || part.function_response.is_some()
                 || part.server_tool_call.is_some()
@@ -637,14 +887,14 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             }
             if part.thought.unwrap_or(false) {
                 reasoning.push_str(part.text.as_deref().unwrap_or_default());
-            } else if let Some(fragment) = part.text {
-                text.push_str(&fragment);
+            } else if let Some(fragment) = &part.text {
+                text.push_str(fragment);
             }
-            if let Some(call) = part.function_call {
+            if let Some(call) = &part.function_call {
                 if tool_calls.len() >= MAX_TOOL_CALLS_PER_RESPONSE {
                     return Err(AdapterError::MalformedResponse);
                 }
-                tool_calls.push(parse_function_call(call)?);
+                tool_calls.push(parse_function_call(call.clone())?);
             }
         }
         if tool_calls.len() > 1
@@ -661,6 +911,35 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             )
         {
             return Err(AdapterError::MalformedResponse);
+        }
+        let has_thought_signature = parts.iter().any(|part| {
+            part.thought_signature
+                .as_deref()
+                .is_some_and(|signature| !signature.is_empty())
+        });
+        let provider_replay =
+            if has_function_calls && (signed_replay_required || has_thought_signature) {
+                let calls = tool_calls
+                    .iter()
+                    .map(|call| {
+                        (
+                            call.provider_call_id.clone(),
+                            call.name.clone(),
+                            call.arguments.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                validate_gemini_replay_parts(&parts, &calls)?;
+                Some(stage_gemini_replay(
+                    replay_artifacts.ok_or(AdapterError::MalformedResponse)?,
+                    attempt_id,
+                    &raw_parts,
+                )?)
+            } else {
+                None
+            };
+        for call in &mut tool_calls {
+            call.provider_replay.clone_from(&provider_replay);
         }
         match candidate.finish_reason.as_deref() {
             None | Some("STOP") | Some("FINISH_REASON_UNSPECIFIED") => {}
@@ -700,7 +979,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
                 parts
             },
             tool_calls,
-            provider_replay: None,
+            provider_replay,
         });
     }
     if !has_content
@@ -730,6 +1009,16 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         provider_request_id,
         warning_codes: warnings,
     })
+}
+
+#[cfg(test)]
+fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterError> {
+    parse_response_with_replay(
+        response,
+        None,
+        lettuce_types::GenerationAttemptId::new(),
+        false,
+    )
 }
 
 fn parse_function_call(call: ResponseFunctionCall) -> Result<ProposedToolCall, AdapterError> {
@@ -790,7 +1079,14 @@ impl GenerateRequest {
 #[derive(Clone, Serialize)]
 pub(crate) struct Content {
     role: &'static str,
-    parts: Vec<ContentPart>,
+    parts: ContentParts,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(untagged)]
+enum ContentParts {
+    Blocks(Vec<ContentPart>),
+    Replay(Box<RawValue>),
 }
 
 #[derive(Clone, Serialize)]
@@ -930,8 +1226,7 @@ struct Candidate {
 
 #[derive(Deserialize)]
 struct CandidateContent {
-    #[serde(default)]
-    parts: Vec<CandidatePart>,
+    parts: Option<Box<RawValue>>,
 }
 
 #[derive(Deserialize)]
@@ -950,7 +1245,7 @@ struct CandidatePart {
     thought_signature: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct ResponseFunctionCall {
     id: Option<String>,
     name: Option<String>,
@@ -973,12 +1268,64 @@ struct UsageMetadata {
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::HashMap, sync::Mutex};
+
     use super::*;
     use lettuce_conversations::{
         ContextAttributions, ContextBudgetReport, ProviderNeutralMessage, ToolDefinition,
         ToolOutput, TranscriptToolCall, TranscriptToolResult,
     };
     use lettuce_models::{ChatProfileWarning, ModelCapabilities, ProviderProtocol};
+
+    #[derive(Default)]
+    struct MemoryReplayPort {
+        artifacts: Mutex<HashMap<lettuce_types::ReplayArtifactId, (ReplayArtifactRef, Vec<u8>)>>,
+    }
+
+    impl ProviderReplayArtifactPort for MemoryReplayPort {
+        fn stage_provider_replay(
+            &self,
+            draft: ReplayArtifactDraft,
+        ) -> Result<ReplayArtifactRef, lettuce_conversations::ArtifactError> {
+            draft.validate()?;
+            let reference = draft.reference();
+            let bytes = draft.bytes.into_store_bytes();
+            let mut artifacts = self.artifacts.lock().expect("artifact lock");
+            if let Some((stored, stored_bytes)) = artifacts.get(&reference.artifact_id) {
+                if stored != &reference || stored_bytes != &bytes {
+                    return Err(lettuce_conversations::ArtifactError::ImmutableConflict);
+                }
+                return Ok(stored.clone());
+            }
+            artifacts.insert(reference.artifact_id, (reference.clone(), bytes));
+            Ok(reference)
+        }
+
+        fn materialize_provider_replay(
+            &self,
+            reference: &ReplayArtifactRef,
+        ) -> Result<ProtectedArtifactBytes, lettuce_conversations::ArtifactError> {
+            let artifacts = self.artifacts.lock().expect("artifact lock");
+            let (stored, bytes) = artifacts
+                .get(&reference.artifact_id)
+                .ok_or(lettuce_conversations::ArtifactError::NotFound)?;
+            if stored != reference {
+                return Err(lettuce_conversations::ArtifactError::ImmutableConflict);
+            }
+            ProtectedArtifactBytes::new(bytes.clone())
+        }
+
+        fn cleanup_orphan_provider_replay(
+            &self,
+            artifact_id: lettuce_types::ReplayArtifactId,
+        ) -> Result<(), lettuce_conversations::ArtifactError> {
+            self.artifacts
+                .lock()
+                .expect("artifact lock")
+                .remove(&artifact_id);
+            Ok(())
+        }
+    }
 
     fn response(body: &str) -> JsonResponse {
         JsonResponse {
@@ -1089,7 +1436,7 @@ mod tests {
             name: "lookup_weather".to_owned(),
         });
         let body = serde_json::to_value(
-            build_request(&test_profile(), &context, Some(&tools)).expect("request"),
+            build_request(&test_profile(), &context, Some(&tools), None).expect("request"),
         )
         .expect("json");
         assert_eq!(
@@ -1146,7 +1493,7 @@ mod tests {
             attributions: ContextAttributions::default(),
             budget: ContextBudgetReport::default(),
         };
-        assert!(build_request(&test_profile(), &incomplete, None).is_err());
+        assert!(build_request(&test_profile(), &incomplete, None, None).is_err());
 
         let result = ProviderNeutralMessage {
             role: MessageRole::User,
@@ -1166,7 +1513,7 @@ mod tests {
             budget: ContextBudgetReport::default(),
         };
         let body = serde_json::to_value(
-            build_request(&test_profile(), &complete, None).expect("complete replay"),
+            build_request(&test_profile(), &complete, None, None).expect("complete replay"),
         )
         .expect("json");
         assert_eq!(
@@ -1226,7 +1573,7 @@ mod tests {
             budget: ContextBudgetReport::default(),
         };
         ambiguous.validate().expect("domain-valid transcript");
-        assert!(build_request(&test_profile(), &ambiguous, None).is_err());
+        assert!(build_request(&test_profile(), &ambiguous, None, None).is_err());
     }
 
     #[test]
@@ -1276,21 +1623,161 @@ mod tests {
     }
 
     #[test]
+    fn signed_buffered_call_stages_retries_and_replays_exact_native_parts() {
+        let artifacts = MemoryReplayPort::default();
+        let attempt_id = lettuce_types::GenerationAttemptId::new();
+        let native_parts = r#"[ {"thought":true,"text":"checking","thoughtSignature":"opaque"}, {"functionCall":{"id":"call-1","name":"lookup_weather","args":{"city":"Istanbul"}},"thoughtSignature":"call-signature"} ]"#;
+        let response_body = format!(
+            r#"{{"candidates":[{{"content":{{"parts":{native_parts}}},"finishReason":"STOP"}}]}}"#
+        );
+        let outcome = parse_response_with_replay(
+            response(&response_body),
+            Some(&artifacts),
+            attempt_id,
+            true,
+        )
+        .expect("signed response");
+        let candidate = &outcome.candidates[0];
+        let reference = candidate.provider_replay.clone().expect("candidate replay");
+        assert_eq!(
+            reference.retention,
+            lettuce_conversations::ReplayRetention::Conversation
+        );
+        assert_eq!(
+            candidate.tool_calls[0].provider_replay.as_ref(),
+            Some(&reference)
+        );
+        let retry = parse_response_with_replay(
+            response(&response_body),
+            Some(&artifacts),
+            attempt_id,
+            true,
+        )
+        .expect("stable retry");
+        assert_eq!(
+            retry.candidates[0].provider_replay.as_ref(),
+            Some(&reference)
+        );
+        assert_eq!(
+            artifacts
+                .materialize_provider_replay(&reference)
+                .expect("materialize")
+                .into_store_bytes(),
+            native_parts.as_bytes()
+        );
+
+        let execution_id = lettuce_types::ToolExecutionId::new();
+        let context = ProviderNeutralContext {
+            messages: vec![
+                ProviderNeutralMessage {
+                    role: MessageRole::User,
+                    parts: vec![ProviderContextPart::Text {
+                        text: "Weather?".to_owned(),
+                    }],
+                },
+                ProviderNeutralMessage {
+                    role: MessageRole::Assistant,
+                    parts: vec![ProviderContextPart::ToolCall(TranscriptToolCall {
+                        execution_id,
+                        provider_call_id: Some("call-1".to_owned()),
+                        name: "lookup_weather".to_owned(),
+                        arguments: serde_json::json!({"city": "Istanbul"}),
+                        raw_arguments: None,
+                        provider_replay: Some(reference),
+                    })],
+                },
+                ProviderNeutralMessage {
+                    role: MessageRole::User,
+                    parts: vec![ProviderContextPart::ToolResult(TranscriptToolResult {
+                        execution_id,
+                        provider_call_id: Some("call-1".to_owned()),
+                        name: "lookup_weather".to_owned(),
+                        output: ToolOutput {
+                            value: serde_json::json!({"temperature": 18}),
+                            is_error: false,
+                        },
+                    })],
+                },
+            ],
+            attributions: ContextAttributions::default(),
+            budget: ContextBudgetReport::default(),
+        };
+        context.validate().expect("context");
+        let body = encode_request(
+            &build_request(
+                &test_profile(),
+                &context,
+                Some(&tool_request(ToolChoice::Auto)),
+                Some(&artifacts),
+            )
+            .expect("request"),
+        )
+        .expect("encode");
+        assert!(
+            String::from_utf8(body)
+                .expect("utf8")
+                .contains(native_parts)
+        );
+    }
+
+    #[test]
+    fn signed_buffered_call_rejects_missing_signature_and_changed_call() {
+        let artifacts = MemoryReplayPort::default();
+        assert_eq!(
+            parse_response_with_replay(
+                response(
+                    r#"{"candidates":[{"content":{"parts":[{"functionCall":{"id":"call-1","name":"lookup_weather","args":{}}}]},"finishReason":"STOP"}]}"#
+                ),
+                Some(&artifacts),
+                lettuce_types::GenerationAttemptId::new(),
+                true,
+            ),
+            Err(AdapterError::MalformedResponse)
+        );
+
+        let outcome = parse_response_with_replay(
+            response(r#"{"candidates":[{"content":{"parts":[{"functionCall":{"id":"call-1","name":"lookup_weather","args":{"city":"Istanbul"}},"thoughtSignature":"opaque"}]},"finishReason":"STOP"}]}"#),
+            Some(&artifacts),
+            lettuce_types::GenerationAttemptId::new(),
+            true,
+        )
+        .expect("signed response");
+        let reference = outcome.candidates[0]
+            .provider_replay
+            .clone()
+            .expect("reference");
+        let changed = TranscriptToolCall {
+            execution_id: lettuce_types::ToolExecutionId::new(),
+            provider_call_id: Some("call-1".to_owned()),
+            name: "lookup_weather".to_owned(),
+            arguments: serde_json::json!({"city": "Ankara"}),
+            raw_arguments: None,
+            provider_replay: Some(reference.clone()),
+        };
+        assert!(matches!(
+            materialize_gemini_replay(&artifacts, &reference, &[&changed]),
+            Err(AdapterError::Rejected)
+        ));
+    }
+
+    #[test]
     fn rejects_tool_modes_that_require_unavailable_signed_replay() {
         let tools = tool_request(ToolChoice::Auto);
         let mut profile = test_profile();
         profile.external_model_id = "gemini-3-flash-preview".to_owned();
         assert_eq!(
-            validate_tool_features(&profile, Some(&tools)),
+            validate_tool_features(&profile, Some(&tools), false),
             Err(AdapterError::Rejected)
         );
+        assert_eq!(validate_tool_features(&profile, Some(&tools), true), Ok(()));
 
         profile.external_model_id = "gemini-2.5-flash".to_owned();
         profile.parameters = reasoning_parameters();
         assert_eq!(
-            validate_tool_features(&profile, Some(&tools)),
+            validate_tool_features(&profile, Some(&tools), false),
             Err(AdapterError::Rejected)
         );
+        assert_eq!(validate_tool_features(&profile, Some(&tools), true), Ok(()));
     }
 
     #[test]

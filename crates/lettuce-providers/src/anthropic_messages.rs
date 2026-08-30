@@ -214,7 +214,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
                 .map_err(Into::into)
         })
         .await?;
-        let (outcome, replay) = crate::streaming::consume_stream_with_anthropic_replay(
+        let (outcome, replay) = crate::streaming::consume_stream_with_provider_replay(
             response,
             crate::stream_framing::StreamFormat::Sse,
             crate::stream_normalize::StreamProtocol::Anthropic,

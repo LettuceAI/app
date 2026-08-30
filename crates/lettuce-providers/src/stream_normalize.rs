@@ -12,6 +12,7 @@ const MAX_TEXT_BYTES: usize = 1024 * 1024;
 const MAX_REASONING_BYTES: usize = 256 * 1024;
 const MAX_ERROR_CODE_BYTES: usize = 128;
 const MAX_ERROR_MESSAGE_BYTES: usize = 2 * 1024;
+const MAX_PROVIDER_REPLAY_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StreamProtocol {
@@ -30,7 +31,7 @@ pub(crate) enum StreamDelta {
 pub(crate) struct StreamCompletion {
     pub tail: Vec<StreamDelta>,
     pub outcome: InferenceOutcome,
-    pub anthropic_replay: Option<Vec<u8>>,
+    pub provider_replay: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -71,6 +72,8 @@ pub(crate) struct StreamNormalizer {
     anthropic_server_tool_blocks: BTreeSet<u64>,
     anthropic_unreplayable_block: bool,
     gemini_tool_calls: Vec<ProposedToolCall>,
+    gemini_replay_parts: Vec<Value>,
+    gemini_replay_bytes: usize,
     ollama_tool_calls: Vec<ProposedToolCall>,
     gemini_has_thought_signature: bool,
     requires_openai_tool_calls: bool,
@@ -131,6 +134,8 @@ impl StreamNormalizer {
             anthropic_server_tool_blocks: BTreeSet::new(),
             anthropic_unreplayable_block: false,
             gemini_tool_calls: Vec::new(),
+            gemini_replay_parts: Vec::new(),
+            gemini_replay_bytes: 0,
             ollama_tool_calls: Vec::new(),
             gemini_has_thought_signature: false,
             requires_openai_tool_calls: false,
@@ -158,11 +163,11 @@ impl StreamNormalizer {
     pub(crate) fn finish(
         self,
     ) -> Result<(Vec<StreamDelta>, InferenceOutcome), StreamNormalizeError> {
-        let completion = self.finish_with_anthropic_replay()?;
+        let completion = self.finish_with_provider_replay()?;
         Ok((completion.tail, completion.outcome))
     }
 
-    pub(crate) fn finish_with_anthropic_replay(
+    pub(crate) fn finish_with_provider_replay(
         mut self,
     ) -> Result<StreamCompletion, StreamNormalizeError> {
         if !self.terminal {
@@ -174,10 +179,18 @@ impl StreamNormalizer {
         if !self.anthropic_server_tool_blocks.is_empty() {
             return Err(StreamNormalizeError::MalformedJson);
         }
-        let anthropic_replay = if self.protocol == StreamProtocol::Anthropic
+        let provider_replay = if self.protocol == StreamProtocol::Anthropic
             && !self.anthropic_tool_calls.is_empty()
         {
             self.build_anthropic_replay()?
+        } else if self.protocol == StreamProtocol::Gemini
+            && self.gemini_has_thought_signature
+            && !self.gemini_tool_calls.is_empty()
+        {
+            Some(
+                serde_json::to_vec(&self.gemini_replay_parts)
+                    .map_err(|_| StreamNormalizeError::MalformedJson)?,
+            )
         } else {
             None
         };
@@ -189,9 +202,6 @@ impl StreamNormalizer {
                 finish_anthropic_tool_calls(std::mem::take(&mut self.anthropic_tool_calls))?
             }
             StreamProtocol::Gemini => {
-                if self.gemini_has_thought_signature && !self.gemini_tool_calls.is_empty() {
-                    return Err(StreamNormalizeError::MalformedJson);
-                }
                 if self.gemini_tool_calls.len() > 1
                     && self
                         .gemini_tool_calls
@@ -264,7 +274,7 @@ impl StreamNormalizer {
         Ok(StreamCompletion {
             tail,
             outcome,
-            anthropic_replay,
+            provider_replay,
         })
     }
 
@@ -766,6 +776,21 @@ impl StreamNormalizer {
                     {
                         self.gemini_has_thought_signature = true;
                     }
+                    let replay_bytes = serde_json::to_vec(part)
+                        .map_err(|_| StreamNormalizeError::MalformedJson)?
+                        .len();
+                    self.gemini_replay_bytes = self
+                        .gemini_replay_bytes
+                        .checked_add(replay_bytes)
+                        .ok_or(StreamNormalizeError::OutputTooLarge {
+                        field: "provider_replay",
+                    })?;
+                    if self.gemini_replay_bytes > MAX_PROVIDER_REPLAY_BYTES {
+                        return Err(StreamNormalizeError::OutputTooLarge {
+                            field: "provider_replay",
+                        });
+                    }
+                    self.gemini_replay_parts.push(part.clone());
                     if let Some(text) = part.get("text").and_then(Value::as_str) {
                         if part.get("thought").and_then(Value::as_bool) == Some(true) {
                             self.append_reasoning(text, &mut deltas)?;
@@ -1530,12 +1555,12 @@ mod tests {
             .unwrap();
 
         let completion = normalizer
-            .finish_with_anthropic_replay()
+            .finish_with_provider_replay()
             .expect("signed replay");
         assert_eq!(completion.outcome.candidates[0].tool_calls.len(), 1);
         assert_eq!(
             serde_json::from_slice::<serde_json::Value>(
-                &completion.anthropic_replay.expect("replay bytes")
+                &completion.provider_replay.expect("replay bytes")
             )
             .expect("replay json"),
             serde_json::json!([
@@ -1671,12 +1696,22 @@ mod tests {
     }
 
     #[test]
-    fn gemini_rejects_signed_malformed_or_incompatible_stream_calls() {
+    fn gemini_preserves_signed_parts_and_rejects_malformed_stream_calls() {
         let mut signed = StreamNormalizer::new(StreamProtocol::Gemini, None);
         signed.consume(&record(r#"{"candidates":[{"content":{"parts":[{"functionCall":{"id":"call-1","name":"lookup_weather","args":{}},"thoughtSignature":"opaque"}]},"finishReason":"STOP"}]}"#)).unwrap();
+        let completion = signed
+            .finish_with_provider_replay()
+            .expect("signed completion");
+        assert_eq!(completion.outcome.candidates[0].tool_calls.len(), 1);
         assert_eq!(
-            signed.finish().unwrap_err(),
-            StreamNormalizeError::MalformedJson
+            serde_json::from_slice::<serde_json::Value>(
+                &completion.provider_replay.expect("signed replay")
+            )
+            .expect("replay json"),
+            serde_json::json!([{
+                "functionCall": {"id": "call-1", "name": "lookup_weather", "args": {}},
+                "thoughtSignature": "opaque"
+            }])
         );
 
         let mut malformed = StreamNormalizer::new(StreamProtocol::Gemini, None);

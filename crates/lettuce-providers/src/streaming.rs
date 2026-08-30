@@ -21,11 +21,11 @@ pub(crate) async fn consume_stream(
     request: &InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     let (outcome, _) =
-        consume_stream_with_anthropic_replay(response, format, protocol, runtime, request).await?;
+        consume_stream_with_provider_replay(response, format, protocol, runtime, request).await?;
     Ok(outcome)
 }
 
-pub(crate) async fn consume_stream_with_anthropic_replay(
+pub(crate) async fn consume_stream_with_provider_replay(
     mut response: JsonResponseStream,
     format: StreamFormat,
     protocol: StreamProtocol,
@@ -58,13 +58,13 @@ pub(crate) async fn consume_stream_with_anthropic_replay(
     }
     framer.finish().map_err(map_framing)?;
     let completion = normalizer
-        .finish_with_anthropic_replay()
+        .finish_with_provider_replay()
         .map_err(|error| map_normalize(error, provider_request_id))?;
     for delta in completion.tail {
         sequence = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
         emit(runtime, request, sequence, delta).await?;
     }
-    Ok((completion.outcome, completion.anthropic_replay))
+    Ok((completion.outcome, completion.provider_replay))
 }
 
 pub(crate) async fn await_cancelable<T, F>(
