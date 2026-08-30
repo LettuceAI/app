@@ -1,14 +1,16 @@
 use std::str::FromStr;
 
+use lettuce_characters::{Persona, RepositoryError as PersonaRepositoryError};
 use lettuce_creation::{
-    AdmittedCreationToolCall, CreationAttemptFailureCode, CreationAttemptOwner,
-    CreationAttemptRecovery, CreationAttemptRepository, CreationAttemptStatus,
-    CreationAttemptSuccess, CreationAttemptSuccessSettlement, CreationInferenceAttempt,
-    CreationInferenceRound, CreationOperationOutcome, CreationProposal, CreationRepositoryError,
-    CreationRoundFinishReason, CreationStage, CreationTargetKind, CreationToolCallEvidence,
-    CreationTurn, CreationTurnAttemptAdmission, CreationWorkflow, CreationWorkflowRepository,
-    NewCreationAttempt, NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationTurn,
-    NewCreationTurnAttempt, NewCreationWorkflow, creation_tool_request, reduce_creation_tool_calls,
+    AdmittedCreationToolCall, ConfirmedPersonaApply, CreationApplyReceipt, CreationApplyRepository,
+    CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptRecovery,
+    CreationAttemptRepository, CreationAttemptStatus, CreationAttemptSuccess,
+    CreationAttemptSuccessSettlement, CreationInferenceAttempt, CreationInferenceRound,
+    CreationOperationOutcome, CreationProposal, CreationRepositoryError, CreationRoundFinishReason,
+    CreationStage, CreationTarget, CreationTargetKind, CreationToolCallEvidence, CreationTurn,
+    CreationTurnAttemptAdmission, CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt,
+    NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt,
+    NewCreationWorkflow, creation_tool_request, reduce_creation_tool_calls,
     validate_creation_tool_calls,
 };
 use lettuce_types::{
@@ -131,6 +133,38 @@ fn profile_fingerprint(value: Vec<u8>) -> rusqlite::Result<[u8; 32]> {
 
 fn sql_u64(value: u64) -> Result<i64, CreationRepositoryError> {
     i64::try_from(value).map_err(|_| CreationRepositoryError::Storage)
+}
+
+fn persona_error(error: PersonaRepositoryError) -> CreationRepositoryError {
+    match error {
+        PersonaRepositoryError::AlreadyExists => CreationRepositoryError::Conflict,
+        PersonaRepositoryError::Invalid(_) => CreationRepositoryError::Invalid,
+        _ => CreationRepositoryError::Storage,
+    }
+}
+
+fn load_apply_receipt(
+    connection: &Connection,
+    workflow_id: CreationWorkflowId,
+) -> Result<Option<CreationApplyReceipt>, CreationRepositoryError> {
+    connection
+        .query_row(
+            "SELECT workflow_revision,proposal_id,persona_id,persona_revision,applied_at \
+             FROM creation_apply_receipts WHERE workflow_id=?1",
+            [workflow_id.to_string()],
+            |row| {
+                Ok(CreationApplyReceipt {
+                    workflow_id,
+                    workflow_revision: revision(row.get(0)?)?,
+                    proposal_id: parse_id(row.get(1)?)?,
+                    persona_id: parse_id(row.get(2)?)?,
+                    persona_revision: revision(row.get(3)?)?,
+                    applied_at: TimestampMillis::new(row.get(4)?),
+                })
+            },
+        )
+        .optional()
+        .map_err(storage)
 }
 
 fn load_workflow_conn(
@@ -474,6 +508,79 @@ fn list_rounds_in(
             .map_err(|_| CreationRepositoryError::Invalid)?;
     }
     Ok(rounds)
+}
+
+impl CreationApplyRepository for Database {
+    fn apply_new_persona(
+        &self,
+        request: ConfirmedPersonaApply,
+    ) -> Result<CreationApplyReceipt, CreationRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        if let Some(receipt) = load_apply_receipt(&transaction, request.workflow_id)? {
+            if receipt.workflow_revision == request.expected_workflow_revision
+                && receipt.proposal_id == request.proposal_id
+                && receipt.persona_id == request.destination_persona_id
+            {
+                transaction.commit().map_err(storage)?;
+                return Ok(receipt);
+            }
+            return Err(CreationRepositoryError::Conflict);
+        }
+
+        let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+        if workflow.target != CreationTarget::NewPersona
+            || workflow.stage != CreationStage::AwaitingConfirmation
+            || workflow.revision != request.expected_workflow_revision
+            || workflow.current_proposal_id != request.proposal_id
+            || request.now.get() < workflow.updated_at.get()
+        {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let proposal = load_proposal_conn(&transaction, request.proposal_id)?;
+        let (Some(title), Some(description)) = (match proposal.draft {
+            lettuce_creation::CreationDraft::Persona { name, description } => (name, description),
+            _ => return Err(CreationRepositoryError::Conflict),
+        }) else {
+            return Err(CreationRepositoryError::Invalid);
+        };
+        let persona = Persona::new(
+            request.destination_persona_id,
+            title,
+            description,
+            request.now,
+        )
+        .map_err(|_| CreationRepositoryError::Invalid)?;
+        let persona =
+            crate::persona_adapter::insert_persona(&transaction, persona).map_err(persona_error)?;
+        let receipt = CreationApplyReceipt {
+            workflow_id: request.workflow_id,
+            workflow_revision: request.expected_workflow_revision,
+            proposal_id: request.proposal_id,
+            persona_id: persona.id,
+            persona_revision: persona.revision,
+            applied_at: request.now,
+        };
+        transaction
+            .execute(
+                "INSERT INTO creation_apply_receipts \
+                 (workflow_id,workflow_revision,proposal_id,persona_id,persona_revision,applied_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6)",
+                params![
+                    receipt.workflow_id.to_string(),
+                    sql_u64(receipt.workflow_revision.get())?,
+                    receipt.proposal_id.to_string(),
+                    receipt.persona_id.to_string(),
+                    sql_u64(receipt.persona_revision.get())?,
+                    receipt.applied_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        transaction.commit().map_err(storage)?;
+        Ok(receipt)
+    }
 }
 
 impl CreationWorkflowRepository for Database {
@@ -1552,17 +1659,20 @@ mod tests {
         ProtectedArtifactBytes, ReplayArtifactDraft, ReplayArtifactRef,
     };
     use lettuce_creation::{
-        AdmittedCreationToolCall, CreationAttemptOwner, CreationAttemptRepository,
-        CreationAttemptStatus, CreationDraft, CreationOperation, CreationOperationError,
-        CreationRepositoryError, CreationRoundFinishReason, CreationStage, CreationTarget,
-        CreationToolApply, CreationWorkflowRepository, NewCreationAttempt,
+        AdmittedCreationToolCall, ConfirmedPersonaApply, CreationApplyRepository,
+        CreationAttemptOwner, CreationAttemptRepository, CreationAttemptStatus, CreationDraft,
+        CreationOperation, CreationOperationError, CreationRepositoryError,
+        CreationRoundFinishReason, CreationStage, CreationTarget, CreationToolApply,
+        CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt,
         NewCreationInferenceRound, NewCreationToolCall, NewCreationTurn, NewCreationWorkflow,
         apply_creation_tool_calls,
     };
     use lettuce_types::{
         CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, JobId,
-        ReplayArtifactId, Revision, SceneId, TimestampMillis, ToolExecutionId,
+        PersonaId, ReplayArtifactId, Revision, SceneId, TimestampMillis, ToolExecutionId,
     };
+
+    use lettuce_characters::PersonaRepository;
 
     use crate::Database;
 
@@ -1618,6 +1728,276 @@ mod tests {
             calls,
             admitted_at,
         }
+    }
+
+    fn confirmed_workflow(
+        database: &Database,
+        target: CreationTarget,
+        draft: CreationDraft,
+        timestamp: i64,
+    ) -> (CreationWorkflow, CreationProposalId) {
+        let workflow_id = CreationWorkflowId::new();
+        let initial_id = CreationProposalId::new();
+        let initial = database
+            .create_workflow(NewCreationWorkflow {
+                id: workflow_id,
+                initial_proposal_id: initial_id,
+                target,
+                initial_draft: draft,
+                now: TimestampMillis::new(timestamp),
+            })
+            .expect("create workflow");
+        let review_turn = database
+            .record_user_turn(NewCreationTurn {
+                id: CreationTurnId::new(),
+                workflow_id,
+                base_proposal_id: initial_id,
+                user_message: "Show the preview".into(),
+                now: TimestampMillis::new(timestamp + 1),
+            })
+            .expect("record review turn");
+        let reviewed_proposal = database
+            .load_proposal(initial_id)
+            .expect("load initial proposal")
+            .apply(
+                CreationProposalId::new(),
+                review_turn.id,
+                vec![CreationOperation::ShowPreview],
+                TimestampMillis::new(timestamp + 2),
+            )
+            .expect("build review proposal");
+        let reviewed = database
+            .append_proposal(workflow_id, initial.revision, reviewed_proposal.clone())
+            .expect("append review proposal");
+        let confirmation_turn = database
+            .record_user_turn(NewCreationTurn {
+                id: CreationTurnId::new(),
+                workflow_id,
+                base_proposal_id: reviewed_proposal.id,
+                user_message: "Confirm".into(),
+                now: TimestampMillis::new(timestamp + 3),
+            })
+            .expect("record confirmation turn");
+        let confirmation = reviewed_proposal
+            .apply(
+                CreationProposalId::new(),
+                confirmation_turn.id,
+                vec![CreationOperation::RequestConfirmation],
+                TimestampMillis::new(timestamp + 4),
+            )
+            .expect("build confirmation proposal");
+        let workflow = database
+            .append_proposal(workflow_id, reviewed.revision, confirmation.clone())
+            .expect("append confirmation proposal");
+        (workflow, confirmation.id)
+    }
+
+    #[test]
+    fn confirmed_new_persona_apply_is_atomic_idempotent_and_domain_validated() {
+        let database = Database::open_in_memory().expect("database");
+        let (workflow, proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewPersona,
+            CreationDraft::Persona {
+                name: Some("Navigator".into()),
+                description: Some("Keeps the journey on course.".into()),
+            },
+            10,
+        );
+        let persona_id = PersonaId::new();
+        let request = ConfirmedPersonaApply {
+            workflow_id: workflow.id,
+            expected_workflow_revision: workflow.revision,
+            proposal_id,
+            destination_persona_id: persona_id,
+            now: TimestampMillis::new(15),
+        };
+        let receipt = database
+            .apply_new_persona(request.clone())
+            .expect("apply persona");
+        assert_eq!(receipt.persona_id, persona_id);
+        assert_eq!(receipt.persona_revision, Revision::INITIAL);
+        let persona = PersonaRepository::get(&database, persona_id)
+            .expect("load persona")
+            .expect("persona exists");
+        assert_eq!(persona.title, "Navigator");
+        assert_eq!(persona.description, "Keeps the journey on course.");
+        assert!(persona.media.links.is_empty());
+        assert_eq!(
+            PersonaRepository::get_default_snapshot(&database)
+                .expect("default snapshot")
+                .state
+                .persona_id,
+            None
+        );
+
+        let mut retry = request.clone();
+        retry.now = TimestampMillis::new(99);
+        assert_eq!(
+            database.apply_new_persona(retry).expect("exact retry"),
+            receipt
+        );
+        let mut changed_destination = request.clone();
+        changed_destination.destination_persona_id = PersonaId::new();
+        assert_eq!(
+            database.apply_new_persona(changed_destination),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let mut changed_revision = request.clone();
+        changed_revision.expected_workflow_revision =
+            Revision::new(request.expected_workflow_revision.get() + 1);
+        assert_eq!(
+            database.apply_new_persona(changed_revision),
+            Err(CreationRepositoryError::Conflict)
+        );
+
+        let connection = database.connection().expect("database lock");
+        assert!(
+            connection
+                .execute(
+                    "UPDATE creation_apply_receipts SET applied_at=100 WHERE workflow_id=?1",
+                    [workflow.id.to_string()],
+                )
+                .is_err()
+        );
+        assert!(
+            connection
+                .execute(
+                    "DELETE FROM creation_apply_receipts WHERE workflow_id=?1",
+                    [workflow.id.to_string()],
+                )
+                .is_err()
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM personas", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("persona count"),
+            1
+        );
+    }
+
+    #[test]
+    fn new_persona_apply_rejects_unconfirmed_stale_incomplete_and_duplicate_inputs() {
+        let database = Database::open_in_memory().expect("database");
+        assert_eq!(
+            database.create_workflow(NewCreationWorkflow {
+                id: CreationWorkflowId::new(),
+                initial_proposal_id: CreationProposalId::new(),
+                target: CreationTarget::NewPersona,
+                initial_draft: CreationDraft::Persona {
+                    name: Some(" ".into()),
+                    description: Some("Description".into()),
+                },
+                now: TimestampMillis::new(1),
+            }),
+            Err(CreationRepositoryError::Invalid)
+        );
+        let draft = CreationDraft::Persona {
+            name: Some("Complete".into()),
+            description: Some("Complete description".into()),
+        };
+        let drafting_id = CreationWorkflowId::new();
+        let drafting_proposal_id = CreationProposalId::new();
+        let drafting = database
+            .create_workflow(NewCreationWorkflow {
+                id: drafting_id,
+                initial_proposal_id: drafting_proposal_id,
+                target: CreationTarget::NewPersona,
+                initial_draft: draft.clone(),
+                now: TimestampMillis::new(1),
+            })
+            .expect("drafting workflow");
+        let destination = PersonaId::new();
+        assert_eq!(
+            database.apply_new_persona(ConfirmedPersonaApply {
+                workflow_id: drafting.id,
+                expected_workflow_revision: drafting.revision,
+                proposal_id: drafting_proposal_id,
+                destination_persona_id: destination,
+                now: TimestampMillis::new(2),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
+
+        let (confirmed, confirmed_proposal_id) =
+            confirmed_workflow(&database, CreationTarget::NewPersona, draft.clone(), 10);
+        let base_request = ConfirmedPersonaApply {
+            workflow_id: confirmed.id,
+            expected_workflow_revision: confirmed.revision,
+            proposal_id: confirmed_proposal_id,
+            destination_persona_id: destination,
+            now: TimestampMillis::new(15),
+        };
+        let mut stale_proposal = base_request.clone();
+        stale_proposal.proposal_id = CreationProposalId::new();
+        assert_eq!(
+            database.apply_new_persona(stale_proposal),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let mut stale_workflow = base_request.clone();
+        stale_workflow.expected_workflow_revision = Revision::new(2);
+        assert_eq!(
+            database.apply_new_persona(stale_workflow),
+            Err(CreationRepositoryError::Conflict)
+        );
+
+        let (incomplete, incomplete_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewPersona,
+            CreationDraft::Persona {
+                name: Some("Incomplete".into()),
+                description: None,
+            },
+            20,
+        );
+        assert_eq!(
+            database.apply_new_persona(ConfirmedPersonaApply {
+                workflow_id: incomplete.id,
+                expected_workflow_revision: incomplete.revision,
+                proposal_id: incomplete_proposal_id,
+                destination_persona_id: PersonaId::new(),
+                now: TimestampMillis::new(25),
+            }),
+            Err(CreationRepositoryError::Invalid)
+        );
+
+        let (character, character_proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewCharacter,
+            CreationDraft::Character {
+                name: Some("Wrong target".into()),
+                definition: Some("Not a persona".into()),
+                scenes: Vec::new(),
+            },
+            30,
+        );
+        assert_eq!(
+            database.apply_new_persona(ConfirmedPersonaApply {
+                workflow_id: character.id,
+                expected_workflow_revision: character.revision,
+                proposal_id: character_proposal_id,
+                destination_persona_id: PersonaId::new(),
+                now: TimestampMillis::new(35),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
+
+        database
+            .apply_new_persona(base_request)
+            .expect("first destination apply");
+        let (duplicate, duplicate_proposal_id) =
+            confirmed_workflow(&database, CreationTarget::NewPersona, draft, 40);
+        assert_eq!(
+            database.apply_new_persona(ConfirmedPersonaApply {
+                workflow_id: duplicate.id,
+                expected_workflow_revision: duplicate.revision,
+                proposal_id: duplicate_proposal_id,
+                destination_persona_id: destination,
+                now: TimestampMillis::new(45),
+            }),
+            Err(CreationRepositoryError::Conflict)
+        );
     }
 
     #[test]

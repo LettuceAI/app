@@ -3774,6 +3774,7 @@ mod tests {
                 "conversation_usage_refs",
                 "conversations",
                 "creation_admitted_tool_calls",
+                "creation_apply_receipts",
                 "creation_inference_attempts",
                 "creation_inference_rounds",
                 "creation_proposals",

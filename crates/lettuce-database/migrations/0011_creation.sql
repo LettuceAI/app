@@ -49,6 +49,31 @@ CREATE UNIQUE INDEX creation_proposals_owner_id_uq
 CREATE UNIQUE INDEX creation_turns_owner_id_uq
     ON creation_turns(workflow_id, id);
 
+CREATE TABLE creation_apply_receipts (
+    workflow_id TEXT PRIMARY KEY,
+    workflow_revision INTEGER NOT NULL CHECK (workflow_revision >= 1),
+    proposal_id TEXT NOT NULL UNIQUE,
+    persona_id TEXT NOT NULL UNIQUE,
+    persona_revision INTEGER NOT NULL CHECK (persona_revision >= 1),
+    applied_at INTEGER NOT NULL,
+    FOREIGN KEY (workflow_id) REFERENCES creation_workflows(id) ON DELETE RESTRICT,
+    FOREIGN KEY (workflow_id, proposal_id)
+        REFERENCES creation_proposals(workflow_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (persona_id) REFERENCES personas(id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE TRIGGER creation_apply_receipts_immutable_update
+BEFORE UPDATE ON creation_apply_receipts
+BEGIN
+    SELECT RAISE(ABORT, 'creation apply receipts are immutable');
+END;
+
+CREATE TRIGGER creation_apply_receipts_immutable_delete
+BEFORE DELETE ON creation_apply_receipts
+BEGIN
+    SELECT RAISE(ABORT, 'creation apply receipts are immutable');
+END;
+
 CREATE TABLE creation_inference_attempts (
     workflow_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,

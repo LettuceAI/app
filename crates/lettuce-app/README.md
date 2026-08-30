@@ -137,6 +137,9 @@ binding, a new planned proposal, and a distinct job. Partial provider rounds are
 not transplanted into a new request. Successful continuation settlement now
 commits the exact reduced proposal, workflow advance, and attempt success in one
 SQLite transaction, closing the proposal-committed/running-attempt crash window.
+The confirmed new-persona command is also exposed through an application use
+case and delegates to one creation-owned atomic apply port; callers do not
+coordinate persona creation and receipt persistence themselves.
 
 ## Bundled prompts
 

@@ -384,6 +384,60 @@ fn replace_media(
     Ok(())
 }
 
+pub(crate) fn insert_persona(
+    tx: &Transaction<'_>,
+    persona: Persona,
+) -> Result<Persona, RepositoryError> {
+    persona.validate()?;
+    image_assets(tx, persona.media.links.iter().map(|link| link.asset_id))?;
+    let media = normalize_media(persona.media.clone())?;
+    if tx
+        .query_row(
+            "SELECT 1 FROM personas WHERE id=?1",
+            [persona.id.to_string()],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(db_error)?
+        .is_some()
+    {
+        return Err(RepositoryError::AlreadyExists);
+    }
+    let crop = persona
+        .avatar_crop
+        .as_ref()
+        .map(|value| encode(value, CROP_VERSION))
+        .transpose()?;
+    let recommendation = persona
+        .image_recommendation
+        .as_ref()
+        .map(|value| encode(value, RECOMMENDATION_VERSION))
+        .transpose()?;
+    tx.execute(
+        "INSERT INTO personas(id,status,title,normalized_title,nickname,normalized_nickname,description,design_description,avatar_crop_json,image_recommendation_json,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+        params![
+            persona.id.to_string(),
+            status_name(persona.status),
+            persona.title,
+            canonical_title(&persona.title),
+            persona.nickname,
+            persona.nickname.as_deref().map(canonical_title),
+            persona.description,
+            persona.design_description,
+            crop,
+            recommendation,
+            sql_u64(persona.revision.get())?,
+            persona.created_at.get(),
+            persona.updated_at.get()
+        ],
+    )
+    .map_err(db_error)?;
+    replace_media(tx, persona.id, &media)?;
+    load_persona(tx, persona.id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::Storage)
+}
+
 fn update_root(
     tx: &Transaction<'_>,
     id: PersonaId,
@@ -448,61 +502,11 @@ fn load_page(
 
 impl PersonaRepository for Database {
     fn create(&self, persona: Persona) -> Result<Persona, RepositoryError> {
-        persona.validate()?;
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
-        image_assets(
-            &connection,
-            persona.media.links.iter().map(|link| link.asset_id),
-        )?;
-        let media = normalize_media(persona.media.clone())?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        if tx
-            .query_row(
-                "SELECT 1 FROM personas WHERE id=?1",
-                [persona.id.to_string()],
-                |_| Ok(()),
-            )
-            .optional()
-            .map_err(db_error)?
-            .is_some()
-        {
-            return Err(RepositoryError::AlreadyExists);
-        }
-        let crop = persona
-            .avatar_crop
-            .as_ref()
-            .map(|value| encode(value, CROP_VERSION))
-            .transpose()?;
-        let recommendation = persona
-            .image_recommendation
-            .as_ref()
-            .map(|value| encode(value, RECOMMENDATION_VERSION))
-            .transpose()?;
-        tx.execute(
-            "INSERT INTO personas(id,status,title,normalized_title,nickname,normalized_nickname,description,design_description,avatar_crop_json,image_recommendation_json,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
-            params![
-                persona.id.to_string(),
-                status_name(persona.status),
-                persona.title,
-                canonical_title(&persona.title),
-                persona.nickname,
-                persona.nickname.as_deref().map(canonical_title),
-                persona.description,
-                persona.design_description,
-                crop,
-                recommendation,
-                sql_u64(persona.revision.get())?,
-                persona.created_at.get(),
-                persona.updated_at.get()
-            ],
-        )
-        .map_err(db_error)?;
-        replace_media(&tx, persona.id, &media)?;
-        let stored = load_persona(&tx, persona.id)
-            .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?;
+        let stored = insert_persona(&tx, persona)?;
         tx.commit().map_err(db_error)?;
         Ok(stored)
     }
