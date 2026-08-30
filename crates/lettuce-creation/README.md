@@ -78,8 +78,16 @@ definition plus the ordered draft scenes map into the normal character-plan
 contract, retaining proposal scene IDs, text, direction, and order. The
 resulting graph deliberately starts with default character policies and empty
 provenance, presentation customizations, media, variants, and starters. The
-complete graph and its character-specific immutable receipt commit atomically;
-existing-character apply remains a later slice.
+complete graph and its character-specific immutable receipt commit atomically.
+
+Confirmed existing-character finalization is revision-pinned and applies the
+reviewed name, definition, and authoritative ordered scene list in one root
+CAS. All character fields absent from the helper draft remain unchanged.
+Retained scene IDs preserve lifecycle, variants, selected variant, assets, and
+creation metadata while reviewed text/direction/order changes bump only affected
+scene revisions; new IDs start as minimal active text scenes and omitted IDs
+are removed. Removal is rejected when it would invalidate an unrepresented
+default-scene or starter reference instead of silently rewriting that setting.
 
 Confirmed new-lorebook finalization is active through the normal lorebook
 aggregate path. It preserves the confirmed root name and exact entry IDs,

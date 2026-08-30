@@ -1,8 +1,8 @@
 use lettuce_creation::{
-    ConfirmedCharacterApply, ConfirmedLorebookApply, ConfirmedLorebookRevisionApply,
-    ConfirmedPersonaApply, ConfirmedPersonaRevisionApply, CreationApplyReceipt,
-    CreationApplyRepository, CreationCharacterApplyReceipt, CreationLorebookApplyReceipt,
-    CreationRepositoryError,
+    ConfirmedCharacterApply, ConfirmedCharacterRevisionApply, ConfirmedLorebookApply,
+    ConfirmedLorebookRevisionApply, ConfirmedPersonaApply, ConfirmedPersonaRevisionApply,
+    CreationApplyReceipt, CreationApplyRepository, CreationCharacterApplyReceipt,
+    CreationLorebookApplyReceipt, CreationRepositoryError,
 };
 
 pub fn apply_confirmed_new_persona<R: CreationApplyRepository + ?Sized>(
@@ -31,6 +31,13 @@ pub fn apply_confirmed_new_character<R: CreationApplyRepository + ?Sized>(
     request: ConfirmedCharacterApply,
 ) -> Result<CreationCharacterApplyReceipt, CreationRepositoryError> {
     repository.apply_new_character(request)
+}
+
+pub fn apply_confirmed_existing_character<R: CreationApplyRepository + ?Sized>(
+    repository: &R,
+    request: ConfirmedCharacterRevisionApply,
+) -> Result<CreationCharacterApplyReceipt, CreationRepositoryError> {
+    repository.apply_existing_character(request)
 }
 
 pub fn apply_confirmed_existing_persona<R: CreationApplyRepository + ?Sized>(

@@ -130,6 +130,10 @@ typed receipt table. It reconciles reviewed entry IDs in one transaction,
 preserves hidden policy fields for retained entries, permits sequential
 workflows against later root revisions, and rolls back root, children, and
 receipt together on any collision or validation failure.
+Existing-character apply similarly uses one character-owned profile/scene CAS
+transaction and the immutable character receipt. The adapter preserves the
+unreviewed graph, rejects dependent scene removal, and commits profile, ordered
+scenes, one root revision bump, and receipt together.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

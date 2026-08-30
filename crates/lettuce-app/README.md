@@ -147,6 +147,8 @@ Confirmed new-lorebook finalization is exposed through the same application
 boundary and delegates its ordered aggregate plus receipt commit atomically.
 The revision-pinned existing-lorebook use case uses that boundary as well, so
 callers never coordinate root CAS, entry reconciliation, and receipt storage.
+Confirmed existing-character finalization follows the same rule for profile,
+scene reconciliation, dependency checks, root CAS, and receipt persistence.
 
 ## Bundled prompts
 

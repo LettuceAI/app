@@ -933,6 +933,124 @@ pub(crate) fn insert_character_plan(
         .ok_or(RepositoryError::Storage)
 }
 
+pub(crate) fn load_character_details(
+    connection: &Connection,
+    id: CharacterId,
+) -> Result<Option<lettuce_characters::CharacterDetails>, RepositoryError> {
+    load_details(connection, id).map_err(db_error)
+}
+
+pub(crate) fn replace_character_profile_scenes(
+    tx: &Transaction<'_>,
+    expected_revision: Revision,
+    plan: &CreateCharacterPlan,
+) -> Result<lettuce_characters::CharacterDetails, RepositoryError> {
+    let current = ensure_root(tx, plan.character.id, expected_revision, false)?;
+    let expected_character = Character {
+        profile: plan.character.profile.clone(),
+        revision: expected_revision
+            .next()
+            .map_err(|_| RepositoryError::Storage)?,
+        updated_at: plan.character.updated_at,
+        ..current.character.clone()
+    };
+    let retained_scene_ids: BTreeSet<_> = plan.scenes.iter().map(|scene| scene.id).collect();
+    if current
+        .character
+        .defaults
+        .default_scene_id
+        .is_some_and(|id| !retained_scene_ids.contains(&id))
+        || current.starters.iter().any(|starter| {
+            starter
+                .scene_id
+                .is_some_and(|id| !retained_scene_ids.contains(&id))
+        })
+    {
+        return Err(RepositoryError::HasDependencies);
+    }
+    let expected_variants: Vec<_> = current
+        .variants
+        .iter()
+        .filter(|variant| retained_scene_ids.contains(&variant.scene_id))
+        .cloned()
+        .collect();
+    if plan.character != expected_character
+        || plan.variants != expected_variants
+        || plan.starters != current.starters
+    {
+        return Err(RepositoryError::Invalid(
+            lettuce_characters::ValidationError::Invariant {
+                field: "character.profile_scene_plan",
+            },
+        ));
+    }
+    plan.validate()?;
+    validate_plan_assets(tx, plan)?;
+    let current_by_id: HashMap<_, _> = current
+        .scenes
+        .iter()
+        .map(|scene| (scene.id, scene))
+        .collect();
+    let profile = encode(&plan.character.profile, PROFILE_VERSION)?;
+    tx.execute(
+        "UPDATE characters SET name=?2,nickname=?3,normalized_name=?4,normalized_nickname=?5,profile_json=?6 WHERE id=?1",
+        params![
+            plan.character.id.to_string(),
+            plan.character.profile.name,
+            plan.character.profile.nickname,
+            canonical_name(&plan.character.profile.name),
+            plan.character.profile.nickname.as_deref().map(canonical_name),
+            profile,
+        ],
+    )
+    .map_err(db_error)?;
+    for scene in &current.scenes {
+        if !retained_scene_ids.contains(&scene.id) {
+            tx.execute(
+                "DELETE FROM scenes WHERE character_id=?1 AND id=?2",
+                params![plan.character.id.to_string(), scene.id.to_string()],
+            )
+            .map_err(db_error)?;
+        }
+    }
+    tx.execute(
+        "UPDATE scenes SET ordinal=ordinal+1000000 WHERE character_id=?1",
+        [plan.character.id.to_string()],
+    )
+    .map_err(db_error)?;
+    for scene in &plan.scenes {
+        if current_by_id.contains_key(&scene.id) {
+            tx.execute(
+                "UPDATE scenes SET status=?3,ordinal=?4,content_json=?5,direction=?6,selected_variant_id=?7,revision=?8,created_at=?9,updated_at=?10 WHERE character_id=?1 AND id=?2",
+                params![
+                    plan.character.id.to_string(),
+                    scene.id.to_string(),
+                    status_name(scene.status),
+                    scene.ordinal,
+                    encode(&scene.content, DOCUMENT_VERSION)?,
+                    scene.direction,
+                    id_text(scene.selected_variant_id),
+                    sql_u64(scene.revision.get())?,
+                    scene.created_at.get(),
+                    scene.updated_at.get(),
+                ],
+            )
+            .map_err(db_error)?;
+        } else {
+            insert_scene(tx, plan.character.id, scene)?;
+        }
+    }
+    bump_root(
+        tx,
+        plan.character.id,
+        expected_revision,
+        plan.character.updated_at,
+    )?;
+    load_details(tx, plan.character.id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::Storage)
+}
+
 impl CharacterRepository for Database {
     fn create(
         &self,
