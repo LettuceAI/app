@@ -72,6 +72,10 @@ restart rebuilds the same logical batch. Empty discovery is the
 non-companion/dynamic-memory-disabled no-op. Worker execution/debounce and
 binding admission to host startup/finalization remain the next application
 slice; the generic job store itself is still only an in-memory reference store.
+Conversation launch now creates the authoritative normalized memory space in
+the same transaction for every resolved manual/dynamic memory policy, and the
+memory repository resolves it directly from the conversation identity. This
+removes an external `MemorySpaceId` input from the pending post-turn worker.
 
 The first direct/group dynamic-memory handler path accepts an already admitted
 and running ordered tool round, validates the exact v1 feature contract, joins

@@ -37,6 +37,10 @@ target exists in its current snapshot.
 
 The SQLite `MemoryRepository` implementation and first admitted-round
 application handler are now wired through `lettuce-database` and `lettuce-app`.
+Every launched direct/group conversation with resolved manual or dynamic memory
+receives one normalized memory space in the same creation transaction; the
+repository resolves that authoritative space by `ConversationId`, removing the
+previous test-only requirement for callers to invent a space ID.
 The domain-owned cross-aggregate commit port carries one optional memory change
 plus an optional planned-memory revision and a complete terminal
 tool-transition batch. Infrastructure must check that revision even for a

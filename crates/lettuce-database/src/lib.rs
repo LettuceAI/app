@@ -3791,6 +3791,7 @@ mod tests {
                 "companion_turn_effects",
                 "conversation_branches",
                 "conversation_initial_message_origins",
+                "conversation_memory_spaces",
                 "conversation_message_candidates",
                 "conversation_message_revisions",
                 "conversation_messages",

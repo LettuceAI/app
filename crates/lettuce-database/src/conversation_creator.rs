@@ -523,6 +523,9 @@ where
     let root_branch_id = ConversationBranchId::new();
     let aggregate = make_aggregate(&plan, root_branch_id, now)?;
     conversation_vertical_slice::save_conversation(&transaction, &aggregate.conversation)?;
+    if conversation_uses_memory(&plan.kind) {
+        crate::memory_adapter::create_conversation_space_in(&transaction, plan.conversation_id)?;
+    }
     conversation_vertical_slice::save_branch(&transaction, &aggregate.branches[0])?;
     for reference in expected.values() {
         transaction
@@ -545,6 +548,20 @@ where
         operation,
         outbox: vec![outbox],
     })
+}
+
+fn conversation_uses_memory(kind: &lettuce_conversations::ConversationKind) -> bool {
+    use lettuce_conversations::{ConversationKind, MemoryModeSnapshot, SnapshotSelection};
+
+    let selection = match kind {
+        ConversationKind::Direct(details) => &details.memory,
+        ConversationKind::Group(details) => &details.group.memory,
+    };
+    matches!(
+        selection,
+        SnapshotSelection::Inherited(memory) | SnapshotSelection::Explicit(memory)
+            if memory.mode != MemoryModeSnapshot::Disabled
+    )
 }
 
 impl ConversationCreator for Database {

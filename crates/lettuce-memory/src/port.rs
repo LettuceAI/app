@@ -40,6 +40,11 @@ pub trait MemoryRepository: Send + Sync {
 
     fn get(&self, id: MemorySpaceId) -> Result<Option<MemorySpaceSnapshot>, MemoryRepositoryError>;
 
+    fn get_for_conversation(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<MemorySpaceSnapshot>, MemoryRepositoryError>;
+
     /// Atomically verifies `expected_revision`, replaces the complete item set,
     /// and increments the memory-space revision exactly once.
     fn compare_and_apply(

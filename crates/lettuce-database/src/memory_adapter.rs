@@ -4,7 +4,7 @@ use lettuce_memory::{
     MemoryCategory, MemoryChangeSet, MemoryItem, MemoryRepository, MemoryRepositoryError,
     MemorySpaceSnapshot, Score,
 };
-use lettuce_types::{MemorySpaceId, Revision, TimestampMillis};
+use lettuce_types::{ConversationId, MemorySpaceId, Revision, TimestampMillis};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::Database;
@@ -98,6 +98,27 @@ pub(super) fn insert_items(
             .map_err(storage)?;
     }
     Ok(())
+}
+
+pub(crate) fn create_conversation_space_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+) -> Result<MemorySpaceId, lettuce_conversations::ConversationRepositoryError> {
+    let space_id = MemorySpaceId::new();
+    transaction
+        .execute(
+            "INSERT INTO memory_spaces (id, revision) VALUES (?1, 1)",
+            [space_id.to_string()],
+        )
+        .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
+    transaction
+        .execute(
+            "INSERT INTO conversation_memory_spaces (conversation_id, space_id)
+             VALUES (?1, ?2)",
+            params![conversation_id.to_string(), space_id.to_string()],
+        )
+        .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
+    Ok(space_id)
 }
 
 pub(super) fn get_in(
@@ -231,6 +252,35 @@ impl MemoryRepository for Database {
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(storage)?;
         let snapshot = get_in(&transaction, id)?;
+        transaction.commit().map_err(storage)?;
+        Ok(snapshot)
+    }
+
+    fn get_for_conversation(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<MemorySpaceSnapshot>, MemoryRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
+        let space_id = transaction
+            .query_row(
+                "SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1",
+                [conversation_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(storage)?
+            .map(parse_id)
+            .transpose()?;
+        let snapshot = space_id
+            .map(|space_id| get_in(&transaction, space_id))
+            .transpose()?
+            .flatten();
+        if space_id.is_some() && snapshot.is_none() {
+            return Err(storage("conversation memory space is missing"));
+        }
         transaction.commit().map_err(storage)?;
         Ok(snapshot)
     }

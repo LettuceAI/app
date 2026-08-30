@@ -812,6 +812,12 @@ fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let launched = ConversationLaunchPlanner::new(&database)
         .launch_direct(&request(character_id, "companion-effect-launch"), NOW)
         .expect("launch companion");
+    let memory_space =
+        MemoryRepository::get_for_conversation(&database, launched.value.conversation.id)
+            .expect("conversation memory space")
+            .expect("dynamic memory space");
+    assert_eq!(memory_space.revision, Revision::INITIAL);
+    assert!(memory_space.items.is_empty());
     let sent = CompanionTurnCoordinator::<_, ScenarioEmotionEngine>::new(&database, None)
         .begin_send(
             &direct_send_command(

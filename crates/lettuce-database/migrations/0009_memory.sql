@@ -3,6 +3,11 @@ CREATE TABLE memory_spaces (
     revision INTEGER NOT NULL CHECK (revision >= 1)
 ) STRICT;
 
+CREATE TABLE conversation_memory_spaces (
+    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    space_id TEXT NOT NULL UNIQUE REFERENCES memory_spaces(id) ON DELETE RESTRICT
+) STRICT;
+
 CREATE TABLE memory_items (
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     id TEXT NOT NULL UNIQUE,
