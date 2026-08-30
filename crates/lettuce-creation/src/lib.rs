@@ -5,6 +5,7 @@
 mod model;
 mod port;
 mod proposal;
+mod tool;
 
 pub use model::{
     CreationDraft, CreationLorebookEntry, CreationScene, CreationStage, CreationTarget,
@@ -14,4 +15,9 @@ pub use port::{CreationRepositoryError, CreationWorkflowRepository};
 pub use proposal::{
     CreationOperation, CreationOperationError, CreationOperationOutcome, CreationProposal,
     CreationProposalError,
+};
+pub use tool::{
+    AdmittedCreationToolCall, CreationToolApply, CreationToolBatch, CreationToolCommit,
+    CreationToolContractError, apply_creation_tool_calls, creation_tool_request,
+    reduce_creation_tool_calls,
 };

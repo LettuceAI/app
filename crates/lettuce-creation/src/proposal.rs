@@ -233,7 +233,9 @@ fn apply_one(
                 .find(|scene| scene.id == *id)
                 .ok_or(CreationOperationError::NotFound)?;
             scene.content.clone_from(content);
-            scene.direction.clone_from(direction);
+            if direction.is_some() {
+                scene.direction.clone_from(direction);
+            }
         }
         CreationOperation::UpsertLorebookEntry { id, title, content } => {
             validate_text(title)?;

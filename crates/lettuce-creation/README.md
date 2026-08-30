@@ -28,6 +28,16 @@ slice writes character, persona, or lorebook aggregates. Final authored-domain
 apply, provider continuation, image/media leases, administrative tools, and
 frontend events remain later slices.
 
+The native proposal-tool contract is also active. Drafting exposes only the
+versioned mutators valid for the current target plus `show_preview`; review
+exposes only `request_confirmation`, and confirmation exposes no tools. Exact
+declaration/version checks reject undeclared or malformed calls before
+reduction. Valid calls reduce in provider order into one proposal and one typed
+result per call, including operation errors without stopping later calls.
+Application-generated scene and lorebook-entry IDs are deterministic across an
+exact proposal retry, and the repository CAS commits the proposal before any
+later provider-continuation work.
+
 Single-entry, keyword, and staged lorebook-generation behavior is pinned in
 `fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`. Generation
 owns durable reviewed proposals; `lettuce-context` remains the only lorebook

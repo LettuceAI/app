@@ -434,15 +434,30 @@ impl CreationWorkflowRepository for Database {
 
 #[cfg(test)]
 mod tests {
+    use lettuce_conversations::ProposedToolCall;
     use lettuce_creation::{
-        CreationDraft, CreationOperation, CreationOperationError, CreationStage, CreationTarget,
-        CreationWorkflowRepository, NewCreationTurn, NewCreationWorkflow,
+        AdmittedCreationToolCall, CreationDraft, CreationOperation, CreationOperationError,
+        CreationStage, CreationTarget, CreationToolApply, CreationWorkflowRepository,
+        NewCreationTurn, NewCreationWorkflow, apply_creation_tool_calls,
     };
     use lettuce_types::{
         CreationProposalId, CreationTurnId, CreationWorkflowId, Revision, SceneId, TimestampMillis,
     };
 
     use crate::Database;
+
+    fn admitted(name: &str, arguments: serde_json::Value) -> AdmittedCreationToolCall {
+        AdmittedCreationToolCall {
+            definition_version: 1,
+            call: ProposedToolCall {
+                provider_call_id: Some(format!("call-{name}")),
+                name: name.to_owned(),
+                arguments,
+                raw_arguments: None,
+                provider_replay: None,
+            },
+        }
+    }
 
     #[test]
     fn durable_turns_proposals_and_review_transitions_are_atomic_and_retryable() {
@@ -635,5 +650,73 @@ mod tests {
                 )
                 .is_err()
         );
+    }
+
+    #[test]
+    fn native_tool_bridge_persists_one_retry_stable_proposal_and_outputs() {
+        let database = Database::open_in_memory().expect("database");
+        let workflow_id = CreationWorkflowId::new();
+        let initial_id = CreationProposalId::new();
+        let workflow = database
+            .create_workflow(NewCreationWorkflow {
+                id: workflow_id,
+                initial_proposal_id: initial_id,
+                target: CreationTarget::NewPersona,
+                initial_draft: CreationDraft::Persona {
+                    name: None,
+                    description: None,
+                },
+                now: TimestampMillis::new(1),
+            })
+            .expect("workflow");
+        let turn = database
+            .record_user_turn(NewCreationTurn {
+                id: CreationTurnId::new(),
+                workflow_id,
+                base_proposal_id: initial_id,
+                user_message: "Create a navigator persona".to_owned(),
+                now: TimestampMillis::new(2),
+            })
+            .expect("turn");
+        let proposal_id = CreationProposalId::new();
+        let calls = vec![
+            admitted("set_persona_name", serde_json::json!({"name": "Navigator"})),
+            admitted(
+                "set_persona_description",
+                serde_json::json!({"description": "Charts careful routes."}),
+            ),
+            admitted("show_preview", serde_json::json!({})),
+        ];
+        let committed = apply_creation_tool_calls(
+            &database,
+            CreationToolApply {
+                workflow_id,
+                expected_workflow_revision: workflow.revision,
+                base_proposal_id: initial_id,
+                proposal_id,
+                turn_id: turn.id,
+                calls: calls.clone(),
+                now: TimestampMillis::new(3),
+            },
+        )
+        .expect("tool commit");
+        assert_eq!(committed.workflow.stage, CreationStage::AwaitingReview);
+        assert_eq!(committed.outputs.len(), calls.len());
+        assert!(committed.outputs.iter().all(|output| !output.is_error));
+        assert_eq!(committed.outputs[0].value["tool"], "set_persona_name");
+        let retry = apply_creation_tool_calls(
+            &database,
+            CreationToolApply {
+                workflow_id,
+                expected_workflow_revision: workflow.revision,
+                base_proposal_id: initial_id,
+                proposal_id,
+                turn_id: turn.id,
+                calls,
+                now: TimestampMillis::new(3),
+            },
+        )
+        .expect("exact tool retry");
+        assert_eq!(retry, committed);
     }
 }
