@@ -40,19 +40,24 @@ later provider-continuation work.
 
 Creation turns also own durable inference attempts before provider dispatch.
 Each attempt pins its immutable base and planned proposal identities, retry
-parent, target/stage-specific tool request, ordinal, lifecycle, and failure
-state. Native calls are admitted atomically in provider order before reduction,
-including their exact definition version, provider identity, arguments, raw
-arguments, and protected replay reference. Exact retries return the stored
-evidence; stale bases, changed retries, cross-turn owners, undeclared tools,
-version drift, and duplicate identities fail closed. Provider dispatch and
-recursive continuation remain a later application-coordination slice.
+parent, target/stage-specific tool request, job identity, exact resolved-profile
+fingerprint, ordinal, lifecycle, and failure state. Retry children must keep the
+profile binding and use a distinct job. Native calls are admitted atomically in
+provider order before reduction, including their exact definition version,
+provider identity, arguments, raw arguments, and protected replay reference.
+Exact retries return the stored evidence; stale bases, changed retries,
+cross-turn owners, undeclared tools, version drift, reused jobs, profile drift,
+and duplicate identities fail closed.
 
 Each attempt additionally checkpoints up to eight immutable provider-response
 rounds. Round evidence preserves mixed visible text/reasoning, candidate replay,
 and the exact contiguous call range, including text-only terminal responses.
 This makes batch ownership and continuation recovery explicit instead of
 guessing round boundaries from timestamps or a flat call list.
+
+Remote provider dispatch and recursive continuation are active through the
+`lettuce-app` coordinator. Application-level atomic turn/attempt admission and
+the explicit interrupted-parent recovery contract remain later slices.
 
 Single-entry, keyword, and staged lorebook-generation behavior is pinned in
 `fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`. Generation

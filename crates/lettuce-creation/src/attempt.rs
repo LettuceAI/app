@@ -1,8 +1,9 @@
 use lettuce_conversations::{
-    InferenceUsage, MessagePart, ProposedToolCall, ReplayArtifactRef, ReplayRetention, ToolRequest,
+    InferenceUsage, MessagePart, ProposedToolCall, ReplayArtifactRef, ReplayRetention,
+    ResolvedInferenceProfile, ToolRequest,
 };
 use lettuce_types::{
-    CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, Revision,
+    CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, JobId, Revision,
     TimestampMillis, ToolExecutionId,
 };
 use serde::{Deserialize, Serialize};
@@ -59,6 +60,18 @@ pub struct CreationAttemptOwner {
     pub turn_id: CreationTurnId,
 }
 
+pub type CreationInferenceProfileFingerprint = [u8; 32];
+
+pub fn creation_inference_profile_fingerprint(
+    profile: &ResolvedInferenceProfile,
+) -> Result<CreationInferenceProfileFingerprint, CreationAttemptError> {
+    let encoded = serde_json::to_vec(profile).map_err(|_| CreationAttemptError::InvalidContract)?;
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"lettuce-creation-profile-v1\0");
+    hasher.update(&encoded);
+    Ok(*hasher.finalize().as_bytes())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewCreationAttempt {
     pub id: GenerationAttemptId,
@@ -66,6 +79,8 @@ pub struct NewCreationAttempt {
     pub base_proposal_id: CreationProposalId,
     pub planned_proposal_id: CreationProposalId,
     pub retry_parent_id: Option<GenerationAttemptId>,
+    pub job_id: JobId,
+    pub profile_fingerprint: CreationInferenceProfileFingerprint,
     pub now: TimestampMillis,
 }
 
@@ -81,6 +96,8 @@ pub struct CreationInferenceAttempt {
     pub target: CreationTargetKind,
     pub stage: CreationStage,
     pub tool_request: ToolRequest,
+    pub job_id: JobId,
+    pub profile_fingerprint: CreationInferenceProfileFingerprint,
     pub status: CreationAttemptStatus,
     pub failure: Option<CreationAttemptFailureCode>,
     pub revision: Revision,
@@ -381,6 +398,8 @@ mod tests {
                 CreationStage::Drafting,
             )
             .expect("tools"),
+            job_id: JobId::new(),
+            profile_fingerprint: [7; 32],
             status: CreationAttemptStatus::Created,
             failure: None,
             revision: Revision::INITIAL,

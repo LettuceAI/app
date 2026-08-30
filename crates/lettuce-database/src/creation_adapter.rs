@@ -10,7 +10,7 @@ use lettuce_creation::{
     validate_creation_tool_calls,
 };
 use lettuce_types::{
-    CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, Revision,
+    CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, JobId, Revision,
     TimestampMillis,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -121,6 +121,10 @@ fn revision(value: i64) -> rusqlite::Result<Revision> {
         return Err(rusqlite::Error::InvalidQuery);
     }
     Ok(Revision::new(value))
+}
+
+fn profile_fingerprint(value: Vec<u8>) -> rusqlite::Result<[u8; 32]> {
+    value.try_into().map_err(|_| rusqlite::Error::InvalidQuery)
 }
 
 fn sql_u64(value: u64) -> Result<i64, CreationRepositoryError> {
@@ -278,8 +282,8 @@ fn load_attempt_conn(
     let attempt = connection
         .query_row(
             "SELECT workflow_id,turn_id,ordinal,retry_parent_id,base_proposal_id,\
-                    planned_proposal_id,target,stage,tool_request_json,status,failure,revision,\
-                    created_at,started_at,finished_at,updated_at \
+                    planned_proposal_id,target,stage,tool_request_json,job_id,profile_fingerprint,\
+                    status,failure,revision,created_at,started_at,finished_at,updated_at \
              FROM creation_inference_attempts WHERE id=?1",
             [id.to_string()],
             |row| {
@@ -299,16 +303,18 @@ fn load_attempt_conn(
                         CREATION_JSON_VERSION,
                     )
                     .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    status: parse_attempt_status(&row.get::<_, String>(9)?)?,
+                    job_id: parse_id::<JobId>(row.get(9)?)?,
+                    profile_fingerprint: profile_fingerprint(row.get(10)?)?,
+                    status: parse_attempt_status(&row.get::<_, String>(11)?)?,
                     failure: row
-                        .get::<_, Option<String>>(10)?
+                        .get::<_, Option<String>>(12)?
                         .map(|value| parse_attempt_failure(&value))
                         .transpose()?,
-                    revision: revision(row.get(11)?)?,
-                    created_at: TimestampMillis::new(row.get(12)?),
-                    started_at: row.get::<_, Option<i64>>(13)?.map(TimestampMillis::new),
-                    finished_at: row.get::<_, Option<i64>>(14)?.map(TimestampMillis::new),
-                    updated_at: TimestampMillis::new(row.get(15)?),
+                    revision: revision(row.get(13)?)?,
+                    created_at: TimestampMillis::new(row.get(14)?),
+                    started_at: row.get::<_, Option<i64>>(15)?.map(TimestampMillis::new),
+                    finished_at: row.get::<_, Option<i64>>(16)?.map(TimestampMillis::new),
+                    updated_at: TimestampMillis::new(row.get(17)?),
                 })
             },
         )
@@ -721,6 +727,8 @@ impl CreationAttemptRepository for Database {
                     && existing.base_proposal_id == input.base_proposal_id
                     && existing.planned_proposal_id == input.planned_proposal_id
                     && existing.retry_parent_id == input.retry_parent_id
+                    && existing.job_id == input.job_id
+                    && existing.profile_fingerprint == input.profile_fingerprint
                     && existing.created_at == input.now
                 {
                     transaction.commit().map_err(storage)?;
@@ -777,6 +785,8 @@ impl CreationAttemptRepository for Database {
                     || parent.target != workflow.target.kind()
                     || parent.stage != workflow.stage
                     || parent.tool_request != tool_request
+                    || parent.profile_fingerprint != input.profile_fingerprint
+                    || parent.job_id == input.job_id
                 {
                     return Err(CreationRepositoryError::Conflict);
                 }
@@ -787,9 +797,9 @@ impl CreationAttemptRepository for Database {
             .execute(
                 "INSERT INTO creation_inference_attempts \
                  (workflow_id,turn_id,id,ordinal,retry_parent_id,base_proposal_id,\
-                  planned_proposal_id,target,stage,tool_request_json,status,failure,revision,\
-                  created_at,started_at,finished_at,updated_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'created',NULL,1,?11,NULL,NULL,?11)",
+                  planned_proposal_id,target,stage,tool_request_json,job_id,profile_fingerprint,\
+                  status,failure,revision,created_at,started_at,finished_at,updated_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'created',NULL,1,?13,NULL,NULL,?13)",
                 params![
                     input.owner.workflow_id.to_string(),
                     input.owner.turn_id.to_string(),
@@ -802,6 +812,8 @@ impl CreationAttemptRepository for Database {
                     stage_name(workflow.stage),
                     encode_versioned(&tool_request, CREATION_JSON_VERSION)
                         .map_err(|_| CreationRepositoryError::Invalid)?,
+                    input.job_id.to_string(),
+                    input.profile_fingerprint.as_slice(),
                     input.now.get(),
                 ],
             )
@@ -1130,7 +1142,7 @@ mod tests {
         apply_creation_tool_calls,
     };
     use lettuce_types::{
-        CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId,
+        CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, JobId,
         ReplayArtifactId, Revision, SceneId, TimestampMillis, ToolExecutionId,
     };
 
@@ -1488,6 +1500,8 @@ mod tests {
             base_proposal_id: initial_id,
             planned_proposal_id: CreationProposalId::new(),
             retry_parent_id: None,
+            job_id: JobId::new(),
+            profile_fingerprint: [7; 32],
             now: TimestampMillis::new(3),
         };
         let parent = database
@@ -1640,15 +1654,30 @@ mod tests {
             .expect("cancel parent");
         assert_eq!(cancelled.status, CreationAttemptStatus::Cancelled);
         let child_id = GenerationAttemptId::new();
+        let child_input = NewCreationAttempt {
+            id: child_id,
+            owner,
+            base_proposal_id: initial_id,
+            planned_proposal_id: CreationProposalId::new(),
+            retry_parent_id: Some(parent_id),
+            job_id: JobId::new(),
+            profile_fingerprint: parent.profile_fingerprint,
+            now: TimestampMillis::new(7),
+        };
+        let mut reused_job = child_input.clone();
+        reused_job.job_id = parent.job_id;
+        assert_eq!(
+            database.create_creation_attempt(reused_job),
+            Err(CreationRepositoryError::Conflict)
+        );
+        let mut changed_profile = child_input.clone();
+        changed_profile.profile_fingerprint = [8; 32];
+        assert_eq!(
+            database.create_creation_attempt(changed_profile),
+            Err(CreationRepositoryError::Conflict)
+        );
         let child = database
-            .create_creation_attempt(NewCreationAttempt {
-                id: child_id,
-                owner,
-                base_proposal_id: initial_id,
-                planned_proposal_id: CreationProposalId::new(),
-                retry_parent_id: Some(parent_id),
-                now: TimestampMillis::new(7),
-            })
+            .create_creation_attempt(child_input)
             .expect("retry child");
         assert_eq!(child.ordinal, 1);
         let child = database

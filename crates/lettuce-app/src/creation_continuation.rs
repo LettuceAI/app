@@ -11,7 +11,7 @@ use lettuce_creation::{
     CreationInferenceRound, CreationProposal, CreationRepositoryError, CreationRoundFinishReason,
     CreationToolApply, CreationToolCommit, CreationWorkflow, CreationWorkflowRepository,
     MAX_CREATION_INFERENCE_ROUNDS, NewCreationInferenceRound, NewCreationToolCall,
-    apply_creation_tool_calls, reduce_creation_tool_calls,
+    apply_creation_tool_calls, creation_inference_profile_fingerprint, reduce_creation_tool_calls,
 };
 use lettuce_jobs::handle::JobHandle;
 use lettuce_types::{GenerationAttemptId, GenerationTurnId, RequestId, TimestampMillis};
@@ -45,6 +45,15 @@ impl<
         now: TimestampMillis,
     ) -> Result<CreationContinuationResult, CreationContinuationError> {
         let mut attempt = self.repository.load_creation_attempt(attempt_id)?;
+        if attempt.job_id != handle.id() {
+            return Err(CreationContinuationError::InvalidJobOwnership);
+        }
+        if creation_inference_profile_fingerprint(&profile)
+            .map_err(|_| CreationContinuationError::InvalidProfile)?
+            != attempt.profile_fingerprint
+        {
+            return Err(CreationContinuationError::InvalidProfile);
+        }
         if attempt.status == CreationAttemptStatus::Created {
             attempt = self.repository.transition_creation_attempt(
                 attempt.id,
@@ -617,6 +626,8 @@ pub enum CreationContinuationError {
     AttemptNotRunnable,
     #[error("creation attempt ownership is invalid")]
     InvalidOwnership,
+    #[error("creation attempt job ownership is invalid")]
+    InvalidJobOwnership,
     #[error("creation inference profile is invalid")]
     InvalidProfile,
     #[error("creation prompt context is too large")]
@@ -790,7 +801,11 @@ mod tests {
         }
     }
 
-    fn setup(database: &Database) -> GenerationAttemptId {
+    fn setup(
+        database: &Database,
+        handle: &JobHandle,
+        profile: &ResolvedInferenceProfile,
+    ) -> GenerationAttemptId {
         let workflow_id = CreationWorkflowId::new();
         let base_id = CreationProposalId::new();
         database
@@ -825,6 +840,9 @@ mod tests {
                 base_proposal_id: base_id,
                 planned_proposal_id: CreationProposalId::new(),
                 retry_parent_id: None,
+                job_id: handle.id(),
+                profile_fingerprint: creation_inference_profile_fingerprint(profile)
+                    .expect("profile fingerprint"),
                 now: TimestampMillis::new(3),
             })
             .expect("attempt");
@@ -834,7 +852,9 @@ mod tests {
     #[tokio::test]
     async fn runs_two_native_rounds_and_replays_the_committed_result_exactly() {
         let database = Database::open_in_memory().expect("database");
-        let attempt_id = setup(&database);
+        let handle = JobHandle::new(JobId::new());
+        let profile = profile();
+        let attempt_id = setup(&database, &handle, &profile);
         let inference = ScriptedInference {
             outcomes: Mutex::new(VecDeque::from([
                 Ok(outcome(
@@ -871,11 +891,10 @@ mod tests {
             ])),
             requests: Mutex::new(Vec::new()),
         };
-        let handle = JobHandle::new(JobId::new());
         let result = CreationContinuationCoordinator::new(&database, &inference)
             .run(
                 attempt_id,
-                profile(),
+                profile.clone(),
                 &handle,
                 None,
                 TimestampMillis::new(4),
@@ -915,7 +934,7 @@ mod tests {
         let replay = CreationContinuationCoordinator::new(&database, &inference)
             .run(
                 attempt_id,
-                profile(),
+                profile.clone(),
                 &handle,
                 None,
                 TimestampMillis::new(20),
@@ -930,7 +949,9 @@ mod tests {
     #[tokio::test]
     async fn text_only_completion_succeeds_without_fabricating_a_proposal() {
         let database = Database::open_in_memory().expect("database");
-        let attempt_id = setup(&database);
+        let handle = JobHandle::new(JobId::new());
+        let profile = profile();
+        let attempt_id = setup(&database, &handle, &profile);
         let inference = ScriptedInference {
             outcomes: Mutex::new(VecDeque::from([Ok(outcome(
                 vec![MessagePart::Text {
@@ -945,8 +966,8 @@ mod tests {
         let result = CreationContinuationCoordinator::new(&database, &inference)
             .run(
                 attempt_id,
-                profile(),
-                &JobHandle::new(JobId::new()),
+                profile.clone(),
+                &handle,
                 None,
                 TimestampMillis::new(4),
             )
@@ -961,18 +982,19 @@ mod tests {
     #[tokio::test]
     async fn cancellation_settles_the_attempt_before_provider_dispatch() {
         let database = Database::open_in_memory().expect("database");
-        let attempt_id = setup(&database);
+        let handle = JobHandle::new(JobId::new());
+        let profile = profile();
+        let attempt_id = setup(&database, &handle, &profile);
         let inference = ScriptedInference {
             outcomes: Mutex::new(VecDeque::new()),
             requests: Mutex::new(Vec::new()),
         };
-        let handle = JobHandle::new(JobId::new());
         handle.request_cancel();
         assert!(matches!(
             CreationContinuationCoordinator::new(&database, &inference)
                 .run(
                     attempt_id,
-                    profile(),
+                    profile.clone(),
                     &handle,
                     None,
                     TimestampMillis::new(4),
@@ -993,7 +1015,9 @@ mod tests {
     #[tokio::test]
     async fn provider_unavailability_fails_the_attempt_without_a_round() {
         let database = Database::open_in_memory().expect("database");
-        let attempt_id = setup(&database);
+        let handle = JobHandle::new(JobId::new());
+        let profile = profile();
+        let attempt_id = setup(&database, &handle, &profile);
         let inference = ScriptedInference {
             outcomes: Mutex::new(VecDeque::from([Err(PortError::Unavailable)])),
             requests: Mutex::new(Vec::new()),
@@ -1002,8 +1026,8 @@ mod tests {
             CreationContinuationCoordinator::new(&database, &inference)
                 .run(
                     attempt_id,
-                    profile(),
-                    &JobHandle::new(JobId::new()),
+                    profile.clone(),
+                    &handle,
                     None,
                     TimestampMillis::new(4),
                 )
@@ -1031,9 +1055,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dispatch_rejects_the_wrong_job_or_resolved_profile_before_starting() {
+        let database = Database::open_in_memory().expect("database");
+        let handle = JobHandle::new(JobId::new());
+        let profile = profile();
+        let attempt_id = setup(&database, &handle, &profile);
+        let inference = ScriptedInference {
+            outcomes: Mutex::new(VecDeque::new()),
+            requests: Mutex::new(Vec::new()),
+        };
+        assert!(matches!(
+            CreationContinuationCoordinator::new(&database, &inference)
+                .run(
+                    attempt_id,
+                    profile.clone(),
+                    &JobHandle::new(JobId::new()),
+                    None,
+                    TimestampMillis::new(4),
+                )
+                .await,
+            Err(CreationContinuationError::InvalidJobOwnership)
+        ));
+        assert!(matches!(
+            CreationContinuationCoordinator::new(&database, &inference)
+                .run(
+                    attempt_id,
+                    self::profile(),
+                    &handle,
+                    None,
+                    TimestampMillis::new(4),
+                )
+                .await,
+            Err(CreationContinuationError::InvalidProfile)
+        ));
+        assert_eq!(
+            database
+                .load_creation_attempt(attempt_id)
+                .expect("attempt")
+                .status,
+            CreationAttemptStatus::Created
+        );
+        assert!(inference.requests.lock().expect("requests").is_empty());
+    }
+
+    #[tokio::test]
     async fn eight_non_terminal_rounds_fail_with_the_durable_round_limit() {
         let database = Database::open_in_memory().expect("database");
-        let attempt_id = setup(&database);
+        let handle = JobHandle::new(JobId::new());
+        let profile = profile();
+        let attempt_id = setup(&database, &handle, &profile);
         let outcomes = (0..MAX_CREATION_INFERENCE_ROUNDS)
             .map(|ordinal| {
                 Ok(outcome(
@@ -1056,8 +1126,8 @@ mod tests {
             CreationContinuationCoordinator::new(&database, &inference)
                 .run(
                     attempt_id,
-                    profile(),
-                    &JobHandle::new(JobId::new()),
+                    profile.clone(),
+                    &handle,
                     None,
                     TimestampMillis::new(4),
                 )

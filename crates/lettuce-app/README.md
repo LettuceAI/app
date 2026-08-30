@@ -119,6 +119,11 @@ provider failures settle the attempt; and eight non-terminal rounds fail with
 a durable round-limit code. Host commands and frontend surfaces remain a later
 slice.
 
+Dispatch is additionally bound to the attempt's unique claimed job and a
+BLAKE3 fingerprint of the complete resolved inference profile. A stale caller,
+reused retry job, or profile drift is rejected before the attempt starts or any
+provider request is sent.
+
 ## Bundled prompts
 
 The app owns the closed, versioned built-in prompt catalog in

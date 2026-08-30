@@ -64,6 +64,8 @@ CREATE TABLE creation_inference_attempts (
         AND json_extract(tool_request_json, '$.format_version') = 1
         AND json_type(tool_request_json, '$.value.definitions') = 'array'
     ),
+    job_id TEXT NOT NULL,
+    profile_fingerprint BLOB NOT NULL CHECK (length(profile_fingerprint) = 32),
     status TEXT NOT NULL CHECK (
         status IN ('created', 'running', 'succeeded', 'failed', 'cancelled', 'interrupted')
     ),
@@ -81,6 +83,7 @@ CREATE TABLE creation_inference_attempts (
     PRIMARY KEY (workflow_id, turn_id, id),
     UNIQUE (id),
     UNIQUE (workflow_id, turn_id, ordinal),
+    UNIQUE (job_id),
     UNIQUE (planned_proposal_id),
     UNIQUE (workflow_id, turn_id, id, base_proposal_id),
     FOREIGN KEY (workflow_id, turn_id)
@@ -205,6 +208,8 @@ WHEN NEW.retry_parent_id IS NOT NULL AND NOT EXISTS (
       AND parent.target = NEW.target
       AND parent.stage = NEW.stage
       AND parent.tool_request_json = NEW.tool_request_json
+      AND parent.profile_fingerprint = NEW.profile_fingerprint
+      AND parent.job_id != NEW.job_id
 )
 BEGIN SELECT RAISE(ABORT, 'invalid creation attempt retry'); END;
 
@@ -235,7 +240,7 @@ BEGIN SELECT RAISE(ABORT, 'creation attempt ownership mismatch'); END;
 
 CREATE TRIGGER creation_attempt_identity_immutable
 BEFORE UPDATE OF workflow_id, turn_id, id, ordinal, retry_parent_id, base_proposal_id,
-                 planned_proposal_id, target, stage, tool_request_json
+                 planned_proposal_id, target, stage, tool_request_json, job_id, profile_fingerprint
 ON creation_inference_attempts
 BEGIN SELECT RAISE(ABORT, 'creation attempt identity is immutable'); END;
 

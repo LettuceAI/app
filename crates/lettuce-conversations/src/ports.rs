@@ -1531,7 +1531,8 @@ impl MemoryContribution {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SafetyContext {
     Standard,
     Restricted,
@@ -1772,7 +1773,8 @@ impl InferenceRequest {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResolvedInferenceProfile {
     pub chat_profile: lettuce_models::ResolvedChatProfile,
     pub tool_policy: ToolPolicy,
@@ -1781,14 +1783,16 @@ pub struct ResolvedInferenceProfile {
     pub correlation_id: Option<lettuce_types::RequestId>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ToolPolicy {
     Disabled,
     Allowed,
     Required,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum OutputPolicy {
     Plain,
     Structured,

@@ -16,6 +16,7 @@ workspace = true
 [dependencies]
 lettuce-conversations.workspace = true
 lettuce-types.workspace = true
+blake3.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
