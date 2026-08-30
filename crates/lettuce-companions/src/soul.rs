@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use lettuce_types::{CharacterId, OperationRecordId, Revision, TimestampMillis};
+use lettuce_types::{CharacterId, OperationRecordId, PromptDocumentId, Revision, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
 use crate::state::{EmotionVector, RegulationStyle, RelationshipDefaults};
@@ -233,6 +233,15 @@ impl CompanionSoulIdentity {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CompanionPromptingConfig {
+    #[serde(default)]
+    pub prompt_template_id: Option<PromptDocumentId>,
+    #[serde(default)]
+    pub style_notes: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CompanionSoulConfig {
     #[serde(default)]
     pub soul: CompanionSoulIdentity,
@@ -240,6 +249,8 @@ pub struct CompanionSoulConfig {
     pub authored_facts: Vec<SoulFact>,
     #[serde(default)]
     pub relationship_defaults: RelationshipDefaults,
+    #[serde(default)]
+    pub prompting: CompanionPromptingConfig,
 }
 
 pub fn initial_soul_state(
@@ -777,6 +788,7 @@ mod tests {
                 superseded_at: None,
             }],
             relationship_defaults: RelationshipDefaults::default(),
+            prompting: CompanionPromptingConfig::default(),
         };
         let state = initial_soul_state(Some(&config), TimestampMillis::new(42)).expect("state");
         assert_eq!(state.revision, Revision::INITIAL);
@@ -817,6 +829,10 @@ mod tests {
                 false,
             )],
             relationship_defaults: RelationshipDefaults::default(),
+            prompting: CompanionPromptingConfig {
+                prompt_template_id: Some(PromptDocumentId::new()),
+                style_notes: " restrained ".into(),
+            },
         };
         let value = serde_json::to_value(&config).expect("serialize");
         assert_eq!(value["soul"]["relationalStyle"], "Slow trust");
@@ -826,6 +842,8 @@ mod tests {
             serde_json::json!([])
         );
         assert_eq!(value["authoredFacts"][0]["category"], "relationalStyle");
+        assert!(value["prompting"]["promptTemplateId"].is_string());
+        assert_eq!(value["prompting"]["styleNotes"], " restrained ");
 
         let decoded: CompanionSoulConfig = serde_json::from_value(serde_json::json!({
             "soul": { "relationalStyle": "Slow trust" },
@@ -835,7 +853,10 @@ mod tests {
                 "value": "Moved to the coast",
                 "policy": "historical",
                 "slot": "coast-move"
-            }]
+            }],
+            "prompting": {
+                "styleNotes": "warm but reserved"
+            }
         }))
         .expect("legacy-shaped config");
         assert_eq!(decoded.soul.relational_style, "Slow trust");
@@ -843,6 +864,8 @@ mod tests {
         assert_eq!(decoded.authored_facts[0].confidence, 1.0);
         assert_eq!(decoded.authored_facts[0].evidence_count, 1);
         assert_eq!(decoded.authored_facts[0].weight, 1.0);
+        assert_eq!(decoded.prompting.style_notes, "warm but reserved");
+        assert_eq!(decoded.prompting.prompt_template_id, None);
     }
 
     #[test]

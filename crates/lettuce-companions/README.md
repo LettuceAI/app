@@ -88,3 +88,8 @@ clamped weight-times-confidence, style notes, active signals, and regulation
 branches. It accepts typed state and an explicit effective clock. Context
 assembler insertion, companion prompt-template selection, scheduled notes, and
 time-awareness clock resolution remain later application slices.
+
+The authored companion configuration also preserves the legacy nested
+`prompting.promptTemplateId` and `prompting.styleNotes` fields. The template ID
+remains a typed prompt-document reference, while style notes feed the exact
+prompt-state renderer without reinterpretation.

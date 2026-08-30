@@ -3173,6 +3173,7 @@ mod smoke_tests {
             })
             .collect(),
             relationship_defaults: lettuce_companions::RelationshipDefaults::default(),
+            prompting: lettuce_companions::CompanionPromptingConfig::default(),
         };
         let character = Character::new(
             character_id,

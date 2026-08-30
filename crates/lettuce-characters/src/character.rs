@@ -204,6 +204,10 @@ impl CharacterDefaults {
                     field: "character.companion_soul.authored_facts",
                 }
             })?;
+            validate_text(
+                "character.companion_soul.prompting.style_notes",
+                &config.prompting.style_notes,
+            )?;
         }
         if self.interaction_mode != InteractionMode::Companion && self.companion_soul.is_some() {
             return Err(ValidationError::Invariant {
