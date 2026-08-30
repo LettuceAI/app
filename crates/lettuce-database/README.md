@@ -164,6 +164,16 @@ message, generation turn/attempt, companion session and relationship revisions,
 operation, and outbox commit together. A stale state CAS or hook failure rolls
 the entire send back, while exact operation replay returns the existing turn
 without applying the state transition twice.
+Migration 13 also normalizes the legacy companion turn-effect seed as
+relationship columns, three emotion-delta vectors, and ordered signal changes.
+Only dynamic-memory companion sends create that hidden turn-owned seed.
+Companion continuations use the same boundary with the legacy zero-delta seed
+and nullable user-message reference.
+Assistant finalization creates the processing effect in the same transaction;
+failure/cancellation removes an unconsumed seed, while interrupted recovery
+keeps it with the same turn. Ready/failed settlement stores typed memory IDs,
+the exact source-message window, and bounded summary data behind the
+companion-owned repository port. Terminal effects are immutable.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

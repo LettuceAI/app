@@ -4,9 +4,12 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 
 use lettuce_conversations::{
-    ConversationKind, ConversationRepositoryError, CreateConversationResult,
-    PreparedConversationLaunch, SendConversation, SendConversationResult,
+    ContinueConversation, ContinueConversationResult, ConversationKind,
+    ConversationRepositoryError, CreateConversationResult, PreparedConversationLaunch,
+    SendConversation, SendConversationResult,
 };
+
+use crate::effect::CompanionTurnEffectSeed;
 
 const DECAY_MINUTES: f64 = 45.0;
 
@@ -450,6 +453,7 @@ pub struct PreparedCompanionSend {
     command: SendConversation,
     owner: CompanionStateOwner,
     replacement: CompanionStateReplacement,
+    effect_seed: Option<CompanionTurnEffectSeed>,
 }
 
 impl PreparedCompanionSend {
@@ -457,12 +461,16 @@ impl PreparedCompanionSend {
         command: SendConversation,
         owner: CompanionStateOwner,
         replacement: CompanionStateReplacement,
+        effect_seed: Option<CompanionTurnEffectSeed>,
     ) -> Result<Self, CompanionSendRepositoryError> {
         command
             .validate()
             .map_err(|_| CompanionSendRepositoryError::Invalid)?;
         if command.conversation_id != owner.conversation_id
             || validate_runtime_state(&replacement.state).is_err()
+            || effect_seed
+                .as_ref()
+                .is_some_and(|seed| seed.validate().is_err())
         {
             return Err(CompanionSendRepositoryError::Invalid);
         }
@@ -470,6 +478,7 @@ impl PreparedCompanionSend {
             command,
             owner,
             replacement,
+            effect_seed,
         })
     }
 
@@ -485,8 +494,9 @@ impl PreparedCompanionSend {
         SendConversation,
         CompanionStateOwner,
         CompanionStateReplacement,
+        Option<CompanionTurnEffectSeed>,
     ) {
-        (self.command, self.owner, self.replacement)
+        (self.command, self.owner, self.replacement, self.effect_seed)
     }
 }
 
@@ -502,6 +512,39 @@ pub trait CompanionConversationSender: Send + Sync {
         prepared: PreparedCompanionSend,
         now: TimestampMillis,
     ) -> Result<SendConversationResult, CompanionSendRepositoryError>;
+}
+
+#[derive(Debug)]
+pub struct PreparedCompanionContinue {
+    command: ContinueConversation,
+}
+
+impl PreparedCompanionContinue {
+    pub fn new(command: ContinueConversation) -> Result<Self, CompanionContinueRepositoryError> {
+        lettuce_conversations::ConversationMutation::Continue(command.clone())
+            .validate()
+            .map_err(|_| CompanionContinueRepositoryError::Invalid)?;
+        Ok(Self { command })
+    }
+
+    #[must_use]
+    pub fn into_command(self) -> ContinueConversation {
+        self.command
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompanionContinueRepositoryError {
+    Conversation(ConversationRepositoryError),
+    Invalid,
+}
+
+pub trait CompanionConversationContinuer: Send + Sync {
+    fn begin_companion_continue(
+        &self,
+        prepared: PreparedCompanionContinue,
+        now: TimestampMillis,
+    ) -> Result<ContinueConversationResult, CompanionContinueRepositoryError>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

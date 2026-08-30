@@ -1944,6 +1944,81 @@ where
     )
 }
 
+pub(crate) fn begin_continue_with_hook<F>(
+    database: &Database,
+    command: &ContinueConversation,
+    now: TimestampMillis,
+    hook: F,
+) -> Result<ContinueConversationResult, ConversationRepositoryError>
+where
+    F: FnOnce(&Transaction<'_>, GenerationTurnId) -> Result<(), ConversationRepositoryError>,
+{
+    let turn_key = turn_key(OperationKind::Continue, &command.operation)?;
+    kernel::run_mutation(
+        database,
+        command.conversation_id,
+        OperationKind::Continue,
+        &command.operation,
+        now,
+        |transaction, context| {
+            let conversation = kernel::cas_conversation(
+                transaction,
+                context.conversation_id,
+                command.expected_revision,
+            )?;
+            kernel::require_active(&conversation)?;
+            require_active_branch(transaction, context.conversation_id, command.branch_id)?;
+            require_no_live_turn(transaction, context.conversation_id)?;
+            require_speaker_shape(
+                transaction,
+                context.conversation_id,
+                command.forced_speaker,
+                command.swap_roles,
+            )?;
+            let head_message_id =
+                branch_head(transaction, context.conversation_id, command.branch_id)?
+                    .ok_or(ConversationRepositoryError::Conflict)?;
+            let turn_id = GenerationTurnId::new();
+            insert_turn(
+                transaction,
+                &TurnDraft {
+                    conversation_id: context.conversation_id,
+                    turn_id,
+                    branch_id: command.branch_id,
+                    operation: GenerationOperation::Continue,
+                    input: GenerationInput::ExistingHead { head_message_id },
+                    target: GenerationTarget::NewAssistant {
+                        message_id: MessageId::new(),
+                        parent_message_id: Some(head_message_id),
+                    },
+                    idempotency_key: turn_key,
+                    guidance: None,
+                    model_override: None,
+                    forced_speaker: command.forced_speaker,
+                    swap_roles: command.swap_roles,
+                },
+                context.now,
+            )?;
+            insert_first_attempt(transaction, context.conversation_id, turn_id)?;
+            hook(transaction, turn_id)?;
+            kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+            let value = begin_generation(transaction, context.conversation_id, turn_id)?;
+            Ok(kernel::Staged {
+                value,
+                result: OperationResultRef::Turn(turn_id),
+                events: Vec::new(),
+            })
+        },
+        |transaction, operation| {
+            begin_generation(
+                transaction,
+                command.conversation_id,
+                replayed_turn(operation)?,
+            )
+        },
+    )
+}
+
 /// Every port method is implemented here; the kernel owns the shared
 /// transaction, idempotency and outbox order they all run through.
 impl ConversationRepository for Database {
@@ -1964,69 +2039,7 @@ impl ConversationRepository for Database {
         command: &ContinueConversation,
         now: TimestampMillis,
     ) -> Result<ContinueConversationResult, ConversationRepositoryError> {
-        let turn_key = turn_key(OperationKind::Continue, &command.operation)?;
-        kernel::run_mutation(
-            self,
-            command.conversation_id,
-            OperationKind::Continue,
-            &command.operation,
-            now,
-            |transaction, context| {
-                let conversation = kernel::cas_conversation(
-                    transaction,
-                    context.conversation_id,
-                    command.expected_revision,
-                )?;
-                kernel::require_active(&conversation)?;
-                require_active_branch(transaction, context.conversation_id, command.branch_id)?;
-                require_no_live_turn(transaction, context.conversation_id)?;
-                require_speaker_shape(
-                    transaction,
-                    context.conversation_id,
-                    command.forced_speaker,
-                    command.swap_roles,
-                )?;
-                let head_message_id =
-                    branch_head(transaction, context.conversation_id, command.branch_id)?
-                        .ok_or(ConversationRepositoryError::Conflict)?;
-                let turn_id = GenerationTurnId::new();
-                insert_turn(
-                    transaction,
-                    &TurnDraft {
-                        conversation_id: context.conversation_id,
-                        turn_id,
-                        branch_id: command.branch_id,
-                        operation: GenerationOperation::Continue,
-                        input: GenerationInput::ExistingHead { head_message_id },
-                        target: GenerationTarget::NewAssistant {
-                            message_id: MessageId::new(),
-                            parent_message_id: Some(head_message_id),
-                        },
-                        idempotency_key: turn_key,
-                        guidance: None,
-                        model_override: None,
-                        forced_speaker: command.forced_speaker,
-                        swap_roles: command.swap_roles,
-                    },
-                    context.now,
-                )?;
-                insert_first_attempt(transaction, context.conversation_id, turn_id)?;
-                kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
-                let value = begin_generation(transaction, context.conversation_id, turn_id)?;
-                Ok(kernel::Staged {
-                    value,
-                    result: OperationResultRef::Turn(turn_id),
-                    events: Vec::new(),
-                })
-            },
-            |transaction, operation| {
-                begin_generation(
-                    transaction,
-                    command.conversation_id,
-                    replayed_turn(operation)?,
-                )
-            },
-        )
+        begin_continue_with_hook(self, command, now, |_, _| Ok(()))
     }
 
     fn begin_regenerate(
@@ -2535,6 +2548,13 @@ impl ConversationRepository for Database {
                     },
                     context.now,
                 )?;
+                crate::state_adapter::finalize_turn_effect_in(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
+                    message_id,
+                    context.now,
+                )?;
                 if let Some(prior_candidate_id) = prior_candidate_id {
                     transaction
                         .execute(
@@ -2765,6 +2785,11 @@ impl ConversationRepository for Database {
                     turn_id,
                     failure,
                     context.now,
+                )?;
+                crate::state_adapter::discard_turn_effect_draft_in(
+                    transaction,
+                    context.conversation_id,
+                    turn_id,
                 )?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
@@ -3048,6 +3073,11 @@ impl ConversationRepository for Database {
                     command.turn_id,
                     Some(GenerationTurnStatus::Cancelled),
                     context.now,
+                )?;
+                crate::state_adapter::discard_turn_effect_draft_in(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
                 )?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;

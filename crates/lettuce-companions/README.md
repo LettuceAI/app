@@ -70,8 +70,8 @@ while their numeric effects still accumulate, and the exact emotion,
 relationship, confidence, clamping, and unavailable-model fallback values are
 preserved. Verified ONNX tokenization/model execution now lives behind the
 auxiliary-analysis boundary in `lettuce-embeddings`; model discovery, prompt
-rendering, provider/job coordination, companion turn wiring, and frontend
-events remain deferred.
+rendering and direct companion turn wiring are complete. Provider/job
+coordination and frontend events remain deferred.
 
 `PreparedCompanionSend` and `CompanionConversationSender` provide the atomic
 write boundary needed by turn coordination: a prepared state replacement is
@@ -93,3 +93,14 @@ The authored companion configuration also preserves the legacy nested
 `prompting.promptTemplateId` and `prompting.styleNotes` fields. The template ID
 remains a typed prompt-document reference, while style notes feed the exact
 prompt-state renderer without reinterpretation.
+
+Typed companion turn effects copy their relationship, felt/expressed/blocked,
+and ordered signal changes directly from the existing legacy-math transition;
+there is no second calculation path. The domain port exposes the durable
+processing/ready/failed lifecycle, typed memory changes, and source window.
+Dynamic-memory sends retain a hidden seed with the admitted user turn, while a
+visible processing effect is created only with the durable assistant message.
+Dynamic-memory companion continuations retain the legacy zero-delta seed and
+no user-message owner.
+Failure or cancellation before finalization discards the seed, and exact send
+or finalization replay does not duplicate an effect.

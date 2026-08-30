@@ -1,13 +1,16 @@
 use lettuce_characters::{CharacterRepository, RepositoryError as CharacterRepositoryError};
 use lettuce_companions::{
-    CompanionConversationSender, CompanionSendRepositoryError, CompanionStateOwner,
-    CompanionStateReplacement, CompanionStateRepository, CompanionStateRepositoryError,
-    CompanionTurnInput, PreparedCompanionSend, apply_turn, signals_from_classification,
-    unavailable_signal_bundle,
+    CompanionContinueRepositoryError, CompanionConversationContinuer, CompanionConversationSender,
+    CompanionSendRepositoryError, CompanionStateOwner, CompanionStateReplacement,
+    CompanionStateRepository, CompanionStateRepositoryError, CompanionTurnEffectSeed,
+    CompanionTurnInput, PreparedCompanionContinue, PreparedCompanionSend, apply_turn,
+    signals_from_classification, unavailable_signal_bundle,
 };
 use lettuce_conversations::{
-    ConversationKind, ConversationReader, ConversationRepository, ConversationRepositoryError,
-    MessagePart, OperationKind, SendConversation, SendConversationResult, SnapshotSelection,
+    ContinueConversation, ContinueConversationResult, ConversationKind, ConversationReader,
+    ConversationRepository, ConversationRepositoryError, MemoryModeSnapshot, MessagePart,
+    OperationKind, SendConversation, SendConversationResult, SnapshotSelection,
+    resolve_effective_settings,
 };
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_types::TimestampMillis;
@@ -18,6 +21,74 @@ use crate::{CompanionEmotionEngine, CompanionEmotionGenerationError};
 pub struct CompanionTurnCoordinator<'a, S, E: ?Sized> {
     sources: &'a S,
     emotion: Option<&'a E>,
+}
+
+impl<S, E> CompanionTurnCoordinator<'_, S, E>
+where
+    S: ConversationRepository + CompanionStateRepository + CompanionConversationContinuer,
+    E: ?Sized,
+{
+    pub fn begin_continue(
+        &self,
+        command: &ContinueConversation,
+        now: TimestampMillis,
+    ) -> Result<ContinueConversationResult, CompanionTurnError> {
+        lettuce_conversations::ConversationMutation::Continue(command.clone())
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        if self
+            .sources
+            .operation_record(
+                command.conversation_id,
+                OperationKind::Continue,
+                &command.operation,
+            )?
+            .is_some()
+        {
+            return self
+                .sources
+                .begin_continue(command, now)
+                .map_err(Into::into);
+        }
+        let aggregate = ConversationReader::get(self.sources, command.conversation_id)?;
+        if aggregate.conversation.revision != command.expected_revision {
+            return Err(ConversationRepositoryError::StaleRevision {
+                expected: command.expected_revision,
+                actual: aggregate.conversation.revision,
+            }
+            .into());
+        }
+        let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
+            return self
+                .sources
+                .begin_continue(command, now)
+                .map_err(Into::into);
+        };
+        let owner = CompanionStateOwner {
+            conversation_id: command.conversation_id,
+            character_id: details.character.source_id,
+            persona_id: match &details.persona {
+                SnapshotSelection::Inherited(persona) | SnapshotSelection::Explicit(persona) => {
+                    Some(persona.source_id)
+                }
+                SnapshotSelection::Disabled => None,
+            },
+        };
+        let companion = CompanionStateRepository::get(self.sources, owner)?.is_some();
+        let dynamic = resolve_effective_settings(&aggregate.conversation, None)
+            .map_err(ConversationRepositoryError::Invalid)?
+            .memory
+            .is_some_and(|memory| memory.mode == MemoryModeSnapshot::Dynamic);
+        if !companion || !dynamic {
+            return self
+                .sources
+                .begin_continue(command, now)
+                .map_err(Into::into);
+        }
+        let prepared = PreparedCompanionContinue::new(command.clone())?;
+        CompanionConversationContinuer::begin_companion_continue(self.sources, prepared, now)
+            .map_err(Into::into)
+    }
 }
 
 impl<'a, S, E: ?Sized> CompanionTurnCoordinator<'a, S, E> {
@@ -118,6 +189,11 @@ where
                 now,
             },
         );
+        let effect_seed = resolve_effective_settings(&aggregate.conversation, None)
+            .map_err(ConversationRepositoryError::Invalid)?
+            .memory
+            .is_some_and(|memory| memory.mode == MemoryModeSnapshot::Dynamic)
+            .then(|| CompanionTurnEffectSeed::from_transition(&transition));
         let prepared = PreparedCompanionSend::new(
             command.clone(),
             owner,
@@ -127,6 +203,7 @@ where
                 state: transition.current,
                 applied_at: now,
             },
+            effect_seed,
         )?;
         CompanionConversationSender::begin_companion_send(self.sources, prepared, now)
             .map_err(Into::into)
@@ -154,6 +231,8 @@ pub enum CompanionTurnError {
     State(CompanionStateRepositoryError),
     #[error("companion send repository failed: {0:?}")]
     Send(CompanionSendRepositoryError),
+    #[error("companion continue repository failed: {0:?}")]
+    Continue(CompanionContinueRepositoryError),
     #[error("companion character is missing")]
     CharacterMissing,
     #[error("companion emotion classification was cancelled")]
@@ -169,6 +248,12 @@ impl From<CompanionStateRepositoryError> for CompanionTurnError {
 impl From<CompanionSendRepositoryError> for CompanionTurnError {
     fn from(error: CompanionSendRepositoryError) -> Self {
         Self::Send(error)
+    }
+}
+
+impl From<CompanionContinueRepositoryError> for CompanionTurnError {
+    fn from(error: CompanionContinueRepositoryError) -> Self {
+        Self::Continue(error)
     }
 }
 

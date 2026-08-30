@@ -6,9 +6,11 @@ use lettuce_characters::{
     SceneDocumentV1, SceneOwner, ScenePart, SceneVariant, Selection, StarterMessage, StarterRole,
 };
 use lettuce_companions::{
-    CompanionConversationSender, CompanionStateOwner, CompanionStateReplacement,
-    CompanionStateRepository, CompanionTurnInput, EmotionClassification, EmotionLabelScore,
-    PreparedCompanionSend, apply_turn,
+    CompanionConversationSender, CompanionEffectSourceWindow, CompanionMemoryChanges,
+    CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
+    CompanionTurnEffectOutcome, CompanionTurnEffectRepository, CompanionTurnEffectStatus,
+    CompanionTurnInput, EmotionClassification, EmotionLabelScore, PreparedCompanionSend,
+    apply_turn,
 };
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
@@ -17,16 +19,16 @@ use lettuce_context::{
     PromptBehaviorVersion, PromptMetadataDraft, PromptPurpose, PromptRepository,
 };
 use lettuce_conversations::{
-    AttachAttemptJob, ContextAssembler, ContextRequest, ConversationCreator, ConversationKind,
-    ConversationReader, ConversationRepository, CreateConversationPlan, DirectConversationDetails,
-    GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationInput, GenerationTurnStatus,
-    GroupChatModeSnapshot, GroupConversationDetails, IdempotencyKey, InferenceCandidate,
-    InferenceOutcome, InferencePort, InferenceRequest, InferenceUsage, InitialMessageOrigin,
-    MemoryModeSnapshot, MessageDraft, MessagePart, MessageRole, MessageVisibility, OperationToken,
-    OutputPolicy, ParticipantRole, PortError, PromptPurposeSnapshot, ProposedToolCall,
-    ProviderContextPart, ResolvedInferenceProfile, SafetyContext, SendConversation,
-    SnapshotSelection, SnapshotSource, ToolExecutionRepository, ToolExecutionStatus,
-    ToolExecutionTransition, ToolPolicy,
+    AttachAttemptJob, ContextAssembler, ContextRequest, ContinueConversation, ConversationCreator,
+    ConversationKind, ConversationReader, ConversationRepository, CreateConversationPlan,
+    DirectConversationDetails, FinalizationDraft, GenerationCheckpointEnvelope,
+    GenerationCheckpointEvent, GenerationInput, GenerationTurnStatus, GroupChatModeSnapshot,
+    GroupConversationDetails, IdempotencyKey, InferenceCandidate, InferenceOutcome, InferencePort,
+    InferenceRequest, InferenceUsage, InitialMessageOrigin, MemoryModeSnapshot, MessageDraft,
+    MessagePart, MessageRole, MessageVisibility, OperationToken, OutputPolicy, ParticipantRole,
+    PortError, PromptPurposeSnapshot, ProposedToolCall, ProviderContextPart,
+    ResolvedInferenceProfile, SafetyContext, SendConversation, SnapshotSelection, SnapshotSource,
+    ToolExecutionRepository, ToolExecutionStatus, ToolExecutionTransition, ToolPolicy,
 };
 use lettuce_database::Database;
 use lettuce_embeddings::{EmbeddingRequest, EmbeddingVector};
@@ -46,7 +48,7 @@ use lettuce_settings::{GlobalSettingsStore, SecretOwnerId};
 use lettuce_types::{
     CharacterId, ContentHash, ConversationStarterId, GroupId, JobId, LorebookId, MemoryId,
     MemorySpaceId, ModelProfileId, OperationRecordId, PersonaId, ProviderAccountId, Revision,
-    SceneId, SceneVariantId, StarterMessageId, TimestampMillis,
+    SceneId, SceneVariantId, StarterMessageId, TimestampMillis, UsageEventId,
 };
 
 use super::planner::ConversationLaunchPlanner;
@@ -198,6 +200,71 @@ fn context_request_for(
         .expect("timeline")
         .items,
     }
+}
+
+fn finalize_started_turn(
+    database: &Database,
+    started: &lettuce_conversations::BeginGeneration,
+    model: lettuce_conversations::ModelSelectionSnapshot,
+    key_prefix: &str,
+    now: i64,
+) -> lettuce_conversations::GenerationFinalizationResult {
+    let mut turn = started.turn.clone();
+    for (sequence, status) in [
+        GenerationTurnStatus::Preparing,
+        GenerationTurnStatus::ContextPrepared,
+        GenerationTurnStatus::Running,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        turn = database
+            .append_event(
+                turn.id,
+                turn.revision,
+                &OperationToken {
+                    key: key(&format!("{key_prefix}-stage-{sequence}")),
+                    request_digest: ContentHash::parse("ed".repeat(32)).expect("digest"),
+                },
+                GenerationCheckpointEnvelope {
+                    turn_id: turn.id,
+                    attempt_id: started.attempt.id,
+                    job_id: None,
+                    correlation_id: None,
+                    sequence: u64::try_from(sequence + 1).expect("sequence"),
+                    event: GenerationCheckpointEvent::Stage { status },
+                },
+                TimestampMillis::new(now + i64::try_from(sequence).expect("time")),
+            )
+            .expect("advance turn")
+            .value;
+    }
+    let conversation = ConversationReader::get(database, started.conversation.id)
+        .expect("current conversation")
+        .conversation;
+    database
+        .finalize_generation(
+            turn.id,
+            started.attempt.id,
+            conversation.revision,
+            turn.revision,
+            &OperationToken {
+                key: key(&format!("{key_prefix}-finalize")),
+                request_digest: ContentHash::parse("ed".repeat(32)).expect("digest"),
+            },
+            FinalizationDraft {
+                parts: vec![MessagePart::Text {
+                    text: "Continued.".into(),
+                }],
+                ordinal: 0,
+                model,
+                replay: None,
+                outcome: GenerationCheckpointEvent::Completed,
+            },
+            UsageEventId::new(),
+            TimestampMillis::new(now + 10),
+        )
+        .expect("finalize turn")
 }
 
 fn request_with_starter(
@@ -684,8 +751,13 @@ fn companion_send_commits_user_turn_and_state_once() {
         applied_at: TimestampMillis::new(NOW.get() + 10),
     };
     let prepare = || {
-        PreparedCompanionSend::new(command.clone(), owner, replacement.clone())
-            .expect("prepared send")
+        PreparedCompanionSend::new(
+            command.clone(),
+            owner,
+            replacement.clone(),
+            Some(lettuce_companions::CompanionTurnEffectSeed::default()),
+        )
+        .expect("prepared send")
     };
     let sent = CompanionConversationSender::begin_companion_send(
         &database,
@@ -721,6 +793,248 @@ fn companion_send_commits_user_turn_and_state_once() {
     );
     assert_eq!(stored.state.active_signals, ["emotion:love"]);
     assert_eq!(stored.state.relationship_state.interaction_count, 1);
+}
+
+#[test]
+fn companion_effect_appears_once_with_the_finalized_assistant_message() {
+    let database = database_with_builtins();
+    let model_id = seed_model(
+        &database,
+        ProviderProtocol::OpenAiCompatible,
+        "companion-effect",
+    );
+    set_application_default_model(&database, model_id);
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.memory_policy = MemoryPolicy::Dynamic;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(character_id, "companion-effect-launch"), NOW)
+        .expect("launch companion");
+    let sent = CompanionTurnCoordinator::<_, ScenarioEmotionEngine>::new(&database, None)
+        .begin_send(
+            &direct_send_command(
+                &launched.value.conversation,
+                "companion-effect-send",
+                "I missed you.",
+            ),
+            TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
+        )
+        .expect("send companion message");
+    let turn_id = sent.value.turn.id;
+    let attempt_id = sent.value.attempt.id;
+    let user_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        _ => panic!("expected user input"),
+    };
+    let mut turn = sent.value.turn;
+    let operation = |value: &str| OperationToken {
+        key: key(value),
+        request_digest: ContentHash::parse("ef".repeat(32)).expect("digest"),
+    };
+    for (sequence, status) in [
+        GenerationTurnStatus::Preparing,
+        GenerationTurnStatus::ContextPrepared,
+        GenerationTurnStatus::Running,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        turn = database
+            .append_event(
+                turn_id,
+                turn.revision,
+                &operation(&format!("companion-effect-stage-{sequence}")),
+                GenerationCheckpointEnvelope {
+                    turn_id,
+                    attempt_id,
+                    job_id: None,
+                    correlation_id: None,
+                    sequence: u64::try_from(sequence + 1).expect("sequence"),
+                    event: GenerationCheckpointEvent::Stage { status },
+                },
+                TimestampMillis::new(NOW.get() + 2 + i64::try_from(sequence).expect("time")),
+            )
+            .expect("advance companion turn")
+            .value;
+    }
+    let conversation = ConversationReader::get(&database, launched.value.conversation.id)
+        .expect("current conversation")
+        .conversation;
+    let ConversationKind::Direct(details) = &conversation.kind else {
+        panic!("expected direct conversation");
+    };
+    let model = match &details.model {
+        SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => model.clone(),
+        SnapshotSelection::Disabled => panic!("expected resolved model"),
+    };
+    let finalize_operation = operation("companion-effect-finalize");
+    let finalization_draft = FinalizationDraft {
+        parts: vec![MessagePart::Text {
+            text: "I missed you too.".into(),
+        }],
+        ordinal: 0,
+        model,
+        replay: None,
+        outcome: GenerationCheckpointEvent::Completed,
+    };
+    let usage_event_id = UsageEventId::new();
+    let finalized = database
+        .finalize_generation(
+            turn_id,
+            attempt_id,
+            conversation.revision,
+            turn.revision,
+            &finalize_operation,
+            finalization_draft.clone(),
+            usage_event_id,
+            TimestampMillis::new(NOW.get() + 10),
+        )
+        .expect("finalize assistant");
+    let effect = CompanionTurnEffectRepository::get_for_message(
+        &database,
+        conversation.id,
+        finalized.value.assistant_message.id,
+    )
+    .expect("load effect")
+    .expect("processing effect");
+    assert_eq!(effect.status, CompanionTurnEffectStatus::Processing);
+    assert_eq!(effect.user_message_id, Some(user_message_id));
+    let replay = database
+        .finalize_generation(
+            turn_id,
+            attempt_id,
+            conversation.revision,
+            turn.revision,
+            &finalize_operation,
+            finalization_draft,
+            usage_event_id,
+            TimestampMillis::new(NOW.get() + 99),
+        )
+        .expect("replay finalization");
+    assert_eq!(replay.operation, finalized.operation);
+    assert_eq!(
+        CompanionTurnEffectRepository::get_for_message(
+            &database,
+            conversation.id,
+            finalized.value.assistant_message.id,
+        )
+        .expect("reload effect")
+        .expect("same effect")
+        .id,
+        effect.id
+    );
+
+    let ready = CompanionTurnEffectRepository::settle(
+        &database,
+        effect.id,
+        CompanionTurnEffectOutcome::Ready {
+            summary: Some("Reconnected warmly".into()),
+            memory_changes: CompanionMemoryChanges {
+                added: vec![MemoryId::new()],
+                ..CompanionMemoryChanges::default()
+            },
+            source_window: CompanionEffectSourceWindow {
+                message_ids: vec![
+                    effect.user_message_id.expect("user message"),
+                    effect.assistant_message_id,
+                ],
+                enqueued_at: TimestampMillis::new(NOW.get() + 11),
+            },
+        },
+        TimestampMillis::new(NOW.get() + 12),
+    )
+    .expect("settle effect");
+    assert_eq!(ready.status, CompanionTurnEffectStatus::Ready);
+    assert_eq!(ready.summary.as_deref(), Some("Reconnected warmly"));
+    assert_eq!(
+        ready
+            .source_window
+            .expect("source window")
+            .message_ids
+            .len(),
+        2
+    );
+
+    let current = ConversationReader::get(&database, conversation.id)
+        .expect("conversation after reply")
+        .conversation;
+    let ConversationKind::Direct(details) = &current.kind else {
+        panic!("expected direct conversation");
+    };
+    let continue_model = match &details.model {
+        SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => model.clone(),
+        SnapshotSelection::Disabled => panic!("expected resolved model"),
+    };
+    let continued = CompanionTurnCoordinator::<_, ScenarioEmotionEngine>::new(&database, None)
+        .begin_continue(
+            &ContinueConversation {
+                conversation_id: current.id,
+                branch_id: current.active_branch_id,
+                expected_revision: current.revision,
+                forced_speaker: None,
+                swap_roles: false,
+                operation: operation("companion-effect-continue"),
+            },
+            TimestampMillis::new(NOW.get() + 20),
+        )
+        .expect("begin companion continue");
+    let continued_finalization = finalize_started_turn(
+        &database,
+        &continued.value,
+        continue_model,
+        "companion-effect-continue",
+        NOW.get() + 21,
+    );
+    let continued_effect = CompanionTurnEffectRepository::get_for_message(
+        &database,
+        current.id,
+        continued_finalization.value.assistant_message.id,
+    )
+    .expect("load continuation effect")
+    .expect("continuation processing effect");
+    assert_eq!(
+        continued_effect.status,
+        CompanionTurnEffectStatus::Processing
+    );
+    assert_eq!(continued_effect.user_message_id, None);
+    assert_eq!(
+        continued_effect.seed,
+        lettuce_companions::CompanionTurnEffectSeed::default()
+    );
+    let failed = CompanionTurnEffectRepository::settle(
+        &database,
+        continued_effect.id,
+        CompanionTurnEffectOutcome::Failed {
+            summary: "post-turn memory unavailable".into(),
+        },
+        TimestampMillis::new(NOW.get() + 40),
+    )
+    .expect("fail continuation effect");
+    assert_eq!(failed.status, CompanionTurnEffectStatus::Failed);
+    let failed_replay = CompanionTurnEffectRepository::settle(
+        &database,
+        failed.id,
+        CompanionTurnEffectOutcome::Failed {
+            summary: "post-turn memory unavailable".into(),
+        },
+        TimestampMillis::new(NOW.get() + 41),
+    )
+    .expect("replay failed effect");
+    assert_eq!(failed_replay, failed);
+    assert_eq!(
+        CompanionTurnEffectRepository::settle(
+            &database,
+            failed.id,
+            CompanionTurnEffectOutcome::Failed {
+                summary: "changed".into(),
+            },
+            TimestampMillis::new(NOW.get() + 42),
+        ),
+        Err(lettuce_companions::CompanionTurnEffectRepositoryError::Conflict)
+    );
 }
 
 struct ScenarioEmotionEngine {

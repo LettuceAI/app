@@ -109,3 +109,149 @@ BEFORE DELETE ON companion_state_apply_receipts
 BEGIN
     SELECT RAISE(ABORT, 'companion state apply receipts are immutable');
 END;
+
+CREATE TABLE companion_turn_effect_drafts (
+    conversation_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    effect_id TEXT NOT NULL UNIQUE,
+    user_message_id TEXT,
+    closeness_delta REAL NOT NULL CHECK (closeness_delta BETWEEN -2.0 AND 2.0),
+    trust_delta REAL NOT NULL CHECK (trust_delta BETWEEN -2.0 AND 2.0),
+    affection_delta REAL NOT NULL CHECK (affection_delta BETWEEN -2.0 AND 2.0),
+    tension_delta REAL NOT NULL CHECK (tension_delta BETWEEN -2.0 AND 2.0),
+    stability_delta REAL NOT NULL CHECK (stability_delta BETWEEN -2.0 AND 2.0),
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, turn_id),
+    UNIQUE (conversation_id, turn_id, effect_id),
+    FOREIGN KEY (conversation_id, turn_id)
+        REFERENCES conversation_turns(conversation_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_id, user_message_id)
+        REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE companion_turn_effect_emotion_deltas (
+    conversation_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('felt', 'expressed', 'blocked')),
+    warmth REAL NOT NULL CHECK (warmth BETWEEN -1.0 AND 1.0),
+    trust REAL NOT NULL CHECK (trust BETWEEN -1.0 AND 1.0),
+    calm REAL NOT NULL CHECK (calm BETWEEN -1.0 AND 1.0),
+    vulnerability REAL NOT NULL CHECK (vulnerability BETWEEN -1.0 AND 1.0),
+    longing REAL NOT NULL CHECK (longing BETWEEN -1.0 AND 1.0),
+    hurt REAL NOT NULL CHECK (hurt BETWEEN -1.0 AND 1.0),
+    tension REAL NOT NULL CHECK (tension BETWEEN -1.0 AND 1.0),
+    irritation REAL NOT NULL CHECK (irritation BETWEEN -1.0 AND 1.0),
+    affection_intensity REAL NOT NULL CHECK (affection_intensity BETWEEN -1.0 AND 1.0),
+    reassurance_need REAL NOT NULL CHECK (reassurance_need BETWEEN -1.0 AND 1.0),
+    PRIMARY KEY (conversation_id, turn_id, kind),
+    FOREIGN KEY (conversation_id, turn_id)
+        REFERENCES companion_turn_effect_drafts(conversation_id, turn_id) ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE companion_turn_effect_signal_changes (
+    conversation_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    change_kind TEXT NOT NULL CHECK (change_kind IN ('added', 'removed')),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    value TEXT NOT NULL CHECK (length(trim(value)) > 0 AND length(CAST(value AS BLOB)) <= 256),
+    PRIMARY KEY (conversation_id, turn_id, change_kind, ordinal),
+    FOREIGN KEY (conversation_id, turn_id)
+        REFERENCES companion_turn_effect_drafts(conversation_id, turn_id) ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE companion_turn_effects (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    user_message_id TEXT,
+    assistant_message_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('processing', 'ready', 'failed')),
+    summary TEXT CHECK (summary IS NULL OR length(CAST(summary AS BLOB)) <= 8192),
+    enqueued_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE (conversation_id, turn_id),
+    UNIQUE (conversation_id, assistant_message_id),
+    FOREIGN KEY (conversation_id, turn_id, id)
+        REFERENCES companion_turn_effect_drafts(conversation_id, turn_id, effect_id) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id, user_message_id)
+        REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id, assistant_message_id)
+        REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT,
+    CHECK (created_at <= updated_at),
+    CHECK (
+        (status = 'processing' AND enqueued_at IS NULL) OR
+        (status = 'ready' AND enqueued_at IS NOT NULL) OR
+        status = 'failed'
+    )
+) STRICT;
+
+CREATE TABLE companion_turn_effect_memory_changes (
+    effect_id TEXT NOT NULL REFERENCES companion_turn_effects(id) ON DELETE CASCADE,
+    change_kind TEXT NOT NULL CHECK (change_kind IN ('added', 'updated', 'superseded')),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    memory_id TEXT NOT NULL,
+    PRIMARY KEY (effect_id, change_kind, ordinal)
+) STRICT;
+
+CREATE TABLE companion_turn_effect_source_messages (
+    effect_id TEXT NOT NULL REFERENCES companion_turn_effects(id) ON DELETE CASCADE,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    message_id TEXT NOT NULL,
+    PRIMARY KEY (effect_id, ordinal)
+) STRICT;
+
+CREATE TRIGGER companion_turn_effect_terminal_update
+BEFORE UPDATE ON companion_turn_effects
+WHEN OLD.status IN ('ready', 'failed')
+BEGIN
+    SELECT RAISE(ABORT, 'terminal companion turn effect is immutable');
+END;
+
+CREATE TRIGGER companion_turn_effect_no_delete
+BEFORE DELETE ON companion_turn_effects
+BEGIN
+    SELECT RAISE(ABORT, 'companion turn effect is immutable');
+END;
+
+CREATE TRIGGER companion_turn_effect_memory_insert_open
+BEFORE INSERT ON companion_turn_effect_memory_changes
+WHEN (SELECT status FROM companion_turn_effects WHERE id = NEW.effect_id) != 'processing'
+BEGIN
+    SELECT RAISE(ABORT, 'terminal companion turn effect children are immutable');
+END;
+
+CREATE TRIGGER companion_turn_effect_memory_update_open
+BEFORE UPDATE ON companion_turn_effect_memory_changes
+WHEN (SELECT status FROM companion_turn_effects WHERE id = OLD.effect_id) != 'processing'
+BEGIN
+    SELECT RAISE(ABORT, 'terminal companion turn effect children are immutable');
+END;
+
+CREATE TRIGGER companion_turn_effect_memory_delete_open
+BEFORE DELETE ON companion_turn_effect_memory_changes
+WHEN (SELECT status FROM companion_turn_effects WHERE id = OLD.effect_id) != 'processing'
+BEGIN
+    SELECT RAISE(ABORT, 'terminal companion turn effect children are immutable');
+END;
+
+CREATE TRIGGER companion_turn_effect_source_insert_open
+BEFORE INSERT ON companion_turn_effect_source_messages
+WHEN (SELECT status FROM companion_turn_effects WHERE id = NEW.effect_id) != 'processing'
+BEGIN
+    SELECT RAISE(ABORT, 'terminal companion turn effect children are immutable');
+END;
+
+CREATE TRIGGER companion_turn_effect_source_update_open
+BEFORE UPDATE ON companion_turn_effect_source_messages
+WHEN (SELECT status FROM companion_turn_effects WHERE id = OLD.effect_id) != 'processing'
+BEGIN
+    SELECT RAISE(ABORT, 'terminal companion turn effect children are immutable');
+END;
+
+CREATE TRIGGER companion_turn_effect_source_delete_open
+BEFORE DELETE ON companion_turn_effect_source_messages
+WHEN (SELECT status FROM companion_turn_effects WHERE id = OLD.effect_id) != 'processing'
+BEGIN
+    SELECT RAISE(ABORT, 'terminal companion turn effect children are immutable');
+END;

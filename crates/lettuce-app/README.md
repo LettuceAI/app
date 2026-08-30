@@ -29,8 +29,7 @@ persona scope in a non-serializable prepared launch, and the database commits
 the conversation graph, artifacts, operation/outbox, fresh session emotion,
 and carried character/persona relationship in one transaction. Exact launch
 retries revalidate the initial-state request without resetting relationship
-continuity. Group companions, companion prompt construction, assistant-turn
-effects, and growth scheduling remain deferred.
+continuity. Group companions and growth scheduling remain deferred.
 
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct
@@ -53,6 +52,14 @@ effective clock through the existing typed `companion_state` placeholder.
 Roleplay and group assembly do not read companion state. Missing or corrupt
 companion state fails assembly closed, and the composition root exposes the
 fully wired assembler over the shared database ports.
+
+For dynamic-memory companion sends, the coordinator also derives the legacy
+turn-effect seed from the already computed transition. Storage keeps that seed
+with the admitted turn and creates the visible processing effect atomically
+with assistant finalization; companion continuation uses the legacy zero-delta
+seed without a user-message owner, and exact replay cannot duplicate it. Typed
+ready/failed settlement is available for post-turn dynamic-memory coordination,
+while scheduling that post-turn job remains a later application slice.
 
 The first direct/group dynamic-memory handler path accepts an already admitted
 and running ordered tool round, validates the exact v1 feature contract, joins
