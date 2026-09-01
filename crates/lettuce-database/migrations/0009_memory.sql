@@ -129,6 +129,7 @@ CREATE TABLE dynamic_memory_run_source_messages (
     run_id TEXT NOT NULL,
     conversation_id TEXT NOT NULL,
     message_id TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('user','assistant')),
     revision_id TEXT,
     candidate_id TEXT,
     ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 1023),
@@ -285,12 +286,13 @@ CREATE TRIGGER dynamic_memory_run_source_immutable_update
 BEFORE UPDATE ON dynamic_memory_run_source_messages
 BEGIN SELECT RAISE(ABORT, 'dynamic-memory source window is immutable'); END;
 
-CREATE TRIGGER dynamic_memory_run_source_active_revision_guard
+CREATE TRIGGER dynamic_memory_run_source_active_render_guard
 BEFORE INSERT ON dynamic_memory_run_source_messages
 WHEN NOT EXISTS (
     SELECT 1 FROM conversation_messages message
     WHERE message.conversation_id = NEW.conversation_id
       AND message.id = NEW.message_id
+      AND message.role = NEW.role
       AND message.active_revision_id IS NEW.revision_id
       AND message.active_candidate_id IS NEW.candidate_id
       AND message.visibility = 'visible'

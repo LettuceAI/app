@@ -110,7 +110,7 @@ fn load_run_in(
         .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
     let mut statement = connection
         .prepare(
-            "SELECT message_id,revision_id,candidate_id FROM dynamic_memory_run_source_messages \
+            "SELECT message_id,role,revision_id,candidate_id FROM dynamic_memory_run_source_messages \
              WHERE run_id=?1 ORDER BY ordinal",
         )
         .map_err(storage)?;
@@ -118,9 +118,14 @@ fn load_run_in(
         .query_map([id.to_string()], |row| {
             Ok(DynamicMemorySourceMessage {
                 message_id: parse_id(row.get(0)?)?,
+                role: match row.get::<_, String>(1)?.as_str() {
+                    "user" => lettuce_conversations::MessageRole::User,
+                    "assistant" => lettuce_conversations::MessageRole::Assistant,
+                    _ => return Err(rusqlite::Error::InvalidQuery),
+                },
                 render_source: match (
-                    row.get::<_, Option<String>>(1)?,
                     row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
                 ) {
                     (Some(id), None) => MessageRenderSource::Revision(parse_id(id)?),
                     (None, Some(id)) => MessageRenderSource::Candidate(parse_id(id)?),
@@ -470,12 +475,17 @@ impl DynamicMemoryRunRepository for Database {
             transaction
                 .execute(
                     "INSERT INTO dynamic_memory_run_source_messages \
-                     (run_id,conversation_id,message_id,revision_id,candidate_id,ordinal) \
-                     VALUES (?1,?2,?3,?4,?5,?6)",
+                     (run_id,conversation_id,message_id,role,revision_id,candidate_id,ordinal) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7)",
                     params![
                         requested_run.id.to_string(),
                         requested_run.conversation_id.to_string(),
                         source.message_id.to_string(),
+                        match source.role {
+                            lettuce_conversations::MessageRole::User => "user",
+                            lettuce_conversations::MessageRole::Assistant => "assistant",
+                            _ => return Err(DynamicMemoryRunRepositoryError::Conflict),
+                        },
                         revision_id,
                         candidate_id,
                         i64::try_from(ordinal).map_err(storage)?,
@@ -1052,10 +1062,18 @@ mod tests {
             messages
                 .into_iter()
                 .zip(revisions)
-                .map(|(message_id, revision_id)| DynamicMemorySourceMessage {
-                    message_id,
-                    render_source: MessageRenderSource::Revision(revision_id),
-                })
+                .enumerate()
+                .map(
+                    |(ordinal, (message_id, revision_id))| DynamicMemorySourceMessage {
+                        message_id,
+                        role: if ordinal == 0 {
+                            lettuce_conversations::MessageRole::User
+                        } else {
+                            lettuce_conversations::MessageRole::Assistant
+                        },
+                        render_source: MessageRenderSource::Revision(revision_id),
+                    },
+                )
                 .collect(),
         )
     }

@@ -82,8 +82,8 @@ impl<'a, R: DynamicMemoryRunRepository + MemoryRepository + ?Sized, C: Conversat
                     || run
                         .source_messages
                         .iter()
-                        .map(|source| source.message_id)
-                        .ne(expected_messages.iter().map(|(id, _)| *id))
+                        .map(|source| (source.message_id, source.role))
+                        .ne(expected_messages.iter().copied())
                     || run.profile != profile
                 {
                     return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
@@ -275,6 +275,7 @@ fn resolve_source_messages<C: ConversationReader + ?Sized>(
             }
             Ok(DynamicMemorySourceMessage {
                 message_id,
+                role,
                 render_source,
             })
         })
@@ -907,13 +908,13 @@ mod tests {
                 .run
                 .source_messages
                 .iter()
-                .map(|source| (source.message_id, source.render_source))
+                .map(|source| (source.message_id, source.role, source.render_source))
                 .collect::<Vec<_>>(),
             vec![
-                (user_one, sources[0]),
-                (assistant_one, sources[1]),
-                (user_two, sources[2]),
-                (assistant_two, sources[3]),
+                (user_one, MessageRole::User, sources[0]),
+                (assistant_one, MessageRole::Assistant, sources[1]),
+                (user_two, MessageRole::User, sources[2]),
+                (assistant_two, MessageRole::Assistant, sources[3]),
             ]
         );
         assert_eq!(first.attempt.status, DynamicMemoryAttemptStatus::Processing);

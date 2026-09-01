@@ -95,7 +95,7 @@ the child plan in one immediate transaction. Existing partial child state fails
 closed; an exact committed retry hydrates the same rows.
 Migration 9 also owns background dynamic-memory runs that are intentionally not
 conversation generation turns. The immutable run binds the normalized
-conversation memory space, ordered source messages and their active immutable
+conversation memory space, ordered source-message roles and their active immutable
 revision/candidate sources, full resolved inference profile, and tool contract.
 CAS attempts provide
 created/processing/succeeded/failed/cancelled/interrupted state; ordered rounds

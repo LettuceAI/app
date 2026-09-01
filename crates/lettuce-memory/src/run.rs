@@ -63,6 +63,7 @@ pub enum DynamicMemoryAttemptFailureCode {
 #[serde(deny_unknown_fields)]
 pub struct DynamicMemorySourceMessage {
     pub message_id: MessageId,
+    pub role: lettuce_conversations::MessageRole,
     pub render_source: MessageRenderSource,
 }
 
@@ -89,6 +90,13 @@ impl DynamicMemoryRun {
                 .collect::<HashSet<_>>()
                 .len()
                 != self.source_messages.len()
+            || self.source_messages.iter().any(|source| {
+                !matches!(
+                    source.role,
+                    lettuce_conversations::MessageRole::User
+                        | lettuce_conversations::MessageRole::Assistant
+                )
+            })
             || self.profile.tool_policy != ToolPolicy::Required
             || self.tool_request != dynamic_memory_tool_request()
         {

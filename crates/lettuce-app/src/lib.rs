@@ -8,6 +8,7 @@
 
 mod built_in_prompts;
 mod companion_memory_effect;
+mod companion_memory_inference;
 mod companion_memory_job;
 mod companion_memory_run;
 mod companion_turn;
@@ -23,6 +24,7 @@ mod provider_runtime;
 
 pub use built_in_prompts::*;
 pub use companion_memory_effect::*;
+pub use companion_memory_inference::*;
 pub use companion_memory_job::*;
 pub use companion_memory_run::*;
 pub use companion_turn::*;

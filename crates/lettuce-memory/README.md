@@ -60,7 +60,7 @@ semantic evidence from the terminal parent.
 Background post-turn extraction now has a separate memory-owned durable run
 boundary instead of fabricating a visible conversation generation turn. A run
 freezes the authoritative conversation memory space, ordered source-message
-and active revision/candidate window, complete resolved model/profile snapshot,
+roles and active revision/candidate window, complete resolved model/profile snapshot,
 and required dynamic-memory tool contract. Retryable attempts own CAS lifecycle state and immutable ordered
 provider rounds/calls; interruption recovery copies the exact admitted provider
 history into the processing child. This preserves the legacy cycle's frozen
