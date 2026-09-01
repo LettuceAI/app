@@ -1,18 +1,18 @@
 use std::collections::HashSet;
 
 use lettuce_conversations::{
-    InferenceUsage, MessagePart, ProposedToolCall, ReplayArtifactRef, ReplayRetention,
-    ResolvedInferenceProfile, ToolPolicy, ToolRequest,
+    InferenceUsage, MessagePart, MessageRenderSource, ProposedToolCall, ReplayArtifactRef,
+    ReplayRetention, ResolvedInferenceProfile, ToolPolicy, ToolRequest,
 };
 use lettuce_types::{
     ConversationId, DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, MemorySpaceId, MessageId,
-    MessageRevisionId, Revision, TimestampMillis, ToolExecutionId,
+    Revision, TimestampMillis, ToolExecutionId,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::dynamic_memory_tool_request;
 
-pub const MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES: usize = 512;
+pub const MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES: usize = 1024;
 pub const MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS: u8 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,11 +59,11 @@ pub enum DynamicMemoryAttemptFailureCode {
     Internal,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DynamicMemorySourceMessage {
     pub message_id: MessageId,
-    pub revision_id: MessageRevisionId,
+    pub render_source: MessageRenderSource,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

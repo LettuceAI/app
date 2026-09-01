@@ -73,6 +73,11 @@ pub trait DynamicMemoryRunRepository: Send + Sync {
         id: lettuce_types::DynamicMemoryAttemptId,
     ) -> Result<DynamicMemoryAttempt, DynamicMemoryRunRepositoryError>;
 
+    fn load_latest_dynamic_memory_attempt(
+        &self,
+        run_id: lettuce_types::DynamicMemoryRunId,
+    ) -> Result<DynamicMemoryAttempt, DynamicMemoryRunRepositoryError>;
+
     fn transition_dynamic_memory_attempt(
         &self,
         id: lettuce_types::DynamicMemoryAttemptId,

@@ -129,8 +129,9 @@ CREATE TABLE dynamic_memory_run_source_messages (
     run_id TEXT NOT NULL,
     conversation_id TEXT NOT NULL,
     message_id TEXT NOT NULL,
-    revision_id TEXT NOT NULL,
-    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 511),
+    revision_id TEXT,
+    candidate_id TEXT,
+    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 1023),
     PRIMARY KEY (run_id, ordinal),
     UNIQUE (run_id, message_id),
     FOREIGN KEY (run_id, conversation_id)
@@ -138,7 +139,10 @@ CREATE TABLE dynamic_memory_run_source_messages (
     FOREIGN KEY (conversation_id, message_id)
         REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT,
     FOREIGN KEY (conversation_id, message_id, revision_id)
-        REFERENCES conversation_message_revisions(conversation_id, message_id, id) ON DELETE RESTRICT
+        REFERENCES conversation_message_revisions(conversation_id, message_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id, message_id, candidate_id)
+        REFERENCES conversation_message_candidates(conversation_id, message_id, id) ON DELETE RESTRICT,
+    CHECK ((revision_id IS NOT NULL) <> (candidate_id IS NOT NULL))
 ) STRICT;
 
 CREATE TABLE dynamic_memory_run_attempts (
@@ -287,10 +291,11 @@ WHEN NOT EXISTS (
     SELECT 1 FROM conversation_messages message
     WHERE message.conversation_id = NEW.conversation_id
       AND message.id = NEW.message_id
-      AND message.active_revision_id = NEW.revision_id
+      AND message.active_revision_id IS NEW.revision_id
+      AND message.active_candidate_id IS NEW.candidate_id
       AND message.visibility = 'visible'
 )
-BEGIN SELECT RAISE(ABORT, 'dynamic-memory source requires the visible active revision'); END;
+BEGIN SELECT RAISE(ABORT, 'dynamic-memory source requires the visible active render source'); END;
 
 CREATE TRIGGER dynamic_memory_run_source_immutable_delete
 BEFORE DELETE ON dynamic_memory_run_source_messages

@@ -69,9 +69,15 @@ conversation into background `MemoryExtraction` jobs. The batch's logical
 idempotency key is derived from its ordered durable effect identities, so
 duplicate discovery reuses one runtime job and a fresh in-memory job store after
 restart rebuilds the same logical batch. Empty discovery is the
-non-companion/dynamic-memory-disabled no-op. Worker execution/debounce and
-binding admission to host startup/finalization remain the next application
-slice; the generic job store itself is still only an in-memory reference store.
+non-companion/dynamic-memory-disabled no-op. The application bridge maps that
+logical batch deterministically to one durable background memory run, resolves
+the conversation-owned memory space, and freezes ordered visible user/assistant
+messages with each message's exact active revision or candidate plus the
+resolved inference profile. Same-job rediscovery replays the processing attempt;
+a replacement runtime job restart-recovers it into one child instead of creating
+a duplicate run. Prompt construction, provider execution, worker debounce, and
+binding admission to host startup/finalization remain later application slices;
+the generic job store itself is still only an in-memory reference store.
 Conversation launch now creates the authoritative normalized memory space in
 the same transaction for every resolved manual/dynamic memory policy, and the
 memory repository resolves it directly from the conversation identity. This

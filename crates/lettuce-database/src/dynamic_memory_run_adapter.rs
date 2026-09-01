@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use lettuce_conversations::{InferenceUsage, ProposedToolCall};
+use lettuce_conversations::{InferenceUsage, MessageRenderSource, ProposedToolCall};
 use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
     DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound, DynamicMemoryRoundFinishReason,
@@ -110,7 +110,7 @@ fn load_run_in(
         .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
     let mut statement = connection
         .prepare(
-            "SELECT message_id,revision_id FROM dynamic_memory_run_source_messages \
+            "SELECT message_id,revision_id,candidate_id FROM dynamic_memory_run_source_messages \
              WHERE run_id=?1 ORDER BY ordinal",
         )
         .map_err(storage)?;
@@ -118,7 +118,14 @@ fn load_run_in(
         .query_map([id.to_string()], |row| {
             Ok(DynamicMemorySourceMessage {
                 message_id: parse_id(row.get(0)?)?,
-                revision_id: parse_id(row.get(1)?)?,
+                render_source: match (
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ) {
+                    (Some(id), None) => MessageRenderSource::Revision(parse_id(id)?),
+                    (None, Some(id)) => MessageRenderSource::Candidate(parse_id(id)?),
+                    _ => return Err(rusqlite::Error::InvalidQuery),
+                },
             })
         })
         .map_err(storage)?
@@ -456,16 +463,21 @@ impl DynamicMemoryRunRepository for Database {
                 _ => DynamicMemoryRunRepositoryError::Storage,
             })?;
         for (ordinal, source) in requested_run.source_messages.iter().enumerate() {
+            let (revision_id, candidate_id) = match source.render_source {
+                MessageRenderSource::Revision(id) => (Some(id.to_string()), None),
+                MessageRenderSource::Candidate(id) => (None, Some(id.to_string())),
+            };
             transaction
                 .execute(
                     "INSERT INTO dynamic_memory_run_source_messages \
-                     (run_id,conversation_id,message_id,revision_id,ordinal) \
-                     VALUES (?1,?2,?3,?4,?5)",
+                     (run_id,conversation_id,message_id,revision_id,candidate_id,ordinal) \
+                     VALUES (?1,?2,?3,?4,?5,?6)",
                     params![
                         requested_run.id.to_string(),
                         requested_run.conversation_id.to_string(),
                         source.message_id.to_string(),
-                        source.revision_id.to_string(),
+                        revision_id,
+                        candidate_id,
                         i64::try_from(ordinal).map_err(storage)?,
                     ],
                 )
@@ -509,6 +521,24 @@ impl DynamicMemoryRunRepository for Database {
         id: DynamicMemoryAttemptId,
     ) -> Result<DynamicMemoryAttempt, DynamicMemoryRunRepositoryError> {
         let connection = self.connection().map_err(storage)?;
+        load_attempt_in(&connection, id)
+    }
+
+    fn load_latest_dynamic_memory_attempt(
+        &self,
+        run_id: DynamicMemoryRunId,
+    ) -> Result<DynamicMemoryAttempt, DynamicMemoryRunRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        let id = connection
+            .query_row(
+                "SELECT id FROM dynamic_memory_run_attempts \
+                 WHERE run_id=?1 ORDER BY ordinal DESC LIMIT 1",
+                [run_id.to_string()],
+                |row| parse_id(row.get(0)?),
+            )
+            .optional()
+            .map_err(storage)?
+            .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
         load_attempt_in(&connection, id)
     }
 
@@ -799,7 +829,8 @@ impl DynamicMemoryRunRepository for Database {
 #[cfg(test)]
 mod tests {
     use lettuce_conversations::{
-        MessagePart, OutputPolicy, ResolvedInferenceProfile, SafetyContext, ToolPolicy,
+        MessagePart, MessageRenderSource, OutputPolicy, ResolvedInferenceProfile, SafetyContext,
+        ToolPolicy,
     };
     use lettuce_memory::{
         DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptStatus,
@@ -1023,7 +1054,7 @@ mod tests {
                 .zip(revisions)
                 .map(|(message_id, revision_id)| DynamicMemorySourceMessage {
                     message_id,
-                    revision_id,
+                    render_source: MessageRenderSource::Revision(revision_id),
                 })
                 .collect(),
         )
