@@ -250,6 +250,7 @@ pub enum DynamicMemoryRoundFinishReason {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewDynamicMemoryInferenceRound {
     pub ordinal: u8,
+    pub request_context: lettuce_conversations::ProviderNeutralContext,
     pub parts: Vec<MessagePart>,
     pub provider_replay: Option<ReplayArtifactRef>,
     pub usage: Option<InferenceUsage>,
@@ -261,6 +262,9 @@ pub struct NewDynamicMemoryInferenceRound {
 
 impl NewDynamicMemoryInferenceRound {
     pub fn validate(&self) -> Result<(), DynamicMemoryRunError> {
+        self.request_context
+            .validate()
+            .map_err(|_| DynamicMemoryRunError::InvalidRound)?;
         if self.ordinal >= MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS
             || (self.parts.is_empty() && self.calls.is_empty())
             || self.parts.len() > 64
@@ -323,6 +327,7 @@ pub struct DynamicMemoryInferenceRound {
     pub attempt_id: DynamicMemoryAttemptId,
     pub ordinal: u8,
     pub first_call_ordinal: u16,
+    pub request_context: lettuce_conversations::ProviderNeutralContext,
     pub parts: Vec<MessagePart>,
     pub provider_replay: Option<ReplayArtifactRef>,
     pub usage: Option<InferenceUsage>,
@@ -336,6 +341,7 @@ impl DynamicMemoryInferenceRound {
     pub fn validate(&self) -> Result<(), DynamicMemoryRunError> {
         NewDynamicMemoryInferenceRound {
             ordinal: self.ordinal,
+            request_context: self.request_context.clone(),
             parts: self.parts.clone(),
             provider_replay: self.provider_replay.clone(),
             usage: self.usage.clone(),

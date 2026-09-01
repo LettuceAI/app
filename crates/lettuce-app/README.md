@@ -86,7 +86,12 @@ durable calls. One admitted background round now reuses the existing create
 preparation and typed reducer, then atomically settles its ordered results with
 the memory CAS; exact retry returns those results without embedding or reducing
 again, and `done` preserves the existing short-circuit behavior. Summary
-generation, structured text fallback, recursive continuation, terminal success/effect settlement, worker debounce,
+generation and structured text fallback remain deferred. A settled background
+round now appends its admitted native calls and typed results to the exact
+durable request context, stops before provider I/O on `done`, or dispatches and
+atomically admits the next bounded round with the frozen profile/tool contract.
+An already admitted next round replays without provider I/O. Terminal
+success/effect settlement, recursive execute-until-terminal worker wiring, debounce/startup wiring,
 and binding admission to host startup/finalization remain later slices; the
 generic job store itself is still only an in-memory reference store.
 Conversation launch now creates the authoritative normalized memory space in

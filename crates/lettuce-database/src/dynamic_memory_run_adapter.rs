@@ -242,7 +242,7 @@ fn list_rounds_in(
     let calls = list_calls_in(transaction, run_id, attempt_id)?;
     let mut statement = transaction
         .prepare(
-            "SELECT ordinal,first_call_ordinal,call_count,parts_json,provider_replay_artifact_id,\
+            "SELECT ordinal,first_call_ordinal,call_count,request_context_json,parts_json,provider_replay_artifact_id,\
                     provider_replay_retention,input_tokens,output_tokens,finish_reason,\
                     provider_request_id,admitted_at \
              FROM dynamic_memory_inference_rounds \
@@ -273,15 +273,17 @@ fn list_rounds_in(
                 attempt_id,
                 ordinal,
                 first_call_ordinal,
-                parts: decode_versioned(&row.get::<_, String>(3)?, JSON_VERSION)
+                request_context: decode_versioned(&row.get::<_, String>(3)?, JSON_VERSION)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                parts: decode_versioned(&row.get::<_, String>(4)?, JSON_VERSION)
                     .map_err(|_| rusqlite::Error::InvalidQuery)?,
                 provider_replay: conversation_query::replay_ref(
                     transaction,
-                    row.get(4)?,
                     row.get(5)?,
+                    row.get(6)?,
                 )
                 .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                usage: match (row.get::<_, Option<i64>>(6)?, row.get::<_, Option<i64>>(7)?) {
+                usage: match (row.get::<_, Option<i64>>(7)?, row.get::<_, Option<i64>>(8)?) {
                     (Some(input), Some(output)) => Some(InferenceUsage {
                         input_tokens: u64::try_from(input)
                             .map_err(|_| rusqlite::Error::InvalidQuery)?,
@@ -291,14 +293,14 @@ fn list_rounds_in(
                     (None, None) => None,
                     _ => return Err(rusqlite::Error::InvalidQuery),
                 },
-                finish_reason: match row.get::<_, String>(8)?.as_str() {
+                finish_reason: match row.get::<_, String>(9)?.as_str() {
                     "stop" => DynamicMemoryRoundFinishReason::Stop,
                     "length" => DynamicMemoryRoundFinishReason::Length,
                     _ => return Err(rusqlite::Error::InvalidQuery),
                 },
-                provider_request_id: row.get(9)?,
+                provider_request_id: row.get(10)?,
                 calls: round_calls,
-                admitted_at: TimestampMillis::new(row.get(10)?),
+                admitted_at: TimestampMillis::new(row.get(11)?),
             })
         })
         .map_err(storage)?
@@ -416,16 +418,17 @@ fn insert_round_in(
     transaction
         .execute(
             "INSERT INTO dynamic_memory_inference_rounds \
-             (run_id,attempt_id,ordinal,first_call_ordinal,call_count,parts_json,\
+             (run_id,attempt_id,ordinal,first_call_ordinal,call_count,request_context_json,parts_json,\
               provider_replay_artifact_id,provider_replay_retention,input_tokens,output_tokens,\
               finish_reason,provider_request_id,admitted_at) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
             params![
                 round.run_id.to_string(),
                 round.attempt_id.to_string(),
                 i64::from(round.ordinal),
                 i64::from(round.first_call_ordinal),
                 i64::try_from(round.calls.len()).map_err(storage)?,
+                encode_versioned(&round.request_context, JSON_VERSION).map_err(storage)?,
                 encode_versioned(&round.parts, JSON_VERSION).map_err(storage)?,
                 replay_id,
                 replay_retention,
@@ -812,6 +815,7 @@ impl DynamicMemoryRunRepository for Database {
             attempt_id,
             ordinal: round.ordinal,
             first_call_ordinal: expected_next_call_ordinal,
+            request_context: round.request_context,
             parts: round.parts,
             provider_replay: round.provider_replay,
             usage: round.usage,
@@ -1045,8 +1049,8 @@ impl DynamicMemoryRunRepository for Database {
 #[cfg(test)]
 mod tests {
     use lettuce_conversations::{
-        MessagePart, MessageRenderSource, OutputPolicy, ResolvedInferenceProfile, SafetyContext,
-        ToolPolicy,
+        MessagePart, MessageRenderSource, MessageRole, OutputPolicy, ProviderContextPart,
+        ProviderNeutralMessage, ResolvedInferenceProfile, SafetyContext, ToolPolicy,
     };
     use lettuce_memory::{
         DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptStatus,
@@ -1334,7 +1338,7 @@ mod tests {
             .expect("processing");
         let create_id = ToolExecutionId::new();
         let done_id = ToolExecutionId::new();
-        database
+        let admitted_round = database
             .admit_dynamic_memory_inference_round(
                 run_id,
                 attempt_id,
@@ -1342,6 +1346,16 @@ mod tests {
                 0,
                 NewDynamicMemoryInferenceRound {
                     ordinal: 0,
+                    request_context: lettuce_conversations::ProviderNeutralContext {
+                        messages: vec![ProviderNeutralMessage {
+                            role: MessageRole::User,
+                            parts: vec![ProviderContextPart::Text {
+                                text: "frozen first request".into(),
+                            }],
+                        }],
+                        attributions: Default::default(),
+                        budget: Default::default(),
+                    },
                     parts: Vec::new(),
                     provider_replay: None,
                     usage: None,
@@ -1379,6 +1393,10 @@ mod tests {
                 },
             )
             .expect("round");
+        assert!(matches!(
+            &admitted_round.request_context.messages[0].parts[..],
+            [ProviderContextPart::Text { text }] if text == "frozen first request"
+        ));
         let memory_id = MemoryId::new();
         let commit = DynamicMemoryBackgroundRoundCommit {
             run_id,
@@ -1498,6 +1516,11 @@ mod tests {
         let call_id = ToolExecutionId::new();
         let round = NewDynamicMemoryInferenceRound {
             ordinal: 0,
+            request_context: lettuce_conversations::ProviderNeutralContext {
+                messages: Vec::new(),
+                attributions: Default::default(),
+                budget: Default::default(),
+            },
             parts: vec![MessagePart::ReasoningSummary {
                 text: "Found a durable preference".into(),
             }],

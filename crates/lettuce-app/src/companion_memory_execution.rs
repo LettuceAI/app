@@ -266,6 +266,11 @@ mod tests {
             attempt_id,
             ordinal: 0,
             first_call_ordinal: 0,
+            request_context: lettuce_conversations::ProviderNeutralContext {
+                messages: Vec::new(),
+                attributions: Default::default(),
+                budget: Default::default(),
+            },
             parts: Vec::new(),
             provider_replay: None,
             usage: None,

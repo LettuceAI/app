@@ -153,6 +153,7 @@ impl<
             handle,
             stream_sink,
         )?;
+        let request_context = request.context.clone();
         let outcome = match self.inference.run(request).await {
             Ok(outcome) => outcome,
             Err(PortError::Cancelled) => {
@@ -166,7 +167,7 @@ impl<
             self.cancel_attempt(&attempt, now)?;
             return Err(CompanionMemoryInferenceError::Cancelled);
         }
-        let planned = match plan_first_round(&run, &outcome, now) {
+        let planned = match plan_memory_round(&run, 0, request_context, &outcome, now) {
             Ok(round) => round,
             Err(CompanionMemoryInferenceError::Cancelled) => {
                 cleanup_outcome_replays(self.repository, &outcome)?;
@@ -493,8 +494,10 @@ fn insert_in_chat_messages(
     }
 }
 
-fn plan_first_round(
+pub(crate) fn plan_memory_round(
     run: &DynamicMemoryRun,
+    ordinal: u8,
+    request_context: ProviderNeutralContext,
     outcome: &InferenceOutcome,
     now: TimestampMillis,
 ) -> Result<NewDynamicMemoryInferenceRound, CompanionMemoryInferenceError> {
@@ -552,7 +555,8 @@ fn plan_first_round(
         })
         .collect::<Result<Vec<_>, CompanionMemoryInferenceError>>()?;
     let round = NewDynamicMemoryInferenceRound {
-        ordinal: 0,
+        ordinal,
+        request_context,
         parts: candidate.parts.clone(),
         provider_replay: candidate.provider_replay.clone(),
         usage: outcome.usage.clone(),
@@ -567,7 +571,7 @@ fn plan_first_round(
     Ok(round)
 }
 
-fn cleanup_outcome_replays<R: ProviderReplayArtifactPort + ?Sized>(
+pub(crate) fn cleanup_outcome_replays<R: ProviderReplayArtifactPort + ?Sized>(
     repository: &R,
     outcome: &InferenceOutcome,
 ) -> Result<(), CompanionMemoryInferenceError> {
@@ -838,6 +842,11 @@ mod tests {
     #[test]
     fn first_round_requires_one_tool_candidate_and_preserves_calls() {
         let (run, _) = run_and_attempt(JobId::new());
+        let request_context = ProviderNeutralContext {
+            messages: Vec::new(),
+            attributions: Default::default(),
+            budget: Default::default(),
+        };
         let empty = InferenceOutcome {
             candidates: Vec::new(),
             usage: None,
@@ -847,7 +856,13 @@ mod tests {
             warning_codes: Vec::new(),
         };
         assert!(matches!(
-            plan_first_round(&run, &empty, TimestampMillis::new(2)),
+            plan_memory_round(
+                &run,
+                0,
+                request_context.clone(),
+                &empty,
+                TimestampMillis::new(2)
+            ),
             Err(CompanionMemoryInferenceError::NoToolCalls)
         ));
 
@@ -873,7 +888,8 @@ mod tests {
             provider_request_id: Some("request-1".into()),
             warning_codes: Vec::<InferenceWarningCode>::new(),
         };
-        let round = plan_first_round(&run, &outcome, TimestampMillis::new(2)).expect("round");
+        let round = plan_memory_round(&run, 0, request_context, &outcome, TimestampMillis::new(2))
+            .expect("round");
         assert_eq!(round.calls.len(), 1);
         assert_eq!(round.calls[0].call, outcome.candidates[0].tool_calls[0]);
         assert_eq!(round.provider_request_id.as_deref(), Some("request-1"));

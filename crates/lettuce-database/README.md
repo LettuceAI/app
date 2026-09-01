@@ -99,7 +99,8 @@ conversation memory space, ordered source-message roles and their active immutab
 revision/candidate sources, full resolved inference profile, and tool contract.
 CAS attempts provide
 created/processing/succeeded/failed/cancelled/interrupted state; ordered rounds
-and calls retain bounded usage and protected provider-replay references.
+and calls retain their exact provider-neutral request context, bounded usage,
+and protected provider-replay references.
 Admission and retry are idempotent, recovery interrupts the parent and clones
 its exact round/call evidence into one processing child, and SQL ownership
 guards prevent a foreign conversation, memory space, or source message from

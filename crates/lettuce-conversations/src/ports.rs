@@ -1538,7 +1538,8 @@ pub enum SafetyContext {
     Restricted,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "details", rename_all = "snake_case")]
 pub enum ProviderContextPart {
     Text {
         text: String,
@@ -1568,13 +1569,15 @@ impl ProviderContextPart {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderNeutralMessage {
     pub role: MessageRole,
     pub parts: Vec<ProviderContextPart>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderNeutralContext {
     pub messages: Vec<ProviderNeutralMessage>,
     pub attributions: ContextAttributions,
@@ -1686,14 +1689,16 @@ impl ProviderNeutralContext {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ContextAttributions {
     pub prompt: Option<PromptAttribution>,
     pub lorebooks: Vec<LorebookAttribution>,
     pub memory: Option<MemoryAttribution>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ContextBudgetReport {
     pub selected_messages: u32,
     pub omitted_messages: u32,

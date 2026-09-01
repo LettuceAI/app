@@ -177,7 +177,8 @@ impl ToolOutput {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TranscriptToolCall {
     pub execution_id: ToolExecutionId,
     pub provider_call_id: Option<String>,
@@ -200,7 +201,8 @@ impl TranscriptToolCall {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TranscriptToolResult {
     pub execution_id: ToolExecutionId,
     pub provider_call_id: Option<String>,

@@ -190,6 +190,10 @@ CREATE TABLE dynamic_memory_inference_rounds (
     ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 7),
     first_call_ordinal INTEGER NOT NULL CHECK (first_call_ordinal BETWEEN 0 AND 64),
     call_count INTEGER NOT NULL CHECK (call_count BETWEEN 0 AND 64),
+    request_context_json TEXT NOT NULL CHECK (
+        json_valid(request_context_json)
+        AND json_extract(request_context_json, '$.format_version') = 1
+    ),
     parts_json TEXT NOT NULL CHECK (
         json_valid(parts_json)
         AND json_extract(parts_json, '$.format_version') = 1

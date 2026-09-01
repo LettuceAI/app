@@ -62,10 +62,14 @@ boundary instead of fabricating a visible conversation generation turn. A run
 freezes the authoritative conversation memory space, ordered source-message
 roles and active revision/candidate window, complete resolved model/profile snapshot,
 and required dynamic-memory tool contract. Retryable attempts own CAS lifecycle state and immutable ordered
-provider rounds/calls; interruption recovery copies the exact admitted provider
-history into the processing child. This preserves the legacy cycle's frozen
+provider rounds/calls. Each round also freezes the exact provider-neutral
+request context used for its inference, so continuation and recovery do not
+re-render mutable prompts or pre-round memory state. Interruption recovery
+copies the exact admitted provider history into the processing child. This preserves the legacy cycle's frozen
 window/model behavior while deliberately separating it from assistant-message
 generation. The same port now owns atomic background round settlement: an
 optional memory change and every ordered typed result commit together, and an
-exact retry returns the stored settlement. Recursive continuation and
-companion-effect completion remain later application-worker slices.
+exact retry returns the stored settlement. Background provider continuation now
+replays those calls/results into the frozen context and admits the next bounded
+round; execute-until-terminal worker wiring and companion-effect completion
+remain later application-worker slices.
