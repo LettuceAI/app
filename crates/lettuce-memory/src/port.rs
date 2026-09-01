@@ -7,7 +7,11 @@ use serde::{Deserialize, Serialize};
 use lettuce_conversations::{ConversationRepositoryError, ToolExecution, ToolExecutionTransition};
 
 use crate::{
-    CreateMemoryPreparation, MemoryItem, MemoryPolicy, MemorySpaceSnapshot, MemoryValidationError,
+    CreateMemoryPreparation, DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode,
+    DynamicMemoryAttemptRecovery, DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound,
+    DynamicMemoryRun, DynamicMemoryRunAttemptAdmission, DynamicMemoryToolCallEvidence, MemoryItem,
+    MemoryPolicy, MemorySpaceSnapshot, MemoryValidationError, NewDynamicMemoryAttemptRecovery,
+    NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
 };
 
 const MAX_PREPARATION_SOURCE_REVISION_BYTES: usize = 128;
@@ -51,6 +55,70 @@ pub trait MemoryRepository: Send + Sync {
         &self,
         change: MemoryChangeSet,
     ) -> Result<MemorySpaceSnapshot, MemoryRepositoryError>;
+}
+
+pub trait DynamicMemoryRunRepository: Send + Sync {
+    fn admit_dynamic_memory_run_attempt(
+        &self,
+        admission: NewDynamicMemoryRunAttempt,
+    ) -> Result<DynamicMemoryRunAttemptAdmission, DynamicMemoryRunRepositoryError>;
+
+    fn load_dynamic_memory_run(
+        &self,
+        id: lettuce_types::DynamicMemoryRunId,
+    ) -> Result<DynamicMemoryRun, DynamicMemoryRunRepositoryError>;
+
+    fn load_dynamic_memory_attempt(
+        &self,
+        id: lettuce_types::DynamicMemoryAttemptId,
+    ) -> Result<DynamicMemoryAttempt, DynamicMemoryRunRepositoryError>;
+
+    fn transition_dynamic_memory_attempt(
+        &self,
+        id: lettuce_types::DynamicMemoryAttemptId,
+        expected_revision: Revision,
+        next: DynamicMemoryAttemptStatus,
+        failure: Option<DynamicMemoryAttemptFailureCode>,
+        at: TimestampMillis,
+    ) -> Result<DynamicMemoryAttempt, DynamicMemoryRunRepositoryError>;
+
+    fn recover_dynamic_memory_attempt(
+        &self,
+        recovery: NewDynamicMemoryAttemptRecovery,
+    ) -> Result<DynamicMemoryAttemptRecovery, DynamicMemoryRunRepositoryError>;
+
+    fn admit_dynamic_memory_inference_round(
+        &self,
+        run_id: lettuce_types::DynamicMemoryRunId,
+        attempt_id: lettuce_types::DynamicMemoryAttemptId,
+        expected_round_ordinal: u8,
+        expected_next_call_ordinal: u16,
+        round: NewDynamicMemoryInferenceRound,
+    ) -> Result<DynamicMemoryInferenceRound, DynamicMemoryRunRepositoryError>;
+
+    fn list_dynamic_memory_inference_rounds(
+        &self,
+        run_id: lettuce_types::DynamicMemoryRunId,
+        attempt_id: lettuce_types::DynamicMemoryAttemptId,
+    ) -> Result<Vec<DynamicMemoryInferenceRound>, DynamicMemoryRunRepositoryError>;
+
+    fn list_dynamic_memory_tool_calls(
+        &self,
+        run_id: lettuce_types::DynamicMemoryRunId,
+        attempt_id: lettuce_types::DynamicMemoryAttemptId,
+    ) -> Result<Vec<DynamicMemoryToolCallEvidence>, DynamicMemoryRunRepositoryError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum DynamicMemoryRunRepositoryError {
+    #[error("dynamic-memory run record was not found")]
+    NotFound,
+    #[error("dynamic-memory run operation conflicts with durable state")]
+    Conflict,
+    #[error("dynamic-memory run record is invalid")]
+    Invalid,
+    #[error("dynamic-memory run storage failed")]
+    Storage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

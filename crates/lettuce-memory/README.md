@@ -56,3 +56,15 @@ The same port exposes one atomic interrupted-parent to immediate-child recovery
 operation. It returns newly identified running child executions plus their
 remapped immutable plan, while preserving exact call arguments and prepared
 semantic evidence from the terminal parent.
+
+Background post-turn extraction now has a separate memory-owned durable run
+boundary instead of fabricating a visible conversation generation turn. A run
+freezes the authoritative conversation memory space, ordered source-message
+and message-revision window, complete resolved model/profile snapshot, and required dynamic-memory
+tool contract. Retryable attempts own CAS lifecycle state and immutable ordered
+provider rounds/calls; interruption recovery copies the exact admitted provider
+history into the processing child. This preserves the legacy cycle's frozen
+window/model behavior while deliberately separating it from assistant-message
+generation. Prompt construction, reducer execution, preparation/result
+settlement, and companion-effect completion are the next application-worker
+slice.

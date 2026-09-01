@@ -93,6 +93,17 @@ attached child job, then clones the exact parent call payloads under new child
 execution IDs, advances them to running, remaps create preparations, and inserts
 the child plan in one immediate transaction. Existing partial child state fails
 closed; an exact committed retry hydrates the same rows.
+Migration 9 also owns background dynamic-memory runs that are intentionally not
+conversation generation turns. The immutable run binds the normalized
+conversation memory space, ordered source messages and their active immutable revisions, full resolved inference
+profile, and tool contract. CAS attempts provide
+created/processing/succeeded/failed/cancelled/interrupted state; ordered rounds
+and calls retain bounded usage and protected provider-replay references.
+Admission and retry are idempotent, recovery interrupts the parent and clones
+its exact round/call evidence into one processing child, and SQL ownership
+guards prevent a foreign conversation, memory space, or source message from
+entering the run. The SQLite scenario also proves this lifecycle creates no
+conversation turn or message.
 Possession of `Database` is a trusted application-composition capability: ordinary
 conversation repositories and DTOs expose artifact references only and cannot
 export protected bytes. Trusted transfer remains a separate composition-only

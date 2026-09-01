@@ -81,6 +81,8 @@ define_id!(LorebookId);
 define_id!(LorebookEntryId);
 define_id!(MediaBlobId);
 define_id!(MemoryId);
+define_id!(DynamicMemoryRunId);
+define_id!(DynamicMemoryAttemptId);
 define_id!(MemoryRevisionId);
 define_id!(MemorySpaceId);
 define_id!(MessageId);

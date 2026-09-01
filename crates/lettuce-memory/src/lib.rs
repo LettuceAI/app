@@ -4,6 +4,7 @@
 
 mod model;
 mod port;
+mod run;
 mod tool;
 
 pub use model::{
@@ -13,7 +14,16 @@ pub use port::{
     DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError,
     DynamicMemoryPreparationRepository, DynamicMemoryRecoveredChild, DynamicMemoryRoundCommit,
     DynamicMemoryRoundCommitError, DynamicMemoryRoundCommitResult, DynamicMemoryRoundRepository,
-    MemoryChangeSet, MemoryRepository, MemoryRepositoryError, PersistedMemoryCreatePreparation,
+    DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, MemoryChangeSet, MemoryRepository,
+    MemoryRepositoryError, PersistedMemoryCreatePreparation,
+};
+pub use run::{
+    DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
+    DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound, DynamicMemoryRoundFinishReason,
+    DynamicMemoryRun, DynamicMemoryRunAttemptAdmission, DynamicMemoryRunError,
+    DynamicMemorySourceMessage, DynamicMemoryToolCallEvidence, MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS,
+    MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES, NewDynamicMemoryAttemptRecovery,
+    NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall,
 };
 pub use tool::{
     CreateMemoryPreparation, MemoryBatchResult, MemoryToolArguments, MemoryToolCall,

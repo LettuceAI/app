@@ -10,6 +10,7 @@ mod conversation_mutations;
 mod conversation_query;
 mod conversation_vertical_slice;
 mod creation_adapter;
+mod dynamic_memory_run_adapter;
 mod group_adapter;
 mod lorebook_adapter;
 mod memory_adapter;
@@ -3815,7 +3816,12 @@ mod tests {
                 "creation_proposals",
                 "creation_turns",
                 "creation_workflows",
+                "dynamic_memory_admitted_tool_calls",
+                "dynamic_memory_inference_rounds",
                 "dynamic_memory_preparation_plans",
+                "dynamic_memory_run_attempts",
+                "dynamic_memory_run_source_messages",
+                "dynamic_memory_runs",
                 "generation_attempts",
                 "generation_checkpoints",
                 "group_lorebook_bindings",
