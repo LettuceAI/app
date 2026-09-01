@@ -70,6 +70,7 @@ impl<
             });
         }
         if handle.cancellation_token().is_cancelled() {
+            self.cancel(&attempt, now)?;
             return Err(CompanionMemoryRoundExecutionError::Cancelled);
         }
         let round = self
@@ -98,8 +99,17 @@ impl<
                 duplicate_threshold,
                 claim,
                 handle,
-            )?;
+            );
+        let prepared = match prepared {
+            Ok(prepared) => prepared,
+            Err(DynamicMemoryPreparationError::Cancelled) => {
+                self.cancel(&attempt, now)?;
+                return Err(CompanionMemoryRoundExecutionError::Cancelled);
+            }
+            Err(error) => return Err(error.into()),
+        };
         if handle.cancellation_token().is_cancelled() {
+            self.cancel(&attempt, now)?;
             return Err(CompanionMemoryRoundExecutionError::Cancelled);
         }
         let calls = prepare_background_calls(&round, &prepared)?;
@@ -127,6 +137,21 @@ impl<
             replayed: false,
             projection_repairs_pending,
         })
+    }
+
+    fn cancel(
+        &self,
+        attempt: &lettuce_memory::DynamicMemoryAttempt,
+        now: TimestampMillis,
+    ) -> Result<(), CompanionMemoryRoundExecutionError> {
+        self.repository.transition_dynamic_memory_attempt(
+            attempt.id,
+            attempt.revision,
+            DynamicMemoryAttemptStatus::Cancelled,
+            None,
+            now,
+        )?;
+        Ok(())
     }
 }
 
