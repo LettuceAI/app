@@ -10,8 +10,8 @@ use crate::{
     CreateMemoryPreparation, DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode,
     DynamicMemoryAttemptRecovery, DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound,
     DynamicMemoryRun, DynamicMemoryRunAttemptAdmission, DynamicMemoryToolCallEvidence, MemoryItem,
-    MemoryPolicy, MemorySpaceSnapshot, MemoryValidationError, NewDynamicMemoryAttemptRecovery,
-    NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
+    MemoryPolicy, MemorySpaceSnapshot, MemoryToolResult, MemoryValidationError,
+    NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
 };
 
 const MAX_PREPARATION_SOURCE_REVISION_BYTES: usize = 128;
@@ -112,6 +112,51 @@ pub trait DynamicMemoryRunRepository: Send + Sync {
         run_id: lettuce_types::DynamicMemoryRunId,
         attempt_id: lettuce_types::DynamicMemoryAttemptId,
     ) -> Result<Vec<DynamicMemoryToolCallEvidence>, DynamicMemoryRunRepositoryError>;
+
+    fn load_dynamic_memory_round_settlement(
+        &self,
+        _run_id: lettuce_types::DynamicMemoryRunId,
+        _attempt_id: lettuce_types::DynamicMemoryAttemptId,
+        _round_ordinal: u8,
+    ) -> Result<Option<DynamicMemoryBackgroundRoundSettlement>, DynamicMemoryRunRepositoryError>
+    {
+        Err(DynamicMemoryRunRepositoryError::Invalid)
+    }
+
+    /// Atomically applies one background tool round and records its typed
+    /// results. Repeating the exact commit returns the stored settlement.
+    fn commit_dynamic_memory_background_round(
+        &self,
+        _commit: DynamicMemoryBackgroundRoundCommit,
+        _at: TimestampMillis,
+    ) -> Result<DynamicMemoryBackgroundRoundSettlement, DynamicMemoryRunRepositoryError> {
+        Err(DynamicMemoryRunRepositoryError::Invalid)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DynamicMemoryBackgroundRoundCommit {
+    pub run_id: lettuce_types::DynamicMemoryRunId,
+    pub attempt_id: lettuce_types::DynamicMemoryAttemptId,
+    pub round_ordinal: u8,
+    pub space_id: MemorySpaceId,
+    pub expected_memory_revision: Revision,
+    pub change: Option<MemoryChangeSet>,
+    pub results: Vec<MemoryToolResult>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DynamicMemoryBackgroundRoundSettlement {
+    pub run_id: lettuce_types::DynamicMemoryRunId,
+    pub attempt_id: lettuce_types::DynamicMemoryAttemptId,
+    pub round_ordinal: u8,
+    pub space_id: MemorySpaceId,
+    pub expected_memory_revision: Revision,
+    pub resulting_memory_revision: Revision,
+    pub results: Vec<MemoryToolResult>,
+    pub settled_at: TimestampMillis,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

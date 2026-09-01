@@ -3,11 +3,12 @@ use std::str::FromStr;
 use lettuce_conversations::{InferenceUsage, MessageRenderSource, ProposedToolCall};
 use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
-    DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound, DynamicMemoryRoundFinishReason,
-    DynamicMemoryRun, DynamicMemoryRunAttemptAdmission, DynamicMemoryRunRepository,
-    DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage, DynamicMemoryToolCallEvidence,
-    NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
-    dynamic_memory_tool_request,
+    DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
+    DynamicMemoryBackgroundRoundSettlement, DynamicMemoryInferenceRound,
+    DynamicMemoryRoundFinishReason, DynamicMemoryRun, DynamicMemoryRunAttemptAdmission,
+    DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
+    DynamicMemoryToolCallEvidence, MemoryToolResult, NewDynamicMemoryAttemptRecovery,
+    NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt, dynamic_memory_tool_request,
 };
 use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -309,6 +310,82 @@ fn list_rounds_in(
             .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
     }
     Ok(rounds)
+}
+
+fn background_change_digest(
+    change: &Option<lettuce_memory::MemoryChangeSet>,
+) -> Result<String, DynamicMemoryRunRepositoryError> {
+    let encoded = encode_versioned(change, JSON_VERSION).map_err(storage)?;
+    Ok(blake3::hash(encoded.as_bytes()).to_hex().to_string())
+}
+
+fn load_background_settlement_in(
+    connection: &Connection,
+    run_id: DynamicMemoryRunId,
+    attempt_id: DynamicMemoryAttemptId,
+    round_ordinal: u8,
+) -> Result<Option<(DynamicMemoryBackgroundRoundSettlement, String)>, DynamicMemoryRunRepositoryError>
+{
+    let row = connection
+        .query_row(
+            "SELECT space_id,expected_memory_revision,resulting_memory_revision,change_digest,settled_at \
+             FROM dynamic_memory_background_round_settlements \
+             WHERE run_id=?1 AND attempt_id=?2 AND round_ordinal=?3",
+            params![run_id.to_string(), attempt_id.to_string(), i64::from(round_ordinal)],
+            |row| {
+                Ok((
+                    parse_id(row.get::<_, String>(0)?)?,
+                    revision(row.get(1)?)?,
+                    revision(row.get(2)?)?,
+                    row.get::<_, String>(3)?,
+                    TimestampMillis::new(row.get(4)?),
+                ))
+            },
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((space_id, expected_memory_revision, resulting_memory_revision, digest, settled_at)) =
+        row
+    else {
+        return Ok(None);
+    };
+    let mut statement = connection
+        .prepare(
+            "SELECT call_id,outcome_json FROM dynamic_memory_background_tool_results \
+             WHERE run_id=?1 AND attempt_id=?2 AND round_ordinal=?3 ORDER BY ordinal",
+        )
+        .map_err(storage)?;
+    let results = statement
+        .query_map(
+            params![
+                run_id.to_string(),
+                attempt_id.to_string(),
+                i64::from(round_ordinal)
+            ],
+            |row| {
+                Ok(MemoryToolResult {
+                    execution_id: parse_id(row.get(0)?)?,
+                    outcome: decode_versioned(&row.get::<_, String>(1)?, JSON_VERSION)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                })
+            },
+        )
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage)?;
+    Ok(Some((
+        DynamicMemoryBackgroundRoundSettlement {
+            run_id,
+            attempt_id,
+            round_ordinal,
+            space_id,
+            expected_memory_revision,
+            resulting_memory_revision,
+            results,
+            settled_at,
+        },
+        digest,
+    )))
 }
 
 fn insert_round_in(
@@ -834,6 +911,135 @@ impl DynamicMemoryRunRepository for Database {
         transaction.commit().map_err(storage)?;
         Ok(calls)
     }
+
+    fn load_dynamic_memory_round_settlement(
+        &self,
+        run_id: DynamicMemoryRunId,
+        attempt_id: DynamicMemoryAttemptId,
+        round_ordinal: u8,
+    ) -> Result<Option<DynamicMemoryBackgroundRoundSettlement>, DynamicMemoryRunRepositoryError>
+    {
+        let connection = self.connection().map_err(storage)?;
+        let attempt = load_attempt_in(&connection, attempt_id)?;
+        if attempt.run_id != run_id {
+            return Err(DynamicMemoryRunRepositoryError::Conflict);
+        }
+        load_background_settlement_in(&connection, run_id, attempt_id, round_ordinal)
+            .map(|stored| stored.map(|(settlement, _)| settlement))
+    }
+
+    fn commit_dynamic_memory_background_round(
+        &self,
+        commit: DynamicMemoryBackgroundRoundCommit,
+        at: TimestampMillis,
+    ) -> Result<DynamicMemoryBackgroundRoundSettlement, DynamicMemoryRunRepositoryError> {
+        if commit.results.is_empty()
+            || commit.change.as_ref().is_some_and(|change| {
+                change.space_id != commit.space_id
+                    || change.expected_revision != commit.expected_memory_revision
+                    || change.validate().is_err()
+            })
+        {
+            return Err(DynamicMemoryRunRepositoryError::Invalid);
+        }
+        let digest = background_change_digest(&commit.change)?;
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        if let Some((stored, stored_digest)) = load_background_settlement_in(
+            &transaction,
+            commit.run_id,
+            commit.attempt_id,
+            commit.round_ordinal,
+        )? {
+            if stored.space_id == commit.space_id
+                && stored.expected_memory_revision == commit.expected_memory_revision
+                && stored.results == commit.results
+                && stored_digest == digest
+            {
+                transaction.commit().map_err(storage)?;
+                return Ok(stored);
+            }
+            return Err(DynamicMemoryRunRepositoryError::Conflict);
+        }
+        let run = load_run_in(&transaction, commit.run_id)?;
+        let attempt = load_attempt_in(&transaction, commit.attempt_id)?;
+        let rounds = list_rounds_in(&transaction, commit.run_id, commit.attempt_id)?;
+        let round = rounds
+            .get(usize::from(commit.round_ordinal))
+            .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
+        if run.space_id != commit.space_id
+            || attempt.run_id != run.id
+            || attempt.status != DynamicMemoryAttemptStatus::Processing
+            || round.ordinal != commit.round_ordinal
+            || round.calls.len() != commit.results.len()
+            || round
+                .calls
+                .iter()
+                .zip(&commit.results)
+                .any(|(call, result)| call.id != result.execution_id)
+        {
+            return Err(DynamicMemoryRunRepositoryError::Conflict);
+        }
+        let current = crate::memory_adapter::get_in(&transaction, commit.space_id)
+            .map_err(storage)?
+            .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
+        if current.revision != commit.expected_memory_revision {
+            return Err(DynamicMemoryRunRepositoryError::Conflict);
+        }
+        let resulting = match &commit.change {
+            Some(change) => crate::memory_adapter::compare_and_apply_in(&transaction, change)
+                .map_err(storage)?,
+            None => current,
+        };
+        transaction
+            .execute(
+                "INSERT INTO dynamic_memory_background_round_settlements \
+                 (run_id,attempt_id,round_ordinal,space_id,expected_memory_revision,\
+                  resulting_memory_revision,change_digest,settled_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![
+                    commit.run_id.to_string(),
+                    commit.attempt_id.to_string(),
+                    i64::from(commit.round_ordinal),
+                    commit.space_id.to_string(),
+                    sql_u64(commit.expected_memory_revision.get())?,
+                    sql_u64(resulting.revision.get())?,
+                    digest,
+                    at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        for (call, result) in round.calls.iter().zip(&commit.results) {
+            transaction
+                .execute(
+                    "INSERT INTO dynamic_memory_background_tool_results \
+                     (run_id,attempt_id,round_ordinal,call_id,ordinal,outcome_json,settled_at) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                    params![
+                        commit.run_id.to_string(),
+                        commit.attempt_id.to_string(),
+                        i64::from(commit.round_ordinal),
+                        result.execution_id.to_string(),
+                        i64::from(call.ordinal),
+                        encode_versioned(&result.outcome, JSON_VERSION).map_err(storage)?,
+                        at.get(),
+                    ],
+                )
+                .map_err(storage)?;
+        }
+        let stored = load_background_settlement_in(
+            &transaction,
+            commit.run_id,
+            commit.attempt_id,
+            commit.round_ordinal,
+        )?
+        .map(|(settlement, _)| settlement)
+        .ok_or(DynamicMemoryRunRepositoryError::Storage)?;
+        transaction.commit().map_err(storage)?;
+        Ok(stored)
+    }
 }
 
 #[cfg(test)]
@@ -844,9 +1050,11 @@ mod tests {
     };
     use lettuce_memory::{
         DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptStatus,
-        DynamicMemoryRoundFinishReason, DynamicMemoryRunRepository, DynamicMemorySourceMessage,
-        NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound,
-        NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall,
+        DynamicMemoryBackgroundRoundCommit, DynamicMemoryRoundFinishReason,
+        DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
+        MemoryCategory, MemoryChangeSet, MemoryItem, MemoryRepository, MemoryToolOutcome,
+        MemoryToolResult, NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound,
+        NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall, Score,
     };
     use lettuce_models::{
         CapabilityStatus, ChatParameterResolutionInput, ChatRequirements, ExpectedModelIdentity,
@@ -856,7 +1064,7 @@ mod tests {
     use lettuce_settings::SecretOwnerId;
     use lettuce_types::{
         CharacterId, ConversationBranchId, ConversationId, ConversationParticipantId,
-        DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, MemorySpaceId, MessageId,
+        DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, MemoryId, MemorySpaceId, MessageId,
         MessageRevisionId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis,
         ToolExecutionId,
     };
@@ -1095,6 +1303,161 @@ mod tests {
             )
             .expect("turn count");
         (messages, turns)
+    }
+
+    #[test]
+    fn background_round_memory_and_results_commit_once() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let run_id = DynamicMemoryRunId::new();
+        let attempt_id = DynamicMemoryAttemptId::new();
+        let admitted = database
+            .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+                run_id,
+                attempt_id,
+                conversation_id,
+                space_id,
+                source_messages: messages.clone(),
+                profile: profile(),
+                job_id: JobId::new(),
+                now: TimestampMillis::new(10),
+            })
+            .expect("run");
+        database
+            .transition_dynamic_memory_attempt(
+                attempt_id,
+                admitted.attempt.revision,
+                DynamicMemoryAttemptStatus::Processing,
+                None,
+                TimestampMillis::new(11),
+            )
+            .expect("processing");
+        let create_id = ToolExecutionId::new();
+        let done_id = ToolExecutionId::new();
+        database
+            .admit_dynamic_memory_inference_round(
+                run_id,
+                attempt_id,
+                0,
+                0,
+                NewDynamicMemoryInferenceRound {
+                    ordinal: 0,
+                    parts: Vec::new(),
+                    provider_replay: None,
+                    usage: None,
+                    finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                    provider_request_id: None,
+                    calls: vec![
+                        NewDynamicMemoryToolCall {
+                            id: create_id,
+                            definition_version: 1,
+                            call: lettuce_conversations::ProposedToolCall {
+                                provider_call_id: Some("create".into()),
+                                name: "create_memory".into(),
+                                arguments: json!({
+                                    "text":"The user prefers tea",
+                                    "category":"preference",
+                                    "source_message_id":messages[0].message_id.to_string()
+                                }),
+                                raw_arguments: None,
+                                provider_replay: None,
+                            },
+                        },
+                        NewDynamicMemoryToolCall {
+                            id: done_id,
+                            definition_version: 1,
+                            call: lettuce_conversations::ProposedToolCall {
+                                provider_call_id: Some("done".into()),
+                                name: "done".into(),
+                                arguments: json!({"summary":"stored preference"}),
+                                raw_arguments: None,
+                                provider_replay: None,
+                            },
+                        },
+                    ],
+                    admitted_at: TimestampMillis::new(12),
+                },
+            )
+            .expect("round");
+        let memory_id = MemoryId::new();
+        let commit = DynamicMemoryBackgroundRoundCommit {
+            run_id,
+            attempt_id,
+            round_ordinal: 0,
+            space_id,
+            expected_memory_revision: Revision::INITIAL,
+            change: Some(MemoryChangeSet {
+                space_id,
+                expected_revision: Revision::INITIAL,
+                items: vec![MemoryItem {
+                    id: memory_id,
+                    text: "The user prefers tea".into(),
+                    category: MemoryCategory::Preference,
+                    source_message_id: Some(messages[0].message_id),
+                    token_count: 4,
+                    is_cold: false,
+                    is_pinned: false,
+                    importance: Score::FULL,
+                    persistence_importance: Score::FULL,
+                    prompt_importance: Score::FULL,
+                    volatility: Score::LEGACY_VOLATILITY,
+                    access_count: 0,
+                    created_at: TimestampMillis::new(12),
+                    last_accessed_at: TimestampMillis::new(12),
+                }],
+            }),
+            results: vec![
+                MemoryToolResult {
+                    execution_id: create_id,
+                    outcome: MemoryToolOutcome::Created { id: memory_id },
+                },
+                MemoryToolResult {
+                    execution_id: done_id,
+                    outcome: MemoryToolOutcome::Done {
+                        summary: Some("stored preference".into()),
+                    },
+                },
+            ],
+        };
+        let mut stale = commit.clone();
+        stale.expected_memory_revision = Revision::new(2);
+        stale.change.as_mut().expect("change").expected_revision = Revision::new(2);
+        assert_eq!(
+            database.commit_dynamic_memory_background_round(stale, TimestampMillis::new(13)),
+            Err(DynamicMemoryRunRepositoryError::Conflict)
+        );
+        assert_eq!(
+            database
+                .get(space_id)
+                .expect("memory")
+                .expect("space")
+                .revision,
+            Revision::INITIAL
+        );
+        assert_eq!(
+            database
+                .load_dynamic_memory_round_settlement(run_id, attempt_id, 0)
+                .expect("settlement"),
+            None
+        );
+        let settled = database
+            .commit_dynamic_memory_background_round(commit.clone(), TimestampMillis::new(13))
+            .expect("settle");
+        assert_eq!(settled.resulting_memory_revision, Revision::new(2));
+        assert_eq!(settled.results, commit.results);
+        assert_eq!(
+            database
+                .commit_dynamic_memory_background_round(commit, TimestampMillis::new(99))
+                .expect("exact replay"),
+            settled
+        );
+        let stored = database.get(space_id).expect("memory").expect("space");
+        assert_eq!(stored.revision, Revision::new(2));
+        assert_eq!(
+            stored.items[0].source_message_id,
+            Some(messages[0].message_id)
+        );
+        assert_eq!(visible_counts(&database, conversation_id), (2, 0));
     }
 
     #[test]

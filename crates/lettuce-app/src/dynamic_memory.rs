@@ -12,9 +12,9 @@ use lettuce_jobs::{Claim, ResourceClass, handle::JobHandle};
 use lettuce_memory::{
     CreateMemoryPreparation, DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError,
     DynamicMemoryPreparationRepository, DynamicMemoryRecoveredChild, DynamicMemoryRoundCommit,
-    DynamicMemoryRoundCommitError, DynamicMemoryRoundRepository, MemoryBatchResult, MemoryPolicy,
-    MemoryRepository, MemoryRepositoryError, MemorySpaceSnapshot, MemoryToolArguments,
-    MemoryToolCall, MemoryToolError, MemoryToolOutcome, MemoryToolReducer,
+    DynamicMemoryRoundCommitError, DynamicMemoryRoundRepository, DynamicMemoryToolCallEvidence,
+    MemoryBatchResult, MemoryPolicy, MemoryRepository, MemoryRepositoryError, MemorySpaceSnapshot,
+    MemoryToolArguments, MemoryToolCall, MemoryToolError, MemoryToolOutcome, MemoryToolReducer,
     PersistedMemoryCreatePreparation,
 };
 use lettuce_types::{ConversationId, MemoryId, MemorySpaceId, TimestampMillis, ToolExecutionId};
@@ -723,7 +723,7 @@ pub enum DynamicMemoryCoordinatorError {
     Tool(#[from] MemoryToolError),
 }
 
-fn persist_created_projections<R: MemoryEmbeddingRepository + ?Sized>(
+pub(crate) fn persist_created_projections<R: MemoryEmbeddingRepository + ?Sized>(
     repository: &R,
     stored: &MemorySpaceSnapshot,
     reduction: &MemoryBatchResult,
@@ -799,7 +799,92 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
         claim: &Claim,
         handle: &JobHandle,
     ) -> Result<Vec<PreparedMemoryCreate>, DynamicMemoryPreparationError> {
+        for execution in executions {
+            execution
+                .validate()
+                .map_err(|_| DynamicMemoryPreparationError::InvalidExecution)?;
+            if execution.status != ToolExecutionStatus::Running
+                || execution.definition_version != TOOL_VERSION
+            {
+                return Err(DynamicMemoryPreparationError::InvalidExecution);
+            }
+        }
+        self.prepare_call_values(
+            space_id,
+            executions.iter().map(|execution| {
+                (
+                    execution.id,
+                    execution.definition_version,
+                    execution.definition_name.as_str(),
+                    &execution.arguments,
+                )
+            }),
+            seeds,
+            duplicate_threshold,
+            claim,
+            handle,
+        )
+    }
+
+    pub fn prepare_background_calls(
+        &self,
+        space_id: MemorySpaceId,
+        calls: &[DynamicMemoryToolCallEvidence],
+        seeds: &[MemoryCreateSeed],
+        duplicate_threshold: lettuce_memory::Score,
+        claim: &Claim,
+        handle: &JobHandle,
+    ) -> Result<Vec<PreparedMemoryCreate>, DynamicMemoryPreparationError> {
+        if calls.is_empty() {
+            return Err(DynamicMemoryPreparationError::InvalidExecution);
+        }
+        let run_id = calls[0].run_id;
+        let attempt_id = calls[0].attempt_id;
+        let round_ordinal = calls[0].round_ordinal;
+        let mut previous = None;
+        let mut ids = HashSet::with_capacity(calls.len());
+        for call in calls {
+            call.validate()
+                .map_err(|_| DynamicMemoryPreparationError::InvalidExecution)?;
+            if call.run_id != run_id
+                || call.attempt_id != attempt_id
+                || call.round_ordinal != round_ordinal
+                || call.definition_version != TOOL_VERSION
+                || previous.is_some_and(|ordinal| call.ordinal != ordinal + 1)
+                || !ids.insert(call.id)
+            {
+                return Err(DynamicMemoryPreparationError::InvalidExecution);
+            }
+            previous = Some(call.ordinal);
+        }
+        self.prepare_call_values(
+            space_id,
+            calls.iter().map(|call| {
+                (
+                    call.id,
+                    call.definition_version,
+                    call.call.name.as_str(),
+                    &call.call.arguments,
+                )
+            }),
+            seeds,
+            duplicate_threshold,
+            claim,
+            handle,
+        )
+    }
+
+    fn prepare_call_values<'b>(
+        &self,
+        space_id: MemorySpaceId,
+        calls: impl Iterator<Item = (ToolExecutionId, u32, &'b str, &'b serde_json::Value)>,
+        seeds: &[MemoryCreateSeed],
+        duplicate_threshold: lettuce_memory::Score,
+        claim: &Claim,
+        handle: &JobHandle,
+    ) -> Result<Vec<PreparedMemoryCreate>, DynamicMemoryPreparationError> {
         validate_embedding_admission(claim, handle)?;
+        let calls = calls.collect::<Vec<_>>();
         let cancellation = handle.cancellation_token();
         let source_revision = self.engine.source_revision();
         let existing = self
@@ -815,30 +900,24 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
             .collect::<HashMap<_, _>>();
         if seeds.len() != seed_count
             || seeds.len()
-                != executions
+                != calls
                     .iter()
-                    .filter(|execution| execution.definition_name == "create_memory")
+                    .filter(|(_, _, name, _)| *name == "create_memory")
                     .count()
         {
             return Err(DynamicMemoryPreparationError::InvalidSeeds);
         }
         let mut prepared = Vec::with_capacity(seeds.len());
-        for execution in executions {
-            execution
-                .validate()
-                .map_err(|_| DynamicMemoryPreparationError::InvalidExecution)?;
-            if execution.status != ToolExecutionStatus::Running
-                || execution.definition_version != TOOL_VERSION
-            {
+        for (execution_id, definition_version, name, value) in calls {
+            if definition_version != TOOL_VERSION {
                 return Err(DynamicMemoryPreparationError::InvalidExecution);
             }
-            let arguments =
-                MemoryToolArguments::parse(&execution.definition_name, &execution.arguments)?;
+            let arguments = MemoryToolArguments::parse(name, value)?;
             let MemoryToolArguments::CreateMemory { text, .. } = arguments else {
                 continue;
             };
             let seed = seeds
-                .remove(&execution.id)
+                .remove(&execution_id)
                 .ok_or(DynamicMemoryPreparationError::InvalidSeeds)?;
             if cancellation.is_cancelled() {
                 return Err(DynamicMemoryPreparationError::Cancelled);
@@ -851,24 +930,21 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                 &cancellation,
             );
             let (semantic_duplicate, projection) = match generated {
-                Ok(vector) => {
-                    let evidence = EmbeddingService::semantic_duplicate_evidence(
+                Ok(vector) => (
+                    EmbeddingService::semantic_duplicate_evidence(
                         &vector,
                         &existing,
                         duplicate_threshold,
-                    );
-                    (
-                        evidence,
-                        PreparedMemoryProjection::Ready(MemoryEmbeddingProjection {
-                            space_id,
-                            memory_id: seed.id,
-                            source_text: text,
-                            vector,
-                            dimensions: EmbeddingDimensions::D128,
-                            updated_at: seed.created_at,
-                        }),
-                    )
-                }
+                    ),
+                    PreparedMemoryProjection::Ready(MemoryEmbeddingProjection {
+                        space_id,
+                        memory_id: seed.id,
+                        source_text: text,
+                        vector,
+                        dimensions: EmbeddingDimensions::D128,
+                        updated_at: seed.created_at,
+                    }),
+                ),
                 Err(EmbeddingGenerationError::Cancelled) => {
                     return Err(DynamicMemoryPreparationError::Cancelled);
                 }
@@ -885,7 +961,7 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                 ),
             };
             prepared.push(PreparedMemoryCreate {
-                execution_id: execution.id,
+                execution_id,
                 preparation: CreateMemoryPreparation {
                     id: seed.id,
                     token_count: seed.token_count,

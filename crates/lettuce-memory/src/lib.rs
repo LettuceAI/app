@@ -11,6 +11,7 @@ pub use model::{
     MemoryCategory, MemoryItem, MemoryPolicy, MemorySpaceSnapshot, MemoryValidationError, Score,
 };
 pub use port::{
+    DynamicMemoryBackgroundRoundCommit, DynamicMemoryBackgroundRoundSettlement,
     DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError,
     DynamicMemoryPreparationRepository, DynamicMemoryRecoveredChild, DynamicMemoryRoundCommit,
     DynamicMemoryRoundCommitError, DynamicMemoryRoundCommitResult, DynamicMemoryRoundRepository,

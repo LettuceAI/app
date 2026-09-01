@@ -65,6 +65,7 @@ and required dynamic-memory tool contract. Retryable attempts own CAS lifecycle 
 provider rounds/calls; interruption recovery copies the exact admitted provider
 history into the processing child. This preserves the legacy cycle's frozen
 window/model behavior while deliberately separating it from assistant-message
-generation. Prompt construction, reducer execution, preparation/result
-settlement, and companion-effect completion are the next application-worker
-slice.
+generation. The same port now owns atomic background round settlement: an
+optional memory change and every ordered typed result commit together, and an
+exact retry returns the stored settlement. Recursive continuation and
+companion-effect completion remain later application-worker slices.

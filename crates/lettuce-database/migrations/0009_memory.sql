@@ -266,6 +266,62 @@ CREATE UNIQUE INDEX dynamic_memory_admitted_tool_calls_provider_id_uq
     ON dynamic_memory_admitted_tool_calls(run_id, attempt_id, provider_call_id)
     WHERE provider_call_id IS NOT NULL;
 
+CREATE TABLE dynamic_memory_background_round_settlements (
+    run_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 7),
+    space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
+    expected_memory_revision INTEGER NOT NULL CHECK (expected_memory_revision >= 1),
+    resulting_memory_revision INTEGER NOT NULL CHECK (resulting_memory_revision >= expected_memory_revision),
+    change_digest TEXT NOT NULL CHECK (
+        length(change_digest) = 64
+        AND lower(change_digest) = change_digest
+        AND change_digest NOT GLOB '*[^0-9a-f]*'
+    ),
+    settled_at INTEGER NOT NULL,
+    PRIMARY KEY (run_id, attempt_id, round_ordinal),
+    FOREIGN KEY (run_id, attempt_id, round_ordinal)
+        REFERENCES dynamic_memory_inference_rounds(run_id, attempt_id, ordinal)
+        ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE dynamic_memory_background_tool_results (
+    run_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 7),
+    call_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 63),
+    outcome_json TEXT NOT NULL CHECK (
+        json_valid(outcome_json)
+        AND json_extract(outcome_json, '$.format_version') = 1
+    ),
+    settled_at INTEGER NOT NULL,
+    PRIMARY KEY (run_id, attempt_id, call_id),
+    UNIQUE (run_id, attempt_id, ordinal),
+    FOREIGN KEY (run_id, attempt_id, round_ordinal)
+        REFERENCES dynamic_memory_background_round_settlements(run_id, attempt_id, round_ordinal)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (run_id, attempt_id, call_id)
+        REFERENCES dynamic_memory_admitted_tool_calls(run_id, attempt_id, id)
+        ON DELETE RESTRICT
+) STRICT;
+
+CREATE TRIGGER dynamic_memory_background_settlement_immutable
+BEFORE UPDATE ON dynamic_memory_background_round_settlements
+BEGIN SELECT RAISE(ABORT, 'dynamic-memory background settlement is immutable'); END;
+
+CREATE TRIGGER dynamic_memory_background_settlement_delete_restricted
+BEFORE DELETE ON dynamic_memory_background_round_settlements
+BEGIN SELECT RAISE(ABORT, 'dynamic-memory background settlement cannot be deleted'); END;
+
+CREATE TRIGGER dynamic_memory_background_result_immutable
+BEFORE UPDATE ON dynamic_memory_background_tool_results
+BEGIN SELECT RAISE(ABORT, 'dynamic-memory background result is immutable'); END;
+
+CREATE TRIGGER dynamic_memory_background_result_delete_restricted
+BEFORE DELETE ON dynamic_memory_background_tool_results
+BEGIN SELECT RAISE(ABORT, 'dynamic-memory background result cannot be deleted'); END;
+
 CREATE TRIGGER dynamic_memory_run_immutable_update
 BEFORE UPDATE ON dynamic_memory_runs
 BEGIN SELECT RAISE(ABORT, 'dynamic-memory run is immutable'); END;

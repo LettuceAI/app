@@ -82,8 +82,11 @@ the run's frozen profile and required tool contract, and atomically admits the
 single provider tool candidate as round zero. A committed round replays without
 provider I/O; cancellation settles before admission, and rejected, empty,
 mixed-content, undeclared, or inconsistent signed-replay outcomes do not become
-durable calls. Summary generation, structured text fallback, reduction,
-recursive continuation, terminal success/effect settlement, worker debounce,
+durable calls. One admitted background round now reuses the existing create
+preparation and typed reducer, then atomically settles its ordered results with
+the memory CAS; exact retry returns those results without embedding or reducing
+again, and `done` preserves the existing short-circuit behavior. Summary
+generation, structured text fallback, recursive continuation, terminal success/effect settlement, worker debounce,
 and binding admission to host startup/finalization remain later slices; the
 generic job store itself is still only an in-memory reference store.
 Conversation launch now creates the authoritative normalized memory space in

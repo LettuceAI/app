@@ -3817,6 +3817,8 @@ mod tests {
                 "creation_turns",
                 "creation_workflows",
                 "dynamic_memory_admitted_tool_calls",
+                "dynamic_memory_background_round_settlements",
+                "dynamic_memory_background_tool_results",
                 "dynamic_memory_inference_rounds",
                 "dynamic_memory_preparation_plans",
                 "dynamic_memory_run_attempts",

@@ -103,8 +103,11 @@ and calls retain bounded usage and protected provider-replay references.
 Admission and retry are idempotent, recovery interrupts the parent and clones
 its exact round/call evidence into one processing child, and SQL ownership
 guards prevent a foreign conversation, memory space, or source message from
-entering the run. The SQLite scenario also proves this lifecycle creates no
-conversation turn or message.
+entering the run. Background tool outcomes are immutable per admitted round and
+commit in the same transaction as the memory revision CAS; stale revisions roll
+back without results, while exact retries return the original settlement. The
+SQLite scenarios also prove this lifecycle creates no conversation turn or
+message.
 Possession of `Database` is a trusted application-composition capability: ordinary
 conversation repositories and DTOs expose artifact references only and cannot
 export protected bytes. Trusted transfer remains a separate composition-only
