@@ -186,12 +186,12 @@ fn job_spec(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use std::{sync::Mutex, time::Duration};
 
     use lettuce_companions::{
         CompanionMemoryChanges, CompanionTurnEffectOutcome, CompanionTurnEffectSeed,
     };
-    use lettuce_jobs::{InMemoryJobStore, JobState};
+    use lettuce_jobs::{InMemoryJobStore, JobState, ResourceAvailability, WorkerId};
     use lettuce_types::{CompanionEffectId, GenerationTurnId, MessageId, TimestampMillis};
 
     use super::*;
@@ -367,5 +367,84 @@ mod tests {
         assert_eq!(first.job.subject, restarted.job.subject);
         assert_eq!(first.batch.idempotency_key, restarted.batch.idempotency_key);
         assert_eq!(first.batch, restarted.batch);
+    }
+
+    #[test]
+    fn startup_and_post_finalization_bridge_claims_each_conversation_once() {
+        let effects = Effects::default();
+        let jobs = InMemoryJobStore::new();
+        let first_conversation = ConversationId::new();
+        let second_conversation = ConversationId::new();
+        effects.replace(vec![
+            effect(first_conversation, 10),
+            effect(first_conversation, 20),
+            effect(second_conversation, 15),
+        ]);
+        let worker_id = WorkerId::new();
+        let coordinator = crate::CompanionMemoryDispatchCoordinator::new(&effects, &jobs);
+
+        let work = coordinator
+            .discover_and_claim(
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                worker_id,
+                TimestampMillis::new(30),
+                Duration::from_secs(60),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim discovered work");
+        assert_eq!(work.len(), 2);
+        assert!(work.iter().all(|item| item.job.state == JobState::Running));
+        assert!(work.iter().all(|item| {
+            item.handle.id() == item.admission.job.id
+                && item.claim.claim.job_id == item.admission.job.id
+                && item.claim.claim.worker_id == worker_id
+        }));
+        assert_eq!(
+            work.iter()
+                .find(|item| item.admission.batch.conversation_id == first_conversation)
+                .expect("first conversation")
+                .admission
+                .batch
+                .effects
+                .len(),
+            2
+        );
+
+        assert!(
+            coordinator
+                .discover_and_claim(
+                    MAX_COMPANION_POST_TURN_EFFECTS,
+                    worker_id,
+                    TimestampMillis::new(31),
+                    Duration::from_secs(60),
+                    &ResourceAvailability::all(),
+                )
+                .expect("post-finalization replay")
+                .is_empty()
+        );
+
+        let restarted_jobs = InMemoryJobStore::new();
+        let restarted = crate::CompanionMemoryDispatchCoordinator::new(&effects, &restarted_jobs)
+            .discover_and_claim(
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                WorkerId::new(),
+                TimestampMillis::new(40),
+                Duration::from_secs(60),
+                &ResourceAvailability::all(),
+            )
+            .expect("startup rediscovery");
+        assert_eq!(restarted.len(), 2);
+        for original in &work {
+            let recovered = restarted
+                .iter()
+                .find(|item| {
+                    item.admission.batch.conversation_id == original.admission.batch.conversation_id
+                })
+                .expect("same conversation after restart");
+            assert_eq!(
+                recovered.admission.batch.idempotency_key,
+                original.admission.batch.idempotency_key
+            );
+        }
     }
 }

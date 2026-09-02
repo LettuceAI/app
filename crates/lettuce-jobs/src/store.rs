@@ -471,6 +471,43 @@ impl InMemoryJobStore {
         let Some(id) = selected else {
             return Ok(None);
         };
+        Self::claim_selected(&mut inner, id, worker_id, now, lease_for).map(Some)
+    }
+
+    pub fn claim(
+        &self,
+        id: JobId,
+        worker_id: WorkerId,
+        now: Timestamp,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Option<Claim>, StoreError> {
+        if lease_for.is_zero() {
+            return Err(StoreError::InvalidLeaseDuration);
+        }
+        let mut inner = self.lock();
+        let Some(record) = inner.jobs.get(&id) else {
+            return Err(StoreError::NotFound);
+        };
+        if record.snapshot.state != JobState::Queued
+            || !record
+                .spec
+                .resources
+                .iter()
+                .all(|resource| allowed.allows(*resource))
+        {
+            return Ok(None);
+        }
+        Self::claim_selected(&mut inner, id, worker_id, now, lease_for).map(Some)
+    }
+
+    fn claim_selected(
+        inner: &mut StoreInner,
+        id: JobId,
+        worker_id: WorkerId,
+        now: Timestamp,
+        lease_for: Duration,
+    ) -> Result<Claim, StoreError> {
         let lease_expires_at =
             timestamp_after(now, lease_for).map_err(|_| StoreError::TimeOverflow)?;
         let record = inner.jobs.get_mut(&id).ok_or(StoreError::NotFound)?;
@@ -504,14 +541,14 @@ impl InMemoryJobStore {
             },
             now,
         )?;
-        Ok(Some(Claim {
+        Ok(Claim {
             claim,
             lease_expires_at,
             input_ref: record.spec.input_ref.clone(),
             recovery_policy: record.spec.recovery_policy,
             cancellation_policy: record.spec.cancellation_policy,
             resources: record.spec.resources.clone(),
-        }))
+        })
     }
 
     pub fn heartbeat(
@@ -1177,6 +1214,14 @@ pub trait JobStore: Send + Sync {
         lease_for: Duration,
         allowed: &ResourceAvailability,
     ) -> Result<Option<Claim>, StoreError>;
+    fn claim(
+        &self,
+        id: JobId,
+        worker_id: WorkerId,
+        now: Timestamp,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Option<Claim>, StoreError>;
     fn heartbeat(
         &self,
         claim: &ClaimRef,
@@ -1222,6 +1267,17 @@ impl JobStore for InMemoryJobStore {
         allowed: &ResourceAvailability,
     ) -> Result<Option<Claim>, StoreError> {
         Self::claim_next(self, worker_id, now, lease_for, allowed)
+    }
+
+    fn claim(
+        &self,
+        id: JobId,
+        worker_id: WorkerId,
+        now: Timestamp,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Option<Claim>, StoreError> {
+        Self::claim(self, id, worker_id, now, lease_for, allowed)
     }
 
     fn heartbeat(
@@ -1331,6 +1387,54 @@ mod tests {
             .map(|thread| thread.join().expect("join"))
             .collect();
         assert!(ids.windows(2).all(|pair| pair[0] == pair[1]));
+    }
+
+    #[test]
+    fn exact_claim_leaves_other_queued_jobs_untouched() {
+        let store = test_store();
+        let first = store.create_or_get(spec("first")).expect("first").job;
+        let second = store.create_or_get(spec("second")).expect("second").job;
+
+        assert!(
+            store
+                .claim(
+                    second.id,
+                    WorkerId::new(),
+                    Timestamp::new(10),
+                    Duration::from_secs(30),
+                    &ResourceAvailability::none(),
+                )
+                .expect("resource check")
+                .is_none()
+        );
+        let claim = store
+            .claim(
+                second.id,
+                WorkerId::new(),
+                Timestamp::new(10),
+                Duration::from_secs(30),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim")
+            .expect("eligible job");
+
+        assert_eq!(claim.claim.job_id, second.id);
+        assert_eq!(
+            store
+                .get(first.id)
+                .expect("first")
+                .expect("first job")
+                .state,
+            JobState::Queued
+        );
+        assert_eq!(
+            store
+                .get(second.id)
+                .expect("second")
+                .expect("second job")
+                .state,
+            JobState::Claimed
+        );
     }
 
     #[test]

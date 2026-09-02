@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use lettuce_characters::{
     Character, CharacterDefaults, CharacterMedia, CharacterPresentationV1, CharacterProfile,
     CharacterProvenance, CharacterRepository, ChatMode, ConversationStarter, CreateCharacterPlan,
@@ -33,7 +35,8 @@ use lettuce_database::Database;
 use lettuce_embeddings::{EmbeddingRequest, EmbeddingVector};
 use lettuce_jobs::{
     AttemptNo, CancellationPolicy, Claim, ClaimRef, InMemoryJobStore, LeaseId, OutcomeRef,
-    RecoveryPolicy, ResourceClass, WorkerId, handle::CancellationToken, handle::JobHandle,
+    RecoveryPolicy, ResourceAvailability, ResourceClass, WorkerId, handle::CancellationToken,
+    handle::JobHandle,
 };
 use lettuce_memory::{
     DynamicMemoryAttemptStatus, DynamicMemoryPreparationRepository, DynamicMemoryRoundFinishReason,
@@ -968,13 +971,19 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .expect("prompt")
         .expect("dynamic memory prompt");
     let jobs = InMemoryJobStore::new();
-    let admission = crate::CompanionPostTurnMemoryAdmissionCoordinator::new(&database, &jobs)
-        .discover_and_admit(512)
-        .expect("discover job")
+    let work = crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
+        .discover_and_claim(
+            512,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 11),
+            Duration::from_secs(60),
+            &ResourceAvailability::all(),
+        )
+        .expect("discover and claim job")
         .into_iter()
         .next()
         .expect("memory job");
-    let job_id = admission.job.id;
+    let admission = work.admission;
     let scripted = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {
@@ -1022,24 +1031,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         ])),
         requests: Mutex::new(Vec::new()),
     };
-    let handle = JobHandle::new(job_id);
-    let claim = Claim {
-        claim: ClaimRef {
-            job_id,
-            worker_id: WorkerId::new(),
-            attempt: AttemptNo::new(1),
-            lease_id: LeaseId::new(),
-        },
-        lease_expires_at: TimestampMillis::new(NOW.get() + 1_000),
-        input_ref: OutcomeRef::Conversation(conversation.id),
-        recovery_policy: RecoveryPolicy::Restart,
-        cancellation_policy: CancellationPolicy::Cooperative,
-        resources: vec![
-            ResourceClass::ModelLoad,
-            ResourceClass::DiskRead,
-            ResourceClass::Cpu,
-        ],
-    };
+    let handle = work.handle;
+    let claim = work.claim;
     let policy = DynamicMemoryPolicy {
         max_entries: 10,
         hot_token_budget: 100,

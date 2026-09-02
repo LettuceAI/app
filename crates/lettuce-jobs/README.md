@@ -18,14 +18,16 @@ The crate now provides the domain-independent foundation:
 - a checked lifecycle state machine with durable cancellation and cleanup
   semantics;
 - an atomic, thread-safe in-memory `JobStore` reference implementation with
-  idempotent create-or-get, event cursors, pagination, claims, heartbeats and
-  expired-lease recovery; and
+  idempotent create-or-get, event cursors, pagination, next-job and exact-job
+  claims, heartbeats and expired-lease recovery; and
 - policy, recovery, retention, handle and resource-admission vocabulary for
   later database/application adapters.
 
 Snapshots retain the optional caller idempotency key so application schedulers
 can distinguish an exact active logical batch from newly arrived work for the
 same subject without opening the store's private specification record.
+Exact-job claims use the same lease and resource checks as ordinary queue
+claims while leaving unrelated queued work untouched.
 
 Request handles expose a cloneable cancellation token with both an atomic
 instant check and an async notification, allowing executors to interrupt

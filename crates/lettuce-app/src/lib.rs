@@ -8,6 +8,7 @@
 
 mod built_in_prompts;
 mod companion_memory_continuation;
+mod companion_memory_dispatch;
 mod companion_memory_effect;
 mod companion_memory_execution;
 mod companion_memory_inference;
@@ -29,6 +30,7 @@ mod provider_runtime;
 
 pub use built_in_prompts::*;
 pub use companion_memory_continuation::*;
+pub use companion_memory_dispatch::*;
 pub use companion_memory_effect::*;
 pub use companion_memory_execution::*;
 pub use companion_memory_inference::*;

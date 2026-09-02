@@ -109,6 +109,14 @@ first-round inference, bounded execution/continuation loop, and terminal
 settlement into one application path. Prompt/profile/policy inputs and stable
 create seeds stay caller-owned. First-round and loop failures are classified
 through the same terminal coordinator before returning their typed error.
+One shared startup/post-finalization bridge now rediscovers those durable
+processing effects, reuses their deterministic per-conversation admission,
+claims each exact job with the ordinary lease/resource lifecycle, starts it,
+and returns the admission, claim, and cancellation handle needed by that
+runner. Repeated dispatch while a conversation job is active is a no-op, and a
+fresh job store rebuilds and claims the same logical effect batch after
+restart. Host-specific runtime inputs and terminal job progress/completion
+remain outside this bridge.
 Conversation launch now creates the authoritative normalized memory space in
 the same transaction for every resolved manual/dynamic memory policy, and the
 memory repository resolves it directly from the conversation identity. This
