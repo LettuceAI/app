@@ -26,6 +26,35 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "2.2.3 / 2.2.3",
+    date: "2026-09-02",
+    title: "2.2.3 — Companion Prompt Fixes & Richer Relationship State",
+    description:
+      "A companion's own prompt template now wins over the session template, the relationship state handed to the model spells out what each band means alongside the raw score, and character generation works again on local models whose chat template only accepts a single system message.",
+    changes: [
+      {
+        type: "bugfix",
+        description:
+          "Companion mode resolves the character's companion prompt template before the session template, so an active session template no longer overwrites the companion prompt. The prompt debugger reports the same source.",
+      },
+      {
+        type: "improvement",
+        description:
+          "The relationship-state line sent to the model now shows each axis as a band, a short behavioral gloss, and the raw score on its scale, instead of a single word per axis. Trust, closeness, and affection use a seven-step scale, and tension has named bands instead of a bare percentage.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "Smart Creator on llama.cpp merges its system entries into one leading system message, so models with strict chat templates such as Gemma no longer fail with \"System message must be at the beginning\". Remote providers keep the entries separate.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "Choosing dynamic memory while creating a group chat now sticks. The group is created with that memory mode instead of defaulting to manual, so there is no need to switch it again from group settings.",
+      },
+    ],
+  },
+  {
     version: "2.2.0 / 2.2.0",
     date: "2026-08-13",
     title: "2.2.0 — Local Image Generation, Transactional Sync & Companion Continuity",
