@@ -119,6 +119,11 @@ retaining the prompted-count baseline, and approval bypasses the ordinary gate
 to freeze the newest interval-sized whole-effect suffix. Older unsummarized
 effects remain attached for terminal settlement while only that suffix is sent
 to summary and memory inference, matching the legacy forced-cycle cursor move.
+The same coordinator exposes explicit direct/group trigger admission without
+consulting the authored run mode or interval gate. Direct trigger/retry selects
+the recent suffix; the legacy group trigger keeps the oldest cursor prefix.
+Both accept a partial window when fewer than one interval of messages exists,
+keep whole companion effects, and reuse the same idempotent job/claim path.
 The run freezes whether companion time awareness is enabled and uses the matching
 legacy tool contract. In enabled runs, a known create source is retained and an
 unknown or omitted ID falls back to the latest frozen user/assistant source. In

@@ -132,6 +132,34 @@ where
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn trigger_and_claim(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        limit: u16,
+        summary_message_interval: u32,
+        window_selection: crate::CompanionMemoryWindowSelection,
+        worker_id: WorkerId,
+        now: TimestampMillis,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryDispatchError> {
+        let coordinator = CompanionPostTurnMemoryAdmissionCoordinator::new(self.effects, self.jobs);
+        let admission = coordinator.trigger_and_admit(
+            conversation_id,
+            limit,
+            summary_message_interval,
+            window_selection,
+        )?;
+        self.claim_admissions(
+            admission.into_iter().collect(),
+            worker_id,
+            now,
+            lease_for,
+            allowed,
+        )
+    }
+
     fn claim_admissions(
         &self,
         admissions: Vec<CompanionPostTurnMemoryAdmission>,

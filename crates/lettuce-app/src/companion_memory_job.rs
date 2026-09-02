@@ -198,6 +198,25 @@ impl<
         if !pending.is_some_and(|approval| approval.pending) {
             return Ok(None);
         }
+        self.trigger_and_admit(
+            conversation_id,
+            limit,
+            summary_message_interval,
+            CompanionMemoryWindowSelection::Recent,
+        )
+    }
+
+    pub fn trigger_and_admit(
+        &self,
+        conversation_id: ConversationId,
+        limit: u16,
+        summary_message_interval: u32,
+        window_selection: CompanionMemoryWindowSelection,
+    ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
+    {
+        if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS || summary_message_interval == 0 {
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+        }
         let mut effects = self
             .effects
             .list_processing(limit)
@@ -213,13 +232,29 @@ impl<
             return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
         }
         effects.sort_by_key(|effect| (effect.created_at, effect.id));
+        if effects.is_empty() {
+            self.effects
+                .clear_dynamic_memory_pending_approval(conversation_id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
+            return Ok(None);
+        }
         let unsummarized_message_count = effect_message_count(&effects);
-        let source_effect_offset = recent_effect_offset(&effects, summary_message_interval)
-            .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+        let (effects, source_effect_offset) = match window_selection {
+            CompanionMemoryWindowSelection::Automatic => (
+                forced_effect_prefix(effects, summary_message_interval)
+                    .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?,
+                0,
+            ),
+            CompanionMemoryWindowSelection::Recent => {
+                let source_effect_offset = recent_effect_offset(&effects, summary_message_interval)
+                    .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+                (effects, source_effect_offset)
+            }
+        };
         let admitted = self.admit_selected(
             conversation_id,
             summary_message_interval,
-            CompanionMemoryWindowSelection::Recent,
+            window_selection,
             unsummarized_message_count,
             source_effect_offset,
             effects,
@@ -355,7 +390,31 @@ fn recent_effect_offset(
             return Some(start);
         }
     }
-    None
+    (!effects.is_empty()).then_some(0)
+}
+
+fn forced_effect_prefix(
+    effects: Vec<CompanionTurnEffect>,
+    summary_message_interval: u32,
+) -> Option<Vec<CompanionTurnEffect>> {
+    if effects.is_empty() {
+        return None;
+    }
+    let target = u64::from(summary_message_interval);
+    let mut message_count = 0_u64;
+    let mut prefix = Vec::new();
+    for effect in effects {
+        message_count += if effect.user_message_id.is_some() {
+            2
+        } else {
+            1
+        };
+        prefix.push(effect);
+        if message_count >= target {
+            break;
+        }
+    }
+    Some(prefix)
 }
 
 fn ready_effect_prefix(
@@ -792,6 +851,66 @@ mod tests {
         let boundary = ready_effect_prefix(vec![first], 1).expect("whole effect");
         assert_eq!(boundary.len(), 1);
         assert!(boundary[0].user_message_id.is_some());
+    }
+
+    #[test]
+    fn explicit_triggers_bypass_interval_and_preserve_direct_group_windows() {
+        let direct_conversation = ConversationId::new();
+        let direct_effects = Effects::default();
+        let direct_jobs = InMemoryJobStore::new();
+        let direct_effect = effect(direct_conversation, 10);
+        direct_effects.replace(vec![direct_effect.clone()]);
+        let direct =
+            CompanionPostTurnMemoryAdmissionCoordinator::new(&direct_effects, &direct_jobs);
+
+        let first = direct
+            .trigger_and_admit(
+                direct_conversation,
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                3,
+                CompanionMemoryWindowSelection::Recent,
+            )
+            .expect("direct trigger")
+            .expect("direct admission");
+        assert!(first.created);
+        assert_eq!(first.batch.effects, [direct_effect]);
+        assert_eq!(first.batch.source_effect_offset, 0);
+        let replay = direct
+            .trigger_and_admit(
+                direct_conversation,
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                3,
+                CompanionMemoryWindowSelection::Recent,
+            )
+            .expect("direct retry")
+            .expect("direct replay");
+        assert!(!replay.created);
+        assert_eq!(replay.batch, first.batch);
+
+        let group_conversation = ConversationId::new();
+        let group_effects = Effects::default();
+        let group_jobs = InMemoryJobStore::new();
+        let first_group = effect(group_conversation, 10);
+        let second_group = effect(group_conversation, 20);
+        group_effects.replace(vec![
+            first_group.clone(),
+            second_group.clone(),
+            effect(group_conversation, 30),
+            effect(group_conversation, 40),
+        ]);
+        let group = CompanionPostTurnMemoryAdmissionCoordinator::new(&group_effects, &group_jobs);
+        let admitted = group
+            .trigger_and_admit(
+                group_conversation,
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                3,
+                CompanionMemoryWindowSelection::Automatic,
+            )
+            .expect("group trigger")
+            .expect("group admission");
+        assert_eq!(admitted.batch.unsummarized_message_count, 8);
+        assert_eq!(admitted.batch.source_effect_offset, 0);
+        assert_eq!(admitted.batch.effects, [first_group, second_group]);
     }
 
     #[test]
