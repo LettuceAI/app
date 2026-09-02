@@ -97,6 +97,12 @@ existing round executor and continuation coordinator until the durable `done`
 result. It resumes from the latest admitted checkpoint, skips seed generation,
 embedding, reduction, and provider dispatch for already settled/admitted work,
 and keeps create IDs, token counts, and timestamps as explicit caller inputs.
+For a supplied create source, the executor copies the legacy validation
+behavior: an ID in the frozen source window is retained, while an unknown ID
+falls back to the latest frozen user/assistant source instead of persisting a
+foreign attribution. An omitted source remains omitted for non-time-aware
+direct/group memory. Freezing observed time/role and making the source field
+required only for time-aware companions remain the next temporal-memory slice.
 The existing eight-round and 64-call admission limits remain authoritative.
 Terminal success now feeds the run's durable starting snapshot and current
 memory snapshot into the existing companion effect coordinator, settles every

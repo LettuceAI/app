@@ -112,7 +112,7 @@ impl<
             self.cancel(&attempt, now)?;
             return Err(CompanionMemoryRoundExecutionError::Cancelled);
         }
-        let calls = prepare_background_calls(&round, &prepared)?;
+        let calls = prepare_background_calls(&round, &run.source_messages, &prepared)?;
         let reduction = MemoryToolReducer.reduce(&snapshot, policy, &calls)?;
         let settlement = self.repository.commit_dynamic_memory_background_round(
             DynamicMemoryBackgroundRoundCommit {
@@ -157,6 +157,7 @@ impl<
 
 fn prepare_background_calls(
     round: &DynamicMemoryInferenceRound,
+    sources: &[lettuce_memory::DynamicMemorySourceMessage],
     prepared_creates: &[PreparedMemoryCreate],
 ) -> Result<Vec<MemoryToolCall>, CompanionMemoryRoundExecutionError> {
     let mut preparations = prepared_creates
@@ -172,7 +173,20 @@ fn prepare_background_calls(
         if !ids.insert(call.id) {
             return Err(CompanionMemoryRoundExecutionError::InvalidOwnership);
         }
-        let arguments = MemoryToolArguments::parse(&call.call.name, &call.call.arguments)?;
+        let mut arguments = MemoryToolArguments::parse(&call.call.name, &call.call.arguments)?;
+        if let MemoryToolArguments::CreateMemory {
+            source_message_id: Some(source_message_id),
+            ..
+        } = &mut arguments
+            && !sources
+                .iter()
+                .any(|source| source.message_id == *source_message_id)
+        {
+            *source_message_id = sources
+                .last()
+                .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership)?
+                .message_id;
+        }
         let create = if matches!(arguments, MemoryToolArguments::CreateMemory { .. }) {
             Some(
                 preparations
@@ -328,7 +342,18 @@ mod tests {
                     delete_confidence_default: Score::FULL,
                     max_hard_delete_ratio_per_cycle: Score::FULL,
                 },
-                &prepare_background_calls(&round, &prepared).expect("calls"),
+                &prepare_background_calls(
+                    &round,
+                    &[lettuce_memory::DynamicMemorySourceMessage {
+                        message_id: source_id,
+                        role: lettuce_conversations::MessageRole::User,
+                        render_source: lettuce_conversations::MessageRenderSource::Revision(
+                            lettuce_types::MessageRevisionId::new(),
+                        ),
+                    }],
+                    &prepared,
+                )
+                .expect("calls"),
             )
             .expect("reduction");
         assert!(matches!(
@@ -351,5 +376,106 @@ mod tests {
             .find(|item| item.category == MemoryCategory::Preference)
             .expect("created memory");
         assert_eq!(created.source_message_id, Some(source_id));
+    }
+
+    #[test]
+    fn background_adapter_falls_back_from_an_unknown_source_to_the_latest_message() {
+        let run_id = DynamicMemoryRunId::new();
+        let attempt_id = DynamicMemoryAttemptId::new();
+        let first_source = MessageId::new();
+        let latest_source = MessageId::new();
+        let call = evidence(
+            run_id,
+            attempt_id,
+            0,
+            "create_memory",
+            json!({
+                "text":"The user prefers tea",
+                "category":"preference",
+                "source_message_id":MessageId::new().to_string()
+            }),
+        );
+        let round = DynamicMemoryInferenceRound {
+            run_id,
+            attempt_id,
+            ordinal: 0,
+            first_call_ordinal: 0,
+            request_context: lettuce_conversations::ProviderNeutralContext {
+                messages: Vec::new(),
+                attributions: Default::default(),
+                budget: Default::default(),
+            },
+            parts: Vec::new(),
+            provider_replay: None,
+            usage: None,
+            finish_reason: DynamicMemoryRoundFinishReason::Stop,
+            provider_request_id: None,
+            calls: vec![call.clone()],
+            admitted_at: TimestampMillis::new(1),
+        };
+        let sources = [first_source, latest_source].map(|message_id| {
+            lettuce_memory::DynamicMemorySourceMessage {
+                message_id,
+                role: lettuce_conversations::MessageRole::User,
+                render_source: lettuce_conversations::MessageRenderSource::Revision(
+                    lettuce_types::MessageRevisionId::new(),
+                ),
+            }
+        });
+        let calls = prepare_background_calls(
+            &round,
+            &sources,
+            &[PreparedMemoryCreate {
+                execution_id: call.id,
+                preparation: CreateMemoryPreparation {
+                    id: MemoryId::new(),
+                    token_count: 4,
+                    created_at: TimestampMillis::new(1),
+                    semantic_duplicate: None,
+                },
+                projection: None,
+            }],
+        )
+        .expect("prepare calls");
+
+        assert!(matches!(
+            calls[0].arguments,
+            MemoryToolArguments::CreateMemory {
+                source_message_id: Some(id),
+                ..
+            } if id == latest_source
+        ));
+
+        let unanchored = evidence(
+            run_id,
+            attempt_id,
+            0,
+            "create_memory",
+            json!({"text":"The group met at noon", "category":"plot_event"}),
+        );
+        let mut unanchored_round = round;
+        unanchored_round.calls = vec![unanchored.clone()];
+        let calls = prepare_background_calls(
+            &unanchored_round,
+            &sources,
+            &[PreparedMemoryCreate {
+                execution_id: unanchored.id,
+                preparation: CreateMemoryPreparation {
+                    id: MemoryId::new(),
+                    token_count: 4,
+                    created_at: TimestampMillis::new(1),
+                    semantic_duplicate: None,
+                },
+                projection: None,
+            }],
+        )
+        .expect("prepare unanchored call");
+        assert!(matches!(
+            calls[0].arguments,
+            MemoryToolArguments::CreateMemory {
+                source_message_id: None,
+                ..
+            }
+        ));
     }
 }
