@@ -113,7 +113,12 @@ Effect discovery also accepts the exact authored `auto`, `askFirst`, or
 `manual` run mode. `manual` admits no automatic job; `askFirst` waits for the
 existing interval gate and records/replays a durable conversation approval
 without provider dispatch; `auto` preserves the existing oldest-prefix cadence
-and clears any pending approval when it admits the job.
+and clears any pending approval when it admits the job. The approval query
+returns only a currently pending count. Skip clears that pending flag while
+retaining the prompted-count baseline, and approval bypasses the ordinary gate
+to freeze the newest interval-sized whole-effect suffix. Older unsummarized
+effects remain attached for terminal settlement while only that suffix is sent
+to summary and memory inference, matching the legacy forced-cycle cursor move.
 The run freezes whether companion time awareness is enabled and uses the matching
 legacy tool contract. In enabled runs, a known create source is retained and an
 unknown or omitted ID falls back to the latest frozen user/assistant source. In

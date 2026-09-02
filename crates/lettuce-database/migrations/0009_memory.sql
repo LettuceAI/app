@@ -13,6 +13,7 @@ CREATE TABLE dynamic_memory_pending_approvals (
     conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
     prompted_message_count INTEGER NOT NULL CHECK (prompted_message_count >= 1),
     pending INTEGER NOT NULL CHECK (pending IN (0, 1)),
+    skipped INTEGER NOT NULL CHECK (skipped IN (0, 1)),
     updated_at INTEGER NOT NULL
 ) STRICT;
 

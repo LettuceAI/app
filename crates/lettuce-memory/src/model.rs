@@ -21,6 +21,7 @@ pub struct DynamicMemoryPendingApproval {
     pub conversation_id: lettuce_types::ConversationId,
     pub prompted_message_count: u64,
     pub pending: bool,
+    pub skipped: bool,
     pub updated_at: TimestampMillis,
 }
 

@@ -111,9 +111,10 @@ summary, token count, exact provider-neutral request context, usage, provider
 request ID, and root-revision transition in the same immediate transaction as
 the summary cursor CAS.
 Migration 9 stores the conversation-owned `askFirst` prompt baseline and
-pending state. Repeating discovery at the same unsummarized count is a no-op,
-while a later full interval advances the durable prompt count; automatic job
-admission clears it.
+pending/skipped state. Repeating discovery at the same unsummarized count is a
+no-op; skip clears pending but retains the baseline, and a later full interval
+advances the durable prompt count. Automatic or approved forced job admission
+clears the row.
 CAS attempts provide
 created/processing/succeeded/failed/cancelled/interrupted state; ordered rounds
 and calls retain their exact provider-neutral request context, bounded usage,

@@ -126,7 +126,7 @@ impl<
             .map_err(CompanionMemoryInferenceError::Memory)?;
         if previous
             .as_ref()
-            .is_some_and(|summary| summary.window_end != run.summary_window.start)
+            .is_some_and(|summary| summary.window_end > run.summary_window.start)
         {
             return Err(CompanionMemoryInferenceError::InvalidOwnership);
         }

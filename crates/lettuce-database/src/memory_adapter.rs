@@ -519,7 +519,7 @@ fn get_pending_approval_in(
 ) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError> {
     connection
         .query_row(
-            "SELECT prompted_message_count,pending,updated_at
+            "SELECT prompted_message_count,pending,skipped,updated_at
                FROM dynamic_memory_pending_approvals WHERE conversation_id=?1",
             [conversation_id.to_string()],
             |row| {
@@ -528,7 +528,8 @@ fn get_pending_approval_in(
                     prompted_message_count: u64::try_from(row.get::<_, i64>(0)?)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     pending: row.get(1)?,
-                    updated_at: TimestampMillis::new(row.get(2)?),
+                    skipped: row.get(2)?,
+                    updated_at: TimestampMillis::new(row.get(3)?),
                 })
             },
         )
@@ -570,8 +571,8 @@ impl DynamicMemoryApprovalRepository for Database {
         transaction
             .execute(
                 "INSERT INTO dynamic_memory_pending_approvals
-                    (conversation_id,prompted_message_count,pending,updated_at)
-                 VALUES (?1,?2,1,?3)
+                    (conversation_id,prompted_message_count,pending,skipped,updated_at)
+                 VALUES (?1,?2,1,0,?3)
                  ON CONFLICT(conversation_id) DO UPDATE SET
                     prompted_message_count=excluded.prompted_message_count,
                     pending=1,
@@ -601,6 +602,23 @@ impl DynamicMemoryApprovalRepository for Database {
             )
             .map_err(storage)?;
         Ok(())
+    }
+
+    fn skip_dynamic_memory_pending_approval(
+        &self,
+        conversation_id: ConversationId,
+        at: TimestampMillis,
+    ) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        connection
+            .execute(
+                "UPDATE dynamic_memory_pending_approvals
+                    SET pending=0,skipped=1,updated_at=?2
+                  WHERE conversation_id=?1 AND pending=1",
+                params![conversation_id.to_string(), at.get()],
+            )
+            .map_err(storage)?;
+        get_pending_approval_in(&connection, conversation_id)
     }
 }
 

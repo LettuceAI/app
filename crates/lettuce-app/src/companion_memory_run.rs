@@ -145,6 +145,8 @@ impl<
                         .get_summary(snapshot.id)
                         .map_err(CompanionPostTurnMemoryRunError::Memory)?,
                     admission.batch.summary_message_interval,
+                    admission.batch.window_selection,
+                    admission.batch.unsummarized_message_count,
                     expected_messages.len(),
                 )?;
                 let source_messages = resolve_source_messages(
@@ -195,18 +197,33 @@ impl<
 fn summary_window(
     previous: Option<lettuce_memory::MemorySummary>,
     message_interval: u32,
+    selection: crate::CompanionMemoryWindowSelection,
+    unsummarized_message_count: u64,
     source_message_count: usize,
 ) -> Result<DynamicMemorySummaryWindow, CompanionPostTurnMemoryRunError> {
-    if message_interval == 0 || source_message_count == 0 {
+    if message_interval == 0 || source_message_count == 0 || unsummarized_message_count == 0 {
         return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
     }
-    let start = previous.map_or(0, |summary| summary.window_end);
-    let end = start
-        .checked_add(
-            u64::try_from(source_message_count)
-                .map_err(|_| CompanionPostTurnMemoryRunError::InvalidAdmission)?,
-        )
-        .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?;
+    let cursor = previous.map_or(0, |summary| summary.window_end);
+    let source_message_count = u64::try_from(source_message_count)
+        .map_err(|_| CompanionPostTurnMemoryRunError::InvalidAdmission)?;
+    if source_message_count > unsummarized_message_count {
+        return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+    }
+    let (start, end) = match selection {
+        crate::CompanionMemoryWindowSelection::Automatic => (
+            cursor,
+            cursor
+                .checked_add(source_message_count)
+                .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?,
+        ),
+        crate::CompanionMemoryWindowSelection::Recent => {
+            let end = cursor
+                .checked_add(unsummarized_message_count)
+                .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?;
+            (end - source_message_count, end)
+        }
+    };
     Ok(DynamicMemorySummaryWindow {
         message_interval,
         start,
@@ -241,9 +258,17 @@ fn validate_job(
 fn expected_effect_messages(
     admission: &CompanionPostTurnMemoryAdmission,
 ) -> Result<Vec<(MessageId, MessageRole)>, CompanionPostTurnMemoryRunError> {
-    let mut expected = Vec::with_capacity(admission.batch.effects.len() * 2);
+    let source_effects = admission
+        .batch
+        .effects
+        .get(admission.batch.source_effect_offset..)
+        .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?;
+    if source_effects.is_empty() {
+        return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+    }
+    let mut expected = Vec::with_capacity(source_effects.len() * 2);
     let mut unique = HashSet::new();
-    for effect in &admission.batch.effects {
+    for effect in source_effects {
         if let Some(id) = effect.user_message_id {
             if !unique.insert(id) {
                 return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
@@ -860,6 +885,16 @@ mod tests {
         conversation_id: ConversationId,
         effects: Vec<CompanionTurnEffect>,
     ) -> CompanionPostTurnMemoryAdmission {
+        let unsummarized_message_count = effects
+            .iter()
+            .map(|effect| {
+                if effect.user_message_id.is_some() {
+                    2
+                } else {
+                    1
+                }
+            })
+            .sum();
         let key = IdempotencyKey::new("companion-memory-fixed-batch").expect("key");
         let spec = JobSpec::new(
             JobKind::MemoryExtraction,
@@ -877,6 +912,9 @@ mod tests {
                 conversation_id,
                 idempotency_key: key,
                 summary_message_interval: 20,
+                window_selection: crate::CompanionMemoryWindowSelection::Automatic,
+                unsummarized_message_count,
+                source_effect_offset: 0,
                 effects,
             },
             job: admitted.job,
@@ -897,11 +935,33 @@ mod tests {
             updated_at: TimestampMillis::new(1),
         };
         assert_eq!(
-            summary_window(Some(previous), 4, 4).expect("window"),
+            summary_window(
+                Some(previous.clone()),
+                4,
+                crate::CompanionMemoryWindowSelection::Automatic,
+                4,
+                4,
+            )
+            .expect("window"),
             lettuce_memory::DynamicMemorySummaryWindow {
                 message_interval: 4,
                 start: 10,
                 end: 14,
+            }
+        );
+        assert_eq!(
+            summary_window(
+                Some(previous),
+                4,
+                crate::CompanionMemoryWindowSelection::Recent,
+                10,
+                4,
+            )
+            .expect("recent window"),
+            lettuce_memory::DynamicMemorySummaryWindow {
+                message_interval: 4,
+                start: 16,
+                end: 20,
             }
         );
     }

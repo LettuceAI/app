@@ -1708,8 +1708,15 @@ mod tests {
             reopened
                 .get_dynamic_memory_pending_approval(conversation_id)
                 .expect("stored approval"),
-            Some(first)
+            Some(first.clone())
         );
+        let skipped = reopened
+            .skip_dynamic_memory_pending_approval(conversation_id, TimestampMillis::new(20))
+            .expect("skip")
+            .expect("skipped approval");
+        assert!(!skipped.pending);
+        assert!(skipped.skipped);
+        assert_eq!(skipped.prompted_message_count, first.prompted_message_count);
         assert!(
             reopened
                 .prompt_dynamic_memory_if_due(conversation_id, 6, 3, TimestampMillis::new(100),)
@@ -1721,6 +1728,8 @@ mod tests {
             .expect("next prompt")
             .expect("next approval");
         assert_eq!(next.prompted_message_count, 7);
+        assert!(next.pending);
+        assert!(next.skipped);
         reopened
             .clear_dynamic_memory_pending_approval(conversation_id)
             .expect("clear");

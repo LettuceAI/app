@@ -39,6 +39,12 @@ pub trait DynamicMemoryApprovalRepository: Send + Sync {
         &self,
         conversation_id: ConversationId,
     ) -> Result<(), MemoryRepositoryError>;
+
+    fn skip_dynamic_memory_pending_approval(
+        &self,
+        conversation_id: ConversationId,
+        at: TimestampMillis,
+    ) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -85,6 +85,61 @@ where
     ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryDispatchError> {
         let admissions = CompanionPostTurnMemoryAdmissionCoordinator::new(self.effects, self.jobs)
             .discover_and_admit(limit, summary_message_interval, run_mode, now)?;
+        self.claim_admissions(admissions, worker_id, now, lease_for, allowed)
+    }
+
+    pub fn skip_pending_approval(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        now: TimestampMillis,
+    ) -> Result<Option<lettuce_memory::DynamicMemoryPendingApproval>, CompanionMemoryDispatchError>
+    {
+        Ok(
+            CompanionPostTurnMemoryAdmissionCoordinator::new(self.effects, self.jobs)
+                .skip_pending_approval(conversation_id, now)?,
+        )
+    }
+
+    pub fn pending_approval_count(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+    ) -> Result<Option<u64>, CompanionMemoryDispatchError> {
+        Ok(
+            CompanionPostTurnMemoryAdmissionCoordinator::new(self.effects, self.jobs)
+                .pending_approval_count(conversation_id)?,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn approve_and_claim(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        limit: u16,
+        summary_message_interval: u32,
+        worker_id: WorkerId,
+        now: TimestampMillis,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryDispatchError> {
+        let admission = CompanionPostTurnMemoryAdmissionCoordinator::new(self.effects, self.jobs)
+            .approve_and_admit(conversation_id, limit, summary_message_interval)?;
+        self.claim_admissions(
+            admission.into_iter().collect(),
+            worker_id,
+            now,
+            lease_for,
+            allowed,
+        )
+    }
+
+    fn claim_admissions(
+        &self,
+        admissions: Vec<CompanionPostTurnMemoryAdmission>,
+        worker_id: WorkerId,
+        now: TimestampMillis,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryDispatchError> {
         let mut work = Vec::with_capacity(admissions.len());
         for admission in admissions {
             let claim_at = now.max(admission.job.updated_at);

@@ -85,7 +85,9 @@ an exact replay returns it without a second summary CAS.
 The memory boundary also owns the typed legacy `auto`/`askFirst`/`manual` run
 mode and the conversation-owned pending-approval port. Its prompt threshold is
 the copied interval rule: after one prompt, another is due only when another
-full interval of unsummarized messages accumulates.
+full interval of unsummarized messages accumulates. Skip durably retains that
+baseline and records the legacy skipped state; a consumed approval is removed
+only after its forced recent-window job is admitted.
 Retryable attempts own CAS lifecycle state and immutable ordered
 provider rounds/calls. Each round also freezes the exact provider-neutral
 request context used for its inference, so continuation and recovery do not

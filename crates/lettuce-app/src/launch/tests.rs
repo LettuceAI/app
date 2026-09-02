@@ -1436,6 +1436,13 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         idempotency_key: lettuce_jobs::IdempotencyKey::new("terminal-failure-batch")
             .expect("batch key"),
         summary_message_interval: 1,
+        window_selection: crate::CompanionMemoryWindowSelection::Automatic,
+        unsummarized_message_count: if continued_effect.user_message_id.is_some() {
+            2
+        } else {
+            1
+        },
+        source_effect_offset: 0,
         effects: vec![continued_effect],
     };
     let failure_handle = JobHandle::new(failure_job_id);
