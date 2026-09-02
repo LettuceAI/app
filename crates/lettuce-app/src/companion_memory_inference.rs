@@ -9,14 +9,15 @@ use lettuce_conversations::{
     FinishReason, GenerationOperation, InferenceOutcome, InferencePort, InferenceRequest,
     MessagePart, MessageRenderSource, MessageRole, PortError, PromptAttribution,
     ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage,
-    ProviderReplayArtifactPort,
+    ProviderReplayArtifactPort, ToolPolicy,
 };
 use lettuce_jobs::handle::JobHandle;
 use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound,
     DynamicMemoryRoundFinishReason, DynamicMemoryRun, DynamicMemoryRunRepository,
-    DynamicMemoryRunRepositoryError, MemoryPolicy, MemoryRepository, MemoryRepositoryError,
-    MemorySpaceSnapshot, NewDynamicMemoryInferenceRound, NewDynamicMemoryToolCall,
+    DynamicMemoryRunRepositoryError, DynamicMemoryStructuredFallbackFormat, MemoryPolicy,
+    MemoryRepository, MemoryRepositoryError, MemorySpaceSnapshot, NewDynamicMemoryInferenceRound,
+    NewDynamicMemoryToolCall, memory_operations_fallback_prompt, parse_memory_operations_from_text,
 };
 use lettuce_types::{
     DynamicMemoryAttemptId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId, RequestId,
@@ -155,13 +156,20 @@ impl<
             stream_sink,
         )?;
         let request_context = request.context.clone();
-        let outcome = match self.inference.run(request).await {
+        let outcome = match run_memory_request_with_fallback(
+            self.inference,
+            request,
+            run.structured_fallback_format,
+            |outcome| cleanup_outcome_replays(self.repository, outcome),
+        )
+        .await
+        {
             Ok(outcome) => outcome,
-            Err(PortError::Cancelled) => {
+            Err(CompanionMemoryInferenceError::Cancelled) => {
                 self.cancel_attempt(&attempt, now)?;
                 return Err(CompanionMemoryInferenceError::Cancelled);
             }
-            Err(error) => return Err(CompanionMemoryInferenceError::Inference(error)),
+            Err(error) => return Err(error),
         };
         if handle.cancellation_token().is_cancelled() {
             cleanup_outcome_replays(self.repository, &outcome)?;
@@ -212,6 +220,122 @@ impl<
             .map_err(CompanionMemoryInferenceError::Run)?;
         Ok(())
     }
+}
+
+pub(crate) async fn run_memory_request_with_fallback<I, C>(
+    inference: &I,
+    request: InferenceRequest,
+    format: DynamicMemoryStructuredFallbackFormat,
+    cleanup: C,
+) -> Result<InferenceOutcome, CompanionMemoryInferenceError>
+where
+    I: InferencePort + ?Sized,
+    C: Fn(&InferenceOutcome) -> Result<(), CompanionMemoryInferenceError>,
+{
+    let primary = match inference.run(request.clone()).await {
+        Ok(outcome) if outcome_has_tool_calls(&outcome) => return Ok(outcome),
+        Ok(outcome) => Some(outcome),
+        Err(PortError::Cancelled) => return Err(CompanionMemoryInferenceError::Cancelled),
+        Err(_) => None,
+    };
+    let mut fallback = request;
+    fallback.profile.tool_policy = ToolPolicy::Disabled;
+    fallback.profile.output_policy = lettuce_conversations::OutputPolicy::Plain;
+    fallback.tools = None;
+    fallback.context.messages.push(ProviderNeutralMessage {
+        role: MessageRole::User,
+        parts: vec![ProviderContextPart::Text {
+            text: memory_operations_fallback_prompt(format).to_owned(),
+        }],
+    });
+    if fallback.validate().is_err() {
+        if let Some(primary) = &primary {
+            cleanup(primary)?;
+        }
+        return Err(CompanionMemoryInferenceError::InvalidPrompt);
+    }
+    let mut outcome = match inference.run(fallback).await {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            if let Some(primary) = &primary {
+                cleanup(primary)?;
+            }
+            return Err(if error == PortError::Cancelled {
+                CompanionMemoryInferenceError::Cancelled
+            } else {
+                CompanionMemoryInferenceError::Inference(error)
+            });
+        }
+    };
+    let parsed = parse_fallback_outcome(&mut outcome, format);
+    if let Err(error) = parsed {
+        if let Some(primary) = &primary {
+            cleanup(primary)?;
+        }
+        cleanup(&outcome)?;
+        return Err(error);
+    }
+    if let Some(primary) = &primary {
+        cleanup(primary)?;
+    }
+    if let Some(primary_usage) = primary.as_ref().and_then(|outcome| outcome.usage.as_ref()) {
+        match &mut outcome.usage {
+            Some(usage) => {
+                usage.input_tokens = usage
+                    .input_tokens
+                    .saturating_add(primary_usage.input_tokens);
+                usage.output_tokens = usage
+                    .output_tokens
+                    .saturating_add(primary_usage.output_tokens);
+            }
+            None => outcome.usage = Some(primary_usage.clone()),
+        }
+    }
+    Ok(outcome)
+}
+
+fn parse_fallback_outcome(
+    outcome: &mut InferenceOutcome,
+    format: DynamicMemoryStructuredFallbackFormat,
+) -> Result<(), CompanionMemoryInferenceError> {
+    outcome
+        .validate()
+        .map_err(|_| CompanionMemoryInferenceError::NoToolCalls)?;
+    if outcome.candidates.len() != 1 || !outcome.candidates[0].tool_calls.is_empty() {
+        return Err(CompanionMemoryInferenceError::NoToolCalls);
+    }
+    let text = outcome.candidates[0]
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            MessagePart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<String>();
+    if text.is_empty() {
+        return Err(CompanionMemoryInferenceError::NoToolCalls);
+    }
+    let mut calls = parse_memory_operations_from_text(&text, format)
+        .map_err(|_| CompanionMemoryInferenceError::NoToolCalls)?;
+    if calls.is_empty() {
+        calls.push(lettuce_conversations::ProposedToolCall {
+            provider_call_id: Some("fallback_done".to_owned()),
+            name: "done".to_owned(),
+            arguments: serde_json::json!({}),
+            raw_arguments: None,
+            provider_replay: None,
+        });
+    }
+    for call in &mut calls {
+        call.provider_replay = outcome.candidates[0].provider_replay.clone();
+    }
+    outcome.candidates[0].parts.clear();
+    outcome.candidates[0].tool_calls = calls;
+    Ok(())
+}
+
+fn outcome_has_tool_calls(outcome: &InferenceOutcome) -> bool {
+    outcome.candidates.len() == 1 && !outcome.candidates[0].tool_calls.is_empty()
 }
 
 fn validate_ownership(
@@ -624,10 +748,12 @@ pub(crate) fn cleanup_outcome_replays<R: ProviderReplayArtifactPort + ?Sized>(
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::VecDeque, sync::Mutex};
+
     use lettuce_context::PromptRepository;
     use lettuce_conversations::{
-        InferenceCandidate, InferenceWarningCode, OutputPolicy, ProposedToolCall, SafetyContext,
-        ToolPolicy,
+        InferenceCandidate, InferenceUsage, InferenceWarningCode, OutputPolicy, ProposedToolCall,
+        SafetyContext, ToolPolicy,
     };
     use lettuce_memory::{MemoryCategory, MemoryItem, Score, dynamic_memory_tool_request};
     use lettuce_models::{
@@ -643,6 +769,23 @@ mod tests {
 
     use super::*;
     use crate::{AppBackend, BuiltInPromptId};
+
+    struct ScriptedInference {
+        outcomes: Mutex<VecDeque<Result<InferenceOutcome, PortError>>>,
+        requests: Mutex<Vec<InferenceRequest>>,
+    }
+
+    #[async_trait::async_trait]
+    impl InferencePort for ScriptedInference {
+        async fn run(&self, request: InferenceRequest) -> Result<InferenceOutcome, PortError> {
+            self.requests.lock().expect("requests").push(request);
+            self.outcomes
+                .lock()
+                .expect("outcomes")
+                .pop_front()
+                .expect("scripted outcome")
+        }
+    }
 
     fn profile() -> lettuce_conversations::ResolvedInferenceProfile {
         let account_id = ProviderAccountId::new();
@@ -718,6 +861,132 @@ mod tests {
         }
     }
 
+    fn fallback_request() -> InferenceRequest {
+        InferenceRequest {
+            turn_id: GenerationTurnId::new(),
+            attempt_id: GenerationAttemptId::new(),
+            operation: GenerationOperation::Send,
+            profile: profile(),
+            context: ProviderNeutralContext {
+                messages: vec![ProviderNeutralMessage {
+                    role: MessageRole::User,
+                    parts: vec![ProviderContextPart::Text {
+                        text: "memory input".to_owned(),
+                    }],
+                }],
+                attributions: ContextAttributions::default(),
+                budget: ContextBudgetReport::default(),
+            },
+            cancellation: None,
+            stream_sink: None,
+            media_grants: Vec::new(),
+            tools: Some(dynamic_memory_tool_request()),
+        }
+    }
+
+    fn text_outcome(text: &str, usage: Option<InferenceUsage>) -> InferenceOutcome {
+        InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: vec![MessagePart::Text {
+                    text: text.to_owned(),
+                }],
+                tool_calls: Vec::new(),
+                provider_replay: None,
+            }],
+            usage,
+            finish_reason: FinishReason::Stop,
+            provider_finish_reason: Some("stop".to_owned()),
+            provider_request_id: None,
+            warning_codes: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn tool_less_primary_uses_legacy_xml_fallback_request() {
+        let scripted = ScriptedInference {
+            outcomes: Mutex::new(VecDeque::from([
+                Ok(text_outcome(
+                    "plain prose",
+                    Some(InferenceUsage {
+                        input_tokens: 3,
+                        output_tokens: 2,
+                    }),
+                )),
+                Ok(text_outcome(
+                    "<memory_ops><done summary=\"captured\" /></memory_ops>",
+                    Some(InferenceUsage {
+                        input_tokens: 5,
+                        output_tokens: 4,
+                    }),
+                )),
+            ])),
+            requests: Mutex::new(Vec::new()),
+        };
+        let outcome = run_memory_request_with_fallback(
+            &scripted,
+            fallback_request(),
+            DynamicMemoryStructuredFallbackFormat::Xml,
+            |_| Ok(()),
+        )
+        .await
+        .expect("fallback");
+        assert_eq!(outcome.candidates[0].tool_calls[0].name, "done");
+        assert_eq!(
+            outcome.candidates[0].tool_calls[0].arguments,
+            serde_json::json!({"summary":"captured"})
+        );
+        assert_eq!(
+            outcome.usage,
+            Some(InferenceUsage {
+                input_tokens: 8,
+                output_tokens: 6,
+            })
+        );
+        let requests = scripted.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[1].profile.tool_policy, ToolPolicy::Disabled);
+        assert!(requests[1].tools.is_none());
+        assert!(matches!(
+            requests[1].context.messages.last().map(|message| &message.parts[..]),
+            Some([ProviderContextPart::Text { text }])
+                if text == lettuce_memory::MEMORY_OPERATIONS_XML_FALLBACK_PROMPT
+        ));
+    }
+
+    #[tokio::test]
+    async fn provider_error_and_empty_json_operations_settle_as_done() {
+        let scripted = ScriptedInference {
+            outcomes: Mutex::new(VecDeque::from([
+                Err(PortError::Unavailable),
+                Ok(text_outcome("{\"operations\":[]}", None)),
+            ])),
+            requests: Mutex::new(Vec::new()),
+        };
+        let outcome = run_memory_request_with_fallback(
+            &scripted,
+            fallback_request(),
+            DynamicMemoryStructuredFallbackFormat::Json,
+            |_| Ok(()),
+        )
+        .await
+        .expect("empty fallback");
+        assert_eq!(outcome.candidates[0].tool_calls.len(), 1);
+        assert_eq!(outcome.candidates[0].tool_calls[0].name, "done");
+        assert_eq!(
+            outcome.candidates[0].tool_calls[0]
+                .provider_call_id
+                .as_deref(),
+            Some("fallback_done")
+        );
+        let requests = scripted.requests.lock().expect("requests");
+        assert!(matches!(
+            requests[1].context.messages.last().map(|message| &message.parts[..]),
+            Some([ProviderContextPart::Text { text }])
+                if text == lettuce_memory::MEMORY_OPERATIONS_JSON_FALLBACK_PROMPT
+        ));
+    }
+
     fn run_and_attempt(job_id: JobId) -> (DynamicMemoryRun, DynamicMemoryAttempt) {
         let run_id = DynamicMemoryRunId::new();
         let attempt_id = DynamicMemoryAttemptId::new();
@@ -750,6 +1019,8 @@ mod tests {
                 profile: profile(),
                 time_awareness_enabled: false,
                 supersession_enabled: false,
+                structured_fallback_format:
+                    lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
                 tool_request: dynamic_memory_tool_request(),
                 created_at: now,
             },

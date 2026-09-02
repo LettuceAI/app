@@ -5,7 +5,10 @@ use lettuce_conversations::{
 };
 use lettuce_embeddings::MemoryEmbeddingRepository;
 use lettuce_jobs::{Claim, handle::JobHandle};
-use lettuce_memory::{DynamicMemoryInferenceRound, DynamicMemoryRunRepository, MemoryRepository};
+use lettuce_memory::{
+    DynamicMemoryInferenceRound, DynamicMemoryRunRepository, DynamicMemoryStructuredFallbackFormat,
+    MemoryRepository,
+};
 use lettuce_types::{RequestId, TimestampMillis};
 
 use crate::{
@@ -69,6 +72,7 @@ impl<
         profile: ResolvedInferenceProfile,
         time_awareness_enabled: bool,
         supersession_enabled: bool,
+        structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
         prompt: &PromptDocument,
         previous_summary: &str,
         policy: &lettuce_memory::MemoryPolicy,
@@ -89,6 +93,7 @@ impl<
                     profile,
                     time_awareness_enabled,
                     supersession_enabled,
+                    structured_fallback_format,
                     handle,
                     now,
                 )?;

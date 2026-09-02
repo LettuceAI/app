@@ -14,7 +14,7 @@ use lettuce_types::{
     TimestampMillis,
 };
 
-use crate::{cleanup_outcome_replays, plan_memory_round};
+use crate::{cleanup_outcome_replays, plan_memory_round, run_memory_request_with_fallback};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompanionMemoryContinuationResult {
@@ -119,13 +119,23 @@ impl<
         request
             .validate()
             .map_err(|_| CompanionMemoryContinuationError::InvalidRequest)?;
-        let outcome = match self.inference.run(request).await {
+        let outcome = match run_memory_request_with_fallback(
+            self.inference,
+            request,
+            run.structured_fallback_format,
+            |outcome| cleanup_outcome_replays(self.repository, outcome),
+        )
+        .await
+        {
             Ok(outcome) => outcome,
-            Err(PortError::Cancelled) => {
+            Err(crate::CompanionMemoryInferenceError::Cancelled) => {
                 self.cancel(&attempt, now)?;
                 return Err(CompanionMemoryContinuationError::Cancelled);
             }
-            Err(error) => return Err(CompanionMemoryContinuationError::Inference(error)),
+            Err(crate::CompanionMemoryInferenceError::Inference(error)) => {
+                return Err(CompanionMemoryContinuationError::Inference(error));
+            }
+            Err(error) => return Err(CompanionMemoryContinuationError::InvalidOutcome(error)),
         };
         if handle.cancellation_token().is_cancelled() {
             cleanup_outcome_replays(self.repository, &outcome)

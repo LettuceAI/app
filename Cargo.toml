@@ -69,3 +69,4 @@ rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots"] }
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dynamic", "half", "ndarray"] }
 tokenizers = { version = "0.20", default-features = false, features = ["unstable_wasm"] }
+quick-xml = "0.38.4"

@@ -101,7 +101,9 @@ full resolved inference profile, frozen time-awareness flag, and matching tool
 contract. Memory items preserve coherent optional source role, observed time,
 and legacy `turn` precision alongside source-message attribution. The same
 rows preserve superseded-by/time and ordered supersedes IDs, while the immutable
-run freezes whether its tool contract enables companion supersession.
+run freezes whether its tool contract enables companion supersession. It also
+stores the selected JSON/XML structured fallback format so recovery cannot
+silently change the parser or retry request.
 CAS attempts provide
 created/processing/succeeded/failed/cancelled/interrupted state; ordered rounds
 and calls retain their exact provider-neutral request context, bounded usage,

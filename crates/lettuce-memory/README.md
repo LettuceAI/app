@@ -70,7 +70,10 @@ Companion runs also freeze whether create calls may declare `supersedes` IDs.
 The reducer keeps only existing active targets, links each replaced item to the
 new memory at creation time, omits superseded entries from later manager input,
 and retains only the latest forty superseded records as legacy does. Other
-direct/group runs do not advertise or apply supersession.
+direct/group runs do not advertise or apply supersession. The run also freezes
+the selected legacy structured fallback format. This crate owns the copied
+JSON/XML operation parsers and fallback prompts; an empty operation document is
+a valid no-change response.
 Retryable attempts own CAS lifecycle state and immutable ordered
 provider rounds/calls. Each round also freezes the exact provider-neutral
 request context used for its inference, so continuation and recovery do not

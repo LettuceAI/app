@@ -9,8 +9,8 @@ use lettuce_jobs::{JobKind, SubjectKind, handle::JobHandle};
 use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryAttemptStatus, DynamicMemoryRun,
     DynamicMemoryRunAttemptAdmission, DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError,
-    DynamicMemorySourceMessage, MemoryRepository, MemoryRepositoryError,
-    NewDynamicMemoryAttemptRecovery, NewDynamicMemoryRunAttempt,
+    DynamicMemorySourceMessage, DynamicMemoryStructuredFallbackFormat, MemoryRepository,
+    MemoryRepositoryError, NewDynamicMemoryAttemptRecovery, NewDynamicMemoryRunAttempt,
 };
 use lettuce_types::{
     DynamicMemoryAttemptId, DynamicMemoryRunId, MessageId, PageLimit, PageRequest, TimestampMillis,
@@ -58,12 +58,14 @@ impl<'a, R: DynamicMemoryRunRepository + MemoryRepository + ?Sized, C: Conversat
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn admit_or_recover(
         &self,
         admission: &CompanionPostTurnMemoryAdmission,
         profile: ResolvedInferenceProfile,
         time_awareness_enabled: bool,
         supersession_enabled: bool,
+        structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
         handle: &JobHandle,
         now: TimestampMillis,
     ) -> Result<CompanionPostTurnMemoryRunDispatch, CompanionPostTurnMemoryRunError> {
@@ -89,6 +91,7 @@ impl<'a, R: DynamicMemoryRunRepository + MemoryRepository + ?Sized, C: Conversat
                     || run.profile != profile
                     || run.time_awareness_enabled != time_awareness_enabled
                     || run.supersession_enabled != supersession_enabled
+                    || run.structured_fallback_format != structured_fallback_format
                 {
                     return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
                 }
@@ -149,6 +152,7 @@ impl<'a, R: DynamicMemoryRunRepository + MemoryRepository + ?Sized, C: Conversat
                         profile,
                         time_awareness_enabled,
                         supersession_enabled,
+                        structured_fallback_format,
                         job_id: handle.id(),
                         now,
                     })
@@ -547,6 +551,7 @@ mod tests {
                 profile: input.profile,
                 time_awareness_enabled: input.time_awareness_enabled,
                 supersession_enabled: input.supersession_enabled,
+                structured_fallback_format: input.structured_fallback_format,
                 tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
                     input.supersession_enabled,
                     input.time_awareness_enabled,
@@ -923,6 +928,7 @@ mod tests {
                 resolved_profile.clone(),
                 true,
                 true,
+                DynamicMemoryStructuredFallbackFormat::Xml,
                 &first_handle,
                 TimestampMillis::new(10),
             )
@@ -982,6 +988,7 @@ mod tests {
                 profile(),
                 true,
                 true,
+                DynamicMemoryStructuredFallbackFormat::Json,
                 &first_handle,
                 TimestampMillis::new(11),
             ),
@@ -993,6 +1000,7 @@ mod tests {
                 resolved_profile.clone(),
                 true,
                 false,
+                DynamicMemoryStructuredFallbackFormat::Xml,
                 &first_handle,
                 TimestampMillis::new(11),
             ),
@@ -1005,6 +1013,7 @@ mod tests {
                     resolved_profile.clone(),
                     true,
                     true,
+                    DynamicMemoryStructuredFallbackFormat::Xml,
                     &first_handle,
                     TimestampMillis::new(11),
                 )
@@ -1021,6 +1030,7 @@ mod tests {
                 resolved_profile.clone(),
                 true,
                 true,
+                DynamicMemoryStructuredFallbackFormat::Xml,
                 &first_handle,
                 TimestampMillis::new(11),
             ),
@@ -1036,6 +1046,7 @@ mod tests {
                 resolved_profile,
                 true,
                 true,
+                DynamicMemoryStructuredFallbackFormat::Xml,
                 &restarted_handle,
                 TimestampMillis::new(12),
             )

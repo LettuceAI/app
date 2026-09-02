@@ -7,8 +7,8 @@ use lettuce_memory::{
     DynamicMemoryBackgroundRoundSettlement, DynamicMemoryInferenceRound,
     DynamicMemoryRoundFinishReason, DynamicMemoryRun, DynamicMemoryRunAttemptAdmission,
     DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
-    DynamicMemoryToolCallEvidence, MemoryToolResult, NewDynamicMemoryAttemptRecovery,
-    NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
+    DynamicMemoryStructuredFallbackFormat, DynamicMemoryToolCallEvidence, MemoryToolResult,
+    NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
 };
 use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -83,13 +83,28 @@ fn parse_failure(value: &str) -> rusqlite::Result<DynamicMemoryAttemptFailureCod
     }
 }
 
+fn fallback_format_name(format: DynamicMemoryStructuredFallbackFormat) -> &'static str {
+    match format {
+        DynamicMemoryStructuredFallbackFormat::Json => "json",
+        DynamicMemoryStructuredFallbackFormat::Xml => "xml",
+    }
+}
+
+fn parse_fallback_format(value: &str) -> rusqlite::Result<DynamicMemoryStructuredFallbackFormat> {
+    match value {
+        "json" => Ok(DynamicMemoryStructuredFallbackFormat::Json),
+        "xml" => Ok(DynamicMemoryStructuredFallbackFormat::Xml),
+        _ => Err(rusqlite::Error::InvalidQuery),
+    }
+}
+
 fn load_run_in(
     connection: &Connection,
     id: DynamicMemoryRunId,
 ) -> Result<DynamicMemoryRun, DynamicMemoryRunRepositoryError> {
     let mut run = connection
         .query_row(
-            "SELECT conversation_id,space_id,time_awareness_enabled,supersession_enabled,starting_memory_json,profile_json,tool_request_json,created_at \
+            "SELECT conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,starting_memory_json,profile_json,tool_request_json,created_at \
              FROM dynamic_memory_runs WHERE id=?1",
             [id.to_string()],
             |row| {
@@ -99,14 +114,15 @@ fn load_run_in(
                     space_id: parse_id(row.get(1)?)?,
                     time_awareness_enabled: row.get(2)?,
                     supersession_enabled: row.get(3)?,
-                    starting_memory: decode_versioned(&row.get::<_, String>(4)?, JSON_VERSION)
+                    structured_fallback_format: parse_fallback_format(&row.get::<_, String>(4)?)?,
+                    starting_memory: decode_versioned(&row.get::<_, String>(5)?, JSON_VERSION)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     source_messages: Vec::new(),
-                    profile: decode_versioned(&row.get::<_, String>(5)?, JSON_VERSION)
+                    profile: decode_versioned(&row.get::<_, String>(6)?, JSON_VERSION)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    tool_request: decode_versioned(&row.get::<_, String>(6)?, JSON_VERSION)
+                    tool_request: decode_versioned(&row.get::<_, String>(7)?, JSON_VERSION)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    created_at: TimestampMillis::new(row.get(7)?),
+                    created_at: TimestampMillis::new(row.get(8)?),
                 })
             },
         )
@@ -547,6 +563,7 @@ impl DynamicMemoryRunRepository for Database {
             profile: input.profile,
             time_awareness_enabled: input.time_awareness_enabled,
             supersession_enabled: input.supersession_enabled,
+            structured_fallback_format: input.structured_fallback_format,
             tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
                 input.supersession_enabled,
                 input.time_awareness_enabled,
@@ -593,14 +610,15 @@ impl DynamicMemoryRunRepository for Database {
         transaction
             .execute(
                 "INSERT INTO dynamic_memory_runs \
-                 (id,conversation_id,space_id,time_awareness_enabled,supersession_enabled,starting_memory_json,profile_json,tool_request_json,created_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                 (id,conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,starting_memory_json,profile_json,tool_request_json,created_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
                 params![
                     requested_run.id.to_string(),
                     requested_run.conversation_id.to_string(),
                     requested_run.space_id.to_string(),
                     requested_run.time_awareness_enabled,
                     requested_run.supersession_enabled,
+                    fallback_format_name(requested_run.structured_fallback_format),
                     encode_versioned(&requested_run.starting_memory, JSON_VERSION)
                         .map_err(storage)?,
                     encode_versioned(&requested_run.profile, JSON_VERSION).map_err(storage)?,
@@ -1165,9 +1183,10 @@ mod tests {
         DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptStatus,
         DynamicMemoryBackgroundRoundCommit, DynamicMemoryRoundFinishReason,
         DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
-        MemoryCategory, MemoryChangeSet, MemoryItem, MemoryRepository, MemoryToolOutcome,
-        MemoryToolResult, NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound,
-        NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall, Score,
+        DynamicMemoryStructuredFallbackFormat, MemoryCategory, MemoryChangeSet, MemoryItem,
+        MemoryRepository, MemoryToolOutcome, MemoryToolResult, NewDynamicMemoryAttemptRecovery,
+        NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall,
+        Score,
     };
     use lettuce_models::{
         CapabilityStatus, ChatParameterResolutionInput, ChatRequirements, ExpectedModelIdentity,
@@ -1436,6 +1455,7 @@ mod tests {
                 profile: profile(),
                 time_awareness_enabled: true,
                 supersession_enabled: true,
+                structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
                 job_id: JobId::new(),
                 now: TimestampMillis::new(10),
             })
@@ -1614,6 +1634,7 @@ mod tests {
             profile: profile(),
             time_awareness_enabled: true,
             supersession_enabled: true,
+            structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
             job_id: JobId::new(),
             now: TimestampMillis::new(10),
         };

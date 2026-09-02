@@ -1050,6 +1050,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             profile.clone(),
             true,
             true,
+            lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
             &prompt,
             "",
             &policy,
@@ -1245,6 +1246,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             profile,
             time_awareness_enabled: false,
             supersession_enabled: false,
+            structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
             job_id: failure_job_id,
             now: TimestampMillis::new(NOW.get() + 39),
         })
@@ -2990,6 +2992,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
             profile,
             time_awareness_enabled: false,
             supersession_enabled: false,
+            structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
             job_id,
             now: TimestampMillis::new(1_010),
         })

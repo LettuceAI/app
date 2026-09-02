@@ -85,8 +85,13 @@ mixed-content, undeclared, or inconsistent signed-replay outcomes do not become
 durable calls. One admitted background round now reuses the existing create
 preparation and typed reducer, then atomically settles its ordered results with
 the memory CAS; exact retry returns those results without embedding or reducing
-again, and `done` preserves the existing short-circuit behavior. Summary
-generation and structured text fallback remain deferred. A settled background
+again, and `done` preserves the existing short-circuit behavior. When a native
+tool request errors or returns no calls, the coordinator copies the legacy
+second request with tools disabled and the frozen JSON/XML format instruction,
+parses its text into the same typed calls, aggregates both request usages, and
+admits them through the same durable round path. Empty operations become an
+explicit no-change `done` checkpoint. Cumulative summary generation remains
+deferred. A settled background
 round now appends its admitted native calls and typed results to the exact
 durable request context, stops before provider I/O on `done`, or dispatches and
 atomically admits the next bounded round with the frozen profile/tool contract.

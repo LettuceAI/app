@@ -16,6 +16,13 @@ pub const MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES: usize = 1024;
 pub const MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS: u8 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DynamicMemoryStructuredFallbackFormat {
+    Json,
+    Xml,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DynamicMemoryAttemptStatus {
     Created,
@@ -79,6 +86,7 @@ pub struct DynamicMemoryRun {
     pub profile: ResolvedInferenceProfile,
     pub time_awareness_enabled: bool,
     pub supersession_enabled: bool,
+    pub structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
     pub tool_request: ToolRequest,
     pub created_at: TimestampMillis,
 }
@@ -129,6 +137,7 @@ pub struct NewDynamicMemoryRunAttempt {
     pub profile: ResolvedInferenceProfile,
     pub time_awareness_enabled: bool,
     pub supersession_enabled: bool,
+    pub structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
     pub job_id: JobId,
     pub now: TimestampMillis,
 }

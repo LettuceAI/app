@@ -126,6 +126,7 @@ CREATE TABLE dynamic_memory_runs (
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     time_awareness_enabled INTEGER NOT NULL CHECK (time_awareness_enabled IN (0,1)),
     supersession_enabled INTEGER NOT NULL CHECK (supersession_enabled IN (0,1)),
+    structured_fallback_format TEXT NOT NULL CHECK (structured_fallback_format IN ('json','xml')),
     starting_memory_json TEXT NOT NULL CHECK (
         json_valid(starting_memory_json)
         AND json_extract(starting_memory_json, '$.format_version') = 1

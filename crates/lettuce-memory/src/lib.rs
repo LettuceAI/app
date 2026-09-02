@@ -5,6 +5,7 @@
 mod model;
 mod port;
 mod run;
+mod structured_fallback;
 mod tool;
 
 pub use model::{
@@ -22,9 +23,14 @@ pub use run::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
     DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound, DynamicMemoryRoundFinishReason,
     DynamicMemoryRun, DynamicMemoryRunAttemptAdmission, DynamicMemoryRunError,
-    DynamicMemorySourceMessage, DynamicMemoryToolCallEvidence, MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS,
+    DynamicMemorySourceMessage, DynamicMemoryStructuredFallbackFormat,
+    DynamicMemoryToolCallEvidence, MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS,
     MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES, NewDynamicMemoryAttemptRecovery,
     NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall,
+};
+pub use structured_fallback::{
+    MEMORY_OPERATIONS_JSON_FALLBACK_PROMPT, MEMORY_OPERATIONS_XML_FALLBACK_PROMPT,
+    StructuredFallbackError, memory_operations_fallback_prompt, parse_memory_operations_from_text,
 };
 pub use tool::{
     CreateMemoryPreparation, MemoryBatchResult, MemoryToolArguments, MemoryToolCall,
