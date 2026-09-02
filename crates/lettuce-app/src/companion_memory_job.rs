@@ -191,7 +191,10 @@ mod tests {
     use lettuce_companions::{
         CompanionMemoryChanges, CompanionTurnEffectOutcome, CompanionTurnEffectSeed,
     };
-    use lettuce_jobs::{InMemoryJobStore, JobState, ResourceAvailability, WorkerId};
+    use lettuce_jobs::{
+        CancellationReason, InMemoryJobStore, JobErrorCode, JobState, ResourceAvailability,
+        WorkerId,
+    };
     use lettuce_types::{CompanionEffectId, GenerationTurnId, MessageId, TimestampMillis};
 
     use super::*;
@@ -446,5 +449,128 @@ mod tests {
                 original.admission.batch.idempotency_key
             );
         }
+    }
+
+    #[test]
+    fn runner_errors_settle_cancel_fail_or_retry_on_the_same_claim() {
+        let cancellation_effects = Effects::default();
+        cancellation_effects.replace(vec![effect(ConversationId::new(), 10)]);
+        let cancellation_jobs = InMemoryJobStore::new();
+        let cancellation_coordinator = crate::CompanionMemoryDispatchCoordinator::new(
+            &cancellation_effects,
+            &cancellation_jobs,
+        );
+        let cancellation_work = cancellation_coordinator
+            .discover_and_claim(
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                WorkerId::new(),
+                TimestampMillis::new(20),
+                Duration::from_secs(60),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim cancellation")
+            .remove(0);
+        cancellation_work.handle.request_cancel();
+        cancellation_jobs
+            .append_and_transition(lettuce_jobs::JobMutation::RequestCancellation {
+                id: cancellation_work.claim.claim.job_id,
+                reason: CancellationReason::Shutdown,
+                at: cancellation_work.job.updated_at,
+            })
+            .expect("request durable cancellation");
+        let cancellation = cancellation_coordinator
+            .settle_run(
+                cancellation_work,
+                Err(crate::CompanionMemoryJobRunError::Inference(
+                    crate::CompanionMemoryInferenceError::Cancelled,
+                )),
+                CancellationReason::Shutdown,
+                TimestampMillis::new(21),
+            )
+            .expect("settle cancellation");
+        let crate::CompanionMemorySettledWork::Cancelled { job, .. } = cancellation else {
+            panic!("expected cancelled job");
+        };
+        assert_eq!(job.state, JobState::Cancelled);
+        assert_eq!(job.cancellation.reason, Some(CancellationReason::Shutdown));
+
+        let failure_effects = Effects::default();
+        failure_effects.replace(vec![effect(ConversationId::new(), 30)]);
+        let failure_jobs = InMemoryJobStore::new();
+        let failure_coordinator =
+            crate::CompanionMemoryDispatchCoordinator::new(&failure_effects, &failure_jobs);
+        let failure_work = failure_coordinator
+            .discover_and_claim(
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                WorkerId::new(),
+                TimestampMillis::new(40),
+                Duration::from_secs(60),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim failure")
+            .remove(0);
+        let failure = failure_coordinator
+            .settle_run(
+                failure_work,
+                Err(crate::CompanionMemoryJobRunError::Inference(
+                    crate::CompanionMemoryInferenceError::Inference(
+                        lettuce_conversations::PortError::Unavailable,
+                    ),
+                )),
+                CancellationReason::User,
+                TimestampMillis::new(41),
+            )
+            .expect("settle failure");
+        let crate::CompanionMemorySettledWork::Failed { job, .. } = failure else {
+            panic!("expected failed job");
+        };
+        assert_eq!(job.state, JobState::Failed);
+        assert_eq!(
+            job.error.as_ref().map(|error| error.code),
+            Some(JobErrorCode::ResourceUnavailable)
+        );
+
+        let retry_effects = Effects::default();
+        retry_effects.replace(vec![effect(ConversationId::new(), 50)]);
+        let retry_jobs = InMemoryJobStore::new();
+        let retry_coordinator =
+            crate::CompanionMemoryDispatchCoordinator::new(&retry_effects, &retry_jobs);
+        let retry_work = retry_coordinator
+            .discover_and_claim(
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                WorkerId::new(),
+                TimestampMillis::new(60),
+                Duration::from_secs(60),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim retry")
+            .remove(0);
+        let job_id = retry_work.claim.claim.job_id;
+        let retry = retry_coordinator
+            .settle_run(
+                retry_work,
+                Err(crate::CompanionMemoryJobRunError::Admission(
+                    crate::CompanionPostTurnMemoryRunError::InvalidAdmission,
+                )),
+                CancellationReason::Recovery,
+                TimestampMillis::new(61),
+            )
+            .expect("schedule retry");
+        let crate::CompanionMemorySettledWork::RetryScheduled { job, .. } = retry else {
+            panic!("expected retry job");
+        };
+        assert_eq!(job.state, JobState::Queued);
+        let reclaimed = retry_coordinator
+            .discover_and_claim(
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                WorkerId::new(),
+                TimestampMillis::new(62),
+                Duration::from_secs(60),
+                &ResourceAvailability::all(),
+            )
+            .expect("reclaim retry")
+            .remove(0);
+        assert_eq!(reclaimed.claim.claim.job_id, job_id);
+        assert_eq!(reclaimed.claim.claim.attempt.get(), 2);
     }
 }

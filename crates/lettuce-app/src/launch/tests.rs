@@ -34,9 +34,9 @@ use lettuce_conversations::{
 use lettuce_database::Database;
 use lettuce_embeddings::{EmbeddingRequest, EmbeddingVector};
 use lettuce_jobs::{
-    AttemptNo, CancellationPolicy, Claim, ClaimRef, InMemoryJobStore, LeaseId, OutcomeRef,
-    RecoveryPolicy, ResourceAvailability, ResourceClass, WorkerId, handle::CancellationToken,
-    handle::JobHandle,
+    AttemptNo, CancellationPolicy, CancellationReason, Claim, ClaimRef, InMemoryJobStore,
+    JobOutcome, JobState, LeaseId, OutcomeRef, RecoveryPolicy, ResourceAvailability, ResourceClass,
+    WorkerId, handle::CancellationToken, handle::JobHandle,
 };
 use lettuce_memory::{
     DynamicMemoryAttemptStatus, DynamicMemoryPreparationRepository, DynamicMemoryRoundFinishReason,
@@ -983,7 +983,6 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .into_iter()
         .next()
         .expect("memory job");
-    let admission = work.admission;
     let scripted = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {
@@ -1031,8 +1030,6 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         ])),
         requests: Mutex::new(Vec::new()),
     };
-    let handle = work.handle;
-    let claim = work.claim;
     let policy = DynamicMemoryPolicy {
         max_entries: 10,
         hot_token_budget: 100,
@@ -1049,14 +1046,14 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     );
     let result = runner
         .run(
-            &admission,
+            &work.admission,
             profile.clone(),
             &prompt,
             "",
             &policy,
             Score::from_basis_points(9_000).expect("score"),
-            &claim,
-            &handle,
+            &work.claim,
+            &work.handle,
             None,
             TimestampMillis::new(NOW.get() + 12),
             |round| {
@@ -1094,8 +1091,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .settle_success(
             result.dispatch.run.id,
             result.dispatch.attempt.id,
-            &admission.batch,
-            &handle,
+            &work.admission.batch,
+            &work.handle,
             TimestampMillis::new(NOW.get() + 99),
         )
         .expect("replay terminal success");
@@ -1104,6 +1101,28 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         DynamicMemoryAttemptStatus::Succeeded
     );
     assert_eq!(replayed.effects, result.effects);
+    let settled = crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
+        .settle_run(
+            work,
+            Ok(result),
+            CancellationReason::User,
+            TimestampMillis::new(NOW.get() + 100),
+        )
+        .expect("settle runtime job");
+    let crate::CompanionMemorySettledWork::Succeeded { result, job } = settled else {
+        panic!("expected succeeded runtime job");
+    };
+    assert_eq!(job.state, JobState::Succeeded);
+    assert_eq!(
+        job.progress.fraction,
+        Some(lettuce_jobs::FiniteFraction::new(1.0).expect("fraction"))
+    );
+    assert_eq!(
+        job.outcome,
+        Some(JobOutcome::Success {
+            result_ref: OutcomeRef::Conversation(conversation.id),
+        })
+    );
     let ready = result.effects.into_iter().next().expect("settled effect");
     assert_eq!(ready.status, CompanionTurnEffectStatus::Ready);
     assert_eq!(ready.memory_changes.added, [memory_id]);

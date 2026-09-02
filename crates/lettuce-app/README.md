@@ -117,6 +117,13 @@ runner. Repeated dispatch while a conversation job is active is a no-op, and a
 fresh job store rebuilds and claims the same logical effect batch after
 restart. Host-specific runtime inputs and terminal job progress/completion
 remain outside this bridge.
+The matching settlement boundary keeps runtime lifecycle evidence on that same
+claim: success records complete progress and the conversation outcome,
+provider/tool failures use bounded job errors after the runner has settled the
+attempt and effects, and cancellation follows request, cleanup, and terminal
+steps. Admission or terminal-settlement errors return the existing job to its
+retry queue so processing effects are not stranded behind a terminal
+idempotency record.
 Conversation launch now creates the authoritative normalized memory space in
 the same transaction for every resolved manual/dynamic memory policy, and the
 memory repository resolves it directly from the conversation identity. This

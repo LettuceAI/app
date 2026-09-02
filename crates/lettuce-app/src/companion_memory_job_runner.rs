@@ -169,3 +169,16 @@ pub enum CompanionMemoryJobRunError {
     #[error("background memory terminal settlement failed: {0}")]
     Terminal(#[from] CompanionMemoryTerminalError),
 }
+
+impl CompanionMemoryJobRunError {
+    #[must_use]
+    pub fn terminal_failure(&self) -> Option<CompanionMemoryTerminalFailure> {
+        match self {
+            Self::Inference(error) => {
+                Some(CompanionMemoryTerminalFailure::from_inference_error(error))
+            }
+            Self::Loop(error) => Some(CompanionMemoryTerminalFailure::from_loop_error(error)),
+            Self::Admission(_) | Self::Terminal(_) => None,
+        }
+    }
+}
