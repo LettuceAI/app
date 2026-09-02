@@ -8,7 +8,10 @@ use lettuce_jobs::{
     CancellationPolicy, IdempotencyKey, JobKind, JobPriority, JobQuery, JobSnapshot, JobSpec,
     JobStore, JobSubject, OutcomeRef, RecoveryPolicy, ResourceClass, StoreError, SubjectKind,
 };
-use lettuce_types::{ConversationId, PageLimit, PageRequest};
+use lettuce_memory::{
+    DynamicMemoryApprovalRepository, DynamicMemoryRunMode, MemoryRepositoryError,
+};
+use lettuce_types::{ConversationId, PageLimit, PageRequest, TimestampMillis};
 
 use crate::CompanionPostTurnEffect;
 
@@ -50,6 +53,8 @@ pub enum CompanionPostTurnMemoryAdmissionError {
     InvalidBatch,
     #[error("post-turn memory job admission failed: {0}")]
     Jobs(StoreError),
+    #[error("dynamic memory approval persistence failed: {0}")]
+    Approval(MemoryRepositoryError),
 }
 
 #[derive(Debug)]
@@ -58,8 +63,11 @@ pub struct CompanionPostTurnMemoryAdmissionCoordinator<'a, R: ?Sized, J: ?Sized>
     jobs: &'a J,
 }
 
-impl<'a, R: CompanionTurnEffectRepository + ?Sized, J: JobStore + ?Sized>
-    CompanionPostTurnMemoryAdmissionCoordinator<'a, R, J>
+impl<
+    'a,
+    R: CompanionTurnEffectRepository + DynamicMemoryApprovalRepository + ?Sized,
+    J: JobStore + ?Sized,
+> CompanionPostTurnMemoryAdmissionCoordinator<'a, R, J>
 {
     #[must_use]
     pub const fn new(effects: &'a R, jobs: &'a J) -> Self {
@@ -74,6 +82,8 @@ impl<'a, R: CompanionTurnEffectRepository + ?Sized, J: JobStore + ?Sized>
         &self,
         limit: u16,
         summary_message_interval: u32,
+        run_mode: DynamicMemoryRunMode,
+        now: TimestampMillis,
     ) -> Result<Vec<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError> {
         if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS || summary_message_interval == 0 {
             return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
@@ -99,6 +109,24 @@ impl<'a, R: CompanionTurnEffectRepository + ?Sized, J: JobStore + ?Sized>
         let mut admissions = Vec::with_capacity(by_conversation.len());
         for (conversation_id, mut effects) in by_conversation {
             effects.sort_by_key(|effect| (effect.created_at, effect.id));
+            let unsummarized_message_count = effect_message_count(&effects);
+            match run_mode {
+                DynamicMemoryRunMode::Manual => continue,
+                DynamicMemoryRunMode::AskFirst => {
+                    if unsummarized_message_count >= u64::from(summary_message_interval) {
+                        self.effects
+                            .prompt_dynamic_memory_if_due(
+                                conversation_id,
+                                unsummarized_message_count,
+                                summary_message_interval,
+                                now,
+                            )
+                            .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
+                    }
+                    continue;
+                }
+                DynamicMemoryRunMode::Auto => {}
+            }
             let Some(effects) = ready_effect_prefix(effects, summary_message_interval) else {
                 continue;
             };
@@ -133,6 +161,9 @@ impl<'a, R: CompanionTurnEffectRepository + ?Sized, J: JobStore + ?Sized>
                     .create_or_get(spec)
                     .map_err(CompanionPostTurnMemoryAdmissionError::Jobs)?,
             };
+            self.effects
+                .clear_dynamic_memory_pending_approval(conversation_id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
             admissions.push(CompanionPostTurnMemoryAdmission {
                 batch: CompanionPostTurnMemoryBatch {
                     conversation_id,
@@ -146,6 +177,19 @@ impl<'a, R: CompanionTurnEffectRepository + ?Sized, J: JobStore + ?Sized>
         }
         Ok(admissions)
     }
+}
+
+fn effect_message_count(effects: &[CompanionTurnEffect]) -> u64 {
+    effects
+        .iter()
+        .map(|effect| {
+            if effect.user_message_id.is_some() {
+                2
+            } else {
+                1
+            }
+        })
+        .sum()
 }
 
 fn batch_idempotency_key(
@@ -230,7 +274,10 @@ mod tests {
     use super::*;
 
     #[derive(Debug, Default)]
-    struct Effects(Mutex<Vec<CompanionTurnEffect>>);
+    struct Effects(
+        Mutex<Vec<CompanionTurnEffect>>,
+        Mutex<BTreeMap<ConversationId, lettuce_memory::DynamicMemoryPendingApproval>>,
+    );
 
     impl Effects {
         fn replace(&self, effects: Vec<CompanionTurnEffect>) {
@@ -303,6 +350,54 @@ mod tests {
         }
     }
 
+    impl DynamicMemoryApprovalRepository for Effects {
+        fn get_dynamic_memory_pending_approval(
+            &self,
+            conversation_id: ConversationId,
+        ) -> Result<Option<lettuce_memory::DynamicMemoryPendingApproval>, MemoryRepositoryError>
+        {
+            Ok(self
+                .1
+                .lock()
+                .expect("approvals")
+                .get(&conversation_id)
+                .cloned())
+        }
+
+        fn prompt_dynamic_memory_if_due(
+            &self,
+            conversation_id: ConversationId,
+            unsummarized_message_count: u64,
+            message_interval: u32,
+            at: TimestampMillis,
+        ) -> Result<Option<lettuce_memory::DynamicMemoryPendingApproval>, MemoryRepositoryError>
+        {
+            let mut approvals = self.1.lock().expect("approvals");
+            let baseline = approvals
+                .get(&conversation_id)
+                .map_or(0, |approval| approval.prompted_message_count);
+            if unsummarized_message_count.saturating_sub(baseline) < u64::from(message_interval) {
+                return Ok(None);
+            }
+            let approval = lettuce_memory::DynamicMemoryPendingApproval {
+                conversation_id,
+                prompted_message_count: unsummarized_message_count,
+                pending: true,
+                updated_at: at,
+            };
+            approvals.insert(conversation_id, approval.clone());
+            Ok(Some(approval))
+        }
+
+        fn clear_dynamic_memory_pending_approval(
+            &self,
+            conversation_id: ConversationId,
+        ) -> Result<(), MemoryRepositoryError> {
+            self.1.lock().expect("approvals").remove(&conversation_id);
+            Ok(())
+        }
+    }
+
     fn effect(conversation_id: ConversationId, created_at: i64) -> CompanionTurnEffect {
         CompanionTurnEffect {
             id: CompanionEffectId::new(),
@@ -333,7 +428,12 @@ mod tests {
         let coordinator = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &jobs);
 
         let admitted = coordinator
-            .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS, 1)
+            .discover_and_admit(
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
+                DynamicMemoryRunMode::Auto,
+                TimestampMillis::new(30),
+            )
             .expect("admit batches");
         assert_eq!(admitted.len(), 2);
         let first = admitted
@@ -352,7 +452,12 @@ mod tests {
         );
 
         let replay = coordinator
-            .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS, 1)
+            .discover_and_admit(
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
+                DynamicMemoryRunMode::Auto,
+                TimestampMillis::new(31),
+            )
             .expect("replay admission");
         assert!(replay.iter().all(|admission| !admission.created));
         assert_eq!(
@@ -365,7 +470,12 @@ mod tests {
 
         effects.replace(vec![earlier, later, effect(first_conversation, 30)]);
         let replay = coordinator
-            .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS, 1)
+            .discover_and_admit(
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
+                DynamicMemoryRunMode::Auto,
+                TimestampMillis::new(32),
+            )
             .expect("active prefix replays");
         assert_eq!(replay.len(), 1);
         assert!(!replay[0].created);
@@ -378,7 +488,12 @@ mod tests {
         let conversation_id = ConversationId::new();
         assert!(
             CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &first_store)
-                .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS, 1)
+                .discover_and_admit(
+                    MAX_COMPANION_POST_TURN_EFFECTS,
+                    1,
+                    DynamicMemoryRunMode::Auto,
+                    TimestampMillis::new(33),
+                )
                 .expect("empty discovery")
                 .is_empty()
         );
@@ -386,13 +501,23 @@ mod tests {
         let pending = effect(conversation_id, 10);
         effects.replace(vec![pending]);
         let first = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &first_store)
-            .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS, 1)
+            .discover_and_admit(
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
+                DynamicMemoryRunMode::Auto,
+                TimestampMillis::new(34),
+            )
             .expect("first process")
             .remove(0);
         let restarted_store = InMemoryJobStore::new();
         let restarted =
             CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &restarted_store)
-                .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS, 1)
+                .discover_and_admit(
+                    MAX_COMPANION_POST_TURN_EFFECTS,
+                    1,
+                    DynamicMemoryRunMode::Auto,
+                    TimestampMillis::new(35),
+                )
                 .expect("restart discovery")
                 .remove(0);
         assert!(first.created && restarted.created);
@@ -420,6 +545,7 @@ mod tests {
             .discover_and_claim(
                 MAX_COMPANION_POST_TURN_EFFECTS,
                 1,
+                DynamicMemoryRunMode::Auto,
                 worker_id,
                 TimestampMillis::new(30),
                 Duration::from_secs(60),
@@ -449,6 +575,7 @@ mod tests {
                 .discover_and_claim(
                     MAX_COMPANION_POST_TURN_EFFECTS,
                     1,
+                    DynamicMemoryRunMode::Auto,
                     worker_id,
                     TimestampMillis::new(31),
                     Duration::from_secs(60),
@@ -463,6 +590,7 @@ mod tests {
             .discover_and_claim(
                 MAX_COMPANION_POST_TURN_EFFECTS,
                 1,
+                DynamicMemoryRunMode::Auto,
                 WorkerId::new(),
                 TimestampMillis::new(40),
                 Duration::from_secs(60),
@@ -501,6 +629,85 @@ mod tests {
     }
 
     #[test]
+    fn authored_run_mode_gates_jobs_and_replays_ask_first_prompt() {
+        let effects = Effects::default();
+        let jobs = InMemoryJobStore::new();
+        let conversation_id = ConversationId::new();
+        effects.replace(vec![
+            effect(conversation_id, 10),
+            effect(conversation_id, 20),
+        ]);
+        let coordinator = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &jobs);
+
+        assert!(
+            coordinator
+                .discover_and_admit(
+                    MAX_COMPANION_POST_TURN_EFFECTS,
+                    3,
+                    DynamicMemoryRunMode::Manual,
+                    TimestampMillis::new(30),
+                )
+                .expect("manual")
+                .is_empty()
+        );
+        assert_eq!(
+            effects
+                .get_dynamic_memory_pending_approval(conversation_id)
+                .expect("manual approval"),
+            None
+        );
+        assert!(
+            coordinator
+                .discover_and_admit(
+                    MAX_COMPANION_POST_TURN_EFFECTS,
+                    3,
+                    DynamicMemoryRunMode::AskFirst,
+                    TimestampMillis::new(31),
+                )
+                .expect("ask first")
+                .is_empty()
+        );
+        let approval = effects
+            .get_dynamic_memory_pending_approval(conversation_id)
+            .expect("approval")
+            .expect("pending approval");
+        assert_eq!(approval.prompted_message_count, 4);
+        assert_eq!(approval.updated_at, TimestampMillis::new(31));
+        coordinator
+            .discover_and_admit(
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                3,
+                DynamicMemoryRunMode::AskFirst,
+                TimestampMillis::new(99),
+            )
+            .expect("ask first replay");
+        assert_eq!(
+            effects
+                .get_dynamic_memory_pending_approval(conversation_id)
+                .expect("replayed approval")
+                .expect("pending approval"),
+            approval
+        );
+
+        let admitted = coordinator
+            .discover_and_admit(
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                3,
+                DynamicMemoryRunMode::Auto,
+                TimestampMillis::new(100),
+            )
+            .expect("auto");
+        assert_eq!(admitted.len(), 1);
+        assert_eq!(admitted[0].batch.effects.len(), 2);
+        assert_eq!(
+            effects
+                .get_dynamic_memory_pending_approval(conversation_id)
+                .expect("cleared approval"),
+            None
+        );
+    }
+
+    #[test]
     fn runner_errors_settle_cancel_fail_or_retry_on_the_same_claim() {
         let cancellation_effects = Effects::default();
         cancellation_effects.replace(vec![effect(ConversationId::new(), 10)]);
@@ -513,6 +720,7 @@ mod tests {
             .discover_and_claim(
                 MAX_COMPANION_POST_TURN_EFFECTS,
                 1,
+                DynamicMemoryRunMode::Auto,
                 WorkerId::new(),
                 TimestampMillis::new(20),
                 Duration::from_secs(60),
@@ -553,6 +761,7 @@ mod tests {
             .discover_and_claim(
                 MAX_COMPANION_POST_TURN_EFFECTS,
                 1,
+                DynamicMemoryRunMode::Auto,
                 WorkerId::new(),
                 TimestampMillis::new(40),
                 Duration::from_secs(60),
@@ -590,6 +799,7 @@ mod tests {
             .discover_and_claim(
                 MAX_COMPANION_POST_TURN_EFFECTS,
                 1,
+                DynamicMemoryRunMode::Auto,
                 WorkerId::new(),
                 TimestampMillis::new(60),
                 Duration::from_secs(60),
@@ -616,6 +826,7 @@ mod tests {
             .discover_and_claim(
                 MAX_COMPANION_POST_TURN_EFFECTS,
                 1,
+                DynamicMemoryRunMode::Auto,
                 WorkerId::new(),
                 TimestampMillis::new(62),
                 Duration::from_secs(60),

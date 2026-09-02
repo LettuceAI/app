@@ -12,13 +12,34 @@ use lettuce_conversations::{
 use crate::{
     CreateMemoryPreparation, DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode,
     DynamicMemoryAttemptRecovery, DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound,
-    DynamicMemoryRun, DynamicMemoryRunAttemptAdmission, DynamicMemoryToolCallEvidence, MemoryItem,
-    MemoryPolicy, MemorySpaceSnapshot, MemorySummary, MemoryToolResult, MemoryValidationError,
-    NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
+    DynamicMemoryPendingApproval, DynamicMemoryRun, DynamicMemoryRunAttemptAdmission,
+    DynamicMemoryToolCallEvidence, MemoryItem, MemoryPolicy, MemorySpaceSnapshot, MemorySummary,
+    MemoryToolResult, MemoryValidationError, NewDynamicMemoryAttemptRecovery,
+    NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
 };
 
 const MAX_PREPARATION_SOURCE_REVISION_BYTES: usize = 128;
 const MAX_PREPARATION_SOURCE_TEXT_BYTES: usize = 16 * 1024;
+
+pub trait DynamicMemoryApprovalRepository: Send + Sync {
+    fn get_dynamic_memory_pending_approval(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError>;
+
+    fn prompt_dynamic_memory_if_due(
+        &self,
+        conversation_id: ConversationId,
+        unsummarized_message_count: u64,
+        message_interval: u32,
+        at: TimestampMillis,
+    ) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError>;
+
+    fn clear_dynamic_memory_pending_approval(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<(), MemoryRepositoryError>;
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

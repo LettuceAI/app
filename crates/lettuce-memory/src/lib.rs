@@ -9,18 +9,19 @@ mod structured_fallback;
 mod tool;
 
 pub use model::{
-    MAX_MEMORY_SUMMARY_BYTES, MAX_MEMORY_SUMMARY_SOURCE_MESSAGES, MemoryCategory, MemoryItem,
-    MemoryPolicy, MemorySpaceSnapshot, MemorySummary, MemoryValidationError, Score,
+    DynamicMemoryPendingApproval, DynamicMemoryRunMode, MAX_MEMORY_SUMMARY_BYTES,
+    MAX_MEMORY_SUMMARY_SOURCE_MESSAGES, MemoryCategory, MemoryItem, MemoryPolicy,
+    MemorySpaceSnapshot, MemorySummary, MemoryValidationError, Score,
 };
 pub use port::{
-    DynamicMemoryBackgroundRoundCommit, DynamicMemoryBackgroundRoundSettlement,
-    DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError,
-    DynamicMemoryPreparationRepository, DynamicMemoryRecoveredChild, DynamicMemoryRoundCommit,
-    DynamicMemoryRoundCommitError, DynamicMemoryRoundCommitResult, DynamicMemoryRoundRepository,
-    DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, DynamicMemorySummaryCheckpoint,
-    DynamicMemorySummaryCommit, MemoryChangeSet, MemoryRepository, MemoryRepositoryError,
-    MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository,
-    PersistedMemoryCreatePreparation,
+    DynamicMemoryApprovalRepository, DynamicMemoryBackgroundRoundCommit,
+    DynamicMemoryBackgroundRoundSettlement, DynamicMemoryPreparationPlan,
+    DynamicMemoryPreparationPlanError, DynamicMemoryPreparationRepository,
+    DynamicMemoryRecoveredChild, DynamicMemoryRoundCommit, DynamicMemoryRoundCommitError,
+    DynamicMemoryRoundCommitResult, DynamicMemoryRoundRepository, DynamicMemoryRunRepository,
+    DynamicMemoryRunRepositoryError, DynamicMemorySummaryCheckpoint, DynamicMemorySummaryCommit,
+    MemoryChangeSet, MemoryRepository, MemoryRepositoryError, MemorySummaryChange,
+    MemorySummaryCommit, MemorySummaryRepository, PersistedMemoryCreatePreparation,
 };
 pub use run::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,

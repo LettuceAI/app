@@ -989,10 +989,35 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .expect("prompt")
             .expect("dynamic summary prompt");
     let jobs = InMemoryJobStore::new();
+    assert!(
+        crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
+            .discover_and_claim(
+                512,
+                1,
+                lettuce_memory::DynamicMemoryRunMode::AskFirst,
+                WorkerId::new(),
+                TimestampMillis::new(NOW.get() + 11),
+                Duration::from_secs(60),
+                &ResourceAvailability::all(),
+            )
+            .expect("record pending approval")
+            .is_empty()
+    );
+    assert_eq!(
+        lettuce_memory::DynamicMemoryApprovalRepository::get_dynamic_memory_pending_approval(
+            &database,
+            conversation.id,
+        )
+        .expect("pending approval")
+        .expect("approval")
+        .prompted_message_count,
+        2
+    );
     let work = crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
         .discover_and_claim(
             512,
             1,
+            lettuce_memory::DynamicMemoryRunMode::Auto,
             WorkerId::new(),
             TimestampMillis::new(NOW.get() + 11),
             Duration::from_secs(60),
@@ -1002,6 +1027,14 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .into_iter()
         .next()
         .expect("memory job");
+    assert!(
+        lettuce_memory::DynamicMemoryApprovalRepository::get_dynamic_memory_pending_approval(
+            &database,
+            conversation.id,
+        )
+        .expect("cleared approval")
+        .is_none()
+    );
     let scripted = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {

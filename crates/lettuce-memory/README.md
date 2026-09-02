@@ -82,6 +82,10 @@ Each run may atomically checkpoint one validated cumulative summary before its
 first memory-tool round. The checkpoint retains the exact provider-neutral
 request, usage, provider request ID, resulting root revision, and summary text;
 an exact replay returns it without a second summary CAS.
+The memory boundary also owns the typed legacy `auto`/`askFirst`/`manual` run
+mode and the conversation-owned pending-approval port. Its prompt threshold is
+the copied interval rule: after one prompt, another is due only when another
+full interval of unsummarized messages accumulates.
 Retryable attempts own CAS lifecycle state and immutable ordered
 provider rounds/calls. Each round also freezes the exact provider-neutral
 request context used for its inference, so continuation and recovery do not

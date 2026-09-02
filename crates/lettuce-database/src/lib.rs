@@ -3820,6 +3820,7 @@ mod tests {
                 "dynamic_memory_background_round_settlements",
                 "dynamic_memory_background_tool_results",
                 "dynamic_memory_inference_rounds",
+                "dynamic_memory_pending_approvals",
                 "dynamic_memory_preparation_plans",
                 "dynamic_memory_run_attempts",
                 "dynamic_memory_run_source_messages",

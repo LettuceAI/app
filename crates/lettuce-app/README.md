@@ -109,6 +109,11 @@ existing round executor and continuation coordinator until the durable `done`
 result. It resumes from the latest admitted checkpoint, skips seed generation,
 embedding, reduction, and provider dispatch for already settled/admitted work,
 and keeps create IDs, token counts, and timestamps as explicit caller inputs.
+Effect discovery also accepts the exact authored `auto`, `askFirst`, or
+`manual` run mode. `manual` admits no automatic job; `askFirst` waits for the
+existing interval gate and records/replays a durable conversation approval
+without provider dispatch; `auto` preserves the existing oldest-prefix cadence
+and clears any pending approval when it admits the job.
 The run freezes whether companion time awareness is enabled and uses the matching
 legacy tool contract. In enabled runs, a known create source is retained and an
 unknown or omitted ID falls back to the latest frozen user/assistant source. In

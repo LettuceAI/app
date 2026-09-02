@@ -1,9 +1,9 @@
 use std::str::FromStr;
 
 use lettuce_memory::{
-    MemoryCategory, MemoryChangeSet, MemoryItem, MemoryRepository, MemoryRepositoryError,
-    MemorySpaceSnapshot, MemorySummary, MemorySummaryChange, MemorySummaryCommit,
-    MemorySummaryRepository, Score,
+    DynamicMemoryApprovalRepository, DynamicMemoryPendingApproval, MemoryCategory, MemoryChangeSet,
+    MemoryItem, MemoryRepository, MemoryRepositoryError, MemorySpaceSnapshot, MemorySummary,
+    MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository, Score,
 };
 use lettuce_types::{ConversationId, MemorySpaceId, MessageId, Revision, TimestampMillis};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
@@ -510,6 +510,97 @@ impl MemorySummaryRepository for Database {
         let commit = compare_and_apply_summary_in(&transaction, &change)?;
         transaction.commit().map_err(storage)?;
         Ok(commit)
+    }
+}
+
+fn get_pending_approval_in(
+    connection: &rusqlite::Connection,
+    conversation_id: ConversationId,
+) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError> {
+    connection
+        .query_row(
+            "SELECT prompted_message_count,pending,updated_at
+               FROM dynamic_memory_pending_approvals WHERE conversation_id=?1",
+            [conversation_id.to_string()],
+            |row| {
+                Ok(DynamicMemoryPendingApproval {
+                    conversation_id,
+                    prompted_message_count: u64::try_from(row.get::<_, i64>(0)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    pending: row.get(1)?,
+                    updated_at: TimestampMillis::new(row.get(2)?),
+                })
+            },
+        )
+        .optional()
+        .map_err(storage)
+}
+
+impl DynamicMemoryApprovalRepository for Database {
+    fn get_dynamic_memory_pending_approval(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        get_pending_approval_in(&connection, conversation_id)
+    }
+
+    fn prompt_dynamic_memory_if_due(
+        &self,
+        conversation_id: ConversationId,
+        unsummarized_message_count: u64,
+        message_interval: u32,
+        at: TimestampMillis,
+    ) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError> {
+        if message_interval == 0 || unsummarized_message_count == 0 {
+            return Err(storage("invalid dynamic memory approval input"));
+        }
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let existing = get_pending_approval_in(&transaction, conversation_id)?;
+        let baseline = existing
+            .as_ref()
+            .map_or(0, |approval| approval.prompted_message_count);
+        if unsummarized_message_count.saturating_sub(baseline) < u64::from(message_interval) {
+            transaction.commit().map_err(storage)?;
+            return Ok(None);
+        }
+        transaction
+            .execute(
+                "INSERT INTO dynamic_memory_pending_approvals
+                    (conversation_id,prompted_message_count,pending,updated_at)
+                 VALUES (?1,?2,1,?3)
+                 ON CONFLICT(conversation_id) DO UPDATE SET
+                    prompted_message_count=excluded.prompted_message_count,
+                    pending=1,
+                    updated_at=excluded.updated_at",
+                params![
+                    conversation_id.to_string(),
+                    i64::try_from(unsummarized_message_count).map_err(storage)?,
+                    at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        let approval = get_pending_approval_in(&transaction, conversation_id)?
+            .ok_or_else(|| storage("missing dynamic memory approval"))?;
+        transaction.commit().map_err(storage)?;
+        Ok(Some(approval))
+    }
+
+    fn clear_dynamic_memory_pending_approval(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<(), MemoryRepositoryError> {
+        self.connection()
+            .map_err(storage)?
+            .execute(
+                "DELETE FROM dynamic_memory_pending_approvals WHERE conversation_id=?1",
+                [conversation_id.to_string()],
+            )
+            .map_err(storage)?;
+        Ok(())
     }
 }
 

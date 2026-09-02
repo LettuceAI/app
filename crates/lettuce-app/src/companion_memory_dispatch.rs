@@ -6,6 +6,7 @@ use lettuce_jobs::{
     JobSnapshot, JobState, JobStore, OutcomeRef, ProgressSnapshot, ResourceAvailability,
     StageSnapshot, StoreError, WorkerId, handle::JobHandle,
 };
+use lettuce_memory::{DynamicMemoryApprovalRepository, DynamicMemoryRunMode};
 use lettuce_types::TimestampMillis;
 
 use crate::{
@@ -60,7 +61,7 @@ pub struct CompanionMemoryDispatchCoordinator<'a, R: ?Sized, J: ?Sized> {
 
 impl<'a, R, J> CompanionMemoryDispatchCoordinator<'a, R, J>
 where
-    R: CompanionTurnEffectRepository + ?Sized,
+    R: CompanionTurnEffectRepository + DynamicMemoryApprovalRepository + ?Sized,
     J: JobStore + ?Sized,
 {
     #[must_use]
@@ -71,17 +72,19 @@ where
     /// Shared startup and post-finalization entry point. The host supplies the
     /// worker identity and immediately dispatches each returned item through
     /// `CompanionMemoryJobRunner` with its resolved runtime inputs.
+    #[allow(clippy::too_many_arguments)]
     pub fn discover_and_claim(
         &self,
         limit: u16,
         summary_message_interval: u32,
+        run_mode: DynamicMemoryRunMode,
         worker_id: WorkerId,
         now: TimestampMillis,
         lease_for: Duration,
         allowed: &ResourceAvailability,
     ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryDispatchError> {
         let admissions = CompanionPostTurnMemoryAdmissionCoordinator::new(self.effects, self.jobs)
-            .discover_and_admit(limit, summary_message_interval)?;
+            .discover_and_admit(limit, summary_message_interval, run_mode, now)?;
         let mut work = Vec::with_capacity(admissions.len());
         for admission in admissions {
             let claim_at = now.max(admission.job.updated_at);

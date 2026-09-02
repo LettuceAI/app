@@ -8,6 +8,22 @@ pub const MAX_MEMORY_ITEMS: usize = 4096;
 pub const MAX_MEMORY_SUMMARY_BYTES: usize = 6000;
 pub const MAX_MEMORY_SUMMARY_SOURCE_MESSAGES: usize = 1024;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DynamicMemoryRunMode {
+    Auto,
+    AskFirst,
+    Manual,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DynamicMemoryPendingApproval {
+    pub conversation_id: lettuce_types::ConversationId,
+    pub prompted_message_count: u64,
+    pub pending: bool,
+    pub updated_at: TimestampMillis,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Score(u16);

@@ -1423,9 +1423,10 @@ mod tests {
         ResolvedInferenceProfile, SafetyContext, ToolPolicy,
     };
     use lettuce_memory::{
-        DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptStatus,
-        DynamicMemoryBackgroundRoundCommit, DynamicMemoryRoundFinishReason,
-        DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
+        DynamicMemoryApprovalRepository, DynamicMemoryAttemptFailureCode,
+        DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
+        DynamicMemoryRoundFinishReason, DynamicMemoryRunRepository,
+        DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
         DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryCommit, MemoryCategory,
         MemoryChangeSet, MemoryItem, MemoryRepository, MemorySummaryRepository, MemoryToolOutcome,
         MemoryToolResult, NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound,
@@ -1679,6 +1680,58 @@ mod tests {
             )
             .expect("turn count");
         (messages, turns)
+    }
+
+    #[test]
+    fn ask_first_prompt_baseline_survives_restart() {
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-memory-approval-{}.sqlite3",
+            DynamicMemoryRunId::new()
+        ));
+        let database = Database::open(&path).expect("database");
+        let (conversation_id, _, _) = conversation_fixture(&database);
+        let first = database
+            .prompt_dynamic_memory_if_due(conversation_id, 4, 3, TimestampMillis::new(10))
+            .expect("first prompt")
+            .expect("approval");
+        assert_eq!(first.prompted_message_count, 4);
+        assert!(
+            database
+                .prompt_dynamic_memory_if_due(conversation_id, 4, 3, TimestampMillis::new(99),)
+                .expect("exact replay")
+                .is_none()
+        );
+        drop(database);
+
+        let reopened = Database::open(&path).expect("reopen");
+        assert_eq!(
+            reopened
+                .get_dynamic_memory_pending_approval(conversation_id)
+                .expect("stored approval"),
+            Some(first)
+        );
+        assert!(
+            reopened
+                .prompt_dynamic_memory_if_due(conversation_id, 6, 3, TimestampMillis::new(100),)
+                .expect("below next interval")
+                .is_none()
+        );
+        let next = reopened
+            .prompt_dynamic_memory_if_due(conversation_id, 7, 3, TimestampMillis::new(101))
+            .expect("next prompt")
+            .expect("next approval");
+        assert_eq!(next.prompted_message_count, 7);
+        reopened
+            .clear_dynamic_memory_pending_approval(conversation_id)
+            .expect("clear");
+        assert_eq!(
+            reopened
+                .get_dynamic_memory_pending_approval(conversation_id)
+                .expect("cleared"),
+            None
+        );
+        drop(reopened);
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
