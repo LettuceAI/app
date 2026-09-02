@@ -3824,6 +3824,7 @@ mod tests {
                 "dynamic_memory_run_attempts",
                 "dynamic_memory_run_source_messages",
                 "dynamic_memory_runs",
+                "dynamic_memory_summary_checkpoints",
                 "generation_attempts",
                 "generation_checkpoints",
                 "group_lorebook_bindings",

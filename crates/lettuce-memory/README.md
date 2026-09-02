@@ -78,6 +78,10 @@ legacy bounded text, token count, exact ordered source cursor, and root memory
 CAS. Each background run freezes the resolved message interval and exact
 half-open summary window so recovery cannot advance it after its own summary
 checkpoint.
+Each run may atomically checkpoint one validated cumulative summary before its
+first memory-tool round. The checkpoint retains the exact provider-neutral
+request, usage, provider request ID, resulting root revision, and summary text;
+an exact replay returns it without a second summary CAS.
 Retryable attempts own CAS lifecycle state and immutable ordered
 provider rounds/calls. Each round also freezes the exact provider-neutral
 request context used for its inference, so continuation and recovery do not

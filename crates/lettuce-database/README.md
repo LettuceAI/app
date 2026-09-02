@@ -106,6 +106,10 @@ rows preserve superseded-by/time and ordered supersedes IDs, while the immutable
 run freezes whether its tool contract enables companion supersession. It also
 stores the selected JSON/XML structured fallback format so recovery cannot
 silently change the parser or retry request.
+One immutable pre-round summary checkpoint stores the validated cumulative
+summary, token count, exact provider-neutral request context, usage, provider
+request ID, and root-revision transition in the same immediate transaction as
+the summary cursor CAS.
 CAS attempts provide
 created/processing/succeeded/failed/cancelled/interrupted state; ordered rounds
 and calls retain their exact provider-neutral request context, bounded usage,

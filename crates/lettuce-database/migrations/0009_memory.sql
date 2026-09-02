@@ -237,6 +237,47 @@ CREATE TABLE dynamic_memory_run_attempts (
     CHECK (started_at IS NULL OR finished_at IS NULL OR started_at <= finished_at)
 ) STRICT;
 
+CREATE TABLE dynamic_memory_summary_checkpoints (
+    run_id TEXT PRIMARY KEY REFERENCES dynamic_memory_runs(id) ON DELETE RESTRICT,
+    attempt_id TEXT NOT NULL,
+    space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
+    expected_memory_revision INTEGER NOT NULL CHECK (expected_memory_revision >= 1),
+    resulting_memory_revision INTEGER NOT NULL CHECK (resulting_memory_revision = expected_memory_revision + 1),
+    summary_text TEXT NOT NULL CHECK (
+        length(trim(summary_text)) > 0
+        AND length(CAST(summary_text AS BLOB)) <= 6000
+    ),
+    token_count INTEGER NOT NULL CHECK (token_count BETWEEN 0 AND 4294967295),
+    request_context_json TEXT NOT NULL CHECK (
+        json_valid(request_context_json)
+        AND json_extract(request_context_json, '$.format_version') = 1
+    ),
+    input_tokens INTEGER CHECK (input_tokens >= 0),
+    output_tokens INTEGER CHECK (output_tokens >= 0),
+    provider_request_id TEXT CHECK (
+        provider_request_id IS NULL OR (
+            length(trim(provider_request_id)) > 0
+            AND length(CAST(provider_request_id AS BLOB)) <= 256
+        )
+    ),
+    settled_at INTEGER NOT NULL,
+    FOREIGN KEY (run_id, attempt_id)
+        REFERENCES dynamic_memory_run_attempts(run_id, id) ON DELETE RESTRICT,
+    CHECK ((input_tokens IS NULL) = (output_tokens IS NULL))
+) STRICT;
+
+CREATE TRIGGER dynamic_memory_summary_checkpoints_no_update
+BEFORE UPDATE ON dynamic_memory_summary_checkpoints
+BEGIN
+    SELECT RAISE(ABORT, 'dynamic memory summary checkpoints are immutable');
+END;
+
+CREATE TRIGGER dynamic_memory_summary_checkpoints_no_delete
+BEFORE DELETE ON dynamic_memory_summary_checkpoints
+BEGIN
+    SELECT RAISE(ABORT, 'dynamic memory summary checkpoints are immutable');
+END;
+
 CREATE TABLE dynamic_memory_inference_rounds (
     run_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,

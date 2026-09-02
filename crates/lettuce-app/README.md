@@ -92,9 +92,13 @@ tool request errors or returns no calls, the coordinator copies the legacy
 second request with tools disabled and the frozen JSON/XML format instruction,
 parses its text into the same typed calls, aggregates both request usages, and
 admits them through the same durable round path. Empty operations become an
-explicit no-change `done` checkpoint. Cumulative summary state and its ordered
-source cursor are durable; each new run freezes the next window after that
-cursor, while summary inference remains deferred. A settled background
+explicit no-change `done` checkpoint. Before round zero, the runner renders the
+editable dynamic-summary prompt over the frozen source window and prior
+cumulative summary, requires `write_summary`, accepts valid same-response text,
+and copies the legacy tool-disabled retry and validation. The validated summary,
+token count, provider context, usage, and cursor commit atomically against the
+memory root; recovery replays that checkpoint without provider I/O, and the
+following memory-tool phase consumes its stored text. A settled background
 round now appends its admitted native calls and typed results to the exact
 durable request context, stops before provider I/O on `done`, or dispatches and
 atomically admits the next bounded round with the frozen profile/tool contract.

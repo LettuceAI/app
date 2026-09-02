@@ -7,8 +7,9 @@ use lettuce_memory::{
     DynamicMemoryBackgroundRoundSettlement, DynamicMemoryInferenceRound,
     DynamicMemoryRoundFinishReason, DynamicMemoryRun, DynamicMemoryRunAttemptAdmission,
     DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
-    DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryWindow,
-    DynamicMemoryToolCallEvidence, MemoryToolResult, NewDynamicMemoryAttemptRecovery,
+    DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryCheckpoint,
+    DynamicMemorySummaryCommit, DynamicMemorySummaryWindow, DynamicMemoryToolCallEvidence,
+    MemorySummary, MemorySummaryChange, MemoryToolResult, NewDynamicMemoryAttemptRecovery,
     NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
 };
 use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, Revision, TimestampMillis};
@@ -210,6 +211,102 @@ fn load_attempt_in(
         .validate()
         .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
     Ok(attempt)
+}
+
+fn load_summary_checkpoint_in(
+    connection: &Connection,
+    run_id: DynamicMemoryRunId,
+) -> Result<Option<DynamicMemorySummaryCheckpoint>, DynamicMemoryRunRepositoryError> {
+    let row = connection
+        .query_row(
+            "SELECT attempt_id,space_id,expected_memory_revision,resulting_memory_revision,
+                    summary_text,token_count,request_context_json,input_tokens,output_tokens,
+                    provider_request_id,settled_at
+               FROM dynamic_memory_summary_checkpoints WHERE run_id=?1",
+            [run_id.to_string()],
+            |row| {
+                Ok((
+                    parse_id(row.get::<_, String>(0)?)?,
+                    parse_id(row.get::<_, String>(1)?)?,
+                    revision(row.get(2)?)?,
+                    revision(row.get(3)?)?,
+                    row.get::<_, String>(4)?,
+                    u32::try_from(row.get::<_, i64>(5)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    decode_versioned::<lettuce_conversations::ProviderNeutralContext>(
+                        &row.get::<_, String>(6)?,
+                        JSON_VERSION,
+                    )
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, Option<i64>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    TimestampMillis::new(row.get(10)?),
+                ))
+            },
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((
+        attempt_id,
+        space_id,
+        expected_memory_revision,
+        resulting_memory_revision,
+        text,
+        token_count,
+        request_context,
+        input_tokens,
+        output_tokens,
+        provider_request_id,
+        settled_at,
+    )) = row
+    else {
+        return Ok(None);
+    };
+    let run = load_run_in(connection, run_id)?;
+    if run.space_id != space_id
+        || resulting_memory_revision.get() != expected_memory_revision.get().saturating_add(1)
+    {
+        return Err(DynamicMemoryRunRepositoryError::Invalid);
+    }
+    let usage = match (input_tokens, output_tokens) {
+        (Some(input), Some(output)) => Some(InferenceUsage {
+            input_tokens: u64::try_from(input).map_err(storage)?,
+            output_tokens: u64::try_from(output).map_err(storage)?,
+        }),
+        (None, None) => None,
+        _ => return Err(DynamicMemoryRunRepositoryError::Invalid),
+    };
+    let summary = MemorySummary {
+        space_id,
+        text,
+        token_count,
+        window_start: run.summary_window.start,
+        window_end: run.summary_window.end,
+        source_message_ids: run
+            .source_messages
+            .iter()
+            .map(|source| source.message_id)
+            .collect(),
+        updated_at: settled_at,
+    };
+    summary
+        .validate()
+        .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+    request_context
+        .validate()
+        .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+    Ok(Some(DynamicMemorySummaryCheckpoint {
+        run_id,
+        attempt_id,
+        summary,
+        expected_memory_revision,
+        resulting_memory_revision,
+        request_context,
+        usage,
+        provider_request_id,
+        settled_at,
+    }))
 }
 
 fn list_calls_in(
@@ -1184,22 +1281,155 @@ impl DynamicMemoryRunRepository for Database {
         transaction.commit().map_err(storage)?;
         Ok(stored)
     }
+
+    fn load_dynamic_memory_summary_checkpoint(
+        &self,
+        run_id: DynamicMemoryRunId,
+    ) -> Result<Option<DynamicMemorySummaryCheckpoint>, DynamicMemoryRunRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        load_summary_checkpoint_in(&connection, run_id)
+    }
+
+    fn commit_dynamic_memory_summary(
+        &self,
+        commit: DynamicMemorySummaryCommit,
+        at: TimestampMillis,
+    ) -> Result<DynamicMemorySummaryCheckpoint, DynamicMemoryRunRepositoryError> {
+        commit
+            .request_context
+            .validate()
+            .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+        if commit
+            .provider_request_id
+            .as_ref()
+            .is_some_and(|id| id.trim().is_empty() || id.len() > 256)
+        {
+            return Err(DynamicMemoryRunRepositoryError::Invalid);
+        }
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        if let Some(stored) = load_summary_checkpoint_in(&transaction, commit.run_id)? {
+            if stored.attempt_id == commit.attempt_id
+                && stored.expected_memory_revision == commit.expected_memory_revision
+                && stored.summary.text == commit.text
+                && stored.summary.token_count == commit.token_count
+                && stored.request_context == commit.request_context
+                && stored.usage == commit.usage
+                && stored.provider_request_id == commit.provider_request_id
+                && stored.settled_at == at
+            {
+                transaction.commit().map_err(storage)?;
+                return Ok(stored);
+            }
+            return Err(DynamicMemoryRunRepositoryError::Conflict);
+        }
+        let run = load_run_in(&transaction, commit.run_id)?;
+        let attempt = load_attempt_in(&transaction, commit.attempt_id)?;
+        if attempt.run_id != run.id
+            || attempt.status != DynamicMemoryAttemptStatus::Processing
+            || transaction
+                .query_row(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM dynamic_memory_inference_rounds WHERE run_id=?1
+                    )",
+                    [run.id.to_string()],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(storage)?
+        {
+            return Err(DynamicMemoryRunRepositoryError::Conflict);
+        }
+        let summary = MemorySummary {
+            space_id: run.space_id,
+            text: commit.text,
+            token_count: commit.token_count,
+            window_start: run.summary_window.start,
+            window_end: run.summary_window.end,
+            source_message_ids: run
+                .source_messages
+                .iter()
+                .map(|source| source.message_id)
+                .collect(),
+            updated_at: at,
+        };
+        summary
+            .validate()
+            .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+        let applied = memory_adapter::compare_and_apply_summary_in(
+            &transaction,
+            &MemorySummaryChange {
+                expected_revision: commit.expected_memory_revision,
+                summary: summary.clone(),
+            },
+        )
+        .map_err(|error| match error {
+            lettuce_memory::MemoryRepositoryError::Conflict => {
+                DynamicMemoryRunRepositoryError::Conflict
+            }
+            lettuce_memory::MemoryRepositoryError::NotFound => {
+                DynamicMemoryRunRepositoryError::NotFound
+            }
+            _ => DynamicMemoryRunRepositoryError::Storage,
+        })?;
+        let (input_tokens, output_tokens) = commit
+            .usage
+            .as_ref()
+            .map(|usage| {
+                Ok((
+                    Some(sql_u64(usage.input_tokens)?),
+                    Some(sql_u64(usage.output_tokens)?),
+                ))
+            })
+            .transpose()?
+            .unwrap_or((None, None));
+        transaction
+            .execute(
+                "INSERT INTO dynamic_memory_summary_checkpoints (
+                    run_id,attempt_id,space_id,expected_memory_revision,
+                    resulting_memory_revision,summary_text,token_count,
+                    request_context_json,input_tokens,output_tokens,
+                    provider_request_id,settled_at
+                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                params![
+                    run.id.to_string(),
+                    attempt.id.to_string(),
+                    run.space_id.to_string(),
+                    sql_u64(commit.expected_memory_revision.get())?,
+                    sql_u64(applied.memory.revision.get())?,
+                    summary.text,
+                    i64::from(summary.token_count),
+                    encode_versioned(&commit.request_context, JSON_VERSION).map_err(storage)?,
+                    input_tokens,
+                    output_tokens,
+                    commit.provider_request_id,
+                    at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        let stored = load_summary_checkpoint_in(&transaction, run.id)?
+            .ok_or(DynamicMemoryRunRepositoryError::Storage)?;
+        transaction.commit().map_err(storage)?;
+        Ok(stored)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use lettuce_conversations::{
-        MessagePart, MessageRenderSource, MessageRole, OutputPolicy, ProviderContextPart,
-        ProviderNeutralMessage, ResolvedInferenceProfile, SafetyContext, ToolPolicy,
+        InferenceUsage, MessagePart, MessageRenderSource, MessageRole, OutputPolicy,
+        ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage,
+        ResolvedInferenceProfile, SafetyContext, ToolPolicy,
     };
     use lettuce_memory::{
         DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptStatus,
         DynamicMemoryBackgroundRoundCommit, DynamicMemoryRoundFinishReason,
         DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
-        DynamicMemoryStructuredFallbackFormat, MemoryCategory, MemoryChangeSet, MemoryItem,
-        MemoryRepository, MemoryToolOutcome, MemoryToolResult, NewDynamicMemoryAttemptRecovery,
-        NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall,
-        Score,
+        DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryCommit, MemoryCategory,
+        MemoryChangeSet, MemoryItem, MemoryRepository, MemorySummaryRepository, MemoryToolOutcome,
+        MemoryToolResult, NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound,
+        NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall, Score,
     };
     use lettuce_models::{
         CapabilityStatus, ChatParameterResolutionInput, ChatRequirements, ExpectedModelIdentity,
@@ -1449,6 +1679,104 @@ mod tests {
             )
             .expect("turn count");
         (messages, turns)
+    }
+
+    #[test]
+    fn summary_checkpoint_applies_once_and_replays_exactly() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let run_id = DynamicMemoryRunId::new();
+        let attempt_id = DynamicMemoryAttemptId::new();
+        let admitted = database
+            .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+                run_id,
+                attempt_id,
+                conversation_id,
+                space_id,
+                starting_memory: database.get(space_id).expect("memory").expect("space"),
+                source_messages: messages.clone(),
+                profile: profile(),
+                time_awareness_enabled: true,
+                supersession_enabled: true,
+                structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                    message_interval: 2,
+                    start: 0,
+                    end: 2,
+                },
+                job_id: JobId::new(),
+                now: TimestampMillis::new(10),
+            })
+            .expect("run");
+        database
+            .transition_dynamic_memory_attempt(
+                attempt_id,
+                admitted.attempt.revision,
+                DynamicMemoryAttemptStatus::Processing,
+                None,
+                TimestampMillis::new(11),
+            )
+            .expect("processing");
+        let commit = DynamicMemorySummaryCommit {
+            run_id,
+            attempt_id,
+            expected_memory_revision: Revision::INITIAL,
+            text: "The user prefers tea.".into(),
+            token_count: 5,
+            request_context: ProviderNeutralContext {
+                messages: vec![ProviderNeutralMessage {
+                    role: MessageRole::User,
+                    parts: vec![ProviderContextPart::Text {
+                        text: "frozen summary request".into(),
+                    }],
+                }],
+                attributions: Default::default(),
+                budget: Default::default(),
+            },
+            usage: Some(InferenceUsage {
+                input_tokens: 20,
+                output_tokens: 5,
+            }),
+            provider_request_id: Some("summary-request".into()),
+        };
+        let checkpoint = database
+            .commit_dynamic_memory_summary(commit.clone(), TimestampMillis::new(12))
+            .expect("checkpoint");
+        assert_eq!(checkpoint.resulting_memory_revision, Revision::new(2));
+        assert_eq!(
+            checkpoint.summary.source_message_ids,
+            messages
+                .iter()
+                .map(|source| source.message_id)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            database
+                .get_summary(space_id)
+                .expect("summary")
+                .expect("stored summary"),
+            checkpoint.summary
+        );
+        assert_eq!(
+            database
+                .commit_dynamic_memory_summary(commit.clone(), TimestampMillis::new(12))
+                .expect("exact replay"),
+            checkpoint
+        );
+        let mut changed = commit;
+        changed.text = "Different summary.".into();
+        assert_eq!(
+            database.commit_dynamic_memory_summary(changed, TimestampMillis::new(12)),
+            Err(DynamicMemoryRunRepositoryError::Conflict)
+        );
+        assert_eq!(
+            database
+                .get(space_id)
+                .expect("memory")
+                .expect("space")
+                .revision,
+            Revision::new(2)
+        );
     }
 
     #[test]

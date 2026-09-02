@@ -4,7 +4,10 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-use lettuce_conversations::{ConversationRepositoryError, ToolExecution, ToolExecutionTransition};
+use lettuce_conversations::{
+    ConversationRepositoryError, InferenceUsage, ProviderNeutralContext, ToolExecution,
+    ToolExecutionTransition,
+};
 
 use crate::{
     CreateMemoryPreparation, DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode,
@@ -168,6 +171,46 @@ pub trait DynamicMemoryRunRepository: Send + Sync {
     ) -> Result<DynamicMemoryBackgroundRoundSettlement, DynamicMemoryRunRepositoryError> {
         Err(DynamicMemoryRunRepositoryError::Invalid)
     }
+
+    fn load_dynamic_memory_summary_checkpoint(
+        &self,
+        _run_id: lettuce_types::DynamicMemoryRunId,
+    ) -> Result<Option<DynamicMemorySummaryCheckpoint>, DynamicMemoryRunRepositoryError> {
+        Err(DynamicMemoryRunRepositoryError::Invalid)
+    }
+
+    fn commit_dynamic_memory_summary(
+        &self,
+        _commit: DynamicMemorySummaryCommit,
+        _at: TimestampMillis,
+    ) -> Result<DynamicMemorySummaryCheckpoint, DynamicMemoryRunRepositoryError> {
+        Err(DynamicMemoryRunRepositoryError::Invalid)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DynamicMemorySummaryCommit {
+    pub run_id: lettuce_types::DynamicMemoryRunId,
+    pub attempt_id: lettuce_types::DynamicMemoryAttemptId,
+    pub expected_memory_revision: Revision,
+    pub text: String,
+    pub token_count: u32,
+    pub request_context: ProviderNeutralContext,
+    pub usage: Option<InferenceUsage>,
+    pub provider_request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DynamicMemorySummaryCheckpoint {
+    pub run_id: lettuce_types::DynamicMemoryRunId,
+    pub attempt_id: lettuce_types::DynamicMemoryAttemptId,
+    pub summary: MemorySummary,
+    pub expected_memory_revision: Revision,
+    pub resulting_memory_revision: Revision,
+    pub request_context: ProviderNeutralContext,
+    pub usage: Option<InferenceUsage>,
+    pub provider_request_id: Option<String>,
+    pub settled_at: TimestampMillis,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

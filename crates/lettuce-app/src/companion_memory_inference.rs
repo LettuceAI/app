@@ -353,14 +353,14 @@ fn validate_ownership(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct MaterializedSource {
-    message_id: lettuce_types::MessageId,
-    role: MessageRole,
-    effective_time: TimestampMillis,
-    text: String,
+pub(crate) struct MaterializedSource {
+    pub(crate) message_id: lettuce_types::MessageId,
+    pub(crate) role: MessageRole,
+    pub(crate) effective_time: TimestampMillis,
+    pub(crate) text: String,
 }
 
-fn materialize_sources<C: ConversationReader + ?Sized>(
+pub(crate) fn materialize_sources<C: ConversationReader + ?Sized>(
     conversations: &C,
     run: &DynamicMemoryRun,
 ) -> Result<Vec<MaterializedSource>, CompanionMemoryInferenceError> {
@@ -602,7 +602,7 @@ fn build_first_request(
     Ok(request)
 }
 
-fn format_message_timestamp(effective_time: TimestampMillis) -> String {
+pub(crate) fn format_message_timestamp(effective_time: TimestampMillis) -> String {
     let datetime = match Local.timestamp_millis_opt(effective_time.get()) {
         LocalResult::Single(datetime) | LocalResult::Ambiguous(datetime, _) => datetime,
         LocalResult::None => Local::now(),
@@ -610,7 +610,7 @@ fn format_message_timestamp(effective_time: TimestampMillis) -> String {
     format!("<time>{}</time>", datetime.format("%Y-%m-%d %H:%M"))
 }
 
-fn rendered_message(
+pub(crate) fn rendered_message(
     entry: &lettuce_context::RenderedPromptMessage,
 ) -> Result<ProviderNeutralMessage, CompanionMemoryInferenceError> {
     if entry.payload.is_some() {
@@ -628,7 +628,7 @@ fn rendered_message(
     })
 }
 
-fn insert_in_chat_messages(
+pub(crate) fn insert_in_chat_messages(
     messages: &mut Vec<ProviderNeutralMessage>,
     in_chat: Vec<(u32, ProviderNeutralMessage)>,
 ) {

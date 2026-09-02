@@ -41,7 +41,7 @@ use lettuce_jobs::{
 use lettuce_memory::{
     DynamicMemoryAttemptStatus, DynamicMemoryPreparationRepository, DynamicMemoryRoundFinishReason,
     DynamicMemoryRunRepository, DynamicMemorySourceMessage, MemoryPolicy as DynamicMemoryPolicy,
-    MemoryRepository, MemorySpaceSnapshot, NewDynamicMemoryInferenceRound,
+    MemoryRepository, MemorySpaceSnapshot, MemorySummaryRepository, NewDynamicMemoryInferenceRound,
     NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall, Score, dynamic_memory_tool_request,
 };
 use lettuce_models::{
@@ -76,6 +76,11 @@ impl crate::MemoryEmbeddingEngine for ScenarioEmbeddingEngine {
         "scenario-v1"
     }
 
+    fn count_tokens(&self, text: &str) -> Result<u32, crate::EmbeddingGenerationError> {
+        u32::try_from(text.split_whitespace().count())
+            .map_err(|_| crate::EmbeddingGenerationError::Unavailable)
+    }
+
     fn embed_memory(
         &self,
         request: &EmbeddingRequest,
@@ -96,6 +101,15 @@ impl crate::MemoryEmbeddingEngine for ScenarioEmbeddingEngine {
 struct ScriptedInference {
     outcomes: Mutex<VecDeque<InferenceOutcome>>,
     requests: Mutex<Vec<InferenceRequest>>,
+}
+
+struct UnavailableInference;
+
+#[async_trait::async_trait]
+impl InferencePort for UnavailableInference {
+    async fn run(&self, _request: InferenceRequest) -> Result<InferenceOutcome, PortError> {
+        Err(PortError::Unavailable)
+    }
 }
 
 #[async_trait::async_trait]
@@ -970,6 +984,10 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let prompt = PromptRepository::get(&database, prompt_ids.get(BuiltInPromptId::DynamicMemory))
         .expect("prompt")
         .expect("dynamic memory prompt");
+    let summary_prompt =
+        PromptRepository::get(&database, prompt_ids.get(BuiltInPromptId::DynamicSummary))
+            .expect("prompt")
+            .expect("dynamic summary prompt");
     let jobs = InMemoryJobStore::new();
     let work = crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
         .discover_and_claim(
@@ -986,6 +1004,42 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .expect("memory job");
     let scripted = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
+            InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: vec![MessagePart::Text {
+                        text: "write_summary({ summary: 'invalid' })".into(),
+                    }],
+                    tool_calls: Vec::new(),
+                    provider_replay: None,
+                }],
+                usage: Some(InferenceUsage {
+                    input_tokens: 20,
+                    output_tokens: 3,
+                }),
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None,
+                provider_request_id: Some("runner-summary-invalid".into()),
+                warning_codes: Vec::new(),
+            },
+            InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: vec![MessagePart::Text {
+                        text: "The user told Mira they missed her.".into(),
+                    }],
+                    tool_calls: Vec::new(),
+                    provider_replay: None,
+                }],
+                usage: Some(InferenceUsage {
+                    input_tokens: 24,
+                    output_tokens: 7,
+                }),
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None,
+                provider_request_id: Some("runner-summary-fallback".into()),
+                warning_codes: Vec::new(),
+            },
             InferenceOutcome {
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
@@ -1038,6 +1092,61 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         delete_confidence_default: Score::from_basis_points(5_000).expect("score"),
         max_hard_delete_ratio_per_cycle: Score::from_basis_points(5_000).expect("score"),
     };
+    let dispatch = crate::CompanionPostTurnMemoryRunCoordinator::new(&database, &database)
+        .admit_or_recover(
+            &work.admission,
+            profile.clone(),
+            true,
+            true,
+            lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
+            &work.handle,
+            TimestampMillis::new(NOW.get() + 12),
+        )
+        .expect("admit memory run");
+    let summary = crate::CompanionMemorySummaryCoordinator::new(
+        &ScenarioEmbeddingEngine,
+        &database,
+        &database,
+        &scripted,
+    )
+    .run(
+        dispatch.run.id,
+        dispatch.attempt.id,
+        &summary_prompt,
+        &work.handle,
+        None,
+        TimestampMillis::new(NOW.get() + 12),
+    )
+    .await
+    .expect("checkpoint summary");
+    assert!(!summary.replayed);
+    assert!(matches!(
+        crate::CompanionMemoryInferenceCoordinator::new(
+            &database,
+            &database,
+            &UnavailableInference,
+        )
+        .run_first_round(
+            dispatch.run.id,
+            dispatch.attempt.id,
+            &prompt,
+            &summary.checkpoint.summary.text,
+            &policy,
+            &work.handle,
+            None,
+            TimestampMillis::new(NOW.get() + 12),
+        )
+        .await,
+        Err(crate::CompanionMemoryInferenceError::Inference(
+            PortError::Unavailable
+        ))
+    ));
+    assert_eq!(
+        MemorySummaryRepository::get_summary(&database, memory_space.id)
+            .expect("summary after memory failure")
+            .expect("stored summary after memory failure"),
+        summary.checkpoint.summary
+    );
     let memory_id = MemoryId::new();
     let runner = crate::CompanionMemoryJobRunner::new(
         &ScenarioEmbeddingEngine,
@@ -1052,8 +1161,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             true,
             true,
             lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
+            &summary_prompt,
             &prompt,
-            "",
             &policy,
             Score::from_basis_points(9_000).expect("score"),
             &work.claim,
@@ -1076,6 +1185,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .await
         .expect("run background job");
     assert!(!result.first_round_replayed);
+    assert!(result.summary_replayed);
     assert_eq!(
         result.dispatch.attempt.status,
         DynamicMemoryAttemptStatus::Succeeded
@@ -1085,7 +1195,29 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         result.loop_result.summary.as_deref(),
         Some("stored relationship")
     );
-    assert_eq!(scripted.requests.lock().expect("requests").len(), 2);
+    let requests = scripted.requests.lock().expect("requests");
+    assert_eq!(requests.len(), 4);
+    assert!(requests[0].tools.is_some());
+    assert_eq!(requests[0].profile.tool_policy, ToolPolicy::Required);
+    assert!(requests[1].tools.is_none());
+    assert_eq!(requests[1].profile.tool_policy, ToolPolicy::Disabled);
+    assert!(matches!(
+        requests[1].context.messages.last(),
+        Some(lettuce_conversations::ProviderNeutralMessage {
+            role: MessageRole::User,
+            parts,
+        }) if matches!(parts.as_slice(), [ProviderContextPart::Text { text }] if text == "Return only the final merged summary as plain text. No tools, no JSON, no markdown, no commentary.")
+    ));
+    drop(requests);
+    let stored_summary = MemorySummaryRepository::get_summary(&database, memory_space.id)
+        .expect("summary")
+        .expect("stored summary");
+    assert_eq!(stored_summary.text, "The user told Mira they missed her.");
+    assert_eq!(stored_summary.token_count, 7);
+    assert_eq!(
+        stored_summary.source_message_ids,
+        [user_message_id, finalized.value.assistant_message.id]
+    );
     let stored_memory = MemoryRepository::get(&database, memory_space.id)
         .expect("memory")
         .expect("memory space");

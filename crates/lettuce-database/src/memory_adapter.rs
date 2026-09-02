@@ -308,7 +308,7 @@ fn get_summary_in(
     Ok(Some(summary))
 }
 
-fn compare_and_apply_summary_in(
+pub(super) fn compare_and_apply_summary_in(
     transaction: &Transaction<'_>,
     change: &MemorySummaryChange,
 ) -> Result<MemorySummaryCommit, MemoryRepositoryError> {

@@ -49,6 +49,14 @@ impl EmbeddingService {
             .map_err(Into::into)
     }
 
+    pub fn count_tokens(&self, text: &str) -> Result<u32, EmbeddingServiceError> {
+        self.runtime
+            .lock()
+            .map_err(|_| EmbeddingServiceError::RuntimeLock)?
+            .count_tokens(text)
+            .map_err(Into::into)
+    }
+
     pub fn semantic_duplicate_evidence(
         candidate: &EmbeddingVector,
         existing: &[(MemoryId, EmbeddingVector)],
@@ -82,6 +90,8 @@ impl EmbeddingService {
 pub trait MemoryEmbeddingEngine: Send + Sync {
     fn source_revision(&self) -> &str;
 
+    fn count_tokens(&self, text: &str) -> Result<u32, EmbeddingGenerationError>;
+
     fn embed_memory(
         &self,
         request: &EmbeddingRequest,
@@ -92,6 +102,11 @@ pub trait MemoryEmbeddingEngine: Send + Sync {
 impl MemoryEmbeddingEngine for EmbeddingService {
     fn source_revision(&self) -> &str {
         self.source_revision()
+    }
+
+    fn count_tokens(&self, text: &str) -> Result<u32, EmbeddingGenerationError> {
+        self.count_tokens(text)
+            .map_err(|_| EmbeddingGenerationError::Unavailable)
     }
 
     fn embed_memory(

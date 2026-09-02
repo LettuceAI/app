@@ -17,8 +17,9 @@ pub use port::{
     DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError,
     DynamicMemoryPreparationRepository, DynamicMemoryRecoveredChild, DynamicMemoryRoundCommit,
     DynamicMemoryRoundCommitError, DynamicMemoryRoundCommitResult, DynamicMemoryRoundRepository,
-    DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, MemoryChangeSet, MemoryRepository,
-    MemoryRepositoryError, MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository,
+    DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, DynamicMemorySummaryCheckpoint,
+    DynamicMemorySummaryCommit, MemoryChangeSet, MemoryRepository, MemoryRepositoryError,
+    MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository,
     PersistedMemoryCreatePreparation,
 };
 pub use run::{

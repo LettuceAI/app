@@ -14,8 +14,8 @@ use lettuce_types::{RequestId, TimestampMillis};
 use crate::{
     CompanionMemoryInferenceCoordinator, CompanionMemoryInferenceError,
     CompanionMemoryLoopCoordinator, CompanionMemoryLoopError, CompanionMemoryLoopResult,
-    CompanionMemoryTerminalCoordinator, CompanionMemoryTerminalError,
-    CompanionMemoryTerminalFailure, CompanionPostTurnMemoryAdmission,
+    CompanionMemorySummaryCoordinator, CompanionMemoryTerminalCoordinator,
+    CompanionMemoryTerminalError, CompanionMemoryTerminalFailure, CompanionPostTurnMemoryAdmission,
     CompanionPostTurnMemoryRunCoordinator, CompanionPostTurnMemoryRunDispatch,
     CompanionPostTurnMemoryRunError, MemoryCreateSeed, MemoryEmbeddingEngine,
 };
@@ -24,6 +24,7 @@ use crate::{
 pub struct CompanionMemoryJobRunResult {
     pub dispatch: CompanionPostTurnMemoryRunDispatch,
     pub first_round_replayed: bool,
+    pub summary_replayed: bool,
     pub loop_result: CompanionMemoryLoopResult,
     pub effects: Vec<CompanionTurnEffect>,
 }
@@ -74,8 +75,8 @@ impl<
         time_awareness_enabled: bool,
         supersession_enabled: bool,
         structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
-        prompt: &PromptDocument,
-        previous_summary: &str,
+        summary_prompt: &PromptDocument,
+        memory_prompt: &PromptDocument,
         policy: &lettuce_memory::MemoryPolicy,
         duplicate_threshold: lettuce_memory::Score,
         claim: &Claim,
@@ -98,6 +99,35 @@ impl<
                     handle,
                     now,
                 )?;
+        let summary = match CompanionMemorySummaryCoordinator::new(
+            self.engine,
+            self.repository,
+            self.conversations,
+            self.inference,
+        )
+        .run(
+            dispatch.run.id,
+            dispatch.attempt.id,
+            summary_prompt,
+            handle,
+            stream_sink,
+            now,
+        )
+        .await
+        {
+            Ok(summary) => summary,
+            Err(error) => {
+                CompanionMemoryTerminalCoordinator::new(self.repository).settle_failure(
+                    dispatch.run.id,
+                    dispatch.attempt.id,
+                    &admission.batch,
+                    handle,
+                    CompanionMemoryTerminalFailure::from_inference_error(&error),
+                    now,
+                )?;
+                return Err(CompanionMemoryJobRunError::Inference(error));
+            }
+        };
         let first = match CompanionMemoryInferenceCoordinator::new(
             self.repository,
             self.conversations,
@@ -106,8 +136,8 @@ impl<
         .run_first_round(
             dispatch.run.id,
             dispatch.attempt.id,
-            prompt,
-            previous_summary,
+            memory_prompt,
+            &summary.checkpoint.summary.text,
             policy,
             handle,
             stream_sink,
@@ -167,6 +197,7 @@ impl<
         Ok(CompanionMemoryJobRunResult {
             dispatch,
             first_round_replayed: first.replayed,
+            summary_replayed: summary.replayed,
             loop_result,
             effects: terminal.effects,
         })

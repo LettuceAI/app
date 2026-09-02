@@ -248,6 +248,14 @@ impl OnnxEmbeddingRuntime {
             values,
         })
     }
+
+    pub fn count_tokens(&self, text: &str) -> Result<u32, EmbeddingError> {
+        let encoding = self
+            .tokenizer
+            .encode(text, true)
+            .map_err(|_| EmbeddingError::Tokenization)?;
+        u32::try_from(encoding.len()).map_err(|_| EmbeddingError::InputTooLarge)
+    }
 }
 
 pub(crate) fn spawn_canceller(

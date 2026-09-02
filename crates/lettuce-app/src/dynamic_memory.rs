@@ -1246,6 +1246,11 @@ mod tests {
             "v4-test"
         }
 
+        fn count_tokens(&self, text: &str) -> Result<u32, EmbeddingGenerationError> {
+            u32::try_from(text.split_whitespace().count())
+                .map_err(|_| EmbeddingGenerationError::Unavailable)
+        }
+
         fn embed_memory(
             &self,
             request: &EmbeddingRequest,
