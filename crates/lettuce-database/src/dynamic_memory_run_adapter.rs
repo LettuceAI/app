@@ -114,7 +114,7 @@ fn load_run_in(
         .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
     let mut statement = connection
         .prepare(
-            "SELECT message_id,role,revision_id,candidate_id FROM dynamic_memory_run_source_messages \
+            "SELECT message_id,role,revision_id,candidate_id,effective_time FROM dynamic_memory_run_source_messages \
              WHERE run_id=?1 ORDER BY ordinal",
         )
         .map_err(storage)?;
@@ -135,6 +135,7 @@ fn load_run_in(
                     (None, Some(id)) => MessageRenderSource::Candidate(parse_id(id)?),
                     _ => return Err(rusqlite::Error::InvalidQuery),
                 },
+                effective_time: TimestampMillis::new(row.get(4)?),
             })
         })
         .map_err(storage)?
@@ -617,8 +618,8 @@ impl DynamicMemoryRunRepository for Database {
             transaction
                 .execute(
                     "INSERT INTO dynamic_memory_run_source_messages \
-                     (run_id,conversation_id,message_id,role,revision_id,candidate_id,ordinal) \
-                     VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                     (run_id,conversation_id,message_id,role,revision_id,candidate_id,effective_time,ordinal) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
                     params![
                         requested_run.id.to_string(),
                         requested_run.conversation_id.to_string(),
@@ -630,6 +631,7 @@ impl DynamicMemoryRunRepository for Database {
                         },
                         revision_id,
                         candidate_id,
+                        source.effective_time.get(),
                         i64::try_from(ordinal).map_err(storage)?,
                     ],
                 )
@@ -1387,6 +1389,7 @@ mod tests {
                             lettuce_conversations::MessageRole::Assistant
                         },
                         render_source: MessageRenderSource::Revision(revision_id),
+                        effective_time: TimestampMillis::new(i64::from(ordinal as u16) + 1),
                     },
                 )
                 .collect(),
@@ -1517,6 +1520,9 @@ mod tests {
                     text: "The user prefers tea".into(),
                     category: MemoryCategory::Preference,
                     source_message_id: Some(messages[0].message_id),
+                    source_role: None,
+                    observed_at: None,
+                    observed_time_precision: None,
                     token_count: 4,
                     is_cold: false,
                     is_pinned: false,
@@ -1691,6 +1697,9 @@ mod tests {
                             text: "The user prefers tea".into(),
                             category: MemoryCategory::Preference,
                             source_message_id: Some(messages[0].message_id),
+                            source_role: None,
+                            observed_at: None,
+                            observed_time_precision: None,
                             token_count: 4,
                             is_cold: false,
                             is_pinned: false,

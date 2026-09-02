@@ -10,7 +10,7 @@ use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use crate::Database;
 
 const SELECT_ITEM: &str = "
-    SELECT id, text, category, source_message_id, token_count, is_cold, is_pinned,
+    SELECT id, text, category, source_message_id, source_role, observed_at, observed_time_precision, token_count, is_cold, is_pinned,
            importance, persistence_importance, prompt_importance, volatility,
            access_count, created_at, last_accessed_at
       FROM memory_items
@@ -72,10 +72,10 @@ pub(super) fn insert_items(
         transaction
             .execute(
                 "INSERT INTO memory_items (
-                    space_id, id, ordinal, text, category, source_message_id, token_count, is_cold, is_pinned,
+                    space_id, id, ordinal, text, category, source_message_id, source_role, observed_at, observed_time_precision, token_count, is_cold, is_pinned,
                     importance, persistence_importance, prompt_importance, volatility,
                     access_count, created_at, last_accessed_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
                 params![
                     space_id.to_string(),
                     item.id.to_string(),
@@ -83,6 +83,13 @@ pub(super) fn insert_items(
                     item.text,
                     category_name(item.category),
                     item.source_message_id.map(|id| id.to_string()),
+                    item.source_role.map(|role| match role {
+                        lettuce_conversations::MessageRole::User => "user",
+                        lettuce_conversations::MessageRole::Assistant => "assistant",
+                        _ => "invalid",
+                    }),
+                    item.observed_at.map(TimestampMillis::get),
+                    item.observed_time_precision,
                     i64::from(item.token_count),
                     item.is_cold,
                     item.is_pinned,
@@ -150,16 +157,27 @@ pub(super) fn get_in(
                     .map_err(storage)?
                     .map(parse_id)
                     .transpose()?,
-                token_count: row.get(4).map_err(storage)?,
-                is_cold: row.get(5).map_err(storage)?,
-                is_pinned: row.get(6).map_err(storage)?,
-                importance: parse_score(row.get(7).map_err(storage)?)?,
-                persistence_importance: parse_score(row.get(8).map_err(storage)?)?,
-                prompt_importance: parse_score(row.get(9).map_err(storage)?)?,
-                volatility: parse_score(row.get(10).map_err(storage)?)?,
-                access_count: row.get(11).map_err(storage)?,
-                created_at: TimestampMillis::new(row.get(12).map_err(storage)?),
-                last_accessed_at: TimestampMillis::new(row.get(13).map_err(storage)?),
+                source_role: match row.get::<_, Option<String>>(4).map_err(storage)?.as_deref() {
+                    Some("user") => Some(lettuce_conversations::MessageRole::User),
+                    Some("assistant") => Some(lettuce_conversations::MessageRole::Assistant),
+                    None => None,
+                    _ => return Err(storage("invalid memory source role")),
+                },
+                observed_at: row
+                    .get::<_, Option<i64>>(5)
+                    .map_err(storage)?
+                    .map(TimestampMillis::new),
+                observed_time_precision: row.get(6).map_err(storage)?,
+                token_count: row.get(7).map_err(storage)?,
+                is_cold: row.get(8).map_err(storage)?,
+                is_pinned: row.get(9).map_err(storage)?,
+                importance: parse_score(row.get(10).map_err(storage)?)?,
+                persistence_importance: parse_score(row.get(11).map_err(storage)?)?,
+                prompt_importance: parse_score(row.get(12).map_err(storage)?)?,
+                volatility: parse_score(row.get(13).map_err(storage)?)?,
+                access_count: row.get(14).map_err(storage)?,
+                created_at: TimestampMillis::new(row.get(15).map_err(storage)?),
+                last_accessed_at: TimestampMillis::new(row.get(16).map_err(storage)?),
             });
         }
         items
@@ -315,6 +333,9 @@ mod tests {
             text: text.to_owned(),
             category: MemoryCategory::Other,
             source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
             token_count: 3,
             is_cold: false,
             is_pinned: false,
@@ -342,6 +363,9 @@ mod tests {
         let space_id = MemorySpaceId::new();
         let mut first = item(MemoryId::new(), "first");
         first.source_message_id = Some(MessageId::new());
+        first.source_role = Some(lettuce_conversations::MessageRole::User);
+        first.observed_at = Some(TimestampMillis::new(42));
+        first.observed_time_precision = Some("turn".to_owned());
         let created = database
             .create(snapshot(space_id, vec![first.clone()]))
             .expect("create");

@@ -65,6 +65,7 @@ pub struct DynamicMemorySourceMessage {
     pub message_id: MessageId,
     pub role: lettuce_conversations::MessageRole,
     pub render_source: MessageRenderSource,
+    pub effective_time: TimestampMillis,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

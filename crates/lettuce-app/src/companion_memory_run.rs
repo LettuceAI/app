@@ -228,8 +228,15 @@ fn resolve_source_messages<C: ConversationReader + ?Sized>(
         .map_err(CompanionPostTurnMemoryRunError::Conversation)?;
 
     let expected_ids = expected.iter().map(|(id, _)| *id).collect::<HashSet<_>>();
-    let mut found =
-        HashMap::<MessageId, (MessageRole, MessageVisibility, MessageRenderSource)>::new();
+    let mut found = HashMap::<
+        MessageId,
+        (
+            MessageRole,
+            MessageVisibility,
+            MessageRenderSource,
+            TimestampMillis,
+        ),
+    >::new();
     let mut cursor = None;
     let mut seen_cursors = HashSet::new();
     loop {
@@ -251,6 +258,7 @@ fn resolve_source_messages<C: ConversationReader + ?Sized>(
                         item.message.role,
                         item.message.visibility,
                         item.message.active_render_source,
+                        item.message.effective_time,
                     ),
                 );
             }
@@ -270,7 +278,7 @@ fn resolve_source_messages<C: ConversationReader + ?Sized>(
     expected
         .into_iter()
         .map(|(message_id, expected_role)| {
-            let (role, visibility, render_source) = found
+            let (role, visibility, render_source, effective_time) = found
                 .get(&message_id)
                 .copied()
                 .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?;
@@ -281,6 +289,7 @@ fn resolve_source_messages<C: ConversationReader + ?Sized>(
                 message_id,
                 role,
                 render_source,
+                effective_time,
             })
         })
         .collect()
@@ -917,13 +926,40 @@ mod tests {
                 .run
                 .source_messages
                 .iter()
-                .map(|source| (source.message_id, source.role, source.render_source))
+                .map(|source| {
+                    (
+                        source.message_id,
+                        source.role,
+                        source.render_source,
+                        source.effective_time,
+                    )
+                })
                 .collect::<Vec<_>>(),
             vec![
-                (user_one, MessageRole::User, sources[0]),
-                (assistant_one, MessageRole::Assistant, sources[1]),
-                (user_two, MessageRole::User, sources[2]),
-                (assistant_two, MessageRole::Assistant, sources[3]),
+                (
+                    user_one,
+                    MessageRole::User,
+                    sources[0],
+                    TimestampMillis::new(1)
+                ),
+                (
+                    assistant_one,
+                    MessageRole::Assistant,
+                    sources[1],
+                    TimestampMillis::new(1),
+                ),
+                (
+                    user_two,
+                    MessageRole::User,
+                    sources[2],
+                    TimestampMillis::new(1)
+                ),
+                (
+                    assistant_two,
+                    MessageRole::Assistant,
+                    sources[3],
+                    TimestampMillis::new(1),
+                ),
             ]
         );
         assert_eq!(first.attempt.status, DynamicMemoryAttemptStatus::Processing);

@@ -289,6 +289,8 @@ pub struct MemoryToolCall {
     pub execution_id: ToolExecutionId,
     pub arguments: MemoryToolArguments,
     pub create: Option<CreateMemoryPreparation>,
+    pub source_role: Option<lettuce_conversations::MessageRole>,
+    pub observed_at: Option<TimestampMillis>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -393,6 +395,7 @@ impl MemoryToolReducer {
                         *category,
                         *important,
                         *source_message_id,
+                        (call.source_role, call.observed_at),
                         call.create.clone(),
                     ),
                     MemoryToolArguments::DeleteMemory { id, confidence } => apply_delete(
@@ -446,8 +449,13 @@ fn apply_create(
     category: MemoryCategory,
     important: bool,
     source_message_id: Option<MessageId>,
+    observed_context: (
+        Option<lettuce_conversations::MessageRole>,
+        Option<TimestampMillis>,
+    ),
     preparation: Option<CreateMemoryPreparation>,
 ) -> MemoryToolOutcome {
+    let (source_role, observed_at) = observed_context;
     let Some(preparation) = preparation else {
         return MemoryToolOutcome::Rejected {
             reason: MemoryToolRejection::CreateNotPrepared,
@@ -476,6 +484,9 @@ fn apply_create(
         text: text.to_string(),
         category,
         source_message_id,
+        source_role,
+        observed_at,
+        observed_time_precision: observed_at.map(|_| "turn".to_owned()),
         token_count: preparation.token_count,
         is_cold: false,
         is_pinned: important,
@@ -739,6 +750,9 @@ mod tests {
             text: text.to_string(),
             category: MemoryCategory::Other,
             source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
             token_count: tokens,
             is_cold: false,
             is_pinned: pinned,
@@ -765,6 +779,8 @@ mod tests {
             execution_id: ToolExecutionId::new(),
             arguments,
             create: None,
+            source_role: None,
+            observed_at: None,
         }
     }
 

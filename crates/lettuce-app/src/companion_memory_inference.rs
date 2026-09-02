@@ -1,3 +1,4 @@
+use chrono::{Local, LocalResult, TimeZone};
 use lettuce_context::{
     LifecycleStatus, PromptDocument, PromptEntryChatMode, PromptEntryInfoSource, PromptEntryRole,
     PromptPurpose, PromptRenderContext, PromptRenderError, PromptRenderValues, PromptVariable,
@@ -229,7 +230,9 @@ fn validate_ownership(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MaterializedSource {
+    message_id: lettuce_types::MessageId,
     role: MessageRole,
+    effective_time: TimestampMillis,
     text: String,
 }
 
@@ -271,7 +274,9 @@ fn materialize_sources<C: ConversationReader + ?Sized>(
                 .collect::<Vec<_>>()
                 .join("\n");
             Ok(MaterializedSource {
+                message_id: source.message_id,
                 role: source.role,
+                effective_time: source.effective_time,
                 text,
             })
         })
@@ -322,7 +327,19 @@ fn build_first_request(
                 MessageRole::Assistant => "assistant",
                 _ => unreachable!("source roles were validated"),
             };
-            format!("{role}: {}", source.text)
+            if run.time_awareness_enabled {
+                let timestamp = format_message_timestamp(source.effective_time);
+                if source.text.is_empty() {
+                    format!("[message:{}] {role}: {timestamp}", source.message_id)
+                } else {
+                    format!(
+                        "[message:{}] {role}: {timestamp} {}",
+                        source.message_id, source.text
+                    )
+                }
+            } else {
+                format!("{role}: {}", source.text)
+            }
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -458,6 +475,14 @@ fn build_first_request(
         .validate()
         .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
     Ok(request)
+}
+
+fn format_message_timestamp(effective_time: TimestampMillis) -> String {
+    let datetime = match Local.timestamp_millis_opt(effective_time.get()) {
+        LocalResult::Single(datetime) | LocalResult::Ambiguous(datetime, _) => datetime,
+        LocalResult::None => Local::now(),
+    };
+    format!("<time>{}</time>", datetime.format("%Y-%m-%d %H:%M"))
 }
 
 fn rendered_message(
@@ -712,11 +737,13 @@ mod tests {
                         message_id: MessageId::new(),
                         role: MessageRole::User,
                         render_source: MessageRenderSource::Revision(MessageRevisionId::new()),
+                        effective_time: now,
                     },
                     lettuce_memory::DynamicMemorySourceMessage {
                         message_id: MessageId::new(),
                         role: MessageRole::Assistant,
                         render_source: MessageRenderSource::Candidate(MessageCandidateId::new()),
+                        effective_time: now,
                     },
                 ],
                 profile: profile(),
@@ -763,6 +790,9 @@ mod tests {
                 text: "The user prefers tea.".into(),
                 category: MemoryCategory::Preference,
                 source_message_id: Some(run.source_messages[0].message_id),
+                source_role: None,
+                observed_at: None,
+                observed_time_precision: None,
                 token_count: 7,
                 is_cold: false,
                 is_pinned: false,
@@ -782,6 +812,20 @@ mod tests {
             delete_confidence_default: Score::HARD_DELETE_THRESHOLD,
             max_hard_delete_ratio_per_cycle: Score::FULL,
         };
+        let sources = [
+            MaterializedSource {
+                message_id: run.source_messages[0].message_id,
+                role: MessageRole::User,
+                effective_time: run.source_messages[0].effective_time,
+                text: "Hello".into(),
+            },
+            MaterializedSource {
+                message_id: run.source_messages[1].message_id,
+                role: MessageRole::Assistant,
+                effective_time: run.source_messages[1].effective_time,
+                text: "Hi".into(),
+            },
+        ];
         let request = build_first_request(
             &run,
             &attempt,
@@ -789,16 +833,7 @@ mod tests {
             "Prior summary.",
             &policy,
             &memory,
-            &[
-                MaterializedSource {
-                    role: MessageRole::User,
-                    text: "Hello".into(),
-                },
-                MaterializedSource {
-                    role: MessageRole::Assistant,
-                    text: "Hi".into(),
-                },
-            ],
+            &sources,
             false,
             2,
             &handle,
@@ -844,6 +879,98 @@ mod tests {
         );
         assert_eq!(request.tools, Some(dynamic_memory_tool_request()));
         assert_eq!(request.cancellation, Some(handle.id()));
+
+        let group_request = build_first_request(
+            &run,
+            &attempt,
+            &prompt,
+            "Prior summary.",
+            &policy,
+            &memory,
+            &sources,
+            true,
+            2,
+            &handle,
+            None,
+        )
+        .expect("group request");
+        let group_runtime = match &group_request
+            .context
+            .messages
+            .last()
+            .expect("group runtime input")
+            .parts[..]
+        {
+            [ProviderContextPart::Text { text }] => text,
+            _ => panic!("text-only group runtime input"),
+        };
+        assert!(group_runtime.contains("Recent transcript lines:\nuser: Hello\nassistant: Hi"));
+        assert!(!group_runtime.contains("[message:"));
+
+        let mut time_aware_run = run.clone();
+        time_aware_run.time_awareness_enabled = true;
+        time_aware_run.tool_request =
+            lettuce_memory::dynamic_memory_tool_request_with_source_requirement(true);
+        let sources = [
+            MaterializedSource {
+                message_id: time_aware_run.source_messages[0].message_id,
+                role: MessageRole::User,
+                effective_time: time_aware_run.source_messages[0].effective_time,
+                text: "Hello".into(),
+            },
+            MaterializedSource {
+                message_id: time_aware_run.source_messages[1].message_id,
+                role: MessageRole::Assistant,
+                effective_time: time_aware_run.source_messages[1].effective_time,
+                text: String::new(),
+            },
+        ];
+        let request = build_first_request(
+            &time_aware_run,
+            &attempt,
+            &prompt,
+            "Prior summary.",
+            &policy,
+            &memory,
+            &sources,
+            false,
+            2,
+            &handle,
+            None,
+        )
+        .expect("time-aware request");
+        let runtime_input = match &request
+            .context
+            .messages
+            .last()
+            .expect("runtime input")
+            .parts[..]
+        {
+            [ProviderContextPart::Text { text }] => text,
+            _ => panic!("text-only runtime input"),
+        };
+        for source in &sources {
+            let prefix = format!(
+                "[message:{}] {}: {}",
+                source.message_id,
+                match source.role {
+                    MessageRole::User => "user",
+                    MessageRole::Assistant => "assistant",
+                    _ => unreachable!(),
+                },
+                format_message_timestamp(source.effective_time)
+            );
+            let expected = if source.text.is_empty() {
+                prefix
+            } else {
+                format!("{prefix} {}", source.text)
+            };
+            assert!(runtime_input.contains(&expected));
+        }
+        assert_eq!(
+            request.tools,
+            Some(lettuce_memory::dynamic_memory_tool_request_with_source_requirement(true))
+        );
     }
 
     #[test]

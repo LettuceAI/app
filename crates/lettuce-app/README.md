@@ -100,9 +100,10 @@ and keeps create IDs, token counts, and timestamps as explicit caller inputs.
 The run freezes whether companion time awareness is enabled and uses the matching
 legacy tool contract. In enabled runs, a known create source is retained and an
 unknown or omitted ID falls back to the latest frozen user/assistant source. In
-disabled runs, source attribution is cleared. Freezing source effective times,
-timestamped transcript rendering, and observed time/role persistence remain the
-next temporal-memory slice.
+disabled runs, source attribution is cleared. Each source effective time is
+frozen with the run; enabled transcript lines use the copied legacy
+`[message:ID] role: <time>YYYY-MM-DD HH:MM</time> content` format, and created
+memories persist the selected role, observed time, and `turn` precision.
 The existing eight-round and 64-call admission limits remain authoritative.
 Terminal success now feeds the run's durable starting snapshot and current
 memory snapshot into the existing companion effect coordinator, settles every

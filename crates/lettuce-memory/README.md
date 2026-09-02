@@ -60,9 +60,12 @@ semantic evidence from the terminal parent.
 Background post-turn extraction now has a separate memory-owned durable run
 boundary instead of fabricating a visible conversation generation turn. A run
 freezes the authoritative starting memory snapshot, ordered source-message
-roles and active revision/candidate window, complete resolved model/profile snapshot,
+roles, effective times, and active revision/candidate window, complete resolved model/profile snapshot,
 frozen companion time-awareness mode, and its matching required dynamic-memory
 tool contract. Time-aware runs require source attribution; other runs keep it optional.
+Created time-aware memories retain the selected source role, observed effective
+time, and legacy `turn` precision together; non-time-aware memory keeps those
+temporal fields empty.
 Retryable attempts own CAS lifecycle state and immutable ordered
 provider rounds/calls. Each round also freezes the exact provider-neutral
 request context used for its inference, so continuation and recovery do not

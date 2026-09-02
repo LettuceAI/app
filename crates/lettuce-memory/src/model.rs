@@ -62,6 +62,9 @@ pub struct MemoryItem {
     pub text: String,
     pub category: MemoryCategory,
     pub source_message_id: Option<MessageId>,
+    pub source_role: Option<lettuce_conversations::MessageRole>,
+    pub observed_at: Option<TimestampMillis>,
+    pub observed_time_precision: Option<String>,
     pub token_count: u32,
     pub is_cold: bool,
     pub is_pinned: bool,
@@ -79,6 +82,19 @@ impl MemoryItem {
         validate_memory_text(&self.text)?;
         if self.is_pinned && self.is_cold {
             return Err(MemoryValidationError::PinnedCold);
+        }
+        if self.source_role.is_some() != self.observed_at.is_some()
+            || self.observed_time_precision.as_deref() != self.observed_at.map(|_| "turn")
+            || (self.observed_at.is_some() && self.source_message_id.is_none())
+            || self.source_role.is_some_and(|role| {
+                !matches!(
+                    role,
+                    lettuce_conversations::MessageRole::User
+                        | lettuce_conversations::MessageRole::Assistant
+                )
+            })
+        {
+            return Err(MemoryValidationError::InvalidTemporalAttribution);
         }
         Ok(())
     }
@@ -140,6 +156,8 @@ pub enum MemoryValidationError {
     InvalidScore,
     #[error("pinned memory cannot be cold")]
     PinnedCold,
+    #[error("memory temporal attribution is inconsistent")]
+    InvalidTemporalAttribution,
     #[error("memory space contains duplicate item ids")]
     DuplicateItemId,
     #[error("memory space contains too many items")]

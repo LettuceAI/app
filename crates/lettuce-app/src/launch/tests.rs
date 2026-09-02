@@ -1087,6 +1087,19 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .expect("memory")
         .expect("memory space");
     assert_eq!(stored_memory.items[0].id, memory_id);
+    assert_eq!(
+        stored_memory.items[0].source_message_id,
+        Some(user_message_id)
+    );
+    assert_eq!(stored_memory.items[0].source_role, Some(MessageRole::User));
+    assert_eq!(
+        stored_memory.items[0].observed_at,
+        Some(TimestampMillis::new(NOW.get() + 1))
+    );
+    assert_eq!(
+        stored_memory.items[0].observed_time_precision.as_deref(),
+        Some("turn")
+    );
     let terminal = crate::CompanionMemoryTerminalCoordinator::new(&database);
     let replayed = terminal
         .settle_success(
@@ -1226,6 +1239,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 message_id: continued_source.message.id,
                 role: continued_source.message.role,
                 render_source: continued_source.message.active_render_source,
+                effective_time: continued_source.message.effective_time,
             }],
             profile,
             time_awareness_enabled: false,
@@ -2969,6 +2983,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
                 message_id: source.message.id,
                 role: source.message.role,
                 render_source: source.message.active_render_source,
+                effective_time: source.message.effective_time,
             }],
             profile,
             time_awareness_enabled: false,

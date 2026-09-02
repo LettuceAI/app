@@ -21,6 +21,9 @@ CREATE TABLE memory_items (
         'world_detail', 'preference', 'other'
     )),
     source_message_id TEXT,
+    source_role TEXT CHECK (source_role IN ('user','assistant')),
+    observed_at INTEGER,
+    observed_time_precision TEXT CHECK (observed_time_precision = 'turn'),
     token_count INTEGER NOT NULL CHECK (token_count BETWEEN 0 AND 4294967295),
     is_cold INTEGER NOT NULL CHECK (is_cold IN (0, 1)),
     is_pinned INTEGER NOT NULL CHECK (is_pinned IN (0, 1)),
@@ -33,7 +36,11 @@ CREATE TABLE memory_items (
     last_accessed_at INTEGER NOT NULL,
     PRIMARY KEY (space_id, id),
     UNIQUE (space_id, ordinal),
-    CHECK (NOT (is_pinned = 1 AND is_cold = 1))
+    CHECK (NOT (is_pinned = 1 AND is_cold = 1)),
+    CHECK (
+        (source_role IS NULL AND observed_at IS NULL AND observed_time_precision IS NULL)
+        OR (source_message_id IS NOT NULL AND source_role IS NOT NULL AND observed_at IS NOT NULL AND observed_time_precision = 'turn')
+    )
 ) STRICT;
 
 CREATE INDEX memory_items_space_policy_idx
@@ -137,6 +144,7 @@ CREATE TABLE dynamic_memory_run_source_messages (
     role TEXT NOT NULL CHECK (role IN ('user','assistant')),
     revision_id TEXT,
     candidate_id TEXT,
+    effective_time INTEGER NOT NULL,
     ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 1023),
     PRIMARY KEY (run_id, ordinal),
     UNIQUE (run_id, message_id),

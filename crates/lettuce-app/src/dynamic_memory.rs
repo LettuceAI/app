@@ -1169,6 +1169,8 @@ fn prepare_calls(
             execution_id: execution.id,
             arguments,
             create,
+            source_role: None,
+            observed_at: None,
         });
         previous_ordinal = Some(execution.ordinal);
     }
@@ -1308,6 +1310,9 @@ mod tests {
             text: text.to_owned(),
             category: MemoryCategory::Other,
             source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
             token_count: 3,
             is_cold: false,
             is_pinned: false,

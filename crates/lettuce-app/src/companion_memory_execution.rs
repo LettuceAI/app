@@ -180,6 +180,8 @@ fn prepare_background_calls(
             return Err(CompanionMemoryRoundExecutionError::InvalidOwnership);
         }
         let mut arguments = MemoryToolArguments::parse(&call.call.name, &call.call.arguments)?;
+        let mut source_role = None;
+        let mut observed_at = None;
         if let MemoryToolArguments::CreateMemory {
             source_message_id, ..
         } = &mut arguments
@@ -195,6 +197,12 @@ fn prepare_background_calls(
                             .message_id,
                     );
                 }
+                let source = sources
+                    .iter()
+                    .find(|source| Some(source.message_id) == *source_message_id)
+                    .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership)?;
+                source_role = Some(source.role);
+                observed_at = Some(source.effective_time);
             } else {
                 *source_message_id = None;
             }
@@ -212,6 +220,8 @@ fn prepare_background_calls(
             execution_id: call.id,
             arguments,
             create,
+            source_role,
+            observed_at,
         });
     }
     if !preparations.is_empty() {
@@ -362,6 +372,7 @@ mod tests {
                         render_source: lettuce_conversations::MessageRenderSource::Revision(
                             lettuce_types::MessageRevisionId::new(),
                         ),
+                        effective_time: TimestampMillis::new(1),
                     }],
                     true,
                     &prepared,
@@ -389,6 +400,12 @@ mod tests {
             .find(|item| item.category == MemoryCategory::Preference)
             .expect("created memory");
         assert_eq!(created.source_message_id, Some(source_id));
+        assert_eq!(
+            created.source_role,
+            Some(lettuce_conversations::MessageRole::User)
+        );
+        assert_eq!(created.observed_at, Some(TimestampMillis::new(1)));
+        assert_eq!(created.observed_time_precision.as_deref(), Some("turn"));
     }
 
     #[test]
@@ -433,6 +450,7 @@ mod tests {
                 render_source: lettuce_conversations::MessageRenderSource::Revision(
                     lettuce_types::MessageRevisionId::new(),
                 ),
+                effective_time: TimestampMillis::new(1),
             }
         });
         let calls = prepare_background_calls(
@@ -459,6 +477,11 @@ mod tests {
                 ..
             } if id == latest_source
         ));
+        assert_eq!(
+            calls[0].source_role,
+            Some(lettuce_conversations::MessageRole::User)
+        );
+        assert_eq!(calls[0].observed_at, Some(TimestampMillis::new(1)));
 
         let unanchored = evidence(
             run_id,
@@ -492,6 +515,11 @@ mod tests {
                 ..
             } if id == latest_source
         ));
+        assert_eq!(
+            calls[0].source_role,
+            Some(lettuce_conversations::MessageRole::User)
+        );
+        assert_eq!(calls[0].observed_at, Some(TimestampMillis::new(1)));
 
         let calls = prepare_background_calls(
             &round,
@@ -516,5 +544,7 @@ mod tests {
                 ..
             }
         ));
+        assert_eq!(calls[0].source_role, None);
+        assert_eq!(calls[0].observed_at, None);
     }
 }
