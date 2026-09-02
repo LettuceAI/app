@@ -2,9 +2,10 @@ use std::str::FromStr;
 
 use lettuce_memory::{
     MemoryCategory, MemoryChangeSet, MemoryItem, MemoryRepository, MemoryRepositoryError,
-    MemorySpaceSnapshot, Score,
+    MemorySpaceSnapshot, MemorySummary, MemorySummaryChange, MemorySummaryCommit,
+    MemorySummaryRepository, Score,
 };
-use lettuce_types::{ConversationId, MemorySpaceId, Revision, TimestampMillis};
+use lettuce_types::{ConversationId, MemorySpaceId, MessageId, Revision, TimestampMillis};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::Database;
@@ -251,6 +252,157 @@ pub(super) fn compare_and_apply_in(
     get_in(transaction, change.space_id)?.ok_or(MemoryRepositoryError::NotFound)
 }
 
+fn get_summary_in(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+) -> Result<Option<MemorySummary>, MemoryRepositoryError> {
+    let row = transaction
+        .query_row(
+            "SELECT text, token_count, window_start, window_end, updated_at
+               FROM memory_summaries
+              WHERE space_id = ?1",
+            [space_id.to_string()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((text, token_count, window_start, window_end, updated_at)) = row else {
+        return Ok(None);
+    };
+    let source_message_ids = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT message_id
+                   FROM memory_summary_source_messages
+                  WHERE space_id = ?1
+                  ORDER BY ordinal",
+            )
+            .map_err(storage)?;
+        let mut rows = statement.query([space_id.to_string()]).map_err(storage)?;
+        let mut ids = Vec::new();
+        while let Some(row) = rows.next().map_err(storage)? {
+            ids.push(parse_id::<MessageId>(
+                row.get::<_, String>(0).map_err(storage)?,
+            )?);
+        }
+        ids
+    };
+    let summary = MemorySummary {
+        space_id,
+        text,
+        token_count: u32::try_from(token_count).map_err(storage)?,
+        window_start: u64::try_from(window_start).map_err(storage)?,
+        window_end: u64::try_from(window_end).map_err(storage)?,
+        source_message_ids,
+        updated_at: TimestampMillis::new(updated_at),
+    };
+    summary.validate()?;
+    Ok(Some(summary))
+}
+
+fn compare_and_apply_summary_in(
+    transaction: &Transaction<'_>,
+    change: &MemorySummaryChange,
+) -> Result<MemorySummaryCommit, MemoryRepositoryError> {
+    change.validate()?;
+    let space_id = change.summary.space_id;
+    let current_revision = transaction
+        .query_row(
+            "SELECT revision FROM memory_spaces WHERE id = ?1",
+            [space_id.to_string()],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(storage)?
+        .ok_or(MemoryRepositoryError::NotFound)?;
+    if parse_revision(current_revision)? != change.expected_revision {
+        return Err(MemoryRepositoryError::Conflict);
+    }
+    let conversation_id = transaction
+        .query_row(
+            "SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = ?1",
+            [space_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage)?
+        .ok_or(MemoryRepositoryError::NotFound)?;
+    transaction
+        .execute(
+            "DELETE FROM memory_summary_source_messages WHERE space_id = ?1",
+            [space_id.to_string()],
+        )
+        .map_err(storage)?;
+    transaction
+        .execute(
+            "INSERT INTO memory_summaries (
+                space_id, conversation_id, text, token_count,
+                window_start, window_end, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(space_id) DO UPDATE SET
+                conversation_id = excluded.conversation_id,
+                text = excluded.text,
+                token_count = excluded.token_count,
+                window_start = excluded.window_start,
+                window_end = excluded.window_end,
+                updated_at = excluded.updated_at",
+            params![
+                space_id.to_string(),
+                conversation_id,
+                change.summary.text,
+                i64::from(change.summary.token_count),
+                i64::try_from(change.summary.window_start).map_err(storage)?,
+                i64::try_from(change.summary.window_end).map_err(storage)?,
+                change.summary.updated_at.get(),
+            ],
+        )
+        .map_err(storage)?;
+    for (ordinal, message_id) in change.summary.source_message_ids.iter().enumerate() {
+        transaction
+            .execute(
+                "INSERT INTO memory_summary_source_messages (
+                    space_id, conversation_id, message_id, ordinal
+                 ) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    space_id.to_string(),
+                    conversation_id,
+                    message_id.to_string(),
+                    i64::try_from(ordinal).map_err(storage)?,
+                ],
+            )
+            .map_err(storage)?;
+    }
+    let next_revision = change
+        .expected_revision
+        .next()
+        .map_err(|_| MemoryRepositoryError::Conflict)?;
+    let updated = transaction
+        .execute(
+            "UPDATE memory_spaces SET revision = ?2 WHERE id = ?1 AND revision = ?3",
+            params![
+                space_id.to_string(),
+                sql_revision(next_revision)?,
+                sql_revision(change.expected_revision)?,
+            ],
+        )
+        .map_err(storage)?;
+    if updated != 1 {
+        return Err(MemoryRepositoryError::Conflict);
+    }
+    let memory = get_in(transaction, space_id)?.ok_or(MemoryRepositoryError::NotFound)?;
+    let summary =
+        get_summary_in(transaction, space_id)?.ok_or_else(|| storage("missing summary"))?;
+    Ok(MemorySummaryCommit { memory, summary })
+}
+
 impl MemoryRepository for Database {
     fn create(
         &self,
@@ -333,11 +485,39 @@ impl MemoryRepository for Database {
     }
 }
 
+impl MemorySummaryRepository for Database {
+    fn get_summary(
+        &self,
+        space_id: MemorySpaceId,
+    ) -> Result<Option<MemorySummary>, MemoryRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
+        let summary = get_summary_in(&transaction, space_id)?;
+        transaction.commit().map_err(storage)?;
+        Ok(summary)
+    }
+
+    fn compare_and_apply_summary(
+        &self,
+        change: MemorySummaryChange,
+    ) -> Result<MemorySummaryCommit, MemoryRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let commit = compare_and_apply_summary_in(&transaction, &change)?;
+        transaction.commit().map_err(storage)?;
+        Ok(commit)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use lettuce_memory::{
         MemoryCategory, MemoryChangeSet, MemoryItem, MemoryRepository, MemoryRepositoryError,
-        MemorySpaceSnapshot, Score,
+        MemorySpaceSnapshot, MemorySummary, MemorySummaryChange, MemorySummaryRepository, Score,
     };
     use lettuce_types::{MemoryId, MemorySpaceId, MessageId, Revision, TimestampMillis};
 
@@ -444,5 +624,94 @@ mod tests {
             Err(MemoryRepositoryError::Failure(_))
         ));
         assert_eq!(database.get(second_space_id).expect("get"), None);
+    }
+
+    #[test]
+    fn summary_cas_persists_ordered_cursor_and_advances_root_revision() {
+        let database = Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("fixture mode");
+        let space_id = MemorySpaceId::new();
+        let created = database
+            .create(snapshot(space_id, vec![item(MemoryId::new(), "memory")]))
+            .expect("create");
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                rusqlite::params!["conversation", space_id.to_string()],
+            )
+            .expect("binding");
+        let source_message_ids = vec![MessageId::new(), MessageId::new()];
+        let summary = MemorySummary {
+            space_id,
+            text: "Mira learned the route.".to_owned(),
+            token_count: 6,
+            window_start: 0,
+            window_end: 2,
+            source_message_ids,
+            updated_at: TimestampMillis::new(50),
+        };
+        let committed = database
+            .compare_and_apply_summary(MemorySummaryChange {
+                expected_revision: created.revision,
+                summary: summary.clone(),
+            })
+            .expect("summary commit");
+        assert_eq!(committed.memory.revision, Revision::new(2));
+        assert_eq!(committed.memory.items, created.items);
+        assert_eq!(committed.summary, summary);
+        assert_eq!(database.get_summary(space_id).expect("get"), Some(summary));
+    }
+
+    #[test]
+    fn stale_summary_cas_preserves_current_summary() {
+        let database = Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("fixture mode");
+        let space_id = MemorySpaceId::new();
+        let created = database.create(snapshot(space_id, vec![])).expect("create");
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                rusqlite::params!["conversation", space_id.to_string()],
+            )
+            .expect("binding");
+        let source_id = MessageId::new();
+        let current = MemorySummary {
+            space_id,
+            text: "Current summary".to_owned(),
+            token_count: 2,
+            window_start: 0,
+            window_end: 1,
+            source_message_ids: vec![source_id],
+            updated_at: TimestampMillis::new(10),
+        };
+        database
+            .compare_and_apply_summary(MemorySummaryChange {
+                expected_revision: created.revision,
+                summary: current.clone(),
+            })
+            .expect("first commit");
+        assert_eq!(
+            database.compare_and_apply_summary(MemorySummaryChange {
+                expected_revision: created.revision,
+                summary: MemorySummary {
+                    text: "Stale summary".to_owned(),
+                    ..current.clone()
+                },
+            }),
+            Err(MemoryRepositoryError::Conflict)
+        );
+        assert_eq!(database.get_summary(space_id).expect("get"), Some(current));
     }
 }

@@ -9,7 +9,8 @@ mod structured_fallback;
 mod tool;
 
 pub use model::{
-    MemoryCategory, MemoryItem, MemoryPolicy, MemorySpaceSnapshot, MemoryValidationError, Score,
+    MAX_MEMORY_SUMMARY_BYTES, MAX_MEMORY_SUMMARY_SOURCE_MESSAGES, MemoryCategory, MemoryItem,
+    MemoryPolicy, MemorySpaceSnapshot, MemorySummary, MemoryValidationError, Score,
 };
 pub use port::{
     DynamicMemoryBackgroundRoundCommit, DynamicMemoryBackgroundRoundSettlement,
@@ -17,7 +18,8 @@ pub use port::{
     DynamicMemoryPreparationRepository, DynamicMemoryRecoveredChild, DynamicMemoryRoundCommit,
     DynamicMemoryRoundCommitError, DynamicMemoryRoundCommitResult, DynamicMemoryRoundRepository,
     DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, MemoryChangeSet, MemoryRepository,
-    MemoryRepositoryError, PersistedMemoryCreatePreparation,
+    MemoryRepositoryError, MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository,
+    PersistedMemoryCreatePreparation,
 };
 pub use run::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,

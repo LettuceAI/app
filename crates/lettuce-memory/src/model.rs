@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_MEMORY_TEXT_BYTES: usize = 16 * 1024;
 pub const MAX_MEMORY_ITEMS: usize = 4096;
+pub const MAX_MEMORY_SUMMARY_BYTES: usize = 6000;
+pub const MAX_MEMORY_SUMMARY_SOURCE_MESSAGES: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -135,6 +137,43 @@ impl MemorySpaceSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct MemorySummary {
+    pub space_id: MemorySpaceId,
+    pub text: String,
+    pub token_count: u32,
+    pub window_start: u64,
+    pub window_end: u64,
+    pub source_message_ids: Vec<MessageId>,
+    pub updated_at: TimestampMillis,
+}
+
+impl MemorySummary {
+    pub fn validate(&self) -> Result<(), MemoryValidationError> {
+        let text = self.text.trim();
+        if text.is_empty() {
+            return Err(MemoryValidationError::EmptySummary);
+        }
+        if text.len() > MAX_MEMORY_SUMMARY_BYTES {
+            return Err(MemoryValidationError::SummaryTooLarge);
+        }
+        if self.source_message_ids.is_empty()
+            || self.source_message_ids.len() > MAX_MEMORY_SUMMARY_SOURCE_MESSAGES
+            || self.window_end <= self.window_start
+            || self.window_end - self.window_start
+                != u64::try_from(self.source_message_ids.len()).unwrap_or(u64::MAX)
+        {
+            return Err(MemoryValidationError::InvalidSummaryWindow);
+        }
+        let mut ids = HashSet::with_capacity(self.source_message_ids.len());
+        if self.source_message_ids.iter().any(|id| !ids.insert(*id)) {
+            return Err(MemoryValidationError::DuplicateSummarySourceMessage);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MemoryPolicy {
     pub max_entries: usize,
     pub hot_token_budget: u32,
@@ -170,6 +209,14 @@ pub enum MemoryValidationError {
     TooManyItems,
     #[error("memory space revision must be positive")]
     InvalidRevision,
+    #[error("memory summary is empty")]
+    EmptySummary,
+    #[error("memory summary is too large")]
+    SummaryTooLarge,
+    #[error("memory summary window is invalid")]
+    InvalidSummaryWindow,
+    #[error("memory summary contains a duplicate source message")]
+    DuplicateSummarySourceMessage,
     #[error("memory space identity does not match")]
     InvalidSpaceId,
     #[error("memory policy max entries is invalid")]
@@ -191,9 +238,9 @@ pub(crate) fn validate_memory_text(value: &str) -> Result<&str, MemoryValidation
 
 #[cfg(test)]
 mod tests {
-    use lettuce_types::{MemorySpaceId, Revision};
+    use lettuce_types::{MemorySpaceId, MessageId, Revision, TimestampMillis};
 
-    use super::{MemorySpaceSnapshot, MemoryValidationError, Score};
+    use super::{MemorySpaceSnapshot, MemorySummary, MemoryValidationError, Score};
 
     #[test]
     fn score_conversion_is_bounded() {
@@ -218,6 +265,23 @@ mod tests {
         assert_eq!(
             snapshot.validate(),
             Err(MemoryValidationError::InvalidRevision)
+        );
+    }
+
+    #[test]
+    fn summary_cursor_must_exactly_cover_its_window() {
+        let summary = MemorySummary {
+            space_id: MemorySpaceId::new(),
+            text: "summary".to_owned(),
+            token_count: 1,
+            window_start: 4,
+            window_end: 7,
+            source_message_ids: vec![MessageId::new(), MessageId::new()],
+            updated_at: TimestampMillis::new(1),
+        };
+        assert_eq!(
+            summary.validate(),
+            Err(MemoryValidationError::InvalidSummaryWindow)
         );
     }
 }

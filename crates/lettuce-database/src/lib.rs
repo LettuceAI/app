@@ -3840,6 +3840,8 @@ mod tests {
                 "memory_embedding_projections",
                 "memory_items",
                 "memory_spaces",
+                "memory_summaries",
+                "memory_summary_source_messages",
                 "model_profiles",
                 "persona_defaults",
                 "persona_lorebook_bindings",

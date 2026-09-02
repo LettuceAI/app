@@ -5,7 +5,37 @@ CREATE TABLE memory_spaces (
 
 CREATE TABLE conversation_memory_spaces (
     conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
-    space_id TEXT NOT NULL UNIQUE REFERENCES memory_spaces(id) ON DELETE RESTRICT
+    space_id TEXT NOT NULL UNIQUE REFERENCES memory_spaces(id) ON DELETE RESTRICT,
+    UNIQUE (conversation_id, space_id)
+) STRICT;
+
+CREATE TABLE memory_summaries (
+    space_id TEXT PRIMARY KEY REFERENCES memory_spaces(id) ON DELETE RESTRICT,
+    conversation_id TEXT NOT NULL,
+    text TEXT NOT NULL CHECK (
+        length(trim(text)) > 0
+        AND length(CAST(text AS BLOB)) <= 6000
+    ),
+    token_count INTEGER NOT NULL CHECK (token_count BETWEEN 0 AND 4294967295),
+    window_start INTEGER NOT NULL CHECK (window_start >= 0),
+    window_end INTEGER NOT NULL CHECK (window_end > window_start),
+    updated_at INTEGER NOT NULL,
+    UNIQUE (space_id, conversation_id),
+    FOREIGN KEY (conversation_id, space_id)
+        REFERENCES conversation_memory_spaces(conversation_id, space_id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE memory_summary_source_messages (
+    space_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 1023),
+    PRIMARY KEY (space_id, ordinal),
+    UNIQUE (space_id, message_id),
+    FOREIGN KEY (space_id, conversation_id)
+        REFERENCES memory_summaries(space_id, conversation_id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_id, message_id)
+        REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT
 ) STRICT;
 
 CREATE TABLE memory_items (

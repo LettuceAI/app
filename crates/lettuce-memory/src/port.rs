@@ -10,7 +10,7 @@ use crate::{
     CreateMemoryPreparation, DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode,
     DynamicMemoryAttemptRecovery, DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound,
     DynamicMemoryRun, DynamicMemoryRunAttemptAdmission, DynamicMemoryToolCallEvidence, MemoryItem,
-    MemoryPolicy, MemorySpaceSnapshot, MemoryToolResult, MemoryValidationError,
+    MemoryPolicy, MemorySpaceSnapshot, MemorySummary, MemoryToolResult, MemoryValidationError,
     NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
 };
 
@@ -55,6 +55,42 @@ pub trait MemoryRepository: Send + Sync {
         &self,
         change: MemoryChangeSet,
     ) -> Result<MemorySpaceSnapshot, MemoryRepositoryError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemorySummaryChange {
+    pub expected_revision: Revision,
+    pub summary: MemorySummary,
+}
+
+impl MemorySummaryChange {
+    pub fn validate(&self) -> Result<(), MemoryValidationError> {
+        if self.expected_revision.get() == 0 {
+            return Err(MemoryValidationError::InvalidRevision);
+        }
+        self.summary.validate()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemorySummaryCommit {
+    pub memory: MemorySpaceSnapshot,
+    pub summary: MemorySummary,
+}
+
+pub trait MemorySummaryRepository: Send + Sync {
+    fn get_summary(
+        &self,
+        space_id: MemorySpaceId,
+    ) -> Result<Option<MemorySummary>, MemoryRepositoryError>;
+
+    /// Atomically verifies the memory-space revision, replaces its cumulative
+    /// summary and ordered source cursor, and increments the root revision.
+    fn compare_and_apply_summary(
+        &self,
+        change: MemorySummaryChange,
+    ) -> Result<MemorySummaryCommit, MemoryRepositoryError>;
 }
 
 pub trait DynamicMemoryRunRepository: Send + Sync {
