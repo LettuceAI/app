@@ -15,6 +15,16 @@ const TOOL_VERSION: u32 = 1;
 const MAX_DONE_SUMMARY_BYTES: usize = 4096;
 
 pub fn dynamic_memory_tool_request() -> ToolRequest {
+    dynamic_memory_tool_request_with_source_requirement(false)
+}
+
+pub fn dynamic_memory_tool_request_with_source_requirement(
+    require_source_message_id: bool,
+) -> ToolRequest {
+    let mut create_required = vec!["text", "category"];
+    if require_source_message_id {
+        create_required.push("source_message_id");
+    }
     ToolRequest {
         definitions: vec![
             ToolDefinition {
@@ -35,7 +45,7 @@ pub fn dynamic_memory_tool_request() -> ToolRequest {
                             "description": "ID from the transcript message where this fact or event occurred."
                         }
                     },
-                    "required": ["text", "category"],
+                    "required": create_required,
                     "additionalProperties": false
                 }),
                 version: TOOL_VERSION,
@@ -702,6 +712,7 @@ mod tests {
     use super::{
         CreateMemoryPreparation, MemoryToolArguments, MemoryToolCall, MemoryToolOutcome,
         MemoryToolReducer, SoftDeleteReason, dynamic_memory_tool_request,
+        dynamic_memory_tool_request_with_source_requirement,
     };
     use crate::{MemoryCategory, MemoryItem, MemoryPolicy, MemorySpaceSnapshot, Score};
 
@@ -771,6 +782,25 @@ mod tests {
             request.choice,
             lettuce_conversations::ToolChoice::Required
         ));
+
+        let create_required = request.definitions[0].parameters["required"]
+            .as_array()
+            .expect("required fields");
+        assert!(
+            !create_required
+                .iter()
+                .any(|field| field == "source_message_id")
+        );
+
+        let time_aware = dynamic_memory_tool_request_with_source_requirement(true);
+        let create_required = time_aware.definitions[0].parameters["required"]
+            .as_array()
+            .expect("required fields");
+        assert!(
+            create_required
+                .iter()
+                .any(|field| field == "source_message_id")
+        );
     }
 
     #[test]

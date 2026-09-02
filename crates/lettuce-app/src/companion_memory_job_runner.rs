@@ -67,6 +67,7 @@ impl<
         &self,
         admission: &CompanionPostTurnMemoryAdmission,
         profile: ResolvedInferenceProfile,
+        time_awareness_enabled: bool,
         prompt: &PromptDocument,
         previous_summary: &str,
         policy: &lettuce_memory::MemoryPolicy,
@@ -82,7 +83,7 @@ impl<
     {
         let mut dispatch =
             CompanionPostTurnMemoryRunCoordinator::new(self.repository, self.conversations)
-                .admit_or_recover(admission, profile, handle, now)?;
+                .admit_or_recover(admission, profile, time_awareness_enabled, handle, now)?;
         let first = match CompanionMemoryInferenceCoordinator::new(
             self.repository,
             self.conversations,

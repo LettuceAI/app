@@ -112,7 +112,12 @@ impl<
             self.cancel(&attempt, now)?;
             return Err(CompanionMemoryRoundExecutionError::Cancelled);
         }
-        let calls = prepare_background_calls(&round, &run.source_messages, &prepared)?;
+        let calls = prepare_background_calls(
+            &round,
+            &run.source_messages,
+            run.time_awareness_enabled,
+            &prepared,
+        )?;
         let reduction = MemoryToolReducer.reduce(&snapshot, policy, &calls)?;
         let settlement = self.repository.commit_dynamic_memory_background_round(
             DynamicMemoryBackgroundRoundCommit {
@@ -158,6 +163,7 @@ impl<
 fn prepare_background_calls(
     round: &DynamicMemoryInferenceRound,
     sources: &[lettuce_memory::DynamicMemorySourceMessage],
+    time_awareness_enabled: bool,
     prepared_creates: &[PreparedMemoryCreate],
 ) -> Result<Vec<MemoryToolCall>, CompanionMemoryRoundExecutionError> {
     let mut preparations = prepared_creates
@@ -175,17 +181,23 @@ fn prepare_background_calls(
         }
         let mut arguments = MemoryToolArguments::parse(&call.call.name, &call.call.arguments)?;
         if let MemoryToolArguments::CreateMemory {
-            source_message_id: Some(source_message_id),
-            ..
+            source_message_id, ..
         } = &mut arguments
-            && !sources
-                .iter()
-                .any(|source| source.message_id == *source_message_id)
         {
-            *source_message_id = sources
-                .last()
-                .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership)?
-                .message_id;
+            if time_awareness_enabled {
+                if source_message_id.is_none_or(|message_id| {
+                    !sources.iter().any(|source| source.message_id == message_id)
+                }) {
+                    *source_message_id = Some(
+                        sources
+                            .last()
+                            .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership)?
+                            .message_id,
+                    );
+                }
+            } else {
+                *source_message_id = None;
+            }
         }
         let create = if matches!(arguments, MemoryToolArguments::CreateMemory { .. }) {
             Some(
@@ -351,6 +363,7 @@ mod tests {
                             lettuce_types::MessageRevisionId::new(),
                         ),
                     }],
+                    true,
                     &prepared,
                 )
                 .expect("calls"),
@@ -425,6 +438,7 @@ mod tests {
         let calls = prepare_background_calls(
             &round,
             &sources,
+            true,
             &[PreparedMemoryCreate {
                 execution_id: call.id,
                 preparation: CreateMemoryPreparation {
@@ -453,11 +467,12 @@ mod tests {
             "create_memory",
             json!({"text":"The group met at noon", "category":"plot_event"}),
         );
-        let mut unanchored_round = round;
+        let mut unanchored_round = round.clone();
         unanchored_round.calls = vec![unanchored.clone()];
         let calls = prepare_background_calls(
             &unanchored_round,
             &sources,
+            true,
             &[PreparedMemoryCreate {
                 execution_id: unanchored.id,
                 preparation: CreateMemoryPreparation {
@@ -470,6 +485,30 @@ mod tests {
             }],
         )
         .expect("prepare unanchored call");
+        assert!(matches!(
+            calls[0].arguments,
+            MemoryToolArguments::CreateMemory {
+                source_message_id: Some(id),
+                ..
+            } if id == latest_source
+        ));
+
+        let calls = prepare_background_calls(
+            &round,
+            &sources,
+            false,
+            &[PreparedMemoryCreate {
+                execution_id: call.id,
+                preparation: CreateMemoryPreparation {
+                    id: MemoryId::new(),
+                    token_count: 4,
+                    created_at: TimestampMillis::new(1),
+                    semantic_duplicate: None,
+                },
+                projection: None,
+            }],
+        )
+        .expect("prepare disabled call");
         assert!(matches!(
             calls[0].arguments,
             MemoryToolArguments::CreateMemory {

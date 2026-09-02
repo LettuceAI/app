@@ -720,6 +720,7 @@ mod tests {
                     },
                 ],
                 profile: profile(),
+                time_awareness_enabled: false,
                 tool_request: dynamic_memory_tool_request(),
                 created_at: now,
             },

@@ -61,7 +61,9 @@ Background post-turn extraction now has a separate memory-owned durable run
 boundary instead of fabricating a visible conversation generation turn. A run
 freezes the authoritative starting memory snapshot, ordered source-message
 roles and active revision/candidate window, complete resolved model/profile snapshot,
-and required dynamic-memory tool contract. Retryable attempts own CAS lifecycle state and immutable ordered
+frozen companion time-awareness mode, and its matching required dynamic-memory
+tool contract. Time-aware runs require source attribution; other runs keep it optional.
+Retryable attempts own CAS lifecycle state and immutable ordered
 provider rounds/calls. Each round also freezes the exact provider-neutral
 request context used for its inference, so continuation and recovery do not
 re-render mutable prompts or pre-round memory state. Interruption recovery

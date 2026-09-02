@@ -1048,6 +1048,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .run(
             &work.admission,
             profile.clone(),
+            true,
             &prompt,
             "",
             &policy,
@@ -1227,6 +1228,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 render_source: continued_source.message.active_render_source,
             }],
             profile,
+            time_awareness_enabled: false,
             job_id: failure_job_id,
             now: TimestampMillis::new(NOW.get() + 39),
         })
@@ -2969,6 +2971,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
                 render_source: source.message.active_render_source,
             }],
             profile,
+            time_awareness_enabled: false,
             job_id,
             now: TimestampMillis::new(1_010),
         })
