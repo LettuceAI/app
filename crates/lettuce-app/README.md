@@ -104,6 +104,11 @@ coalesced effect idempotently, then marks the attempt succeeded. Failure and
 cancellation use the existing bounded effect summaries and attempt failure
 codes. Effect-first ordering makes a crash retry converge without leaving a
 succeeded attempt whose effects are still processing.
+The claimed-job runner composes the existing run admission/recovery,
+first-round inference, bounded execution/continuation loop, and terminal
+settlement into one application path. Prompt/profile/policy inputs and stable
+create seeds stay caller-owned. First-round and loop failures are classified
+through the same terminal coordinator before returning their typed error.
 Conversation launch now creates the authoritative normalized memory space in
 the same transaction for every resolved manual/dynamic memory policy, and the
 memory repository resolves it directly from the conversation identity. This

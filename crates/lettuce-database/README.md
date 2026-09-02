@@ -103,7 +103,8 @@ created/processing/succeeded/failed/cancelled/interrupted state; ordered rounds
 and calls retain their exact provider-neutral request context, bounded usage,
 and protected provider-replay references.
 Admission and retry are idempotent, recovery interrupts the parent and clones
-its exact round/call evidence into one processing child, and SQL ownership
+its exact round/call evidence plus any settled result checkpoints into one
+processing child, and SQL ownership
 guards prevent a foreign conversation, memory space, or source message from
 entering the run. Background tool outcomes are immutable per admitted round and
 commit in the same transaction as the memory revision CAS; stale revisions roll

@@ -392,6 +392,51 @@ fn load_background_settlement_in(
     )))
 }
 
+fn copy_background_settlement_in(
+    transaction: &Transaction<'_>,
+    settlement: &DynamicMemoryBackgroundRoundSettlement,
+    change_digest: &str,
+    child_attempt_id: DynamicMemoryAttemptId,
+) -> Result<(), DynamicMemoryRunRepositoryError> {
+    transaction
+        .execute(
+            "INSERT INTO dynamic_memory_background_round_settlements
+               (run_id,attempt_id,round_ordinal,space_id,expected_memory_revision,
+                resulting_memory_revision,change_digest,settled_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![
+                settlement.run_id.to_string(),
+                child_attempt_id.to_string(),
+                i64::from(settlement.round_ordinal),
+                settlement.space_id.to_string(),
+                sql_u64(settlement.expected_memory_revision.get())?,
+                sql_u64(settlement.resulting_memory_revision.get())?,
+                change_digest,
+                settlement.settled_at.get(),
+            ],
+        )
+        .map_err(storage)?;
+    for (ordinal, result) in settlement.results.iter().enumerate() {
+        transaction
+            .execute(
+                "INSERT INTO dynamic_memory_background_tool_results
+                   (run_id,attempt_id,round_ordinal,call_id,ordinal,outcome_json,settled_at)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![
+                    settlement.run_id.to_string(),
+                    child_attempt_id.to_string(),
+                    i64::from(settlement.round_ordinal),
+                    result.execution_id.to_string(),
+                    i64::try_from(ordinal).map_err(storage)?,
+                    encode_versioned(&result.outcome, JSON_VERSION).map_err(storage)?,
+                    settlement.settled_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+    }
+    Ok(())
+}
+
 fn insert_round_in(
     transaction: &Transaction<'_>,
     round: &DynamicMemoryInferenceRound,
@@ -718,6 +763,32 @@ impl DynamicMemoryRunRepository for Database {
                         call.attempt_id = child.id;
                     }
                 }
+                let settlements_match = parent_rounds.iter().all(|round| {
+                    let parent = load_background_settlement_in(
+                        &transaction,
+                        input.run_id,
+                        parent.id,
+                        round.ordinal,
+                    );
+                    let child_settlement = load_background_settlement_in(
+                        &transaction,
+                        input.run_id,
+                        child.id,
+                        round.ordinal,
+                    );
+                    match (parent, child_settlement) {
+                        (Ok(None), Ok(None)) => true,
+                        (
+                            Ok(Some((parent, parent_digest))),
+                            Ok(Some((child_settlement, child_digest))),
+                        ) => {
+                            let mut expected = parent;
+                            expected.attempt_id = child.id;
+                            expected == child_settlement && parent_digest == child_digest
+                        }
+                        _ => false,
+                    }
+                });
                 if parent.status != DynamicMemoryAttemptStatus::Interrupted
                     || parent.finished_at != Some(input.now)
                     || child.run_id != input.run_id
@@ -727,6 +798,7 @@ impl DynamicMemoryRunRepository for Database {
                     || child.status != DynamicMemoryAttemptStatus::Processing
                     || child.created_at != input.now
                     || list_rounds_in(&transaction, input.run_id, child.id)? != expected_rounds
+                    || !settlements_match
                 {
                     return Err(DynamicMemoryRunRepositoryError::Conflict);
                 }
@@ -796,11 +868,25 @@ impl DynamicMemoryRunRepository for Database {
                 _ => DynamicMemoryRunRepositoryError::Storage,
             })?;
         for mut round in parent_rounds {
+            let settlement = load_background_settlement_in(
+                &transaction,
+                input.run_id,
+                parent.id,
+                round.ordinal,
+            )?;
             round.attempt_id = input.child_attempt_id;
             for call in &mut round.calls {
                 call.attempt_id = input.child_attempt_id;
             }
             insert_round_in(&transaction, &round)?;
+            if let Some((settlement, digest)) = settlement {
+                copy_background_settlement_in(
+                    &transaction,
+                    &settlement,
+                    &digest,
+                    input.child_attempt_id,
+                )?;
+            }
         }
         let parent = load_attempt_in(&transaction, parent.id)?;
         let child = load_attempt_in(&transaction, input.child_attempt_id)?;
@@ -1576,6 +1662,43 @@ mod tests {
                 .expect("round replay"),
             admitted_round
         );
+        let memory_id = MemoryId::new();
+        let parent_settlement = database
+            .commit_dynamic_memory_background_round(
+                DynamicMemoryBackgroundRoundCommit {
+                    run_id,
+                    attempt_id: parent_id,
+                    round_ordinal: 0,
+                    space_id,
+                    expected_memory_revision: Revision::INITIAL,
+                    change: Some(MemoryChangeSet {
+                        space_id,
+                        expected_revision: Revision::INITIAL,
+                        items: vec![MemoryItem {
+                            id: memory_id,
+                            text: "The user prefers tea".into(),
+                            category: MemoryCategory::Preference,
+                            source_message_id: Some(messages[0].message_id),
+                            token_count: 4,
+                            is_cold: false,
+                            is_pinned: false,
+                            importance: Score::FULL,
+                            persistence_importance: Score::FULL,
+                            prompt_importance: Score::FULL,
+                            volatility: Score::LEGACY_VOLATILITY,
+                            access_count: 0,
+                            created_at: TimestampMillis::new(12),
+                            last_accessed_at: TimestampMillis::new(12),
+                        }],
+                    }),
+                    results: vec![MemoryToolResult {
+                        execution_id: call_id,
+                        outcome: MemoryToolOutcome::Created { id: memory_id },
+                    }],
+                },
+                TimestampMillis::new(12),
+            )
+            .expect("parent settlement");
         let child_id = DynamicMemoryAttemptId::new();
         let recovery = NewDynamicMemoryAttemptRecovery {
             run_id,
@@ -1594,6 +1717,21 @@ mod tests {
         assert_eq!(
             recovered.child.status,
             DynamicMemoryAttemptStatus::Processing
+        );
+        let child_settlement = database
+            .load_dynamic_memory_round_settlement(run_id, child_id, 0)
+            .expect("child settlement")
+            .expect("copied checkpoint");
+        let mut expected_child_settlement = parent_settlement;
+        expected_child_settlement.attempt_id = child_id;
+        assert_eq!(child_settlement, expected_child_settlement);
+        assert_eq!(
+            database
+                .get(space_id)
+                .expect("memory")
+                .expect("space")
+                .revision,
+            Revision::new(2)
         );
         assert_eq!(
             database

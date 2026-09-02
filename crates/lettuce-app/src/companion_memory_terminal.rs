@@ -9,9 +9,9 @@ use lettuce_memory::{
 use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, TimestampMillis};
 
 use crate::{
-    CompanionMemoryContinuationError, CompanionMemoryLoopError, CompanionMemoryRoundExecutionError,
-    CompanionPostTurnEffectCoordinator, CompanionPostTurnEffectError, CompanionPostTurnFailure,
-    CompanionPostTurnMemoryBatch,
+    CompanionMemoryContinuationError, CompanionMemoryInferenceError, CompanionMemoryLoopError,
+    CompanionMemoryRoundExecutionError, CompanionPostTurnEffectCoordinator,
+    CompanionPostTurnEffectError, CompanionPostTurnFailure, CompanionPostTurnMemoryBatch,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,6 +32,40 @@ pub enum CompanionMemoryTerminalFailure {
 }
 
 impl CompanionMemoryTerminalFailure {
+    #[must_use]
+    pub fn from_inference_error(error: &CompanionMemoryInferenceError) -> Self {
+        match error {
+            CompanionMemoryInferenceError::Cancelled
+            | CompanionMemoryInferenceError::Inference(PortError::Cancelled) => Self::Cancelled,
+            CompanionMemoryInferenceError::NoToolCalls
+            | CompanionMemoryInferenceError::Inference(PortError::Empty) => Self::EmptyResponse,
+            CompanionMemoryInferenceError::Inference(PortError::Unavailable) => {
+                Self::ProviderUnavailable
+            }
+            CompanionMemoryInferenceError::Inference(PortError::Rejected) => Self::ProviderRejected,
+            CompanionMemoryInferenceError::Inference(PortError::Provider(failure)) => {
+                match failure.kind {
+                    ProviderFailureKind::Unavailable => Self::ProviderUnavailable,
+                    ProviderFailureKind::CredentialRejected
+                    | ProviderFailureKind::RequestRejected => Self::ProviderRejected,
+                }
+            }
+            CompanionMemoryInferenceError::MultipleCandidates
+            | CompanionMemoryInferenceError::MixedToolAndContent
+            | CompanionMemoryInferenceError::InvalidSignedReplay
+            | CompanionMemoryInferenceError::UndeclaredTool => Self::ProviderRejected,
+            CompanionMemoryInferenceError::InvalidOwnership
+            | CompanionMemoryInferenceError::InvalidPrompt
+            | CompanionMemoryInferenceError::InvalidSource
+            | CompanionMemoryInferenceError::ContextTooLarge
+            | CompanionMemoryInferenceError::Conversation(_)
+            | CompanionMemoryInferenceError::Memory(_)
+            | CompanionMemoryInferenceError::Run(_)
+            | CompanionMemoryInferenceError::Prompt(_)
+            | CompanionMemoryInferenceError::ReplayCleanup => Self::Recovery,
+        }
+    }
+
     #[must_use]
     pub fn from_loop_error(error: &CompanionMemoryLoopError) -> Self {
         match error {

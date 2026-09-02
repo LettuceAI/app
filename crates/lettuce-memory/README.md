@@ -65,7 +65,8 @@ and required dynamic-memory tool contract. Retryable attempts own CAS lifecycle 
 provider rounds/calls. Each round also freezes the exact provider-neutral
 request context used for its inference, so continuation and recovery do not
 re-render mutable prompts or pre-round memory state. Interruption recovery
-copies the exact admitted provider history into the processing child. This preserves the legacy cycle's frozen
+copies the exact admitted provider history and any settled typed-result
+checkpoints into the processing child. This preserves the legacy cycle's frozen
 window/model behavior while deliberately separating it from assistant-message
 generation. The same port now owns atomic background round settlement: an
 optional memory change and every ordered typed result commit together, and an
