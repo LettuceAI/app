@@ -73,7 +73,11 @@ and retains only the latest forty superseded records as legacy does. Other
 direct/group runs do not advertise or apply supersession. The run also freezes
 the selected legacy structured fallback format. This crate owns the copied
 JSON/XML operation parsers and fallback prompts; an empty operation document is
-a valid no-change response.
+a valid no-change response. Conversation-owned cumulative summaries retain the
+legacy bounded text, token count, exact ordered source cursor, and root memory
+CAS. Each background run freezes the resolved message interval and exact
+half-open summary window so recovery cannot advance it after its own summary
+checkpoint.
 Retryable attempts own CAS lifecycle state and immutable ordered
 provider rounds/calls. Each round also freezes the exact provider-neutral
 request context used for its inference, so continuation and recovery do not

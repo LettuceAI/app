@@ -157,6 +157,9 @@ CREATE TABLE dynamic_memory_runs (
     time_awareness_enabled INTEGER NOT NULL CHECK (time_awareness_enabled IN (0,1)),
     supersession_enabled INTEGER NOT NULL CHECK (supersession_enabled IN (0,1)),
     structured_fallback_format TEXT NOT NULL CHECK (structured_fallback_format IN ('json','xml')),
+    summary_message_interval INTEGER NOT NULL CHECK (summary_message_interval BETWEEN 1 AND 4294967295),
+    summary_window_start INTEGER NOT NULL CHECK (summary_window_start >= 0),
+    summary_window_end INTEGER NOT NULL CHECK (summary_window_end > summary_window_start),
     starting_memory_json TEXT NOT NULL CHECK (
         json_valid(starting_memory_json)
         AND json_extract(starting_memory_json, '$.format_version') = 1

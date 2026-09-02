@@ -18,6 +18,7 @@ pub const MAX_COMPANION_POST_TURN_EFFECTS: u16 = 512;
 pub struct CompanionPostTurnMemoryBatch {
     pub conversation_id: ConversationId,
     pub idempotency_key: IdempotencyKey,
+    pub summary_message_interval: u32,
     pub effects: Vec<CompanionTurnEffect>,
 }
 
@@ -72,8 +73,9 @@ impl<'a, R: CompanionTurnEffectRepository + ?Sized, J: JobStore + ?Sized>
     pub fn discover_and_admit(
         &self,
         limit: u16,
+        summary_message_interval: u32,
     ) -> Result<Vec<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError> {
-        if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS {
+        if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS || summary_message_interval == 0 {
             return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
         }
         let effects = self
@@ -97,7 +99,11 @@ impl<'a, R: CompanionTurnEffectRepository + ?Sized, J: JobStore + ?Sized>
         let mut admissions = Vec::with_capacity(by_conversation.len());
         for (conversation_id, mut effects) in by_conversation {
             effects.sort_by_key(|effect| (effect.created_at, effect.id));
-            let idempotency_key = batch_idempotency_key(conversation_id, &effects)?;
+            let Some(effects) = ready_effect_prefix(effects, summary_message_interval) else {
+                continue;
+            };
+            let idempotency_key =
+                batch_idempotency_key(conversation_id, summary_message_interval, &effects)?;
             let spec = job_spec(conversation_id, idempotency_key.clone())?;
             let active = self
                 .jobs
@@ -131,6 +137,7 @@ impl<'a, R: CompanionTurnEffectRepository + ?Sized, J: JobStore + ?Sized>
                 batch: CompanionPostTurnMemoryBatch {
                     conversation_id,
                     idempotency_key,
+                    summary_message_interval,
                     effects,
                 },
                 job: admitted.job,
@@ -143,6 +150,7 @@ impl<'a, R: CompanionTurnEffectRepository + ?Sized, J: JobStore + ?Sized>
 
 fn batch_idempotency_key(
     conversation_id: ConversationId,
+    summary_message_interval: u32,
     effects: &[CompanionTurnEffect],
 ) -> Result<IdempotencyKey, CompanionPostTurnMemoryAdmissionError> {
     if effects.is_empty()
@@ -154,11 +162,33 @@ fn batch_idempotency_key(
     }
     let mut digest = blake3::Hasher::new();
     digest.update(conversation_id.to_string().as_bytes());
+    digest.update(&summary_message_interval.to_le_bytes());
     for effect in effects {
         digest.update(effect.id.to_string().as_bytes());
     }
     IdempotencyKey::new(format!("companion-memory-{}", digest.finalize().to_hex()))
         .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)
+}
+
+fn ready_effect_prefix(
+    effects: Vec<CompanionTurnEffect>,
+    summary_message_interval: u32,
+) -> Option<Vec<CompanionTurnEffect>> {
+    let target = u64::from(summary_message_interval);
+    let mut message_count = 0_u64;
+    let mut end = 0;
+    for effect in &effects {
+        message_count += if effect.user_message_id.is_some() {
+            2
+        } else {
+            1
+        };
+        end += 1;
+        if message_count >= target {
+            return Some(effects.into_iter().take(end).collect());
+        }
+    }
+    None
 }
 
 fn job_spec(
@@ -291,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn discovery_coalesces_per_conversation_and_admits_exactly_once() {
+    fn discovery_admits_the_oldest_ready_prefix_exactly_once() {
         let effects = Effects::default();
         let jobs = InMemoryJobStore::new();
         let first_conversation = ConversationId::new();
@@ -303,7 +333,7 @@ mod tests {
         let coordinator = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &jobs);
 
         let admitted = coordinator
-            .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS)
+            .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS, 1)
             .expect("admit batches");
         assert_eq!(admitted.len(), 2);
         let first = admitted
@@ -313,15 +343,16 @@ mod tests {
         assert!(first.created);
         assert_eq!(first.job.kind, JobKind::MemoryExtraction);
         assert_eq!(first.job.state, JobState::Queued);
+        assert_eq!(first.batch.summary_message_interval, 1);
         assert_eq!(first.batch.effects[0].id, earlier.id);
-        assert_eq!(first.batch.effects[1].id, later.id);
+        assert_eq!(first.batch.effects.len(), 1);
         assert_eq!(
             first.batch.terminal_effects()[0].enqueued_at,
             earlier.created_at
         );
 
         let replay = coordinator
-            .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS)
+            .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS, 1)
             .expect("replay admission");
         assert!(replay.iter().all(|admission| !admission.created));
         assert_eq!(
@@ -333,12 +364,11 @@ mod tests {
         );
 
         effects.replace(vec![earlier, later, effect(first_conversation, 30)]);
-        assert!(
-            coordinator
-                .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS)
-                .expect("active conversation remains coalesced")
-                .is_empty()
-        );
+        let replay = coordinator
+            .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS, 1)
+            .expect("active prefix replays");
+        assert_eq!(replay.len(), 1);
+        assert!(!replay[0].created);
     }
 
     #[test]
@@ -348,7 +378,7 @@ mod tests {
         let conversation_id = ConversationId::new();
         assert!(
             CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &first_store)
-                .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS)
+                .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS, 1)
                 .expect("empty discovery")
                 .is_empty()
         );
@@ -356,13 +386,13 @@ mod tests {
         let pending = effect(conversation_id, 10);
         effects.replace(vec![pending]);
         let first = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &first_store)
-            .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS)
+            .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS, 1)
             .expect("first process")
             .remove(0);
         let restarted_store = InMemoryJobStore::new();
         let restarted =
             CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &restarted_store)
-                .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS)
+                .discover_and_admit(MAX_COMPANION_POST_TURN_EFFECTS, 1)
                 .expect("restart discovery")
                 .remove(0);
         assert!(first.created && restarted.created);
@@ -389,6 +419,7 @@ mod tests {
         let work = coordinator
             .discover_and_claim(
                 MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
                 worker_id,
                 TimestampMillis::new(30),
                 Duration::from_secs(60),
@@ -410,13 +441,14 @@ mod tests {
                 .batch
                 .effects
                 .len(),
-            2
+            1
         );
 
         assert!(
             coordinator
                 .discover_and_claim(
                     MAX_COMPANION_POST_TURN_EFFECTS,
+                    1,
                     worker_id,
                     TimestampMillis::new(31),
                     Duration::from_secs(60),
@@ -430,6 +462,7 @@ mod tests {
         let restarted = crate::CompanionMemoryDispatchCoordinator::new(&effects, &restarted_jobs)
             .discover_and_claim(
                 MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
                 WorkerId::new(),
                 TimestampMillis::new(40),
                 Duration::from_secs(60),
@@ -452,6 +485,22 @@ mod tests {
     }
 
     #[test]
+    fn cadence_waits_below_interval_and_keeps_boundary_effect_whole() {
+        let conversation_id = ConversationId::new();
+        let first = effect(conversation_id, 10);
+        let second = effect(conversation_id, 20);
+        assert!(ready_effect_prefix(vec![first.clone(), second.clone()], 5).is_none());
+
+        let ready = ready_effect_prefix(vec![first.clone(), second], 3).expect("ready prefix");
+        assert_eq!(ready.len(), 2);
+        assert_eq!(ready[0].id, first.id);
+
+        let boundary = ready_effect_prefix(vec![first], 1).expect("whole effect");
+        assert_eq!(boundary.len(), 1);
+        assert!(boundary[0].user_message_id.is_some());
+    }
+
+    #[test]
     fn runner_errors_settle_cancel_fail_or_retry_on_the_same_claim() {
         let cancellation_effects = Effects::default();
         cancellation_effects.replace(vec![effect(ConversationId::new(), 10)]);
@@ -463,6 +512,7 @@ mod tests {
         let cancellation_work = cancellation_coordinator
             .discover_and_claim(
                 MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
                 WorkerId::new(),
                 TimestampMillis::new(20),
                 Duration::from_secs(60),
@@ -502,6 +552,7 @@ mod tests {
         let failure_work = failure_coordinator
             .discover_and_claim(
                 MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
                 WorkerId::new(),
                 TimestampMillis::new(40),
                 Duration::from_secs(60),
@@ -538,6 +589,7 @@ mod tests {
         let retry_work = retry_coordinator
             .discover_and_claim(
                 MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
                 WorkerId::new(),
                 TimestampMillis::new(60),
                 Duration::from_secs(60),
@@ -563,6 +615,7 @@ mod tests {
         let reclaimed = retry_coordinator
             .discover_and_claim(
                 MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
                 WorkerId::new(),
                 TimestampMillis::new(62),
                 Duration::from_secs(60),

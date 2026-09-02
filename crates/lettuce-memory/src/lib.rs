@@ -25,7 +25,7 @@ pub use run::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
     DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound, DynamicMemoryRoundFinishReason,
     DynamicMemoryRun, DynamicMemoryRunAttemptAdmission, DynamicMemoryRunError,
-    DynamicMemorySourceMessage, DynamicMemoryStructuredFallbackFormat,
+    DynamicMemorySourceMessage, DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryWindow,
     DynamicMemoryToolCallEvidence, MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS,
     MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES, NewDynamicMemoryAttemptRecovery,
     NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall,

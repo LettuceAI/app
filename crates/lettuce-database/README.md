@@ -98,7 +98,9 @@ conversation generation turns. The immutable run binds the normalized
 conversation memory space plus its complete starting snapshot, ordered
 source-message roles, effective times, and active immutable revision/candidate sources,
 full resolved inference profile, frozen time-awareness flag, and matching tool
-contract. Memory items preserve coherent optional source role, observed time,
+contract. The same memory root owns a normalized cumulative summary, token
+count, and ordered source-message cursor; immutable runs freeze the selected
+summary interval and half-open window. Memory items preserve coherent optional source role, observed time,
 and legacy `turn` precision alongside source-message attribution. The same
 rows preserve superseded-by/time and ordered supersedes IDs, while the immutable
 run freezes whether its tool contract enables companion supersession. It also

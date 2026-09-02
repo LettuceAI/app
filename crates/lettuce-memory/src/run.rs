@@ -23,6 +23,26 @@ pub enum DynamicMemoryStructuredFallbackFormat {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DynamicMemorySummaryWindow {
+    pub message_interval: u32,
+    pub start: u64,
+    pub end: u64,
+}
+
+impl DynamicMemorySummaryWindow {
+    fn validate(self, source_message_count: usize) -> Result<(), DynamicMemoryRunError> {
+        if self.message_interval == 0
+            || self.end <= self.start
+            || self.end - self.start != u64::try_from(source_message_count).unwrap_or(u64::MAX)
+        {
+            return Err(DynamicMemoryRunError::InvalidRun);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DynamicMemoryAttemptStatus {
     Created,
@@ -87,12 +107,14 @@ pub struct DynamicMemoryRun {
     pub time_awareness_enabled: bool,
     pub supersession_enabled: bool,
     pub structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
+    pub summary_window: DynamicMemorySummaryWindow,
     pub tool_request: ToolRequest,
     pub created_at: TimestampMillis,
 }
 
 impl DynamicMemoryRun {
     pub fn validate(&self) -> Result<(), DynamicMemoryRunError> {
+        self.summary_window.validate(self.source_messages.len())?;
         if self.source_messages.is_empty()
             || self.source_messages.len() > MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES
             || self
@@ -138,6 +160,7 @@ pub struct NewDynamicMemoryRunAttempt {
     pub time_awareness_enabled: bool,
     pub supersession_enabled: bool,
     pub structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
+    pub summary_window: DynamicMemorySummaryWindow,
     pub job_id: JobId,
     pub now: TimestampMillis,
 }

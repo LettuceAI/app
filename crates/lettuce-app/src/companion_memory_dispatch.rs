@@ -74,13 +74,14 @@ where
     pub fn discover_and_claim(
         &self,
         limit: u16,
+        summary_message_interval: u32,
         worker_id: WorkerId,
         now: TimestampMillis,
         lease_for: Duration,
         allowed: &ResourceAvailability,
     ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryDispatchError> {
         let admissions = CompanionPostTurnMemoryAdmissionCoordinator::new(self.effects, self.jobs)
-            .discover_and_admit(limit)?;
+            .discover_and_admit(limit, summary_message_interval)?;
         let mut work = Vec::with_capacity(admissions.len());
         for admission in admissions {
             let claim_at = now.max(admission.job.updated_at);

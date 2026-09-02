@@ -1021,6 +1021,11 @@ mod tests {
                 supersession_enabled: false,
                 structured_fallback_format:
                     lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                    message_interval: 2,
+                    start: 0,
+                    end: 2,
+                },
                 tool_request: dynamic_memory_tool_request(),
                 created_at: now,
             },

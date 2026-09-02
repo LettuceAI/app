@@ -974,6 +974,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let work = crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
         .discover_and_claim(
             512,
+            1,
             WorkerId::new(),
             TimestampMillis::new(NOW.get() + 11),
             Duration::from_secs(60),
@@ -1247,6 +1248,11 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             time_awareness_enabled: false,
             supersession_enabled: false,
             structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
+            summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                message_interval: 1,
+                start: 0,
+                end: 1,
+            },
             job_id: failure_job_id,
             now: TimestampMillis::new(NOW.get() + 39),
         })
@@ -1264,6 +1270,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         conversation_id: current.id,
         idempotency_key: lettuce_jobs::IdempotencyKey::new("terminal-failure-batch")
             .expect("batch key"),
+        summary_message_interval: 1,
         effects: vec![continued_effect],
     };
     let failure_handle = JobHandle::new(failure_job_id);
@@ -2993,6 +3000,11 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
             time_awareness_enabled: false,
             supersession_enabled: false,
             structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
+            summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                message_interval: 1,
+                start: 0,
+                end: 1,
+            },
             job_id,
             now: TimestampMillis::new(1_010),
         })

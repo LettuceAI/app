@@ -64,9 +64,11 @@ to each coalesced effect through its exact user/assistant source window. It
 copies the legacy largest-delta summary selection, percent rounding, wording,
 pluralization, and three-part cap; no-op success is ready, terminal failures use
 bounded stable reasons, and exact settlement replay is idempotent. Processing
-effects can now be rediscovered from SQLite in stable order and coalesced per
-conversation into background `MemoryExtraction` jobs. The batch's logical
-idempotency key is derived from its ordered durable effect identities, so
+effects can now be rediscovered from SQLite in stable order. Automatic
+admission waits for the resolved legacy message interval and takes the oldest
+ready effect prefix; a user/assistant effect remains atomic when it crosses the
+interval boundary. The batch's logical idempotency key is derived from its
+ordered durable effect identities and frozen interval, so
 duplicate discovery reuses one runtime job and a fresh in-memory job store after
 restart rebuilds the same logical batch. Empty discovery is the
 non-companion/dynamic-memory-disabled no-op. The application bridge maps that
@@ -90,8 +92,9 @@ tool request errors or returns no calls, the coordinator copies the legacy
 second request with tools disabled and the frozen JSON/XML format instruction,
 parses its text into the same typed calls, aggregates both request usages, and
 admits them through the same durable round path. Empty operations become an
-explicit no-change `done` checkpoint. Cumulative summary generation remains
-deferred. A settled background
+explicit no-change `done` checkpoint. Cumulative summary state and its ordered
+source cursor are durable; each new run freezes the next window after that
+cursor, while summary inference remains deferred. A settled background
 round now appends its admitted native calls and typed results to the exact
 durable request context, stops before provider I/O on `done`, or dispatches and
 atomically admits the next bounded round with the frozen profile/tool contract.

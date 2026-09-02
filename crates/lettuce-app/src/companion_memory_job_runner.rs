@@ -7,7 +7,7 @@ use lettuce_embeddings::MemoryEmbeddingRepository;
 use lettuce_jobs::{Claim, handle::JobHandle};
 use lettuce_memory::{
     DynamicMemoryInferenceRound, DynamicMemoryRunRepository, DynamicMemoryStructuredFallbackFormat,
-    MemoryRepository,
+    MemoryRepository, MemorySummaryRepository,
 };
 use lettuce_types::{RequestId, TimestampMillis};
 
@@ -57,6 +57,7 @@ impl<
     E: MemoryEmbeddingEngine + ?Sized,
     R: DynamicMemoryRunRepository
         + MemoryRepository
+        + MemorySummaryRepository
         + MemoryEmbeddingRepository
         + ProviderReplayArtifactPort
         + CompanionTurnEffectRepository

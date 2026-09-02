@@ -9,8 +9,9 @@ use lettuce_jobs::{JobKind, SubjectKind, handle::JobHandle};
 use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryAttemptStatus, DynamicMemoryRun,
     DynamicMemoryRunAttemptAdmission, DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError,
-    DynamicMemorySourceMessage, DynamicMemoryStructuredFallbackFormat, MemoryRepository,
-    MemoryRepositoryError, NewDynamicMemoryAttemptRecovery, NewDynamicMemoryRunAttempt,
+    DynamicMemorySourceMessage, DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryWindow,
+    MemoryRepository, MemoryRepositoryError, MemorySummaryRepository,
+    NewDynamicMemoryAttemptRecovery, NewDynamicMemoryRunAttempt,
 };
 use lettuce_types::{
     DynamicMemoryAttemptId, DynamicMemoryRunId, MessageId, PageLimit, PageRequest, TimestampMillis,
@@ -47,8 +48,11 @@ pub struct CompanionPostTurnMemoryRunCoordinator<'a, R: ?Sized, C: ?Sized> {
     conversations: &'a C,
 }
 
-impl<'a, R: DynamicMemoryRunRepository + MemoryRepository + ?Sized, C: ConversationReader + ?Sized>
-    CompanionPostTurnMemoryRunCoordinator<'a, R, C>
+impl<
+    'a,
+    R: DynamicMemoryRunRepository + MemoryRepository + MemorySummaryRepository + ?Sized,
+    C: ConversationReader + ?Sized,
+> CompanionPostTurnMemoryRunCoordinator<'a, R, C>
 {
     #[must_use]
     pub const fn new(repository: &'a R, conversations: &'a C) -> Self {
@@ -92,6 +96,8 @@ impl<'a, R: DynamicMemoryRunRepository + MemoryRepository + ?Sized, C: Conversat
                     || run.time_awareness_enabled != time_awareness_enabled
                     || run.supersession_enabled != supersession_enabled
                     || run.structured_fallback_format != structured_fallback_format
+                    || run.summary_window.message_interval
+                        != admission.batch.summary_message_interval
                 {
                     return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
                 }
@@ -134,6 +140,13 @@ impl<'a, R: DynamicMemoryRunRepository + MemoryRepository + ?Sized, C: Conversat
                 })
             }
             Err(DynamicMemoryRunRepositoryError::NotFound) => {
+                let summary_window = summary_window(
+                    self.repository
+                        .get_summary(snapshot.id)
+                        .map_err(CompanionPostTurnMemoryRunError::Memory)?,
+                    admission.batch.summary_message_interval,
+                    expected_messages.len(),
+                )?;
                 let source_messages = resolve_source_messages(
                     self.conversations,
                     conversation_id,
@@ -153,6 +166,7 @@ impl<'a, R: DynamicMemoryRunRepository + MemoryRepository + ?Sized, C: Conversat
                         time_awareness_enabled,
                         supersession_enabled,
                         structured_fallback_format,
+                        summary_window,
                         job_id: handle.id(),
                         now,
                     })
@@ -176,6 +190,28 @@ impl<'a, R: DynamicMemoryRunRepository + MemoryRepository + ?Sized, C: Conversat
             Err(error) => Err(CompanionPostTurnMemoryRunError::Run(error)),
         }
     }
+}
+
+fn summary_window(
+    previous: Option<lettuce_memory::MemorySummary>,
+    message_interval: u32,
+    source_message_count: usize,
+) -> Result<DynamicMemorySummaryWindow, CompanionPostTurnMemoryRunError> {
+    if message_interval == 0 || source_message_count == 0 {
+        return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+    }
+    let start = previous.map_or(0, |summary| summary.window_end);
+    let end = start
+        .checked_add(
+            u64::try_from(source_message_count)
+                .map_err(|_| CompanionPostTurnMemoryRunError::InvalidAdmission)?,
+        )
+        .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?;
+    Ok(DynamicMemorySummaryWindow {
+        message_interval,
+        start,
+        end,
+    })
 }
 
 fn validate_job(
@@ -503,6 +539,7 @@ mod tests {
     struct Repository {
         conversation_id: ConversationId,
         snapshot: MemorySpaceSnapshot,
+        summary: Mutex<Option<lettuce_memory::MemorySummary>>,
         run: Mutex<Option<DynamicMemoryRun>>,
         attempts: Mutex<Vec<DynamicMemoryAttempt>>,
     }
@@ -534,6 +571,22 @@ mod tests {
         }
     }
 
+    impl lettuce_memory::MemorySummaryRepository for Repository {
+        fn get_summary(
+            &self,
+            _space_id: MemorySpaceId,
+        ) -> Result<Option<lettuce_memory::MemorySummary>, MemoryRepositoryError> {
+            Ok(self.summary.lock().expect("summary").clone())
+        }
+
+        fn compare_and_apply_summary(
+            &self,
+            _change: lettuce_memory::MemorySummaryChange,
+        ) -> Result<lettuce_memory::MemorySummaryCommit, MemoryRepositoryError> {
+            unimplemented!()
+        }
+    }
+
     impl DynamicMemoryRunRepository for Repository {
         fn admit_dynamic_memory_run_attempt(
             &self,
@@ -552,6 +605,7 @@ mod tests {
                 time_awareness_enabled: input.time_awareness_enabled,
                 supersession_enabled: input.supersession_enabled,
                 structured_fallback_format: input.structured_fallback_format,
+                summary_window: input.summary_window,
                 tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
                     input.supersession_enabled,
                     input.time_awareness_enabled,
@@ -822,11 +876,34 @@ mod tests {
             batch: crate::CompanionPostTurnMemoryBatch {
                 conversation_id,
                 idempotency_key: key,
+                summary_message_interval: 20,
                 effects,
             },
             job: admitted.job,
             created: admitted.created,
         }
+    }
+
+    #[test]
+    fn new_summary_window_starts_after_the_durable_cursor() {
+        let space_id = MemorySpaceId::new();
+        let previous = lettuce_memory::MemorySummary {
+            space_id,
+            text: "previous".to_owned(),
+            token_count: 1,
+            window_start: 6,
+            window_end: 10,
+            source_message_ids: (0..4).map(|_| MessageId::new()).collect(),
+            updated_at: TimestampMillis::new(1),
+        };
+        assert_eq!(
+            summary_window(Some(previous), 4, 4).expect("window"),
+            lettuce_memory::DynamicMemorySummaryWindow {
+                message_interval: 4,
+                start: 10,
+                end: 14,
+            }
+        );
     }
 
     #[test]
@@ -914,6 +991,7 @@ mod tests {
                 revision: Revision::INITIAL,
                 items: Vec::new(),
             },
+            summary: Mutex::new(None),
             run: Mutex::new(None),
             attempts: Mutex::new(Vec::new()),
         };
@@ -978,9 +1056,31 @@ mod tests {
         assert!(first.run.time_awareness_enabled);
         assert!(first.run.supersession_enabled);
         assert_eq!(
+            first.run.summary_window,
+            lettuce_memory::DynamicMemorySummaryWindow {
+                message_interval: 20,
+                start: 0,
+                end: 4,
+            }
+        );
+        assert_eq!(
             first.run.tool_request,
             lettuce_memory::dynamic_memory_tool_request_for_run(true, true)
         );
+        *repository.summary.lock().expect("summary") = Some(lettuce_memory::MemorySummary {
+            space_id: repository.snapshot.id,
+            text: "persisted by the run".to_owned(),
+            token_count: 4,
+            window_start: first.run.summary_window.start,
+            window_end: first.run.summary_window.end,
+            source_message_ids: first
+                .run
+                .source_messages
+                .iter()
+                .map(|source| source.message_id)
+                .collect(),
+            updated_at: TimestampMillis::new(10),
+        });
         assert!(!first.recovered);
         assert_eq!(
             coordinator.admit_or_recover(
@@ -989,6 +1089,20 @@ mod tests {
                 true,
                 true,
                 DynamicMemoryStructuredFallbackFormat::Json,
+                &first_handle,
+                TimestampMillis::new(11),
+            ),
+            Err(CompanionPostTurnMemoryRunError::InvalidAdmission)
+        );
+        let mut changed_interval = first_admission.clone();
+        changed_interval.batch.summary_message_interval = 21;
+        assert_eq!(
+            coordinator.admit_or_recover(
+                &changed_interval,
+                resolved_profile.clone(),
+                true,
+                true,
+                DynamicMemoryStructuredFallbackFormat::Xml,
                 &first_handle,
                 TimestampMillis::new(11),
             ),
