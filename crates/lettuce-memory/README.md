@@ -59,7 +59,7 @@ semantic evidence from the terminal parent.
 
 Background post-turn extraction now has a separate memory-owned durable run
 boundary instead of fabricating a visible conversation generation turn. A run
-freezes the authoritative conversation memory space, ordered source-message
+freezes the authoritative starting memory snapshot, ordered source-message
 roles and active revision/candidate window, complete resolved model/profile snapshot,
 and required dynamic-memory tool contract. Retryable attempts own CAS lifecycle state and immutable ordered
 provider rounds/calls. Each round also freezes the exact provider-neutral
@@ -71,5 +71,6 @@ generation. The same port now owns atomic background round settlement: an
 optional memory change and every ordered typed result commit together, and an
 exact retry returns the stored settlement. Background provider continuation now
 replays those calls/results into the frozen context and admits the next bounded
-round; execute-until-terminal worker wiring and companion-effect completion
-remain later application-worker slices.
+round. The starting snapshot remains available after restart for the existing
+companion effect delta/summary calculation; host worker wiring remains a later
+application slice.

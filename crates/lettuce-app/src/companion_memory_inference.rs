@@ -695,12 +695,18 @@ mod tests {
     fn run_and_attempt(job_id: JobId) -> (DynamicMemoryRun, DynamicMemoryAttempt) {
         let run_id = DynamicMemoryRunId::new();
         let attempt_id = DynamicMemoryAttemptId::new();
+        let space_id = MemorySpaceId::new();
         let now = TimestampMillis::new(1);
         (
             DynamicMemoryRun {
                 id: run_id,
                 conversation_id: lettuce_types::ConversationId::new(),
-                space_id: MemorySpaceId::new(),
+                space_id,
+                starting_memory: MemorySpaceSnapshot {
+                    id: space_id,
+                    revision: lettuce_types::Revision::INITIAL,
+                    items: Vec::new(),
+                },
                 source_messages: vec![
                     lettuce_memory::DynamicMemorySourceMessage {
                         message_id: MessageId::new(),

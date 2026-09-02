@@ -112,6 +112,10 @@ CREATE TABLE dynamic_memory_runs (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
+    starting_memory_json TEXT NOT NULL CHECK (
+        json_valid(starting_memory_json)
+        AND json_extract(starting_memory_json, '$.format_version') = 1
+    ),
     profile_json TEXT NOT NULL CHECK (
         json_valid(profile_json)
         AND json_extract(profile_json, '$.format_version') = 1

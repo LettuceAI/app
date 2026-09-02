@@ -90,15 +90,20 @@ generation and structured text fallback remain deferred. A settled background
 round now appends its admitted native calls and typed results to the exact
 durable request context, stops before provider I/O on `done`, or dispatches and
 atomically admits the next bounded round with the frozen profile/tool contract.
-An already admitted next round replays without provider I/O. Terminal
-success/effect settlement, debounce/startup wiring, and binding admission to
-host startup/finalization remain later slices; the generic job store itself is
-still only an in-memory reference store. The background loop now connects the
+An already admitted next round replays without provider I/O. Debounce/startup
+wiring and binding admission to host startup/finalization remain later slices;
+the generic job store itself is still only an in-memory reference store. The background loop now connects the
 existing round executor and continuation coordinator until the durable `done`
 result. It resumes from the latest admitted checkpoint, skips seed generation,
 embedding, reduction, and provider dispatch for already settled/admitted work,
 and keeps create IDs, token counts, and timestamps as explicit caller inputs.
 The existing eight-round and 64-call admission limits remain authoritative.
+Terminal success now feeds the run's durable starting snapshot and current
+memory snapshot into the existing companion effect coordinator, settles every
+coalesced effect idempotently, then marks the attempt succeeded. Failure and
+cancellation use the existing bounded effect summaries and attempt failure
+codes. Effect-first ordering makes a crash retry converge without leaving a
+succeeded attempt whose effects are still processing.
 Conversation launch now creates the authoritative normalized memory space in
 the same transaction for every resolved manual/dynamic memory policy, and the
 memory repository resolves it directly from the conversation identity. This

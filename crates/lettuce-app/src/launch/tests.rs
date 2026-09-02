@@ -6,9 +6,8 @@ use lettuce_characters::{
     SceneDocumentV1, SceneOwner, ScenePart, SceneVariant, Selection, StarterMessage, StarterRole,
 };
 use lettuce_companions::{
-    CompanionConversationSender, CompanionEffectSourceWindow, CompanionMemoryChanges,
-    CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
-    CompanionTurnEffectOutcome, CompanionTurnEffectRepository, CompanionTurnEffectStatus,
+    CompanionConversationSender, CompanionStateOwner, CompanionStateReplacement,
+    CompanionStateRepository, CompanionTurnEffectRepository, CompanionTurnEffectStatus,
     CompanionTurnInput, EmotionClassification, EmotionLabelScore, PreparedCompanionSend,
     apply_turn,
 };
@@ -801,11 +800,7 @@ fn companion_send_commits_user_turn_and_state_once() {
 #[test]
 fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let database = database_with_builtins();
-    let model_id = seed_model(
-        &database,
-        ProviderProtocol::OpenAiCompatible,
-        "companion-effect",
-    );
+    let model_id = seed_model(&database, ProviderProtocol::Ollama, "companion-effect");
     set_application_default_model(&database, model_id);
     let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
         defaults.interaction_mode = InteractionMode::Companion;
@@ -885,7 +880,7 @@ fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             text: "I missed you too.".into(),
         }],
         ordinal: 0,
-        model,
+        model: model.clone(),
         replay: None,
         outcome: GenerationCheckpointEvent::Completed,
     };
@@ -944,28 +939,113 @@ fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         effect.id
     );
 
-    let ready = CompanionTurnEffectRepository::settle(
+    let source_ids = [user_message_id, effect.assistant_message_id];
+    let mut source_messages = ConversationReader::timeline_page(
         &database,
-        effect.id,
-        CompanionTurnEffectOutcome::Ready {
-            summary: Some("Reconnected warmly".into()),
-            memory_changes: CompanionMemoryChanges {
-                added: vec![MemoryId::new()],
-                ..CompanionMemoryChanges::default()
-            },
-            source_window: CompanionEffectSourceWindow {
-                message_ids: vec![
-                    effect.user_message_id.expect("user message"),
-                    effect.assistant_message_id,
-                ],
-                enqueued_at: TimestampMillis::new(NOW.get() + 11),
-            },
+        conversation.id,
+        conversation.active_branch_id,
+        &PageRequest {
+            cursor: None,
+            limit: PageLimit::new(20),
         },
-        TimestampMillis::new(NOW.get() + 12),
     )
-    .expect("settle effect");
+    .expect("source timeline")
+    .items
+    .into_iter()
+    .filter(|item| source_ids.contains(&item.message.id))
+    .map(|item| DynamicMemorySourceMessage {
+        message_id: item.message.id,
+        role: item.message.role,
+        render_source: item.message.active_render_source,
+    })
+    .collect::<Vec<_>>();
+    source_messages.sort_by_key(|source| {
+        source_ids
+            .iter()
+            .position(|id| *id == source.message_id)
+            .expect("source order")
+    });
+    assert_eq!(source_messages.len(), 2);
+    let mut stored_profile = ModelProfileRepository::get(&database, model.source_id)
+        .expect("profile")
+        .expect("profile exists");
+    stored_profile.config.chat_parameters.temperature = None;
+    let account = ProviderAccountRepository::get(&database, model.provider_account_id)
+        .expect("account")
+        .expect("account exists");
+    let profile = ResolvedInferenceProfile {
+        chat_profile: lettuce_models::resolve_chat_profile(
+            &model.expected_chat_identity(),
+            &stored_profile,
+            &account,
+            &lettuce_models::ChatParameterResolutionInput::default(),
+            &lettuce_models::ChatRequirements::default(),
+        )
+        .expect("resolve profile"),
+        tool_policy: ToolPolicy::Required,
+        output_policy: OutputPolicy::Plain,
+        safety_policy: SafetyContext::Standard,
+        correlation_id: None,
+    };
+    let run_id = DynamicMemoryRunId::new();
+    let memory_attempt_id = DynamicMemoryAttemptId::new();
+    let job_id = JobId::new();
+    let admitted = database
+        .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+            run_id,
+            attempt_id: memory_attempt_id,
+            conversation_id: conversation.id,
+            space_id: memory_space.id,
+            starting_memory: memory_space,
+            source_messages,
+            profile: profile.clone(),
+            job_id,
+            now: TimestampMillis::new(NOW.get() + 11),
+        })
+        .expect("background run");
+    database
+        .transition_dynamic_memory_attempt(
+            memory_attempt_id,
+            admitted.attempt.revision,
+            DynamicMemoryAttemptStatus::Processing,
+            None,
+            TimestampMillis::new(NOW.get() + 11),
+        )
+        .expect("processing attempt");
+    let batch = crate::CompanionPostTurnMemoryBatch {
+        conversation_id: conversation.id,
+        idempotency_key: lettuce_jobs::IdempotencyKey::new("terminal-effect-batch")
+            .expect("batch key"),
+        effects: vec![effect.clone()],
+    };
+    let handle = JobHandle::new(job_id);
+    let terminal = crate::CompanionMemoryTerminalCoordinator::new(&database);
+    let settled = terminal
+        .settle_success(
+            run_id,
+            memory_attempt_id,
+            &batch,
+            &handle,
+            TimestampMillis::new(NOW.get() + 12),
+        )
+        .expect("settle terminal success");
+    let replayed = terminal
+        .settle_success(
+            run_id,
+            memory_attempt_id,
+            &batch,
+            &handle,
+            TimestampMillis::new(NOW.get() + 99),
+        )
+        .expect("replay terminal success");
+    assert_eq!(settled, replayed);
+    assert_eq!(
+        settled.attempt.status,
+        DynamicMemoryAttemptStatus::Succeeded
+    );
+    let ready = settled.effects.into_iter().next().expect("settled effect");
     assert_eq!(ready.status, CompanionTurnEffectStatus::Ready);
-    assert_eq!(ready.summary.as_deref(), Some("Reconnected warmly"));
+    assert!(ready.memory_changes.added.is_empty());
     assert_eq!(
         ready
             .source_window
@@ -1034,41 +1114,91 @@ fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .collect::<Vec<_>>(),
         [continued_effect.id]
     );
-    let failed = CompanionTurnEffectRepository::settle(
+    let continued_source = ConversationReader::timeline_page(
         &database,
-        continued_effect.id,
-        CompanionTurnEffectOutcome::Failed {
-            summary: "post-turn memory unavailable".into(),
+        current.id,
+        current.active_branch_id,
+        &PageRequest {
+            cursor: None,
+            limit: PageLimit::new(20),
         },
-        TimestampMillis::new(NOW.get() + 40),
     )
-    .expect("fail continuation effect");
-    assert_eq!(failed.status, CompanionTurnEffectStatus::Failed);
-    let failed_replay = CompanionTurnEffectRepository::settle(
-        &database,
-        failed.id,
-        CompanionTurnEffectOutcome::Failed {
-            summary: "post-turn memory unavailable".into(),
-        },
-        TimestampMillis::new(NOW.get() + 41),
-    )
-    .expect("replay failed effect");
+    .expect("continuation timeline")
+    .items
+    .into_iter()
+    .find(|item| item.message.id == continued_effect.assistant_message_id)
+    .expect("continuation source");
+    let failure_run_id = DynamicMemoryRunId::new();
+    let failure_attempt_id = DynamicMemoryAttemptId::new();
+    let failure_job_id = JobId::new();
+    let failure_memory = MemoryRepository::get_for_conversation(&database, current.id)
+        .expect("memory")
+        .expect("memory space");
+    let admitted_failure = database
+        .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+            run_id: failure_run_id,
+            attempt_id: failure_attempt_id,
+            conversation_id: current.id,
+            space_id: failure_memory.id,
+            starting_memory: failure_memory,
+            source_messages: vec![DynamicMemorySourceMessage {
+                message_id: continued_source.message.id,
+                role: continued_source.message.role,
+                render_source: continued_source.message.active_render_source,
+            }],
+            profile,
+            job_id: failure_job_id,
+            now: TimestampMillis::new(NOW.get() + 39),
+        })
+        .expect("failure run");
+    database
+        .transition_dynamic_memory_attempt(
+            failure_attempt_id,
+            admitted_failure.attempt.revision,
+            DynamicMemoryAttemptStatus::Processing,
+            None,
+            TimestampMillis::new(NOW.get() + 39),
+        )
+        .expect("failure processing");
+    let failure_batch = crate::CompanionPostTurnMemoryBatch {
+        conversation_id: current.id,
+        idempotency_key: lettuce_jobs::IdempotencyKey::new("terminal-failure-batch")
+            .expect("batch key"),
+        effects: vec![continued_effect],
+    };
+    let failure_handle = JobHandle::new(failure_job_id);
+    let failed = terminal
+        .settle_failure(
+            failure_run_id,
+            failure_attempt_id,
+            &failure_batch,
+            &failure_handle,
+            crate::CompanionMemoryTerminalFailure::Cancelled,
+            TimestampMillis::new(NOW.get() + 40),
+        )
+        .expect("cancel terminal effect");
+    let failed_replay = terminal
+        .settle_failure(
+            failure_run_id,
+            failure_attempt_id,
+            &failure_batch,
+            &failure_handle,
+            crate::CompanionMemoryTerminalFailure::Cancelled,
+            TimestampMillis::new(NOW.get() + 41),
+        )
+        .expect("replay cancelled terminal effect");
     assert_eq!(failed_replay, failed);
+    assert_eq!(failed.attempt.status, DynamicMemoryAttemptStatus::Cancelled);
+    let failed = failed.effects.into_iter().next().expect("failed effect");
+    assert_eq!(failed.status, CompanionTurnEffectStatus::Failed);
+    assert_eq!(
+        failed.summary.as_deref(),
+        Some("Dynamic memory was cancelled")
+    );
     assert!(
         CompanionTurnEffectRepository::list_processing(&database, 512)
             .expect("failed effect is not pending")
             .is_empty()
-    );
-    assert_eq!(
-        CompanionTurnEffectRepository::settle(
-            &database,
-            failed.id,
-            CompanionTurnEffectOutcome::Failed {
-                summary: "changed".into(),
-            },
-            TimestampMillis::new(NOW.get() + 42),
-        ),
-        Err(lettuce_companions::CompanionTurnEffectRepositoryError::Conflict)
     );
 }
 
@@ -2750,6 +2880,9 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
             attempt_id,
             conversation_id,
             space_id,
+            starting_memory: MemoryRepository::get(&database, space_id)
+                .expect("starting memory")
+                .expect("memory space"),
             source_messages: vec![DynamicMemorySourceMessage {
                 message_id: source.message.id,
                 role: source.message.role,

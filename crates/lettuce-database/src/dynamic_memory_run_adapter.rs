@@ -13,7 +13,7 @@ use lettuce_memory::{
 use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
-use crate::{Database, conversation_query, decode_versioned, encode_versioned};
+use crate::{Database, conversation_query, decode_versioned, encode_versioned, memory_adapter};
 
 const JSON_VERSION: u32 = 1;
 
@@ -89,7 +89,7 @@ fn load_run_in(
 ) -> Result<DynamicMemoryRun, DynamicMemoryRunRepositoryError> {
     let mut run = connection
         .query_row(
-            "SELECT conversation_id,space_id,profile_json,tool_request_json,created_at \
+            "SELECT conversation_id,space_id,starting_memory_json,profile_json,tool_request_json,created_at \
              FROM dynamic_memory_runs WHERE id=?1",
             [id.to_string()],
             |row| {
@@ -97,12 +97,14 @@ fn load_run_in(
                     id,
                     conversation_id: parse_id(row.get(0)?)?,
                     space_id: parse_id(row.get(1)?)?,
+                    starting_memory: decode_versioned(&row.get::<_, String>(2)?, JSON_VERSION)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     source_messages: Vec::new(),
-                    profile: decode_versioned(&row.get::<_, String>(2)?, JSON_VERSION)
+                    profile: decode_versioned(&row.get::<_, String>(3)?, JSON_VERSION)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    tool_request: decode_versioned(&row.get::<_, String>(3)?, JSON_VERSION)
+                    tool_request: decode_versioned(&row.get::<_, String>(4)?, JSON_VERSION)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    created_at: TimestampMillis::new(row.get(4)?),
+                    created_at: TimestampMillis::new(row.get(5)?),
                 })
             },
         )
@@ -492,6 +494,7 @@ impl DynamicMemoryRunRepository for Database {
             id: input.run_id,
             conversation_id: input.conversation_id,
             space_id: input.space_id,
+            starting_memory: input.starting_memory,
             source_messages: input.source_messages,
             profile: input.profile,
             tool_request: dynamic_memory_tool_request(),
@@ -527,15 +530,24 @@ impl DynamicMemoryRunRepository for Database {
             Err(DynamicMemoryRunRepositoryError::NotFound) => {}
             Err(error) => return Err(error),
         }
+        if memory_adapter::get_in(&transaction, requested_run.space_id)
+            .map_err(|_| DynamicMemoryRunRepositoryError::Storage)?
+            .as_ref()
+            != Some(&requested_run.starting_memory)
+        {
+            return Err(DynamicMemoryRunRepositoryError::Conflict);
+        }
         transaction
             .execute(
                 "INSERT INTO dynamic_memory_runs \
-                 (id,conversation_id,space_id,profile_json,tool_request_json,created_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6)",
+                 (id,conversation_id,space_id,starting_memory_json,profile_json,tool_request_json,created_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
                 params![
                     requested_run.id.to_string(),
                     requested_run.conversation_id.to_string(),
                     requested_run.space_id.to_string(),
+                    encode_versioned(&requested_run.starting_memory, JSON_VERSION)
+                        .map_err(storage)?,
                     encode_versioned(&requested_run.profile, JSON_VERSION).map_err(storage)?,
                     encode_versioned(&requested_run.tool_request, JSON_VERSION).map_err(storage)?,
                     requested_run.created_at.get(),
@@ -1321,6 +1333,7 @@ mod tests {
                 attempt_id,
                 conversation_id,
                 space_id,
+                starting_memory: database.get(space_id).expect("memory").expect("space"),
                 source_messages: messages.clone(),
                 profile: profile(),
                 job_id: JobId::new(),
@@ -1490,11 +1503,20 @@ mod tests {
             attempt_id: parent_id,
             conversation_id,
             space_id,
+            starting_memory: database.get(space_id).expect("memory").expect("space"),
             source_messages: messages.clone(),
             profile: profile(),
             job_id: JobId::new(),
             now: TimestampMillis::new(10),
         };
+        let mut stale_start = admission.clone();
+        stale_start.run_id = DynamicMemoryRunId::new();
+        stale_start.attempt_id = DynamicMemoryAttemptId::new();
+        stale_start.starting_memory.revision = Revision::new(2);
+        assert_eq!(
+            database.admit_dynamic_memory_run_attempt(stale_start),
+            Err(DynamicMemoryRunRepositoryError::Conflict)
+        );
         let admitted = database
             .admit_dynamic_memory_run_attempt(admission.clone())
             .expect("admit");

@@ -73,6 +73,7 @@ pub struct DynamicMemoryRun {
     pub id: DynamicMemoryRunId,
     pub conversation_id: ConversationId,
     pub space_id: MemorySpaceId,
+    pub starting_memory: crate::MemorySpaceSnapshot,
     pub source_messages: Vec<DynamicMemorySourceMessage>,
     pub profile: ResolvedInferenceProfile,
     pub tool_request: ToolRequest,
@@ -99,6 +100,8 @@ impl DynamicMemoryRun {
             })
             || self.profile.tool_policy != ToolPolicy::Required
             || self.tool_request != dynamic_memory_tool_request()
+            || self.starting_memory.id != self.space_id
+            || self.starting_memory.validate().is_err()
         {
             return Err(DynamicMemoryRunError::InvalidRun);
         }
@@ -114,6 +117,7 @@ pub struct NewDynamicMemoryRunAttempt {
     pub attempt_id: DynamicMemoryAttemptId,
     pub conversation_id: ConversationId,
     pub space_id: MemorySpaceId,
+    pub starting_memory: crate::MemorySpaceSnapshot,
     pub source_messages: Vec<DynamicMemorySourceMessage>,
     pub profile: ResolvedInferenceProfile,
     pub job_id: JobId,
