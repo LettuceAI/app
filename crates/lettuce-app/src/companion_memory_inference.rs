@@ -346,6 +346,7 @@ fn build_first_request(
     let memory_lines = memory
         .items
         .iter()
+        .filter(|item| item.superseded_by.is_none())
         .map(|item| format!("[{}] {}", item.id, item.text))
         .collect::<Vec<_>>();
     let mut values = PromptRenderValues::default();
@@ -375,7 +376,7 @@ fn build_first_request(
                 recent_text: transcript.clone(),
                 dynamic_memory_enabled: true,
                 has_memory_summary: !previous_summary.trim().is_empty(),
-                has_key_memories: !memory.items.is_empty(),
+                has_key_memories: memory.items.iter().any(|item| item.superseded_by.is_none()),
                 provider_id: Some(run.profile.chat_profile.provider_kind.clone()),
                 reasoning_enabled: run.profile.chat_profile.parameters.reasoning_mode.is_some()
                     || run
@@ -748,6 +749,7 @@ mod tests {
                 ],
                 profile: profile(),
                 time_awareness_enabled: false,
+                supersession_enabled: false,
                 tool_request: dynamic_memory_tool_request(),
                 created_at: now,
             },
@@ -793,6 +795,9 @@ mod tests {
                 source_role: None,
                 observed_at: None,
                 observed_time_precision: None,
+                superseded_by: None,
+                superseded_at: None,
+                supersedes: Vec::new(),
                 token_count: 7,
                 is_cold: false,
                 is_pinned: false,
@@ -909,8 +914,9 @@ mod tests {
 
         let mut time_aware_run = run.clone();
         time_aware_run.time_awareness_enabled = true;
+        time_aware_run.supersession_enabled = true;
         time_aware_run.tool_request =
-            lettuce_memory::dynamic_memory_tool_request_with_source_requirement(true);
+            lettuce_memory::dynamic_memory_tool_request_for_run(true, true);
         let sources = [
             MaterializedSource {
                 message_id: time_aware_run.source_messages[0].message_id,
@@ -969,7 +975,9 @@ mod tests {
         }
         assert_eq!(
             request.tools,
-            Some(lettuce_memory::dynamic_memory_tool_request_with_source_requirement(true))
+            Some(lettuce_memory::dynamic_memory_tool_request_for_run(
+                true, true
+            ))
         );
     }
 

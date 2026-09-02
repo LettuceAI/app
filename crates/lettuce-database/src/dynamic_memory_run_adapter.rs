@@ -89,7 +89,7 @@ fn load_run_in(
 ) -> Result<DynamicMemoryRun, DynamicMemoryRunRepositoryError> {
     let mut run = connection
         .query_row(
-            "SELECT conversation_id,space_id,time_awareness_enabled,starting_memory_json,profile_json,tool_request_json,created_at \
+            "SELECT conversation_id,space_id,time_awareness_enabled,supersession_enabled,starting_memory_json,profile_json,tool_request_json,created_at \
              FROM dynamic_memory_runs WHERE id=?1",
             [id.to_string()],
             |row| {
@@ -98,14 +98,15 @@ fn load_run_in(
                     conversation_id: parse_id(row.get(0)?)?,
                     space_id: parse_id(row.get(1)?)?,
                     time_awareness_enabled: row.get(2)?,
-                    starting_memory: decode_versioned(&row.get::<_, String>(3)?, JSON_VERSION)
+                    supersession_enabled: row.get(3)?,
+                    starting_memory: decode_versioned(&row.get::<_, String>(4)?, JSON_VERSION)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     source_messages: Vec::new(),
-                    profile: decode_versioned(&row.get::<_, String>(4)?, JSON_VERSION)
+                    profile: decode_versioned(&row.get::<_, String>(5)?, JSON_VERSION)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    tool_request: decode_versioned(&row.get::<_, String>(5)?, JSON_VERSION)
+                    tool_request: decode_versioned(&row.get::<_, String>(6)?, JSON_VERSION)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    created_at: TimestampMillis::new(row.get(6)?),
+                    created_at: TimestampMillis::new(row.get(7)?),
                 })
             },
         )
@@ -545,7 +546,9 @@ impl DynamicMemoryRunRepository for Database {
             source_messages: input.source_messages,
             profile: input.profile,
             time_awareness_enabled: input.time_awareness_enabled,
-            tool_request: lettuce_memory::dynamic_memory_tool_request_with_source_requirement(
+            supersession_enabled: input.supersession_enabled,
+            tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                input.supersession_enabled,
                 input.time_awareness_enabled,
             ),
             created_at: input.now,
@@ -590,13 +593,14 @@ impl DynamicMemoryRunRepository for Database {
         transaction
             .execute(
                 "INSERT INTO dynamic_memory_runs \
-                 (id,conversation_id,space_id,time_awareness_enabled,starting_memory_json,profile_json,tool_request_json,created_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                 (id,conversation_id,space_id,time_awareness_enabled,supersession_enabled,starting_memory_json,profile_json,tool_request_json,created_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
                 params![
                     requested_run.id.to_string(),
                     requested_run.conversation_id.to_string(),
                     requested_run.space_id.to_string(),
                     requested_run.time_awareness_enabled,
+                    requested_run.supersession_enabled,
                     encode_versioned(&requested_run.starting_memory, JSON_VERSION)
                         .map_err(storage)?,
                     encode_versioned(&requested_run.profile, JSON_VERSION).map_err(storage)?,
@@ -1431,6 +1435,7 @@ mod tests {
                 source_messages: messages.clone(),
                 profile: profile(),
                 time_awareness_enabled: true,
+                supersession_enabled: true,
                 job_id: JobId::new(),
                 now: TimestampMillis::new(10),
             })
@@ -1523,6 +1528,9 @@ mod tests {
                     source_role: None,
                     observed_at: None,
                     observed_time_precision: None,
+                    superseded_by: None,
+                    superseded_at: None,
+                    supersedes: Vec::new(),
                     token_count: 4,
                     is_cold: false,
                     is_pinned: false,
@@ -1605,6 +1613,7 @@ mod tests {
             source_messages: messages.clone(),
             profile: profile(),
             time_awareness_enabled: true,
+            supersession_enabled: true,
             job_id: JobId::new(),
             now: TimestampMillis::new(10),
         };
@@ -1620,9 +1629,10 @@ mod tests {
             .admit_dynamic_memory_run_attempt(admission.clone())
             .expect("admit");
         assert!(admitted.run.time_awareness_enabled);
+        assert!(admitted.run.supersession_enabled);
         assert_eq!(
             admitted.run.tool_request,
-            lettuce_memory::dynamic_memory_tool_request_with_source_requirement(true)
+            lettuce_memory::dynamic_memory_tool_request_for_run(true, true)
         );
         assert_eq!(
             database
@@ -1700,6 +1710,9 @@ mod tests {
                             source_role: None,
                             observed_at: None,
                             observed_time_precision: None,
+                            superseded_by: None,
+                            superseded_at: None,
+                            supersedes: Vec::new(),
                             token_count: 4,
                             is_cold: false,
                             is_pinned: false,

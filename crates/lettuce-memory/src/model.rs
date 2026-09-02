@@ -65,6 +65,9 @@ pub struct MemoryItem {
     pub source_role: Option<lettuce_conversations::MessageRole>,
     pub observed_at: Option<TimestampMillis>,
     pub observed_time_precision: Option<String>,
+    pub superseded_by: Option<MemoryId>,
+    pub superseded_at: Option<TimestampMillis>,
+    pub supersedes: Vec<MemoryId>,
     pub token_count: u32,
     pub is_cold: bool,
     pub is_pinned: bool,
@@ -93,6 +96,9 @@ impl MemoryItem {
                         | lettuce_conversations::MessageRole::Assistant
                 )
             })
+            || self.superseded_by.is_some() != self.superseded_at.is_some()
+            || self.superseded_by == Some(self.id)
+            || self.supersedes.contains(&self.id)
         {
             return Err(MemoryValidationError::InvalidTemporalAttribution);
         }

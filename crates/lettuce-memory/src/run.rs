@@ -10,7 +10,7 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{dynamic_memory_tool_request, dynamic_memory_tool_request_with_source_requirement};
+use crate::{dynamic_memory_tool_request, dynamic_memory_tool_request_for_run};
 
 pub const MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES: usize = 1024;
 pub const MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS: u8 = 8;
@@ -78,6 +78,7 @@ pub struct DynamicMemoryRun {
     pub source_messages: Vec<DynamicMemorySourceMessage>,
     pub profile: ResolvedInferenceProfile,
     pub time_awareness_enabled: bool,
+    pub supersession_enabled: bool,
     pub tool_request: ToolRequest,
     pub created_at: TimestampMillis,
 }
@@ -102,7 +103,10 @@ impl DynamicMemoryRun {
             })
             || self.profile.tool_policy != ToolPolicy::Required
             || self.tool_request
-                != dynamic_memory_tool_request_with_source_requirement(self.time_awareness_enabled)
+                != dynamic_memory_tool_request_for_run(
+                    self.supersession_enabled,
+                    self.time_awareness_enabled,
+                )
             || self.starting_memory.id != self.space_id
             || self.starting_memory.validate().is_err()
         {
@@ -124,6 +128,7 @@ pub struct NewDynamicMemoryRunAttempt {
     pub source_messages: Vec<DynamicMemorySourceMessage>,
     pub profile: ResolvedInferenceProfile,
     pub time_awareness_enabled: bool,
+    pub supersession_enabled: bool,
     pub job_id: JobId,
     pub now: TimestampMillis,
 }

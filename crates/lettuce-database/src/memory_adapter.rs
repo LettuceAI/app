@@ -10,7 +10,8 @@ use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use crate::Database;
 
 const SELECT_ITEM: &str = "
-    SELECT id, text, category, source_message_id, source_role, observed_at, observed_time_precision, token_count, is_cold, is_pinned,
+    SELECT id, text, category, source_message_id, source_role, observed_at, observed_time_precision,
+           superseded_by, superseded_at, supersedes_json, token_count, is_cold, is_pinned,
            importance, persistence_importance, prompt_importance, volatility,
            access_count, created_at, last_accessed_at
       FROM memory_items
@@ -72,10 +73,11 @@ pub(super) fn insert_items(
         transaction
             .execute(
                 "INSERT INTO memory_items (
-                    space_id, id, ordinal, text, category, source_message_id, source_role, observed_at, observed_time_precision, token_count, is_cold, is_pinned,
+                    space_id, id, ordinal, text, category, source_message_id, source_role, observed_at, observed_time_precision,
+                    superseded_by, superseded_at, supersedes_json, token_count, is_cold, is_pinned,
                     importance, persistence_importance, prompt_importance, volatility,
                     access_count, created_at, last_accessed_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
                 params![
                     space_id.to_string(),
                     item.id.to_string(),
@@ -90,6 +92,9 @@ pub(super) fn insert_items(
                     }),
                     item.observed_at.map(TimestampMillis::get),
                     item.observed_time_precision,
+                    item.superseded_by.map(|id| id.to_string()),
+                    item.superseded_at.map(TimestampMillis::get),
+                    serde_json::to_string(&item.supersedes).map_err(storage)?,
                     i64::from(item.token_count),
                     item.is_cold,
                     item.is_pinned,
@@ -168,16 +173,27 @@ pub(super) fn get_in(
                     .map_err(storage)?
                     .map(TimestampMillis::new),
                 observed_time_precision: row.get(6).map_err(storage)?,
-                token_count: row.get(7).map_err(storage)?,
-                is_cold: row.get(8).map_err(storage)?,
-                is_pinned: row.get(9).map_err(storage)?,
-                importance: parse_score(row.get(10).map_err(storage)?)?,
-                persistence_importance: parse_score(row.get(11).map_err(storage)?)?,
-                prompt_importance: parse_score(row.get(12).map_err(storage)?)?,
-                volatility: parse_score(row.get(13).map_err(storage)?)?,
-                access_count: row.get(14).map_err(storage)?,
-                created_at: TimestampMillis::new(row.get(15).map_err(storage)?),
-                last_accessed_at: TimestampMillis::new(row.get(16).map_err(storage)?),
+                superseded_by: row
+                    .get::<_, Option<String>>(7)
+                    .map_err(storage)?
+                    .map(parse_id)
+                    .transpose()?,
+                superseded_at: row
+                    .get::<_, Option<i64>>(8)
+                    .map_err(storage)?
+                    .map(TimestampMillis::new),
+                supersedes: serde_json::from_str(&row.get::<_, String>(9).map_err(storage)?)
+                    .map_err(storage)?,
+                token_count: row.get(10).map_err(storage)?,
+                is_cold: row.get(11).map_err(storage)?,
+                is_pinned: row.get(12).map_err(storage)?,
+                importance: parse_score(row.get(13).map_err(storage)?)?,
+                persistence_importance: parse_score(row.get(14).map_err(storage)?)?,
+                prompt_importance: parse_score(row.get(15).map_err(storage)?)?,
+                volatility: parse_score(row.get(16).map_err(storage)?)?,
+                access_count: row.get(17).map_err(storage)?,
+                created_at: TimestampMillis::new(row.get(18).map_err(storage)?),
+                last_accessed_at: TimestampMillis::new(row.get(19).map_err(storage)?),
             });
         }
         items
@@ -336,6 +352,9 @@ mod tests {
             source_role: None,
             observed_at: None,
             observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
             token_count: 3,
             is_cold: false,
             is_pinned: false,
@@ -366,6 +385,9 @@ mod tests {
         first.source_role = Some(lettuce_conversations::MessageRole::User);
         first.observed_at = Some(TimestampMillis::new(42));
         first.observed_time_precision = Some("turn".to_owned());
+        first.superseded_by = Some(MemoryId::new());
+        first.superseded_at = Some(TimestampMillis::new(43));
+        first.supersedes = vec![MemoryId::new()];
         let created = database
             .create(snapshot(space_id, vec![first.clone()]))
             .expect("create");

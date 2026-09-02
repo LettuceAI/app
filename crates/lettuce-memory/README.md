@@ -66,6 +66,11 @@ tool contract. Time-aware runs require source attribution; other runs keep it op
 Created time-aware memories retain the selected source role, observed effective
 time, and legacy `turn` precision together; non-time-aware memory keeps those
 temporal fields empty.
+Companion runs also freeze whether create calls may declare `supersedes` IDs.
+The reducer keeps only existing active targets, links each replaced item to the
+new memory at creation time, omits superseded entries from later manager input,
+and retains only the latest forty superseded records as legacy does. Other
+direct/group runs do not advertise or apply supersession.
 Retryable attempts own CAS lifecycle state and immutable ordered
 provider rounds/calls. Each round also freezes the exact provider-neutral
 request context used for its inference, so continuation and recovery do not

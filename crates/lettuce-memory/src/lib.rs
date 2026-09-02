@@ -30,5 +30,5 @@ pub use tool::{
     CreateMemoryPreparation, MemoryBatchResult, MemoryToolArguments, MemoryToolCall,
     MemoryToolError, MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
     SemanticDuplicateEvidence, SoftDeleteReason, dynamic_memory_tool_request,
-    dynamic_memory_tool_request_with_source_requirement,
+    dynamic_memory_tool_request_for_run, dynamic_memory_tool_request_with_source_requirement,
 };

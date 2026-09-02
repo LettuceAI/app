@@ -24,6 +24,9 @@ CREATE TABLE memory_items (
     source_role TEXT CHECK (source_role IN ('user','assistant')),
     observed_at INTEGER,
     observed_time_precision TEXT CHECK (observed_time_precision = 'turn'),
+    superseded_by TEXT,
+    superseded_at INTEGER,
+    supersedes_json TEXT NOT NULL CHECK (json_valid(supersedes_json) AND json_type(supersedes_json) = 'array'),
     token_count INTEGER NOT NULL CHECK (token_count BETWEEN 0 AND 4294967295),
     is_cold INTEGER NOT NULL CHECK (is_cold IN (0, 1)),
     is_pinned INTEGER NOT NULL CHECK (is_pinned IN (0, 1)),
@@ -40,7 +43,9 @@ CREATE TABLE memory_items (
     CHECK (
         (source_role IS NULL AND observed_at IS NULL AND observed_time_precision IS NULL)
         OR (source_message_id IS NOT NULL AND source_role IS NOT NULL AND observed_at IS NOT NULL AND observed_time_precision = 'turn')
-    )
+    ),
+    CHECK ((superseded_by IS NULL) = (superseded_at IS NULL)),
+    CHECK (superseded_by IS NULL OR superseded_by <> id)
 ) STRICT;
 
 CREATE INDEX memory_items_space_policy_idx
@@ -120,6 +125,7 @@ CREATE TABLE dynamic_memory_runs (
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     time_awareness_enabled INTEGER NOT NULL CHECK (time_awareness_enabled IN (0,1)),
+    supersession_enabled INTEGER NOT NULL CHECK (supersession_enabled IN (0,1)),
     starting_memory_json TEXT NOT NULL CHECK (
         json_valid(starting_memory_json)
         AND json_extract(starting_memory_json, '$.format_version') = 1

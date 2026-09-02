@@ -99,7 +99,9 @@ conversation memory space plus its complete starting snapshot, ordered
 source-message roles, effective times, and active immutable revision/candidate sources,
 full resolved inference profile, frozen time-awareness flag, and matching tool
 contract. Memory items preserve coherent optional source role, observed time,
-and legacy `turn` precision alongside source-message attribution.
+and legacy `turn` precision alongside source-message attribution. The same
+rows preserve superseded-by/time and ordered supersedes IDs, while the immutable
+run freezes whether its tool contract enables companion supersession.
 CAS attempts provide
 created/processing/succeeded/failed/cancelled/interrupted state; ordered rounds
 and calls retain their exact provider-neutral request context, bounded usage,

@@ -104,6 +104,10 @@ disabled runs, source attribution is cleared. Each source effective time is
 frozen with the run; enabled transcript lines use the copied legacy
 `[message:ID] role: <time>YYYY-MM-DD HH:MM</time> content` format, and created
 memories persist the selected role, observed time, and `turn` precision.
+Companion runs additionally freeze the legacy supersession capability: their
+create schema exposes `supersedes`, valid active targets are linked during the
+existing atomic reduction, and disabled direct/group execution clears that
+field before reduction.
 The existing eight-round and 64-call admission limits remain authoritative.
 Terminal success now feeds the run's durable starting snapshot and current
 memory snapshot into the existing companion effect coordinator, settles every

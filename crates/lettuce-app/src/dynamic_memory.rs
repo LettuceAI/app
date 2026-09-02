@@ -1138,8 +1138,11 @@ fn prepare_calls(
         {
             return Err(DynamicMemoryHandlerError::InvalidExecution);
         }
-        let arguments =
+        let mut arguments =
             MemoryToolArguments::parse(&execution.definition_name, &execution.arguments)?;
+        if let MemoryToolArguments::CreateMemory { supersedes, .. } = &mut arguments {
+            supersedes.clear();
+        }
         let create = if let MemoryToolArguments::CreateMemory { text, .. } = &arguments {
             let prepared = preparations
                 .remove(&execution.id)
@@ -1313,6 +1316,9 @@ mod tests {
             source_role: None,
             observed_at: None,
             observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
             token_count: 3,
             is_cold: false,
             is_pinned: false,

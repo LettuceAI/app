@@ -13,17 +13,45 @@ use crate::{
 
 const TOOL_VERSION: u32 = 1;
 const MAX_DONE_SUMMARY_BYTES: usize = 4096;
+const MAX_SUPERSEDED_MEMORIES: usize = 40;
 
 pub fn dynamic_memory_tool_request() -> ToolRequest {
-    dynamic_memory_tool_request_with_source_requirement(false)
+    dynamic_memory_tool_request_for_run(false, false)
 }
 
 pub fn dynamic_memory_tool_request_with_source_requirement(
     require_source_message_id: bool,
 ) -> ToolRequest {
+    dynamic_memory_tool_request_for_run(false, require_source_message_id)
+}
+
+pub fn dynamic_memory_tool_request_for_run(
+    supersession_enabled: bool,
+    require_source_message_id: bool,
+) -> ToolRequest {
     let mut create_required = vec!["text", "category"];
     if require_source_message_id {
         create_required.push("source_message_id");
+    }
+    let mut create_properties = json!({
+        "text": { "type": "string" },
+        "category": {
+            "type": "string",
+            "enum": ["character_trait", "relationship", "plot_event", "world_detail", "preference", "other"]
+        },
+        "important": { "type": "boolean" },
+        "source_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID from the transcript message where this fact or event occurred."
+        }
+    });
+    if supersession_enabled {
+        create_properties["supersedes"] = json!({
+            "type": "array",
+            "items": { "type": "string", "format": "uuid" },
+            "description": "IDs of older memories this entry replaces."
+        });
     }
     ToolRequest {
         definitions: vec![
@@ -32,19 +60,7 @@ pub fn dynamic_memory_tool_request_with_source_requirement(
                 description: Some("Create one concise categorized long-term memory.".to_string()),
                 parameters: json!({
                     "type": "object",
-                    "properties": {
-                        "text": { "type": "string" },
-                        "category": {
-                            "type": "string",
-                            "enum": ["character_trait", "relationship", "plot_event", "world_detail", "preference", "other"]
-                        },
-                        "important": { "type": "boolean" },
-                        "source_message_id": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "ID from the transcript message where this fact or event occurred."
-                        }
-                    },
+                    "properties": create_properties,
                     "required": create_required,
                     "additionalProperties": false
                 }),
@@ -111,6 +127,7 @@ pub enum MemoryToolArguments {
         category: MemoryCategory,
         important: bool,
         source_message_id: Option<MessageId>,
+        supersedes: Vec<MemoryId>,
     },
     DeleteMemory {
         id: MemoryId,
@@ -136,7 +153,13 @@ impl MemoryToolArguments {
             "create_memory" => {
                 ensure_keys(
                     object,
-                    &["text", "category", "important", "source_message_id"],
+                    &[
+                        "text",
+                        "category",
+                        "important",
+                        "source_message_id",
+                        "supersedes",
+                    ],
                 )?;
                 let text = required_string(object, "text")?;
                 validate_memory_text(&text)?;
@@ -168,11 +191,30 @@ impl MemoryToolArguments {
                             .map_err(|_| MemoryToolError::InvalidField("source_message_id"))
                     })
                     .transpose()?;
+                let supersedes = object
+                    .get("supersedes")
+                    .map(|value| {
+                        value
+                            .as_array()
+                            .ok_or(MemoryToolError::InvalidField("supersedes"))?
+                            .iter()
+                            .map(|value| {
+                                value
+                                    .as_str()
+                                    .ok_or(MemoryToolError::InvalidField("supersedes"))?
+                                    .parse()
+                                    .map_err(|_| MemoryToolError::InvalidField("supersedes"))
+                            })
+                            .collect()
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
                 Ok(Self::CreateMemory {
                     text: text.trim().to_string(),
                     category,
                     important,
                     source_message_id,
+                    supersedes,
                 })
             }
             "delete_memory" => {
@@ -389,13 +431,14 @@ impl MemoryToolReducer {
                         category,
                         important,
                         source_message_id,
+                        supersedes,
                     } => apply_create(
                         &mut items,
                         text,
                         *category,
                         *important,
-                        *source_message_id,
-                        (call.source_role, call.observed_at),
+                        supersedes,
+                        (*source_message_id, call.source_role, call.observed_at),
                         call.create.clone(),
                     ),
                     MemoryToolArguments::DeleteMemory { id, confidence } => apply_delete(
@@ -448,14 +491,15 @@ fn apply_create(
     text: &str,
     category: MemoryCategory,
     important: bool,
-    source_message_id: Option<MessageId>,
+    requested_supersedes: &[MemoryId],
     observed_context: (
+        Option<MessageId>,
         Option<lettuce_conversations::MessageRole>,
         Option<TimestampMillis>,
     ),
     preparation: Option<CreateMemoryPreparation>,
 ) -> MemoryToolOutcome {
-    let (source_role, observed_at) = observed_context;
+    let (source_message_id, source_role, observed_at) = observed_context;
     let Some(preparation) = preparation else {
         return MemoryToolOutcome::Rejected {
             reason: MemoryToolRejection::CreateNotPrepared,
@@ -479,6 +523,16 @@ fn apply_create(
         return MemoryToolOutcome::DuplicateSkipped { existing_id };
     }
 
+    let supersedes = requested_supersedes
+        .iter()
+        .copied()
+        .filter(|id| {
+            *id != preparation.id
+                && items
+                    .iter()
+                    .any(|item| item.id == *id && item.superseded_by.is_none())
+        })
+        .collect::<Vec<_>>();
     items.push(MemoryItem {
         id: preparation.id,
         text: text.to_string(),
@@ -487,6 +541,9 @@ fn apply_create(
         source_role,
         observed_at,
         observed_time_precision: observed_at.map(|_| "turn".to_owned()),
+        superseded_by: None,
+        superseded_at: None,
+        supersedes: supersedes.clone(),
         token_count: preparation.token_count,
         is_cold: false,
         is_pinned: important,
@@ -498,7 +555,52 @@ fn apply_create(
         created_at: preparation.created_at,
         last_accessed_at: preparation.created_at,
     });
+    if !supersedes.is_empty() {
+        for item in items.iter_mut() {
+            if item.id != preparation.id
+                && item.superseded_by.is_none()
+                && supersedes.contains(&item.id)
+            {
+                item.superseded_by = Some(preparation.id);
+                item.superseded_at = Some(preparation.created_at);
+            }
+        }
+        enforce_superseded_cap(items, MAX_SUPERSEDED_MEMORIES);
+    }
     MemoryToolOutcome::Created { id: preparation.id }
+}
+
+fn enforce_superseded_cap(items: &mut Vec<MemoryItem>, cap: usize) {
+    let count = items
+        .iter()
+        .filter(|item| item.superseded_by.is_some())
+        .count();
+    if count <= cap {
+        return;
+    }
+    let mut order = items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| item.superseded_by.is_some())
+        .map(|(index, item)| {
+            (
+                index,
+                item.superseded_at.unwrap_or(TimestampMillis::UNIX_EPOCH),
+            )
+        })
+        .collect::<Vec<_>>();
+    order.sort_by_key(|(_, at)| *at);
+    let drop = order
+        .into_iter()
+        .take(count - cap)
+        .map(|(index, _)| index)
+        .collect::<HashSet<_>>();
+    let mut index = 0;
+    items.retain(|_| {
+        let keep = !drop.contains(&index);
+        index += 1;
+        keep
+    });
 }
 
 fn duplicate_id(
@@ -723,7 +825,7 @@ mod tests {
     use super::{
         CreateMemoryPreparation, MemoryToolArguments, MemoryToolCall, MemoryToolOutcome,
         MemoryToolReducer, SoftDeleteReason, dynamic_memory_tool_request,
-        dynamic_memory_tool_request_with_source_requirement,
+        dynamic_memory_tool_request_for_run, dynamic_memory_tool_request_with_source_requirement,
     };
     use crate::{MemoryCategory, MemoryItem, MemoryPolicy, MemorySpaceSnapshot, Score};
 
@@ -753,6 +855,9 @@ mod tests {
             source_role: None,
             observed_at: None,
             observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
             token_count: tokens,
             is_cold: false,
             is_pinned: pinned,
@@ -817,6 +922,19 @@ mod tests {
                 .iter()
                 .any(|field| field == "source_message_id")
         );
+
+        assert!(
+            dynamic_memory_tool_request_for_run(true, false).definitions[0].parameters
+                ["properties"]
+                .get("supersedes")
+                .is_some()
+        );
+        assert!(
+            dynamic_memory_tool_request_for_run(false, false).definitions[0].parameters
+                ["properties"]
+                .get("supersedes")
+                .is_none()
+        );
     }
 
     #[test]
@@ -848,6 +966,7 @@ mod tests {
                 category: MemoryCategory::Relationship,
                 important: false,
                 source_message_id: Some(source_message_id),
+                supersedes: Vec::new(),
             })
         );
     }
@@ -861,6 +980,7 @@ mod tests {
             category: MemoryCategory::Relationship,
             important: false,
             source_message_id: Some(source_message_id),
+            supersedes: Vec::new(),
         });
         create.create = Some(CreateMemoryPreparation {
             id: created_id,
@@ -883,6 +1003,107 @@ mod tests {
     }
 
     #[test]
+    fn create_supersedes_only_existing_active_memories() {
+        let active = item("Mira lives in Ankara.", 4, 1, false);
+        let active_id = active.id;
+        let mut already_superseded = item("Mira lived in Izmir.", 4, 1, false);
+        let already_superseded_id = already_superseded.id;
+        already_superseded.superseded_by = Some(MemoryId::new());
+        already_superseded.superseded_at = Some(TimestampMillis::new(1));
+        let existing_replacement = already_superseded.superseded_by;
+        let created_id = MemoryId::new();
+        let mut create = call(MemoryToolArguments::CreateMemory {
+            text: "Mira lives in Berlin.".to_owned(),
+            category: MemoryCategory::WorldDetail,
+            important: false,
+            source_message_id: None,
+            supersedes: vec![active_id, already_superseded_id, MemoryId::new()],
+        });
+        create.create = Some(CreateMemoryPreparation {
+            id: created_id,
+            token_count: 4,
+            created_at: TimestampMillis::new(2),
+            semantic_duplicate: None,
+        });
+
+        let result = MemoryToolReducer
+            .reduce(
+                &snapshot(vec![active, already_superseded]),
+                &policy(),
+                &[create],
+            )
+            .expect("supersede");
+        let items = result.change.expect("change").items;
+        let active = items.iter().find(|item| item.id == active_id).expect("old");
+        assert_eq!(active.superseded_by, Some(created_id));
+        assert_eq!(active.superseded_at, Some(TimestampMillis::new(2)));
+        let created = items
+            .iter()
+            .find(|item| item.id == created_id)
+            .expect("new");
+        assert_eq!(created.supersedes, vec![active_id]);
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| item.id == already_superseded_id)
+                .expect("already superseded")
+                .superseded_by,
+            existing_replacement
+        );
+    }
+
+    #[test]
+    fn superseded_history_keeps_the_latest_forty_entries() {
+        let mut items = (0..41)
+            .map(|at| {
+                let mut item = item("historical memory", 1, at, false);
+                item.superseded_by = Some(MemoryId::new());
+                item.superseded_at = Some(TimestampMillis::new(at));
+                item
+            })
+            .collect::<Vec<_>>();
+        let oldest = items[0].id;
+        let second_oldest = items[1].id;
+        let active = item("current location", 1, 42, false);
+        let active_id = active.id;
+        items.push(active);
+        let mut create = call(MemoryToolArguments::CreateMemory {
+            text: "new location".to_owned(),
+            category: MemoryCategory::WorldDetail,
+            important: false,
+            source_message_id: None,
+            supersedes: vec![active_id],
+        });
+        create.create = Some(CreateMemoryPreparation {
+            id: MemoryId::new(),
+            token_count: 1,
+            created_at: TimestampMillis::new(43),
+            semantic_duplicate: None,
+        });
+        let result = MemoryToolReducer
+            .reduce(
+                &snapshot(items),
+                &MemoryPolicy {
+                    max_entries: 100,
+                    hot_token_budget: 1_000,
+                    ..policy()
+                },
+                &[create],
+            )
+            .expect("cap superseded history");
+        let items = result.change.expect("change").items;
+        assert_eq!(
+            items
+                .iter()
+                .filter(|item| item.superseded_by.is_some())
+                .count(),
+            40
+        );
+        assert!(!items.iter().any(|item| item.id == oldest));
+        assert!(!items.iter().any(|item| item.id == second_oldest));
+    }
+
+    #[test]
     fn create_skips_normalized_and_semantic_duplicates() {
         let existing = item("Mira likes the old harbor.", 4, 1, false);
         let existing_id = existing.id;
@@ -893,6 +1114,7 @@ mod tests {
             category: MemoryCategory::Preference,
             important: false,
             source_message_id: None,
+            supersedes: Vec::new(),
         });
         first.create = Some(CreateMemoryPreparation {
             id: create_id,
@@ -916,6 +1138,7 @@ mod tests {
             category: MemoryCategory::Preference,
             important: false,
             source_message_id: None,
+            supersedes: Vec::new(),
         });
         semantic.create = Some(CreateMemoryPreparation {
             id: MemoryId::new(),
@@ -941,6 +1164,7 @@ mod tests {
             category: MemoryCategory::Other,
             important: false,
             source_message_id: None,
+            supersedes: Vec::new(),
         });
         create.create = Some(CreateMemoryPreparation {
             id: MemoryId::new(),

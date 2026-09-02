@@ -63,6 +63,7 @@ impl<'a, R: DynamicMemoryRunRepository + MemoryRepository + ?Sized, C: Conversat
         admission: &CompanionPostTurnMemoryAdmission,
         profile: ResolvedInferenceProfile,
         time_awareness_enabled: bool,
+        supersession_enabled: bool,
         handle: &JobHandle,
         now: TimestampMillis,
     ) -> Result<CompanionPostTurnMemoryRunDispatch, CompanionPostTurnMemoryRunError> {
@@ -87,6 +88,7 @@ impl<'a, R: DynamicMemoryRunRepository + MemoryRepository + ?Sized, C: Conversat
                         .ne(expected_messages.iter().copied())
                     || run.profile != profile
                     || run.time_awareness_enabled != time_awareness_enabled
+                    || run.supersession_enabled != supersession_enabled
                 {
                     return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
                 }
@@ -146,6 +148,7 @@ impl<'a, R: DynamicMemoryRunRepository + MemoryRepository + ?Sized, C: Conversat
                         source_messages,
                         profile,
                         time_awareness_enabled,
+                        supersession_enabled,
                         job_id: handle.id(),
                         now,
                     })
@@ -543,7 +546,9 @@ mod tests {
                 source_messages: input.source_messages,
                 profile: input.profile,
                 time_awareness_enabled: input.time_awareness_enabled,
-                tool_request: lettuce_memory::dynamic_memory_tool_request_with_source_requirement(
+                supersession_enabled: input.supersession_enabled,
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    input.supersession_enabled,
                     input.time_awareness_enabled,
                 ),
                 created_at: input.now,
@@ -917,6 +922,7 @@ mod tests {
                 &first_admission,
                 resolved_profile.clone(),
                 true,
+                true,
                 &first_handle,
                 TimestampMillis::new(10),
             )
@@ -964,9 +970,10 @@ mod tests {
         );
         assert_eq!(first.attempt.status, DynamicMemoryAttemptStatus::Processing);
         assert!(first.run.time_awareness_enabled);
+        assert!(first.run.supersession_enabled);
         assert_eq!(
             first.run.tool_request,
-            lettuce_memory::dynamic_memory_tool_request_with_source_requirement(true)
+            lettuce_memory::dynamic_memory_tool_request_for_run(true, true)
         );
         assert!(!first.recovered);
         assert_eq!(
@@ -974,6 +981,18 @@ mod tests {
                 &first_admission,
                 profile(),
                 true,
+                true,
+                &first_handle,
+                TimestampMillis::new(11),
+            ),
+            Err(CompanionPostTurnMemoryRunError::InvalidAdmission)
+        );
+        assert_eq!(
+            coordinator.admit_or_recover(
+                &first_admission,
+                resolved_profile.clone(),
+                true,
+                false,
                 &first_handle,
                 TimestampMillis::new(11),
             ),
@@ -984,6 +1003,7 @@ mod tests {
                 .admit_or_recover(
                     &first_admission,
                     resolved_profile.clone(),
+                    true,
                     true,
                     &first_handle,
                     TimestampMillis::new(11),
@@ -1000,6 +1020,7 @@ mod tests {
                 &mismatched_admission,
                 resolved_profile.clone(),
                 true,
+                true,
                 &first_handle,
                 TimestampMillis::new(11),
             ),
@@ -1013,6 +1034,7 @@ mod tests {
             .admit_or_recover(
                 &restarted_admission,
                 resolved_profile,
+                true,
                 true,
                 &restarted_handle,
                 TimestampMillis::new(12),

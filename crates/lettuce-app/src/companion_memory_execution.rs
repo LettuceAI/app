@@ -116,6 +116,7 @@ impl<
             &round,
             &run.source_messages,
             run.time_awareness_enabled,
+            run.supersession_enabled,
             &prepared,
         )?;
         let reduction = MemoryToolReducer.reduce(&snapshot, policy, &calls)?;
@@ -164,6 +165,7 @@ fn prepare_background_calls(
     round: &DynamicMemoryInferenceRound,
     sources: &[lettuce_memory::DynamicMemorySourceMessage],
     time_awareness_enabled: bool,
+    supersession_enabled: bool,
     prepared_creates: &[PreparedMemoryCreate],
 ) -> Result<Vec<MemoryToolCall>, CompanionMemoryRoundExecutionError> {
     let mut preparations = prepared_creates
@@ -183,9 +185,14 @@ fn prepare_background_calls(
         let mut source_role = None;
         let mut observed_at = None;
         if let MemoryToolArguments::CreateMemory {
-            source_message_id, ..
+            source_message_id,
+            supersedes,
+            ..
         } = &mut arguments
         {
+            if !supersession_enabled {
+                supersedes.clear();
+            }
             if time_awareness_enabled {
                 if source_message_id.is_none_or(|message_id| {
                     !sources.iter().any(|source| source.message_id == message_id)
@@ -375,6 +382,7 @@ mod tests {
                         effective_time: TimestampMillis::new(1),
                     }],
                     true,
+                    true,
                     &prepared,
                 )
                 .expect("calls"),
@@ -414,6 +422,7 @@ mod tests {
         let attempt_id = DynamicMemoryAttemptId::new();
         let first_source = MessageId::new();
         let latest_source = MessageId::new();
+        let requested_supersede = MemoryId::new();
         let call = evidence(
             run_id,
             attempt_id,
@@ -422,7 +431,8 @@ mod tests {
             json!({
                 "text":"The user prefers tea",
                 "category":"preference",
-                "source_message_id":MessageId::new().to_string()
+                "source_message_id":MessageId::new().to_string(),
+                "supersedes":[requested_supersede]
             }),
         );
         let round = DynamicMemoryInferenceRound {
@@ -457,6 +467,7 @@ mod tests {
             &round,
             &sources,
             true,
+            true,
             &[PreparedMemoryCreate {
                 execution_id: call.id,
                 preparation: CreateMemoryPreparation {
@@ -482,6 +493,11 @@ mod tests {
             Some(lettuce_conversations::MessageRole::User)
         );
         assert_eq!(calls[0].observed_at, Some(TimestampMillis::new(1)));
+        assert!(matches!(
+            &calls[0].arguments,
+            MemoryToolArguments::CreateMemory { supersedes, .. }
+                if supersedes == &[requested_supersede]
+        ));
 
         let unanchored = evidence(
             run_id,
@@ -495,6 +511,7 @@ mod tests {
         let calls = prepare_background_calls(
             &unanchored_round,
             &sources,
+            true,
             true,
             &[PreparedMemoryCreate {
                 execution_id: unanchored.id,
@@ -525,6 +542,7 @@ mod tests {
             &round,
             &sources,
             false,
+            false,
             &[PreparedMemoryCreate {
                 execution_id: call.id,
                 preparation: CreateMemoryPreparation {
@@ -541,8 +559,9 @@ mod tests {
             calls[0].arguments,
             MemoryToolArguments::CreateMemory {
                 source_message_id: None,
+                ref supersedes,
                 ..
-            }
+            } if supersedes.is_empty()
         ));
         assert_eq!(calls[0].source_role, None);
         assert_eq!(calls[0].observed_at, None);
