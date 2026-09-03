@@ -152,6 +152,11 @@ The same terminal read now exposes the ordered prefix of at most sixteen
 nonblank memory items whose IDs were absent from the run's durable starting
 snapshot. This is the legacy growth trigger/evidence boundary; it does not run
 growth or alter memory settlement.
+Successful direct-companion results can now admit one restart-policy
+`CompanionGrowth` job keyed by the durable memory-run ID. Admission freezes the
+successful attempt, resolved memory profile, current Soul revision, character
+owner, and bounded fresh-memory evidence; empty and non-companion results
+create no job. Provider execution and Soul apply remain the next step.
 The claimed-job runner composes the existing run admission/recovery,
 first-round inference, bounded execution/continuation loop, and terminal
 settlement into one application path. Prompt/profile/policy inputs and stable

@@ -54,6 +54,7 @@ impl From<JobKind> for JobKindKey {
             JobKind::SpeechSynthesize => 16,
             JobKind::EmbeddingBenchmark => 17,
             JobKind::Maintenance => 18,
+            JobKind::CompanionGrowth => 19,
         })
     }
 }

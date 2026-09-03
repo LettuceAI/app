@@ -48,6 +48,10 @@ nonempty, deduplicated classes; kind/subject compatibility is intentionally
 registration-owned so a remote image executor can declare network rather than
 GPU admission without a universal default baked into this crate.
 
+`CompanionGrowth` is a distinct durable kind because Soul growth is derived
+after memory success and must fail or retry without changing the completed
+memory job. Its feature input and checkpoints remain application-owned.
+
 Lease timestamps use an inclusive boundary: a mutation or heartbeat at the
 expiry instant is accepted, while a timestamp after expiry is rejected. A
 heartbeat never shortens the authoritative snapshot expiry. The first claim
