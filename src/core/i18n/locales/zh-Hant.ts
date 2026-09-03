@@ -4246,6 +4246,9 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "供應商預設值",
       forceSend: "強制發送思考狀態",
       forceSendDescription: "明確地向模型發送 enable_thinking，而不是省略它。這有助於在未發送數值時預設為思考的本地模型。",
+      forceGemma4Reasoning: "強制 Gemma4 系列模型進行推理",
+      forceGemma4ReasoningDescription:
+        "注入推理預填充，使 Gemma4 系列模型以思考區塊開始回覆，強制它們在回答前進行推理。",
     },
     runtimeFacts: {
       updated: "已更新",

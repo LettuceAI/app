@@ -73,6 +73,19 @@ fn earliest_open_tag(buffer: &str) -> Option<(usize, &'static str, &'static str)
 }
 
 impl ThinkingTagStreamParser {
+    /// Start the parser already inside a reasoning block that ends at `close_tag`.
+    /// Used when the assistant reply was prefilled with a reasoning opener (e.g.
+    /// forced Gemma4 reasoning): the model's output then begins mid-thought and
+    /// never emits the open tag, so the parser would otherwise treat the whole
+    /// reasoning block as visible content.
+    pub fn starting_in_reasoning(close_tag: &'static str) -> Self {
+        Self {
+            in_think: true,
+            close_tag: Some(close_tag),
+            pending: String::new(),
+        }
+    }
+
     pub fn feed(&mut self, chunk: &str) -> ThinkingSplit {
         self.pending.push_str(chunk);
         let mut split = ThinkingSplit::default();
@@ -149,6 +162,33 @@ pub fn normalize_thinking_content(
 ) -> ThinkingSplit {
     let mut split = content
         .map(split_thinking_tags)
+        .unwrap_or_default()
+        .merge_reasoning(explicit_reasoning);
+
+    split.content = split.content.trim().to_string();
+    split.reasoning = split.reasoning.trim().to_string();
+    split
+}
+
+/// Like [`normalize_thinking_content`], but the parser begins already inside a
+/// reasoning block that ends at `close_tag`. Used when the reply was prefilled
+/// with a reasoning opener (e.g. forced Gemma4 reasoning): the raw output starts
+/// mid-thought and never emits the open tag, so a default parse would leave the
+/// entire reasoning block in the visible content.
+pub fn normalize_thinking_content_starting_in_reasoning(
+    content: Option<&str>,
+    explicit_reasoning: Option<&str>,
+    close_tag: &'static str,
+) -> ThinkingSplit {
+    let mut split = content
+        .map(|text| {
+            let mut parser = ThinkingTagStreamParser::starting_in_reasoning(close_tag);
+            let mut split = parser.feed(text);
+            let tail = parser.finish();
+            split.content.push_str(&tail.content);
+            split.reasoning.push_str(&tail.reasoning);
+            split
+        })
         .unwrap_or_default()
         .merge_reasoning(explicit_reasoning);
 

@@ -4246,6 +4246,9 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Sağlayıcı varsayılanı",
       forceSend: "Düşünme durumunu zorla gönder",
       forceSendDescription: "enable_thinking parametresini atlamak yerine modele açıkça gönderir. Değer gönderilmediğinde varsayılan olarak düşünme moduna geçen yerel modeller için yardımcı olur.",
+      forceGemma4Reasoning: "Gemma4 serisi modellerde akıl yürütmeyi zorla",
+      forceGemma4ReasoningDescription:
+        "Bir akıl yürütme ön dolgusu enjekte ederek Gemma4 serisi modellerin yanıtlarına bir düşünme bloğuyla başlamasını sağlar ve böylece yanıt vermeden önce akıl yürütmeye zorlar.",
     },
     runtimeFacts: {
       updated: "Güncellendi",

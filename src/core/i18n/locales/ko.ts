@@ -4246,6 +4246,9 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "제공자 기본값",
       forceSend: "사고 상태 강제 전송",
       forceSendDescription: "enable_thinking을 생략하지 않고 모델에 명시적으로 전송합니다. 값이 전송되지 않을 때 기본적으로 사고하는 로컬 모델에 도움이 됩니다.",
+      forceGemma4Reasoning: "Gemma4 시리즈 모델에서 추론 강제",
+      forceGemma4ReasoningDescription:
+        "추론 프리필을 삽입하여 Gemma4 시리즈 모델이 사고 블록으로 응답을 시작하도록 하여 답변하기 전에 추론하도록 강제합니다.",
     },
     runtimeFacts: {
       updated: "업데이트됨",

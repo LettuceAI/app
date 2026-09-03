@@ -9646,6 +9646,9 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Provider default",
       forceSend: "思考状態を強制送信",
       forceSendDescription: "enable_thinking を省略せずに明示的にモデルに送信します。値を送らないと既定で思考するローカルモデルに役立ちます。",
+      forceGemma4Reasoning: "Gemma4 シリーズのモデルで推論を強制する",
+      forceGemma4ReasoningDescription:
+        "推論プレフィルを挿入し、Gemma4 シリーズのモデルが思考ブロックで返信を開始するようにして、回答する前に推論するよう強制します。",
     },
     runtimeFacts: {
       updated: "Updated",

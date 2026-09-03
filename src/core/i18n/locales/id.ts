@@ -9646,6 +9646,9 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Provider default",
       forceSend: "Paksa kirim status berpikir",
       forceSendDescription: "Kirim enable_thinking secara eksplisit ke model alih-alih menghilangkannya. Membantu model lokal yang default berpikir saat tidak ada nilai dikirim.",
+      forceGemma4Reasoning: "Paksa Penalaran di model seri Gemma4",
+      forceGemma4ReasoningDescription:
+        "Menyuntikkan prefill penalaran agar model seri Gemma4 memulai balasannya dengan blok berpikir, memaksa mereka bernalar sebelum menjawab.",
     },
     runtimeFacts: {
       updated: "Updated",

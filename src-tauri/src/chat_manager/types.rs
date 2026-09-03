@@ -907,6 +907,8 @@ pub struct AdvancedModelSettings {
     pub reasoning_budget_tokens: Option<u32>,
     #[serde(default)]
     pub force_send_thinking_state: Option<bool>,
+    #[serde(default)]
+    pub force_gemma4_reasoning: Option<bool>,
     // Caching settings
     #[serde(default)]
     pub prompt_caching_enabled: Option<bool>,
@@ -1052,6 +1054,7 @@ impl Default for AdvancedModelSettings {
             reasoning_effort: None,
             reasoning_budget_tokens: None,
             force_send_thinking_state: None,
+            force_gemma4_reasoning: None,
             prompt_caching_enabled: Some(false),
             prompt_caching_ttl: Some("5min".to_string()),
             open_router_provider: None,

@@ -4348,6 +4348,9 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Provider default",
       forceSend: "Forcer l'envoi de l'état de réflexion",
       forceSendDescription: "Envoyer explicitement enable_thinking au modèle au lieu de l'omettre. Aide les modèles locaux qui activent la réflexion par défaut lorsqu'aucune valeur n'est envoyée.",
+      forceGemma4Reasoning: "Forcer le raisonnement dans les modèles de la série Gemma4",
+      forceGemma4ReasoningDescription:
+        "Injecte un préremplissage de raisonnement afin que les modèles de la série Gemma4 commencent leur réponse par un bloc de réflexion, les forçant à raisonner avant de répondre.",
     },
     runtimeFacts: {
       updated: "Updated",

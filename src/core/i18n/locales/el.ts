@@ -4348,6 +4348,9 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Provider default",
       forceSend: "Επιβολή αποστολής κατάστασης σκέψης",
       forceSendDescription: "Αποστολή ρητά του enable_thinking στο μοντέλο αντί για την παράλειψή του. Βοηθά τοπικά μοντέλα που προεπιλέγουν τη σκέψη όταν δεν αποστέλλει καμία τιμή.",
+      forceGemma4Reasoning: "Επιβολή συλλογισμού σε μοντέλα σειράς Gemma4",
+      forceGemma4ReasoningDescription:
+        "Εισάγει ένα prefill συλλογισμού ώστε τα μοντέλα σειράς Gemma4 να ξεκινούν την απάντησή τους με ένα μπλοκ σκέψης, αναγκάζοντάς τα να συλλογιστούν πριν απαντήσουν.",
     },
     runtimeFacts: {
       updated: "Updated",

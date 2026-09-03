@@ -110,6 +110,7 @@ type ControllerReturn = {
   handleReasoningEffortChange: (value: "low" | "medium" | "high" | null) => void;
   handleReasoningBudgetChange: (value: number | null) => void;
   handleForceSendThinkingStateChange: (value: boolean) => void;
+  handleForceGemma4ReasoningChange: (value: boolean) => void;
   handlePromptCachingEnabledChange: (value: boolean) => void;
   handlePromptCachingTtlChange: (value: string) => void;
   applyLlamaRuntimeSuggestion: () => Promise<boolean>;
@@ -519,8 +520,20 @@ export function useModelEditorController(): ControllerReturn {
             : {}),
         },
       });
+
+      // The forced-reasoning prefill only applies to the local llama.cpp engine,
+      // so clear it when switching to any other provider to avoid a stale toggle.
+      if (providerId !== "llamacpp" && state.modelAdvancedDraft.forceGemma4Reasoning) {
+        dispatch({
+          type: "set_model_advanced_draft",
+          payload: {
+            ...state.modelAdvancedDraft,
+            forceGemma4Reasoning: null,
+          },
+        });
+      }
     },
-    [dispatch, state.editorModel],
+    [dispatch, state.editorModel, state.modelAdvancedDraft],
   );
 
   const setModelAdvancedDraft = useCallback(
@@ -1456,6 +1469,19 @@ export function useModelEditorController(): ControllerReturn {
     [dispatch, state.modelAdvancedDraft],
   );
 
+  const handleForceGemma4ReasoningChange = useCallback(
+    (value: boolean) => {
+      dispatch({
+        type: "set_model_advanced_draft",
+        payload: {
+          ...state.modelAdvancedDraft,
+          forceGemma4Reasoning: value,
+        },
+      });
+    },
+    [dispatch, state.modelAdvancedDraft],
+  );
+
   const handlePromptCachingEnabledChange = useCallback(
     (value: boolean) => {
       dispatch({
@@ -1868,6 +1894,7 @@ export function useModelEditorController(): ControllerReturn {
     handleReasoningEffortChange,
     handleReasoningBudgetChange,
     handleForceSendThinkingStateChange,
+    handleForceGemma4ReasoningChange,
     handlePromptCachingEnabledChange,
     handlePromptCachingTtlChange,
     applyLlamaRuntimeSuggestion,

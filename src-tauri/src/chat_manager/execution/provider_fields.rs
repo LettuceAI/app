@@ -261,6 +261,8 @@ mod tests {
             llama_dry_sequence_breakers: Some(vec![":".to_string()]),
             llama_xtc_probability: Some(0.5),
             llama_xtc_threshold: Some(0.1),
+            llama_adaptive_target: Some(0.3),
+            llama_adaptive_decay: Some(0.95),
             ..Default::default()
         };
         let model = Model {
@@ -305,7 +307,7 @@ mod tests {
         assert_eq!(extra.get("llamaNPenRange"), Some(&json!(64)));
         assert_eq!(
             extra.len(),
-            42,
+            44,
             "unexpected llama extra-body key count; a resolver stopped emitting or a new field was added without updating this fixture: {:?}",
             extra.keys().collect::<Vec<_>>()
         );
@@ -706,6 +708,27 @@ pub(crate) fn build_provider_extra_fields(
             "chat_template_kwargs".to_string(),
             json!({ "enable_thinking": enabled }),
         );
+    }
+
+    // Force reasoning on Gemma4-series models by prefilling the assistant reply
+    // with an opening thought channel. Only meaningful for the local llama.cpp
+    // engine, which builds the prompt itself and can carry the prefill.
+    if provider_id == "llamacpp" {
+        let force_gemma4_reasoning = model
+            .advanced_model_settings
+            .as_ref()
+            .and_then(|cfg| cfg.force_gemma4_reasoning)
+            .or_else(|| {
+                session
+                    .advanced_model_settings
+                    .as_ref()
+                    .and_then(|cfg| cfg.force_gemma4_reasoning)
+            })
+            .unwrap_or(false);
+
+        if force_gemma4_reasoning {
+            extra.insert("forceGemma4Reasoning".to_string(), json!(true));
+        }
     }
 
     // ─────────────────────────────────────────────────────────────

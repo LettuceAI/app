@@ -4348,6 +4348,9 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Provider default",
       forceSend: "Forzar el envío del estado de pensamiento",
       forceSendDescription: "Envía explícitamente enable_thinking al modelo en lugar de omitirlo. Ayuda a los modelos locales que piensan por defecto cuando no se envía ningún valor.",
+      forceGemma4Reasoning: "Forzar el razonamiento en los modelos de la serie Gemma4",
+      forceGemma4ReasoningDescription:
+        "Inserta un prefill de razonamiento para que los modelos de la serie Gemma4 comiencen su respuesta con un bloque de pensamiento, obligándolos a razonar antes de responder.",
     },
     runtimeFacts: {
       updated: "Updated",

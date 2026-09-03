@@ -9646,6 +9646,9 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Provider default",
       forceSend: "थिंकिंग स्टेट को ज़बरदस्ती भेजें",
       forceSendDescription: "इसे छोड़ने के बजाय स्पष्ट रूप से मॉडल को enable_thinking भेजें। यह उन लोकल मॉडल की मदद करता है जो मान द्वारा थिंकिंग करते हैं जब कोई वैल्यू नहीं भेजी जाती।",
+      forceGemma4Reasoning: "Gemma4-सीरीज़ मॉडल में रीज़निंग को ज़बरदस्ती लागू करें",
+      forceGemma4ReasoningDescription:
+        "एक रीज़निंग प्रीफिल इंजेक्ट करता है ताकि Gemma4-सीरीज़ मॉडल अपनी प्रतिक्रिया की शुरुआत एक थिंकिंग ब्लॉक से करें, जिससे वे उत्तर देने से पहले तर्क करने के लिए मजबूर हों।",
     },
     runtimeFacts: {
       updated: "Updated",

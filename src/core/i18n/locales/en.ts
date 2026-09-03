@@ -4396,6 +4396,9 @@ export const enMessages = {
       forceSend: "Force send thinking state",
       forceSendDescription:
         "Explicitly send enable_thinking to the model instead of omitting it. Helps local models that default to thinking when no value is sent.",
+      forceGemma4Reasoning: "Force Reasoning in Gemma4-series models",
+      forceGemma4ReasoningDescription:
+        "Injects a reasoning prefill so Gemma4-series models open their reply with a thinking block, forcing them to reason before answering.",
     },
     runtimeFacts: {
       updated: "Updated",

@@ -8405,6 +8405,9 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Provider default",
       forceSend: "Buộc gửi trạng thái suy nghĩ",
       forceSendDescription: "Gửi rõ ràng enable_thinking đến mô hình thay vì bỏ qua nó. Giúp các mô hình cục bộ mặc định suy nghĩ khi không có giá trị nào được gửi.",
+      forceGemma4Reasoning: "Buộc suy luận trong các mô hình dòng Gemma4",
+      forceGemma4ReasoningDescription:
+        "Chèn một prefill suy luận để các mô hình dòng Gemma4 bắt đầu câu trả lời bằng một khối suy nghĩ, buộc chúng phải suy luận trước khi trả lời.",
     },
     runtimeFacts: {
       updated: "Updated",

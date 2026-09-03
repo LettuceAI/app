@@ -4785,6 +4785,9 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Aanbiederstandaard",
       forceSend: "Denkstaat geforceerd verzenden",
       forceSendDescription: "Stuur enable_thinking expliciet naar het model in plaats van het weg te laten. Helpt lokale modellen die standaard nadenken wanneer geen waarde wordt verzonden.",
+      forceGemma4Reasoning: "Redeneren forceren in modellen van de Gemma4-serie",
+      forceGemma4ReasoningDescription:
+        "Voegt een redeneer-prefill in zodat modellen van de Gemma4-serie hun antwoord beginnen met een denkblok, waardoor ze gedwongen worden te redeneren voordat ze antwoorden.",
     },
     runtimeFacts: {
       updated: "Bijgewerkt",

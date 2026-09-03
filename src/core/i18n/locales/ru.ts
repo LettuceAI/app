@@ -4246,6 +4246,9 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Значение провайдера по умолчанию",
       forceSend: "Принудительно отправлять состояние размышления",
       forceSendDescription: "Явно отправлять enable_thinking модели вместо его опускания. Помогает локальным моделям, которые по умолчанию размышляют, когда значение не отправлено.",
+      forceGemma4Reasoning: "Принудительное рассуждение в моделях серии Gemma4",
+      forceGemma4ReasoningDescription:
+        "Вставляет префилл рассуждения, чтобы модели серии Gemma4 начинали свой ответ с блока размышления, вынуждая их рассуждать перед ответом.",
     },
     runtimeFacts: {
       updated: "Обновлено",

@@ -4246,6 +4246,9 @@ export const deMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Anbieter-Standard",
       forceSend: "Denkzustand erzwungen senden",
       forceSendDescription: "enable_thinking explizit an das Modell senden, statt es wegzulassen. Hilft lokalen Modellen, die standardmäßig denken, wenn kein Wert gesendet wird.",
+      forceGemma4Reasoning: "Reasoning bei Modellen der Gemma4-Reihe erzwingen",
+      forceGemma4ReasoningDescription:
+        "Fügt ein Reasoning-Prefill ein, damit Modelle der Gemma4-Reihe ihre Antwort mit einem Denkblock beginnen und so gezwungen werden, vor der Antwort nachzudenken.",
     },
     runtimeFacts: {
       updated: "Aktualisiert",

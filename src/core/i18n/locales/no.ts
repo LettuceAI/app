@@ -4246,6 +4246,9 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Leverandørstandard",
       forceSend: "Tving sending av tenketilstand",
       forceSendDescription: "Send eksplisitt enable_thinking til modellen i stedet for å utelate den. Hjelper lokale modeller som standardiserer til tenking når ingen verdi sendes.",
+      forceGemma4Reasoning: "Tving resonnering i modeller i Gemma4-serien",
+      forceGemma4ReasoningDescription:
+        "Setter inn en resonnerings-prefill slik at modeller i Gemma4-serien starter svaret sitt med en tenkeblokk, og tvinger dem til å resonnere før de svarer.",
     },
     runtimeFacts: {
       updated: "Oppdatert",

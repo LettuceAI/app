@@ -666,6 +666,7 @@ export const AdvancedModelSettingsSchema = z.object({
   reasoningEffort: z.enum(["low", "medium", "high"]).nullable().optional(),
   reasoningBudgetTokens: z.number().int().min(1024).nullable().optional(),
   forceSendThinkingState: z.boolean().nullable().optional(),
+  forceGemma4Reasoning: z.boolean().nullable().optional(),
   // Caching settings
   promptCachingEnabled: z.boolean().nullable().optional(),
   promptCachingTtl: z.string().nullish().optional(),

@@ -35,6 +35,9 @@ pub(super) struct OpenAICompatPromptOptions {
     pub(super) chat_template_kwargs: Option<String>,
     pub(super) parallel_tool_calls: bool,
     pub(super) enable_thinking: bool,
+    /// When set, this text is appended to the built prompt so the model's reply
+    /// starts prefilled with it (e.g. an opening thought channel for Gemma4).
+    pub(super) forced_reasoning_prefill: Option<String>,
 }
 
 fn normalize_role(role: &str) -> &'static str {
@@ -130,6 +133,38 @@ fn build_fallback_prompt(messages: &[Value]) -> String {
     }
     prompt.push_str("assistant: ");
     prompt
+}
+
+/// Prepend the forced-reasoning opener to the very start of the system prompt so
+/// Gemma4-series models begin their turn already inside a thinking block. The
+/// opener has to live inside the single leading system message — Gemma chat
+/// templates reject conversations with more than one system message — so we
+/// prepend it into the first system message's text rather than inserting a new
+/// one. If no system message exists we add one, which is then the only system
+/// message present.
+pub(super) fn prepend_reasoning_system_prefix(messages: &[Value]) -> Vec<Value> {
+    const THINK_OPENER: &str = "<|think|>\n";
+    let mut out: Vec<Value> = messages.to_vec();
+    if let Some(system) = out
+        .iter_mut()
+        .find(|message| message.get("role").and_then(|role| role.as_str()) == Some("system"))
+    {
+        match system.get("content").cloned() {
+            Some(Value::String(text)) => {
+                system["content"] = Value::String(format!("{THINK_OPENER}{text}"));
+            }
+            Some(Value::Array(mut parts)) => {
+                parts.insert(0, json!({ "type": "text", "text": THINK_OPENER }));
+                system["content"] = Value::Array(parts);
+            }
+            _ => {
+                system["content"] = Value::String(THINK_OPENER.to_string());
+            }
+        }
+    } else {
+        out.insert(0, json!({ "role": "system", "content": THINK_OPENER }));
+    }
+    out
 }
 
 pub(super) fn inject_media_markers(messages: &[Value]) -> Vec<Value> {

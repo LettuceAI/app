@@ -4348,6 +4348,9 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       providerDefault: "Provider default",
       forceSend: "Pilitin ang pagpapadala ng thinking state",
       forceSendDescription: "Tahasang ipadala ang enable_thinking sa model sa halip na iwanan ito. Tumutulong sa mga local model na default na nag-iisip kapag walang value na ipinadala.",
+      forceGemma4Reasoning: "Pilitin ang Pangangatwiran sa mga modelong serye ng Gemma4",
+      forceGemma4ReasoningDescription:
+        "Nag-iinject ng reasoning prefill upang simulan ng mga modelong serye ng Gemma4 ang kanilang sagot gamit ang thinking block, na pumipilit sa kanila na mangatwiran bago sumagot.",
     },
     runtimeFacts: {
       updated: "Updated",

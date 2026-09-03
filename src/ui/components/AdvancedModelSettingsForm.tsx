@@ -470,6 +470,7 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
       true,
     ),
     forceSendThinkingState: input.forceSendThinkingState ?? null,
+    forceGemma4Reasoning: input.forceGemma4Reasoning ?? null,
     promptCachingEnabled: input.promptCachingEnabled ?? null,
     promptCachingTtl: input.promptCachingTtl ?? "5min",
     openRouterProvider: input.openRouterProvider
