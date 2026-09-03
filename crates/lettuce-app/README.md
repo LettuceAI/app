@@ -168,8 +168,13 @@ Only a succeeded growth job that actually added facts can admit its separate
 Soul has at least twelve active changeable facts. Admission freezes the exact
 profile, authored context, Soul revision, character owner, and deterministic
 apply identity in SQLite; repeated admission loads the same run and its one
-immutable parsed-proposal checkpoint. Provider execution and settlement remain
-the next consolidation slice.
+immutable parsed-proposal checkpoint. A claimed consolidation job renders the
+editable legacy prompt from that frozen snapshot, requires the exact
+`consolidate_soul` tool, checkpoints its first parsed proposal, and passes it
+unchanged through the existing consolidation policy and Soul repository with
+the run's stable operation ID. Restart skips inference after the checkpoint and
+replays the same Soul receipt; the SQLite job then settles success,
+cancellation, terminal rejection, or retryable provider/storage failure.
 The claimed-job runner composes the existing run admission/recovery,
 first-round inference, bounded execution/continuation loop, and terminal
 settlement into one application path. Prompt/profile/policy inputs and stable

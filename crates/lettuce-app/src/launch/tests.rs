@@ -8,11 +8,10 @@ use lettuce_characters::{
     SceneDocumentV1, SceneOwner, ScenePart, SceneVariant, Selection, StarterMessage, StarterRole,
 };
 use lettuce_companions::{
-    CompanionConsolidationProposalCheckpoint, CompanionConsolidationRunRepository,
-    CompanionConversationSender, CompanionGrowthRunRepository, CompanionStateOwner,
-    CompanionStateReplacement, CompanionStateRepository, CompanionTurnEffectRepository,
-    CompanionTurnEffectStatus, CompanionTurnInput, EmotionClassification, EmotionLabelScore,
-    PreparedCompanionSend, SoulRepository, apply_turn, parse_consolidation_proposal,
+    CompanionConsolidationRunRepository, CompanionConversationSender, CompanionGrowthRunRepository,
+    CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
+    CompanionTurnEffectRepository, CompanionTurnEffectStatus, CompanionTurnInput,
+    EmotionClassification, EmotionLabelScore, PreparedCompanionSend, SoulRepository, apply_turn,
 };
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
@@ -1521,40 +1520,164 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .expect("consolidation replay");
     assert!(!consolidation_replay.created);
     assert_eq!(consolidation_replay.run, consolidation.run);
-    let proposal = parse_consolidation_proposal(
-        &[ProposedToolCall {
-            provider_call_id: Some("consolidate".into()),
-            name: "consolidate_soul".into(),
-            arguments: serde_json::json!({
-                "coreAdjustments": [{
-                    "category": "traits",
-                    "value": "Patient",
-                    "confidence": 0.9,
-                    "weight": 0.8
+    let retired_fact_id = stored_soul.facts[0].id.clone();
+    let consolidation_dispatch =
+        crate::CompanionConsolidationDispatchCoordinator::new(&database, &database);
+    let consolidation_work = consolidation_dispatch
+        .claim(
+            consolidation.job.id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 104),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim consolidation job")
+        .expect("consolidation work");
+    assert_eq!(consolidation_work.job.state, JobState::Running);
+    scripted
+        .outcomes
+        .lock()
+        .expect("consolidation outcome")
+        .push_back(InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: Vec::new(),
+                tool_calls: vec![ProposedToolCall {
+                    provider_call_id: Some("consolidate".into()),
+                    name: "consolidate_soul".into(),
+                    arguments: serde_json::json!({
+                        "coreAdjustments": [{
+                            "category": "traits",
+                            "value": "Patient",
+                            "confidence": 0.9,
+                            "weight": 0.8
+                        }],
+                        "retire": [retired_fact_id.clone()]
+                    }),
+                    raw_arguments: None,
+                    provider_replay: None,
                 }],
-                "retire": [stored_soul.facts[0].id.clone()]
-            }),
-            raw_arguments: None,
-            provider_replay: None,
-        }],
-        None,
-    );
-    let checkpoint = CompanionConsolidationProposalCheckpoint {
-        proposal,
-        reduced_at: TimestampMillis::new(NOW.get() + 104),
-    };
+                provider_replay: None,
+            }],
+            usage: None,
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: None,
+            provider_request_id: Some("provider-consolidation".into()),
+            warning_codes: Vec::new(),
+        });
+    let consolidation_prompt = PromptRepository::get(
+        &database,
+        prompt_ids.get(BuiltInPromptId::CompanionConsolidation),
+    )
+    .expect("consolidation prompt")
+    .expect("consolidation prompt exists");
+    let consolidated = crate::CompanionConsolidationExecutionCoordinator::new(&database, &scripted)
+        .run(
+            consolidation.job.id,
+            &consolidation_prompt,
+            &consolidation_work.handle,
+            None,
+            TimestampMillis::new(NOW.get() + 105),
+        )
+        .await
+        .expect("execute consolidation");
+    assert_eq!(consolidated.applied_changes, 2);
+    assert!(!consolidated.proposal_replayed);
     let checkpointed_consolidation = database
-        .commit_companion_consolidation_proposal(consolidation.job.id, checkpoint.clone())
-        .expect("checkpoint consolidation");
+        .load_companion_consolidation_run(consolidation.job.id)
+        .expect("load checkpointed consolidation");
     assert_eq!(
-        checkpointed_consolidation.proposal_checkpoint,
-        Some(checkpoint)
+        checkpointed_consolidation
+            .proposal_checkpoint
+            .as_ref()
+            .map(|checkpoint| (
+                checkpoint.proposal.core_adjustments.len(),
+                checkpoint.proposal.retire_ids.len()
+            )),
+        Some((1, 1))
     );
+    let replayed_consolidation =
+        crate::CompanionConsolidationExecutionCoordinator::new(&database, &UnavailableInference)
+            .run(
+                consolidation.job.id,
+                &consolidation_prompt,
+                &consolidation_work.handle,
+                None,
+                TimestampMillis::new(NOW.get() + 106),
+            )
+            .await
+            .expect("replay consolidation without provider");
+    assert_eq!(replayed_consolidation.receipt, consolidated.receipt);
+    assert!(replayed_consolidation.proposal_replayed);
+    {
+        let requests = scripted.requests.lock().expect("consolidation request");
+        let request = requests.last().expect("consolidation provider request");
+        assert_eq!(request.profile.tool_policy, ToolPolicy::Required);
+        let tools = request.tools.as_ref().expect("consolidation tools");
+        assert_eq!(tools.definitions.len(), 1);
+        assert_eq!(tools.definitions[0].name, "consolidate_soul");
+        assert!(request.context.messages.iter().any(|message| {
+            message.parts.iter().any(|part| {
+                matches!(part, ProviderContextPart::Text { text } if text.contains("Habit 1"))
+            })
+        }));
+    }
+    let consolidated_soul = SoulRepository::get(
+        &database,
+        lettuce_companions::SoulOwner::Character(growth.run.character_id),
+    )
+    .expect("load consolidated Soul")
+    .expect("consolidated Soul");
+    assert!(consolidated_soul.facts.iter().any(|fact| {
+        fact.value == "Patient" && fact.kind == lettuce_companions::SoulFactKind::Consolidated
+    }));
+    assert_eq!(
+        consolidated_soul
+            .facts
+            .iter()
+            .find(|fact| fact.id == retired_fact_id)
+            .and_then(|fact| fact.superseded_by.as_deref()),
+        Some("consolidation")
+    );
+    assert_eq!(
+        consolidated_soul.revision,
+        consolidated
+            .receipt
+            .as_ref()
+            .expect("consolidation receipt")
+            .resulting_revision
+    );
+    let after_consolidation =
+        crate::CompanionConsolidationJobAdmissionCoordinator::new(&database, &database)
+            .admit_after_growth(growth.job.id, &applied_growth)
+            .expect("replay consolidation after Soul apply")
+            .expect("consolidation after Soul apply");
+    assert!(!after_consolidation.created);
+    assert_eq!(after_consolidation.run, checkpointed_consolidation);
     assert_eq!(
         database
             .load_companion_consolidation_run_for_growth(growth.job.id)
             .expect("load consolidation by growth"),
         checkpointed_consolidation
+    );
+    let settled_consolidation = consolidation_dispatch
+        .settle(
+            consolidation_work,
+            Ok(consolidated),
+            CancellationReason::User,
+            TimestampMillis::new(NOW.get() + 107),
+        )
+        .expect("settle consolidation job");
+    let crate::CompanionConsolidationSettledWork::Succeeded { job, .. } = settled_consolidation
+    else {
+        panic!("expected succeeded consolidation job");
+    };
+    assert_eq!(job.state, JobState::Succeeded);
+    assert_eq!(
+        job.outcome,
+        Some(JobOutcome::Success {
+            result_ref: OutcomeRef::Character(growth.run.character_id),
+        })
     );
     let settled = crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
         .settle_run(

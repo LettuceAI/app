@@ -104,6 +104,16 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn companion_consolidation_dispatcher(
+        &self,
+    ) -> crate::CompanionConsolidationDispatchCoordinator<'_, Database, Database> {
+        crate::CompanionConsolidationDispatchCoordinator::new(
+            self.database.as_ref(),
+            self.database.as_ref(),
+        )
+    }
+
+    #[must_use]
     pub const fn built_in_prompt_ids(&self) -> &BuiltInPromptIds {
         &self.built_in_prompt_ids
     }
