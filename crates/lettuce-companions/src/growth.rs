@@ -1,5 +1,13 @@
-use lettuce_conversations::{ProposedToolCall, ToolChoice, ToolDefinition, ToolRequest};
-use lettuce_types::TimestampMillis;
+use std::collections::HashSet;
+
+use lettuce_conversations::{
+    ProposedToolCall, ResolvedInferenceProfile, ToolChoice, ToolDefinition, ToolRequest,
+};
+use lettuce_types::{
+    CharacterId, ConversationId, DynamicMemoryAttemptId, DynamicMemoryRunId, JobId,
+    OperationRecordId, TimestampMillis,
+};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -11,10 +19,105 @@ use crate::{
 pub const MAX_GROWTH_MEMORIES: usize = 16;
 pub const RECORD_GROWTH_TOOL_NAME: &str = "record_growth";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GrowthMemoryEvidence {
     pub id: String,
     pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompanionGrowthRun {
+    pub job_id: JobId,
+    pub conversation_id: ConversationId,
+    pub character_id: CharacterId,
+    pub memory_run_id: DynamicMemoryRunId,
+    pub memory_attempt_id: DynamicMemoryAttemptId,
+    pub profile: ResolvedInferenceProfile,
+    pub companion_name: String,
+    pub authored_soul: CompanionSoulIdentity,
+    pub soul: SoulState,
+    pub fresh_memories: Vec<GrowthMemoryEvidence>,
+    pub operation_id: OperationRecordId,
+    pub created_at: TimestampMillis,
+    pub proposal_checkpoint: Option<CompanionGrowthProposalCheckpoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompanionGrowthProposalCheckpoint {
+    pub proposals: Vec<ProposedSoulFact>,
+    pub reduced_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CompanionGrowthRunRepositoryError {
+    #[error("companion growth run was not found")]
+    NotFound,
+    #[error("companion growth run conflicts with durable state")]
+    Conflict,
+    #[error("companion growth run is invalid")]
+    Invalid,
+    #[error("companion growth run storage failed")]
+    Failure,
+    #[error("companion growth run storage is corrupt")]
+    Corrupt,
+}
+
+pub trait CompanionGrowthRunRepository: Send + Sync {
+    fn admit_companion_growth_run(
+        &self,
+        run: CompanionGrowthRun,
+    ) -> Result<CompanionGrowthRun, CompanionGrowthRunRepositoryError>;
+
+    fn load_companion_growth_run(
+        &self,
+        job_id: JobId,
+    ) -> Result<CompanionGrowthRun, CompanionGrowthRunRepositoryError>;
+
+    fn commit_companion_growth_proposals(
+        &self,
+        job_id: JobId,
+        checkpoint: CompanionGrowthProposalCheckpoint,
+    ) -> Result<CompanionGrowthRun, CompanionGrowthRunRepositoryError>;
+}
+
+impl CompanionGrowthRun {
+    pub fn validate(&self) -> Result<(), CompanionGrowthRunRepositoryError> {
+        let mut memory_ids = HashSet::new();
+        if self.companion_name.trim().is_empty()
+            || self.fresh_memories.is_empty()
+            || self.fresh_memories.len() > MAX_GROWTH_MEMORIES
+            || self.fresh_memories.iter().any(|memory| {
+                memory.id.trim().is_empty()
+                    || memory.text.trim().is_empty()
+                    || !memory_ids.insert(memory.id.as_str())
+            })
+            || crate::validate_state(&self.soul).is_err()
+            || self.created_at.get() < 0
+        {
+            return Err(CompanionGrowthRunRepositoryError::Invalid);
+        }
+        if let Some(checkpoint) = &self.proposal_checkpoint {
+            checkpoint.validate()?;
+        }
+        Ok(())
+    }
+}
+
+impl CompanionGrowthProposalCheckpoint {
+    pub fn validate(&self) -> Result<(), CompanionGrowthRunRepositoryError> {
+        let mut ids = HashSet::new();
+        if self.reduced_at.get() < 0
+            || self
+                .proposals
+                .iter()
+                .any(|proposal| proposal.id.trim().is_empty() || !ids.insert(&proposal.id))
+        {
+            return Err(CompanionGrowthRunRepositoryError::Invalid);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

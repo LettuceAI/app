@@ -13,6 +13,7 @@ mod creation_adapter;
 mod dynamic_memory_rewind_adapter;
 mod dynamic_memory_run_adapter;
 mod group_adapter;
+mod growth_adapter;
 mod job_adapter;
 mod lorebook_adapter;
 mod memory_adapter;
@@ -3852,6 +3853,7 @@ mod tests {
                 "character_presentation_asset_refs",
                 "characters",
                 "companion_emotion_vectors",
+                "companion_growth_runs",
                 "companion_relationship_states",
                 "companion_session_states",
                 "companion_soul_apply_receipts",

@@ -76,3 +76,23 @@ BEFORE DELETE ON companion_soul_apply_receipts
 BEGIN
     SELECT RAISE(ABORT, 'companion soul apply receipts are immutable');
 END;
+
+CREATE TABLE companion_growth_runs (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    memory_run_id TEXT NOT NULL UNIQUE REFERENCES dynamic_memory_runs(id) ON DELETE RESTRICT,
+    memory_attempt_id TEXT NOT NULL UNIQUE REFERENCES dynamic_memory_run_attempts(id) ON DELETE RESTRICT,
+    operation_id TEXT NOT NULL UNIQUE,
+    expected_soul_revision INTEGER NOT NULL CHECK (expected_soul_revision >= 1),
+    created_at INTEGER NOT NULL,
+    run_json TEXT NOT NULL CHECK (json_valid(run_json)),
+    proposal_checkpoint_json TEXT CHECK (
+        proposal_checkpoint_json IS NULL OR json_valid(proposal_checkpoint_json)
+    ),
+    reduced_at INTEGER,
+    CHECK ((proposal_checkpoint_json IS NULL) = (reduced_at IS NULL))
+) STRICT;
+
+CREATE INDEX companion_growth_runs_character_idx
+    ON companion_growth_runs(character_id, created_at, job_id);

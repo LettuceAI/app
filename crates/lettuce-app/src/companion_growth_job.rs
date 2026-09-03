@@ -1,33 +1,22 @@
 use lettuce_characters::{CharacterRepository, InteractionMode, RepositoryError};
-use lettuce_companions::{MAX_GROWTH_MEMORIES, SoulOwner, SoulRepository, SoulRepositoryError};
-use lettuce_conversations::{
-    ConversationKind, ConversationReader, ConversationRepositoryError, ResolvedInferenceProfile,
+use lettuce_companions::{
+    CompanionGrowthRun, CompanionGrowthRunRepository, CompanionGrowthRunRepositoryError,
+    GrowthMemoryEvidence, MAX_GROWTH_MEMORIES, SoulOwner, SoulRepository, SoulRepositoryError,
 };
+use lettuce_conversations::{ConversationKind, ConversationReader, ConversationRepositoryError};
 use lettuce_jobs::{
     CancellationPolicy, IdempotencyKey, JobKind, JobPriority, JobSnapshot, JobSpec, JobStore,
     JobSubject, OutcomeRef, RecoveryPolicy, ResourceClass, StoreError, SubjectKind,
 };
-use lettuce_memory::{DynamicMemoryAttemptStatus, MemoryItem};
-use lettuce_types::{
-    CharacterId, ConversationId, DynamicMemoryAttemptId, DynamicMemoryRunId, Revision,
-};
+use lettuce_memory::DynamicMemoryAttemptStatus;
+use lettuce_types::OperationRecordId;
+use uuid::Uuid;
 
 use crate::CompanionMemoryJobRunResult;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CompanionGrowthJobInput {
-    pub conversation_id: ConversationId,
-    pub character_id: CharacterId,
-    pub memory_run_id: DynamicMemoryRunId,
-    pub memory_attempt_id: DynamicMemoryAttemptId,
-    pub profile: ResolvedInferenceProfile,
-    pub expected_soul_revision: Revision,
-    pub fresh_memories: Vec<MemoryItem>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct CompanionGrowthJobAdmission {
-    pub input: CompanionGrowthJobInput,
+    pub run: CompanionGrowthRun,
     pub job: JobSnapshot,
     pub created: bool,
 }
@@ -44,6 +33,8 @@ pub enum CompanionGrowthJobAdmissionError {
     Soul(SoulRepositoryError),
     #[error("companion growth job admission failed: {0}")]
     Job(StoreError),
+    #[error("companion growth run persistence failed: {0}")]
+    Run(CompanionGrowthRunRepositoryError),
 }
 
 #[derive(Debug)]
@@ -59,8 +50,14 @@ impl<'a, R: ?Sized, J: ?Sized> CompanionGrowthJobAdmissionCoordinator<'a, R, J> 
     }
 }
 
-impl<R: ConversationReader + CharacterRepository + SoulRepository + ?Sized, J: JobStore + ?Sized>
-    CompanionGrowthJobAdmissionCoordinator<'_, R, J>
+impl<
+    R: ConversationReader
+        + CharacterRepository
+        + SoulRepository
+        + CompanionGrowthRunRepository
+        + ?Sized,
+    J: JobStore + ?Sized,
+> CompanionGrowthJobAdmissionCoordinator<'_, R, J>
 {
     pub fn admit_after_memory(
         &self,
@@ -90,23 +87,22 @@ impl<R: ConversationReader + CharacterRepository + SoulRepository + ?Sized, J: J
         if character.character.defaults.interaction_mode != InteractionMode::Companion {
             return Ok(None);
         }
+        let config = character
+            .character
+            .defaults
+            .companion_soul
+            .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?;
         let soul = SoulRepository::get(self.sources, SoulOwner::Character(character_id))
             .map_err(CompanionGrowthJobAdmissionError::Soul)?
             .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?;
-        let input = CompanionGrowthJobInput {
-            conversation_id: conversation.conversation.id,
-            character_id,
-            memory_run_id: result.dispatch.run.id,
-            memory_attempt_id: result.dispatch.attempt.id,
-            profile: result.dispatch.run.profile.clone(),
-            expected_soul_revision: soul.revision,
-            fresh_memories: result.fresh_memories.clone(),
-        };
         let idempotency_key =
-            IdempotencyKey::new(format!("companion-growth-{}", input.memory_run_id))
+            IdempotencyKey::new(format!("companion-growth-{}", result.dispatch.run.id))
                 .map_err(|_| CompanionGrowthJobAdmissionError::InvalidSource)?;
-        let subject = JobSubject::new(SubjectKind::Conversation, input.conversation_id.to_string())
-            .map_err(|_| CompanionGrowthJobAdmissionError::InvalidSource)?;
+        let subject = JobSubject::new(
+            SubjectKind::Conversation,
+            conversation.conversation.id.to_string(),
+        )
+        .map_err(|_| CompanionGrowthJobAdmissionError::InvalidSource)?;
         let admitted = self
             .jobs
             .create_or_get(
@@ -127,8 +123,41 @@ impl<R: ConversationReader + CharacterRepository + SoulRepository + ?Sized, J: J
                 .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
             )
             .map_err(CompanionGrowthJobAdmissionError::Job)?;
+        let created_at = result
+            .dispatch
+            .attempt
+            .finished_at
+            .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?;
+        let run = self
+            .sources
+            .admit_companion_growth_run(CompanionGrowthRun {
+                job_id: admitted.job.id,
+                conversation_id: conversation.conversation.id,
+                character_id,
+                memory_run_id: result.dispatch.run.id,
+                memory_attempt_id: result.dispatch.attempt.id,
+                profile: result.dispatch.run.profile.clone(),
+                companion_name: character.character.profile.name,
+                authored_soul: config.soul,
+                soul,
+                fresh_memories: result
+                    .fresh_memories
+                    .iter()
+                    .map(|memory| GrowthMemoryEvidence {
+                        id: memory.id.to_string(),
+                        text: memory.text.clone(),
+                    })
+                    .collect(),
+                operation_id: OperationRecordId::from_uuid(Uuid::new_v5(
+                    &admitted.job.id.as_uuid(),
+                    b"companion-growth-soul-apply",
+                )),
+                created_at,
+                proposal_checkpoint: None,
+            })
+            .map_err(CompanionGrowthJobAdmissionError::Run)?;
         Ok(Some(CompanionGrowthJobAdmission {
-            input,
+            run,
             job: admitted.job,
             created: admitted.created,
         }))

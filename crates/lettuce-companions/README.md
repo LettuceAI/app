@@ -32,6 +32,10 @@ fresh-memory IDs; the existing Soul reducer remains the only policy path.
 Its growth prompt values also reuse the existing effective-Soul projection and
 copy the legacy category order, labels, fact-line formatting, empty fallbacks,
 and zero-based sixteen-memory list.
+The domain-owned growth-run port freezes that prompt input, resolved profile,
+successful memory attempt, Soul snapshot/revision, and a stable Soul operation
+ID. Its only checkpoint immutably stores the reduced typed proposals before
+any Soul mutation.
 
 Durable Soul state is character-owned, matching legacy continuity: companion
 Soul growth is shared across that character's sessions regardless of the

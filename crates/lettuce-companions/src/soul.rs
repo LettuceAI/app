@@ -305,7 +305,7 @@ impl SoulFact {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SoulState {
     pub revision: Revision,
     pub facts: Vec<SoulFact>,
@@ -327,7 +327,7 @@ impl SoulOwner {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProposedSoulFact {
     pub id: String,
     pub category: SoulCategory,

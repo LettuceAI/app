@@ -180,6 +180,11 @@ under immediate-transaction revision CAS, rewrites the bounded state, advances
 the root, and inserts an immutable operation receipt atomically. Exact retries
 return the original receipt; changed operation reuse, stale revisions, foreign
 owners, malformed rows, and partial writes fail closed.
+The same unshipped migration now stores one immutable companion growth run per
+durable job and memory run. It freezes the successful memory attempt, profile,
+prompt inputs, bounded evidence, Soul snapshot, and deterministic apply ID;
+the adapter admits one immutable reduced-proposal checkpoint before Soul apply
+and replays it exactly across restart.
 Creating a companion character now seeds its initial character-owned Soul root
 and normalized authored facts inside the same character aggregate transaction.
 An authored-fact failure rolls back the character and Soul rows together;

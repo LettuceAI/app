@@ -8,10 +8,10 @@ use lettuce_characters::{
     SceneDocumentV1, SceneOwner, ScenePart, SceneVariant, Selection, StarterMessage, StarterRole,
 };
 use lettuce_companions::{
-    CompanionConversationSender, CompanionStateOwner, CompanionStateReplacement,
-    CompanionStateRepository, CompanionTurnEffectRepository, CompanionTurnEffectStatus,
-    CompanionTurnInput, EmotionClassification, EmotionLabelScore, PreparedCompanionSend,
-    apply_turn,
+    CompanionConversationSender, CompanionGrowthProposalCheckpoint, CompanionGrowthRunRepository,
+    CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
+    CompanionTurnEffectRepository, CompanionTurnEffectStatus, CompanionTurnInput,
+    EmotionClassification, EmotionLabelScore, PreparedCompanionSend, apply_turn,
 };
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
@@ -1312,16 +1312,16 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let mut empty_growth = result.clone();
     empty_growth.fresh_memories.clear();
     assert!(
-        crate::CompanionGrowthJobAdmissionCoordinator::new(&database, &jobs)
+        crate::CompanionGrowthJobAdmissionCoordinator::new(&database, &database)
             .admit_after_memory(&empty_growth)
             .expect("skip empty growth")
             .is_none()
     );
-    let growth = crate::CompanionGrowthJobAdmissionCoordinator::new(&database, &jobs)
+    let growth = crate::CompanionGrowthJobAdmissionCoordinator::new(&database, &database)
         .admit_after_memory(&result)
         .expect("admit growth")
         .expect("growth job");
-    let growth_replay = crate::CompanionGrowthJobAdmissionCoordinator::new(&database, &jobs)
+    let growth_replay = crate::CompanionGrowthJobAdmissionCoordinator::new(&database, &database)
         .admit_after_memory(&result)
         .expect("replay growth")
         .expect("growth job replay");
@@ -1329,11 +1329,25 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     assert!(!growth_replay.created);
     assert_eq!(growth.job.id, growth_replay.job.id);
     assert_eq!(growth.job.kind, JobKind::CompanionGrowth);
-    assert_eq!(growth.input.memory_run_id, result.dispatch.run.id);
-    assert_eq!(growth.input.memory_attempt_id, result.dispatch.attempt.id);
-    assert_eq!(growth.input.profile, result.dispatch.run.profile);
-    assert_eq!(growth.input.fresh_memories.len(), 1);
-    assert_eq!(growth.input.fresh_memories[0].id, memory_id);
+    assert_eq!(growth.run.memory_run_id, result.dispatch.run.id);
+    assert_eq!(growth.run.memory_attempt_id, result.dispatch.attempt.id);
+    assert_eq!(growth.run.profile, result.dispatch.run.profile);
+    assert_eq!(growth.run.fresh_memories.len(), 1);
+    assert_eq!(growth.run.fresh_memories[0].id, memory_id.to_string());
+    let checkpoint = CompanionGrowthProposalCheckpoint {
+        proposals: Vec::new(),
+        reduced_at: TimestampMillis::new(NOW.get() + 101),
+    };
+    let checkpointed = database
+        .commit_companion_growth_proposals(growth.job.id, checkpoint.clone())
+        .expect("checkpoint growth proposals");
+    assert_eq!(checkpointed.proposal_checkpoint, Some(checkpoint));
+    let after_checkpoint = crate::CompanionGrowthJobAdmissionCoordinator::new(&database, &database)
+        .admit_after_memory(&result)
+        .expect("replay growth after checkpoint")
+        .expect("growth job after checkpoint");
+    assert_eq!(after_checkpoint.job.id, growth.job.id);
+    assert_eq!(after_checkpoint.run, checkpointed);
     let settled = crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
         .settle_run(
             work,
