@@ -49,6 +49,17 @@ post-growth Soul snapshot and accepts one immutable typed proposal checkpoint;
 storage and application crates implement admission and execution around that
 domain boundary.
 
+The pure Soul-writer boundary copies the legacy six-tool required contract and
+working-draft reducer. A partial current JSON value is completed with the same
+zero defaults, known fields are preserved and clamped, calls apply in provider
+order, and the first `done` suppresses later calls. Identity updates remain
+nonblank partial overwrites; affect and regulation values clamp to `[0,1]`;
+relationship closeness, trust, and affection clamp to `[-1,1]`; and tension
+clamps to `[0,1]`. Authored facts retain the legacy `0.7` confidence gate,
+weight default/clamp, generated identity and timestamps, and forced historical
+locking. Prompt rendering, recursion, structured fallback, model selection,
+durable proposal application, and frontend events remain application work.
+
 Durable Soul state is character-owned, matching legacy continuity: companion
 Soul growth is shared across that character's sessions regardless of the
 separate shared-memory setting. `SoulRepository` owns create/load and atomic

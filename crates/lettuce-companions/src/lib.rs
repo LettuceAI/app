@@ -8,6 +8,7 @@ mod growth;
 mod prompt;
 mod signals;
 mod soul;
+mod soul_writer;
 mod state;
 
 pub use consolidation::*;
@@ -16,4 +17,5 @@ pub use growth::*;
 pub use prompt::*;
 pub use signals::*;
 pub use soul::*;
+pub use soul_writer::*;
 pub use state::*;
