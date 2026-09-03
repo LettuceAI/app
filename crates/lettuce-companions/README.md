@@ -22,8 +22,8 @@ superseded-history bound. The typed boundary deliberately makes a proposed
 growth or consolidation change set atomic at one expected revision. Legacy's
 sixteen-item limit remains a fresh-memory coordinator input limit and is not
 misapplied to the number of proposed Soul facts. Provider calls, prompt
-rendering, job coordination, database adapters, and frontend events remain
-outside this slice.
+document rendering, job coordination, database adapters, and frontend events
+remain outside this domain.
 
 The domain now exposes the same required `record_growth` tool contract and
 reduces the first matching native call or legacy structured-text fallback into
@@ -36,6 +36,14 @@ The domain-owned growth-run port freezes that prompt input, resolved profile,
 successful memory attempt, Soul snapshot/revision, and a stable Soul operation
 ID. Its only checkpoint immutably stores the reduced typed proposals before
 any Soul mutation.
+
+The exact legacy consolidation input is also available without a second policy
+path: the twelve-active-changeable-fact readiness check, authored/core/growth
+prompt values, required `consolidate_soul` schema, first matching native call,
+structured-text fallback, core adjustment filtering, and retirement IDs. Its
+typed output is consumed by the existing atomic
+`prepare_consolidation_change_set`; confidence thresholds, locked retirement
+protection, core-category filtering, and revision behavior stay there.
 
 Durable Soul state is character-owned, matching legacy continuity: companion
 Soul growth is shared across that character's sessions regardless of the
