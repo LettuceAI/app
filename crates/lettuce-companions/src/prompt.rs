@@ -228,7 +228,7 @@ fn push_soul_line(lines: &mut Vec<String>, label: &str, value: &str) {
     }
 }
 
-fn effective_soul_value(
+pub fn effective_soul_value(
     base: &str,
     category: SoulCategory,
     state: &SoulState,

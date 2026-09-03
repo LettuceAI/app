@@ -29,6 +29,9 @@ The domain now exposes the same required `record_growth` tool contract and
 reduces the first matching native call or legacy structured-text fallback into
 typed proposals. Source indices preserve the legacy fallback to all supplied
 fresh-memory IDs; the existing Soul reducer remains the only policy path.
+Its growth prompt values also reuse the existing effective-Soul projection and
+copy the legacy category order, labels, fact-line formatting, empty fallbacks,
+and zero-based sixteen-memory list.
 
 Durable Soul state is character-owned, matching legacy continuity: companion
 Soul growth is shared across that character's sessions regardless of the
