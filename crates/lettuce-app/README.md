@@ -124,6 +124,11 @@ consulting the authored run mode or interval gate. Direct trigger/retry selects
 the recent suffix; the legacy group trigger keeps the oldest cursor prefix.
 Both accept a partial window when fewer than one interval of messages exists,
 keep whole companion effects, and reuse the same idempotent job/claim path.
+Direct retry may freeze an explicit model profile into that same recent-window
+job. The run rejects a different resolved profile, and an opted-in default
+change happens only on the first successful terminal settlement. Failed or
+cancelled retries leave the configured dynamic-memory model unchanged. Group
+retry intentionally has no model-override entry point, matching the legacy API.
 The run freezes whether companion time awareness is enabled and uses the matching
 legacy tool contract. In enabled runs, a known create source is retained and an
 unknown or omitted ID falls back to the latest frozen user/assistant source. In

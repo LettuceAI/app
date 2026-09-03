@@ -9,6 +9,7 @@ use lettuce_memory::{
     DynamicMemoryInferenceRound, DynamicMemoryRunRepository, DynamicMemoryStructuredFallbackFormat,
     MemoryRepository, MemorySummaryRepository,
 };
+use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{RequestId, TimestampMillis};
 
 use crate::{
@@ -62,6 +63,7 @@ impl<
         + MemoryEmbeddingRepository
         + ProviderReplayArtifactPort
         + CompanionTurnEffectRepository
+        + GlobalSettingsStore
         + ?Sized,
     C: ConversationReader + ?Sized,
     I: InferencePort + ?Sized,

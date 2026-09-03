@@ -6,6 +6,7 @@ use lettuce_memory::{
     DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, MemoryRepository,
     MemoryRepositoryError,
 };
+use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, TimestampMillis};
 
 use crate::{
@@ -165,8 +166,13 @@ impl<'a, R: ?Sized> CompanionMemoryTerminalCoordinator<'a, R> {
     }
 }
 
-impl<R: DynamicMemoryRunRepository + MemoryRepository + CompanionTurnEffectRepository + ?Sized>
-    CompanionMemoryTerminalCoordinator<'_, R>
+impl<
+    R: DynamicMemoryRunRepository
+        + MemoryRepository
+        + CompanionTurnEffectRepository
+        + GlobalSettingsStore
+        + ?Sized,
+> CompanionMemoryTerminalCoordinator<'_, R>
 {
     pub fn settle_success(
         &self,
@@ -197,7 +203,8 @@ impl<R: DynamicMemoryRunRepository + MemoryRepository + CompanionTurnEffectRepos
         } else {
             batch.effects.clone()
         };
-        let attempt = if attempt.status == DynamicMemoryAttemptStatus::Processing {
+        let first_settlement = attempt.status == DynamicMemoryAttemptStatus::Processing;
+        let attempt = if first_settlement {
             self.repository.transition_dynamic_memory_attempt(
                 attempt.id,
                 attempt.revision,
@@ -208,6 +215,27 @@ impl<R: DynamicMemoryRunRepository + MemoryRepository + CompanionTurnEffectRepos
         } else {
             attempt
         };
+        if first_settlement && batch.update_dynamic_memory_model_on_success {
+            let selected = batch
+                .selected_model_profile_id
+                .ok_or(CompanionMemoryTerminalError::InvalidOwnership)?;
+            match self.repository.load() {
+                Ok(settings) => {
+                    if let Err(error) = self
+                        .repository
+                        .set_dynamic_memory_model_profile(Some(selected), settings.revision)
+                    {
+                        tracing::warn!(
+                            ?error,
+                            "failed to update dynamic memory model after success"
+                        );
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(?error, "failed to load settings after memory success");
+                }
+            }
+        }
         Ok(CompanionMemoryTerminalResult { attempt, effects })
     }
 

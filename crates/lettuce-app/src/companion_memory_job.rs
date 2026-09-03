@@ -4,6 +4,7 @@ use lettuce_companions::{
     CompanionTurnEffect, CompanionTurnEffectRepository, CompanionTurnEffectRepositoryError,
     CompanionTurnEffectStatus,
 };
+use lettuce_conversations::{ConversationKind, ConversationReader, ConversationRepositoryError};
 use lettuce_jobs::{
     CancellationPolicy, IdempotencyKey, JobKind, JobPriority, JobQuery, JobSnapshot, JobSpec,
     JobStore, JobSubject, OutcomeRef, RecoveryPolicy, ResourceClass, StoreError, SubjectKind,
@@ -11,7 +12,9 @@ use lettuce_jobs::{
 use lettuce_memory::{
     DynamicMemoryApprovalRepository, DynamicMemoryRunMode, MemoryRepositoryError,
 };
-use lettuce_types::{ConversationId, OperationId, PageLimit, PageRequest, TimestampMillis};
+use lettuce_types::{
+    ConversationId, ModelProfileId, OperationId, PageLimit, PageRequest, TimestampMillis,
+};
 
 use crate::CompanionPostTurnEffect;
 
@@ -33,6 +36,8 @@ pub struct CompanionPostTurnMemoryBatch {
     pub source_effect_offset: usize,
     pub effects: Vec<CompanionTurnEffect>,
     pub settle_effects: bool,
+    pub selected_model_profile_id: Option<ModelProfileId>,
+    pub update_dynamic_memory_model_on_success: bool,
 }
 
 impl CompanionPostTurnMemoryBatch {
@@ -65,6 +70,8 @@ pub enum CompanionPostTurnMemoryAdmissionError {
     Jobs(StoreError),
     #[error("dynamic memory approval persistence failed: {0}")]
     Approval(MemoryRepositoryError),
+    #[error("conversation lookup failed: {0}")]
+    Conversation(ConversationRepositoryError),
 }
 
 #[derive(Debug)]
@@ -149,6 +156,8 @@ impl<
                 effects,
                 true,
                 None,
+                None,
+                false,
             )? {
                 self.effects
                     .clear_dynamic_memory_pending_approval(conversation_id)
@@ -217,6 +226,26 @@ impl<
         window_selection: CompanionMemoryWindowSelection,
     ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
     {
+        self.trigger_and_admit_inner(
+            conversation_id,
+            limit,
+            summary_message_interval,
+            window_selection,
+            None,
+            false,
+        )
+    }
+
+    fn trigger_and_admit_inner(
+        &self,
+        conversation_id: ConversationId,
+        limit: u16,
+        summary_message_interval: u32,
+        window_selection: CompanionMemoryWindowSelection,
+        selected_model_profile_id: Option<ModelProfileId>,
+        update_dynamic_memory_model_on_success: bool,
+    ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
+    {
         if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS || summary_message_interval == 0 {
             return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
         }
@@ -263,6 +292,8 @@ impl<
             effects,
             true,
             None,
+            selected_model_profile_id,
+            update_dynamic_memory_model_on_success,
         )?;
         if admitted.is_some() {
             self.effects
@@ -270,6 +301,32 @@ impl<
                 .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
         }
         Ok(admitted)
+    }
+
+    pub fn retry_direct_with_model_and_admit(
+        &self,
+        conversation_id: ConversationId,
+        limit: u16,
+        summary_message_interval: u32,
+        model_profile_id: ModelProfileId,
+        update_default_on_success: bool,
+    ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
+    where
+        R: ConversationReader,
+    {
+        let aggregate = ConversationReader::get(self.effects, conversation_id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Conversation)?;
+        if !matches!(aggregate.conversation.kind, ConversationKind::Direct(_)) {
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+        }
+        self.trigger_and_admit_inner(
+            conversation_id,
+            limit,
+            summary_message_interval,
+            CompanionMemoryWindowSelection::Recent,
+            Some(model_profile_id),
+            update_default_on_success,
+        )
     }
 
     pub fn rebuild_and_admit(
@@ -301,6 +358,8 @@ impl<
             effects,
             false,
             Some(rewind_operation_id),
+            None,
+            false,
         )
     }
 
@@ -315,6 +374,8 @@ impl<
         effects: Vec<CompanionTurnEffect>,
         settle_effects: bool,
         rewind_operation_id: Option<OperationId>,
+        selected_model_profile_id: Option<ModelProfileId>,
+        update_dynamic_memory_model_on_success: bool,
     ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
     {
         if effects.is_empty()
@@ -329,6 +390,8 @@ impl<
             window_selection,
             settle_effects,
             rewind_operation_id,
+            selected_model_profile_id,
+            update_dynamic_memory_model_on_success,
             &effects,
         )?;
         let spec = job_spec(conversation_id, idempotency_key.clone())?;
@@ -370,6 +433,8 @@ impl<
                 source_effect_offset,
                 effects,
                 settle_effects,
+                selected_model_profile_id,
+                update_dynamic_memory_model_on_success,
             },
             job: admitted.job,
             created: admitted.created,
@@ -390,12 +455,15 @@ fn effect_message_count(effects: &[CompanionTurnEffect]) -> u64 {
         .sum()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn batch_idempotency_key(
     conversation_id: ConversationId,
     summary_message_interval: u32,
     window_selection: CompanionMemoryWindowSelection,
     settle_effects: bool,
     rewind_operation_id: Option<OperationId>,
+    selected_model_profile_id: Option<ModelProfileId>,
+    update_dynamic_memory_model_on_success: bool,
     effects: &[CompanionTurnEffect],
 ) -> Result<IdempotencyKey, CompanionPostTurnMemoryAdmissionError> {
     if effects.is_empty()
@@ -420,6 +488,10 @@ fn batch_idempotency_key(
     if let Some(operation_id) = rewind_operation_id {
         digest.update(operation_id.to_string().as_bytes());
     }
+    if let Some(model_profile_id) = selected_model_profile_id {
+        digest.update(model_profile_id.to_string().as_bytes());
+    }
+    digest.update(&[u8::from(update_dynamic_memory_model_on_success)]);
     for effect in effects {
         digest.update(effect.id.to_string().as_bytes());
     }

@@ -33,6 +33,7 @@ pub enum PureMode {
 pub struct StoredGlobalSettings {
     pub settings: GlobalSettings,
     pub default_model_profile_id: Option<ModelProfileId>,
+    pub dynamic_memory_model_profile_id: Option<ModelProfileId>,
     pub revision: Revision,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
@@ -57,6 +58,12 @@ pub trait GlobalSettingsStore: Send + Sync {
         &self,
         settings: GlobalSettings,
         default_model_profile_id: Option<ModelProfileId>,
+        expected_revision: Revision,
+    ) -> Result<StoredGlobalSettings, GlobalSettingsStoreError>;
+
+    fn set_dynamic_memory_model_profile(
+        &self,
+        model_profile_id: Option<ModelProfileId>,
         expected_revision: Revision,
     ) -> Result<StoredGlobalSettings, GlobalSettingsStoreError>;
 }

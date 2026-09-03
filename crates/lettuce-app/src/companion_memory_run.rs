@@ -74,6 +74,13 @@ impl<
         now: TimestampMillis,
     ) -> Result<CompanionPostTurnMemoryRunDispatch, CompanionPostTurnMemoryRunError> {
         validate_job(admission, handle)?;
+        if admission
+            .batch
+            .selected_model_profile_id
+            .is_some_and(|id| id != profile.chat_profile.model_profile_id)
+        {
+            return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+        }
         let conversation_id = admission.batch.conversation_id;
         let snapshot = self
             .repository
@@ -237,6 +244,8 @@ fn validate_job(
 ) -> Result<(), CompanionPostTurnMemoryRunError> {
     let conversation_id = admission.batch.conversation_id;
     if admission.batch.effects.is_empty()
+        || (admission.batch.update_dynamic_memory_model_on_success
+            && admission.batch.selected_model_profile_id.is_none())
         || admission.job.id != handle.id()
         || admission.job.kind != JobKind::MemoryExtraction
         || admission.job.subject.kind != SubjectKind::Conversation
@@ -919,6 +928,8 @@ mod tests {
                 source_effect_offset: 0,
                 effects,
                 settle_effects: true,
+                selected_model_profile_id: None,
+                update_dynamic_memory_model_on_success: false,
             },
             job: admitted.job,
             created: admitted.created,

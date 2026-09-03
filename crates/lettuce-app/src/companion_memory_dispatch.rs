@@ -160,6 +160,39 @@ where
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn retry_direct_with_model_and_claim(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        limit: u16,
+        summary_message_interval: u32,
+        model_profile_id: lettuce_types::ModelProfileId,
+        update_default_on_success: bool,
+        worker_id: WorkerId,
+        now: TimestampMillis,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryDispatchError>
+    where
+        R: lettuce_conversations::ConversationReader,
+    {
+        let coordinator = CompanionPostTurnMemoryAdmissionCoordinator::new(self.effects, self.jobs);
+        let admission = coordinator.retry_direct_with_model_and_admit(
+            conversation_id,
+            limit,
+            summary_message_interval,
+            model_profile_id,
+            update_default_on_success,
+        )?;
+        self.claim_admissions(
+            admission.into_iter().collect(),
+            worker_id,
+            now,
+            lease_for,
+            allowed,
+        )
+    }
+
     fn claim_admissions(
         &self,
         admissions: Vec<CompanionPostTurnMemoryAdmission>,

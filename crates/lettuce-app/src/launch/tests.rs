@@ -1014,10 +1014,12 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         2
     );
     let work = crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
-        .discover_and_claim(
+        .retry_direct_with_model_and_claim(
+            conversation.id,
             512,
             1,
-            lettuce_memory::DynamicMemoryRunMode::Auto,
+            model.source_id,
+            true,
             WorkerId::new(),
             TimestampMillis::new(NOW.get() + 11),
             Duration::from_secs(60),
@@ -1027,6 +1029,24 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .into_iter()
         .next()
         .expect("memory job");
+    assert_eq!(
+        work.admission.batch.selected_model_profile_id,
+        Some(model.source_id)
+    );
+    assert!(work.admission.batch.update_dynamic_memory_model_on_success);
+    assert_eq!(
+        work.admission.batch.window_selection,
+        crate::CompanionMemoryWindowSelection::Recent
+    );
+    let retry = crate::CompanionPostTurnMemoryAdmissionCoordinator::new(&database, &jobs)
+        .retry_direct_with_model_and_admit(conversation.id, 512, 1, model.source_id, true)
+        .expect("exact model retry")
+        .expect("same admission");
+    assert!(!retry.created);
+    assert_eq!(
+        retry.batch.idempotency_key,
+        work.admission.batch.idempotency_key
+    );
     assert!(
         lettuce_memory::DynamicMemoryApprovalRepository::get_dynamic_memory_pending_approval(
             &database,
@@ -1217,6 +1237,12 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         )
         .await
         .expect("run background job");
+    assert_eq!(
+        GlobalSettingsStore::load(&database)
+            .expect("updated settings")
+            .dynamic_memory_model_profile_id,
+        Some(model.source_id)
+    );
     assert!(!result.first_round_replayed);
     assert!(result.summary_replayed);
     assert_eq!(
@@ -1431,6 +1457,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             TimestampMillis::new(NOW.get() + 39),
         )
         .expect("failure processing");
+    let failed_model_id = ModelProfileId::new();
     let failure_batch = crate::CompanionPostTurnMemoryBatch {
         conversation_id: current.id,
         idempotency_key: lettuce_jobs::IdempotencyKey::new("terminal-failure-batch")
@@ -1445,6 +1472,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         source_effect_offset: 0,
         effects: vec![continued_effect],
         settle_effects: true,
+        selected_model_profile_id: Some(failed_model_id),
+        update_dynamic_memory_model_on_success: true,
     };
     let failure_handle = JobHandle::new(failure_job_id);
     let failed = terminal
@@ -1474,6 +1503,12 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     assert_eq!(
         failed.summary.as_deref(),
         Some("Dynamic memory was cancelled")
+    );
+    assert_eq!(
+        GlobalSettingsStore::load(&database)
+            .expect("settings after cancelled retry")
+            .dynamic_memory_model_profile_id,
+        Some(model.source_id)
     );
     assert!(
         CompanionTurnEffectRepository::list_processing(&database, 512)
@@ -2715,6 +2750,12 @@ fn group_delete_after_keeps_the_scene_anchor_and_tombstones_the_reply() {
         .launch_group(&group_request(group_id, "group-delete-after-launch"), NOW)
         .expect("launch group");
     let conversation = launched.value.conversation;
+    let jobs = InMemoryJobStore::new();
+    assert!(matches!(
+        crate::CompanionPostTurnMemoryAdmissionCoordinator::new(&database, &jobs)
+            .retry_direct_with_model_and_admit(conversation.id, 512, 20, model_id, true),
+        Err(crate::CompanionPostTurnMemoryAdmissionError::InvalidBatch)
+    ));
     let anchor = ConversationReader::timeline_page(
         &database,
         conversation.id,
@@ -2764,7 +2805,6 @@ fn group_delete_after_keeps_the_scene_anchor_and_tombstones_the_reply() {
     let current = ConversationReader::get(&database, conversation.id)
         .expect("group conversation")
         .conversation;
-    let jobs = InMemoryJobStore::new();
     let deleted = crate::DynamicMemoryDeleteAfterCoordinator::new(&database, &jobs)
         .delete_after(
             &crate::DeleteAfterMessages {

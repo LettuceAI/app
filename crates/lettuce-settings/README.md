@@ -41,5 +41,7 @@ exposed here.
 The database foundation adds a small closed `GlobalSettings` document and a
 synchronous persistence port. It currently holds global safety/telemetry/update
 preferences only; frontend appearance is deliberately excluded.
-The selected model is a separate typed ID with optimistic revision checks, not
-an arbitrary setting key.
+The application default and dynamic-memory model selections are separate typed
+IDs with foreign keys and optimistic revision checks, not arbitrary setting
+keys. Dynamic-memory selection has a narrow CAS setter so a successful retry
+can update only that feature route without rewriting unrelated preferences.

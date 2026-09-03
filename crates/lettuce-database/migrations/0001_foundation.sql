@@ -33,6 +33,7 @@ CREATE INDEX model_profiles_account_idx ON model_profiles(provider_account_id);
 CREATE TABLE app_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     default_model_profile_id TEXT REFERENCES model_profiles(id) ON DELETE RESTRICT,
+    dynamic_memory_model_profile_id TEXT REFERENCES model_profiles(id) ON DELETE RESTRICT,
     format_version INTEGER NOT NULL CHECK (format_version >= 1),
     payload_json TEXT NOT NULL,
     revision INTEGER NOT NULL CHECK (revision >= 1),
