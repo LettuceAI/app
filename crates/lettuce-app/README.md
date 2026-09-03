@@ -328,6 +328,14 @@ set. This prevents a host from accidentally serving an initialized database
 without the required app prompts. `AppBackend::open_in_memory` provides the
 same invariant for tests.
 
+Startup recovery is one explicit bounded application pass over expired durable
+claims. It returns every recovered job with its persisted policy action and
+current snapshot, including kinds whose executors are not wired yet, so a host
+cannot silently consume unrelated work. `AppBackend` also exposes the existing
+companion memory discovery/claim coordinator with the same SQLite database as
+both effect repository and job store. Worker identity, resource admission,
+runtime inputs, polling, and execution remain host-owned.
+
 The adjacent `v1.snap` pins a canonical digest for every individual entry,
 including its stable key, role, content, scheduling, conditions, payload, and
 system-prompt flag. A change to one legacy field therefore identifies the

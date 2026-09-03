@@ -27,6 +27,7 @@ mod dynamic_memory;
 mod dynamic_memory_continuation;
 mod dynamic_memory_delete_after;
 mod embeddings;
+mod job_recovery;
 mod launch;
 mod provider_runtime;
 
@@ -51,6 +52,7 @@ pub use dynamic_memory::*;
 pub use dynamic_memory_continuation::*;
 pub use dynamic_memory_delete_after::*;
 pub use embeddings::*;
+pub use job_recovery::*;
 pub use launch::*;
 pub use provider_runtime::*;
 

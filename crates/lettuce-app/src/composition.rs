@@ -59,6 +59,21 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn startup_job_recovery(&self) -> crate::StartupJobRecoveryCoordinator<'_, Database> {
+        crate::StartupJobRecoveryCoordinator::new(self.database.as_ref())
+    }
+
+    #[must_use]
+    pub fn companion_memory_dispatcher(
+        &self,
+    ) -> crate::CompanionMemoryDispatchCoordinator<'_, Database, Database> {
+        crate::CompanionMemoryDispatchCoordinator::new(
+            self.database.as_ref(),
+            self.database.as_ref(),
+        )
+    }
+
+    #[must_use]
     pub const fn built_in_prompt_ids(&self) -> &BuiltInPromptIds {
         &self.built_in_prompt_ids
     }
@@ -120,9 +135,13 @@ pub enum AppInitializationError {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
-    use crate::BuiltInPromptId;
+    use crate::{BuiltInPromptId, MAX_COMPANION_POST_TURN_EFFECTS};
     use lettuce_context::PromptRepository;
+    use lettuce_jobs::{ResourceAvailability, WorkerId};
+    use lettuce_memory::DynamicMemoryRunMode;
     use lettuce_types::TimestampMillis;
 
     #[test]
@@ -160,6 +179,21 @@ mod tests {
                 .list(lettuce_jobs::JobQuery::default())
                 .expect("list jobs")
                 .items
+                .is_empty()
+        );
+        assert!(
+            backend
+                .companion_memory_dispatcher()
+                .discover_and_claim(
+                    MAX_COMPANION_POST_TURN_EFFECTS,
+                    1,
+                    DynamicMemoryRunMode::Auto,
+                    WorkerId::new(),
+                    TimestampMillis::new(2),
+                    Duration::from_secs(60),
+                    &ResourceAvailability::all(),
+                )
+                .expect("discover jobs")
                 .is_empty()
         );
         assert!(
