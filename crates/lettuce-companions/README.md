@@ -59,6 +59,13 @@ clamps to `[0,1]`. Authored facts retain the legacy `0.7` confidence gate,
 weight default/clamp, generated identity and timestamps, and forced historical
 locking. Prompt rendering, recursion, structured fallback, model selection,
 durable proposal application, and frontend events remain application work.
+The writer prompt-value helper also preserves the exact legacy blank-input
+fallbacks, pretty current-Soul JSON, and final authoring instruction. Its
+structured fallback accepts the legacy JSON object/array aliases and
+`soul_ops`/`operations` XML roots, filters to the six known operations,
+preserves call order, coerces numeric XML fields, and keeps JSON-encoded
+authored facts for the same reducer. Provider fallback dispatch and recursion
+remain outside this pure boundary.
 
 Durable Soul state is character-owned, matching legacy continuity: companion
 Soul growth is shared across that character's sessions regardless of the

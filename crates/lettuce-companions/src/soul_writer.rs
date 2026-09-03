@@ -1,5 +1,10 @@
+use std::collections::HashSet;
+
 use lettuce_conversations::{ProposedToolCall, ToolChoice, ToolDefinition, ToolRequest};
 use lettuce_types::TimestampMillis;
+use quick_xml::Reader;
+use quick_xml::escape::{resolve_xml_entity, unescape};
+use quick_xml::events::{BytesRef, Event};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
@@ -9,6 +14,7 @@ pub const SET_BASELINE_AFFECT_TOOL_NAME: &str = "set_baseline_affect";
 pub const SET_REGULATION_STYLE_TOOL_NAME: &str = "set_regulation_style";
 pub const SET_RELATIONSHIP_DEFAULTS_TOOL_NAME: &str = "set_relationship_defaults";
 pub const SOUL_WRITER_DONE_TOOL_NAME: &str = "done";
+pub const SOUL_WRITER_FINAL_INSTRUCTION: &str = "Author the Companion Soul now. Issue tool calls (set_identity, set_authored_facts, set_baseline_affect, set_regulation_style, set_relationship_defaults) across one or more turns, then call done to finish. Populate every identity text field you can ground from the inputs: essence, traits, backstory, appearance, goals, likes, voice, relationalStyle, vulnerabilities, fears, habits, and boundaries. Also extract atomic facts from the backstory and definition: historical events use policy=historical and locked=true; present-state details use policy=current; inferred traits, fears, goals, habits, and vulnerabilities use policy=adaptive and locked=false. Do not turn uncertain implications into facts.";
 
 const TEXT_FIELDS: &[&str] = &[
     "essence",
@@ -52,12 +58,384 @@ const REGULATION_STYLE_FIELDS: &[&str] = &[
 
 const RELATIONSHIP_DEFAULTS_FIELDS: &[&str] = &["closeness", "trust", "affection", "tension"];
 const RELATIONSHIP_BIPOLAR_FIELDS: &[&str] = &["closeness", "trust", "affection"];
+const SOUL_OPERATION_NAMES: &[&str] = &[
+    SET_IDENTITY_TOOL_NAME,
+    SET_AUTHORED_FACTS_TOOL_NAME,
+    SET_BASELINE_AFFECT_TOOL_NAME,
+    SET_REGULATION_STYLE_TOOL_NAME,
+    SET_RELATIONSHIP_DEFAULTS_TOOL_NAME,
+    SOUL_WRITER_DONE_TOOL_NAME,
+];
+const SOUL_OPERATION_ROOTS: &[&str] = &["soul_ops", "operations"];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SoulWriterFallbackFormat {
+    Json,
+    Xml,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoulWriterPromptValues {
+    pub character_name: String,
+    pub character_definition: String,
+    pub character_description: String,
+    pub opening_context: String,
+    pub current_soul: String,
+    pub user_notes: String,
+    pub final_instruction: String,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoulWriterReduction {
     pub draft: Value,
     pub results: Vec<Value>,
     pub completed: bool,
+}
+
+#[must_use]
+pub fn soul_writer_prompt_values(
+    character_name: &str,
+    character_definition: Option<&str>,
+    character_description: Option<&str>,
+    opening_context: Option<&str>,
+    current_soul: Option<&Value>,
+    user_notes: Option<&str>,
+) -> SoulWriterPromptValues {
+    SoulWriterPromptValues {
+        character_name: character_name.trim().to_owned(),
+        character_definition: nonblank_or(character_definition, "Not provided."),
+        character_description: nonblank_or(character_description, "Not provided."),
+        opening_context: nonblank_or(opening_context, "Not provided."),
+        current_soul: current_soul
+            .map(|value| serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_owned()))
+            .unwrap_or_else(|| "{}".to_owned()),
+        user_notes: nonblank_or(user_notes, "No special direction."),
+        final_instruction: SOUL_WRITER_FINAL_INSTRUCTION.to_owned(),
+    }
+}
+
+fn nonblank_or(value: Option<&str>, fallback: &str) -> String {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(fallback)
+        .to_owned()
+}
+
+pub fn parse_soul_writer_fallback_calls(
+    raw: &str,
+    format: SoulWriterFallbackFormat,
+) -> Result<Vec<ProposedToolCall>, String> {
+    match format {
+        SoulWriterFallbackFormat::Json => parse_fallback_json(raw),
+        SoulWriterFallbackFormat::Xml => parse_fallback_xml(raw),
+    }
+}
+
+fn normalize_structured_fallback_text(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.starts_with("```") {
+        let mut lines = trimmed.lines();
+        let _ = lines.next();
+        let mut body = lines.collect::<Vec<_>>();
+        if body.last().is_some_and(|line| line.trim() == "```") {
+            body.pop();
+        }
+        return body.join("\n").trim().to_owned();
+    }
+    trimmed.to_owned()
+}
+
+fn extract_json_snippet(raw: &str) -> Option<&str> {
+    let mut start = None;
+    let mut stack = Vec::new();
+    let mut in_string = false;
+    let mut escape = false;
+    for (index, character) in raw.char_indices() {
+        if in_string {
+            if escape {
+                escape = false;
+            } else if character == '\\' {
+                escape = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match character {
+            '"' => in_string = true,
+            '{' | '[' => {
+                if start.is_none() {
+                    start = Some(index);
+                }
+                stack.push(character);
+            }
+            '}' => {
+                if stack.pop() != Some('{') {
+                    return None;
+                }
+                if stack.is_empty() {
+                    return start.map(|start| &raw[start..=index]);
+                }
+            }
+            ']' => {
+                if stack.pop() != Some('[') {
+                    return None;
+                }
+                if stack.is_empty() {
+                    return start.map(|start| &raw[start..=index]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn parse_fallback_json(raw: &str) -> Result<Vec<ProposedToolCall>, String> {
+    let normalized = normalize_structured_fallback_text(raw);
+    let snippet = extract_json_snippet(&normalized).unwrap_or(&normalized);
+    let value: Value = serde_json::from_str(snippet)
+        .map_err(|error| format!("fallback JSON parse error: {error}"))?;
+    let operations = match &value {
+        Value::Array(items) => items.clone(),
+        Value::Object(map) => map
+            .get("operations")
+            .or_else(|| map.get("ops"))
+            .and_then(Value::as_array)
+            .cloned()
+            .ok_or_else(|| "fallback JSON missing operations array".to_owned())?,
+        _ => return Err("fallback JSON must be object or array".to_owned()),
+    };
+    operations
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let Some(object) = item.as_object() else {
+                return Ok(None);
+            };
+            let name = match object
+                .get("name")
+                .or_else(|| object.get("tool"))
+                .or_else(|| object.get("op"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+            {
+                Some(name) => name,
+                None => {
+                    return Err(format!(
+                        "fallback JSON operation {} is missing a name",
+                        index + 1
+                    ));
+                }
+            };
+            if !SOUL_OPERATION_NAMES.contains(&name) {
+                return Ok(None);
+            }
+            let arguments = match object.get("arguments") {
+                Some(Value::Object(arguments)) => Value::Object(arguments.clone()),
+                Some(arguments) => arguments.clone(),
+                None => Value::Object(
+                    object
+                        .iter()
+                        .filter(|(key, _)| !matches!(key.as_str(), "name" | "tool" | "op"))
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect(),
+                ),
+            };
+            Ok(Some(ProposedToolCall {
+                provider_call_id: Some(format!("json_op_{}", index + 1)),
+                name: name.to_owned(),
+                arguments,
+                raw_arguments: None,
+                provider_replay: None,
+            }))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(|calls| calls.into_iter().flatten().collect())
+}
+
+fn parse_fallback_xml(raw: &str) -> Result<Vec<ProposedToolCall>, String> {
+    let normalized = normalize_structured_fallback_text(raw);
+    let mut reader = Reader::from_str(&normalized);
+    reader.config_mut().trim_text(false);
+    let mut buffer = Vec::new();
+    let mut root_seen = false;
+    let mut current_operation: Option<String> = None;
+    let mut current_arguments = Map::new();
+    let mut current_field: Option<String> = None;
+    let mut calls = Vec::new();
+    let mut operation_index = 0usize;
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Start(event)) => {
+                let tag = String::from_utf8_lossy(event.name().as_ref()).into_owned();
+                if !root_seen && SOUL_OPERATION_ROOTS.contains(&tag.as_str()) {
+                    root_seen = true;
+                } else if root_seen
+                    && current_operation.is_none()
+                    && SOUL_OPERATION_NAMES.contains(&tag.as_str())
+                {
+                    current_operation = Some(tag);
+                    current_arguments = Map::new();
+                    ingest_xml_attributes(&mut current_arguments, &event);
+                } else if current_operation.is_some() {
+                    current_field = Some(tag);
+                }
+            }
+            Ok(Event::Empty(event)) => {
+                let tag = String::from_utf8_lossy(event.name().as_ref()).into_owned();
+                if !root_seen && SOUL_OPERATION_ROOTS.contains(&tag.as_str()) {
+                    root_seen = true;
+                } else if root_seen
+                    && current_operation.is_none()
+                    && SOUL_OPERATION_NAMES.contains(&tag.as_str())
+                {
+                    let mut arguments = Map::new();
+                    ingest_xml_attributes(&mut arguments, &event);
+                    operation_index += 1;
+                    calls.push(fallback_call(
+                        format!("xml_op_{operation_index}"),
+                        tag,
+                        arguments,
+                    ));
+                }
+            }
+            Ok(Event::Text(event)) => {
+                if let (Some(field), Some(_)) =
+                    (current_field.as_deref(), current_operation.as_ref())
+                {
+                    let text = String::from_utf8_lossy(event.as_ref());
+                    let text = unescape(&text)
+                        .map_err(|error| format!("fallback XML text decode error: {error}"))?;
+                    append_text_field(&mut current_arguments, field, &text);
+                }
+            }
+            Ok(Event::CData(event)) => {
+                if let (Some(field), Some(_)) =
+                    (current_field.as_deref(), current_operation.as_ref())
+                {
+                    append_text_field(
+                        &mut current_arguments,
+                        field,
+                        &String::from_utf8_lossy(event.as_ref()),
+                    );
+                }
+            }
+            Ok(Event::GeneralRef(event)) => {
+                if let (Some(field), Some(_)) =
+                    (current_field.as_deref(), current_operation.as_ref())
+                {
+                    let text = decode_xml_reference(event)?;
+                    append_text_field(&mut current_arguments, field, &text);
+                }
+            }
+            Ok(Event::End(event)) => {
+                let tag = String::from_utf8_lossy(event.name().as_ref()).into_owned();
+                if current_field.as_deref() == Some(tag.as_str()) {
+                    current_field = None;
+                } else if current_operation.as_deref() == Some(tag.as_str()) {
+                    coerce_numeric_strings(&mut current_arguments);
+                    operation_index += 1;
+                    calls.push(fallback_call(
+                        format!("xml_op_{operation_index}"),
+                        current_operation.take().unwrap_or_default(),
+                        std::mem::take(&mut current_arguments),
+                    ));
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(error) => return Err(format!("fallback XML parse error: {error}")),
+            _ => {}
+        }
+        buffer.clear();
+    }
+    if !root_seen {
+        return Err("fallback response did not contain a soul_ops root".to_owned());
+    }
+    Ok(calls)
+}
+
+fn ingest_xml_attributes(
+    arguments: &mut Map<String, Value>,
+    event: &quick_xml::events::BytesStart<'_>,
+) {
+    for attribute in event.attributes().flatten() {
+        let key = String::from_utf8_lossy(attribute.key.as_ref()).into_owned();
+        let Ok(raw) = attribute.unescape_value() else {
+            continue;
+        };
+        if let Ok(number) = raw.trim().parse::<f64>()
+            && let Some(number) = serde_json::Number::from_f64(number)
+        {
+            arguments.insert(key, Value::Number(number));
+            continue;
+        }
+        arguments.insert(key, Value::String(raw.into_owned()));
+    }
+}
+
+fn decode_xml_reference(reference: BytesRef<'_>) -> Result<String, String> {
+    if let Ok(Some(character)) = reference.resolve_char_ref() {
+        return Ok(character.to_string());
+    }
+    let content = reference
+        .xml_content()
+        .map_err(|error| format!("fallback XML reference decode error: {error}"))?;
+    Ok(resolve_xml_entity(&content)
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("&{content};")))
+}
+
+fn append_text_field(arguments: &mut Map<String, Value>, key: &str, fragment: &str) {
+    if fragment.is_empty() {
+        return;
+    }
+    match arguments.get_mut(key) {
+        Some(Value::String(existing)) => existing.push_str(fragment),
+        _ => {
+            arguments.insert(key.to_owned(), Value::String(fragment.to_owned()));
+        }
+    }
+}
+
+fn coerce_numeric_strings(arguments: &mut Map<String, Value>) {
+    let numeric_fields = BASELINE_AFFECT_FIELDS
+        .iter()
+        .copied()
+        .chain(REGULATION_STYLE_FIELDS.iter().copied())
+        .chain(RELATIONSHIP_DEFAULTS_FIELDS.iter().copied())
+        .collect::<HashSet<_>>();
+    for (key, value) in arguments.iter_mut() {
+        if !numeric_fields.contains(key.as_str()) {
+            if let Value::String(text) = value {
+                *text = text.trim().to_owned();
+            }
+            continue;
+        }
+        if let Value::String(text) = value
+            && let Ok(number) = text.trim().parse::<f64>()
+            && let Some(number) = serde_json::Number::from_f64(number)
+        {
+            *value = Value::Number(number);
+        }
+    }
+    arguments.retain(|_, value| !matches!(value, Value::String(text) if text.is_empty()));
+}
+
+fn fallback_call(
+    provider_call_id: String,
+    name: String,
+    arguments: Map<String, Value>,
+) -> ProposedToolCall {
+    ProposedToolCall {
+        provider_call_id: Some(provider_call_id),
+        name,
+        arguments: Value::Object(arguments),
+        raw_arguments: None,
+        provider_replay: None,
+    }
 }
 
 #[must_use]
@@ -656,5 +1034,117 @@ mod tests {
         assert_eq!(facts[0]["evidenceCount"], 1);
         assert_eq!(facts[0]["validFrom"], 7);
         assert_eq!(reduction.results[0], json!({ "ok": true, "applied": 1 }));
+    }
+
+    #[test]
+    fn prompt_values_copy_legacy_missing_value_and_json_rules() {
+        let current = json!({ "soul": { "traits": "Careful" } });
+        let values = soul_writer_prompt_values(
+            "  Mira  ",
+            Some("  Canon  "),
+            Some(" "),
+            None,
+            Some(&current),
+            Some("  Be reserved  "),
+        );
+        assert_eq!(values.character_name, "Mira");
+        assert_eq!(values.character_definition, "Canon");
+        assert_eq!(values.character_description, "Not provided.");
+        assert_eq!(values.opening_context, "Not provided.");
+        assert_eq!(
+            values.current_soul,
+            serde_json::to_string_pretty(&current).expect("json")
+        );
+        assert_eq!(values.user_notes, "Be reserved");
+        assert_eq!(values.final_instruction, SOUL_WRITER_FINAL_INSTRUCTION);
+
+        let empty = soul_writer_prompt_values("Mira", None, None, None, None, None);
+        assert_eq!(empty.current_soul, "{}");
+        assert_eq!(empty.user_notes, "No special direction.");
+    }
+
+    #[test]
+    fn json_fallback_preserves_aliases_inline_arguments_and_order() {
+        let calls = parse_soul_writer_fallback_calls(
+            r#"```json
+            {"ops":[
+                {"tool":"ignored","value":1},
+                {"op":"set_identity","traits":"Careful"},
+                {"name":"set_baseline_affect","arguments":{"warmth":0.8}},
+                {"name":"done","arguments":{}}
+            ]}
+            ```"#,
+            SoulWriterFallbackFormat::Json,
+        )
+        .expect("json fallback");
+        assert_eq!(
+            calls
+                .iter()
+                .map(|call| call.name.as_str())
+                .collect::<Vec<_>>(),
+            ["set_identity", "set_baseline_affect", "done"]
+        );
+        assert_eq!(calls[0].provider_call_id.as_deref(), Some("json_op_2"));
+        assert_eq!(calls[0].arguments, json!({ "traits": "Careful" }));
+        assert_eq!(calls[1].arguments, json!({ "warmth": 0.8 }));
+    }
+
+    #[test]
+    fn xml_fallback_copies_numeric_text_entity_and_authored_fact_handling() {
+        let calls = parse_soul_writer_fallback_calls(
+            r#"<soul_ops>
+                <set_identity><traits> Calm &amp; careful </traits></set_identity>
+                <set_authored_facts><facts>[{"category":"backstory","value":"Moved to the coast","policy":"historical","slot":"coast-move","confidence":1,"weight":1,"locked":true}]</facts></set_authored_facts>
+                <set_relationship_defaults closeness="-0.5" tension="1.5" />
+                <done />
+            </soul_ops>"#,
+            SoulWriterFallbackFormat::Xml,
+        )
+        .expect("xml fallback");
+        assert_eq!(
+            calls
+                .iter()
+                .map(|call| call.name.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "set_identity",
+                "set_authored_facts",
+                "set_relationship_defaults",
+                "done"
+            ]
+        );
+        assert_eq!(calls[0].arguments["traits"], "Calm & careful");
+        assert!(
+            calls[1].arguments["facts"]
+                .as_str()
+                .is_some_and(|facts| facts.contains("coast-move"))
+        );
+        assert_eq!(calls[2].arguments["closeness"], -0.5);
+        assert_eq!(calls[2].arguments["tension"], 1.5);
+
+        let reduction = reduce_soul_writer_calls(None, &calls, TimestampMillis::new(9));
+        assert!(reduction.completed);
+        assert_eq!(reduction.draft["soul"]["traits"], "Calm & careful");
+        assert_eq!(reduction.draft["authoredFacts"][0]["locked"], true);
+        assert_eq!(reduction.draft["relationshipDefaults"]["closeness"], -0.5);
+        assert_eq!(reduction.draft["relationshipDefaults"]["tension"], 1.0);
+    }
+
+    #[test]
+    fn malformed_fallbacks_are_rejected() {
+        assert!(
+            parse_soul_writer_fallback_calls(
+                r#"{"operations":[{"value":1}]}"#,
+                SoulWriterFallbackFormat::Json,
+            )
+            .is_err()
+        );
+        assert!(
+            parse_soul_writer_fallback_calls(
+                "<set_identity><traits>orphan</traits></set_identity>",
+                SoulWriterFallbackFormat::Xml,
+            )
+            .is_err()
+        );
     }
 }
