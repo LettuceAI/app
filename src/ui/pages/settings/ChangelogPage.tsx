@@ -30,8 +30,38 @@ export const changelog: ChangelogEntry[] = [
     date: "2026-09-02",
     title: "2.2.3 — Companion Prompt Fixes & Richer Relationship State",
     description:
-      "A companion's own prompt template now wins over the session template, the relationship state handed to the model spells out what each band means alongside the raw score, and character generation works again on local models whose chat template only accepts a single system message.",
+      "A companion's own prompt template now wins over the session template, the relationship state handed to the model spells out what each band means alongside the raw score, and character generation works again on local models whose chat template only accepts a single system message. Gemma4 models on llama.cpp can be forced to reason before answering, and OpenRouter image generation moves to the Image API with clearer errors and automatic downsizing of oversized reference images.",
     changes: [
+      {
+        type: "feature",
+        description:
+          "A new Force Reasoning toggle in the Reasoning section of the model settings makes Gemma4-series models on the local llama.cpp engine open a thinking block before they answer. The opener is injected into the prompt automatically and the thought is routed to the reasoning view instead of leaking into the reply.",
+      },
+      {
+        type: "improvement",
+        description:
+          "OpenRouter image generation now uses OpenRouter's Image API, which returns the image directly instead of wrapping it in a chat completion. Models that are not served there fall back to the chat endpoint automatically. This fixes OpenAI image models such as gpt-5.4-image-2 finishing without an image.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "Image generation reports the provider's own error when it arrives inside a successful response, such as an upstream 504, instead of failing with a parse error. Transient server errors are retried once, and an oversized request now explains that the reference image is too large instead of showing a bare 413.",
+      },
+      {
+        type: "improvement",
+        description:
+          "Reference images sent to remote image providers are downsized to 2048 px on the longest edge and re-encoded when they are larger than 4 MB, with the inpainting mask resized to match. Upscaled sources no longer push the request past the provider's size limit.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "The adaptive-p sampler on llama.cpp now receives its target and decay values. They were dropped from every request, so the sampler ran without its controls.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "The debug view no longer shows an OpenAI endpoint for local llama.cpp requests. Unregistered providers default to a localhost URL instead of the OpenAI API.",
+      },
       {
         type: "bugfix",
         description:
