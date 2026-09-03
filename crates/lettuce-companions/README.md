@@ -25,6 +25,11 @@ misapplied to the number of proposed Soul facts. Provider calls, prompt
 rendering, job coordination, database adapters, and frontend events remain
 outside this slice.
 
+The domain now exposes the same required `record_growth` tool contract and
+reduces the first matching native call or legacy structured-text fallback into
+typed proposals. Source indices preserve the legacy fallback to all supplied
+fresh-memory IDs; the existing Soul reducer remains the only policy path.
+
 Durable Soul state is character-owned, matching legacy continuity: companion
 Soul growth is shared across that character's sessions regardless of the
 separate shared-memory setting. `SoulRepository` owns create/load and atomic
