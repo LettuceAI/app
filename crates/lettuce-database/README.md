@@ -185,6 +185,11 @@ durable job and memory run. It freezes the successful memory attempt, profile,
 prompt inputs, bounded evidence, Soul snapshot, and deterministic apply ID;
 the adapter admits one immutable reduced-proposal checkpoint before Soul apply
 and replays it exactly across restart.
+Migration 12 also stores one consolidation run per succeeded growth job. The
+row freezes the authoritative post-growth Soul revision and companion prompt
+inputs plus a deterministic apply ID; its typed adjustment/retirement proposal
+checkpoint is immutable and independently replayable before the later Soul
+apply worker runs.
 Creating a companion character now seeds its initial character-owned Soul root
 and normalized authored facts inside the same character aggregate transaction.
 An authored-fact failure rolls back the character and Soul rows together;

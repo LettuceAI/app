@@ -335,6 +335,7 @@ pub enum JobKind {
     MemoryExtraction,
     MemoryConsolidation,
     CompanionGrowth,
+    CompanionConsolidation,
     VectorIndexBuild,
     CreationRun,
     ImageGenerate,

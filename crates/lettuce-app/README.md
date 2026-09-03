@@ -163,6 +163,13 @@ and repository with one stable operation ID. Restart skips inference after the
 checkpoint and exact Soul apply replays its receipt. The same SQLite job claim
 then settles success, cancellation, terminal rejection, or a retryable provider
 or storage failure without changing the already-settled chat or memory run.
+Only a succeeded growth job that actually added facts can admit its separate
+`CompanionConsolidation` follow-on, and only when the authoritative post-growth
+Soul has at least twelve active changeable facts. Admission freezes the exact
+profile, authored context, Soul revision, character owner, and deterministic
+apply identity in SQLite; repeated admission loads the same run and its one
+immutable parsed-proposal checkpoint. Provider execution and settlement remain
+the next consolidation slice.
 The claimed-job runner composes the existing run admission/recovery,
 first-round inference, bounded execution/continuation loop, and terminal
 settlement into one application path. Prompt/profile/policy inputs and stable

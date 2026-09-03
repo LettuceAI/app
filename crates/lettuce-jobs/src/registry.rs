@@ -55,6 +55,7 @@ impl From<JobKind> for JobKindKey {
             JobKind::EmbeddingBenchmark => 17,
             JobKind::Maintenance => 18,
             JobKind::CompanionGrowth => 19,
+            JobKind::CompanionConsolidation => 20,
         })
     }
 }

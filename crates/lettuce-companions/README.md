@@ -44,6 +44,10 @@ structured-text fallback, core adjustment filtering, and retirement IDs. Its
 typed output is consumed by the existing atomic
 `prepare_consolidation_change_set`; confidence thresholds, locked retirement
 protection, core-category filtering, and revision behavior stay there.
+The companion-owned consolidation-run port freezes one authoritative
+post-growth Soul snapshot and accepts one immutable typed proposal checkpoint;
+storage and application crates implement admission and execution around that
+domain boundary.
 
 Durable Soul state is character-owned, matching legacy continuity: companion
 Soul growth is shared across that character's sessions regardless of the

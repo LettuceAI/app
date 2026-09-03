@@ -1,5 +1,7 @@
+use lettuce_conversations::ResolvedInferenceProfile;
 use lettuce_conversations::{ProposedToolCall, ToolChoice, ToolDefinition, ToolRequest};
-use lettuce_types::TimestampMillis;
+use lettuce_types::{CharacterId, ConversationId, JobId, OperationRecordId, TimestampMillis};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -17,10 +19,106 @@ pub struct ConsolidationPromptValues {
     pub accumulated_growth: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ConsolidationProposal {
     pub core_adjustments: Vec<ProposedSoulFact>,
     pub retire_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompanionConsolidationRun {
+    pub job_id: JobId,
+    pub growth_job_id: JobId,
+    pub conversation_id: ConversationId,
+    pub character_id: CharacterId,
+    pub profile: ResolvedInferenceProfile,
+    pub companion_name: String,
+    pub authored_soul: CompanionSoulIdentity,
+    pub soul: SoulState,
+    pub operation_id: OperationRecordId,
+    pub created_at: TimestampMillis,
+    pub proposal_checkpoint: Option<CompanionConsolidationProposalCheckpoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompanionConsolidationProposalCheckpoint {
+    pub proposal: ConsolidationProposal,
+    pub reduced_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CompanionConsolidationRunRepositoryError {
+    #[error("companion consolidation run was not found")]
+    NotFound,
+    #[error("companion consolidation run conflicts with durable state")]
+    Conflict,
+    #[error("companion consolidation run is invalid")]
+    Invalid,
+    #[error("companion consolidation run storage failed")]
+    Failure,
+    #[error("companion consolidation run storage is corrupt")]
+    Corrupt,
+}
+
+pub trait CompanionConsolidationRunRepository: Send + Sync {
+    fn admit_companion_consolidation_run(
+        &self,
+        run: CompanionConsolidationRun,
+    ) -> Result<CompanionConsolidationRun, CompanionConsolidationRunRepositoryError>;
+
+    fn load_companion_consolidation_run(
+        &self,
+        job_id: JobId,
+    ) -> Result<CompanionConsolidationRun, CompanionConsolidationRunRepositoryError>;
+
+    fn load_companion_consolidation_run_for_growth(
+        &self,
+        growth_job_id: JobId,
+    ) -> Result<CompanionConsolidationRun, CompanionConsolidationRunRepositoryError>;
+
+    fn commit_companion_consolidation_proposal(
+        &self,
+        job_id: JobId,
+        checkpoint: CompanionConsolidationProposalCheckpoint,
+    ) -> Result<CompanionConsolidationRun, CompanionConsolidationRunRepositoryError>;
+}
+
+impl CompanionConsolidationRun {
+    pub fn validate(&self) -> Result<(), CompanionConsolidationRunRepositoryError> {
+        if self.job_id == self.growth_job_id
+            || self.companion_name.trim().is_empty()
+            || crate::validate_state(&self.soul).is_err()
+            || !consolidation_ready(&self.soul, self.created_at)
+            || self.created_at.get() < 0
+        {
+            return Err(CompanionConsolidationRunRepositoryError::Invalid);
+        }
+        if let Some(checkpoint) = &self.proposal_checkpoint {
+            checkpoint.validate()?;
+        }
+        Ok(())
+    }
+}
+
+impl CompanionConsolidationProposalCheckpoint {
+    pub fn validate(&self) -> Result<(), CompanionConsolidationRunRepositoryError> {
+        let mut proposal_ids = std::collections::HashSet::new();
+        if self.reduced_at.get() < 0
+            || self.proposal.core_adjustments.iter().any(|proposal| {
+                proposal.id.trim().is_empty() || !proposal_ids.insert(proposal.id.as_str())
+            })
+            || self
+                .proposal
+                .retire_ids
+                .iter()
+                .any(|id| id.trim().is_empty())
+        {
+            return Err(CompanionConsolidationRunRepositoryError::Invalid);
+        }
+        Ok(())
+    }
 }
 
 #[must_use]

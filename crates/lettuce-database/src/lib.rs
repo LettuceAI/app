@@ -3,6 +3,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod character_adapter;
+mod consolidation_adapter;
 mod conversation_artifact_adapter;
 mod conversation_creator;
 mod conversation_mutation_kernel;
@@ -3852,6 +3853,7 @@ mod tests {
                 "character_media",
                 "character_presentation_asset_refs",
                 "characters",
+                "companion_consolidation_runs",
                 "companion_emotion_vectors",
                 "companion_growth_runs",
                 "companion_relationship_states",

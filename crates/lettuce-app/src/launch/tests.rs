@@ -8,10 +8,11 @@ use lettuce_characters::{
     SceneDocumentV1, SceneOwner, ScenePart, SceneVariant, Selection, StarterMessage, StarterRole,
 };
 use lettuce_companions::{
+    CompanionConsolidationProposalCheckpoint, CompanionConsolidationRunRepository,
     CompanionConversationSender, CompanionGrowthRunRepository, CompanionStateOwner,
     CompanionStateReplacement, CompanionStateRepository, CompanionTurnEffectRepository,
     CompanionTurnEffectStatus, CompanionTurnInput, EmotionClassification, EmotionLabelScore,
-    PreparedCompanionSend, SoulRepository, apply_turn,
+    PreparedCompanionSend, SoulRepository, apply_turn, parse_consolidation_proposal,
 };
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
@@ -1347,6 +1348,28 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .expect("claim growth job")
         .expect("growth work");
     assert_eq!(growth_work.job.state, JobState::Running);
+    let mut growth_adjustments = vec![serde_json::json!({
+        "category": "likes",
+        "kind": "add",
+        "policy": "adaptive",
+        "slot": "drink",
+        "value": "Prefers tea",
+        "confidence": 0.8,
+        "weight": 0.7,
+        "sourceIndices": [0]
+    })];
+    growth_adjustments.extend((1..12).map(|index| {
+        serde_json::json!({
+            "category": "habits",
+            "kind": "add",
+            "policy": "adaptive",
+            "slot": format!("habit-{index}"),
+            "value": format!("Habit {index}"),
+            "confidence": 0.8,
+            "weight": 0.7,
+            "sourceIndices": [0]
+        })
+    }));
     scripted
         .outcomes
         .lock()
@@ -1358,16 +1381,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 tool_calls: vec![ProposedToolCall {
                     provider_call_id: Some("growth-record".into()),
                     name: "record_growth".into(),
-                    arguments: serde_json::json!({"adjustments": [{
-                        "category": "likes",
-                        "kind": "add",
-                        "policy": "adaptive",
-                        "slot": "drink",
-                        "value": "Prefers tea",
-                        "confidence": 0.8,
-                        "weight": 0.7,
-                        "sourceIndices": [0]
-                    }]}),
+                    arguments: serde_json::json!({"adjustments": growth_adjustments}),
                     raw_arguments: None,
                     provider_replay: None,
                 }],
@@ -1395,7 +1409,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         )
         .await
         .expect("execute growth");
-    assert_eq!(applied.applied_facts, 1);
+    assert_eq!(applied.applied_facts, 12);
     assert!(!applied.proposal_replayed);
     let checkpointed = database
         .load_companion_growth_run(growth.job.id)
@@ -1405,7 +1419,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .proposal_checkpoint
             .as_ref()
             .map(|checkpoint| checkpoint.proposals.len()),
-        Some(1)
+        Some(12)
     );
     let replayed_growth =
         crate::CompanionGrowthExecutionCoordinator::new(&database, &UnavailableInference)
@@ -1464,7 +1478,11 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             TimestampMillis::new(NOW.get() + 103),
         )
         .expect("settle growth job");
-    let crate::CompanionGrowthSettledWork::Succeeded { job, .. } = settled_growth else {
+    let crate::CompanionGrowthSettledWork::Succeeded {
+        result: applied_growth,
+        job,
+    } = settled_growth
+    else {
         panic!("expected succeeded growth job");
     };
     assert_eq!(job.state, JobState::Succeeded);
@@ -1473,6 +1491,70 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         Some(JobOutcome::Success {
             result_ref: OutcomeRef::Character(growth.run.character_id),
         })
+    );
+    assert!(
+        crate::CompanionConsolidationJobAdmissionCoordinator::new(&database, &database)
+            .admit_after_growth(
+                growth.job.id,
+                &crate::CompanionGrowthExecutionResult {
+                    receipt: None,
+                    applied_facts: 0,
+                    proposal_replayed: false,
+                },
+            )
+            .expect("skip empty consolidation")
+            .is_none()
+    );
+    let consolidation =
+        crate::CompanionConsolidationJobAdmissionCoordinator::new(&database, &database)
+            .admit_after_growth(growth.job.id, &applied_growth)
+            .expect("admit consolidation")
+            .expect("consolidation job");
+    assert!(consolidation.created);
+    assert_eq!(consolidation.job.kind, JobKind::CompanionConsolidation);
+    assert_eq!(consolidation.run.growth_job_id, growth.job.id);
+    assert_eq!(consolidation.run.soul, stored_soul);
+    let consolidation_replay =
+        crate::CompanionConsolidationJobAdmissionCoordinator::new(&database, &database)
+            .admit_after_growth(growth.job.id, &applied_growth)
+            .expect("replay consolidation")
+            .expect("consolidation replay");
+    assert!(!consolidation_replay.created);
+    assert_eq!(consolidation_replay.run, consolidation.run);
+    let proposal = parse_consolidation_proposal(
+        &[ProposedToolCall {
+            provider_call_id: Some("consolidate".into()),
+            name: "consolidate_soul".into(),
+            arguments: serde_json::json!({
+                "coreAdjustments": [{
+                    "category": "traits",
+                    "value": "Patient",
+                    "confidence": 0.9,
+                    "weight": 0.8
+                }],
+                "retire": [stored_soul.facts[0].id.clone()]
+            }),
+            raw_arguments: None,
+            provider_replay: None,
+        }],
+        None,
+    );
+    let checkpoint = CompanionConsolidationProposalCheckpoint {
+        proposal,
+        reduced_at: TimestampMillis::new(NOW.get() + 104),
+    };
+    let checkpointed_consolidation = database
+        .commit_companion_consolidation_proposal(consolidation.job.id, checkpoint.clone())
+        .expect("checkpoint consolidation");
+    assert_eq!(
+        checkpointed_consolidation.proposal_checkpoint,
+        Some(checkpoint)
+    );
+    assert_eq!(
+        database
+            .load_companion_consolidation_run_for_growth(growth.job.id)
+            .expect("load consolidation by growth"),
+        checkpointed_consolidation
     );
     let settled = crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
         .settle_run(
