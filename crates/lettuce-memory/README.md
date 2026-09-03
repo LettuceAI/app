@@ -102,3 +102,8 @@ replays those calls/results into the frozen context and admits the next bounded
 round. The starting snapshot remains available after restart for the existing
 companion effect delta/summary calculation; host worker wiring remains a later
 application slice.
+Delete-after rewind now has a narrow idempotent repository contract. It restores
+the earliest invalid run's immutable starting memory snapshot, restores the
+latest earlier summary checkpoint (or clears the summary), and retires the
+named companion effects in the same storage transaction. Selecting the invalid
+suffix from tombstoned message IDs remains application-owned.

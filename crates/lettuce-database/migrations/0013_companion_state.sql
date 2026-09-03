@@ -201,6 +201,62 @@ CREATE TABLE companion_turn_effect_source_messages (
     PRIMARY KEY (effect_id, ordinal)
 ) STRICT;
 
+CREATE TABLE dynamic_memory_suffix_rewinds (
+    operation_id TEXT PRIMARY KEY,
+    request_digest TEXT NOT NULL CHECK (
+        length(request_digest) = 64
+        AND lower(request_digest) = request_digest
+        AND request_digest NOT GLOB '*[^0-9a-f]*'
+    ),
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
+    invalid_run_id TEXT REFERENCES dynamic_memory_runs(id) ON DELETE RESTRICT,
+    space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
+    source_memory_revision INTEGER NOT NULL CHECK (source_memory_revision >= 1),
+    resulting_memory_revision INTEGER NOT NULL CHECK (
+        resulting_memory_revision = source_memory_revision
+        OR resulting_memory_revision = source_memory_revision + 1
+    ),
+    restored_summary_run_id TEXT REFERENCES dynamic_memory_runs(id) ON DELETE RESTRICT,
+    resulting_memory_json TEXT NOT NULL CHECK (
+        json_valid(resulting_memory_json)
+        AND json_extract(resulting_memory_json, '$.format_version') = 1
+    ),
+    resulting_summary_json TEXT CHECK (
+        resulting_summary_json IS NULL OR (
+            json_valid(resulting_summary_json)
+            AND json_extract(resulting_summary_json, '$.format_version') = 1
+        )
+    ),
+    applied_at INTEGER NOT NULL,
+    UNIQUE (operation_id, conversation_id)
+) STRICT;
+
+CREATE TABLE companion_turn_effect_invalidations (
+    operation_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    effect_id TEXT NOT NULL UNIQUE REFERENCES companion_turn_effects(id) ON DELETE RESTRICT,
+    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 511),
+    PRIMARY KEY (operation_id, ordinal),
+    FOREIGN KEY (operation_id, conversation_id)
+        REFERENCES dynamic_memory_suffix_rewinds(operation_id, conversation_id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE TRIGGER dynamic_memory_suffix_rewinds_immutable
+BEFORE UPDATE ON dynamic_memory_suffix_rewinds
+BEGIN SELECT RAISE(ABORT, 'dynamic-memory suffix rewind is immutable'); END;
+
+CREATE TRIGGER dynamic_memory_suffix_rewinds_no_delete
+BEFORE DELETE ON dynamic_memory_suffix_rewinds
+BEGIN SELECT RAISE(ABORT, 'dynamic-memory suffix rewind cannot be deleted'); END;
+
+CREATE TRIGGER companion_turn_effect_invalidations_immutable
+BEFORE UPDATE ON companion_turn_effect_invalidations
+BEGIN SELECT RAISE(ABORT, 'companion effect invalidation is immutable'); END;
+
+CREATE TRIGGER companion_turn_effect_invalidations_no_delete
+BEFORE DELETE ON companion_turn_effect_invalidations
+BEGIN SELECT RAISE(ABORT, 'companion effect invalidation cannot be deleted'); END;
+
 CREATE TRIGGER companion_turn_effect_terminal_update
 BEFORE UPDATE ON companion_turn_effects
 WHEN OLD.status IN ('ready', 'failed')

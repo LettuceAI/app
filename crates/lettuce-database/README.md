@@ -209,6 +209,12 @@ failure/cancellation removes an unconsumed seed, while interrupted recovery
 keeps it with the same turn. Ready/failed settlement stores typed memory IDs,
 the exact source-message window, and bounded summary data behind the
 companion-owned repository port. Terminal effects are immutable.
+Migration 13 adds immutable delete-after rewind receipts and companion-effect
+invalidation rows. The adapter uses an admitted run's starting snapshot and an
+earlier summary checkpoint as the rollback authority, applies one memory CAS,
+restores the summary without a second root revision bump, clears pending
+approval, and records the exact retry result atomically. Effect invalidation is
+an overlay, so migration 13's terminal effect evidence is never rewritten.
 The versioned operation `result_json` and outbox `event_json` envelopes are the
 canonical payloads; scalar columns are routing/index projections. The future
 full repository must validate projection equality on every write and hydrate.

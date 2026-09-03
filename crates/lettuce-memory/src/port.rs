@@ -1,6 +1,6 @@
 use lettuce_types::{
-    ConversationId, GenerationAttemptId, GenerationTurnId, JobId, MemorySpaceId, Revision,
-    TimestampMillis, ToolExecutionId,
+    CompanionEffectId, ConversationId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId,
+    JobId, MemorySpaceId, OperationId, Revision, TimestampMillis, ToolExecutionId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -124,6 +124,13 @@ pub trait MemorySummaryRepository: Send + Sync {
 }
 
 pub trait DynamicMemoryRunRepository: Send + Sync {
+    fn list_dynamic_memory_runs(
+        &self,
+        _conversation_id: ConversationId,
+    ) -> Result<Vec<DynamicMemoryRun>, DynamicMemoryRunRepositoryError> {
+        Err(DynamicMemoryRunRepositoryError::Invalid)
+    }
+
     fn admit_dynamic_memory_run_attempt(
         &self,
         admission: NewDynamicMemoryRunAttempt,
@@ -213,6 +220,47 @@ pub trait DynamicMemoryRunRepository: Send + Sync {
     ) -> Result<DynamicMemorySummaryCheckpoint, DynamicMemoryRunRepositoryError> {
         Err(DynamicMemoryRunRepositoryError::Invalid)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DynamicMemorySuffixRewind {
+    pub operation_id: OperationId,
+    pub conversation_id: ConversationId,
+    pub invalid_run_id: Option<DynamicMemoryRunId>,
+    pub expected_memory_revision: Revision,
+    pub invalidated_effect_ids: Vec<CompanionEffectId>,
+    pub at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DynamicMemorySuffixRewindReceipt {
+    pub operation_id: OperationId,
+    pub conversation_id: ConversationId,
+    pub invalid_run_id: Option<DynamicMemoryRunId>,
+    pub memory: MemorySpaceSnapshot,
+    pub summary: Option<MemorySummary>,
+    pub invalidated_effect_ids: Vec<CompanionEffectId>,
+    pub applied_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum DynamicMemorySuffixRewindError {
+    #[error("dynamic-memory suffix rewind target was not found")]
+    NotFound,
+    #[error("dynamic-memory suffix rewind conflicts with durable state")]
+    Conflict,
+    #[error("dynamic-memory suffix rewind request is invalid")]
+    Invalid,
+    #[error("dynamic-memory suffix rewind storage failed")]
+    Storage,
+}
+
+pub trait DynamicMemorySuffixRewindRepository: Send + Sync {
+    fn rewind_dynamic_memory_suffix(
+        &self,
+        rewind: DynamicMemorySuffixRewind,
+    ) -> Result<DynamicMemorySuffixRewindReceipt, DynamicMemorySuffixRewindError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

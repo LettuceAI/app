@@ -252,7 +252,7 @@ pub(super) fn compare_and_apply_in(
     get_in(transaction, change.space_id)?.ok_or(MemoryRepositoryError::NotFound)
 }
 
-fn get_summary_in(
+pub(crate) fn get_summary_in(
     transaction: &Transaction<'_>,
     space_id: MemorySpaceId,
 ) -> Result<Option<MemorySummary>, MemoryRepositoryError> {
@@ -308,6 +308,80 @@ fn get_summary_in(
     Ok(Some(summary))
 }
 
+pub(crate) fn replace_summary_in(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+    summary: Option<&MemorySummary>,
+) -> Result<Option<MemorySummary>, MemoryRepositoryError> {
+    if summary.is_some_and(|summary| summary.space_id != space_id || summary.validate().is_err()) {
+        return Err(storage("invalid replacement summary"));
+    }
+    let conversation_id = transaction
+        .query_row(
+            "SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = ?1",
+            [space_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage)?
+        .ok_or(MemoryRepositoryError::NotFound)?;
+    transaction
+        .execute(
+            "DELETE FROM memory_summary_source_messages WHERE space_id = ?1",
+            [space_id.to_string()],
+        )
+        .map_err(storage)?;
+    if let Some(summary) = summary {
+        transaction
+            .execute(
+                "INSERT INTO memory_summaries (
+                    space_id, conversation_id, text, token_count,
+                    window_start, window_end, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(space_id) DO UPDATE SET
+                    conversation_id = excluded.conversation_id,
+                    text = excluded.text,
+                    token_count = excluded.token_count,
+                    window_start = excluded.window_start,
+                    window_end = excluded.window_end,
+                    updated_at = excluded.updated_at",
+                params![
+                    space_id.to_string(),
+                    conversation_id,
+                    summary.text,
+                    i64::from(summary.token_count),
+                    i64::try_from(summary.window_start).map_err(storage)?,
+                    i64::try_from(summary.window_end).map_err(storage)?,
+                    summary.updated_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        for (ordinal, message_id) in summary.source_message_ids.iter().enumerate() {
+            transaction
+                .execute(
+                    "INSERT INTO memory_summary_source_messages (
+                        space_id, conversation_id, message_id, ordinal
+                     ) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        space_id.to_string(),
+                        conversation_id,
+                        message_id.to_string(),
+                        i64::try_from(ordinal).map_err(storage)?,
+                    ],
+                )
+                .map_err(storage)?;
+        }
+    } else {
+        transaction
+            .execute(
+                "DELETE FROM memory_summaries WHERE space_id = ?1",
+                [space_id.to_string()],
+            )
+            .map_err(storage)?;
+    }
+    get_summary_in(transaction, space_id)
+}
+
 pub(super) fn compare_and_apply_summary_in(
     transaction: &Transaction<'_>,
     change: &MemorySummaryChange,
@@ -326,60 +400,7 @@ pub(super) fn compare_and_apply_summary_in(
     if parse_revision(current_revision)? != change.expected_revision {
         return Err(MemoryRepositoryError::Conflict);
     }
-    let conversation_id = transaction
-        .query_row(
-            "SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = ?1",
-            [space_id.to_string()],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(storage)?
-        .ok_or(MemoryRepositoryError::NotFound)?;
-    transaction
-        .execute(
-            "DELETE FROM memory_summary_source_messages WHERE space_id = ?1",
-            [space_id.to_string()],
-        )
-        .map_err(storage)?;
-    transaction
-        .execute(
-            "INSERT INTO memory_summaries (
-                space_id, conversation_id, text, token_count,
-                window_start, window_end, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-             ON CONFLICT(space_id) DO UPDATE SET
-                conversation_id = excluded.conversation_id,
-                text = excluded.text,
-                token_count = excluded.token_count,
-                window_start = excluded.window_start,
-                window_end = excluded.window_end,
-                updated_at = excluded.updated_at",
-            params![
-                space_id.to_string(),
-                conversation_id,
-                change.summary.text,
-                i64::from(change.summary.token_count),
-                i64::try_from(change.summary.window_start).map_err(storage)?,
-                i64::try_from(change.summary.window_end).map_err(storage)?,
-                change.summary.updated_at.get(),
-            ],
-        )
-        .map_err(storage)?;
-    for (ordinal, message_id) in change.summary.source_message_ids.iter().enumerate() {
-        transaction
-            .execute(
-                "INSERT INTO memory_summary_source_messages (
-                    space_id, conversation_id, message_id, ordinal
-                 ) VALUES (?1, ?2, ?3, ?4)",
-                params![
-                    space_id.to_string(),
-                    conversation_id,
-                    message_id.to_string(),
-                    i64::try_from(ordinal).map_err(storage)?,
-                ],
-            )
-            .map_err(storage)?;
-    }
+    replace_summary_in(transaction, space_id, Some(&change.summary))?;
     let next_revision = change
         .expected_revision
         .next()

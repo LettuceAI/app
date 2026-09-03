@@ -10,6 +10,7 @@ mod conversation_mutations;
 mod conversation_query;
 mod conversation_vertical_slice;
 mod creation_adapter;
+mod dynamic_memory_rewind_adapter;
 mod dynamic_memory_run_adapter;
 mod group_adapter;
 mod lorebook_adapter;
@@ -3786,6 +3787,7 @@ mod tests {
                 "companion_state_signals",
                 "companion_turn_effect_drafts",
                 "companion_turn_effect_emotion_deltas",
+                "companion_turn_effect_invalidations",
                 "companion_turn_effect_memory_changes",
                 "companion_turn_effect_signal_changes",
                 "companion_turn_effect_source_messages",
@@ -3825,6 +3827,7 @@ mod tests {
                 "dynamic_memory_run_attempts",
                 "dynamic_memory_run_source_messages",
                 "dynamic_memory_runs",
+                "dynamic_memory_suffix_rewinds",
                 "dynamic_memory_summary_checkpoints",
                 "generation_attempts",
                 "generation_checkpoints",

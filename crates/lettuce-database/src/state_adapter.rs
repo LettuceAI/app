@@ -782,7 +782,7 @@ fn insert_effect_vector(
     Ok(())
 }
 
-fn insert_effect_draft_in(
+pub(crate) fn insert_effect_draft_in(
     tx: &Transaction<'_>,
     conversation_id: ConversationId,
     turn_id: GenerationTurnId,
@@ -1008,7 +1008,7 @@ fn load_effect(
         .2
         .map(|value| MessageId::from_str(&value).map_err(effect_corrupt))
         .transpose()?;
-    let status = match row.3.as_str() {
+    let stored_status = match row.3.as_str() {
         "processing" => CompanionTurnEffectStatus::Processing,
         "ready" => CompanionTurnEffectStatus::Ready,
         "failed" => CompanionTurnEffectStatus::Failed,
@@ -1052,13 +1052,13 @@ fn load_effect(
                 })
         })
         .transpose()?;
-    let effect = CompanionTurnEffect {
+    let mut effect = CompanionTurnEffect {
         id,
         conversation_id,
         turn_id,
         user_message_id,
         assistant_message_id,
-        status,
+        status: stored_status,
         summary: row.4,
         seed: CompanionTurnEffectSeed {
             relationship_delta: RelationshipDelta {
@@ -1091,7 +1091,7 @@ fn load_effect(
     if effect.updated_at < effect.created_at {
         return Err(CompanionTurnEffectRepositoryError::Corrupt);
     }
-    match effect.status {
+    match stored_status {
         CompanionTurnEffectStatus::Processing
             if effect.summary.is_none()
                 && effect.memory_changes == CompanionMemoryChanges::default()
@@ -1118,6 +1118,16 @@ fn load_effect(
             .validate()?;
         }
         _ => return Err(CompanionTurnEffectRepositoryError::Corrupt),
+    }
+    if connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM companion_turn_effect_invalidations WHERE effect_id=?1)",
+            [id.to_string()],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(effect_failure)?
+    {
+        effect.status = CompanionTurnEffectStatus::Invalidated;
     }
     Ok(Some(effect))
 }
@@ -1146,6 +1156,10 @@ impl CompanionTurnEffectRepository for Database {
                     "SELECT conversation_id, assistant_message_id
                      FROM companion_turn_effects
                      WHERE status = 'processing'
+                       AND NOT EXISTS (
+                           SELECT 1 FROM companion_turn_effect_invalidations invalidation
+                           WHERE invalidation.effect_id = companion_turn_effects.id
+                       )
                      ORDER BY conversation_id, created_at, id
                      LIMIT ?1",
                 )
@@ -1163,6 +1177,42 @@ impl CompanionTurnEffectRepository for Database {
             .map(|(conversation_id, assistant_message_id)| {
                 let conversation_id =
                     ConversationId::from_str(&conversation_id).map_err(effect_corrupt)?;
+                let assistant_message_id =
+                    MessageId::from_str(&assistant_message_id).map_err(effect_corrupt)?;
+                load_effect(&connection, conversation_id, assistant_message_id)?
+                    .ok_or(CompanionTurnEffectRepositoryError::Corrupt)
+            })
+            .collect()
+    }
+
+    fn list_for_conversation(
+        &self,
+        conversation_id: ConversationId,
+        limit: u16,
+    ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
+        if limit == 0 || limit > 512 {
+            return Err(CompanionTurnEffectRepositoryError::Invalid);
+        }
+        let connection = self.connection().map_err(effect_failure)?;
+        let assistant_ids = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT assistant_message_id FROM companion_turn_effects
+                     WHERE conversation_id=?1 ORDER BY created_at, id LIMIT ?2",
+                )
+                .map_err(effect_failure)?;
+            statement
+                .query_map(
+                    params![conversation_id.to_string(), i64::from(limit)],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(effect_failure)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(effect_failure)?
+        };
+        assistant_ids
+            .into_iter()
+            .map(|assistant_message_id| {
                 let assistant_message_id =
                     MessageId::from_str(&assistant_message_id).map_err(effect_corrupt)?;
                 load_effect(&connection, conversation_id, assistant_message_id)?
@@ -1201,6 +1251,16 @@ impl CompanionTurnEffectRepository for Database {
             .optional()
             .map_err(effect_failure)?
             .ok_or(CompanionTurnEffectRepositoryError::NotFound)?;
+        if tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM companion_turn_effect_invalidations WHERE effect_id=?1)",
+                [effect_id.to_string()],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(effect_failure)?
+        {
+            return Err(CompanionTurnEffectRepositoryError::Conflict);
+        }
         if current_status != "processing" {
             let conversation_id =
                 ConversationId::from_str(&conversation_id).map_err(effect_corrupt)?;

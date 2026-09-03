@@ -128,6 +128,7 @@ pub enum CompanionTurnEffectStatus {
     Processing,
     Ready,
     Failed,
+    Invalidated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -231,6 +232,14 @@ pub trait CompanionTurnEffectRepository: Send + Sync {
         &self,
         limit: u16,
     ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError>;
+
+    fn list_for_conversation(
+        &self,
+        _conversation_id: ConversationId,
+        _limit: u16,
+    ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
+        Err(CompanionTurnEffectRepositoryError::Invalid)
+    }
 
     fn settle(
         &self,

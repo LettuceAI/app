@@ -100,7 +100,7 @@ fn parse_fallback_format(value: &str) -> rusqlite::Result<DynamicMemoryStructure
     }
 }
 
-fn load_run_in(
+pub(crate) fn load_run_in(
     connection: &Connection,
     id: DynamicMemoryRunId,
 ) -> Result<DynamicMemoryRun, DynamicMemoryRunRepositoryError> {
@@ -213,7 +213,7 @@ fn load_attempt_in(
     Ok(attempt)
 }
 
-fn load_summary_checkpoint_in(
+pub(crate) fn load_summary_checkpoint_in(
     connection: &Connection,
     run_id: DynamicMemoryRunId,
 ) -> Result<Option<DynamicMemorySummaryCheckpoint>, DynamicMemoryRunRepositoryError> {
@@ -656,6 +656,30 @@ fn insert_round_in(
 }
 
 impl DynamicMemoryRunRepository for Database {
+    fn list_dynamic_memory_runs(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+    ) -> Result<Vec<DynamicMemoryRun>, DynamicMemoryRunRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        let ids = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT id FROM dynamic_memory_runs
+                     WHERE conversation_id=?1
+                     ORDER BY summary_window_start, summary_window_end, created_at, id",
+                )
+                .map_err(storage)?;
+            statement
+                .query_map([conversation_id.to_string()], |row| parse_id(row.get(0)?))
+                .map_err(storage)?
+                .collect::<rusqlite::Result<Vec<DynamicMemoryRunId>>>()
+                .map_err(storage)?
+        };
+        ids.into_iter()
+            .map(|id| load_run_in(&connection, id))
+            .collect()
+    }
+
     fn admit_dynamic_memory_run_attempt(
         &self,
         input: NewDynamicMemoryRunAttempt,
@@ -1417,6 +1441,9 @@ impl DynamicMemoryRunRepository for Database {
 
 #[cfg(test)]
 mod tests {
+    use lettuce_companions::{
+        CompanionTurnEffectRepository, CompanionTurnEffectSeed, CompanionTurnEffectStatus,
+    };
     use lettuce_conversations::{
         InferenceUsage, MessagePart, MessageRenderSource, MessageRole, OutputPolicy,
         ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage,
@@ -1427,9 +1454,11 @@ mod tests {
         DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
         DynamicMemoryRoundFinishReason, DynamicMemoryRunRepository,
         DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
-        DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryCommit, MemoryCategory,
-        MemoryChangeSet, MemoryItem, MemoryRepository, MemorySummaryRepository, MemoryToolOutcome,
-        MemoryToolResult, NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound,
+        DynamicMemoryStructuredFallbackFormat, DynamicMemorySuffixRewind,
+        DynamicMemorySuffixRewindError, DynamicMemorySuffixRewindRepository,
+        DynamicMemorySummaryCommit, MemoryCategory, MemoryChangeSet, MemoryItem, MemoryRepository,
+        MemorySummaryRepository, MemoryToolOutcome, MemoryToolResult,
+        NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound,
         NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall, Score,
     };
     use lettuce_models::{
@@ -1440,9 +1469,9 @@ mod tests {
     use lettuce_settings::SecretOwnerId;
     use lettuce_types::{
         CharacterId, ConversationBranchId, ConversationId, ConversationParticipantId,
-        DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, MemoryId, MemorySpaceId, MessageId,
-        MessageRevisionId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis,
-        ToolExecutionId,
+        DynamicMemoryAttemptId, DynamicMemoryRunId, GenerationTurnId, JobId, MemoryId,
+        MemorySpaceId, MessageId, MessageRevisionId, ModelProfileId, OperationId,
+        ProviderAccountId, Revision, TimestampMillis, ToolExecutionId,
     };
     use rusqlite::{TransactionBehavior, params};
     use serde_json::json;
@@ -1682,6 +1711,31 @@ mod tests {
         (messages, turns)
     }
 
+    fn memory_item(id: MemoryId, text: &str, at: i64) -> MemoryItem {
+        MemoryItem {
+            id,
+            text: text.into(),
+            category: MemoryCategory::Other,
+            source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
+            token_count: 3,
+            is_cold: false,
+            is_pinned: false,
+            importance: Score::FULL,
+            persistence_importance: Score::FULL,
+            prompt_importance: Score::FULL,
+            volatility: Score::LEGACY_VOLATILITY,
+            access_count: 0,
+            created_at: TimestampMillis::new(at),
+            last_accessed_at: TimestampMillis::new(at),
+        }
+    }
+
     #[test]
     fn ask_first_prompt_baseline_survives_restart() {
         let path = std::env::temp_dir().join(format!(
@@ -1838,6 +1892,259 @@ mod tests {
                 .expect("space")
                 .revision,
             Revision::new(2)
+        );
+    }
+
+    #[test]
+    fn suffix_rewind_restores_the_prior_run_boundary_once() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+
+        let first_run_id = DynamicMemoryRunId::new();
+        let first_attempt_id = DynamicMemoryAttemptId::new();
+        let first = database
+            .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+                run_id: first_run_id,
+                attempt_id: first_attempt_id,
+                conversation_id,
+                space_id,
+                starting_memory: database.get(space_id).expect("memory").expect("space"),
+                source_messages: messages.clone(),
+                profile: profile(),
+                time_awareness_enabled: true,
+                supersession_enabled: true,
+                structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                    message_interval: 2,
+                    start: 0,
+                    end: 2,
+                },
+                job_id: JobId::new(),
+                now: TimestampMillis::new(10),
+            })
+            .expect("first run");
+        database
+            .transition_dynamic_memory_attempt(
+                first_attempt_id,
+                first.attempt.revision,
+                DynamicMemoryAttemptStatus::Processing,
+                None,
+                TimestampMillis::new(11),
+            )
+            .expect("first processing");
+        let first_summary = database
+            .commit_dynamic_memory_summary(
+                DynamicMemorySummaryCommit {
+                    run_id: first_run_id,
+                    attempt_id: first_attempt_id,
+                    expected_memory_revision: Revision::INITIAL,
+                    text: "First summary".into(),
+                    token_count: 2,
+                    request_context: ProviderNeutralContext {
+                        messages: Vec::new(),
+                        attributions: Default::default(),
+                        budget: Default::default(),
+                    },
+                    usage: None,
+                    provider_request_id: None,
+                },
+                TimestampMillis::new(12),
+            )
+            .expect("first summary");
+
+        let kept_item = memory_item(MemoryId::new(), "kept memory", 13);
+        let before_second = database
+            .compare_and_apply(MemoryChangeSet {
+                space_id,
+                expected_revision: first_summary.resulting_memory_revision,
+                items: vec![kept_item.clone()],
+            })
+            .expect("kept memory");
+        let second_run_id = DynamicMemoryRunId::new();
+        let second_attempt_id = DynamicMemoryAttemptId::new();
+        let second = database
+            .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+                run_id: second_run_id,
+                attempt_id: second_attempt_id,
+                conversation_id,
+                space_id,
+                starting_memory: before_second.clone(),
+                source_messages: messages,
+                profile: profile(),
+                time_awareness_enabled: true,
+                supersession_enabled: true,
+                structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                    message_interval: 2,
+                    start: 2,
+                    end: 4,
+                },
+                job_id: JobId::new(),
+                now: TimestampMillis::new(14),
+            })
+            .expect("second run");
+        database
+            .transition_dynamic_memory_attempt(
+                second_attempt_id,
+                second.attempt.revision,
+                DynamicMemoryAttemptStatus::Processing,
+                None,
+                TimestampMillis::new(15),
+            )
+            .expect("second processing");
+        let after_effect = database
+            .compare_and_apply(MemoryChangeSet {
+                space_id,
+                expected_revision: before_second.revision,
+                items: vec![memory_item(MemoryId::new(), "removed suffix memory", 16)],
+            })
+            .expect("suffix memory");
+        let second_summary = database
+            .commit_dynamic_memory_summary(
+                DynamicMemorySummaryCommit {
+                    run_id: second_run_id,
+                    attempt_id: second_attempt_id,
+                    expected_memory_revision: after_effect.revision,
+                    text: "Second summary".into(),
+                    token_count: 2,
+                    request_context: ProviderNeutralContext {
+                        messages: Vec::new(),
+                        attributions: Default::default(),
+                        budget: Default::default(),
+                    },
+                    usage: None,
+                    provider_request_id: None,
+                },
+                TimestampMillis::new(17),
+            )
+            .expect("second summary");
+
+        let rewind = DynamicMemorySuffixRewind {
+            operation_id: OperationId::new(),
+            conversation_id,
+            invalid_run_id: Some(second_run_id),
+            expected_memory_revision: second_summary.resulting_memory_revision,
+            invalidated_effect_ids: Vec::new(),
+            at: TimestampMillis::new(18),
+        };
+        let receipt = database
+            .rewind_dynamic_memory_suffix(rewind.clone())
+            .expect("rewind");
+        assert_eq!(receipt.memory.revision, Revision::new(6));
+        assert_eq!(receipt.memory.items, vec![kept_item]);
+        assert_eq!(receipt.summary, Some(first_summary.summary.clone()));
+        assert_eq!(
+            database.get_summary(space_id).expect("summary"),
+            receipt.summary
+        );
+        assert_eq!(
+            database
+                .rewind_dynamic_memory_suffix(rewind.clone())
+                .expect("exact replay"),
+            receipt
+        );
+
+        let mut changed = rewind;
+        changed.at = TimestampMillis::new(19);
+        assert_eq!(
+            database.rewind_dynamic_memory_suffix(changed),
+            Err(DynamicMemorySuffixRewindError::Conflict)
+        );
+        assert_eq!(
+            database.get(space_id).expect("memory").expect("space"),
+            receipt.memory
+        );
+    }
+
+    #[test]
+    fn suffix_rewind_invalidates_processing_effects_without_rewriting_them() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let turn_id = GenerationTurnId::new();
+        let target_message_id = MessageId::new();
+        let branch_id = {
+            let connection = database.connection().expect("connection");
+            connection
+                .query_row(
+                    "SELECT active_branch_id FROM conversations WHERE id=?1",
+                    [conversation_id.to_string()],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("branch")
+        };
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("transaction");
+        transaction
+            .execute(
+                "INSERT INTO conversation_turns
+                    (conversation_id,id,branch_id,operation,input_kind,user_message_id,
+                     idempotency_key,status,target_kind,target_message_id,target_parent_message_id,
+                     swap_roles,revision,created_at,updated_at)
+                 VALUES (?1,?2,?3,'send','user_message',?4,?5,'created','new_assistant',?6,?4,
+                         0,1,20,20)",
+                params![
+                    conversation_id.to_string(),
+                    turn_id.to_string(),
+                    branch_id,
+                    messages[0].message_id.to_string(),
+                    format!("effect-{turn_id}"),
+                    target_message_id.to_string(),
+                ],
+            )
+            .expect("turn");
+        crate::state_adapter::insert_effect_draft_in(
+            &transaction,
+            conversation_id,
+            turn_id,
+            Some(messages[0].message_id),
+            &CompanionTurnEffectSeed::default(),
+            TimestampMillis::new(20),
+        )
+        .expect("effect draft");
+        crate::state_adapter::finalize_turn_effect_in(
+            &transaction,
+            conversation_id,
+            turn_id,
+            messages[1].message_id,
+            TimestampMillis::new(21),
+        )
+        .expect("effect");
+        transaction.commit().expect("commit");
+        drop(connection);
+
+        let effect = database
+            .get_for_message(conversation_id, messages[1].message_id)
+            .expect("effect")
+            .expect("stored effect");
+        assert_eq!(effect.status, CompanionTurnEffectStatus::Processing);
+        let rewind = database
+            .rewind_dynamic_memory_suffix(DynamicMemorySuffixRewind {
+                operation_id: OperationId::new(),
+                conversation_id,
+                invalid_run_id: None,
+                expected_memory_revision: Revision::INITIAL,
+                invalidated_effect_ids: vec![effect.id],
+                at: TimestampMillis::new(22),
+            })
+            .expect("invalidate effect");
+        assert_eq!(rewind.memory.revision, Revision::INITIAL);
+        assert_eq!(rewind.memory.id, space_id);
+        assert_eq!(rewind.invalidated_effect_ids, vec![effect.id]);
+        assert_eq!(
+            database
+                .get_for_message(conversation_id, messages[1].message_id)
+                .expect("effect")
+                .expect("stored effect")
+                .status,
+            CompanionTurnEffectStatus::Invalidated
+        );
+        assert!(
+            database
+                .list_processing(10)
+                .expect("pending effects")
+                .is_empty()
         );
     }
 
