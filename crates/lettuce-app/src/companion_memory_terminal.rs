@@ -1,10 +1,12 @@
-use lettuce_companions::{CompanionTurnEffect, CompanionTurnEffectRepository};
+use std::collections::HashSet;
+
+use lettuce_companions::{CompanionTurnEffect, CompanionTurnEffectRepository, MAX_GROWTH_MEMORIES};
 use lettuce_conversations::{MessageRole, PortError, ProviderFailureKind};
 use lettuce_jobs::handle::JobHandle;
 use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptStatus,
-    DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, MemoryRepository,
-    MemoryRepositoryError,
+    DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, MemoryItem, MemoryRepository,
+    MemoryRepositoryError, MemorySpaceSnapshot,
 };
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, TimestampMillis};
@@ -19,6 +21,7 @@ use crate::{
 pub struct CompanionMemoryTerminalResult {
     pub attempt: DynamicMemoryAttempt,
     pub effects: Vec<CompanionTurnEffect>,
+    pub fresh_memories: Vec<MemoryItem>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,6 +196,7 @@ impl<
             .repository
             .get(run.space_id)?
             .ok_or(CompanionMemoryTerminalError::InvalidOwnership)?;
+        let fresh_memories = fresh_growth_memories(&run.starting_memory, &after);
         let effects = if batch.settle_effects {
             CompanionPostTurnEffectCoordinator::new(self.repository).settle_ready(
                 &batch.terminal_effects(),
@@ -236,7 +240,11 @@ impl<
                 }
             }
         }
-        Ok(CompanionMemoryTerminalResult { attempt, effects })
+        Ok(CompanionMemoryTerminalResult {
+            attempt,
+            effects,
+            fresh_memories,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -279,7 +287,11 @@ impl<
         } else {
             attempt
         };
-        Ok(CompanionMemoryTerminalResult { attempt, effects })
+        Ok(CompanionMemoryTerminalResult {
+            attempt,
+            effects,
+            fresh_memories: Vec::new(),
+        })
     }
 
     fn load_owner(
@@ -328,6 +340,24 @@ impl<
     }
 }
 
+fn fresh_growth_memories(
+    before: &MemorySpaceSnapshot,
+    after: &MemorySpaceSnapshot,
+) -> Vec<MemoryItem> {
+    let previous = before
+        .items
+        .iter()
+        .map(|memory| memory.id)
+        .collect::<HashSet<_>>();
+    after
+        .items
+        .iter()
+        .filter(|memory| !previous.contains(&memory.id) && !memory.text.trim().is_empty())
+        .take(MAX_GROWTH_MEMORIES)
+        .cloned()
+        .collect()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionMemoryTerminalError {
     #[error("background memory terminal ownership is invalid")]
@@ -342,7 +372,35 @@ pub enum CompanionMemoryTerminalError {
 
 #[cfg(test)]
 mod tests {
+    use lettuce_memory::{MemoryCategory, Score};
+    use lettuce_types::{MemoryId, MemorySpaceId, Revision};
+
     use super::*;
+
+    fn memory(text: &str) -> MemoryItem {
+        MemoryItem {
+            id: MemoryId::new(),
+            text: text.to_owned(),
+            category: MemoryCategory::Other,
+            source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
+            token_count: 1,
+            is_cold: false,
+            is_pinned: false,
+            importance: Score::ZERO,
+            persistence_importance: Score::ZERO,
+            prompt_importance: Score::ZERO,
+            volatility: Score::ZERO,
+            access_count: 0,
+            created_at: TimestampMillis::new(1),
+            last_accessed_at: TimestampMillis::new(1),
+        }
+    }
 
     #[test]
     fn loop_failures_use_existing_terminal_categories() {
@@ -373,6 +431,36 @@ mod tests {
                 &CompanionMemoryLoopError::MissingRound
             ),
             CompanionMemoryTerminalFailure::Recovery
+        );
+    }
+
+    #[test]
+    fn successful_terminal_selects_legacy_bounded_fresh_memory_prefix() {
+        let space_id = MemorySpaceId::new();
+        let existing = memory("existing");
+        let before = MemorySpaceSnapshot {
+            id: space_id,
+            revision: Revision::INITIAL,
+            items: vec![existing.clone()],
+        };
+        let mut items = vec![existing, memory("   ")];
+        items.extend((0..18).map(|index| memory(&format!("new {index}"))));
+        let after = MemorySpaceSnapshot {
+            id: space_id,
+            revision: Revision::new(2),
+            items,
+        };
+
+        let selected = fresh_growth_memories(&before, &after);
+
+        assert_eq!(selected.len(), MAX_GROWTH_MEMORIES);
+        assert_eq!(
+            selected.first().map(|item| item.text.as_str()),
+            Some("new 0")
+        );
+        assert_eq!(
+            selected.last().map(|item| item.text.as_str()),
+            Some("new 15")
         );
     }
 }

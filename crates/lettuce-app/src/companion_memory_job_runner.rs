@@ -7,7 +7,7 @@ use lettuce_embeddings::MemoryEmbeddingRepository;
 use lettuce_jobs::{Claim, handle::JobHandle};
 use lettuce_memory::{
     DynamicMemoryInferenceRound, DynamicMemoryRunRepository, DynamicMemoryStructuredFallbackFormat,
-    MemoryRepository, MemorySummaryRepository,
+    MemoryItem, MemoryRepository, MemorySummaryRepository,
 };
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{RequestId, TimestampMillis};
@@ -28,6 +28,7 @@ pub struct CompanionMemoryJobRunResult {
     pub summary_replayed: bool,
     pub loop_result: CompanionMemoryLoopResult,
     pub effects: Vec<CompanionTurnEffect>,
+    pub fresh_memories: Vec<MemoryItem>,
 }
 
 #[derive(Debug)]
@@ -202,6 +203,7 @@ impl<
             summary_replayed: summary.replayed,
             loop_result,
             effects: terminal.effects,
+            fresh_memories: terminal.fresh_memories,
         })
     }
 }

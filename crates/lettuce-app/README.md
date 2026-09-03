@@ -148,6 +148,10 @@ coalesced effect idempotently, then marks the attempt succeeded. Failure and
 cancellation use the existing bounded effect summaries and attempt failure
 codes. Effect-first ordering makes a crash retry converge without leaving a
 succeeded attempt whose effects are still processing.
+The same terminal read now exposes the ordered prefix of at most sixteen
+nonblank memory items whose IDs were absent from the run's durable starting
+snapshot. This is the legacy growth trigger/evidence boundary; it does not run
+growth or alter memory settlement.
 The claimed-job runner composes the existing run admission/recovery,
 first-round inference, bounded execution/continuation loop, and terminal
 settlement into one application path. Prompt/profile/policy inputs and stable
