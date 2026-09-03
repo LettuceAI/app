@@ -56,6 +56,7 @@ impl From<JobKind> for JobKindKey {
             JobKind::Maintenance => 18,
             JobKind::CompanionGrowth => 19,
             JobKind::CompanionConsolidation => 20,
+            JobKind::CompanionSoulWriter => 21,
         })
     }
 }

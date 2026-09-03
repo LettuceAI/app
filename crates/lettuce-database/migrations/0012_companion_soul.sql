@@ -118,6 +118,7 @@ CREATE INDEX companion_consolidation_runs_character_idx
 
 CREATE TABLE companion_soul_writer_runs (
     request_id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE,
     prompt_id TEXT NOT NULL REFERENCES prompt_documents(id) ON DELETE RESTRICT,
     prompt_revision INTEGER NOT NULL CHECK (prompt_revision >= 1),
     created_at INTEGER NOT NULL,

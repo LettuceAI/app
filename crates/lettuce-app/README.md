@@ -179,9 +179,10 @@ Explicit Soul-writer preview admission now freezes the selected primary and
 optional fallback profiles, editable prompt identity/revision, exact legacy
 prompt values, normalized starting draft, structured fallback format, and
 request identity in SQLite before inference. Repeating the request ID returns
-the stored run, and ordered round checkpoints are idempotent; admission does
-not mutate the character or durable Soul. Provider recursion and completed
-preview settlement remain the next writer slice.
+the stored run and its interactive restart-policy job, and ordered round
+checkpoints are idempotent; admission does not mutate the character or durable
+Soul. Provider recursion and completed preview settlement remain the next
+writer slice.
 The claimed-job runner composes the existing run admission/recovery,
 first-round inference, bounded execution/continuation loop, and terminal
 settlement into one application path. Prompt/profile/policy inputs and stable

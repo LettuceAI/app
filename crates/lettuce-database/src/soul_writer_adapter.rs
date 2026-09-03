@@ -4,7 +4,7 @@ use lettuce_companions::{
     CompanionSoulWriterRoundCheckpoint, CompanionSoulWriterRun, CompanionSoulWriterRunRepository,
     CompanionSoulWriterRunRepositoryError,
 };
-use lettuce_types::{PromptDocumentId, RequestId, Revision, TimestampMillis};
+use lettuce_types::{JobId, PromptDocumentId, RequestId, Revision, TimestampMillis};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{Database, decode_versioned, encode_versioned};
@@ -26,22 +26,23 @@ fn load_in(
 ) -> Result<Option<CompanionSoulWriterRun>, CompanionSoulWriterRunRepositoryError> {
     let row = tx
         .query_row(
-            "SELECT prompt_id, prompt_revision, created_at, run_json, rounds_json
+            "SELECT job_id, prompt_id, prompt_revision, created_at, run_json, rounds_json
                FROM companion_soul_writer_runs WHERE request_id = ?1",
             [request_id.to_string()],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
-                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(1)?,
                     row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(3)?,
                     row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
                 ))
             },
         )
         .optional()
         .map_err(corrupt)?;
-    let Some((prompt_id, prompt_revision, created_at, run_json, rounds_json)) = row else {
+    let Some((job_id, prompt_id, prompt_revision, created_at, run_json, rounds_json)) = row else {
         return Ok(None);
     };
     let mut run = decode_versioned::<CompanionSoulWriterRun>(&run_json, RUN_FORMAT_VERSION)
@@ -57,6 +58,7 @@ fn load_in(
         .map(Revision::new)
         .ok_or(CompanionSoulWriterRunRepositoryError::Corrupt)?;
     if run.request_id != request_id
+        || run.job_id != JobId::from_str(&job_id).map_err(corrupt)?
         || run.prompt_id != PromptDocumentId::from_str(&prompt_id).map_err(corrupt)?
         || run.prompt_revision != prompt_revision
         || run.created_at != TimestampMillis::new(created_at)
@@ -88,10 +90,11 @@ impl CompanionSoulWriterRunRepository for Database {
         let inserted = tx
             .execute(
                 "INSERT OR IGNORE INTO companion_soul_writer_runs (
-                    request_id, prompt_id, prompt_revision, created_at, run_json, rounds_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    request_id, job_id, prompt_id, prompt_revision, created_at, run_json, rounds_json
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     run.request_id.to_string(),
+                    run.job_id.to_string(),
                     run.prompt_id.to_string(),
                     i64::try_from(run.prompt_revision.get()).map_err(failure)?,
                     run.created_at.get(),

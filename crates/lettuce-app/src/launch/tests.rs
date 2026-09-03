@@ -999,7 +999,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let current_soul = serde_json::json!({
         "soul": { "traits": "Careful", "baselineAffect": { "warmth": 2.0 } }
     });
-    let soul_writer = crate::CompanionSoulWriterAdmissionCoordinator::new(&database)
+    let soul_writer = crate::CompanionSoulWriterAdmissionCoordinator::new(&database, &database)
         .admit(crate::CompanionSoulWriterAdmissionRequest {
             request_id: soul_writer_request_id,
             primary_profile: profile.clone(),
@@ -1016,6 +1016,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         })
         .expect("admit Soul-writer preview");
     assert!(soul_writer.created);
+    assert_eq!(soul_writer.job.kind, JobKind::CompanionSoulWriter);
+    assert_eq!(soul_writer.run.job_id, soul_writer.job.id);
     assert_eq!(soul_writer.run.prompt_id, soul_writer_prompt.id);
     assert_eq!(soul_writer.run.prompt_revision, soul_writer_prompt.revision);
     assert_eq!(soul_writer.run.primary_profile, profile);
@@ -1026,22 +1028,23 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         1.0
     );
     assert!(soul_writer.run.rounds.is_empty());
-    let soul_writer_replay = crate::CompanionSoulWriterAdmissionCoordinator::new(&database)
-        .admit(crate::CompanionSoulWriterAdmissionRequest {
-            request_id: soul_writer_request_id,
-            primary_profile: profile.clone(),
-            fallback_profile: None,
-            prompt: &summary_prompt,
-            character_name: "changed",
-            character_definition: None,
-            character_description: None,
-            opening_context: None,
-            current_soul: None,
-            user_notes: None,
-            fallback_format: lettuce_companions::SoulWriterFallbackFormat::Xml,
-            now: TimestampMillis::new(NOW.get() + 13),
-        })
-        .expect("replay Soul-writer preview");
+    let soul_writer_replay =
+        crate::CompanionSoulWriterAdmissionCoordinator::new(&database, &database)
+            .admit(crate::CompanionSoulWriterAdmissionRequest {
+                request_id: soul_writer_request_id,
+                primary_profile: profile.clone(),
+                fallback_profile: None,
+                prompt: &summary_prompt,
+                character_name: "changed",
+                character_definition: None,
+                character_description: None,
+                opening_context: None,
+                current_soul: None,
+                user_notes: None,
+                fallback_format: lettuce_companions::SoulWriterFallbackFormat::Xml,
+                now: TimestampMillis::new(NOW.get() + 13),
+            })
+            .expect("replay Soul-writer preview");
     assert!(!soul_writer_replay.created);
     assert_eq!(soul_writer_replay.run, soul_writer.run);
     let writer_checkpoint = lettuce_companions::CompanionSoulWriterRoundCheckpoint {

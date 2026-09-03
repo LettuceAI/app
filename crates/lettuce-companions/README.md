@@ -66,7 +66,7 @@ structured fallback accepts the legacy JSON object/array aliases and
 preserves call order, coerces numeric XML fields, and keeps JSON-encoded
 authored facts for the same reducer. Provider fallback dispatch and recursion
 remain outside this pure boundary.
-The domain also owns the explicit preview run port: one request freezes the
+The domain also owns the explicit preview run port: one job-bound request freezes the
 primary and optional fallback profile, prompt identity/revision, exact input
 values, normalized starting draft, fallback format, and at most eight ordered
 round checkpoints. Exact round replay is idempotent, completion forbids later

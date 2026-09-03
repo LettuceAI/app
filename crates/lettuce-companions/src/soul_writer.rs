@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use lettuce_conversations::{
     ProposedToolCall, ResolvedInferenceProfile, ToolChoice, ToolDefinition, ToolRequest,
 };
-use lettuce_types::{PromptDocumentId, RequestId, Revision, TimestampMillis};
+use lettuce_types::{JobId, PromptDocumentId, RequestId, Revision, TimestampMillis};
 use quick_xml::Reader;
 use quick_xml::escape::{resolve_xml_entity, unescape};
 use quick_xml::events::{BytesRef, Event};
@@ -100,6 +100,7 @@ pub struct SoulWriterReduction {
 #[serde(deny_unknown_fields)]
 pub struct CompanionSoulWriterRun {
     pub request_id: RequestId,
+    pub job_id: JobId,
     pub primary_profile: ResolvedInferenceProfile,
     pub fallback_profile: Option<ResolvedInferenceProfile>,
     pub prompt_id: PromptDocumentId,

@@ -116,8 +116,11 @@ impl AppBackend {
     #[must_use]
     pub fn companion_soul_writer_admission(
         &self,
-    ) -> crate::CompanionSoulWriterAdmissionCoordinator<'_, Database> {
-        crate::CompanionSoulWriterAdmissionCoordinator::new(self.database.as_ref())
+    ) -> crate::CompanionSoulWriterAdmissionCoordinator<'_, Database, Database> {
+        crate::CompanionSoulWriterAdmissionCoordinator::new(
+            self.database.as_ref(),
+            self.database.as_ref(),
+        )
     }
 
     #[must_use]

@@ -5,6 +5,10 @@ use lettuce_companions::{
 };
 use lettuce_context::{LifecycleStatus, PromptDocument, PromptPurpose};
 use lettuce_conversations::ResolvedInferenceProfile;
+use lettuce_jobs::{
+    CancellationPolicy, IdempotencyKey, JobKind, JobPriority, JobSnapshot, JobSpec, JobStore,
+    JobSubject, OutcomeRef, RecoveryPolicy, ResourceClass, StoreError, SubjectKind,
+};
 use lettuce_types::{RequestId, TimestampMillis};
 use serde_json::Value;
 
@@ -27,6 +31,7 @@ pub struct CompanionSoulWriterAdmissionRequest<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompanionSoulWriterAdmission {
     pub run: CompanionSoulWriterRun,
+    pub job: JobSnapshot,
     pub created: bool,
 }
 
@@ -36,21 +41,26 @@ pub enum CompanionSoulWriterAdmissionError {
     InvalidInput,
     #[error("companion Soul-writer run persistence failed: {0}")]
     Run(CompanionSoulWriterRunRepositoryError),
+    #[error("companion Soul-writer job persistence failed: {0}")]
+    Job(StoreError),
 }
 
 #[derive(Debug)]
-pub struct CompanionSoulWriterAdmissionCoordinator<'a, R: ?Sized> {
+pub struct CompanionSoulWriterAdmissionCoordinator<'a, R: ?Sized, J: ?Sized> {
     repository: &'a R,
+    jobs: &'a J,
 }
 
-impl<'a, R: ?Sized> CompanionSoulWriterAdmissionCoordinator<'a, R> {
+impl<'a, R: ?Sized, J: ?Sized> CompanionSoulWriterAdmissionCoordinator<'a, R, J> {
     #[must_use]
-    pub const fn new(repository: &'a R) -> Self {
-        Self { repository }
+    pub const fn new(repository: &'a R, jobs: &'a J) -> Self {
+        Self { repository, jobs }
     }
 }
 
-impl<R: CompanionSoulWriterRunRepository + ?Sized> CompanionSoulWriterAdmissionCoordinator<'_, R> {
+impl<R: CompanionSoulWriterRunRepository + ?Sized, J: JobStore + ?Sized>
+    CompanionSoulWriterAdmissionCoordinator<'_, R, J>
+{
     pub fn admit(
         &self,
         request: CompanionSoulWriterAdmissionRequest<'_>,
@@ -60,8 +70,14 @@ impl<R: CompanionSoulWriterRunRepository + ?Sized> CompanionSoulWriterAdmissionC
             .load_companion_soul_writer_run(request.request_id)
         {
             Ok(run) => {
+                let job = self
+                    .jobs
+                    .get(run.job_id)
+                    .map_err(CompanionSoulWriterAdmissionError::Job)?
+                    .ok_or(CompanionSoulWriterAdmissionError::InvalidInput)?;
                 return Ok(CompanionSoulWriterAdmission {
                     run,
+                    job,
                     created: false,
                 });
             }
@@ -76,8 +92,41 @@ impl<R: CompanionSoulWriterRunRepository + ?Sized> CompanionSoulWriterAdmissionC
         {
             return Err(CompanionSoulWriterAdmissionError::InvalidInput);
         }
+        let idempotency_key =
+            IdempotencyKey::new(format!("companion-soul-writer-{}", request.request_id))
+                .map_err(|_| CompanionSoulWriterAdmissionError::InvalidInput)?;
+        let subject = JobSubject::new(
+            SubjectKind::ModelProfile,
+            request
+                .primary_profile
+                .chat_profile
+                .model_profile_id
+                .to_string(),
+        )
+        .map_err(|_| CompanionSoulWriterAdmissionError::InvalidInput)?;
+        let admitted = self
+            .jobs
+            .create_or_get(
+                JobSpec::new(
+                    JobKind::CompanionSoulWriter,
+                    subject,
+                    OutcomeRef::Request(request.request_id),
+                )
+                .with_idempotency_key(idempotency_key)
+                .with_resources(vec![
+                    ResourceClass::Network,
+                    ResourceClass::ModelLoad,
+                    ResourceClass::DiskRead,
+                    ResourceClass::DiskWrite,
+                    ResourceClass::Cpu,
+                ])
+                .with_priority(JobPriority::Interactive)
+                .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
+            )
+            .map_err(CompanionSoulWriterAdmissionError::Job)?;
         let run = CompanionSoulWriterRun {
             request_id: request.request_id,
+            job_id: admitted.job.id,
             primary_profile: request.primary_profile,
             fallback_profile: request.fallback_profile,
             prompt_id: request.prompt.id,
@@ -99,6 +148,10 @@ impl<R: CompanionSoulWriterRunRepository + ?Sized> CompanionSoulWriterAdmissionC
             .repository
             .admit_companion_soul_writer_run(run)
             .map_err(CompanionSoulWriterAdmissionError::Run)?;
-        Ok(CompanionSoulWriterAdmission { run, created: true })
+        Ok(CompanionSoulWriterAdmission {
+            run,
+            job: admitted.job,
+            created: admitted.created,
+        })
     }
 }
