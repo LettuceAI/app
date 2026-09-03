@@ -181,8 +181,18 @@ prompt values, normalized starting draft, structured fallback format, and
 request identity in SQLite before inference. Repeating the request ID returns
 the stored run and its interactive restart-policy job, and ordered round
 checkpoints are idempotent; admission does not mutate the character or durable
-Soul. Provider recursion and completed preview settlement remain the next
-writer slice.
+Soul. The concrete dispatcher claims and settles that job; its executor renders
+the same editable prompt only at its frozen ID/revision, appends the exact
+legacy authoring instruction, and requires the six-tool contract. It reduces
+and persists every native round
+before provider-neutral continuation, suppresses calls after `done`, resumes
+incomplete checkpoints, and returns completed previews without provider I/O.
+No-call responses use one tools-disabled JSON/XML fallback request with the
+copied legacy instructions; a failed primary target may continue through the
+frozen fallback profile. Cancellation, the eight-round hard cap, later
+provider failures, and generic job settlement never silently promote an
+incomplete draft. Character Soul mutation and frontend IPC remain outside this
+preview workflow.
 The claimed-job runner composes the existing run admission/recovery,
 first-round inference, bounded execution/continuation loop, and terminal
 settlement into one application path. Prompt/profile/policy inputs and stable

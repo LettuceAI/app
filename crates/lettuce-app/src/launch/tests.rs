@@ -104,6 +104,11 @@ struct ScriptedInference {
     requests: Mutex<Vec<InferenceRequest>>,
 }
 
+struct FallibleScriptedInference {
+    outcomes: Mutex<VecDeque<Result<InferenceOutcome, PortError>>>,
+    requests: Mutex<Vec<InferenceRequest>>,
+}
+
 struct UnavailableInference;
 
 #[async_trait::async_trait]
@@ -122,6 +127,18 @@ impl InferencePort for ScriptedInference {
             .expect("outcomes")
             .pop_front()
             .ok_or(PortError::Empty)
+    }
+}
+
+#[async_trait::async_trait]
+impl InferencePort for FallibleScriptedInference {
+    async fn run(&self, request: InferenceRequest) -> Result<InferenceOutcome, PortError> {
+        self.requests.lock().expect("requests").push(request);
+        self.outcomes
+            .lock()
+            .expect("outcomes")
+            .pop_front()
+            .unwrap_or(Err(PortError::Empty))
     }
 }
 
@@ -1047,25 +1064,418 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .expect("replay Soul-writer preview");
     assert!(!soul_writer_replay.created);
     assert_eq!(soul_writer_replay.run, soul_writer.run);
-    let writer_checkpoint = lettuce_companions::CompanionSoulWriterRoundCheckpoint {
-        ordinal: 0,
-        calls: Vec::new(),
-        resulting_draft: soul_writer.run.starting_draft.clone(),
-        completed: false,
-        reduced_at: TimestampMillis::new(NOW.get() + 14),
+    let soul_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([
+            InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: Vec::new(),
+                    tool_calls: vec![ProposedToolCall {
+                        provider_call_id: Some("soul-identity".into()),
+                        name: "set_identity".into(),
+                        arguments: serde_json::json!({"traits": "Patient and observant"}),
+                        raw_arguments: None,
+                        provider_replay: None,
+                    }],
+                    provider_replay: None,
+                }],
+                usage: None,
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None,
+                provider_request_id: Some("soul-round-one".into()),
+                warning_codes: Vec::new(),
+            },
+            InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: Vec::new(),
+                    tool_calls: vec![
+                        ProposedToolCall {
+                            provider_call_id: Some("soul-done".into()),
+                            name: "done".into(),
+                            arguments: serde_json::json!({}),
+                            raw_arguments: None,
+                            provider_replay: None,
+                        },
+                        ProposedToolCall {
+                            provider_call_id: Some("soul-after-done".into()),
+                            name: "set_identity".into(),
+                            arguments: serde_json::json!({"traits": "ignored"}),
+                            raw_arguments: None,
+                            provider_replay: None,
+                        },
+                    ],
+                    provider_replay: None,
+                }],
+                usage: None,
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None,
+                provider_request_id: Some("soul-round-two".into()),
+                warning_codes: Vec::new(),
+            },
+        ])),
+        requests: Mutex::new(Vec::new()),
     };
-    let checkpointed_writer = database
-        .commit_companion_soul_writer_round(soul_writer_request_id, writer_checkpoint.clone())
-        .expect("checkpoint Soul-writer round");
+    let soul_work = crate::CompanionSoulWriterDispatchCoordinator::new(&database, &database)
+        .claim(
+            soul_writer_request_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 14),
+            Duration::from_secs(60),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim Soul-writer job")
+        .expect("Soul-writer work");
+    let soul_result =
+        crate::CompanionSoulWriterExecutionCoordinator::new(&database, &soul_inference)
+            .run(
+                soul_writer_request_id,
+                &soul_writer_prompt,
+                &soul_work.handle,
+                None,
+                TimestampMillis::new(NOW.get() + 14),
+            )
+            .await
+            .expect("execute Soul-writer preview");
+    assert_eq!(soul_result.rounds, 2);
+    assert_eq!(soul_result.draft["soul"]["traits"], "Patient and observant");
+    {
+        let soul_requests = soul_inference.requests.lock().expect("Soul requests");
+        assert_eq!(soul_requests.len(), 2);
+        assert_eq!(soul_requests[0].profile.tool_policy, ToolPolicy::Required);
+        assert_eq!(
+            soul_requests[1].context.messages.len(),
+            soul_requests[0].context.messages.len() + 2
+        );
+    }
+    let settled_soul = crate::CompanionSoulWriterDispatchCoordinator::new(&database, &database)
+        .settle(
+            soul_work,
+            Ok(soul_result.clone()),
+            CancellationReason::User,
+            TimestampMillis::new(NOW.get() + 15),
+        )
+        .expect("settle Soul-writer job");
+    assert!(matches!(
+        settled_soul,
+        crate::CompanionSoulWriterSettledWork::Succeeded { ref job, .. }
+            if job.state == JobState::Succeeded
+    ));
+    let soul_handle = JobHandle::new(soul_writer.job.id);
+    let completed_replay =
+        crate::CompanionSoulWriterExecutionCoordinator::new(&database, &UnavailableInference)
+            .run(
+                soul_writer_request_id,
+                &soul_writer_prompt,
+                &soul_handle,
+                None,
+                TimestampMillis::new(NOW.get() + 15),
+            )
+            .await
+            .expect("replay completed Soul-writer preview");
+    assert!(completed_replay.replayed);
+    assert_eq!(completed_replay.draft, soul_result.draft);
+    let fallback_request_id = RequestId::new();
+    let fallback_writer = crate::CompanionSoulWriterAdmissionCoordinator::new(&database, &database)
+        .admit(crate::CompanionSoulWriterAdmissionRequest {
+            request_id: fallback_request_id,
+            primary_profile: profile.clone(),
+            fallback_profile: None,
+            prompt: &soul_writer_prompt,
+            character_name: "Mira",
+            character_definition: Some("A careful traveller"),
+            character_description: None,
+            opening_context: None,
+            current_soul: None,
+            user_notes: None,
+            fallback_format: lettuce_companions::SoulWriterFallbackFormat::Json,
+            now: TimestampMillis::new(NOW.get() + 16),
+        })
+        .expect("admit structured fallback preview");
+    let fallback_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([
+            InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: vec![MessagePart::Text {
+                        text: "I cannot call tools".into(),
+                    }],
+                    tool_calls: Vec::new(),
+                    provider_replay: None,
+                }],
+                usage: None,
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None,
+                provider_request_id: Some("soul-no-tools".into()),
+                warning_codes: Vec::new(),
+            },
+            InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: vec![MessagePart::Text {
+                        text: r#"{"operations":[{"name":"set_identity","arguments":{"traits":"Structured"}},{"name":"done","arguments":{}}]}"#.into(),
+                    }],
+                    tool_calls: Vec::new(),
+                    provider_replay: None,
+                }],
+                usage: None,
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None,
+                provider_request_id: Some("soul-structured".into()),
+                warning_codes: Vec::new(),
+            },
+        ])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let fallback_result =
+        crate::CompanionSoulWriterExecutionCoordinator::new(&database, &fallback_inference)
+            .run(
+                fallback_request_id,
+                &soul_writer_prompt,
+                &JobHandle::new(fallback_writer.job.id),
+                None,
+                TimestampMillis::new(NOW.get() + 17),
+            )
+            .await
+            .expect("execute structured fallback preview");
+    assert_eq!(fallback_result.draft["soul"]["traits"], "Structured");
+    {
+        let fallback_requests = fallback_inference
+            .requests
+            .lock()
+            .expect("fallback requests");
+        assert_eq!(fallback_requests.len(), 2);
+        assert_eq!(
+            fallback_requests[0].profile.tool_policy,
+            ToolPolicy::Required
+        );
+        assert_eq!(
+            fallback_requests[1].profile.tool_policy,
+            ToolPolicy::Disabled
+        );
+        assert!(fallback_requests[1].tools.is_none());
+    }
+    let mut alternate_profile = profile.clone();
+    alternate_profile.chat_profile.model_profile_id = ModelProfileId::new();
+    let alternate_request_id = RequestId::new();
+    let alternate_writer =
+        crate::CompanionSoulWriterAdmissionCoordinator::new(&database, &database)
+            .admit(crate::CompanionSoulWriterAdmissionRequest {
+                request_id: alternate_request_id,
+                primary_profile: profile.clone(),
+                fallback_profile: Some(alternate_profile.clone()),
+                prompt: &soul_writer_prompt,
+                character_name: "Mira",
+                character_definition: Some("A careful traveller"),
+                character_description: None,
+                opening_context: None,
+                current_soul: None,
+                user_notes: None,
+                fallback_format: lettuce_companions::SoulWriterFallbackFormat::Json,
+                now: TimestampMillis::new(NOW.get() + 18),
+            })
+            .expect("admit alternate profile preview");
+    let alternate_inference = FallibleScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([
+            Err(PortError::Unavailable),
+            Ok(InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: Vec::new(),
+                    tool_calls: vec![ProposedToolCall {
+                        provider_call_id: Some("alternate-done".into()),
+                        name: "done".into(),
+                        arguments: serde_json::json!({}),
+                        raw_arguments: None,
+                        provider_replay: None,
+                    }],
+                    provider_replay: None,
+                }],
+                usage: None,
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None,
+                provider_request_id: Some("alternate-profile".into()),
+                warning_codes: Vec::new(),
+            }),
+        ])),
+        requests: Mutex::new(Vec::new()),
+    };
+    crate::CompanionSoulWriterExecutionCoordinator::new(&database, &alternate_inference)
+        .run(
+            alternate_request_id,
+            &soul_writer_prompt,
+            &JobHandle::new(alternate_writer.job.id),
+            None,
+            TimestampMillis::new(NOW.get() + 19),
+        )
+        .await
+        .expect("execute alternate profile preview");
+    {
+        let alternate_requests = alternate_inference
+            .requests
+            .lock()
+            .expect("alternate requests");
+        assert_eq!(alternate_requests.len(), 2);
+        assert_eq!(
+            alternate_requests[1].profile.chat_profile.model_profile_id,
+            alternate_profile.chat_profile.model_profile_id
+        );
+    }
+    let interrupted_request_id = RequestId::new();
+    let interrupted_writer =
+        crate::CompanionSoulWriterAdmissionCoordinator::new(&database, &database)
+            .admit(crate::CompanionSoulWriterAdmissionRequest {
+                request_id: interrupted_request_id,
+                primary_profile: profile.clone(),
+                fallback_profile: None,
+                prompt: &soul_writer_prompt,
+                character_name: "Mira",
+                character_definition: None,
+                character_description: None,
+                opening_context: None,
+                current_soul: None,
+                user_notes: None,
+                fallback_format: lettuce_companions::SoulWriterFallbackFormat::Json,
+                now: TimestampMillis::new(NOW.get() + 20),
+            })
+            .expect("admit interrupted preview");
+    let interrupted_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: Vec::new(),
+                tool_calls: vec![ProposedToolCall {
+                    provider_call_id: Some("interrupted-identity".into()),
+                    name: "set_identity".into(),
+                    arguments: serde_json::json!({"traits": "Durable partial"}),
+                    raw_arguments: None,
+                    provider_replay: None,
+                }],
+                provider_replay: None,
+            }],
+            usage: None,
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: None,
+            provider_request_id: Some("interrupted-first".into()),
+            warning_codes: Vec::new(),
+        }])),
+        requests: Mutex::new(Vec::new()),
+    };
+    assert!(matches!(
+        crate::CompanionSoulWriterExecutionCoordinator::new(&database, &interrupted_inference)
+            .run(
+                interrupted_request_id,
+                &soul_writer_prompt,
+                &JobHandle::new(interrupted_writer.job.id),
+                None,
+                TimestampMillis::new(NOW.get() + 21),
+            )
+            .await,
+        Err(crate::CompanionSoulWriterExecutionError::Inference(
+            PortError::Empty
+        ))
+    ));
+    let interrupted_run = database
+        .load_companion_soul_writer_run(interrupted_request_id)
+        .expect("load interrupted preview");
+    assert_eq!(interrupted_run.rounds.len(), 1);
     assert_eq!(
-        checkpointed_writer.rounds,
-        std::slice::from_ref(&writer_checkpoint)
+        interrupted_run.rounds[0].resulting_draft["soul"]["traits"],
+        "Durable partial"
     );
+    let cancelled_request_id = RequestId::new();
+    let cancelled_writer =
+        crate::CompanionSoulWriterAdmissionCoordinator::new(&database, &database)
+            .admit(crate::CompanionSoulWriterAdmissionRequest {
+                request_id: cancelled_request_id,
+                primary_profile: profile.clone(),
+                fallback_profile: None,
+                prompt: &soul_writer_prompt,
+                character_name: "Mira",
+                character_definition: None,
+                character_description: None,
+                opening_context: None,
+                current_soul: None,
+                user_notes: None,
+                fallback_format: lettuce_companions::SoulWriterFallbackFormat::Json,
+                now: TimestampMillis::new(NOW.get() + 22),
+            })
+            .expect("admit cancelled preview");
+    let cancelled_handle = JobHandle::new(cancelled_writer.job.id);
+    cancelled_handle.request_cancel();
+    assert!(matches!(
+        crate::CompanionSoulWriterExecutionCoordinator::new(&database, &UnavailableInference)
+            .run(
+                cancelled_request_id,
+                &soul_writer_prompt,
+                &cancelled_handle,
+                None,
+                TimestampMillis::new(NOW.get() + 23),
+            )
+            .await,
+        Err(crate::CompanionSoulWriterExecutionError::Cancelled)
+    ));
+    let capped_request_id = RequestId::new();
+    let capped_writer = crate::CompanionSoulWriterAdmissionCoordinator::new(&database, &database)
+        .admit(crate::CompanionSoulWriterAdmissionRequest {
+            request_id: capped_request_id,
+            primary_profile: profile.clone(),
+            fallback_profile: None,
+            prompt: &soul_writer_prompt,
+            character_name: "Mira",
+            character_definition: None,
+            character_description: None,
+            opening_context: None,
+            current_soul: None,
+            user_notes: None,
+            fallback_format: lettuce_companions::SoulWriterFallbackFormat::Json,
+            now: TimestampMillis::new(NOW.get() + 24),
+        })
+        .expect("admit capped preview");
+    let capped_outcomes = (0..8)
+        .map(|ordinal| InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: Vec::new(),
+                tool_calls: vec![ProposedToolCall {
+                    provider_call_id: Some(format!("capped-{ordinal}")),
+                    name: "set_identity".into(),
+                    arguments: serde_json::json!({"traits": format!("draft-{ordinal}")}),
+                    raw_arguments: None,
+                    provider_replay: None,
+                }],
+                provider_replay: None,
+            }],
+            usage: None,
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: None,
+            provider_request_id: Some(format!("capped-{ordinal}")),
+            warning_codes: Vec::new(),
+        })
+        .collect::<VecDeque<_>>();
+    let capped_inference = ScriptedInference {
+        outcomes: Mutex::new(capped_outcomes),
+        requests: Mutex::new(Vec::new()),
+    };
+    assert!(matches!(
+        crate::CompanionSoulWriterExecutionCoordinator::new(&database, &capped_inference)
+            .run(
+                capped_request_id,
+                &soul_writer_prompt,
+                &JobHandle::new(capped_writer.job.id),
+                None,
+                TimestampMillis::new(NOW.get() + 25),
+            )
+            .await,
+        Err(crate::CompanionSoulWriterExecutionError::RoundLimit)
+    ));
     assert_eq!(
         database
-            .commit_companion_soul_writer_round(soul_writer_request_id, writer_checkpoint)
-            .expect("replay Soul-writer checkpoint"),
-        checkpointed_writer
+            .load_companion_soul_writer_run(capped_request_id)
+            .expect("load capped preview")
+            .rounds
+            .len(),
+        8
     );
     let jobs = InMemoryJobStore::new();
     assert!(

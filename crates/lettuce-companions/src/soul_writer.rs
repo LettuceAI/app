@@ -17,6 +17,10 @@ pub const SET_REGULATION_STYLE_TOOL_NAME: &str = "set_regulation_style";
 pub const SET_RELATIONSHIP_DEFAULTS_TOOL_NAME: &str = "set_relationship_defaults";
 pub const SOUL_WRITER_DONE_TOOL_NAME: &str = "done";
 pub const SOUL_WRITER_FINAL_INSTRUCTION: &str = "Author the Companion Soul now. Issue tool calls (set_identity, set_authored_facts, set_baseline_affect, set_regulation_style, set_relationship_defaults) across one or more turns, then call done to finish. Populate every identity text field you can ground from the inputs: essence, traits, backstory, appearance, goals, likes, voice, relationalStyle, vulnerabilities, fears, habits, and boundaries. Also extract atomic facts from the backstory and definition: historical events use policy=historical and locked=true; present-state details use policy=current; inferred traits, fears, goals, habits, and vulnerabilities use policy=adaptive and locked=false. Do not turn uncertain implications into facts.";
+pub const SOUL_WRITER_JSON_FALLBACK_PROMPT: &str = r#"Return only JSON. Format: {"operations":[{"name":"set_identity","arguments":{"essence":"...","traits":"...","backstory":"...","appearance":"...","goals":"...","likes":"...","voice":"...","relationalStyle":"...","vulnerabilities":"...","fears":"...","habits":"...","boundaries":"..."}},{"name":"set_baseline_affect","arguments":{"warmth":0.5,"trust":0.5,"calm":0.5,"vulnerability":0.5,"longing":0.5,"hurt":0.5,"tension":0.5,"irritation":0.5,"affectionIntensity":0.5,"reassuranceNeed":0.5}},{"name":"set_regulation_style","arguments":{"suppression":0.5,"volatility":0.5,"recoverySpeed":0.5,"conflictAvoidance":0.5,"reassuranceSeeking":0.5,"protestBehavior":0.5,"emotionalTransparency":0.5,"attachmentActivation":0.5,"pride":0.5}},{"name":"set_relationship_defaults","arguments":{"closeness":0.2,"trust":0.3,"affection":0.2,"tension":0.05}},{"name":"done","arguments":{"notes":"optional"}}]}. End with done. Numeric fields are optional; baseline and regulation values clamp to [0,1], and relationship closeness/trust/affection clamp to [-1,1] (negative means the character starts disliking/distrusting/distant from the user) while relationship tension clamps to [0,1]. Do not use markdown."#;
+pub const SOUL_WRITER_XML_FALLBACK_PROMPT: &str = r#"Return only XML. Format: <soul_ops><set_identity><essence>...</essence><traits>...</traits><backstory>...</backstory><appearance>...</appearance><goals>...</goals><likes>...</likes><voice>...</voice><relationalStyle>...</relationalStyle><vulnerabilities>...</vulnerabilities><fears>...</fears><habits>...</habits><boundaries>...</boundaries></set_identity><set_baseline_affect warmth="0.5" trust="0.5" calm="0.5" vulnerability="0.5" longing="0.5" hurt="0.5" tension="0.5" irritation="0.5" affectionIntensity="0.5" reassuranceNeed="0.5" /><set_regulation_style suppression="0.5" volatility="0.5" recoverySpeed="0.5" conflictAvoidance="0.5" reassuranceSeeking="0.5" protestBehavior="0.5" emotionalTransparency="0.5" attachmentActivation="0.5" pride="0.5" /><set_relationship_defaults closeness="0.2" trust="0.3" affection="0.2" tension="0.05" /><done summary="optional" /></soul_ops>. End with <done />. Numeric fields are optional; baseline and regulation values clamp to [0,1], and relationship closeness/trust/affection clamp to [-1,1] (negative means the character starts disliking/distrusting/distant from the user) while relationship tension clamps to [0,1]. Do not use markdown."#;
+pub const SOUL_WRITER_JSON_FACT_FALLBACK_PROMPT: &str = r#"Also include a set_authored_facts operation. Its arguments must be {"facts":[{"category":"backstory","value":"one atomic fact","policy":"historical","slot":"stable-semantic-slot","confidence":1.0,"weight":1.0,"locked":true}]}. Extract historical, current, and adaptive facts conservatively."#;
+pub const SOUL_WRITER_XML_FACT_FALLBACK_PROMPT: &str = r#"Also include <set_authored_facts><facts>[{"category":"backstory","value":"one atomic fact","policy":"historical","slot":"stable-semantic-slot","confidence":1.0,"weight":1.0,"locked":true}]</facts></set_authored_facts>. The facts element contains a JSON array escaped as normal XML text. Extract facts conservatively."#;
 
 const TEXT_FIELDS: &[&str] = &[
     "essence",
@@ -77,6 +81,13 @@ pub enum SoulWriterFallbackFormat {
     Xml,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SoulWriterProfileTarget {
+    Primary,
+    Fallback,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SoulWriterPromptValues {
@@ -116,6 +127,7 @@ pub struct CompanionSoulWriterRun {
 #[serde(deny_unknown_fields)]
 pub struct CompanionSoulWriterRoundCheckpoint {
     pub ordinal: u32,
+    pub profile_target: SoulWriterProfileTarget,
     pub calls: Vec<ProposedToolCall>,
     pub resulting_draft: Value,
     pub completed: bool,
@@ -171,8 +183,17 @@ impl CompanionSoulWriterRun {
             return Err(CompanionSoulWriterRunRepositoryError::Invalid);
         }
         let mut draft = self.starting_draft.clone();
+        let mut fallback_started = false;
         for (index, round) in self.rounds.iter().enumerate() {
             round.validate(index as u32)?;
+            if round.profile_target == SoulWriterProfileTarget::Fallback {
+                if self.fallback_profile.is_none() {
+                    return Err(CompanionSoulWriterRunRepositoryError::Invalid);
+                }
+                fallback_started = true;
+            } else if fallback_started {
+                return Err(CompanionSoulWriterRunRepositoryError::Invalid);
+            }
             let reduction = reduce_soul_writer_calls(Some(&draft), &round.calls, round.reduced_at);
             if reduction.draft != round.resulting_draft || reduction.completed != round.completed {
                 return Err(CompanionSoulWriterRunRepositoryError::Invalid);
@@ -180,6 +201,22 @@ impl CompanionSoulWriterRun {
             draft = reduction.draft;
         }
         Ok(())
+    }
+}
+
+#[must_use]
+pub const fn soul_writer_fallback_prompt(format: SoulWriterFallbackFormat) -> &'static str {
+    match format {
+        SoulWriterFallbackFormat::Json => SOUL_WRITER_JSON_FALLBACK_PROMPT,
+        SoulWriterFallbackFormat::Xml => SOUL_WRITER_XML_FALLBACK_PROMPT,
+    }
+}
+
+#[must_use]
+pub const fn soul_writer_fact_fallback_prompt(format: SoulWriterFallbackFormat) -> &'static str {
+    match format {
+        SoulWriterFallbackFormat::Json => SOUL_WRITER_JSON_FACT_FALLBACK_PROMPT,
+        SoulWriterFallbackFormat::Xml => SOUL_WRITER_XML_FACT_FALLBACK_PROMPT,
     }
 }
 

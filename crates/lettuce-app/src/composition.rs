@@ -124,6 +124,16 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn companion_soul_writer_dispatcher(
+        &self,
+    ) -> crate::CompanionSoulWriterDispatchCoordinator<'_, Database, Database> {
+        crate::CompanionSoulWriterDispatchCoordinator::new(
+            self.database.as_ref(),
+            self.database.as_ref(),
+        )
+    }
+
+    #[must_use]
     pub const fn built_in_prompt_ids(&self) -> &BuiltInPromptIds {
         &self.built_in_prompt_ids
     }
