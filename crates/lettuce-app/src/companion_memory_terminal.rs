@@ -187,12 +187,16 @@ impl<R: DynamicMemoryRunRepository + MemoryRepository + CompanionTurnEffectRepos
             .repository
             .get(run.space_id)?
             .ok_or(CompanionMemoryTerminalError::InvalidOwnership)?;
-        let effects = CompanionPostTurnEffectCoordinator::new(self.repository).settle_ready(
-            &batch.terminal_effects(),
-            &run.starting_memory,
-            &after,
-            now,
-        )?;
+        let effects = if batch.settle_effects {
+            CompanionPostTurnEffectCoordinator::new(self.repository).settle_ready(
+                &batch.terminal_effects(),
+                &run.starting_memory,
+                &after,
+                now,
+            )?
+        } else {
+            batch.effects.clone()
+        };
         let attempt = if attempt.status == DynamicMemoryAttemptStatus::Processing {
             self.repository.transition_dynamic_memory_attempt(
                 attempt.id,
@@ -224,12 +228,18 @@ impl<R: DynamicMemoryRunRepository + MemoryRepository + CompanionTurnEffectRepos
         {
             return Err(CompanionMemoryTerminalError::InvalidOwnership);
         }
-        let effect_coordinator = CompanionPostTurnEffectCoordinator::new(self.repository);
-        let effects = batch
-            .effects
-            .iter()
-            .map(|effect| effect_coordinator.settle_failed(effect, failure.effect_failure(), now))
-            .collect::<Result<Vec<_>, _>>()?;
+        let effects = if batch.settle_effects {
+            let effect_coordinator = CompanionPostTurnEffectCoordinator::new(self.repository);
+            batch
+                .effects
+                .iter()
+                .map(|effect| {
+                    effect_coordinator.settle_failed(effect, failure.effect_failure(), now)
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            batch.effects.clone()
+        };
         let attempt = if attempt.status == DynamicMemoryAttemptStatus::Processing {
             self.repository.transition_dynamic_memory_attempt(
                 attempt.id,

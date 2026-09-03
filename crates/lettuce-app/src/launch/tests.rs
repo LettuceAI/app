@@ -846,8 +846,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .expect("send companion message");
     let turn_id = sent.value.turn.id;
     let attempt_id = sent.value.attempt.id;
-    let user_message_id = match sent.value.turn.input {
-        GenerationInput::UserMessage { message_id } => message_id,
+    let user_message_id = match &sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => *message_id,
         _ => panic!("expected user input"),
     };
     let mut turn = sent.value.turn;
@@ -1415,8 +1415,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
             summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                 message_interval: 1,
-                start: 0,
-                end: 1,
+                start: stored_summary.window_end,
+                end: stored_summary.window_end + 1,
             },
             job_id: failure_job_id,
             now: TimestampMillis::new(NOW.get() + 39),
@@ -1444,6 +1444,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         },
         source_effect_offset: 0,
         effects: vec![continued_effect],
+        settle_effects: true,
     };
     let failure_handle = JobHandle::new(failure_job_id);
     let failed = terminal
@@ -1479,6 +1480,64 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .expect("failed effect is not pending")
             .is_empty()
     );
+
+    let before_delete = ConversationReader::get(&database, current.id)
+        .expect("conversation before delete-after")
+        .conversation;
+    let delete_command = crate::DeleteAfterMessages {
+        conversation_id: current.id,
+        after_message_id: finalized.value.assistant_message.id,
+        expected_revision: before_delete.revision,
+        operation: operation("companion-effect-delete-after"),
+        summary_message_interval: 1,
+    };
+    let deleted = crate::DynamicMemoryDeleteAfterCoordinator::new(&database, &jobs)
+        .delete_after(&delete_command, TimestampMillis::new(NOW.get() + 50))
+        .expect("delete after");
+    assert_eq!(
+        deleted
+            .tombstone
+            .as_ref()
+            .expect("tombstone")
+            .value
+            .message
+            .id,
+        continued_finalization.value.assistant_message.id
+    );
+    assert_eq!(
+        deleted
+            .rewind
+            .as_ref()
+            .and_then(|rewind| rewind.invalid_run_id),
+        Some(failure_run_id)
+    );
+    assert!(deleted.retained_effects.is_empty());
+    assert_eq!(
+        CompanionTurnEffectRepository::get_for_message(
+            &database,
+            current.id,
+            continued_finalization.value.assistant_message.id,
+        )
+        .expect("invalidated effect")
+        .expect("stored effect")
+        .status,
+        CompanionTurnEffectStatus::Invalidated
+    );
+    assert_eq!(
+        MemorySummaryRepository::get_summary(&database, memory_space.id)
+            .expect("restored summary")
+            .expect("prior summary")
+            .text,
+        stored_summary.text
+    );
+    let replay = crate::DynamicMemoryDeleteAfterCoordinator::new(&database, &jobs)
+        .delete_after(&delete_command, TimestampMillis::new(NOW.get() + 99))
+        .expect("delete-after replay");
+    assert_eq!(
+        replay.tombstone.as_ref().map(|value| &value.operation),
+        deleted.tombstone.as_ref().map(|value| &value.operation)
+    );
+    assert_eq!(replay.rewind, deleted.rewind);
 }
 
 struct ScenarioEmotionEngine {
@@ -2564,6 +2623,195 @@ fn the_app_backend_exposes_the_direct_launch() {
         result.value.conversation.id,
         super::identity::launch_conversation_id(&key("backend-launch"))
     );
+}
+
+#[test]
+fn delete_after_without_memory_history_only_tombstones_the_suffix() {
+    let database = database();
+    let model_id = seed_model(
+        &database,
+        ProviderProtocol::Ollama,
+        "delete-after-no-memory",
+    );
+    set_application_default_model(&database, model_id);
+    let character_id = plain_character(&database);
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(character_id, "delete-after-no-memory-launch"), NOW)
+        .expect("launch");
+    let conversation = launched.value.conversation;
+    let ConversationKind::Direct(details) = &conversation.kind else {
+        panic!("direct conversation");
+    };
+    let model = match &details.model {
+        SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => model.clone(),
+        SnapshotSelection::Disabled => panic!("resolved model"),
+    };
+    let sent = database
+        .begin_send(
+            &direct_send_command(&conversation, "delete-after-no-memory-send", "Keep this."),
+            TimestampMillis::new(NOW.get() + 1),
+        )
+        .expect("send");
+    let user_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        _ => panic!("user message"),
+    };
+    let finalized = finalize_started_turn(
+        &database,
+        &sent.value,
+        model,
+        "delete-after-no-memory",
+        NOW.get() + 2,
+    );
+    let current = ConversationReader::get(&database, conversation.id)
+        .expect("conversation")
+        .conversation;
+    let jobs = InMemoryJobStore::new();
+    let deleted = crate::DynamicMemoryDeleteAfterCoordinator::new(&database, &jobs)
+        .delete_after(
+            &crate::DeleteAfterMessages {
+                conversation_id: conversation.id,
+                after_message_id: user_message_id,
+                expected_revision: current.revision,
+                operation: OperationToken {
+                    key: key("delete-after-no-memory"),
+                    request_digest: ContentHash::parse("fa".repeat(32)).expect("digest"),
+                },
+                summary_message_interval: 20,
+            },
+            TimestampMillis::new(NOW.get() + 20),
+        )
+        .expect("delete suffix");
+    assert_eq!(
+        deleted
+            .tombstone
+            .as_ref()
+            .expect("tombstone")
+            .value
+            .message
+            .id,
+        finalized.value.assistant_message.id
+    );
+    assert!(deleted.rewind.is_none());
+    assert!(deleted.retained_effects.is_empty());
+    assert!(deleted.rebuild_admission.is_none());
+}
+
+#[test]
+fn group_delete_after_keeps_the_scene_anchor_and_tombstones_the_reply() {
+    let database = database_with_builtins();
+    let model_id = seed_model(&database, ProviderProtocol::Ollama, "group-delete-after");
+    let first = seed_named_character_with(&database, "Ada", |defaults| {
+        defaults.model_profile_id = Some(model_id);
+    });
+    let second = seed_named_character(&database, "Bea");
+    let group_id = seed_group(
+        &database,
+        vec![member(first, 0), member(second, 1)],
+        Some(group_starting_scene("Keep this scene.")),
+        |group| group.chat_mode = ChatMode::Roleplay,
+    );
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_group(&group_request(group_id, "group-delete-after-launch"), NOW)
+        .expect("launch group");
+    let conversation = launched.value.conversation;
+    let anchor = ConversationReader::timeline_page(
+        &database,
+        conversation.id,
+        conversation.active_branch_id,
+        &PageRequest::default(),
+    )
+    .expect("group timeline")
+    .items
+    .into_iter()
+    .next()
+    .expect("scene anchor")
+    .message;
+    let speaker = conversation
+        .participants
+        .iter()
+        .find(|participant| {
+            participant.source == lettuce_conversations::ParticipantSource::Character(first)
+        })
+        .expect("group speaker");
+    let model = match &speaker.model_selection {
+        SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => model.clone(),
+        SnapshotSelection::Disabled => panic!("resolved model"),
+    };
+    let continued = database
+        .begin_continue(
+            &ContinueConversation {
+                conversation_id: conversation.id,
+                branch_id: conversation.active_branch_id,
+                expected_revision: conversation.revision,
+                forced_speaker: Some(speaker.id),
+                swap_roles: false,
+                operation: OperationToken {
+                    key: key("group-delete-after-continue"),
+                    request_digest: ContentHash::parse("fb".repeat(32)).expect("digest"),
+                },
+            },
+            TimestampMillis::new(NOW.get() + 1),
+        )
+        .expect("continue group");
+    let finalized = finalize_started_turn(
+        &database,
+        &continued.value,
+        model,
+        "group-delete-after",
+        NOW.get() + 2,
+    );
+    let current = ConversationReader::get(&database, conversation.id)
+        .expect("group conversation")
+        .conversation;
+    let jobs = InMemoryJobStore::new();
+    let deleted = crate::DynamicMemoryDeleteAfterCoordinator::new(&database, &jobs)
+        .delete_after(
+            &crate::DeleteAfterMessages {
+                conversation_id: conversation.id,
+                after_message_id: anchor.id,
+                expected_revision: current.revision,
+                operation: OperationToken {
+                    key: key("group-delete-after"),
+                    request_digest: ContentHash::parse("fc".repeat(32)).expect("digest"),
+                },
+                summary_message_interval: 20,
+            },
+            TimestampMillis::new(NOW.get() + 20),
+        )
+        .expect("delete group suffix");
+    assert_eq!(
+        deleted
+            .tombstone
+            .as_ref()
+            .expect("tombstone")
+            .value
+            .message
+            .id,
+        finalized.value.assistant_message.id
+    );
+    let timeline = ConversationReader::timeline_page(
+        &database,
+        conversation.id,
+        conversation.active_branch_id,
+        &PageRequest::default(),
+    )
+    .expect("retained group timeline");
+    assert_eq!(timeline.items.len(), 2);
+    assert_eq!(
+        timeline.items[0].message.id,
+        finalized.value.assistant_message.id
+    );
+    assert_eq!(
+        timeline.items[0].message.visibility,
+        MessageVisibility::Tombstoned
+    );
+    assert_eq!(timeline.items[1].message.id, anchor.id);
+    assert_eq!(
+        timeline.items[1].message.visibility,
+        MessageVisibility::Visible
+    );
+    assert!(deleted.rewind.is_none());
 }
 
 #[tokio::test]

@@ -11,7 +11,7 @@ use lettuce_jobs::{
 use lettuce_memory::{
     DynamicMemoryApprovalRepository, DynamicMemoryRunMode, MemoryRepositoryError,
 };
-use lettuce_types::{ConversationId, PageLimit, PageRequest, TimestampMillis};
+use lettuce_types::{ConversationId, OperationId, PageLimit, PageRequest, TimestampMillis};
 
 use crate::CompanionPostTurnEffect;
 
@@ -32,6 +32,7 @@ pub struct CompanionPostTurnMemoryBatch {
     pub unsummarized_message_count: u64,
     pub source_effect_offset: usize,
     pub effects: Vec<CompanionTurnEffect>,
+    pub settle_effects: bool,
 }
 
 impl CompanionPostTurnMemoryBatch {
@@ -146,6 +147,8 @@ impl<
                 unsummarized_message_count,
                 0,
                 effects,
+                true,
+                None,
             )? {
                 self.effects
                     .clear_dynamic_memory_pending_approval(conversation_id)
@@ -258,6 +261,8 @@ impl<
             unsummarized_message_count,
             source_effect_offset,
             effects,
+            true,
+            None,
         )?;
         if admitted.is_some() {
             self.effects
@@ -267,6 +272,39 @@ impl<
         Ok(admitted)
     }
 
+    pub fn rebuild_and_admit(
+        &self,
+        conversation_id: ConversationId,
+        rewind_operation_id: OperationId,
+        summary_message_interval: u32,
+        mut effects: Vec<CompanionTurnEffect>,
+    ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
+    {
+        if summary_message_interval == 0
+            || effects.is_empty()
+            || effects.len() > usize::from(MAX_COMPANION_POST_TURN_EFFECTS)
+            || effects.iter().any(|effect| {
+                effect.conversation_id != conversation_id
+                    || effect.status == CompanionTurnEffectStatus::Invalidated
+            })
+        {
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+        }
+        effects.sort_by_key(|effect| (effect.created_at, effect.id));
+        let unsummarized_message_count = effect_message_count(&effects);
+        self.admit_selected(
+            conversation_id,
+            summary_message_interval,
+            CompanionMemoryWindowSelection::Automatic,
+            unsummarized_message_count,
+            0,
+            effects,
+            false,
+            Some(rewind_operation_id),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn admit_selected(
         &self,
         conversation_id: ConversationId,
@@ -275,6 +313,8 @@ impl<
         unsummarized_message_count: u64,
         source_effect_offset: usize,
         effects: Vec<CompanionTurnEffect>,
+        settle_effects: bool,
+        rewind_operation_id: Option<OperationId>,
     ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
     {
         if effects.is_empty()
@@ -287,6 +327,8 @@ impl<
             conversation_id,
             summary_message_interval,
             window_selection,
+            settle_effects,
+            rewind_operation_id,
             &effects,
         )?;
         let spec = job_spec(conversation_id, idempotency_key.clone())?;
@@ -327,6 +369,7 @@ impl<
                 unsummarized_message_count,
                 source_effect_offset,
                 effects,
+                settle_effects,
             },
             job: admitted.job,
             created: admitted.created,
@@ -351,6 +394,8 @@ fn batch_idempotency_key(
     conversation_id: ConversationId,
     summary_message_interval: u32,
     window_selection: CompanionMemoryWindowSelection,
+    settle_effects: bool,
+    rewind_operation_id: Option<OperationId>,
     effects: &[CompanionTurnEffect],
 ) -> Result<IdempotencyKey, CompanionPostTurnMemoryAdmissionError> {
     if effects.is_empty()
@@ -367,6 +412,14 @@ fn batch_idempotency_key(
         CompanionMemoryWindowSelection::Automatic => b"automatic",
         CompanionMemoryWindowSelection::Recent => b"recent",
     });
+    digest.update(if settle_effects {
+        b"settle"
+    } else {
+        b"rebuild"
+    });
+    if let Some(operation_id) = rewind_operation_id {
+        digest.update(operation_id.to_string().as_bytes());
+    }
     for effect in effects {
         digest.update(effect.id.to_string().as_bytes());
     }
@@ -911,6 +964,58 @@ mod tests {
         assert_eq!(admitted.batch.unsummarized_message_count, 8);
         assert_eq!(admitted.batch.source_effect_offset, 0);
         assert_eq!(admitted.batch.effects, [first_group, second_group]);
+    }
+
+    #[test]
+    fn rewind_rebuild_admits_terminal_effects_with_a_restart_stable_key() {
+        let effects = Effects::default();
+        let conversation_id = ConversationId::new();
+        let mut retained = effect(conversation_id, 10);
+        retained.status = CompanionTurnEffectStatus::Ready;
+        let first_jobs = InMemoryJobStore::new();
+        let rewind_operation_id = OperationId::new();
+        let first = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &first_jobs)
+            .rebuild_and_admit(
+                conversation_id,
+                rewind_operation_id,
+                4,
+                vec![retained.clone()],
+            )
+            .expect("rebuild")
+            .expect("admission");
+        assert!(first.created);
+        assert!(!first.batch.settle_effects);
+        assert_eq!(first.batch.effects, [retained.clone()]);
+
+        let replay = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &first_jobs)
+            .rebuild_and_admit(
+                conversation_id,
+                rewind_operation_id,
+                4,
+                vec![retained.clone()],
+            )
+            .expect("replay")
+            .expect("same admission");
+        assert!(!replay.created);
+        assert_eq!(replay.job.id, first.job.id);
+
+        let restarted_jobs = InMemoryJobStore::new();
+        let restarted = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &restarted_jobs)
+            .rebuild_and_admit(
+                conversation_id,
+                rewind_operation_id,
+                4,
+                vec![retained.clone()],
+            )
+            .expect("restart")
+            .expect("rebuilt admission");
+        assert_eq!(restarted.batch.idempotency_key, first.batch.idempotency_key);
+        let later_jobs = InMemoryJobStore::new();
+        let later = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &later_jobs)
+            .rebuild_and_admit(conversation_id, OperationId::new(), 4, vec![retained])
+            .expect("later rewind")
+            .expect("later admission");
+        assert_ne!(later.batch.idempotency_key, first.batch.idempotency_key);
     }
 
     #[test]

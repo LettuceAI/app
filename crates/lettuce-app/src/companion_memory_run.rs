@@ -245,9 +245,11 @@ fn validate_job(
         || admission.job.state.is_terminal()
         || admission.batch.effects.iter().any(|effect| {
             effect.conversation_id != conversation_id
-                || effect.status != CompanionTurnEffectStatus::Processing
-                || effect.source_window.is_some()
-                || effect.summary.is_some()
+                || effect.status == CompanionTurnEffectStatus::Invalidated
+                || (admission.batch.settle_effects
+                    && (effect.status != CompanionTurnEffectStatus::Processing
+                        || effect.source_window.is_some()
+                        || effect.summary.is_some()))
         })
     {
         return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
@@ -916,6 +918,7 @@ mod tests {
                 unsummarized_message_count,
                 source_effect_offset: 0,
                 effects,
+                settle_effects: true,
             },
             job: admitted.job,
             created: admitted.created,

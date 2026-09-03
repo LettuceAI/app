@@ -127,6 +127,7 @@ pub trait DynamicMemoryRunRepository: Send + Sync {
     fn list_dynamic_memory_runs(
         &self,
         _conversation_id: ConversationId,
+        _limit: u16,
     ) -> Result<Vec<DynamicMemoryRun>, DynamicMemoryRunRepositoryError> {
         Err(DynamicMemoryRunRepositoryError::Invalid)
     }
@@ -257,6 +258,13 @@ pub enum DynamicMemorySuffixRewindError {
 }
 
 pub trait DynamicMemorySuffixRewindRepository: Send + Sync {
+    fn get_dynamic_memory_suffix_rewind(
+        &self,
+        _operation_id: OperationId,
+    ) -> Result<Option<DynamicMemorySuffixRewindReceipt>, DynamicMemorySuffixRewindError> {
+        Err(DynamicMemorySuffixRewindError::Invalid)
+    }
+
     fn rewind_dynamic_memory_suffix(
         &self,
         rewind: DynamicMemorySuffixRewind,

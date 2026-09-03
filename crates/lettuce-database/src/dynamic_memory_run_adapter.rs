@@ -659,18 +659,26 @@ impl DynamicMemoryRunRepository for Database {
     fn list_dynamic_memory_runs(
         &self,
         conversation_id: lettuce_types::ConversationId,
+        limit: u16,
     ) -> Result<Vec<DynamicMemoryRun>, DynamicMemoryRunRepositoryError> {
+        if limit == 0 || limit > 512 {
+            return Err(DynamicMemoryRunRepositoryError::Invalid);
+        }
         let connection = self.connection().map_err(storage)?;
         let ids = {
             let mut statement = connection
                 .prepare(
                     "SELECT id FROM dynamic_memory_runs
                      WHERE conversation_id=?1
-                     ORDER BY summary_window_start, summary_window_end, created_at, id",
+                     ORDER BY summary_window_start, summary_window_end, created_at, id
+                     LIMIT ?2",
                 )
                 .map_err(storage)?;
             statement
-                .query_map([conversation_id.to_string()], |row| parse_id(row.get(0)?))
+                .query_map(
+                    params![conversation_id.to_string(), i64::from(limit)],
+                    |row| parse_id(row.get(0)?),
+                )
                 .map_err(storage)?
                 .collect::<rusqlite::Result<Vec<DynamicMemoryRunId>>>()
                 .map_err(storage)?
@@ -2030,6 +2038,12 @@ mod tests {
         let receipt = database
             .rewind_dynamic_memory_suffix(rewind.clone())
             .expect("rewind");
+        assert_eq!(
+            database
+                .get_dynamic_memory_suffix_rewind(rewind.operation_id)
+                .expect("receipt lookup"),
+            Some(receipt.clone())
+        );
         assert_eq!(receipt.memory.revision, Revision::new(6));
         assert_eq!(receipt.memory.items, vec![kept_item]);
         assert_eq!(receipt.summary, Some(first_summary.summary.clone()));

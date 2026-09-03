@@ -43,7 +43,7 @@ fn request_digest(
 fn load_receipt(
     connection: &Connection,
     operation_id: OperationId,
-    expected_digest: &str,
+    expected_digest: Option<&str>,
 ) -> Result<Option<DynamicMemorySuffixRewindReceipt>, DynamicMemorySuffixRewindError> {
     let row = connection
         .query_row(
@@ -69,7 +69,7 @@ fn load_receipt(
     else {
         return Ok(None);
     };
-    if digest != expected_digest {
+    if expected_digest.is_some_and(|expected| digest != expected) {
         return Err(DynamicMemorySuffixRewindError::Conflict);
     }
     let invalidated_effect_ids = {
@@ -136,6 +136,14 @@ fn prior_summary(
 }
 
 impl DynamicMemorySuffixRewindRepository for Database {
+    fn get_dynamic_memory_suffix_rewind(
+        &self,
+        operation_id: OperationId,
+    ) -> Result<Option<DynamicMemorySuffixRewindReceipt>, DynamicMemorySuffixRewindError> {
+        let connection = self.connection().map_err(storage)?;
+        load_receipt(&connection, operation_id, None)
+    }
+
     fn rewind_dynamic_memory_suffix(
         &self,
         rewind: DynamicMemorySuffixRewind,
@@ -158,7 +166,7 @@ impl DynamicMemorySuffixRewindRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        if let Some(receipt) = load_receipt(&transaction, rewind.operation_id, &digest)? {
+        if let Some(receipt) = load_receipt(&transaction, rewind.operation_id, Some(&digest))? {
             transaction.commit().map_err(storage)?;
             return Ok(receipt);
         }
@@ -290,7 +298,7 @@ impl DynamicMemorySuffixRewindRepository for Database {
                 [rewind.conversation_id.to_string()],
             )
             .map_err(storage)?;
-        let receipt = load_receipt(&transaction, rewind.operation_id, &digest)?
+        let receipt = load_receipt(&transaction, rewind.operation_id, Some(&digest))?
             .ok_or(DynamicMemorySuffixRewindError::Storage)?;
         transaction.commit().map_err(storage)?;
         Ok(receipt)

@@ -167,6 +167,14 @@ the same transaction for every resolved manual/dynamic memory policy, and the
 memory repository resolves it directly from the conversation identity. This
 removes an external `MemorySpaceId` input from the pending post-turn worker.
 
+The delete-after coordinator preserves the selected anchor message and applies
+the existing branch-local tombstone policy to its suffix. It derives removed
+IDs from the durable tombstone outbox record, restores memory and summary from
+the earliest intersecting immutable run, invalidates removed companion effects,
+and immediately admits retained effects from the rewound run suffix with a
+restart-stable rebuild job key. Tombstone replay first checks the rewind receipt,
+closing the crash gap between the conversation mutation and memory rollback.
+
 The first direct/group dynamic-memory handler path accepts an already admitted
 and running ordered tool round, validates the exact v1 feature contract, joins
 precomputed create metadata, reduces it against one stored memory-space
