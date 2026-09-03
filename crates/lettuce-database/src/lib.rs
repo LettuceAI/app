@@ -24,6 +24,7 @@ mod memory_round_adapter;
 mod persona_adapter;
 mod prompt_adapter;
 mod soul_adapter;
+mod soul_writer_adapter;
 mod state_adapter;
 mod tool_adapter;
 mod usage_adapter;
@@ -3863,6 +3864,7 @@ mod tests {
                 "companion_soul_fact_supersedes",
                 "companion_soul_facts",
                 "companion_soul_states",
+                "companion_soul_writer_runs",
                 "companion_state_apply_receipts",
                 "companion_state_signals",
                 "companion_turn_effect_drafts",

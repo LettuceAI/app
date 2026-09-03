@@ -175,6 +175,13 @@ unchanged through the existing consolidation policy and Soul repository with
 the run's stable operation ID. Restart skips inference after the checkpoint and
 replays the same Soul receipt; the SQLite job then settles success,
 cancellation, terminal rejection, or retryable provider/storage failure.
+Explicit Soul-writer preview admission now freezes the selected primary and
+optional fallback profiles, editable prompt identity/revision, exact legacy
+prompt values, normalized starting draft, structured fallback format, and
+request identity in SQLite before inference. Repeating the request ID returns
+the stored run, and ordered round checkpoints are idempotent; admission does
+not mutate the character or durable Soul. Provider recursion and completed
+preview settlement remain the next writer slice.
 The claimed-job runner composes the existing run admission/recovery,
 first-round inference, bounded execution/continuation loop, and terminal
 settlement into one application path. Prompt/profile/policy inputs and stable

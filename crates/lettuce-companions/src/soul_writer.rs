@@ -1,11 +1,13 @@
 use std::collections::HashSet;
 
-use lettuce_conversations::{ProposedToolCall, ToolChoice, ToolDefinition, ToolRequest};
-use lettuce_types::TimestampMillis;
+use lettuce_conversations::{
+    ProposedToolCall, ResolvedInferenceProfile, ToolChoice, ToolDefinition, ToolRequest,
+};
+use lettuce_types::{PromptDocumentId, RequestId, Revision, TimestampMillis};
 use quick_xml::Reader;
 use quick_xml::escape::{resolve_xml_entity, unescape};
 use quick_xml::events::{BytesRef, Event};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 pub const SET_IDENTITY_TOOL_NAME: &str = "set_identity";
@@ -68,13 +70,15 @@ const SOUL_OPERATION_NAMES: &[&str] = &[
 ];
 const SOUL_OPERATION_ROOTS: &[&str] = &["soul_ops", "operations"];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SoulWriterFallbackFormat {
     Json,
     Xml,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SoulWriterPromptValues {
     pub character_name: String,
     pub character_definition: String,
@@ -90,6 +94,108 @@ pub struct SoulWriterReduction {
     pub draft: Value,
     pub results: Vec<Value>,
     pub completed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompanionSoulWriterRun {
+    pub request_id: RequestId,
+    pub primary_profile: ResolvedInferenceProfile,
+    pub fallback_profile: Option<ResolvedInferenceProfile>,
+    pub prompt_id: PromptDocumentId,
+    pub prompt_revision: Revision,
+    pub prompt_values: SoulWriterPromptValues,
+    pub starting_draft: Value,
+    pub fallback_format: SoulWriterFallbackFormat,
+    pub created_at: TimestampMillis,
+    pub rounds: Vec<CompanionSoulWriterRoundCheckpoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompanionSoulWriterRoundCheckpoint {
+    pub ordinal: u32,
+    pub calls: Vec<ProposedToolCall>,
+    pub resulting_draft: Value,
+    pub completed: bool,
+    pub reduced_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CompanionSoulWriterRunRepositoryError {
+    #[error("companion Soul-writer run was not found")]
+    NotFound,
+    #[error("companion Soul-writer run conflicts with durable state")]
+    Conflict,
+    #[error("companion Soul-writer run is invalid")]
+    Invalid,
+    #[error("companion Soul-writer run storage failed")]
+    Failure,
+    #[error("companion Soul-writer run storage is corrupt")]
+    Corrupt,
+}
+
+pub trait CompanionSoulWriterRunRepository: Send + Sync {
+    fn admit_companion_soul_writer_run(
+        &self,
+        run: CompanionSoulWriterRun,
+    ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterRunRepositoryError>;
+
+    fn load_companion_soul_writer_run(
+        &self,
+        request_id: RequestId,
+    ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterRunRepositoryError>;
+
+    fn commit_companion_soul_writer_round(
+        &self,
+        request_id: RequestId,
+        checkpoint: CompanionSoulWriterRoundCheckpoint,
+    ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterRunRepositoryError>;
+}
+
+impl CompanionSoulWriterRun {
+    pub fn validate(&self) -> Result<(), CompanionSoulWriterRunRepositoryError> {
+        if self.prompt_revision.get() == 0
+            || self.prompt_values.character_name.trim().is_empty()
+            || !self.starting_draft.is_object()
+            || normalize_soul_writer_draft(Some(&self.starting_draft)) != self.starting_draft
+            || self.created_at.get() < 0
+            || self.rounds.len() > 8
+            || self
+                .rounds
+                .iter()
+                .take(self.rounds.len().saturating_sub(1))
+                .any(|round| round.completed)
+        {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid);
+        }
+        let mut draft = self.starting_draft.clone();
+        for (index, round) in self.rounds.iter().enumerate() {
+            round.validate(index as u32)?;
+            let reduction = reduce_soul_writer_calls(Some(&draft), &round.calls, round.reduced_at);
+            if reduction.draft != round.resulting_draft || reduction.completed != round.completed {
+                return Err(CompanionSoulWriterRunRepositoryError::Invalid);
+            }
+            draft = reduction.draft;
+        }
+        Ok(())
+    }
+}
+
+impl CompanionSoulWriterRoundCheckpoint {
+    fn validate(&self, expected_ordinal: u32) -> Result<(), CompanionSoulWriterRunRepositoryError> {
+        if self.ordinal != expected_ordinal
+            || self.calls.len() > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE
+            || self.calls.iter().any(|call| {
+                !SOUL_OPERATION_NAMES.contains(&call.name.as_str()) || call.validate().is_err()
+            })
+            || !self.resulting_draft.is_object()
+            || self.reduced_at.get() < 0
+        {
+            return Err(CompanionSoulWriterRunRepositoryError::Invalid);
+        }
+        Ok(())
+    }
 }
 
 #[must_use]

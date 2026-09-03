@@ -190,6 +190,11 @@ row freezes the authoritative post-growth Soul revision and companion prompt
 inputs plus a deterministic apply ID; its typed adjustment/retirement proposal
 checkpoint is immutable and independently replayable before the later Soul
 apply worker runs.
+Migration 12 also stores explicit Soul-writer preview runs by request ID. The
+immutable row freezes both resolved profiles, prompt identity/revision, exact
+prompt values, normalized starting draft, fallback format, and creation time;
+ordered round checkpoints are appended separately and exact checkpoint replay
+is idempotent. This preview store does not mutate character-owned Soul state.
 Creating a companion character now seeds its initial character-owned Soul root
 and normalized authored facts inside the same character aggregate transaction.
 An authored-fact failure rolls back the character and Soul rows together;

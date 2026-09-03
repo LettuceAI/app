@@ -66,6 +66,11 @@ structured fallback accepts the legacy JSON object/array aliases and
 preserves call order, coerces numeric XML fields, and keeps JSON-encoded
 authored facts for the same reducer. Provider fallback dispatch and recursion
 remain outside this pure boundary.
+The domain also owns the explicit preview run port: one request freezes the
+primary and optional fallback profile, prompt identity/revision, exact input
+values, normalized starting draft, fallback format, and at most eight ordered
+round checkpoints. Exact round replay is idempotent, completion forbids later
+rounds, and this preview state has no character-Soul mutation capability.
 
 Durable Soul state is character-owned, matching legacy continuity: companion
 Soul growth is shared across that character's sessions regardless of the

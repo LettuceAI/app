@@ -115,3 +115,12 @@ CREATE TABLE companion_consolidation_runs (
 
 CREATE INDEX companion_consolidation_runs_character_idx
     ON companion_consolidation_runs(character_id, created_at, job_id);
+
+CREATE TABLE companion_soul_writer_runs (
+    request_id TEXT PRIMARY KEY,
+    prompt_id TEXT NOT NULL REFERENCES prompt_documents(id) ON DELETE RESTRICT,
+    prompt_revision INTEGER NOT NULL CHECK (prompt_revision >= 1),
+    created_at INTEGER NOT NULL,
+    run_json TEXT NOT NULL CHECK (json_valid(run_json)),
+    rounds_json TEXT NOT NULL CHECK (json_valid(rounds_json))
+) STRICT;

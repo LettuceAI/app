@@ -9,9 +9,10 @@ use lettuce_characters::{
 };
 use lettuce_companions::{
     CompanionConsolidationRunRepository, CompanionConversationSender, CompanionGrowthRunRepository,
-    CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
-    CompanionTurnEffectRepository, CompanionTurnEffectStatus, CompanionTurnInput,
-    EmotionClassification, EmotionLabelScore, PreparedCompanionSend, SoulRepository, apply_turn,
+    CompanionSoulWriterRunRepository, CompanionStateOwner, CompanionStateReplacement,
+    CompanionStateRepository, CompanionTurnEffectRepository, CompanionTurnEffectStatus,
+    CompanionTurnInput, EmotionClassification, EmotionLabelScore, PreparedCompanionSend,
+    SoulRepository, apply_turn,
 };
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
@@ -52,8 +53,8 @@ use lettuce_settings::{GlobalSettingsStore, SecretOwnerId};
 use lettuce_types::{
     CharacterId, ContentHash, ConversationStarterId, DynamicMemoryAttemptId, DynamicMemoryRunId,
     GroupId, JobId, LorebookId, MemoryId, MemorySpaceId, ModelProfileId, OperationRecordId,
-    PageLimit, PageRequest, PersonaId, ProviderAccountId, Revision, SceneId, SceneVariantId,
-    StarterMessageId, TimestampMillis, ToolExecutionId, UsageEventId,
+    PageLimit, PageRequest, PersonaId, ProviderAccountId, RequestId, Revision, SceneId,
+    SceneVariantId, StarterMessageId, TimestampMillis, ToolExecutionId, UsageEventId,
 };
 
 use super::planner::ConversationLaunchPlanner;
@@ -988,6 +989,81 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         PromptRepository::get(&database, prompt_ids.get(BuiltInPromptId::DynamicSummary))
             .expect("prompt")
             .expect("dynamic summary prompt");
+    let soul_writer_prompt = PromptRepository::get(
+        &database,
+        prompt_ids.get(BuiltInPromptId::CompanionSoulWriter),
+    )
+    .expect("prompt")
+    .expect("Soul-writer prompt");
+    let soul_writer_request_id = RequestId::new();
+    let current_soul = serde_json::json!({
+        "soul": { "traits": "Careful", "baselineAffect": { "warmth": 2.0 } }
+    });
+    let soul_writer = crate::CompanionSoulWriterAdmissionCoordinator::new(&database)
+        .admit(crate::CompanionSoulWriterAdmissionRequest {
+            request_id: soul_writer_request_id,
+            primary_profile: profile.clone(),
+            fallback_profile: Some(profile.clone()),
+            prompt: &soul_writer_prompt,
+            character_name: "Mira",
+            character_definition: Some("A careful traveller"),
+            character_description: None,
+            opening_context: Some("At the station"),
+            current_soul: Some(&current_soul),
+            user_notes: None,
+            fallback_format: lettuce_companions::SoulWriterFallbackFormat::Json,
+            now: TimestampMillis::new(NOW.get() + 12),
+        })
+        .expect("admit Soul-writer preview");
+    assert!(soul_writer.created);
+    assert_eq!(soul_writer.run.prompt_id, soul_writer_prompt.id);
+    assert_eq!(soul_writer.run.prompt_revision, soul_writer_prompt.revision);
+    assert_eq!(soul_writer.run.primary_profile, profile);
+    assert_eq!(soul_writer.run.fallback_profile, Some(profile.clone()));
+    assert_eq!(soul_writer.run.starting_draft["soul"]["traits"], "Careful");
+    assert_eq!(
+        soul_writer.run.starting_draft["soul"]["baselineAffect"]["warmth"],
+        1.0
+    );
+    assert!(soul_writer.run.rounds.is_empty());
+    let soul_writer_replay = crate::CompanionSoulWriterAdmissionCoordinator::new(&database)
+        .admit(crate::CompanionSoulWriterAdmissionRequest {
+            request_id: soul_writer_request_id,
+            primary_profile: profile.clone(),
+            fallback_profile: None,
+            prompt: &summary_prompt,
+            character_name: "changed",
+            character_definition: None,
+            character_description: None,
+            opening_context: None,
+            current_soul: None,
+            user_notes: None,
+            fallback_format: lettuce_companions::SoulWriterFallbackFormat::Xml,
+            now: TimestampMillis::new(NOW.get() + 13),
+        })
+        .expect("replay Soul-writer preview");
+    assert!(!soul_writer_replay.created);
+    assert_eq!(soul_writer_replay.run, soul_writer.run);
+    let writer_checkpoint = lettuce_companions::CompanionSoulWriterRoundCheckpoint {
+        ordinal: 0,
+        calls: Vec::new(),
+        resulting_draft: soul_writer.run.starting_draft.clone(),
+        completed: false,
+        reduced_at: TimestampMillis::new(NOW.get() + 14),
+    };
+    let checkpointed_writer = database
+        .commit_companion_soul_writer_round(soul_writer_request_id, writer_checkpoint.clone())
+        .expect("checkpoint Soul-writer round");
+    assert_eq!(
+        checkpointed_writer.rounds,
+        std::slice::from_ref(&writer_checkpoint)
+    );
+    assert_eq!(
+        database
+            .commit_companion_soul_writer_round(soul_writer_request_id, writer_checkpoint)
+            .expect("replay Soul-writer checkpoint"),
+        checkpointed_writer
+    );
     let jobs = InMemoryJobStore::new();
     assert!(
         crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
