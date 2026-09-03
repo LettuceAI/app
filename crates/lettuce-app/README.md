@@ -103,8 +103,9 @@ round now appends its admitted native calls and typed results to the exact
 durable request context, stops before provider I/O on `done`, or dispatches and
 atomically admits the next bounded round with the frozen profile/tool contract.
 An already admitted next round replays without provider I/O. Debounce/startup
-wiring and binding admission to host startup/finalization remain later slices;
-the generic job store itself is still only an in-memory reference store. The background loop now connects the
+wiring and binding admission to host startup/finalization remain later slices.
+The composition root now exposes its SQLite database as the durable generic
+`JobStore`. The background loop connects the
 existing round executor and continuation coordinator until the durable `done`
 result. It resumes from the latest admitted checkpoint, skips seed generation,
 embedding, reduction, and provider dispatch for already settled/admitted work,

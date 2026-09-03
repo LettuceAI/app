@@ -17,7 +17,8 @@ The crate now provides the domain-independent foundation:
 - typed subjects, outcome references, safe labels/errors, progress and stages;
 - a checked lifecycle state machine with durable cancellation and cleanup
   semantics;
-- an atomic, thread-safe in-memory `JobStore` reference implementation with
+- an atomic, thread-safe in-memory `JobStore` reference implementation and a
+  persistence-neutral aggregate bridge used by the SQLite adapter, with
   idempotent create-or-get, event cursors, pagination, next-job and exact-job
   claims, heartbeats and expired-lease recovery; and
 - policy, recovery, retention, handle and resource-admission vocabulary for
@@ -33,8 +34,9 @@ Request handles expose a cloneable cancellation token with both an atomic
 instant check and an async notification, allowing executors to interrupt
 blocked I/O without polling.
 
-The store is deterministic when constructed with `FakeClock`. It is a test
-foundation, not a replacement for the planned SQLite adapter. Events have no
+The in-memory store is deterministic when constructed with `FakeClock`; the
+SQLite implementation lives in `lettuce-database` and restores every durable
+aggregate through this same lifecycle reducer. Events have no
 structural slot for arbitrary JSON, provider response bodies, local paths,
 credentials or base64 payloads. `SafeLabel` and `SubjectId` are bounded,
 caller-attested text fields—not secret scrubbers—and their `Debug` output is

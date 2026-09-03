@@ -236,6 +236,14 @@ in their domain crates; this crate contains their SQLite implementations. The
 application is responsible for running these synchronous operations on its
 database worker rather than a UI or async-runtime thread.
 
+The generic `JobStore` persists versioned specifications, snapshots, and an
+ordered event table here. Each mutation loads the durable aggregates into the
+single lifecycle reducer in `lettuce-jobs`, applies it under `BEGIN IMMEDIATE`,
+and writes only changed jobs and events before commit. This preserves the
+reference store's idempotency, lease, cancellation, retry, progress, pagination,
+recovery, and retention behavior across process restart and concurrent database
+handles without creating a second scheduler state machine.
+
 Secrets are never stored here. Provider rows contain opaque `SecretRef` values
 only. Blob registration validates SQLite-representable metadata and preserves
 the first immutable metadata record for a content hash; physical `BlobState`

@@ -41,6 +41,36 @@ CREATE TABLE app_settings (
     updated_at INTEGER NOT NULL
 ) STRICT;
 
+CREATE TABLE jobs (
+    id TEXT PRIMARY KEY,
+    idempotency_key TEXT UNIQUE,
+    kind TEXT NOT NULL,
+    subject_kind TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    priority TEXT NOT NULL,
+    parent_id TEXT REFERENCES jobs(id) DEFERRABLE INITIALLY DEFERRED,
+    lease_expires_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    spec_json TEXT NOT NULL,
+    snapshot_json TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX jobs_claim_idx ON jobs(state, priority, created_at, id);
+CREATE INDEX jobs_subject_idx ON jobs(subject_kind, subject_id, created_at, id);
+CREATE INDEX jobs_parent_idx ON jobs(parent_id);
+CREATE INDEX jobs_lease_idx ON jobs(lease_expires_at) WHERE lease_expires_at IS NOT NULL;
+
+CREATE TABLE job_events (
+    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL CHECK (seq >= 1),
+    at INTEGER NOT NULL,
+    correlation_id TEXT NOT NULL,
+    event_json TEXT NOT NULL,
+    PRIMARY KEY (job_id, seq)
+) STRICT;
+
 CREATE TABLE media_blobs (
     id TEXT PRIMARY KEY,
     content_hash TEXT NOT NULL UNIQUE CHECK (length(content_hash) = 64),

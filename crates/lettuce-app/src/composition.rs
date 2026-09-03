@@ -1,6 +1,7 @@
 use std::{path::Path, sync::Arc};
 
 use lettuce_database::{Database, DatabaseError};
+use lettuce_jobs::JobStore;
 
 use crate::{
     BuiltInPromptIds, BuiltInPromptService, BuiltInPromptServiceError, ConversationLaunchError,
@@ -49,6 +50,11 @@ impl AppBackend {
 
     #[must_use]
     pub fn database(&self) -> &Database {
+        self.database.as_ref()
+    }
+
+    #[must_use]
+    pub fn job_store(&self) -> &dyn JobStore {
         self.database.as_ref()
     }
 
@@ -148,6 +154,14 @@ mod tests {
     #[test]
     fn in_memory_open_is_fully_initialized() {
         let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("open");
+        assert!(
+            backend
+                .job_store()
+                .list(lettuce_jobs::JobQuery::default())
+                .expect("list jobs")
+                .items
+                .is_empty()
+        );
         assert!(
             PromptRepository::get(
                 backend.database(),

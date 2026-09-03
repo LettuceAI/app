@@ -67,6 +67,10 @@ impl Clock for FakeClock {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StoreError {
+    #[error("job storage operation failed")]
+    Storage,
+    #[error("stored job data is invalid")]
+    InvalidData,
     #[error("job was not found")]
     NotFound,
     #[error("idempotency key conflicts with a different submission")]
@@ -153,6 +157,15 @@ struct JobRecord {
     events: Vec<JobEventEnvelope>,
 }
 
+/// Persistence-neutral aggregate used by durable [`JobStore`] adapters.
+/// Lifecycle mutations must still be applied through [`InMemoryJobStore`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredJobRecord {
+    pub spec: JobSpec,
+    pub snapshot: JobSnapshot,
+    pub events: Vec<JobEventEnvelope>,
+}
+
 #[derive(Debug)]
 struct StoreInner {
     jobs: BTreeMap<JobId, JobRecord>,
@@ -188,6 +201,91 @@ impl InMemoryJobStore {
                 clock,
             })),
         }
+    }
+
+    pub fn restore(records: Vec<StoredJobRecord>) -> Result<Self, StoreError> {
+        let mut jobs = BTreeMap::new();
+        let mut idempotency = HashMap::new();
+        for stored in records {
+            stored.spec.validate()?;
+            if stored.snapshot.kind != stored.spec.kind
+                || stored.snapshot.subject != stored.spec.subject
+                || stored.snapshot.idempotency_key != stored.spec.idempotency_key
+                || stored.snapshot.parent_id != stored.spec.parent_id
+                || stored.snapshot.recovery_policy != stored.spec.recovery_policy
+                || stored.snapshot.cancellation_policy != stored.spec.cancellation_policy
+                || stored.snapshot.resources != stored.spec.resources
+                || stored.events.is_empty()
+            {
+                return Err(StoreError::InvalidData);
+            }
+            for (index, event) in stored.events.iter().enumerate() {
+                let expected = u64::try_from(index)
+                    .ok()
+                    .and_then(|value| value.checked_add(1))
+                    .ok_or(StoreError::InvalidData)?;
+                if event.job_id != stored.snapshot.id
+                    || event.seq != EventSeq::new(expected)
+                    || event.correlation_id != stored.spec.correlation_id
+                    || event.at < stored.snapshot.created_at
+                    || event.at > stored.snapshot.updated_at
+                {
+                    return Err(StoreError::InvalidData);
+                }
+            }
+            let id = stored.snapshot.id;
+            if jobs
+                .insert(
+                    id,
+                    JobRecord {
+                        spec: stored.spec.clone(),
+                        snapshot: stored.snapshot,
+                        events: stored.events,
+                    },
+                )
+                .is_some()
+            {
+                return Err(StoreError::InvalidData);
+            }
+            if let Some(key) = stored.spec.idempotency_key
+                && idempotency.insert(key, id).is_some()
+            {
+                return Err(StoreError::InvalidData);
+            }
+        }
+        if jobs.values().any(|record| {
+            record
+                .snapshot
+                .parent_id
+                .is_some_and(|parent_id| !jobs.contains_key(&parent_id))
+                || record
+                    .snapshot
+                    .children
+                    .iter()
+                    .any(|child| !jobs.contains_key(&child.child_id))
+        }) {
+            return Err(StoreError::InvalidData);
+        }
+        Ok(Self {
+            inner: Arc::new(Mutex::new(StoreInner {
+                jobs,
+                idempotency,
+                clock: Arc::new(SystemClock),
+            })),
+        })
+    }
+
+    #[must_use]
+    pub fn stored_records(&self) -> Vec<StoredJobRecord> {
+        self.lock()
+            .jobs
+            .values()
+            .map(|record| StoredJobRecord {
+                spec: record.spec.clone(),
+                snapshot: record.snapshot.clone(),
+                events: record.events.clone(),
+            })
+            .collect()
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, StoreInner> {

@@ -13,6 +13,7 @@ mod creation_adapter;
 mod dynamic_memory_rewind_adapter;
 mod dynamic_memory_run_adapter;
 mod group_adapter;
+mod job_adapter;
 mod lorebook_adapter;
 mod memory_adapter;
 mod memory_embedding_adapter;
@@ -3913,6 +3914,8 @@ mod tests {
                 "group_scene_variants",
                 "group_starting_scenes",
                 "groups",
+                "job_events",
+                "jobs",
                 "lorebook_entries",
                 "lorebooks",
                 "media_assets",
