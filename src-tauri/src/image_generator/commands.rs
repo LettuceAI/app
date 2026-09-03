@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
+use reqwest::StatusCode;
 use tauri::AppHandle;
+use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::chat_manager::types::ProviderId;
@@ -10,9 +13,12 @@ use crate::usage::{
     add_usage_record,
     tracking::{RequestUsage, UsageFinishReason, UsageOperationType},
 };
-use crate::utils::{log_error, log_info, now_millis};
+use crate::utils::{log_error, log_info, log_warn, now_millis};
 
-use super::provider_adapter::{get_adapter, ImageRequestPayload, ImageResponseData, ImageResponseFormat};
+use super::provider_adapter::{
+    extract_body_error, get_adapter, ImageProviderAdapter, ImageRequestPayload,
+    ImageResponseData, ImageResponseFormat,
+};
 use super::storage::save_image;
 use super::types::{GeneratedImage, ImageGenerationRequest, ImageGenerationResponse, ImageLora};
 
@@ -279,151 +285,40 @@ pub async fn generate_image(
 
         let base_url = resolve_base_url(&ProviderId(request.provider_id.clone()), base_url_opt);
 
-        let url = if request.provider_id == "gemini" {
-            gemini_image_endpoint(&base_url, &request.model, &api_key)
-        } else {
-            adapter.endpoint(&base_url, &request)
+        let mut upload_request = request.clone();
+        super::input_images::shrink_for_upload(&app, &mut upload_request).await;
+
+        let context = RemoteRequestContext {
+            app: &app,
+            request: &upload_request,
+            base_url: &base_url,
+            api_key: &api_key,
+            extra_headers: headers_map.as_ref(),
         };
 
-        let headers = adapter.headers(&api_key, headers_map.as_ref());
-
-        let payload = adapter.payload(&request)?;
-
-        log_info(
-            &app,
-            "image_generator",
-            format!("Sending request to: {}", url),
-        );
-
-        let client = crate::transport::build_client(
-            &app,
-            None,
-            false,
-            Some(request.provider_id.as_str()),
-            Some(url.as_str()),
-        )
-        .map_err(|e| crate::utils::err_msg(module_path!(), line!(), e.to_string()))?;
-        let mut req_builder = client.post(&url);
-
-        let is_multipart = matches!(payload, ImageRequestPayload::Multipart(_));
-        for (key, value) in headers {
-            if is_multipart && key.eq_ignore_ascii_case("content-type") {
-                continue;
-            }
-            req_builder = req_builder.header(key, value);
-        }
-        req_builder = match payload {
-            ImageRequestPayload::Json(body) => req_builder.json(&body),
-            ImageRequestPayload::Multipart(form) => req_builder.multipart(form),
-        };
-
-        let response = req_builder.send().await.map_err(|e| {
-            crate::utils::err_msg(module_path!(), line!(), format!("Request failed: {}", e))
-        })?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                format!("API error {}: {}", status, error_text),
-            ));
-        }
-
-        if adapter.response_format() == ImageResponseFormat::Binary {
-            let bytes = response.bytes().await.map_err(|e| {
-                crate::utils::err_msg(
-                    module_path!(),
-                    line!(),
-                    format!("Failed to read image bytes: {}", e),
-                )
-            })?;
-            if bytes.is_empty() {
-                return Err(crate::utils::err_msg(
-                    module_path!(),
-                    line!(),
-                    "Provider returned an empty image response".to_string(),
-                ));
-            }
-            let saved = crate::image_generator::storage::save_image_bytes(&app, &bytes)?;
-            return Ok((
-                ImageGenerationResponse {
-                    images: vec![GeneratedImage {
-                        asset_id: saved.asset_id,
-                        file_path: saved.file_path,
-                        mime_type: saved.mime_type,
-                        url: None,
-                        width: saved.width,
-                        height: saved.height,
-                        text: None,
-                    }],
-                    model: request.model.clone(),
-                    provider_id: request.provider_id.clone(),
-                },
-                None,
-            ));
-        }
-
-        let response_json: serde_json::Value = response.json().await.map_err(|e| {
-            crate::utils::err_msg(
-                module_path!(),
-                line!(),
-                format!("Failed to parse response: {}", e),
-            )
-        })?;
-        let usage_summary = chat_request::extract_usage(&response_json);
-
-        log_info(
-            &app,
-            "image_generator",
-            format!("Received response: {}", response_json),
-        );
-
-        let image_data: Vec<ImageResponseData> = adapter.parse_response(response_json)?;
-
-        let mut generated_images = Vec::new();
-        for img_data in image_data {
-            let image_source = match img_data.url.as_ref().or(img_data.b64_json.as_ref()) {
-                Some(source) => source,
-                None => {
-                    let detail = img_data
-                        .text
-                        .as_deref()
-                        .map(str::trim)
-                        .filter(|text| !text.is_empty())
-                        .map(|text| text.chars().take(160).collect::<String>())
-                        .map(|snippet| format!(" Provider returned text instead: {}", snippet))
-                        .unwrap_or_default();
-
-                    return Err(format!("No image URL or data in response.{}", detail));
+        match run_remote_generation(&context, adapter.as_ref()).await? {
+            RemoteAttempt::Completed(result) => Ok(result),
+            RemoteAttempt::HttpError { status, body } => {
+                let Some(fallback) = adapter.fallback_adapter(status.as_u16(), &body) else {
+                    return Err(http_error_message(status, &body));
+                };
+                log_warn(
+                    &app,
+                    "image_generator",
+                    format!(
+                        "Primary endpoint answered HTTP {}; retrying through the fallback endpoint: {}",
+                        status,
+                        truncate_for_log(&body)
+                    ),
+                );
+                match run_remote_generation(&context, fallback.as_ref()).await? {
+                    RemoteAttempt::Completed(result) => Ok(result),
+                    RemoteAttempt::HttpError { status, body } => {
+                        Err(http_error_message(status, &body))
+                    }
                 }
-            };
-
-            let saved = save_image(&app, image_source).await?;
-
-            generated_images.push(GeneratedImage {
-                asset_id: saved.asset_id,
-                file_path: saved.file_path,
-                mime_type: saved.mime_type,
-                url: img_data.url,
-                width: saved.width,
-                height: saved.height,
-                text: img_data.text,
-            });
+            }
         }
-
-        Ok((
-            ImageGenerationResponse {
-                images: generated_images,
-                model: request.model.clone(),
-                provider_id: request.provider_id.clone(),
-            },
-            usage_summary,
-        ))
     }
     .await;
 
@@ -451,9 +346,260 @@ pub async fn generate_image(
     result.map(|(response, _)| response)
 }
 
+const TRANSIENT_ERROR_RETRIES: u32 = 1;
+const TRANSIENT_ERROR_RETRY_DELAY_MS: u64 = 1_500;
+const LOG_STRING_LIMIT: usize = 200;
+
+struct RemoteRequestContext<'a> {
+    app: &'a AppHandle,
+    request: &'a ImageGenerationRequest,
+    base_url: &'a str,
+    api_key: &'a str,
+    extra_headers: Option<&'a HashMap<String, String>>,
+}
+
+enum RemoteAttempt {
+    Completed((ImageGenerationResponse, Option<UsageSummary>)),
+    HttpError { status: StatusCode, body: String },
+}
+
+fn truncate_for_log(text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.chars().count() <= LOG_STRING_LIMIT {
+        return trimmed.to_string();
+    }
+    let head: String = trimmed.chars().take(LOG_STRING_LIMIT).collect();
+    format!("{}… [{} chars]", head, trimmed.chars().count())
+}
+
+/// Clone of a response with long strings (base64 image payloads) cut down so the log
+/// stays readable.
+fn loggable_json(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::String(text) => serde_json::Value::String(truncate_for_log(text)),
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.iter().map(loggable_json).collect())
+        }
+        serde_json::Value::Object(map) => serde_json::Value::Object(
+            map.iter()
+                .map(|(key, value)| (key.clone(), loggable_json(value)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+fn http_error_message(status: StatusCode, body: &str) -> String {
+    let detail = if status == StatusCode::PAYLOAD_TOO_LARGE {
+        "the provider rejected the request because it was too large. Use a smaller reference image or fewer reference images.".to_string()
+    } else {
+        body.to_string()
+    };
+    crate::utils::err_msg(
+        module_path!(),
+        line!(),
+        format!("API error {}: {}", status, detail),
+    )
+}
+
+async fn run_remote_generation(
+    context: &RemoteRequestContext<'_>,
+    adapter: &dyn ImageProviderAdapter,
+) -> Result<RemoteAttempt, String> {
+    let app = context.app;
+    let request = context.request;
+
+    let url = if request.provider_id == "gemini" {
+        gemini_image_endpoint(context.base_url, &request.model, context.api_key)
+    } else {
+        adapter.endpoint(context.base_url, request)
+    };
+
+    let headers = adapter.headers(context.api_key, context.extra_headers);
+
+    log_info(
+        app,
+        "image_generator",
+        format!("Sending request to: {}", url),
+    );
+
+    let client = crate::transport::build_client(
+        app,
+        None,
+        false,
+        Some(request.provider_id.as_str()),
+        Some(url.as_str()),
+    )
+    .map_err(|e| crate::utils::err_msg(module_path!(), line!(), e.to_string()))?;
+
+    let mut attempt: u32 = 0;
+    loop {
+        let payload = adapter.payload(request)?;
+        let mut req_builder = client.post(&url);
+
+        let is_multipart = matches!(payload, ImageRequestPayload::Multipart(_));
+        for (key, value) in headers.iter() {
+            if is_multipart && key.eq_ignore_ascii_case("content-type") {
+                continue;
+            }
+            req_builder = req_builder.header(key, value);
+        }
+        req_builder = match payload {
+            ImageRequestPayload::Json(body) => req_builder.json(&body),
+            ImageRequestPayload::Multipart(form) => req_builder.multipart(form),
+        };
+
+        let response = req_builder.send().await.map_err(|e| {
+            crate::utils::err_msg(module_path!(), line!(), format!("Request failed: {}", e))
+        })?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            if status.is_server_error() && attempt < TRANSIENT_ERROR_RETRIES {
+                attempt += 1;
+                log_warn(
+                    app,
+                    "image_generator",
+                    format!(
+                        "Provider answered HTTP {}; retrying (attempt {}/{}): {}",
+                        status,
+                        attempt,
+                        TRANSIENT_ERROR_RETRIES,
+                        truncate_for_log(&body)
+                    ),
+                );
+                sleep(Duration::from_millis(TRANSIENT_ERROR_RETRY_DELAY_MS)).await;
+                continue;
+            }
+            return Ok(RemoteAttempt::HttpError { status, body });
+        }
+
+        if adapter.response_format() == ImageResponseFormat::Binary {
+            let bytes = response.bytes().await.map_err(|e| {
+                crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    format!("Failed to read image bytes: {}", e),
+                )
+            })?;
+            if bytes.is_empty() {
+                return Err(crate::utils::err_msg(
+                    module_path!(),
+                    line!(),
+                    "Provider returned an empty image response",
+                ));
+            }
+            let saved = crate::image_generator::storage::save_image_bytes(app, &bytes)?;
+            return Ok(RemoteAttempt::Completed((
+                ImageGenerationResponse {
+                    images: vec![GeneratedImage {
+                        asset_id: saved.asset_id,
+                        file_path: saved.file_path,
+                        mime_type: saved.mime_type,
+                        url: None,
+                        width: saved.width,
+                        height: saved.height,
+                        text: None,
+                    }],
+                    model: request.model.clone(),
+                    provider_id: request.provider_id.clone(),
+                },
+                None,
+            )));
+        }
+
+        let response_json: serde_json::Value = response.json().await.map_err(|e| {
+            crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                format!("Failed to parse response: {}", e),
+            )
+        })?;
+        let usage_summary = chat_request::extract_usage(&response_json);
+
+        log_info(
+            app,
+            "image_generator",
+            format!("Received response: {}", loggable_json(&response_json)),
+        );
+
+        if let Some(body_error) = extract_body_error(&response_json) {
+            if body_error.is_transient() && attempt < TRANSIENT_ERROR_RETRIES {
+                attempt += 1;
+                log_warn(
+                    app,
+                    "image_generator",
+                    format!(
+                        "{}; retrying (attempt {}/{})",
+                        body_error.describe(),
+                        attempt,
+                        TRANSIENT_ERROR_RETRIES
+                    ),
+                );
+                sleep(Duration::from_millis(TRANSIENT_ERROR_RETRY_DELAY_MS)).await;
+                continue;
+            }
+            return Err(crate::utils::err_msg(
+                module_path!(),
+                line!(),
+                body_error.describe(),
+            ));
+        }
+
+        let image_data: Vec<ImageResponseData> = adapter.parse_response(response_json)?;
+
+        let mut generated_images = Vec::new();
+        for img_data in image_data {
+            let image_source = match img_data.url.as_ref().or(img_data.b64_json.as_ref()) {
+                Some(source) => source,
+                None => {
+                    let detail = img_data
+                        .text
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|text| !text.is_empty())
+                        .map(|text| text.chars().take(160).collect::<String>())
+                        .map(|snippet| format!(" Provider returned text instead: {}", snippet))
+                        .unwrap_or_default();
+
+                    return Err(format!("No image URL or data in response.{}", detail));
+                }
+            };
+
+            let saved = save_image(app, image_source).await?;
+
+            generated_images.push(GeneratedImage {
+                asset_id: saved.asset_id,
+                file_path: saved.file_path,
+                mime_type: saved.mime_type,
+                url: img_data.url,
+                width: saved.width,
+                height: saved.height,
+                text: img_data.text,
+            });
+        }
+
+        return Ok(RemoteAttempt::Completed((
+            ImageGenerationResponse {
+                images: generated_images,
+                model: request.model.clone(),
+                provider_id: request.provider_id.clone(),
+            },
+            usage_summary,
+        )));
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{compose_image_prompt, merged_lora_keywords, ImageLora};
+    use super::{
+        compose_image_prompt, http_error_message, loggable_json, merged_lora_keywords, ImageLora,
+        StatusCode,
+    };
 
     #[test]
     fn pre_prompt_is_applied_once_before_the_user_prompt() {
@@ -488,6 +634,29 @@ mod tests {
             ),
             "ArsSamuel offers a mug to MayaTrigger"
         );
+    }
+
+    #[test]
+    fn long_strings_are_truncated_in_response_logs() {
+        let payload = serde_json::json!({
+            "data": [{ "b64_json": "A".repeat(5000), "media_type": "image/png" }],
+            "usage": { "total_tokens": 12 }
+        });
+        let logged = loggable_json(&payload).to_string();
+        assert!(logged.len() < 600, "log line should be short, got {} chars", logged.len());
+        assert!(logged.contains("[5000 chars]"));
+        assert!(logged.contains("\"total_tokens\":12"));
+    }
+
+    #[test]
+    fn payload_too_large_gets_a_readable_message() {
+        let message = http_error_message(StatusCode::PAYLOAD_TOO_LARGE, "<html>413</html>");
+        assert!(message.starts_with("API error 413"));
+        assert!(message.contains("smaller reference image"));
+        assert!(!message.contains("<html>"));
+
+        let message = http_error_message(StatusCode::BAD_GATEWAY, "upstream failed");
+        assert_eq!(message, "API error 502 Bad Gateway: upstream failed");
     }
 
     #[test]
