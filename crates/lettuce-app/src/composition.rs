@@ -84,6 +84,16 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn companion_growth_dispatcher(
+        &self,
+    ) -> crate::CompanionGrowthDispatchCoordinator<'_, Database, Database> {
+        crate::CompanionGrowthDispatchCoordinator::new(
+            self.database.as_ref(),
+            self.database.as_ref(),
+        )
+    }
+
+    #[must_use]
     pub const fn built_in_prompt_ids(&self) -> &BuiltInPromptIds {
         &self.built_in_prompt_ids
     }

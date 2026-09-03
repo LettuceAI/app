@@ -8,10 +8,10 @@ use lettuce_characters::{
     SceneDocumentV1, SceneOwner, ScenePart, SceneVariant, Selection, StarterMessage, StarterRole,
 };
 use lettuce_companions::{
-    CompanionConversationSender, CompanionGrowthProposalCheckpoint, CompanionGrowthRunRepository,
-    CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
-    CompanionTurnEffectRepository, CompanionTurnEffectStatus, CompanionTurnInput,
-    EmotionClassification, EmotionLabelScore, PreparedCompanionSend, apply_turn,
+    CompanionConversationSender, CompanionGrowthRunRepository, CompanionStateOwner,
+    CompanionStateReplacement, CompanionStateRepository, CompanionTurnEffectRepository,
+    CompanionTurnEffectStatus, CompanionTurnInput, EmotionClassification, EmotionLabelScore,
+    PreparedCompanionSend, SoulRepository, apply_turn,
 };
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
@@ -1254,20 +1254,21 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         result.loop_result.summary.as_deref(),
         Some("stored relationship")
     );
-    let requests = scripted.requests.lock().expect("requests");
-    assert_eq!(requests.len(), 4);
-    assert!(requests[0].tools.is_some());
-    assert_eq!(requests[0].profile.tool_policy, ToolPolicy::Required);
-    assert!(requests[1].tools.is_none());
-    assert_eq!(requests[1].profile.tool_policy, ToolPolicy::Disabled);
-    assert!(matches!(
-        requests[1].context.messages.last(),
-        Some(lettuce_conversations::ProviderNeutralMessage {
-            role: MessageRole::User,
-            parts,
-        }) if matches!(parts.as_slice(), [ProviderContextPart::Text { text }] if text == "Return only the final merged summary as plain text. No tools, no JSON, no markdown, no commentary.")
-    ));
-    drop(requests);
+    {
+        let requests = scripted.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 4);
+        assert!(requests[0].tools.is_some());
+        assert_eq!(requests[0].profile.tool_policy, ToolPolicy::Required);
+        assert!(requests[1].tools.is_none());
+        assert_eq!(requests[1].profile.tool_policy, ToolPolicy::Disabled);
+        assert!(matches!(
+            requests[1].context.messages.last(),
+            Some(lettuce_conversations::ProviderNeutralMessage {
+                role: MessageRole::User,
+                parts,
+            }) if matches!(parts.as_slice(), [ProviderContextPart::Text { text }] if text == "Return only the final merged summary as plain text. No tools, no JSON, no markdown, no commentary.")
+        ));
+    }
     let stored_summary = MemorySummaryRepository::get_summary(&database, memory_space.id)
         .expect("summary")
         .expect("stored summary");
@@ -1334,20 +1335,145 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     assert_eq!(growth.run.profile, result.dispatch.run.profile);
     assert_eq!(growth.run.fresh_memories.len(), 1);
     assert_eq!(growth.run.fresh_memories[0].id, memory_id.to_string());
-    let checkpoint = CompanionGrowthProposalCheckpoint {
-        proposals: Vec::new(),
-        reduced_at: TimestampMillis::new(NOW.get() + 101),
-    };
+    let growth_dispatch = crate::CompanionGrowthDispatchCoordinator::new(&database, &database);
+    let growth_work = growth_dispatch
+        .claim(
+            growth.job.id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 100),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim growth job")
+        .expect("growth work");
+    assert_eq!(growth_work.job.state, JobState::Running);
+    scripted
+        .outcomes
+        .lock()
+        .expect("growth outcome")
+        .push_back(InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: Vec::new(),
+                tool_calls: vec![ProposedToolCall {
+                    provider_call_id: Some("growth-record".into()),
+                    name: "record_growth".into(),
+                    arguments: serde_json::json!({"adjustments": [{
+                        "category": "likes",
+                        "kind": "add",
+                        "policy": "adaptive",
+                        "slot": "drink",
+                        "value": "Prefers tea",
+                        "confidence": 0.8,
+                        "weight": 0.7,
+                        "sourceIndices": [0]
+                    }]}),
+                    raw_arguments: None,
+                    provider_replay: None,
+                }],
+                provider_replay: None,
+            }],
+            usage: None,
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: None,
+            provider_request_id: Some("provider-growth".into()),
+            warning_codes: Vec::new(),
+        });
+    let growth_prompt = PromptRepository::get(
+        &database,
+        prompt_ids.get(BuiltInPromptId::CompanionGrowthcycle),
+    )
+    .expect("growth prompt")
+    .expect("growth prompt exists");
+    let applied = crate::CompanionGrowthExecutionCoordinator::new(&database, &scripted)
+        .run(
+            growth.job.id,
+            &growth_prompt,
+            &growth_work.handle,
+            None,
+            TimestampMillis::new(NOW.get() + 101),
+        )
+        .await
+        .expect("execute growth");
+    assert_eq!(applied.applied_facts, 1);
+    assert!(!applied.proposal_replayed);
     let checkpointed = database
-        .commit_companion_growth_proposals(growth.job.id, checkpoint.clone())
-        .expect("checkpoint growth proposals");
-    assert_eq!(checkpointed.proposal_checkpoint, Some(checkpoint));
+        .load_companion_growth_run(growth.job.id)
+        .expect("load checkpointed growth");
+    assert_eq!(
+        checkpointed
+            .proposal_checkpoint
+            .as_ref()
+            .map(|checkpoint| checkpoint.proposals.len()),
+        Some(1)
+    );
+    let replayed_growth =
+        crate::CompanionGrowthExecutionCoordinator::new(&database, &UnavailableInference)
+            .run(
+                growth.job.id,
+                &growth_prompt,
+                &growth_work.handle,
+                None,
+                TimestampMillis::new(NOW.get() + 102),
+            )
+            .await
+            .expect("replay growth without provider");
+    assert_eq!(replayed_growth.receipt, applied.receipt);
+    assert!(replayed_growth.proposal_replayed);
     let after_checkpoint = crate::CompanionGrowthJobAdmissionCoordinator::new(&database, &database)
         .admit_after_memory(&result)
         .expect("replay growth after checkpoint")
         .expect("growth job after checkpoint");
     assert_eq!(after_checkpoint.job.id, growth.job.id);
     assert_eq!(after_checkpoint.run, checkpointed);
+    {
+        let requests = scripted.requests.lock().expect("growth request");
+        let growth_request = requests.last().expect("growth provider request");
+        assert_eq!(growth_request.profile.tool_policy, ToolPolicy::Required);
+        let growth_tools = growth_request.tools.as_ref().expect("growth tools");
+        assert_eq!(growth_tools.definitions.len(), 1);
+        assert_eq!(growth_tools.definitions[0].name, "record_growth");
+        assert!(growth_request.context.messages.iter().any(|message| {
+            message.parts.iter().any(|part| {
+                matches!(part, ProviderContextPart::Text { text } if text.contains("The user missed Mira"))
+            })
+        }));
+    }
+    let stored_soul = SoulRepository::get(
+        &database,
+        lettuce_companions::SoulOwner::Character(growth.run.character_id),
+    )
+    .expect("load grown Soul")
+    .expect("grown Soul");
+    assert_eq!(
+        stored_soul.revision,
+        applied
+            .receipt
+            .as_ref()
+            .expect("receipt")
+            .resulting_revision
+    );
+    assert!(stored_soul.facts.iter().any(|fact| {
+        fact.value == "Prefers tea" && fact.source_memory_ids.as_slice() == [memory_id.to_string()]
+    }));
+    let settled_growth = growth_dispatch
+        .settle(
+            growth_work,
+            Ok(applied),
+            CancellationReason::User,
+            TimestampMillis::new(NOW.get() + 103),
+        )
+        .expect("settle growth job");
+    let crate::CompanionGrowthSettledWork::Succeeded { job, .. } = settled_growth else {
+        panic!("expected succeeded growth job");
+    };
+    assert_eq!(job.state, JobState::Succeeded);
+    assert_eq!(
+        job.outcome,
+        Some(JobOutcome::Success {
+            result_ref: OutcomeRef::Character(growth.run.character_id),
+        })
+    );
     let settled = crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
         .settle_run(
             work,

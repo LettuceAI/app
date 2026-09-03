@@ -29,7 +29,7 @@ persona scope in a non-serializable prepared launch, and the database commits
 the conversation graph, artifacts, operation/outbox, fresh session emotion,
 and carried character/persona relationship in one transaction. Exact launch
 retries revalidate the initial-state request without resetting relationship
-continuity. Group companions and growth scheduling remain deferred.
+continuity. Group companions and group growth scheduling remain deferred.
 
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct
@@ -156,7 +156,13 @@ Successful direct-companion results can now admit one restart-policy
 `CompanionGrowth` job keyed by the durable memory-run ID. Admission freezes the
 successful attempt, resolved memory profile, current Soul revision, character
 owner, and bounded fresh-memory evidence; empty and non-companion results
-create no job. Provider execution and Soul apply remain the next step.
+create no job. A claimed growth job renders the editable growth prompt with the
+frozen legacy values, requires the exact `record_growth` tool, checkpoints the
+first parsed provider proposal, and applies it through the existing Soul policy
+and repository with one stable operation ID. Restart skips inference after the
+checkpoint and exact Soul apply replays its receipt. The same SQLite job claim
+then settles success, cancellation, terminal rejection, or a retryable provider
+or storage failure without changing the already-settled chat or memory run.
 The claimed-job runner composes the existing run admission/recovery,
 first-round inference, bounded execution/continuation loop, and terminal
 settlement into one application path. Prompt/profile/policy inputs and stable

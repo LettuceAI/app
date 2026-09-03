@@ -7,6 +7,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod built_in_prompts;
+mod companion_growth_dispatch;
+mod companion_growth_execution;
 mod companion_growth_job;
 mod companion_memory_continuation;
 mod companion_memory_dispatch;
@@ -33,6 +35,8 @@ mod launch;
 mod provider_runtime;
 
 pub use built_in_prompts::*;
+pub use companion_growth_dispatch::*;
+pub use companion_growth_execution::*;
 pub use companion_growth_job::*;
 pub use companion_memory_continuation::*;
 pub use companion_memory_dispatch::*;

@@ -92,9 +92,6 @@ impl<
             .defaults
             .companion_soul
             .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?;
-        let soul = SoulRepository::get(self.sources, SoulOwner::Character(character_id))
-            .map_err(CompanionGrowthJobAdmissionError::Soul)?
-            .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?;
         let idempotency_key =
             IdempotencyKey::new(format!("companion-growth-{}", result.dispatch.run.id))
                 .map_err(|_| CompanionGrowthJobAdmissionError::InvalidSource)?;
@@ -123,6 +120,22 @@ impl<
                 .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
             )
             .map_err(CompanionGrowthJobAdmissionError::Job)?;
+        if !admitted.created {
+            match self.sources.load_companion_growth_run(admitted.job.id) {
+                Ok(run) => {
+                    return Ok(Some(CompanionGrowthJobAdmission {
+                        run,
+                        job: admitted.job,
+                        created: false,
+                    }));
+                }
+                Err(CompanionGrowthRunRepositoryError::NotFound) => {}
+                Err(error) => return Err(CompanionGrowthJobAdmissionError::Run(error)),
+            }
+        }
+        let soul = SoulRepository::get(self.sources, SoulOwner::Character(character_id))
+            .map_err(CompanionGrowthJobAdmissionError::Soul)?
+            .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?;
         let created_at = result
             .dispatch
             .attempt
