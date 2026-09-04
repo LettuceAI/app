@@ -1,7 +1,8 @@
 use std::str::FromStr;
 
 use lettuce_creation::{
-    LorebookKeywordGenerationRun, LorebookKeywordRunRepository, LorebookKeywordRunRepositoryError,
+    LorebookKeywordAttemptCheckpoint, LorebookKeywordGenerationRun, LorebookKeywordRunRepository,
+    LorebookKeywordRunRepositoryError, validate_lorebook_keyword_attempts,
 };
 use lettuce_types::{
     JobId, ModelProfileId, PromptDocumentId, RequestId, Revision, TimestampMillis,
@@ -11,6 +12,7 @@ use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use crate::{Database, decode_versioned, encode_versioned};
 
 const RUN_FORMAT_VERSION: u32 = 1;
+const ATTEMPTS_FORMAT_VERSION: u32 = 1;
 
 fn failure(_: impl std::fmt::Debug) -> LorebookKeywordRunRepositoryError {
     LorebookKeywordRunRepositoryError::Failure
@@ -73,6 +75,31 @@ fn load_in(
     Ok(Some(run))
 }
 
+fn load_attempts_in(
+    transaction: &Transaction<'_>,
+    request_id: RequestId,
+) -> Result<Option<Vec<LorebookKeywordAttemptCheckpoint>>, LorebookKeywordRunRepositoryError> {
+    let encoded = transaction
+        .query_row(
+            "SELECT attempts_json FROM creation_lorebook_keyword_runs WHERE request_id = ?1",
+            [request_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(corrupt)?;
+    let Some(encoded) = encoded else {
+        return Ok(None);
+    };
+    let attempts = decode_versioned::<Vec<LorebookKeywordAttemptCheckpoint>>(
+        &encoded,
+        ATTEMPTS_FORMAT_VERSION,
+    )
+    .map_err(corrupt)?;
+    validate_lorebook_keyword_attempts(&attempts)
+        .map_err(|_| LorebookKeywordRunRepositoryError::Corrupt)?;
+    Ok(Some(attempts))
+}
+
 impl LorebookKeywordRunRepository for Database {
     fn admit_lorebook_keyword_run(
         &self,
@@ -80,6 +107,11 @@ impl LorebookKeywordRunRepository for Database {
     ) -> Result<LorebookKeywordGenerationRun, LorebookKeywordRunRepositoryError> {
         run.validate()?;
         let encoded = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
+        let attempts = encode_versioned(
+            &Vec::<LorebookKeywordAttemptCheckpoint>::new(),
+            ATTEMPTS_FORMAT_VERSION,
+        )
+        .map_err(failure)?;
         let mut connection = self.connection().map_err(failure)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -88,8 +120,8 @@ impl LorebookKeywordRunRepository for Database {
             .execute(
                 "INSERT OR IGNORE INTO creation_lorebook_keyword_runs (
                    request_id, job_id, model_profile_id, prompt_id, prompt_revision, created_at,
-                   run_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                   run_json, attempts_json
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     run.request_id.to_string(),
                     run.job_id.to_string(),
@@ -98,6 +130,7 @@ impl LorebookKeywordRunRepository for Database {
                     i64::try_from(run.prompt_revision.get()).map_err(failure)?,
                     run.created_at.get(),
                     encoded,
+                    attempts,
                 ],
             )
             .map_err(failure)?;
@@ -122,5 +155,65 @@ impl LorebookKeywordRunRepository for Database {
             .ok_or(LorebookKeywordRunRepositoryError::NotFound)?;
         transaction.commit().map_err(failure)?;
         Ok(run)
+    }
+
+    fn load_lorebook_keyword_attempts(
+        &self,
+        request_id: RequestId,
+    ) -> Result<Vec<LorebookKeywordAttemptCheckpoint>, LorebookKeywordRunRepositoryError> {
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(failure)?;
+        let attempts = load_attempts_in(&transaction, request_id)?
+            .ok_or(LorebookKeywordRunRepositoryError::NotFound)?;
+        transaction.commit().map_err(failure)?;
+        Ok(attempts)
+    }
+
+    fn commit_lorebook_keyword_attempt(
+        &self,
+        request_id: RequestId,
+        checkpoint: LorebookKeywordAttemptCheckpoint,
+    ) -> Result<Vec<LorebookKeywordAttemptCheckpoint>, LorebookKeywordRunRepositoryError> {
+        checkpoint.validate()?;
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let mut attempts = load_attempts_in(&transaction, request_id)?
+            .ok_or(LorebookKeywordRunRepositoryError::NotFound)?;
+        if let Some(stored) = attempts.get(usize::from(checkpoint.ordinal)) {
+            if stored == &checkpoint {
+                transaction.commit().map_err(failure)?;
+                return Ok(attempts);
+            }
+            return Err(LorebookKeywordRunRepositoryError::Conflict);
+        }
+        if usize::from(checkpoint.ordinal) != attempts.len()
+            || attempts.last().is_some_and(|attempt| {
+                !matches!(
+                    attempt.decision,
+                    lettuce_creation::LorebookKeywordAttemptDecision::StructuredFallback
+                )
+            })
+        {
+            return Err(LorebookKeywordRunRepositoryError::Conflict);
+        }
+        attempts.push(checkpoint);
+        validate_lorebook_keyword_attempts(&attempts)?;
+        let encoded = encode_versioned(&attempts, ATTEMPTS_FORMAT_VERSION).map_err(failure)?;
+        if transaction
+            .execute(
+                "UPDATE creation_lorebook_keyword_runs SET attempts_json = ?2 WHERE request_id = ?1",
+                params![request_id.to_string(), encoded],
+            )
+            .map_err(failure)?
+            != 1
+        {
+            return Err(LorebookKeywordRunRepositoryError::Conflict);
+        }
+        transaction.commit().map_err(failure)?;
+        Ok(attempts)
     }
 }

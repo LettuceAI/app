@@ -52,7 +52,10 @@ Keyword-draft preparation separately freezes the legacy title/content,
 existing-keyword, and direction values with the active keyword prompt and
 resolved text profile, then admits one restart-safe request-owned creation job.
 Exact replay returns the same run and changed replay conflicts; provider
-execution remains separate and no lorebook is mutated.
+execution uses the exact required native contract and one same-profile
+structured fallback, checkpoints usage and provider diagnostics, and settles
+the generic job. Completed keyword drafts replay without dispatch and no
+lorebook is mutated.
 
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct

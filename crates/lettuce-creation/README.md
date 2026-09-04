@@ -144,5 +144,7 @@ The keyword draft's pure legacy contract is also preserved: one required
 fallback prompts, first matching writer-call selection, and first-spelling
 case-insensitive deduplication capped at 24 keywords. Its immutable run freezes
 the resolved profile, active prompt revision, exact prepared values, fallback
-format, and generic job identity. Provider execution remains the next keyword
-slice; none of these contracts mutate a lorebook.
+format, and generic job identity. Native and optional one-fallback decisions
+are immutable checkpoints with usage/provider diagnostics, allowing completed
+drafts to replay without another provider request. None of these contracts
+mutate a lorebook.

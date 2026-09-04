@@ -70,6 +70,114 @@ pub trait LorebookKeywordRunRepository: Send + Sync {
         &self,
         request_id: RequestId,
     ) -> Result<LorebookKeywordGenerationRun, LorebookKeywordRunRepositoryError>;
+
+    fn load_lorebook_keyword_attempts(
+        &self,
+        request_id: RequestId,
+    ) -> Result<Vec<LorebookKeywordAttemptCheckpoint>, LorebookKeywordRunRepositoryError>;
+
+    fn commit_lorebook_keyword_attempt(
+        &self,
+        request_id: RequestId,
+        checkpoint: LorebookKeywordAttemptCheckpoint,
+    ) -> Result<Vec<LorebookKeywordAttemptCheckpoint>, LorebookKeywordRunRepositoryError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LorebookKeywordAttemptKind {
+    Native,
+    StructuredFallback,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum LorebookKeywordAttemptDecision {
+    Result(LorebookKeywordDraft),
+    StructuredFallback,
+    Invalid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookKeywordAttemptUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookKeywordAttemptCheckpoint {
+    pub ordinal: u8,
+    pub attempt_kind: LorebookKeywordAttemptKind,
+    pub calls: Vec<ProposedToolCall>,
+    pub decision: LorebookKeywordAttemptDecision,
+    pub usage: Option<LorebookKeywordAttemptUsage>,
+    pub provider_finish_reason: Option<String>,
+    pub provider_request_id: Option<String>,
+    pub completed_at: TimestampMillis,
+}
+
+impl LorebookKeywordAttemptCheckpoint {
+    pub fn validate(&self) -> Result<(), LorebookKeywordRunRepositoryError> {
+        let expected = match self.ordinal {
+            0 => LorebookKeywordAttemptKind::Native,
+            1 => LorebookKeywordAttemptKind::StructuredFallback,
+            _ => return Err(LorebookKeywordRunRepositoryError::Invalid),
+        };
+        if self.attempt_kind != expected
+            || self.completed_at.get() < 0
+            || self.calls.iter().any(|call| {
+                call.provider_replay.is_some()
+                    || call.validate().is_err()
+                    || self.attempt_kind != LorebookKeywordAttemptKind::Native
+            })
+            || (self.attempt_kind == LorebookKeywordAttemptKind::StructuredFallback
+                && matches!(
+                    self.decision,
+                    LorebookKeywordAttemptDecision::StructuredFallback
+                ))
+            || matches!(&self.decision, LorebookKeywordAttemptDecision::Result(result) if !keywords_are_normalized(&result.keywords))
+        {
+            return Err(LorebookKeywordRunRepositoryError::Invalid);
+        }
+        Ok(())
+    }
+}
+
+pub fn validate_lorebook_keyword_attempts(
+    attempts: &[LorebookKeywordAttemptCheckpoint],
+) -> Result<(), LorebookKeywordRunRepositoryError> {
+    if attempts.len() > 2 {
+        return Err(LorebookKeywordRunRepositoryError::Invalid);
+    }
+    for (ordinal, attempt) in attempts.iter().enumerate() {
+        attempt.validate()?;
+        if usize::from(attempt.ordinal) != ordinal
+            || (ordinal == 1
+                && !matches!(
+                    attempts[0].decision,
+                    LorebookKeywordAttemptDecision::StructuredFallback
+                ))
+        {
+            return Err(LorebookKeywordRunRepositoryError::Invalid);
+        }
+    }
+    Ok(())
+}
+
+fn keywords_are_normalized(keywords: &[String]) -> bool {
+    if keywords.len() > MAX_GENERATED_LOREBOOK_KEYWORDS
+        || keywords
+            .iter()
+            .any(|keyword| keyword.is_empty() || keyword != keyword.trim())
+    {
+        return false;
+    }
+    let mut seen = HashSet::with_capacity(keywords.len());
+    keywords
+        .iter()
+        .all(|keyword| seen.insert(keyword.to_ascii_lowercase()))
 }
 
 impl LorebookKeywordGenerationRun {

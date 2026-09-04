@@ -3678,8 +3678,8 @@ fn lorebook_entry_admission_binds_one_restart_safe_creation_job() {
     ));
 }
 
-#[test]
-fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
+#[tokio::test]
+async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
     let database = database_with_builtins();
     let model_id = seed_model(&database, ProviderProtocol::Ollama, "lorebook-keyword");
     let mut stored_profile = ModelProfileRepository::get(&database, model_id)
@@ -3770,6 +3770,191 @@ fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
         Err(crate::LorebookKeywordAdmissionError::Run(
             lettuce_creation::LorebookKeywordRunRepositoryError::Conflict
         ))
+    ));
+
+    let dispatcher = crate::LorebookKeywordDispatchCoordinator::new(&database, &database);
+    let native_work = dispatcher
+        .claim(
+            request_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 3),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim keyword run")
+        .expect("keyword work");
+    let handle = native_work.handle.clone();
+    let native_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: Vec::new(),
+                tool_calls: vec![ProposedToolCall {
+                    provider_call_id: Some("keyword-native".into()),
+                    name: "write_lorebook_keywords".into(),
+                    arguments: serde_json::json!({
+                        "keywords": [" Harbour ", "harbour", "Brass Key"]
+                    }),
+                    raw_arguments: None,
+                    provider_replay: None,
+                }],
+                provider_replay: None,
+            }],
+            usage: Some(InferenceUsage {
+                input_tokens: 20,
+                output_tokens: 5,
+            }),
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: Some("tool_calls".into()),
+            provider_request_id: Some("keyword-native-request".into()),
+            warning_codes: Vec::new(),
+        }])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let executor = crate::LorebookKeywordExecutionCoordinator::new(&database, &native_inference);
+    let result = executor
+        .run(
+            request_id,
+            &prompt,
+            &handle,
+            None,
+            TimestampMillis::new(NOW.get() + 4),
+        )
+        .await
+        .expect("execute native keywords");
+    assert_eq!(result.result.keywords, ["Harbour", "Brass Key"]);
+    assert_eq!(result.attempts, 1);
+    assert!(!result.replayed);
+    let replayed = executor
+        .run(
+            request_id,
+            &prompt,
+            &handle,
+            None,
+            TimestampMillis::new(NOW.get() + 5),
+        )
+        .await
+        .expect("replay native keywords");
+    assert!(replayed.replayed);
+    {
+        let requests = native_inference.requests.lock().expect("keyword requests");
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].tools.is_some());
+        assert!(
+            requests[0]
+                .context
+                .messages
+                .last()
+                .is_some_and(|message| matches!(
+                    message.parts.as_slice(),
+                    [ProviderContextPart::Text { text }]
+                        if text == lettuce_creation::LOREBOOK_KEYWORD_FINAL_INSTRUCTION
+                ))
+        );
+    }
+    assert!(matches!(
+        dispatcher
+            .settle(
+                native_work,
+                Ok(result),
+                CancellationReason::User,
+                TimestampMillis::new(NOW.get() + 6),
+            )
+            .expect("settle keywords"),
+        crate::LorebookKeywordSettledWork::Succeeded { .. }
+    ));
+
+    let fallback_request_id = RequestId::new();
+    let mut fallback_request = make_request();
+    fallback_request.request_id = fallback_request_id;
+    let fallback_admitted = coordinator
+        .prepare_and_admit(fallback_request)
+        .expect("admit fallback keywords");
+    let fallback_work = dispatcher
+        .claim(
+            fallback_request_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 7),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim fallback keywords")
+        .expect("fallback keyword work");
+    let fallback_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([
+            InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: vec![MessagePart::Text {
+                        text: "none".into(),
+                    }],
+                    tool_calls: Vec::new(),
+                    provider_replay: None,
+                }],
+                usage: None,
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: Some("stop".into()),
+                provider_request_id: Some("keyword-primary-empty".into()),
+                warning_codes: Vec::new(),
+            },
+            InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: vec![MessagePart::Text {
+                        text: serde_json::json!({"result": {
+                            "name": "write_lorebook_keywords",
+                            "arguments": {"keywords": ["Ada", "ada", "Harbour Key"]}
+                        }})
+                        .to_string(),
+                    }],
+                    tool_calls: Vec::new(),
+                    provider_replay: None,
+                }],
+                usage: Some(InferenceUsage {
+                    input_tokens: 22,
+                    output_tokens: 6,
+                }),
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: Some("stop".into()),
+                provider_request_id: Some("keyword-fallback".into()),
+                warning_codes: Vec::new(),
+            },
+        ])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let fallback = crate::LorebookKeywordExecutionCoordinator::new(&database, &fallback_inference)
+        .run(
+            fallback_request_id,
+            &prompt,
+            &fallback_work.handle,
+            None,
+            TimestampMillis::new(NOW.get() + 8),
+        )
+        .await
+        .expect("execute fallback keywords");
+    assert_eq!(fallback.result.keywords, ["Ada", "Harbour Key"]);
+    assert_eq!(fallback.attempts, 2);
+    assert_eq!(
+        lettuce_creation::LorebookKeywordRunRepository::load_lorebook_keyword_attempts(
+            &database,
+            fallback_admitted.run.request_id,
+        )
+        .expect("keyword attempts")[1]
+            .usage
+            .as_ref()
+            .map(|usage| usage.output_tokens),
+        Some(6)
+    );
+    assert!(matches!(
+        dispatcher
+            .settle(
+                fallback_work,
+                Ok(fallback),
+                CancellationReason::User,
+                TimestampMillis::new(NOW.get() + 9),
+            )
+            .expect("settle fallback keywords"),
+        crate::LorebookKeywordSettledWork::Succeeded { .. }
     ));
 }
 
