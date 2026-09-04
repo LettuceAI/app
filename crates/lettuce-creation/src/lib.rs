@@ -4,6 +4,7 @@
 
 mod attempt;
 mod lorebook_entry;
+mod lorebook_keyword;
 mod model;
 mod port;
 mod proposal;
@@ -19,6 +20,7 @@ pub use attempt::{
     NewCreationTurnAttempt, creation_inference_profile_fingerprint,
 };
 pub use lorebook_entry::*;
+pub use lorebook_keyword::*;
 pub use model::{
     ConfirmedCharacterApply, ConfirmedCharacterRevisionApply, ConfirmedLorebookApply,
     ConfirmedLorebookRevisionApply, ConfirmedPersonaApply, ConfirmedPersonaRevisionApply,
