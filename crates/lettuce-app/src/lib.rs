@@ -46,6 +46,8 @@ mod lorebook_keyword_dispatch;
 mod lorebook_keyword_execution;
 mod lorebook_keyword_job;
 mod provider_runtime;
+mod staged_lorebook_dispatch;
+mod staged_lorebook_execution;
 mod staged_lorebook_job;
 
 pub use built_in_prompts::*;
@@ -88,6 +90,8 @@ pub use lorebook_keyword_dispatch::*;
 pub use lorebook_keyword_execution::*;
 pub use lorebook_keyword_job::*;
 pub use provider_runtime::*;
+pub use staged_lorebook_dispatch::*;
+pub use staged_lorebook_execution::*;
 pub use staged_lorebook_job::*;
 
 #[cfg(test)]

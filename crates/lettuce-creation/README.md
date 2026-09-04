@@ -154,8 +154,10 @@ The staged generator now has its first pure state slice: the exact legacy
 outline identities, owned source references, and legal created-to-planning-to-
 outline-review transitions. The created/planning project is persisted with its
 planner profile, prompt revision, and generic job identity; exact admission and
-created-to-planning CAS retries are restart-safe. Source extraction, provider
-planning, drafting, coherence, and final apply remain explicit later slices.
+created-to-planning CAS retries are restart-safe. The planner's single native
+attempt, typed calls, reduced decision, usage, and provider diagnostics are
+durable before outline settlement. Source extraction, drafting, coherence, and
+final apply remain explicit later slices.
 
 The planner's exact required `propose_lorebook_outline` declaration and final
 instruction are copied from legacy. Reduction selects the first matching call,

@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
 use lettuce_creation::{
-    StagedLorebookPlanningRun, StagedLorebookRepository, StagedLorebookRepositoryError,
-    StagedLorebookStage,
+    StagedLorebookPlannerAttempt, StagedLorebookPlanningRun, StagedLorebookRepository,
+    StagedLorebookRepositoryError, StagedLorebookStage,
 };
 use lettuce_types::{
     CreationWorkflowId, JobId, ModelProfileId, PromptDocumentId, RequestId, Revision,
@@ -256,6 +256,52 @@ impl StagedLorebookRepository for Database {
                     now.get(),
                     encoded,
                     i64::try_from(expected_revision.get()).map_err(failure)?,
+                ],
+            )
+            .map_err(failure)?
+            != 1
+        {
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        transaction.commit().map_err(failure)?;
+        Ok(next)
+    }
+
+    fn commit_staged_lorebook_planner_attempt(
+        &self,
+        request_id: RequestId,
+        attempt: StagedLorebookPlannerAttempt,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let current =
+            load_in(&transaction, request_id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
+        attempt.validate(&current.project)?;
+        if let Some(stored) = &current.planner_attempt {
+            if stored == &attempt {
+                transaction.commit().map_err(failure)?;
+                return Ok(current);
+            }
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        if current.project.stage != StagedLorebookStage::Planning
+            || current.project.revision != attempt.project_revision
+        {
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        let mut next = current;
+        next.planner_attempt = Some(attempt);
+        let encoded = encode_versioned(&next, RUN_FORMAT_VERSION).map_err(failure)?;
+        if transaction
+            .execute(
+                "UPDATE creation_staged_lorebook_runs SET run_json = ?2
+                 WHERE request_id = ?1 AND revision = ?3 AND stage = 'planning'",
+                params![
+                    request_id.to_string(),
+                    encoded,
+                    i64::try_from(next.project.revision.get()).map_err(failure)?,
                 ],
             )
             .map_err(failure)?

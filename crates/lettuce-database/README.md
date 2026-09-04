@@ -229,6 +229,10 @@ Migration 11 also stores immutable single-entry lorebook-generation runs. Each
 request is bound to one generic creation job plus the real conversation,
 lorebook, character/persona, model profile, and prompt revision; the complete
 frozen request remains versioned JSON and exact replay rejects any drift.
+Staged lorebook planner runs use the same migration to persist the frozen
+project/profile/prompt boundary and its single immutable provider attempt.
+Attempt persistence precedes the atomic planning-to-outline-review CAS, so a
+restart cannot redispatch a completed planner request.
 Prepared companion sends reuse the conversation send transaction: the user
 message, generation turn/attempt, companion session and relationship revisions,
 operation, and outbox commit together. A stale state CAS or hook failure rolls

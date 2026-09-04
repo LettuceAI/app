@@ -59,11 +59,14 @@ lorebook is mutated.
 Staged lorebook admission accepts only already-extracted bounded excerpts,
 freezes the resolved planner profile and active planner prompt, and persists one
 stable project with a generic restart-safe creation job. Exact admission and
-created-to-planning CAS replay without duplicating state; extraction and
-provider planning remain separate.
-Planner-call settlement reduces the copied required contract and atomically
-persists the stable outline with the planning-to-outline-review CAS transition;
-exact settlement replay returns the same project without duplicating state.
+created-to-planning CAS replay without duplicating state; source extraction
+remains a separate input boundary.
+Claimed planner execution renders the frozen prompt with the exact legacy
+brief, decimal target count, source-excerpt formatting, final instruction, and
+required tool declaration. It makes one native request, accepts only typed tool
+calls, durably checkpoints calls, usage, and provider diagnostics, then applies
+the planning-to-outline-review CAS. Restart replays that checkpoint without
+redispatch, and the planner job succeeds while the project waits for review.
 
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct

@@ -3958,8 +3958,8 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
     ));
 }
 
-#[test]
-fn staged_lorebook_admission_and_planning_are_restart_safe() {
+#[tokio::test]
+async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let database = database_with_builtins();
     let model_id = seed_model(&database, ProviderProtocol::Ollama, "staged-lorebook");
     let mut stored_profile = ModelProfileRepository::get(&database, model_id)
@@ -4059,23 +4059,57 @@ fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .expect("replay start planning"),
         planning
     );
-    let planner_calls = vec![ProposedToolCall {
-        provider_call_id: Some("planner-outline".into()),
-        name: lettuce_creation::STAGED_LOREBOOK_PLANNER_TOOL_NAME.into(),
-        arguments: serde_json::json!({"entries": [{
-            "title": " Harbour Key ",
-            "category": "item",
-            "proposedKeys": ["harbour key"],
-            "rationale": "Recurring object",
-            "sourceRefs": ["src_01"]
-        }]}),
-        raw_arguments: None,
-        provider_replay: None,
-    }];
+    let inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: Vec::new(),
+                tool_calls: vec![ProposedToolCall {
+                    provider_call_id: Some("planner-outline".into()),
+                    name: lettuce_creation::STAGED_LOREBOOK_PLANNER_TOOL_NAME.into(),
+                    arguments: serde_json::json!({"entries": [{
+                        "title": " Harbour Key ",
+                        "category": "item",
+                        "proposedKeys": ["harbour key"],
+                        "rationale": "Recurring object",
+                        "sourceRefs": ["src_01"]
+                    }]}),
+                    raw_arguments: None,
+                    provider_replay: None,
+                }],
+                provider_replay: None,
+            }],
+            usage: Some(InferenceUsage {
+                input_tokens: 40,
+                output_tokens: 10,
+            }),
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: Some("tool_calls".into()),
+            provider_request_id: Some("planner-request".into()),
+            warning_codes: Vec::new(),
+        }])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let dispatcher = crate::StagedLorebookPlannerDispatchCoordinator::new(&database, &database);
+    let work = dispatcher
+        .claim(
+            request_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 4),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim planner")
+        .expect("planner work");
+    let handle = work.handle.clone();
+    let executor = crate::StagedLorebookPlannerExecutionCoordinator::new(&database, &inference);
     let outlined_at = TimestampMillis::new(NOW.get() + 4);
-    let outlined = coordinator
-        .settle_planner_calls(request_id, Revision::new(2), &planner_calls, outlined_at)
-        .expect("settle planner outline");
+    let result = executor
+        .run(request_id, &prompt, &handle, None, outlined_at)
+        .await
+        .expect("execute planner");
+    assert!(!result.replayed);
+    let outlined = result.run.clone();
     assert_eq!(
         outlined.project.stage,
         lettuce_creation::StagedLorebookStage::AwaitingOutlineApproval
@@ -4083,11 +4117,68 @@ fn staged_lorebook_admission_and_planning_are_restart_safe() {
     assert_eq!(outlined.project.revision, Revision::new(3));
     assert_eq!(outlined.project.outline[0].title, "Harbour Key");
     assert_eq!(
-        coordinator
-            .settle_planner_calls(request_id, Revision::new(2), &planner_calls, outlined_at)
-            .expect("replay planner outline"),
         outlined
+            .planner_attempt
+            .as_ref()
+            .and_then(|attempt| attempt.usage.as_ref())
+            .map(|usage| (usage.input_tokens, usage.output_tokens)),
+        Some((40, 10))
     );
+    {
+        let requests = inference.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].profile.tool_policy, ToolPolicy::Required);
+        assert_eq!(
+            requests[0]
+                .tools
+                .as_ref()
+                .expect("planner tools")
+                .definitions[0]
+                .name,
+            lettuce_creation::STAGED_LOREBOOK_PLANNER_TOOL_NAME
+        );
+        let rendered_text = requests[0]
+            .context
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                ProviderContextPart::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered_text.contains("Harbour world"));
+        assert!(rendered_text.contains("[src_01] Notes\nAda keeps the harbour key."));
+        assert!(
+            rendered_text.contains(lettuce_creation::STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION)
+        );
+    }
+    let replayed = executor
+        .run(
+            request_id,
+            &prompt,
+            &handle,
+            None,
+            TimestampMillis::new(NOW.get() + 5),
+        )
+        .await
+        .expect("replay planner checkpoint");
+    assert!(replayed.replayed);
+    assert_eq!(replayed.run, outlined);
+    assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+    assert!(matches!(
+        dispatcher
+            .settle(
+                work,
+                Ok(result),
+                CancellationReason::User,
+                TimestampMillis::new(NOW.get() + 5),
+            )
+            .expect("settle planner job"),
+        crate::StagedLorebookPlannerSettledWork::Succeeded { ref job, .. }
+            if job.state == JobState::Succeeded
+    ));
     assert!(matches!(
         coordinator.start_planning(
             request_id,
@@ -4098,6 +4189,68 @@ fn staged_lorebook_admission_and_planning_are_restart_safe() {
             lettuce_creation::StagedLorebookRepositoryError::Conflict
         ))
     ));
+
+    let cancelled_request_id = RequestId::new();
+    let mut cancelled_request = make_request();
+    cancelled_request.request_id = cancelled_request_id;
+    cancelled_request.project_id = lettuce_types::CreationWorkflowId::new();
+    cancelled_request.now = TimestampMillis::new(NOW.get() + 6);
+    coordinator
+        .admit(cancelled_request)
+        .expect("admit cancelled planner");
+    coordinator
+        .start_planning(
+            cancelled_request_id,
+            Revision::new(1),
+            TimestampMillis::new(NOW.get() + 7),
+        )
+        .expect("start cancelled planner");
+    let cancelled_work = dispatcher
+        .claim(
+            cancelled_request_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 8),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim cancelled planner")
+        .expect("cancelled planner work");
+    cancelled_work.handle.request_cancel();
+    let cancelled_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::new()),
+        requests: Mutex::new(Vec::new()),
+    };
+    let cancelled_executor =
+        crate::StagedLorebookPlannerExecutionCoordinator::new(&database, &cancelled_inference);
+    let cancelled = cancelled_executor
+        .run(
+            cancelled_request_id,
+            &prompt,
+            &cancelled_work.handle,
+            None,
+            TimestampMillis::new(NOW.get() + 9),
+        )
+        .await
+        .expect_err("cancel before provider dispatch");
+    assert!(matches!(
+        dispatcher
+            .settle(
+                cancelled_work,
+                Err(cancelled),
+                CancellationReason::User,
+                TimestampMillis::new(NOW.get() + 9),
+            )
+            .expect("settle cancelled planner"),
+        crate::StagedLorebookPlannerSettledWork::Cancelled { ref job, .. }
+            if job.state == JobState::Cancelled
+    ));
+    assert!(
+        cancelled_inference
+            .requests
+            .lock()
+            .expect("requests")
+            .is_empty()
+    );
 }
 
 #[tokio::test]

@@ -196,6 +196,34 @@ pub struct StagedLorebookPlanningRun {
     pub planner_profile: ResolvedInferenceProfile,
     pub planner_prompt_id: PromptDocumentId,
     pub planner_prompt_revision: Revision,
+    #[serde(default)]
+    pub planner_attempt: Option<StagedLorebookPlannerAttempt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum StagedLorebookPlannerDecision {
+    Outline(Vec<StagedLorebookEntryPlan>),
+    Invalid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookPlannerUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookPlannerAttempt {
+    pub project_revision: Revision,
+    pub calls: Vec<ProposedToolCall>,
+    pub decision: StagedLorebookPlannerDecision,
+    pub usage: Option<StagedLorebookPlannerUsage>,
+    pub provider_finish_reason: Option<String>,
+    pub provider_request_id: Option<String>,
+    pub completed_at: TimestampMillis,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -237,6 +265,12 @@ pub trait StagedLorebookRepository: Send + Sync {
         outline: Vec<StagedLorebookEntryPlan>,
         now: TimestampMillis,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn commit_staged_lorebook_planner_attempt(
+        &self,
+        request_id: RequestId,
+        attempt: StagedLorebookPlannerAttempt,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
 }
 
 impl StagedLorebookPlanningRun {
@@ -246,6 +280,29 @@ impl StagedLorebookPlanningRun {
             .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
         if self.planner_prompt_revision.get() == 0
             || serde_json::to_vec(&self.planner_profile).is_err()
+            || self
+                .planner_attempt
+                .as_ref()
+                .is_some_and(|attempt| attempt.validate(&self.project).is_err())
+        {
+            return Err(StagedLorebookRepositoryError::Invalid);
+        }
+        Ok(())
+    }
+}
+
+impl StagedLorebookPlannerAttempt {
+    pub fn validate(
+        &self,
+        project: &StagedLorebookProject,
+    ) -> Result<(), StagedLorebookRepositoryError> {
+        if self.project_revision.get() == 0
+            || self.completed_at.get() < 0
+            || self
+                .calls
+                .iter()
+                .any(|call| call.provider_replay.is_some() || call.validate().is_err())
+            || matches!(&self.decision, StagedLorebookPlannerDecision::Outline(outline) if validate_outline(outline, &project.excerpts).is_err())
         {
             return Err(StagedLorebookRepositoryError::Invalid);
         }
