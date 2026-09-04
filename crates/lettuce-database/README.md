@@ -256,6 +256,9 @@ project-revision CAS. Exact settlement replay is restart-safe.
 Coherence proposal submission and accepted-change application are project-row
 CAS operations as well. The application receipt retains the exact accepted-ID
 list so changed stale retries cannot masquerade as exact replay.
+Coherence admissions and attempts are retained in the versioned staged-project
+document before the separate proposal CAS. Multiple review cycles keep their
+own immutable request/job evidence instead of overwriting an earlier run.
 Prepared companion sends reuse the conversation send transaction: the user
 message, generation turn/attempt, companion session and relationship revisions,
 operation, and outbox commit together. A stale state CAS or hook failure rolls

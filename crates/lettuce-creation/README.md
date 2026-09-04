@@ -195,6 +195,9 @@ reduction, stable change IDs, and four proposal kinds. Accepted changes apply in
 proposal order with the same ASCII-insensitive key removal, literal term
 replacement, contradiction no-op, and always-active toggle behavior; rejected
 changes are discarded when review returns to drafts-ready.
+Each coherence run can retain one immutable native attempt with typed calls,
+proposal-or-invalid decision, usage, and provider diagnostics before proposal
+submission mutates the project.
 Each pending staged draft can now be represented by an immutable writer run
 that freezes its stable project/plan identity, project revision, resolved
 profile, writer prompt revision, exact rendered-input values, and generic job

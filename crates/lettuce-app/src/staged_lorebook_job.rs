@@ -1,9 +1,9 @@
 use lettuce_context::{LifecycleStatus, PromptDocument, PromptPurpose};
 use lettuce_conversations::ResolvedInferenceProfile;
 use lettuce_creation::{
-    StagedLorebookCoherenceChange, StagedLorebookDraftEdit, StagedLorebookPlanningRun,
-    StagedLorebookProject, StagedLorebookRepository, StagedLorebookRepositoryError,
-    StagedLorebookSourceExcerpt,
+    StagedLorebookCoherenceChange, StagedLorebookCoherenceRun, StagedLorebookDraftEdit,
+    StagedLorebookEntryDraft, StagedLorebookPlanningRun, StagedLorebookProject,
+    StagedLorebookRepository, StagedLorebookRepositoryError, StagedLorebookSourceExcerpt,
 };
 use lettuce_jobs::{
     CancellationPolicy, IdempotencyKey, JobKind, JobPriority, JobSnapshot, JobSpec, JobStore,
@@ -27,6 +27,22 @@ pub struct StagedLorebookAdmissionRequest<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StagedLorebookAdmission {
+    pub run: StagedLorebookPlanningRun,
+    pub job: JobSnapshot,
+    pub created: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct StagedLorebookCoherenceRequest<'a> {
+    pub request_id: RequestId,
+    pub project_request_id: RequestId,
+    pub profile: ResolvedInferenceProfile,
+    pub prompt: &'a PromptDocument,
+    pub now: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StagedLorebookCoherenceAdmission {
     pub run: StagedLorebookPlanningRun,
     pub job: JobSnapshot,
     pub created: bool,
@@ -205,6 +221,139 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             )
             .map_err(Into::into)
     }
+
+    pub fn admit_coherence(
+        &self,
+        request: StagedLorebookCoherenceRequest<'_>,
+    ) -> Result<StagedLorebookCoherenceAdmission, StagedLorebookAdmissionError> {
+        validate_coherence_request(&request)?;
+        let project = self
+            .repository
+            .load_staged_lorebook(request.project_request_id)?;
+        if let Some(stored) = project
+            .coherence_runs
+            .iter()
+            .find(|run| run.request_id == request.request_id)
+        {
+            if !same_coherence_request(stored, &request) {
+                return Err(StagedLorebookRepositoryError::Conflict.into());
+            }
+            let job = self
+                .jobs
+                .get(stored.job_id)?
+                .ok_or(StagedLorebookAdmissionError::InvalidInput)?;
+            return Ok(StagedLorebookCoherenceAdmission {
+                run: project,
+                job,
+                created: false,
+            });
+        }
+        if project.project.stage != lettuce_creation::StagedLorebookStage::DraftsReady {
+            return Err(StagedLorebookAdmissionError::InvalidInput);
+        }
+        let admitted = self.jobs.create_or_get(
+            JobSpec::new(
+                JobKind::CreationRun,
+                JobSubject::new(SubjectKind::CreationProject, project.project.id.to_string())
+                    .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
+                OutcomeRef::Request(request.request_id),
+            )
+            .with_idempotency_key(
+                IdempotencyKey::new(format!("staged-lorebook-coherence-{}", request.request_id))
+                    .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
+            )
+            .with_resources(vec![
+                ResourceClass::Network,
+                ResourceClass::ModelLoad,
+                ResourceClass::DiskRead,
+                ResourceClass::DiskWrite,
+                ResourceClass::Cpu,
+            ])
+            .with_priority(JobPriority::Interactive)
+            .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
+        )?;
+        let coherence = StagedLorebookCoherenceRun {
+            request_id: request.request_id,
+            job_id: admitted.job.id,
+            project_revision: project.project.revision,
+            profile: request.profile,
+            prompt_id: request.prompt.id,
+            prompt_revision: request.prompt.revision,
+            drafted_entries: format_drafted_entries(&project.project.drafts),
+            created_at: request.now,
+            attempt: None,
+        };
+        let run = self
+            .repository
+            .admit_staged_lorebook_coherence(request.project_request_id, coherence)?;
+        Ok(StagedLorebookCoherenceAdmission {
+            run,
+            job: admitted.job,
+            created: admitted.created,
+        })
+    }
+}
+
+fn validate_coherence_request(
+    request: &StagedLorebookCoherenceRequest<'_>,
+) -> Result<(), StagedLorebookAdmissionError> {
+    if request.prompt.status != LifecycleStatus::Active
+        || request.prompt.purpose != PromptPurpose::LorebookGeneratorCoherence
+        || request
+            .profile
+            .chat_profile
+            .capabilities
+            .input_modalities
+            .get(Modality::Text)
+            != CapabilityStatus::Supported
+        || request
+            .profile
+            .chat_profile
+            .capabilities
+            .output_modalities
+            .get(Modality::Text)
+            != CapabilityStatus::Supported
+    {
+        return Err(StagedLorebookAdmissionError::InvalidInput);
+    }
+    Ok(())
+}
+
+fn same_coherence_request(
+    run: &StagedLorebookCoherenceRun,
+    request: &StagedLorebookCoherenceRequest<'_>,
+) -> bool {
+    run.request_id == request.request_id
+        && run.profile == request.profile
+        && run.prompt_id == request.prompt.id
+        && run.prompt_revision == request.prompt.revision
+        && run.created_at == request.now
+}
+
+fn format_drafted_entries(drafts: &[StagedLorebookEntryDraft]) -> String {
+    if drafts.is_empty() {
+        return "(none)".to_owned();
+    }
+    drafts
+        .iter()
+        .enumerate()
+        .map(|(index, draft)| {
+            format!(
+                "Entry {} (idx {}): \"{}\"\nKeys: {}\nAlwaysActive: {}\nContent: {}",
+                index + 1,
+                index,
+                draft.title,
+                if draft.keywords.is_empty() {
+                    "(none)".to_owned()
+                } else {
+                    draft.keywords.join(", ")
+                },
+                draft.always_active,
+                draft.content,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n---\n\n")
 }
 
 fn same_admission(
@@ -262,6 +411,7 @@ fn run_from(
         planner_prompt_id: request.planner_prompt.id,
         planner_prompt_revision: request.planner_prompt.revision,
         planner_attempt: None,
+        coherence_runs: Vec::new(),
     }
 }
 

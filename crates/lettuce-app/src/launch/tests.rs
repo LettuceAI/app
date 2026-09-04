@@ -4769,6 +4769,146 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         ))
     ));
 
+    let coherence_prompt_id = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(TimestampMillis::new(NOW.get() + 23))
+        .expect("prompt ids")
+        .get(BuiltInPromptId::LorebookGeneratorCoherence);
+    let coherence_prompt = PromptRepository::get(&database, coherence_prompt_id)
+        .expect("coherence prompt")
+        .expect("coherence prompt exists");
+    let coherence_request_id = RequestId::new();
+    let coherence_request = crate::StagedLorebookCoherenceRequest {
+        request_id: coherence_request_id,
+        project_request_id: request_id,
+        profile: profile.clone(),
+        prompt: &coherence_prompt,
+        now: TimestampMillis::new(NOW.get() + 23),
+    };
+    let admitted_coherence = coordinator
+        .admit_coherence(coherence_request.clone())
+        .expect("admit coherence inference");
+    assert!(admitted_coherence.created);
+    let coherence_run = admitted_coherence
+        .run
+        .coherence_runs
+        .iter()
+        .find(|run| run.request_id == coherence_request_id)
+        .expect("coherence run");
+    assert_eq!(coherence_run.project_revision, Revision::new(12));
+    assert_eq!(
+        coherence_run.drafted_entries,
+        "Entry 1 (idx 0): \"Precise title\"\nKeys: harbour, fact\nAlwaysActive: false\nContent: Precise revised content."
+    );
+    assert!(
+        !coordinator
+            .admit_coherence(coherence_request)
+            .expect("replay coherence admission")
+            .created
+    );
+    let coherence_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: Vec::new(),
+                tool_calls: vec![ProposedToolCall {
+                    provider_call_id: Some("coherence-call".into()),
+                    name: lettuce_creation::STAGED_LOREBOOK_COHERENCE_TOOL_NAME.into(),
+                    arguments: serde_json::json!({"changes": [{
+                        "kind": "toggleAlwaysActive",
+                        "entryIdx": 0,
+                        "newValue": true,
+                        "reason": "overview"
+                    }]}),
+                    raw_arguments: None,
+                    provider_replay: None,
+                }],
+                provider_replay: None,
+            }],
+            usage: Some(InferenceUsage {
+                input_tokens: 30,
+                output_tokens: 10,
+            }),
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: Some("tool_calls".into()),
+            provider_request_id: Some("coherence-request".into()),
+            warning_codes: Vec::new(),
+        }])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let coherence_dispatcher =
+        crate::StagedLorebookCoherenceDispatchCoordinator::new(&database, &database);
+    let coherence_work = coherence_dispatcher
+        .claim(
+            request_id,
+            coherence_request_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 24),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim coherence inference")
+        .expect("coherence work");
+    let coherence_executor =
+        crate::StagedLorebookCoherenceExecutionCoordinator::new(&database, &coherence_inference);
+    let coherence_result = coherence_executor
+        .run(
+            request_id,
+            coherence_request_id,
+            &coherence_prompt,
+            &coherence_work.handle,
+            None,
+            TimestampMillis::new(NOW.get() + 25),
+        )
+        .await
+        .expect("execute coherence inference");
+    assert!(!coherence_result.replayed);
+    assert_eq!(coherence_result.run.project.revision, Revision::new(13));
+    assert_eq!(coherence_result.run.project.coherence_proposals.len(), 1);
+    let coherence_replay = coherence_executor
+        .run(
+            request_id,
+            coherence_request_id,
+            &coherence_prompt,
+            &coherence_work.handle,
+            None,
+            TimestampMillis::new(NOW.get() + 26),
+        )
+        .await
+        .expect("replay coherence inference");
+    assert!(coherence_replay.replayed);
+    assert_eq!(coherence_replay.run, coherence_result.run);
+    {
+        let requests = coherence_inference.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].profile.tool_policy, ToolPolicy::Required);
+        let text = requests[0]
+            .context
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                ProviderContextPart::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Entry 1 (idx 0): \"Precise title\""));
+        assert!(text.contains(lettuce_creation::STAGED_LOREBOOK_COHERENCE_FINAL_INSTRUCTION));
+    }
+    assert!(matches!(
+        coherence_dispatcher
+            .settle(
+                coherence_work,
+                Ok(coherence_result),
+                CancellationReason::User,
+                TimestampMillis::new(NOW.get() + 26),
+            )
+            .expect("settle coherence job"),
+        crate::StagedLorebookCoherenceSettledWork::Succeeded { ref job, .. }
+            if job.state == JobState::Succeeded
+    ));
+
     let cancelled_request_id = RequestId::new();
     let mut cancelled_request = make_request();
     cancelled_request.request_id = cancelled_request_id;

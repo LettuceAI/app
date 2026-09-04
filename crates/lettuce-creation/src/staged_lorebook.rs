@@ -551,6 +551,41 @@ pub struct StagedLorebookPlanningRun {
     pub planner_prompt_revision: Revision,
     #[serde(default)]
     pub planner_attempt: Option<StagedLorebookPlannerAttempt>,
+    #[serde(default)]
+    pub coherence_runs: Vec<StagedLorebookCoherenceRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookCoherenceRun {
+    pub request_id: RequestId,
+    pub job_id: JobId,
+    pub project_revision: Revision,
+    pub profile: ResolvedInferenceProfile,
+    pub prompt_id: PromptDocumentId,
+    pub prompt_revision: Revision,
+    pub drafted_entries: String,
+    pub created_at: TimestampMillis,
+    #[serde(default)]
+    pub attempt: Option<StagedLorebookCoherenceAttempt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum StagedLorebookCoherenceDecision {
+    Proposals(Vec<StagedLorebookCoherenceChange>),
+    Invalid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookCoherenceAttempt {
+    pub calls: Vec<ProposedToolCall>,
+    pub decision: StagedLorebookCoherenceDecision,
+    pub usage: Option<StagedLorebookPlannerUsage>,
+    pub provider_finish_reason: Option<String>,
+    pub provider_request_id: Option<String>,
+    pub completed_at: TimestampMillis,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -798,6 +833,19 @@ pub trait StagedLorebookRepository: Send + Sync {
         accepted_change_ids: Vec<String>,
         now: TimestampMillis,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn admit_staged_lorebook_coherence(
+        &self,
+        project_request_id: RequestId,
+        run: StagedLorebookCoherenceRun,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn commit_staged_lorebook_coherence_attempt(
+        &self,
+        project_request_id: RequestId,
+        coherence_request_id: RequestId,
+        attempt: StagedLorebookCoherenceAttempt,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
 }
 
 impl StagedLorebookPlanningRun {
@@ -805,12 +853,59 @@ impl StagedLorebookPlanningRun {
         self.project
             .validate()
             .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
+        let mut coherence_request_ids = HashSet::with_capacity(self.coherence_runs.len());
+        let mut coherence_job_ids = HashSet::with_capacity(self.coherence_runs.len());
         if self.planner_prompt_revision.get() == 0
             || serde_json::to_vec(&self.planner_profile).is_err()
             || self
                 .planner_attempt
                 .as_ref()
                 .is_some_and(|attempt| attempt.validate(&self.project).is_err())
+            || self.coherence_runs.iter().any(|run| {
+                !coherence_request_ids.insert(run.request_id)
+                    || !coherence_job_ids.insert(run.job_id)
+                    || run.validate(&self.project).is_err()
+            })
+        {
+            return Err(StagedLorebookRepositoryError::Invalid);
+        }
+        Ok(())
+    }
+}
+
+impl StagedLorebookCoherenceRun {
+    pub fn validate(
+        &self,
+        project: &StagedLorebookProject,
+    ) -> Result<(), StagedLorebookRepositoryError> {
+        if self.project_revision.get() == 0
+            || self.project_revision > project.revision
+            || self.prompt_revision.get() == 0
+            || self.created_at.get() < 0
+            || self.drafted_entries.is_empty()
+            || serde_json::to_vec(&self.profile).is_err()
+            || self
+                .attempt
+                .as_ref()
+                .is_some_and(|attempt| attempt.validate(project).is_err())
+        {
+            return Err(StagedLorebookRepositoryError::Invalid);
+        }
+        Ok(())
+    }
+}
+
+impl StagedLorebookCoherenceAttempt {
+    pub fn validate(
+        &self,
+        project: &StagedLorebookProject,
+    ) -> Result<(), StagedLorebookRepositoryError> {
+        if self.completed_at.get() < 0
+            || self
+                .calls
+                .iter()
+                .any(|call| call.provider_replay.is_some() || call.validate().is_err())
+            || matches!(&self.decision, StagedLorebookCoherenceDecision::Proposals(changes) if validate_coherence_changes(changes, &project.drafts).is_err())
         {
             return Err(StagedLorebookRepositoryError::Invalid);
         }
@@ -1904,6 +1999,17 @@ mod tests {
         .expect("coherence changes");
         assert_eq!(changes.len(), 4);
         assert_eq!(changes[0].id(), "change_0");
+        assert!(
+            reduce_staged_lorebook_coherence_calls(
+                &project.drafts,
+                &[call(
+                    STAGED_LOREBOOK_COHERENCE_TOOL_NAME,
+                    json!({"changes": []}),
+                )],
+            )
+            .expect("empty coherence result")
+            .is_empty()
+        );
         let project = project
             .submit_coherence_proposals(changes, TimestampMillis::new(13))
             .expect("coherence review")

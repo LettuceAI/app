@@ -79,6 +79,11 @@ revision-history append through the project CAS.
 The staged project coordinator also persists coherence proposals and applies
 only the accepted stable change IDs before returning to drafts-ready. Coherence
 provider admission and execution remain separate.
+Coherence admission now freezes the exact legacy drafted-entry rendering,
+resolved profile, active prompt revision, project revision, and generic job.
+Claimed execution uses the required native tool contract, checkpoints one
+attempt, then submits the proposals; restart replays both checkpoints without a
+second provider request.
 Claimed staged-writer execution renders those frozen values, appends the exact
 legacy final instruction, and makes one required native tool request. Its
 checkpoint is durable before the matching pending draft CAS; restart replays

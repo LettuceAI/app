@@ -703,4 +703,76 @@ impl StagedLorebookRepository for Database {
         transaction.commit().map_err(failure)?;
         Ok(next)
     }
+
+    fn admit_staged_lorebook_coherence(
+        &self,
+        project_request_id: RequestId,
+        run: lettuce_creation::StagedLorebookCoherenceRun,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let mut current = load_in(&transaction, project_request_id)?
+            .ok_or(StagedLorebookRepositoryError::NotFound)?;
+        run.validate(&current.project)?;
+        if let Some(stored) = current
+            .coherence_runs
+            .iter()
+            .find(|stored| stored.request_id == run.request_id)
+        {
+            if stored == &run {
+                transaction.commit().map_err(failure)?;
+                return Ok(current);
+            }
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        if current.project.stage != StagedLorebookStage::DraftsReady
+            || current.project.revision != run.project_revision
+        {
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        current.coherence_runs.push(run);
+        let encoded = encode_versioned(&current, RUN_FORMAT_VERSION).map_err(failure)?;
+        if transaction.execute("UPDATE creation_staged_lorebook_runs SET run_json = ?2 WHERE request_id = ?1 AND revision = ?3 AND stage = 'drafts_ready'", params![project_request_id.to_string(), encoded, i64::try_from(current.project.revision.get()).map_err(failure)?]).map_err(failure)? != 1 { return Err(StagedLorebookRepositoryError::Conflict); }
+        transaction.commit().map_err(failure)?;
+        Ok(current)
+    }
+
+    fn commit_staged_lorebook_coherence_attempt(
+        &self,
+        project_request_id: RequestId,
+        coherence_request_id: RequestId,
+        attempt: lettuce_creation::StagedLorebookCoherenceAttempt,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let mut current = load_in(&transaction, project_request_id)?
+            .ok_or(StagedLorebookRepositoryError::NotFound)?;
+        attempt.validate(&current.project)?;
+        let run = current
+            .coherence_runs
+            .iter_mut()
+            .find(|run| run.request_id == coherence_request_id)
+            .ok_or(StagedLorebookRepositoryError::NotFound)?;
+        if let Some(stored) = &run.attempt {
+            if stored == &attempt {
+                transaction.commit().map_err(failure)?;
+                return Ok(current);
+            }
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        if current.project.stage != StagedLorebookStage::DraftsReady
+            || current.project.revision != run.project_revision
+        {
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        run.attempt = Some(attempt);
+        let encoded = encode_versioned(&current, RUN_FORMAT_VERSION).map_err(failure)?;
+        if transaction.execute("UPDATE creation_staged_lorebook_runs SET run_json = ?2 WHERE request_id = ?1 AND revision = ?3 AND stage = 'drafts_ready'", params![project_request_id.to_string(), encoded, i64::try_from(current.project.revision.get()).map_err(failure)?]).map_err(failure)? != 1 { return Err(StagedLorebookRepositoryError::Conflict); }
+        transaction.commit().map_err(failure)?;
+        Ok(current)
+    }
 }
