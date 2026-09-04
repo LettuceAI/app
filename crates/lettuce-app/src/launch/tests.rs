@@ -4694,6 +4694,80 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         ),
         Err(lettuce_creation::StagedLorebookRepositoryError::Conflict)
     ));
+    let coherence_at = TimestampMillis::new(NOW.get() + 21);
+    let proposals = vec![
+        lettuce_creation::StagedLorebookCoherenceChange::MergeKeys {
+            id: "change_0".into(),
+            plan_id,
+            remove_keys: vec!["fact".into()],
+            reason: "duplicate".into(),
+        },
+        lettuce_creation::StagedLorebookCoherenceChange::ToggleAlwaysActive {
+            id: "change_1".into(),
+            plan_id,
+            new_value: false,
+            reason: "not global".into(),
+        },
+    ];
+    let reviewing = coordinator
+        .submit_coherence(
+            request_id,
+            refined.project.project.revision,
+            proposals.clone(),
+            coherence_at,
+        )
+        .expect("submit coherence proposals");
+    assert_eq!(
+        reviewing.project.stage,
+        lettuce_creation::StagedLorebookStage::CoherenceReview
+    );
+    assert_eq!(
+        coordinator
+            .submit_coherence(
+                request_id,
+                refined.project.project.revision,
+                proposals.clone(),
+                coherence_at,
+            )
+            .expect("replay coherence proposals"),
+        reviewing
+    );
+    let applied_at = TimestampMillis::new(NOW.get() + 22);
+    let accepted = vec!["change_1".to_owned()];
+    let coherence_applied = coordinator
+        .apply_coherence(
+            request_id,
+            reviewing.project.revision,
+            accepted.clone(),
+            applied_at,
+        )
+        .expect("apply selected coherence changes");
+    assert_eq!(
+        coherence_applied.project.stage,
+        lettuce_creation::StagedLorebookStage::DraftsReady
+    );
+    assert!(!coherence_applied.project.drafts[0].always_active);
+    assert_eq!(
+        coherence_applied.project.drafts[0].keywords,
+        ["harbour", "fact"]
+    );
+    assert_eq!(
+        coordinator
+            .apply_coherence(request_id, reviewing.project.revision, accepted, applied_at,)
+            .expect("replay coherence application"),
+        coherence_applied
+    );
+    assert!(matches!(
+        coordinator.apply_coherence(
+            request_id,
+            reviewing.project.revision,
+            vec!["change_0".into()],
+            applied_at,
+        ),
+        Err(crate::StagedLorebookAdmissionError::Repository(
+            lettuce_creation::StagedLorebookRepositoryError::Conflict
+        ))
+    ));
 
     let cancelled_request_id = RequestId::new();
     let mut cancelled_request = make_request();

@@ -253,6 +253,9 @@ changed retries conflict.
 Refinement reuses the immutable staged-writer run table for its frozen input and
 attempt, then commits the revised draft plus one history record through a strict
 project-revision CAS. Exact settlement replay is restart-safe.
+Coherence proposal submission and accepted-change application are project-row
+CAS operations as well. The application receipt retains the exact accepted-ID
+list so changed stale retries cannot masquerade as exact replay.
 Prepared companion sends reuse the conversation send transaction: the user
 message, generation turn/attempt, companion session and relationship revisions,
 operation, and outbox commit together. A stale state CAS or hook failure rolls

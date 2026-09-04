@@ -22,6 +22,43 @@ pub const STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION: &str =
     "Call write_lorebook_entry now with the final entry.";
 pub const STAGED_LOREBOOK_REFINE_FINAL_INSTRUCTION: &str =
     "Call write_lorebook_entry now with the revised entry.";
+pub const STAGED_LOREBOOK_COHERENCE_TOOL_NAME: &str = "propose_coherence_changes";
+pub const STAGED_LOREBOOK_COHERENCE_FINAL_INSTRUCTION: &str =
+    "Call propose_coherence_changes now with the list of changes.";
+
+#[must_use]
+pub fn staged_lorebook_coherence_tool_request() -> ToolRequest {
+    ToolRequest {
+        definitions: vec![ToolDefinition {
+            name: STAGED_LOREBOOK_COHERENCE_TOOL_NAME.into(),
+            description: Some(
+                "Propose surgical coherence fixes across the drafted entries.".into(),
+            ),
+            parameters: json!({
+                "type": "object",
+                "properties": { "changes": { "type": "array", "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": { "type": "string", "enum": ["mergeKeys", "renameTerm", "flagContradiction", "toggleAlwaysActive"] },
+                        "entryIdx": { "type": "integer" },
+                        "removeKeys": { "type": "array", "items": { "type": "string" } },
+                        "oldTerm": { "type": "string" },
+                        "newTerm": { "type": "string" },
+                        "affectedEntryIdxs": { "type": "array", "items": { "type": "integer" } },
+                        "entryIdxs": { "type": "array", "items": { "type": "integer" } },
+                        "description": { "type": "string" },
+                        "newValue": { "type": "boolean" },
+                        "reason": { "type": "string" }
+                    },
+                    "required": ["kind"]
+                } } },
+                "required": ["changes"]
+            }),
+            version: 1,
+        }],
+        choice: ToolChoice::Required,
+    }
+}
 
 #[must_use]
 pub fn staged_lorebook_planner_tool_request() -> ToolRequest {
@@ -109,6 +146,153 @@ pub fn reduce_staged_lorebook_writer_calls(
         status: StagedLorebookDraftStatus::Drafted,
         revisions: Vec::new(),
     })
+}
+
+pub fn reduce_staged_lorebook_coherence_calls(
+    drafts: &[StagedLorebookEntryDraft],
+    calls: &[ProposedToolCall],
+) -> Result<Vec<StagedLorebookCoherenceChange>, StagedLorebookError> {
+    let call = calls
+        .iter()
+        .find(|call| call.name == STAGED_LOREBOOK_COHERENCE_TOOL_NAME)
+        .ok_or(StagedLorebookError::InvalidDraft)?;
+    let changes = call
+        .arguments
+        .get("changes")
+        .and_then(Value::as_array)
+        .ok_or(StagedLorebookError::InvalidDraft)?;
+    let plan_id = |value: u64| {
+        usize::try_from(value)
+            .ok()
+            .and_then(|index| drafts.get(index))
+            .map(|draft| draft.plan_id)
+    };
+    let mut output = Vec::new();
+    for (index, value) in changes.iter().enumerate() {
+        let Some(object) = value.as_object() else {
+            continue;
+        };
+        let kind = object
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or("");
+        let id = format!("change_{index}");
+        let reason = object
+            .get("reason")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned();
+        match kind {
+            "mergeKeys" => {
+                let remove_keys = strings(object.get("removeKeys"));
+                let Some(target) = object
+                    .get("entryIdx")
+                    .and_then(Value::as_u64)
+                    .or(Some(0))
+                    .and_then(plan_id)
+                else {
+                    continue;
+                };
+                if !remove_keys.is_empty() {
+                    output.push(StagedLorebookCoherenceChange::MergeKeys {
+                        id,
+                        plan_id: target,
+                        remove_keys,
+                        reason,
+                    });
+                }
+            }
+            "renameTerm" => {
+                let old_term = object
+                    .get("oldTerm")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                let new_term = object
+                    .get("newTerm")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                if old_term.is_empty() || new_term.is_empty() || old_term == new_term {
+                    continue;
+                }
+                let indexes = integers(object.get("affectedEntryIdxs"));
+                let targets = if indexes.is_empty() {
+                    None
+                } else {
+                    Some(indexes.into_iter().filter_map(plan_id).collect())
+                };
+                output.push(StagedLorebookCoherenceChange::RenameTerm {
+                    id,
+                    old_term,
+                    new_term,
+                    target_plan_ids: targets,
+                    reason,
+                });
+            }
+            "flagContradiction" => {
+                let plan_ids = integers(object.get("entryIdxs"))
+                    .into_iter()
+                    .filter_map(plan_id)
+                    .collect::<Vec<_>>();
+                let description = object
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned();
+                if !plan_ids.is_empty() && !description.is_empty() {
+                    output.push(StagedLorebookCoherenceChange::FlagContradiction {
+                        id,
+                        plan_ids,
+                        description,
+                    });
+                }
+            }
+            "toggleAlwaysActive" => {
+                let Some(target) = object
+                    .get("entryIdx")
+                    .and_then(Value::as_u64)
+                    .or(Some(0))
+                    .and_then(plan_id)
+                else {
+                    continue;
+                };
+                let new_value = object
+                    .get("newValue")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                output.push(StagedLorebookCoherenceChange::ToggleAlwaysActive {
+                    id,
+                    plan_id: target,
+                    new_value,
+                    reason,
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(output)
+}
+
+fn strings(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn integers(value: Option<&Value>) -> Vec<u64> {
+    value
+        .and_then(Value::as_array)
+        .map(|values| values.iter().filter_map(Value::as_u64).collect())
+        .unwrap_or_default()
 }
 
 pub fn reduce_staged_lorebook_planner_calls(
@@ -213,6 +397,7 @@ pub enum StagedLorebookStage {
     AwaitingOutlineApproval,
     Drafting,
     DraftsReady,
+    CoherenceReview,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -265,6 +450,47 @@ pub struct StagedLorebookEntryDraft {
     pub revisions: Vec<StagedLorebookDraftRevision>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum StagedLorebookCoherenceChange {
+    MergeKeys {
+        id: String,
+        plan_id: LorebookEntryId,
+        remove_keys: Vec<String>,
+        reason: String,
+    },
+    RenameTerm {
+        id: String,
+        old_term: String,
+        new_term: String,
+        target_plan_ids: Option<Vec<LorebookEntryId>>,
+        reason: String,
+    },
+    FlagContradiction {
+        id: String,
+        plan_ids: Vec<LorebookEntryId>,
+        description: String,
+    },
+    ToggleAlwaysActive {
+        id: String,
+        plan_id: LorebookEntryId,
+        new_value: bool,
+        reason: String,
+    },
+}
+
+impl StagedLorebookCoherenceChange {
+    #[must_use]
+    pub fn id(&self) -> &str {
+        match self {
+            Self::MergeKeys { id, .. }
+            | Self::RenameTerm { id, .. }
+            | Self::FlagContradiction { id, .. }
+            | Self::ToggleAlwaysActive { id, .. } => id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StagedLorebookDraftEdit {
     pub plan_id: LorebookEntryId,
@@ -285,10 +511,21 @@ pub struct StagedLorebookProject {
     pub outline: Vec<StagedLorebookEntryPlan>,
     #[serde(default)]
     pub drafts: Vec<StagedLorebookEntryDraft>,
+    #[serde(default)]
+    pub coherence_proposals: Vec<StagedLorebookCoherenceChange>,
+    #[serde(default)]
+    pub last_coherence_application: Option<StagedLorebookCoherenceApplication>,
     pub stage: StagedLorebookStage,
     pub revision: Revision,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookCoherenceApplication {
+    pub source_revision: Revision,
+    pub accepted_change_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -545,6 +782,22 @@ pub trait StagedLorebookRepository: Send + Sync {
         draft: StagedLorebookEntryDraft,
         now: TimestampMillis,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn submit_staged_lorebook_coherence(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        proposals: Vec<StagedLorebookCoherenceChange>,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn apply_staged_lorebook_coherence(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        accepted_change_ids: Vec<String>,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
 }
 
 impl StagedLorebookPlanningRun {
@@ -673,6 +926,8 @@ impl StagedLorebookProject {
             excerpts,
             outline: Vec::new(),
             drafts: Vec::new(),
+            coherence_proposals: Vec::new(),
+            last_coherence_application: None,
             stage: StagedLorebookStage::Created,
             revision: Revision::new(1),
             created_at: now,
@@ -947,6 +1202,58 @@ impl StagedLorebookProject {
         Ok(next)
     }
 
+    pub fn submit_coherence_proposals(
+        &self,
+        proposals: Vec<StagedLorebookCoherenceChange>,
+        now: TimestampMillis,
+    ) -> Result<Self, StagedLorebookError> {
+        if self.stage != StagedLorebookStage::DraftsReady || now < self.updated_at {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        validate_coherence_changes(&proposals, &self.drafts)?;
+        let mut next = self.clone();
+        next.coherence_proposals = proposals;
+        next.last_coherence_application = None;
+        next.stage = StagedLorebookStage::CoherenceReview;
+        next.updated_at = now;
+        next.revision = next
+            .revision
+            .next()
+            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        Ok(next)
+    }
+
+    pub fn apply_coherence(
+        &self,
+        accepted_change_ids: &[String],
+        now: TimestampMillis,
+    ) -> Result<Self, StagedLorebookError> {
+        if self.stage != StagedLorebookStage::CoherenceReview || now < self.updated_at {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        let mut next = self.clone();
+        for change in self
+            .coherence_proposals
+            .iter()
+            .filter(|change| accepted_change_ids.iter().any(|id| id == change.id()))
+        {
+            apply_coherence_change(&mut next.drafts, change);
+        }
+        next.coherence_proposals.clear();
+        next.last_coherence_application = Some(StagedLorebookCoherenceApplication {
+            source_revision: self.revision,
+            accepted_change_ids: accepted_change_ids.to_vec(),
+        });
+        next.stage = StagedLorebookStage::DraftsReady;
+        next.updated_at = now;
+        next.revision = next
+            .revision
+            .next()
+            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.validate()?;
+        Ok(next)
+    }
+
     fn finish_drafting_if_terminal(&mut self) {
         if self.drafts.iter().all(|draft| {
             !matches!(
@@ -983,29 +1290,36 @@ impl StagedLorebookProject {
         }
         match self.stage {
             StagedLorebookStage::Created | StagedLorebookStage::Planning
-                if !self.outline.is_empty() || !self.drafts.is_empty() =>
+                if !self.outline.is_empty()
+                    || !self.drafts.is_empty()
+                    || !self.coherence_proposals.is_empty() =>
             {
                 Err(StagedLorebookError::InvalidOutline)
             }
             StagedLorebookStage::AwaitingOutlineApproval => {
                 validate_outline(&self.outline, &self.excerpts)?;
-                if self.drafts.is_empty() {
+                if self.drafts.is_empty() && self.coherence_proposals.is_empty() {
                     Ok(())
                 } else {
                     Err(StagedLorebookError::InvalidOutline)
                 }
             }
-            StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady => {
+            StagedLorebookStage::Drafting
+            | StagedLorebookStage::DraftsReady
+            | StagedLorebookStage::CoherenceReview => {
                 validate_outline(&self.outline, &self.excerpts)?;
                 validate_drafts(&self.drafts, &self.outline)?;
-                if self.stage == StagedLorebookStage::DraftsReady
+                validate_coherence_changes(&self.coherence_proposals, &self.drafts)?;
+                if (self.stage == StagedLorebookStage::DraftsReady
                     && self.drafts.iter().any(|draft| {
                         matches!(
                             draft.status,
                             StagedLorebookDraftStatus::Pending
                                 | StagedLorebookDraftStatus::Drafting
                         )
-                    })
+                    }))
+                    || (self.stage != StagedLorebookStage::CoherenceReview
+                        && !self.coherence_proposals.is_empty())
                 {
                     Err(StagedLorebookError::InvalidDraft)
                 } else {
@@ -1122,6 +1436,107 @@ fn format_keys(keys: &[String]) -> String {
         "(none)".to_owned()
     } else {
         keys.join(", ")
+    }
+}
+
+fn validate_coherence_changes(
+    changes: &[StagedLorebookCoherenceChange],
+    drafts: &[StagedLorebookEntryDraft],
+) -> Result<(), StagedLorebookError> {
+    let owned = drafts
+        .iter()
+        .map(|draft| draft.plan_id)
+        .collect::<HashSet<_>>();
+    let mut ids = HashSet::with_capacity(changes.len());
+    for change in changes {
+        if change.id().is_empty() || !ids.insert(change.id()) {
+            return Err(StagedLorebookError::InvalidDraft);
+        }
+        let valid = match change {
+            StagedLorebookCoherenceChange::MergeKeys {
+                plan_id,
+                remove_keys,
+                ..
+            } => owned.contains(plan_id) && !remove_keys.is_empty(),
+            StagedLorebookCoherenceChange::RenameTerm {
+                old_term,
+                new_term,
+                target_plan_ids,
+                ..
+            } => {
+                !old_term.is_empty()
+                    && !new_term.is_empty()
+                    && old_term != new_term
+                    && target_plan_ids
+                        .as_ref()
+                        .is_none_or(|ids| ids.iter().all(|id| owned.contains(id)))
+            }
+            StagedLorebookCoherenceChange::FlagContradiction {
+                plan_ids,
+                description,
+                ..
+            } => {
+                !plan_ids.is_empty()
+                    && !description.is_empty()
+                    && plan_ids.iter().all(|id| owned.contains(id))
+            }
+            StagedLorebookCoherenceChange::ToggleAlwaysActive { plan_id, .. } => {
+                owned.contains(plan_id)
+            }
+        };
+        if !valid {
+            return Err(StagedLorebookError::InvalidDraft);
+        }
+    }
+    Ok(())
+}
+
+fn apply_coherence_change(
+    drafts: &mut [StagedLorebookEntryDraft],
+    change: &StagedLorebookCoherenceChange,
+) {
+    match change {
+        StagedLorebookCoherenceChange::MergeKeys {
+            plan_id,
+            remove_keys,
+            ..
+        } => {
+            if let Some(draft) = drafts.iter_mut().find(|draft| draft.plan_id == *plan_id) {
+                let lowered = remove_keys
+                    .iter()
+                    .map(|key| key.to_ascii_lowercase())
+                    .collect::<Vec<_>>();
+                draft
+                    .keywords
+                    .retain(|key| !lowered.contains(&key.to_ascii_lowercase()));
+            }
+        }
+        StagedLorebookCoherenceChange::RenameTerm {
+            old_term,
+            new_term,
+            target_plan_ids,
+            ..
+        } => {
+            for draft in drafts.iter_mut().filter(|draft| {
+                target_plan_ids
+                    .as_ref()
+                    .is_none_or(|ids| ids.contains(&draft.plan_id))
+            }) {
+                draft.title = draft.title.replace(old_term, new_term);
+                draft.content = draft.content.replace(old_term, new_term);
+                for key in &mut draft.keywords {
+                    *key = key.replace(old_term, new_term);
+                }
+            }
+        }
+        StagedLorebookCoherenceChange::FlagContradiction { .. } => {}
+        StagedLorebookCoherenceChange::ToggleAlwaysActive {
+            plan_id, new_value, ..
+        } => {
+            if let Some(draft) = drafts.iter_mut().find(|draft| draft.plan_id == *plan_id) {
+                draft.always_active = *new_value;
+            }
+        }
     }
 }
 
@@ -1474,6 +1889,35 @@ mod tests {
                 .expect("settle retry batch");
         }
         assert_eq!(project.stage, StagedLorebookStage::DraftsReady);
+        let changes = reduce_staged_lorebook_coherence_calls(
+            &project.drafts,
+            &[call(
+                STAGED_LOREBOOK_COHERENCE_TOOL_NAME,
+                json!({"changes": [
+                    {"kind": "mergeKeys", "entryIdx": 0, "removeKeys": ["KEY-0"], "reason": "duplicate"},
+                    {"kind": "renameTerm", "oldTerm": "Body", "newTerm": "Canon", "affectedEntryIdxs": [1], "reason": "drift"},
+                    {"kind": "flagContradiction", "entryIdxs": [0, 1], "description": "Conflict"},
+                    {"kind": "toggleAlwaysActive", "entryIdx": 0, "newValue": true, "reason": "overview"}
+                ]}),
+            )],
+        )
+        .expect("coherence changes");
+        assert_eq!(changes.len(), 4);
+        assert_eq!(changes[0].id(), "change_0");
+        let project = project
+            .submit_coherence_proposals(changes, TimestampMillis::new(13))
+            .expect("coherence review")
+            .apply_coherence(
+                &["change_0".into(), "change_1".into(), "change_3".into()],
+                TimestampMillis::new(14),
+            )
+            .expect("apply selected coherence changes");
+        assert_eq!(project.stage, StagedLorebookStage::DraftsReady);
+        assert!(project.coherence_proposals.is_empty());
+        assert!(project.drafts[0].keywords.is_empty());
+        assert!(project.drafts[0].always_active);
+        assert_eq!(project.drafts[0].content, "Body");
+        assert_eq!(project.drafts[1].content, "Canon");
     }
 
     #[test]

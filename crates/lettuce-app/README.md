@@ -76,6 +76,9 @@ Refine admission freezes the selected draft, trimmed feedback, exact legacy
 render values, resolved profile, and active refine prompt. The shared writer
 executor checkpoints one typed attempt before applying the revised draft and
 revision-history append through the project CAS.
+The staged project coordinator also persists coherence proposals and applies
+only the accepted stable change IDs before returning to drafts-ready. Coherence
+provider admission and execution remain separate.
 Claimed staged-writer execution renders those frozen values, appends the exact
 legacy final instruction, and makes one required native tool request. Its
 checkpoint is durable before the matching pending draft CAS; restart replays

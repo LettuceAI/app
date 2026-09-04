@@ -190,6 +190,11 @@ Refinement reuses the required writer tool contract and copies the legacy
 prompt inputs and final instruction. Successful output replaces the selected
 stable-ID draft as drafted and appends the trimmed feedback, revised content,
 and completion time to its preserved revision history.
+The coherence contract now copies the legacy required tool schema, first-call
+reduction, stable change IDs, and four proposal kinds. Accepted changes apply in
+proposal order with the same ASCII-insensitive key removal, literal term
+replacement, contradiction no-op, and always-active toggle behavior; rejected
+changes are discarded when review returns to drafts-ready.
 Each pending staged draft can now be represented by an immutable writer run
 that freezes its stable project/plan identity, project revision, resolved
 profile, writer prompt revision, exact rendered-input values, and generic job

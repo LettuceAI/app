@@ -1,8 +1,9 @@
 use lettuce_context::{LifecycleStatus, PromptDocument, PromptPurpose};
 use lettuce_conversations::ResolvedInferenceProfile;
 use lettuce_creation::{
-    StagedLorebookDraftEdit, StagedLorebookPlanningRun, StagedLorebookProject,
-    StagedLorebookRepository, StagedLorebookRepositoryError, StagedLorebookSourceExcerpt,
+    StagedLorebookCoherenceChange, StagedLorebookDraftEdit, StagedLorebookPlanningRun,
+    StagedLorebookProject, StagedLorebookRepository, StagedLorebookRepositoryError,
+    StagedLorebookSourceExcerpt,
 };
 use lettuce_jobs::{
     CancellationPolicy, IdempotencyKey, JobKind, JobPriority, JobSnapshot, JobSpec, JobStore,
@@ -171,6 +172,35 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
                 expected_revision,
                 plan_id,
                 approved,
+                now,
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn submit_coherence(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        proposals: Vec<StagedLorebookCoherenceChange>,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookAdmissionError> {
+        self.repository
+            .submit_staged_lorebook_coherence(request_id, expected_revision, proposals, now)
+            .map_err(Into::into)
+    }
+
+    pub fn apply_coherence(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        accepted_change_ids: Vec<String>,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookAdmissionError> {
+        self.repository
+            .apply_staged_lorebook_coherence(
+                request_id,
+                expected_revision,
+                accepted_change_ids,
                 now,
             )
             .map_err(Into::into)
