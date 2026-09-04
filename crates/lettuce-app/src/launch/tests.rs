@@ -4059,11 +4059,40 @@ fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .expect("replay start planning"),
         planning
     );
+    let planner_calls = vec![ProposedToolCall {
+        provider_call_id: Some("planner-outline".into()),
+        name: lettuce_creation::STAGED_LOREBOOK_PLANNER_TOOL_NAME.into(),
+        arguments: serde_json::json!({"entries": [{
+            "title": " Harbour Key ",
+            "category": "item",
+            "proposedKeys": ["harbour key"],
+            "rationale": "Recurring object",
+            "sourceRefs": ["src_01"]
+        }]}),
+        raw_arguments: None,
+        provider_replay: None,
+    }];
+    let outlined_at = TimestampMillis::new(NOW.get() + 4);
+    let outlined = coordinator
+        .settle_planner_calls(request_id, Revision::new(2), &planner_calls, outlined_at)
+        .expect("settle planner outline");
+    assert_eq!(
+        outlined.project.stage,
+        lettuce_creation::StagedLorebookStage::AwaitingOutlineApproval
+    );
+    assert_eq!(outlined.project.revision, Revision::new(3));
+    assert_eq!(outlined.project.outline[0].title, "Harbour Key");
+    assert_eq!(
+        coordinator
+            .settle_planner_calls(request_id, Revision::new(2), &planner_calls, outlined_at)
+            .expect("replay planner outline"),
+        outlined
+    );
     assert!(matches!(
         coordinator.start_planning(
             request_id,
             Revision::new(1),
-            TimestampMillis::new(NOW.get() + 4)
+            TimestampMillis::new(NOW.get() + 5)
         ),
         Err(crate::StagedLorebookAdmissionError::Repository(
             lettuce_creation::StagedLorebookRepositoryError::Conflict

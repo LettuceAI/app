@@ -156,3 +156,9 @@ outline-review transitions. The created/planning project is persisted with its
 planner profile, prompt revision, and generic job identity; exact admission and
 created-to-planning CAS retries are restart-safe. Source extraction, provider
 planning, drafting, coherence, and final apply remain explicit later slices.
+
+The planner's exact required `propose_lorebook_outline` declaration and final
+instruction are copied from legacy. Reduction selects the first matching call,
+preserves legacy field aliases/defaults and returned entry count, assigns
+deterministic stable entry IDs, and rejects empty outlines or foreign source
+references before the outline-review transition.

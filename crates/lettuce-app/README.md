@@ -61,6 +61,9 @@ freezes the resolved planner profile and active planner prompt, and persists one
 stable project with a generic restart-safe creation job. Exact admission and
 created-to-planning CAS replay without duplicating state; extraction and
 provider planning remain separate.
+Planner-call settlement reduces the copied required contract and atomically
+persists the stable outline with the planning-to-outline-review CAS transition;
+exact settlement replay returns the same project without duplicating state.
 
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct

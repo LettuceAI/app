@@ -1,8 +1,10 @@
 use lettuce_context::{LifecycleStatus, PromptDocument, PromptPurpose};
+use lettuce_conversations::ProposedToolCall;
 use lettuce_conversations::ResolvedInferenceProfile;
 use lettuce_creation::{
     StagedLorebookPlanningRun, StagedLorebookProject, StagedLorebookRepository,
     StagedLorebookRepositoryError, StagedLorebookSourceExcerpt,
+    reduce_staged_lorebook_planner_calls,
 };
 use lettuce_jobs::{
     CancellationPolicy, IdempotencyKey, JobKind, JobPriority, JobSnapshot, JobSpec, JobStore,
@@ -131,6 +133,21 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookAdmissionError> {
         self.repository
             .start_staged_lorebook_planning(request_id, expected_revision, now)
+            .map_err(Into::into)
+    }
+
+    pub fn settle_planner_calls(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        calls: &[ProposedToolCall],
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookAdmissionError> {
+        let run = self.repository.load_staged_lorebook(request_id)?;
+        let outline = reduce_staged_lorebook_planner_calls(&run.project, calls)
+            .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?;
+        self.repository
+            .submit_staged_lorebook_outline(request_id, expected_revision, outline, now)
             .map_err(Into::into)
     }
 }

@@ -1,15 +1,138 @@
 use std::collections::HashSet;
 
 use lettuce_conversations::ResolvedInferenceProfile;
+use lettuce_conversations::{ProposedToolCall, ToolChoice, ToolDefinition, ToolRequest};
 use lettuce_types::{
     CreationWorkflowId, JobId, LorebookEntryId, PromptDocumentId, RequestId, Revision,
     TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use uuid::Uuid;
 
 pub const MIN_STAGED_LOREBOOK_TARGET_COUNT: u32 = 5;
 pub const MAX_STAGED_LOREBOOK_TARGET_COUNT: u32 = 50;
 pub const MAX_STAGED_LOREBOOK_EXCERPT_CHARS: usize = 20_000;
+pub const STAGED_LOREBOOK_PLANNER_TOOL_NAME: &str = "propose_lorebook_outline";
+pub const STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION: &str =
+    "Call propose_lorebook_outline now with exactly the requested number of entries.";
+
+#[must_use]
+pub fn staged_lorebook_planner_tool_request() -> ToolRequest {
+    ToolRequest {
+        definitions: vec![ToolDefinition {
+            name: STAGED_LOREBOOK_PLANNER_TOOL_NAME.to_owned(),
+            description: Some("Propose the full outline of lorebook entries to draft.".into()),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "entries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string" },
+                                "category": { "type": "string" },
+                                "proposedKeys": { "type": "array", "items": { "type": "string" } },
+                                "rationale": { "type": "string" },
+                                "sourceRefs": { "type": "array", "items": { "type": "string" } }
+                            },
+                            "required": ["title", "category", "rationale"]
+                        }
+                    }
+                },
+                "required": ["entries"]
+            }),
+            version: 1,
+        }],
+        choice: ToolChoice::Required,
+    }
+}
+
+pub fn reduce_staged_lorebook_planner_calls(
+    project: &StagedLorebookProject,
+    calls: &[ProposedToolCall],
+) -> Result<Vec<StagedLorebookEntryPlan>, StagedLorebookError> {
+    let call = calls
+        .iter()
+        .find(|call| call.name == STAGED_LOREBOOK_PLANNER_TOOL_NAME)
+        .ok_or(StagedLorebookError::InvalidOutline)?;
+    let entries = call
+        .arguments
+        .get("entries")
+        .and_then(Value::as_array)
+        .ok_or(StagedLorebookError::InvalidOutline)?;
+    let mut outline = Vec::with_capacity(entries.len());
+    for (ordinal, value) in entries.iter().enumerate() {
+        let object = value
+            .as_object()
+            .ok_or(StagedLorebookError::InvalidOutline)?;
+        let title = required_text(object.get("title"))?;
+        let category = object
+            .get("category")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("other")
+            .to_owned();
+        let rationale = object
+            .get("rationale")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or("")
+            .to_owned();
+        let proposed_keys = string_array(
+            object
+                .get("proposedKeys")
+                .or_else(|| object.get("proposed_keys")),
+            true,
+        );
+        let source_refs = string_array(
+            object
+                .get("sourceRefs")
+                .or_else(|| object.get("source_refs")),
+            false,
+        );
+        outline.push(StagedLorebookEntryPlan {
+            id: LorebookEntryId::from_uuid(Uuid::new_v5(
+                &project.id.as_uuid(),
+                format!("outline-{ordinal}").as_bytes(),
+            )),
+            ordinal: u32::try_from(ordinal).map_err(|_| StagedLorebookError::InvalidOutline)?,
+            title,
+            category,
+            proposed_keys,
+            rationale,
+            source_refs,
+        });
+    }
+    validate_outline(&outline, &project.excerpts)?;
+    Ok(outline)
+}
+
+fn required_text(value: Option<&Value>) -> Result<String, StagedLorebookError> {
+    value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or(StagedLorebookError::InvalidOutline)
+}
+
+fn string_array(value: Option<&Value>, trim: bool) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(|value| if trim { value.trim() } else { value })
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -104,6 +227,14 @@ pub trait StagedLorebookRepository: Send + Sync {
         &self,
         request_id: RequestId,
         expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn submit_staged_lorebook_outline(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        outline: Vec<StagedLorebookEntryPlan>,
         now: TimestampMillis,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
 }
@@ -246,7 +377,6 @@ fn validate_outline(
             || plan.title != plan.title.trim()
             || plan.category.trim().is_empty()
             || plan.category != plan.category.trim()
-            || plan.rationale.trim().is_empty()
             || plan.rationale != plan.rationale.trim()
             || !plan_ids.insert(plan.id)
             || plan
@@ -263,6 +393,16 @@ fn validate_outline(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn call(name: &str, arguments: Value) -> ProposedToolCall {
+        ProposedToolCall {
+            provider_call_id: None,
+            name: name.into(),
+            arguments,
+            raw_arguments: None,
+            provider_replay: None,
+        }
+    }
 
     #[test]
     fn create_and_planner_transitions_preserve_legacy_boundaries() {
@@ -329,6 +469,60 @@ mod tests {
                 TimestampMillis::new(12),
             ),
             Err(StagedLorebookError::InvalidOutline)
+        );
+    }
+
+    #[test]
+    fn planner_contract_and_reducer_copy_legacy_shapes_without_an_extra_cap() {
+        let request = staged_lorebook_planner_tool_request();
+        assert_eq!(request.choice, ToolChoice::Required);
+        assert_eq!(request.definitions.len(), 1);
+        assert_eq!(
+            request.definitions[0].name,
+            STAGED_LOREBOOK_PLANNER_TOOL_NAME
+        );
+        let project = StagedLorebookProject::create(
+            CreationWorkflowId::new(),
+            "World".into(),
+            None,
+            5,
+            vec![StagedLorebookSourceExcerpt {
+                source_id: "src_01".into(),
+                label: "Notes".into(),
+                content: "Text".into(),
+            }],
+            TimestampMillis::new(1),
+        )
+        .expect("project");
+        let entries = (0..6)
+            .map(|ordinal| {
+                json!({
+                    "title": format!(" Entry {ordinal} "),
+                    "category": if ordinal == 0 { "" } else { "fact" },
+                    "proposed_keys": [" key ", ""],
+                    "rationale": "",
+                    "source_refs": ["src_01"]
+                })
+            })
+            .collect::<Vec<_>>();
+        let outline = reduce_staged_lorebook_planner_calls(
+            &project,
+            &[
+                call("ignored", json!({})),
+                call(
+                    STAGED_LOREBOOK_PLANNER_TOOL_NAME,
+                    json!({"entries": entries}),
+                ),
+            ],
+        )
+        .expect("outline");
+        assert_eq!(outline.len(), 6);
+        assert_eq!(outline[0].category, "other");
+        assert_eq!(outline[0].proposed_keys, ["key"]);
+        assert_eq!(outline[0].source_refs, ["src_01"]);
+        assert_eq!(
+            outline[0].id,
+            LorebookEntryId::from_uuid(Uuid::new_v5(&project.id.as_uuid(), b"outline-0"))
         );
     }
 }
