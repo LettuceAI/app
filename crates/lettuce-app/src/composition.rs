@@ -144,6 +144,13 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn lorebook_entry_dispatcher(
+        &self,
+    ) -> crate::LorebookEntryDispatchCoordinator<'_, Database, Database> {
+        crate::LorebookEntryDispatchCoordinator::new(self.database.as_ref(), self.database.as_ref())
+    }
+
+    #[must_use]
     pub const fn built_in_prompt_ids(&self) -> &BuiltInPromptIds {
         &self.built_in_prompt_ids
     }

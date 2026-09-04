@@ -41,9 +41,13 @@ legacy chronological message, durable memory, relative-time, existing-entry,
 and `(none)` formatting into immutable prompt values. Missing or foreign
 selected message and memory IDs fail closed instead of being silently omitted.
 One interactive generic creation job and one immutable request-owned run bind
-those inputs before provider dispatch. Exact replay returns the same job/run
-and changed replay conflicts; this boundary does not call a provider or mutate
-the lorebook.
+those inputs before provider dispatch. The claimed-job executor renders the
+frozen prompt with the exact source/force instruction, tries the native tool
+contract, and uses exactly one same-model JSON/XML fallback only when no usable
+declared native result exists. Each decision, usage counters, and provider
+diagnostics are checkpointed before job settlement, so restart replays the
+durable entry-or-none result without dispatching again. Changed admission
+replay conflicts, and neither preparation nor execution mutates the lorebook.
 
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct

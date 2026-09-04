@@ -21,6 +21,12 @@ pub const LOREBOOK_ENTRY_NONE_TOOL_NAME: &str = "no_entry";
 pub const MAX_GENERATED_LOREBOOK_KEYWORDS: usize = 24;
 pub const DEFAULT_NO_LOREBOOK_ENTRY_REASON: &str =
     "The selected messages do not establish durable lore.";
+pub const LOREBOOK_ENTRY_MESSAGES_INSTRUCTION: &str = "Analyze the selected transcript and return exactly one result now. Use the write_lorebook_entry tool when there is a durable lorebook entry to create. Use no_entry when there is not.";
+pub const LOREBOOK_ENTRY_MESSAGES_FORCE_INSTRUCTION: &str = "Analyze the selected transcript and return exactly one result now. You MUST call write_lorebook_entry. The no_entry option is disabled — produce the best possible durable lorebook entry even if facts seem weak or already covered.";
+pub const LOREBOOK_ENTRY_MEMORY_INSTRUCTION: &str = "Analyze the dynamic memory context summary and the selected memories, then return exactly one result now. Use the write_lorebook_entry tool when there is a durable lorebook entry to create. Use no_entry when there is not.";
+pub const LOREBOOK_ENTRY_MEMORY_FORCE_INSTRUCTION: &str = "Analyze the dynamic memory context summary and the selected memories, then return exactly one result now. You MUST call write_lorebook_entry. The no_entry option is disabled — produce the best possible durable lorebook entry even if the memories seem weak or already covered.";
+pub const LOREBOOK_ENTRY_MIXED_INSTRUCTION: &str = "Analyze every provided input section that is not marked (none) — selected messages, dynamic memory context summary, and selected memories — and return exactly one result now. Use the write_lorebook_entry tool when there is a durable lorebook entry to create. Use no_entry when there is not.";
+pub const LOREBOOK_ENTRY_MIXED_FORCE_INSTRUCTION: &str = "Analyze every provided input section that is not marked (none) — selected messages, dynamic memory context summary, and selected memories — and return exactly one result now. You MUST call write_lorebook_entry. The no_entry option is disabled — produce the best possible durable lorebook entry even if facts seem weak or already covered.";
 
 pub const LOREBOOK_ENTRY_JSON_FALLBACK_PROMPT: &str = r#"Return only JSON. Format: {"result":{"name":"write_lorebook_entry","arguments":{"title":"...","keywords":["..."],"content":"...","alwaysActive":false}}}. If no durable entry should be created, return {"result":{"name":"no_entry","arguments":{"reason":"..."}}}. Do not use markdown."#;
 pub const LOREBOOK_ENTRY_XML_FALLBACK_PROMPT: &str = r#"Return only XML. Format: <lorebook_result><write_lorebook_entry alwaysActive="false"><title>...</title><keywords><keyword>...</keyword></keywords><content>...</content></write_lorebook_entry></lorebook_result>. If no durable entry should be created, return <lorebook_result><no_entry><reason>...</reason></no_entry></lorebook_result>. Do not use markdown."#;
@@ -76,6 +82,41 @@ pub struct LorebookEntryGenerationRun {
     pub prompt_values: LorebookEntryPromptValues,
     pub fallback_format: LorebookEntryFallbackFormat,
     pub created_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LorebookEntryAttemptKind {
+    Native,
+    StructuredFallback,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum LorebookEntryAttemptDecision {
+    Result(LorebookEntryGenerationResult),
+    StructuredFallback,
+    Invalid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookEntryAttemptUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookEntryAttemptCheckpoint {
+    pub ordinal: u8,
+    pub attempt_kind: LorebookEntryAttemptKind,
+    pub calls: Vec<ProposedToolCall>,
+    pub decision: LorebookEntryAttemptDecision,
+    pub usage: Option<LorebookEntryAttemptUsage>,
+    pub provider_finish_reason: Option<String>,
+    pub provider_request_id: Option<String>,
+    pub completed_at: TimestampMillis,
 }
 
 impl LorebookEntryGenerationRun {
@@ -147,6 +188,96 @@ pub trait LorebookEntryRunRepository: Send + Sync {
         &self,
         request_id: RequestId,
     ) -> Result<LorebookEntryGenerationRun, LorebookEntryRunRepositoryError>;
+
+    fn load_lorebook_entry_attempts(
+        &self,
+        request_id: RequestId,
+    ) -> Result<Vec<LorebookEntryAttemptCheckpoint>, LorebookEntryRunRepositoryError>;
+
+    fn commit_lorebook_entry_attempt(
+        &self,
+        request_id: RequestId,
+        checkpoint: LorebookEntryAttemptCheckpoint,
+    ) -> Result<Vec<LorebookEntryAttemptCheckpoint>, LorebookEntryRunRepositoryError>;
+}
+
+impl LorebookEntryAttemptCheckpoint {
+    pub fn validate(&self) -> Result<(), LorebookEntryRunRepositoryError> {
+        let expected_kind = match self.ordinal {
+            0 => LorebookEntryAttemptKind::Native,
+            1 => LorebookEntryAttemptKind::StructuredFallback,
+            _ => return Err(LorebookEntryRunRepositoryError::Invalid),
+        };
+        if self.attempt_kind != expected_kind
+            || self.completed_at.get() < 0
+            || self.calls.iter().any(|call| {
+                call.provider_replay.is_some()
+                    || call.validate().is_err()
+                    || !matches!(self.attempt_kind, LorebookEntryAttemptKind::Native)
+            })
+            || (self.attempt_kind == LorebookEntryAttemptKind::StructuredFallback
+                && matches!(
+                    self.decision,
+                    LorebookEntryAttemptDecision::StructuredFallback
+                ))
+            || !attempt_decision_is_normalized(&self.decision)
+        {
+            return Err(LorebookEntryRunRepositoryError::Invalid);
+        }
+        Ok(())
+    }
+}
+
+fn attempt_decision_is_normalized(decision: &LorebookEntryAttemptDecision) -> bool {
+    match decision {
+        LorebookEntryAttemptDecision::Result(LorebookEntryGenerationResult::Entry { draft }) => {
+            !draft.title.is_empty()
+                && draft.title == draft.title.trim()
+                && !draft.content.is_empty()
+                && draft.content == draft.content.trim()
+                && draft.keywords.len() <= MAX_GENERATED_LOREBOOK_KEYWORDS
+                && draft
+                    .keywords
+                    .iter()
+                    .all(|keyword| !keyword.is_empty() && keyword == keyword.trim())
+                && !has_case_insensitive_duplicates(&draft.keywords)
+        }
+        LorebookEntryAttemptDecision::Result(LorebookEntryGenerationResult::None { reason }) => {
+            !reason.is_empty() && reason == reason.trim()
+        }
+        LorebookEntryAttemptDecision::StructuredFallback
+        | LorebookEntryAttemptDecision::Invalid => true,
+    }
+}
+
+fn has_case_insensitive_duplicates(values: &[String]) -> bool {
+    let mut seen = HashSet::with_capacity(values.len());
+    values
+        .iter()
+        .any(|value| !seen.insert(value.to_ascii_lowercase()))
+}
+
+pub fn validate_lorebook_entry_attempts(
+    attempts: &[LorebookEntryAttemptCheckpoint],
+) -> Result<(), LorebookEntryRunRepositoryError> {
+    if attempts.len() > 2 {
+        return Err(LorebookEntryRunRepositoryError::Invalid);
+    }
+    for (index, attempt) in attempts.iter().enumerate() {
+        attempt.validate()?;
+        if usize::from(attempt.ordinal) != index {
+            return Err(LorebookEntryRunRepositoryError::Invalid);
+        }
+    }
+    if attempts.len() == 2
+        && !matches!(
+            attempts[0].decision,
+            LorebookEntryAttemptDecision::StructuredFallback
+        )
+    {
+        return Err(LorebookEntryRunRepositoryError::Invalid);
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,6 +364,21 @@ pub const fn lorebook_entry_fallback_prompt(
         (LorebookEntryFallbackFormat::Xml, false) => LOREBOOK_ENTRY_XML_FALLBACK_PROMPT,
         (LorebookEntryFallbackFormat::Json, true) => LOREBOOK_ENTRY_JSON_FORCE_FALLBACK_PROMPT,
         (LorebookEntryFallbackFormat::Xml, true) => LOREBOOK_ENTRY_XML_FORCE_FALLBACK_PROMPT,
+    }
+}
+
+#[must_use]
+pub const fn lorebook_entry_final_instruction(
+    source: LorebookEntrySource,
+    force: bool,
+) -> &'static str {
+    match (source, force) {
+        (LorebookEntrySource::Messages, false) => LOREBOOK_ENTRY_MESSAGES_INSTRUCTION,
+        (LorebookEntrySource::Messages, true) => LOREBOOK_ENTRY_MESSAGES_FORCE_INSTRUCTION,
+        (LorebookEntrySource::Memory, false) => LOREBOOK_ENTRY_MEMORY_INSTRUCTION,
+        (LorebookEntrySource::Memory, true) => LOREBOOK_ENTRY_MEMORY_FORCE_INSTRUCTION,
+        (LorebookEntrySource::Mixed, false) => LOREBOOK_ENTRY_MIXED_INSTRUCTION,
+        (LorebookEntrySource::Mixed, true) => LOREBOOK_ENTRY_MIXED_FORCE_INSTRUCTION,
     }
 }
 

@@ -122,9 +122,9 @@ only `write_lorebook_entry`, a later valid entry wins over an earlier no-entry
 call, and title/content/always-active plus case-insensitively deduplicated
 keywords use the same normalization and 24-keyword legacy cap. Its exact JSON
 and XML fallback prompts and parsers are also present, with force-mode
-`no_entry` rejected as undeclared. Request/context preparation, durable
-admission, provider dispatch, and draft return remain the next slice; this pure
-contract does not mutate a lorebook.
+`no_entry` rejected as undeclared. The six source/force final instructions and
+two-attempt native/structured-fallback checkpoint decisions are typed here as
+well; none of these contracts mutate a lorebook.
 
 The matching immutable run now freezes the direct conversation, lorebook,
 character/persona, selected message and memory identities, source mode,
@@ -133,3 +133,8 @@ revision, rendered input values, fallback format, and generic job identity.
 Messages/memory/mixed source gates are validated before admission. The SQLite
 adapter rejects changed request replay and the application admission boundary
 reuses the generic restart/cooperative-cancellation `CreationRun` job.
+Application execution persists the native decision and, only when needed, one
+same-profile structured fallback decision with normalized result, usage, and
+provider diagnostics. Durable entry-or-none results replay without another
+provider request; invalid declared results remain terminal instead of silently
+falling through.

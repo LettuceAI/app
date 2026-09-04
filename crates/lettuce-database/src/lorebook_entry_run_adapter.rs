@@ -1,7 +1,8 @@
 use std::str::FromStr;
 
 use lettuce_creation::{
-    LorebookEntryGenerationRun, LorebookEntryRunRepository, LorebookEntryRunRepositoryError,
+    LorebookEntryAttemptCheckpoint, LorebookEntryGenerationRun, LorebookEntryRunRepository,
+    LorebookEntryRunRepositoryError, validate_lorebook_entry_attempts,
 };
 use lettuce_types::{
     CharacterId, ConversationId, JobId, LorebookId, ModelProfileId, PersonaId, PromptDocumentId,
@@ -12,6 +13,7 @@ use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use crate::{Database, decode_versioned, encode_versioned};
 
 const RUN_FORMAT_VERSION: u32 = 1;
+const ATTEMPTS_FORMAT_VERSION: u32 = 1;
 
 fn failure(_: impl std::fmt::Debug) -> LorebookEntryRunRepositoryError {
     LorebookEntryRunRepositoryError::Failure
@@ -98,6 +100,29 @@ fn load_in(
     Ok(Some(run))
 }
 
+fn load_attempts_in(
+    transaction: &Transaction<'_>,
+    request_id: RequestId,
+) -> Result<Option<Vec<LorebookEntryAttemptCheckpoint>>, LorebookEntryRunRepositoryError> {
+    let encoded = transaction
+        .query_row(
+            "SELECT attempts_json FROM creation_lorebook_entry_runs WHERE request_id = ?1",
+            [request_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(corrupt)?;
+    let Some(encoded) = encoded else {
+        return Ok(None);
+    };
+    let attempts =
+        decode_versioned::<Vec<LorebookEntryAttemptCheckpoint>>(&encoded, ATTEMPTS_FORMAT_VERSION)
+            .map_err(corrupt)?;
+    validate_lorebook_entry_attempts(&attempts)
+        .map_err(|_| LorebookEntryRunRepositoryError::Corrupt)?;
+    Ok(Some(attempts))
+}
+
 impl LorebookEntryRunRepository for Database {
     fn admit_lorebook_entry_run(
         &self,
@@ -105,6 +130,11 @@ impl LorebookEntryRunRepository for Database {
     ) -> Result<LorebookEntryGenerationRun, LorebookEntryRunRepositoryError> {
         run.validate()?;
         let encoded = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
+        let attempts = encode_versioned(
+            &Vec::<LorebookEntryAttemptCheckpoint>::new(),
+            ATTEMPTS_FORMAT_VERSION,
+        )
+        .map_err(failure)?;
         let mut connection = self.connection().map_err(failure)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -113,8 +143,8 @@ impl LorebookEntryRunRepository for Database {
             .execute(
                 "INSERT OR IGNORE INTO creation_lorebook_entry_runs (
                    request_id, job_id, conversation_id, lorebook_id, character_id, persona_id,
-                   model_profile_id, prompt_id, prompt_revision, created_at, run_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                   model_profile_id, prompt_id, prompt_revision, created_at, run_json, attempts_json
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     run.request_id.to_string(),
                     run.job_id.to_string(),
@@ -127,6 +157,7 @@ impl LorebookEntryRunRepository for Database {
                     i64::try_from(run.prompt_revision.get()).map_err(failure)?,
                     run.created_at.get(),
                     encoded,
+                    attempts,
                 ],
             )
             .map_err(failure)?;
@@ -151,5 +182,64 @@ impl LorebookEntryRunRepository for Database {
             load_in(&transaction, request_id)?.ok_or(LorebookEntryRunRepositoryError::NotFound)?;
         transaction.commit().map_err(failure)?;
         Ok(run)
+    }
+
+    fn load_lorebook_entry_attempts(
+        &self,
+        request_id: RequestId,
+    ) -> Result<Vec<LorebookEntryAttemptCheckpoint>, LorebookEntryRunRepositoryError> {
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(failure)?;
+        let attempts = load_attempts_in(&transaction, request_id)?
+            .ok_or(LorebookEntryRunRepositoryError::NotFound)?;
+        transaction.commit().map_err(failure)?;
+        Ok(attempts)
+    }
+
+    fn commit_lorebook_entry_attempt(
+        &self,
+        request_id: RequestId,
+        checkpoint: LorebookEntryAttemptCheckpoint,
+    ) -> Result<Vec<LorebookEntryAttemptCheckpoint>, LorebookEntryRunRepositoryError> {
+        checkpoint.validate()?;
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let mut attempts = load_attempts_in(&transaction, request_id)?
+            .ok_or(LorebookEntryRunRepositoryError::NotFound)?;
+        if let Some(stored) = attempts.get(usize::from(checkpoint.ordinal)) {
+            if stored == &checkpoint {
+                transaction.commit().map_err(failure)?;
+                return Ok(attempts);
+            }
+            return Err(LorebookEntryRunRepositoryError::Conflict);
+        }
+        if usize::from(checkpoint.ordinal) != attempts.len()
+            || attempts.last().is_some_and(|attempt| {
+                !matches!(
+                    attempt.decision,
+                    lettuce_creation::LorebookEntryAttemptDecision::StructuredFallback
+                )
+            })
+        {
+            return Err(LorebookEntryRunRepositoryError::Conflict);
+        }
+        attempts.push(checkpoint);
+        validate_lorebook_entry_attempts(&attempts)?;
+        let encoded = encode_versioned(&attempts, ATTEMPTS_FORMAT_VERSION).map_err(failure)?;
+        let updated = transaction
+            .execute(
+                "UPDATE creation_lorebook_entry_runs SET attempts_json = ?2 WHERE request_id = ?1",
+                params![request_id.to_string(), encoded],
+            )
+            .map_err(failure)?;
+        if updated != 1 {
+            return Err(LorebookEntryRunRepositoryError::Conflict);
+        }
+        transaction.commit().map_err(failure)?;
+        Ok(attempts)
     }
 }

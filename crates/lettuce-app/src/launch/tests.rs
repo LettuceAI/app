@@ -3678,8 +3678,8 @@ fn lorebook_entry_admission_binds_one_restart_safe_creation_job() {
     ));
 }
 
-#[test]
-fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_prompt_values() {
+#[tokio::test]
+async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_prompt_values() {
     let database = database_with_builtins();
     let model_id = seed_model(&database, ProviderProtocol::Ollama, "lorebook-entry-source");
     let mut stored_profile = ModelProfileRepository::get(&database, model_id)
@@ -3940,6 +3940,297 @@ fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_prompt_valu
             Err(lettuce_creation::LorebookEntryRunRepositoryError::NotFound)
         ));
     }
+
+    let native_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: Vec::new(),
+                tool_calls: vec![ProposedToolCall {
+                    provider_call_id: Some("native-entry".into()),
+                    name: "write_lorebook_entry".into(),
+                    arguments: serde_json::json!({
+                        "title": "Harbour Key",
+                        "keywords": ["harbour", "key"],
+                        "content": "Ada keeps the brass harbour key.",
+                        "alwaysActive": false
+                    }),
+                    raw_arguments: None,
+                    provider_replay: None,
+                }],
+                provider_replay: None,
+            }],
+            usage: Some(InferenceUsage {
+                input_tokens: 30,
+                output_tokens: 12,
+            }),
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: Some("tool_calls".into()),
+            provider_request_id: Some("native-request".into()),
+            warning_codes: Vec::new(),
+        }])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let dispatcher = crate::LorebookEntryDispatchCoordinator::new(&database, &database);
+    let native_work = dispatcher
+        .claim(
+            admitted.run.request_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 6),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim native entry")
+        .expect("native entry work");
+    let handle = native_work.handle.clone();
+    let executor = crate::LorebookEntryExecutionCoordinator::new(&database, &native_inference);
+    let generated = executor
+        .run(
+            admitted.run.request_id,
+            &prompt,
+            &handle,
+            None,
+            TimestampMillis::new(NOW.get() + 6),
+        )
+        .await
+        .expect("execute native entry");
+    assert_eq!(generated.attempts, 1);
+    assert!(!generated.replayed);
+    assert!(matches!(
+        &generated.result,
+        lettuce_creation::LorebookEntryGenerationResult::Entry { draft }
+            if draft.title == "Harbour Key"
+    ));
+    let settled = dispatcher
+        .settle(
+            native_work,
+            Ok(generated.clone()),
+            CancellationReason::User,
+            TimestampMillis::new(NOW.get() + 7),
+        )
+        .expect("settle native entry");
+    assert!(matches!(
+        settled,
+        crate::LorebookEntrySettledWork::Succeeded { ref job, .. }
+            if job.state == JobState::Succeeded
+    ));
+    let replayed = executor
+        .run(
+            admitted.run.request_id,
+            &prompt,
+            &handle,
+            None,
+            TimestampMillis::new(NOW.get() + 8),
+        )
+        .await
+        .expect("replay native entry");
+    assert!(replayed.replayed);
+    {
+        let native_requests = native_inference.requests.lock().expect("native requests");
+        assert_eq!(native_requests.len(), 1);
+        assert!(native_requests[0].tools.is_some());
+        assert!(native_requests[0]
+            .context
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .any(|part| matches!(part, ProviderContextPart::Text { text } if text.contains("# Selected Messages\n1. user: We met by the harbour."))));
+        assert!(
+            native_requests[0]
+                .context
+                .messages
+                .last()
+                .is_some_and(|message| matches!(
+                    message.parts.as_slice(),
+                    [ProviderContextPart::Text { text }]
+                        if text == lettuce_creation::LOREBOOK_ENTRY_MESSAGES_INSTRUCTION
+                ))
+        );
+    }
+    let native_attempts =
+        lettuce_creation::LorebookEntryRunRepository::load_lorebook_entry_attempts(
+            &database,
+            admitted.run.request_id,
+        )
+        .expect("native attempts");
+    assert_eq!(native_attempts.len(), 1);
+    assert_eq!(
+        native_attempts[0]
+            .usage
+            .as_ref()
+            .map(|usage| usage.input_tokens),
+        Some(30)
+    );
+
+    let fallback_request_id = RequestId::new();
+    let fallback_admitted = coordinator
+        .prepare_and_admit(make_request(fallback_request_id, vec![selected_message_id]))
+        .expect("admit fallback run");
+    let fallback_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([
+            InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: vec![MessagePart::Text {
+                        text: "No native call.".into(),
+                    }],
+                    tool_calls: Vec::new(),
+                    provider_replay: None,
+                }],
+                usage: None,
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: Some("stop".into()),
+                provider_request_id: Some("fallback-primary".into()),
+                warning_codes: Vec::new(),
+            },
+            InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: vec![MessagePart::Text {
+                        text: serde_json::json!({
+                            "result": {
+                                "name": "write_lorebook_entry",
+                                "arguments": {
+                                    "title": "Fallback Key",
+                                    "keywords": ["key"],
+                                    "content": "The key opens the harbour gate.",
+                                    "alwaysActive": false
+                                }
+                            }
+                        })
+                        .to_string(),
+                    }],
+                    tool_calls: Vec::new(),
+                    provider_replay: None,
+                }],
+                usage: Some(InferenceUsage {
+                    input_tokens: 25,
+                    output_tokens: 10,
+                }),
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: Some("stop".into()),
+                provider_request_id: Some("fallback-structured".into()),
+                warning_codes: Vec::new(),
+            },
+        ])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let fallback_work = dispatcher
+        .claim(
+            fallback_admitted.run.request_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 9),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim fallback entry")
+        .expect("fallback entry work");
+    let fallback_handle = fallback_work.handle.clone();
+    let fallback_executor =
+        crate::LorebookEntryExecutionCoordinator::new(&database, &fallback_inference);
+    let fallback_result = fallback_executor
+        .run(
+            fallback_request_id,
+            &prompt,
+            &fallback_handle,
+            None,
+            TimestampMillis::new(NOW.get() + 10),
+        )
+        .await
+        .expect("execute structured fallback");
+    assert_eq!(fallback_result.attempts, 2);
+    assert!(matches!(
+        &fallback_result.result,
+        lettuce_creation::LorebookEntryGenerationResult::Entry { draft }
+            if draft.title == "Fallback Key"
+    ));
+    {
+        let fallback_requests = fallback_inference
+            .requests
+            .lock()
+            .expect("fallback requests");
+        assert_eq!(fallback_requests.len(), 2);
+        assert!(fallback_requests[0].tools.is_some());
+        assert!(fallback_requests[1].tools.is_none());
+        assert!(
+            fallback_requests[1]
+                .context
+                .messages
+                .last()
+                .is_some_and(|message| matches!(
+                    message.parts.as_slice(),
+                    [ProviderContextPart::Text { text }]
+                        if text == lettuce_creation::LOREBOOK_ENTRY_JSON_FALLBACK_PROMPT
+                ))
+        );
+    }
+    assert!(matches!(
+        dispatcher
+            .settle(
+                fallback_work,
+                Ok(fallback_result),
+                CancellationReason::User,
+                TimestampMillis::new(NOW.get() + 11),
+            )
+            .expect("settle fallback entry"),
+        crate::LorebookEntrySettledWork::Succeeded { .. }
+    ));
+
+    let cancelled_request_id = RequestId::new();
+    let cancelled_admitted = coordinator
+        .prepare_and_admit(make_request(
+            cancelled_request_id,
+            vec![selected_message_id],
+        ))
+        .expect("admit cancelled run");
+    let cancelled_work = dispatcher
+        .claim(
+            cancelled_admitted.run.request_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 12),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim cancelled entry")
+        .expect("cancelled entry work");
+    cancelled_work.handle.request_cancel();
+    let cancelled_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::new()),
+        requests: Mutex::new(Vec::new()),
+    };
+    let cancellation_error =
+        crate::LorebookEntryExecutionCoordinator::new(&database, &cancelled_inference)
+            .run(
+                cancelled_request_id,
+                &prompt,
+                &cancelled_work.handle,
+                None,
+                TimestampMillis::new(NOW.get() + 13),
+            )
+            .await
+            .expect_err("cancel before dispatch");
+    assert!(matches!(
+        &cancellation_error,
+        crate::LorebookEntryExecutionError::Cancelled
+    ));
+    assert!(
+        cancelled_inference
+            .requests
+            .lock()
+            .expect("cancelled requests")
+            .is_empty()
+    );
+    assert!(matches!(
+        dispatcher
+            .settle(
+                cancelled_work,
+                Err(cancellation_error),
+                CancellationReason::User,
+                TimestampMillis::new(NOW.get() + 14),
+            )
+            .expect("settle cancelled entry"),
+        crate::LorebookEntrySettledWork::Cancelled { .. }
+    ));
     assert_eq!(
         LorebookRepository::get(&database, lorebook_id)
             .expect("lorebook")

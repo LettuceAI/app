@@ -1826,7 +1826,7 @@ fn text_message(role: MessageRole, text: &str) -> ProviderNeutralMessage {
     }
 }
 
-fn condense_prompt_messages(messages: &mut Vec<ProviderNeutralMessage>) {
+pub(crate) fn condense_prompt_messages(messages: &mut Vec<ProviderNeutralMessage>) {
     let mut condensed: Vec<ProviderNeutralMessage> = Vec::with_capacity(messages.len());
     for message in messages.drain(..) {
         if let Some(last) = condensed.last_mut()
