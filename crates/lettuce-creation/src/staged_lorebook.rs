@@ -1,6 +1,10 @@
 use std::collections::HashSet;
 
-use lettuce_types::{CreationWorkflowId, LorebookEntryId, Revision, TimestampMillis};
+use lettuce_conversations::ResolvedInferenceProfile;
+use lettuce_types::{
+    CreationWorkflowId, JobId, LorebookEntryId, PromptDocumentId, RequestId, Revision,
+    TimestampMillis,
+};
 use serde::{Deserialize, Serialize};
 
 pub const MIN_STAGED_LOREBOOK_TARGET_COUNT: u32 = 5;
@@ -58,6 +62,64 @@ pub enum StagedLorebookError {
     InvalidTransition,
     #[error("staged lorebook outline is invalid")]
     InvalidOutline,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookPlanningRun {
+    pub request_id: RequestId,
+    pub job_id: JobId,
+    pub project: StagedLorebookProject,
+    pub planner_profile: ResolvedInferenceProfile,
+    pub planner_prompt_id: PromptDocumentId,
+    pub planner_prompt_revision: Revision,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum StagedLorebookRepositoryError {
+    #[error("staged lorebook project was not found")]
+    NotFound,
+    #[error("staged lorebook project conflicts with durable state")]
+    Conflict,
+    #[error("staged lorebook project is invalid")]
+    Invalid,
+    #[error("staged lorebook project storage failed")]
+    Failure,
+    #[error("staged lorebook project storage is corrupt")]
+    Corrupt,
+}
+
+pub trait StagedLorebookRepository: Send + Sync {
+    fn admit_staged_lorebook(
+        &self,
+        run: StagedLorebookPlanningRun,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn load_staged_lorebook(
+        &self,
+        request_id: RequestId,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn start_staged_lorebook_planning(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+}
+
+impl StagedLorebookPlanningRun {
+    pub fn validate(&self) -> Result<(), StagedLorebookRepositoryError> {
+        self.project
+            .validate()
+            .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
+        if self.planner_prompt_revision.get() == 0
+            || serde_json::to_vec(&self.planner_profile).is_err()
+        {
+            return Err(StagedLorebookRepositoryError::Invalid);
+        }
+        Ok(())
+    }
 }
 
 #[must_use]

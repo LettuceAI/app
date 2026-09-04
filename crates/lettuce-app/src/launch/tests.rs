@@ -3958,6 +3958,119 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
     ));
 }
 
+#[test]
+fn staged_lorebook_admission_and_planning_are_restart_safe() {
+    let database = database_with_builtins();
+    let model_id = seed_model(&database, ProviderProtocol::Ollama, "staged-lorebook");
+    let mut stored_profile = ModelProfileRepository::get(&database, model_id)
+        .expect("profile")
+        .expect("profile exists");
+    stored_profile.config.chat_parameters.temperature = None;
+    let account = ProviderAccountRepository::get(&database, stored_profile.provider_account_id)
+        .expect("account")
+        .expect("account exists");
+    let profile = ResolvedInferenceProfile {
+        chat_profile: lettuce_models::resolve_chat_profile(
+            &lettuce_models::ExpectedModelIdentity {
+                model_profile_id: stored_profile.id,
+                model_revision: stored_profile.revision,
+                provider_account_id: account.id,
+                provider_account_revision: account.revision,
+                external_model_id: stored_profile.external_model_id.clone(),
+                display_name: stored_profile.display_name.clone(),
+                provider_protocol: account.protocol,
+                model_kind: stored_profile.kind,
+            },
+            &stored_profile,
+            &account,
+            &lettuce_models::ChatParameterResolutionInput::default(),
+            &lettuce_models::ChatRequirements::default(),
+        )
+        .expect("resolve profile"),
+        tool_policy: ToolPolicy::Required,
+        output_policy: OutputPolicy::Plain,
+        safety_policy: SafetyContext::Standard,
+        correlation_id: None,
+    };
+    let prompt_id = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(TimestampMillis::new(NOW.get() + 1))
+        .expect("prompt ids")
+        .get(BuiltInPromptId::LorebookGeneratorPlanner);
+    let prompt = PromptRepository::get(&database, prompt_id)
+        .expect("prompt")
+        .expect("prompt exists");
+    let request_id = RequestId::new();
+    let project_id = lettuce_types::CreationWorkflowId::new();
+    let make_request = || crate::StagedLorebookAdmissionRequest {
+        request_id,
+        project_id,
+        brief: "  Harbour world  ".into(),
+        initial_lorebook_name: Some(" Harbour Canon ".into()),
+        target_count: 2,
+        excerpts: vec![lettuce_creation::StagedLorebookSourceExcerpt {
+            source_id: "src_01".into(),
+            label: "Notes".into(),
+            content: "Ada keeps the harbour key.".into(),
+        }],
+        planner_profile: profile.clone(),
+        planner_prompt: &prompt,
+        now: TimestampMillis::new(NOW.get() + 2),
+    };
+    let coordinator = crate::StagedLorebookCoordinator::new(&database, &database);
+    let admitted = coordinator
+        .admit(make_request())
+        .expect("admit staged project");
+    assert!(admitted.created);
+    assert_eq!(admitted.run.project.target_count, 5);
+    assert_eq!(admitted.run.project.brief, "Harbour world");
+    assert_eq!(admitted.job.kind, JobKind::CreationRun);
+    let replay = coordinator
+        .admit(make_request())
+        .expect("replay staged project");
+    assert!(!replay.created);
+    assert_eq!(replay.run, admitted.run);
+
+    let mut changed = make_request();
+    changed.brief = "Changed".into();
+    assert!(matches!(
+        coordinator.admit(changed),
+        Err(crate::StagedLorebookAdmissionError::Repository(
+            lettuce_creation::StagedLorebookRepositoryError::Conflict
+        ))
+    ));
+    let planning_at = TimestampMillis::new(NOW.get() + 3);
+    let planning = coordinator
+        .start_planning(request_id, Revision::new(1), planning_at)
+        .expect("start planning");
+    assert_eq!(
+        planning.project.stage,
+        lettuce_creation::StagedLorebookStage::Planning
+    );
+    assert_eq!(planning.project.revision, Revision::new(2));
+    let replay_after_start = coordinator
+        .admit(make_request())
+        .expect("replay admission after planning");
+    assert!(!replay_after_start.created);
+    assert_eq!(replay_after_start.run, planning);
+    assert_eq!(
+        coordinator
+            .start_planning(request_id, Revision::new(1), planning_at)
+            .expect("replay start planning"),
+        planning
+    );
+    assert!(matches!(
+        coordinator.start_planning(
+            request_id,
+            Revision::new(1),
+            TimestampMillis::new(NOW.get() + 4)
+        ),
+        Err(crate::StagedLorebookAdmissionError::Repository(
+            lettuce_creation::StagedLorebookRepositoryError::Conflict
+        ))
+    ));
+}
+
 #[tokio::test]
 async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_prompt_values() {
     let database = database_with_builtins();

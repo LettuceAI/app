@@ -28,6 +28,7 @@ mod prompt_adapter;
 mod scheduled_note_adapter;
 mod soul_adapter;
 mod soul_writer_adapter;
+mod staged_lorebook_adapter;
 mod state_adapter;
 mod tool_adapter;
 mod usage_adapter;
@@ -3905,6 +3906,7 @@ mod tests {
                 "creation_lorebook_entry_runs",
                 "creation_lorebook_keyword_runs",
                 "creation_proposals",
+                "creation_staged_lorebook_runs",
                 "creation_turns",
                 "creation_workflows",
                 "dynamic_memory_admitted_tool_calls",

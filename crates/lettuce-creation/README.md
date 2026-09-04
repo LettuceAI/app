@@ -152,5 +152,7 @@ mutate a lorebook.
 The staged generator now has its first pure state slice: the exact legacy
 5-to-50 target clamp, bounded 20,000-character extracted excerpts, stable
 outline identities, owned source references, and legal created-to-planning-to-
-outline-review transitions. Persistence, source extraction, provider planning,
-drafting, coherence, and final apply remain explicit later slices.
+outline-review transitions. The created/planning project is persisted with its
+planner profile, prompt revision, and generic job identity; exact admission and
+created-to-planning CAS retries are restart-safe. Source extraction, provider
+planning, drafting, coherence, and final apply remain explicit later slices.

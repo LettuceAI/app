@@ -56,6 +56,11 @@ execution uses the exact required native contract and one same-profile
 structured fallback, checkpoints usage and provider diagnostics, and settles
 the generic job. Completed keyword drafts replay without dispatch and no
 lorebook is mutated.
+Staged lorebook admission accepts only already-extracted bounded excerpts,
+freezes the resolved planner profile and active planner prompt, and persists one
+stable project with a generic restart-safe creation job. Exact admission and
+created-to-planning CAS replay without duplicating state; extraction and
+provider planning remain separate.
 
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct
