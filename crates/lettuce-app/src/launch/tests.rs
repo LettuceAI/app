@@ -4422,7 +4422,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         writer_dispatcher
             .settle(
                 writer_work,
-                Ok(written),
+                Ok(written.clone()),
                 CancellationReason::User,
                 TimestampMillis::new(NOW.get() + 13),
             )
@@ -4430,6 +4430,90 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         crate::StagedLorebookWriterSettledWork::Succeeded { ref job, .. }
             if job.state == JobState::Succeeded
     ));
+
+    let plan_id = written.project.project.drafts[0].plan_id;
+    let edit_at = TimestampMillis::new(NOW.get() + 14);
+    let edit = lettuce_creation::StagedLorebookDraftEdit {
+        plan_id,
+        title: "  Manual title  ".into(),
+        keywords: vec![" harbour ".into(), String::new(), " key ".into()],
+        content: "  Manual content  ".into(),
+        always_active: false,
+    };
+    let edited = coordinator
+        .edit_draft(
+            request_id,
+            written.project.project.revision,
+            edit.clone(),
+            edit_at,
+        )
+        .expect("edit staged draft");
+    assert_eq!(edited.project.drafts[0].title, "  Manual title  ");
+    assert_eq!(edited.project.drafts[0].content, "  Manual content  ");
+    assert_eq!(edited.project.drafts[0].keywords, ["harbour", "key"]);
+    assert_eq!(
+        coordinator
+            .edit_draft(
+                request_id,
+                written.project.project.revision,
+                edit.clone(),
+                edit_at,
+            )
+            .expect("replay staged draft edit"),
+        edited
+    );
+    let mut changed_edit = edit;
+    changed_edit.content = "Different".into();
+    assert!(matches!(
+        coordinator.edit_draft(
+            request_id,
+            written.project.project.revision,
+            changed_edit,
+            edit_at,
+        ),
+        Err(crate::StagedLorebookAdmissionError::Repository(
+            lettuce_creation::StagedLorebookRepositoryError::Conflict
+        ))
+    ));
+    let approval_at = TimestampMillis::new(NOW.get() + 15);
+    let approved = coordinator
+        .set_draft_approved(
+            request_id,
+            edited.project.revision,
+            plan_id,
+            true,
+            approval_at,
+        )
+        .expect("approve staged draft");
+    assert_eq!(
+        approved.project.drafts[0].status,
+        lettuce_creation::StagedLorebookDraftStatus::Approved
+    );
+    assert_eq!(
+        coordinator
+            .set_draft_approved(
+                request_id,
+                edited.project.revision,
+                plan_id,
+                true,
+                approval_at,
+            )
+            .expect("replay staged draft approval"),
+        approved
+    );
+    let unapproved = coordinator
+        .set_draft_approved(
+            request_id,
+            approved.project.revision,
+            plan_id,
+            false,
+            TimestampMillis::new(NOW.get() + 16),
+        )
+        .expect("unapprove staged draft");
+    assert_eq!(
+        unapproved.project.drafts[0].status,
+        lettuce_creation::StagedLorebookDraftStatus::Drafted
+    );
 
     let cancelled_request_id = RequestId::new();
     let mut cancelled_request = make_request();

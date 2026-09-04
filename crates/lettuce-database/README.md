@@ -247,6 +247,9 @@ Draft-batch start, independent stable-plan success/failure, and drafts-ready
 gating use project-row CAS updates. Parallel completions may advance the root
 revision independently without invalidating another run from the same frozen
 batch.
+Stable-plan manual draft edits and approval toggles use the same project-row
+revision CAS. Exact operation retries return the stored project, while stale or
+changed retries conflict.
 Prepared companion sends reuse the conversation send transaction: the user
 message, generation turn/attempt, companion session and relationship revisions,
 operation, and outbox commit together. A stale state CAS or hook failure rolls

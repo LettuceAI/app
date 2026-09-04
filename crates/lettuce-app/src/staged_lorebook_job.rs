@@ -1,15 +1,15 @@
 use lettuce_context::{LifecycleStatus, PromptDocument, PromptPurpose};
 use lettuce_conversations::ResolvedInferenceProfile;
 use lettuce_creation::{
-    StagedLorebookPlanningRun, StagedLorebookProject, StagedLorebookRepository,
-    StagedLorebookRepositoryError, StagedLorebookSourceExcerpt,
+    StagedLorebookDraftEdit, StagedLorebookPlanningRun, StagedLorebookProject,
+    StagedLorebookRepository, StagedLorebookRepositoryError, StagedLorebookSourceExcerpt,
 };
 use lettuce_jobs::{
     CancellationPolicy, IdempotencyKey, JobKind, JobPriority, JobSnapshot, JobSpec, JobStore,
     JobSubject, OutcomeRef, RecoveryPolicy, ResourceClass, StoreError, SubjectKind,
 };
 use lettuce_models::{CapabilityStatus, Modality};
-use lettuce_types::{CreationWorkflowId, RequestId, Revision, TimestampMillis};
+use lettuce_types::{CreationWorkflowId, LorebookEntryId, RequestId, Revision, TimestampMillis};
 
 #[derive(Debug, Clone)]
 pub struct StagedLorebookAdmissionRequest<'a> {
@@ -142,6 +142,37 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookAdmissionError> {
         self.repository
             .approve_staged_lorebook_outline(request_id, expected_revision, now)
+            .map_err(Into::into)
+    }
+
+    pub fn edit_draft(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        edit: StagedLorebookDraftEdit,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookAdmissionError> {
+        self.repository
+            .edit_staged_lorebook_draft(request_id, expected_revision, edit, now)
+            .map_err(Into::into)
+    }
+
+    pub fn set_draft_approved(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        plan_id: LorebookEntryId,
+        approved: bool,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookAdmissionError> {
+        self.repository
+            .set_staged_lorebook_draft_approved(
+                request_id,
+                expected_revision,
+                plan_id,
+                approved,
+                now,
+            )
             .map_err(Into::into)
     }
 }

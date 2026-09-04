@@ -486,4 +486,100 @@ impl StagedLorebookRepository for Database {
         transaction.commit().map_err(failure)?;
         Ok(next)
     }
+
+    fn edit_staged_lorebook_draft(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        edit: lettuce_creation::StagedLorebookDraftEdit,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let current =
+            load_in(&transaction, request_id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
+        let normalized_keywords = edit
+            .keywords
+            .iter()
+            .map(|keyword| keyword.trim().to_owned())
+            .filter(|keyword| !keyword.is_empty())
+            .collect::<Vec<_>>();
+        let next_revision = expected_revision
+            .next()
+            .map_err(|_| StagedLorebookRepositoryError::Conflict)?;
+        if current.project.revision == next_revision
+            && current.project.updated_at == now
+            && current.project.drafts.iter().any(|draft| {
+                draft.plan_id == edit.plan_id
+                    && draft.title == edit.title
+                    && draft.keywords == normalized_keywords
+                    && draft.content == edit.content
+                    && draft.always_active == edit.always_active
+            })
+        {
+            transaction.commit().map_err(failure)?;
+            return Ok(current);
+        }
+        if current.project.revision != expected_revision {
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        let mut next = current;
+        next.project = next
+            .project
+            .edit_draft(edit, now)
+            .map_err(|_| StagedLorebookRepositoryError::Conflict)?;
+        let encoded = encode_versioned(&next, RUN_FORMAT_VERSION).map_err(failure)?;
+        if transaction.execute("UPDATE creation_staged_lorebook_runs SET stage = ?2, revision = ?3, updated_at = ?4, run_json = ?5 WHERE request_id = ?1 AND revision = ?6", params![request_id.to_string(), stage(next.project.stage), i64::try_from(next.project.revision.get()).map_err(failure)?, now.get(), encoded, i64::try_from(expected_revision.get()).map_err(failure)?]).map_err(failure)? != 1 { return Err(StagedLorebookRepositoryError::Conflict); }
+        transaction.commit().map_err(failure)?;
+        Ok(next)
+    }
+
+    fn set_staged_lorebook_draft_approved(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        plan_id: lettuce_types::LorebookEntryId,
+        approved: bool,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let current =
+            load_in(&transaction, request_id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
+        let status = if approved {
+            lettuce_creation::StagedLorebookDraftStatus::Approved
+        } else {
+            lettuce_creation::StagedLorebookDraftStatus::Drafted
+        };
+        let next_revision = expected_revision
+            .next()
+            .map_err(|_| StagedLorebookRepositoryError::Conflict)?;
+        if current.project.revision == next_revision
+            && current.project.updated_at == now
+            && current
+                .project
+                .drafts
+                .iter()
+                .any(|draft| draft.plan_id == plan_id && draft.status == status)
+        {
+            transaction.commit().map_err(failure)?;
+            return Ok(current);
+        }
+        if current.project.revision != expected_revision {
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        let mut next = current;
+        next.project = next
+            .project
+            .set_draft_approved(plan_id, approved, now)
+            .map_err(|_| StagedLorebookRepositoryError::Conflict)?;
+        let encoded = encode_versioned(&next, RUN_FORMAT_VERSION).map_err(failure)?;
+        if transaction.execute("UPDATE creation_staged_lorebook_runs SET stage = ?2, revision = ?3, updated_at = ?4, run_json = ?5 WHERE request_id = ?1 AND revision = ?6", params![request_id.to_string(), stage(next.project.stage), i64::try_from(next.project.revision.get()).map_err(failure)?, now.get(), encoded, i64::try_from(expected_revision.get()).map_err(failure)?]).map_err(failure)? != 1 { return Err(StagedLorebookRepositoryError::Conflict); }
+        transaction.commit().map_err(failure)?;
+        Ok(next)
+    }
 }

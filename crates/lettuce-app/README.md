@@ -70,6 +70,8 @@ redispatch, and the planner job succeeds while the project waits for review.
 Outline approval then performs one restart-safe project CAS that creates the
 ordered pending drafts from the reviewed plans and enters drafting. It does not
 dispatch writer inference or reopen the completed planner job.
+The coordinator also exposes restart-safe stable-ID draft edits and approval
+toggles as project revision operations without dispatching inference.
 Claimed staged-writer execution renders those frozen values, appends the exact
 legacy final instruction, and makes one required native tool request. Its
 checkpoint is durable before the matching pending draft CAS; restart replays
