@@ -236,6 +236,10 @@ restart cannot redispatch a completed planner request.
 The following outline approval is another exact-replay CAS on the same staged
 project row, atomically storing the ordered legacy-initialized pending drafts
 and the drafting stage.
+Migration 11 also stores immutable per-plan staged writer runs. Scalar
+project/job/plan/model/prompt projections are checked against versioned JSON,
+and exact request replay returns the original run while changed replay
+conflicts.
 Prepared companion sends reuse the conversation send transaction: the user
 message, generation turn/attempt, companion session and relationship revisions,
 operation, and outbox commit together. A stale state CAS or hook failure rolls

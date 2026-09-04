@@ -90,6 +90,20 @@ CREATE TABLE creation_staged_lorebook_runs (
     CHECK (updated_at >= created_at)
 ) STRICT;
 
+CREATE TABLE creation_staged_lorebook_writer_runs (
+    request_id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE,
+    project_request_id TEXT NOT NULL REFERENCES creation_staged_lorebook_runs(request_id) ON DELETE CASCADE,
+    project_id TEXT NOT NULL,
+    project_revision INTEGER NOT NULL CHECK (project_revision >= 1),
+    plan_id TEXT NOT NULL,
+    model_profile_id TEXT NOT NULL REFERENCES model_profiles(id) ON DELETE RESTRICT,
+    prompt_id TEXT NOT NULL REFERENCES prompt_documents(id) ON DELETE RESTRICT,
+    prompt_revision INTEGER NOT NULL CHECK (prompt_revision >= 1),
+    created_at INTEGER NOT NULL,
+    run_json TEXT NOT NULL CHECK (json_valid(run_json))
+) STRICT;
+
 CREATE TABLE creation_apply_receipts (
     workflow_id TEXT PRIMARY KEY,
     workflow_revision INTEGER NOT NULL CHECK (workflow_revision >= 1),

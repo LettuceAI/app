@@ -70,6 +70,11 @@ redispatch, and the planner job succeeds while the project waits for review.
 Outline approval then performs one restart-safe project CAS that creates the
 ordered pending drafts from the reviewed plans and enters drafting. It does not
 dispatch writer inference or reopen the completed planner job.
+A pending stable plan can be prepared into one restart-safe writer admission.
+Preparation copies the legacy full-outline, proposed-key, and relevant-excerpt
+formatting into immutable values with the active writer prompt and resolved
+profile, then binds one generic creation job. Foreign/non-pending plans and
+changed request replay fail before provider execution.
 
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct

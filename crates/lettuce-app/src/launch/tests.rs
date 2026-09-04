@@ -4225,11 +4225,87 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         ))
     ));
 
+    let writer_prompt_id = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(TimestampMillis::new(NOW.get() + 8))
+        .expect("prompt ids")
+        .get(BuiltInPromptId::LorebookGeneratorWriter);
+    let writer_prompt = PromptRepository::get(&database, writer_prompt_id)
+        .expect("writer prompt")
+        .expect("writer prompt exists");
+    let writer_request_id = RequestId::new();
+    let make_writer_request = || crate::StagedLorebookWriterRequest {
+        request_id: writer_request_id,
+        project_request_id: request_id,
+        plan_id: drafting.project.outline[0].id,
+        profile: profile.clone(),
+        prompt: &writer_prompt,
+        now: TimestampMillis::new(NOW.get() + 9),
+    };
+    let writer = crate::StagedLorebookWriterCoordinator::new(&database, &database, &database);
+    let admitted_writer = writer
+        .prepare_and_admit(make_writer_request())
+        .expect("admit staged writer");
+    assert!(admitted_writer.created);
+    assert_eq!(admitted_writer.run.project_revision, Revision::new(4));
+    assert_eq!(admitted_writer.run.prompt_values.brief, "Harbour world");
+    assert_eq!(
+        admitted_writer.run.prompt_values.outline,
+        "1. Harbour Key [item] keys: harbour key"
+    );
+    assert_eq!(admitted_writer.run.prompt_values.entry_title, "Harbour Key");
+    assert_eq!(admitted_writer.run.prompt_values.entry_category, "item");
+    assert_eq!(
+        admitted_writer.run.prompt_values.entry_proposed_keys,
+        "harbour key"
+    );
+    assert_eq!(
+        admitted_writer.run.prompt_values.entry_rationale,
+        "Recurring object"
+    );
+    assert_eq!(
+        admitted_writer.run.prompt_values.relevant_excerpts,
+        "[src_01] Notes\nAda keeps the harbour key."
+    );
+    assert_eq!(admitted_writer.job.kind, JobKind::CreationRun);
+    let writer_replay = writer
+        .prepare_and_admit(make_writer_request())
+        .expect("replay staged writer");
+    assert!(!writer_replay.created);
+    assert_eq!(writer_replay.run, admitted_writer.run);
+    let mut changed_writer = make_writer_request();
+    changed_writer.now = TimestampMillis::new(NOW.get() + 10);
+    assert!(matches!(
+        writer.prepare_and_admit(changed_writer),
+        Err(crate::StagedLorebookWriterAdmissionError::Run(
+            lettuce_creation::StagedLorebookWriterRunRepositoryError::Conflict
+        ))
+    ));
+    let foreign_writer_request_id = RequestId::new();
+    assert!(matches!(
+        writer.prepare_and_admit(crate::StagedLorebookWriterRequest {
+            request_id: foreign_writer_request_id,
+            project_request_id: request_id,
+            plan_id: lettuce_types::LorebookEntryId::new(),
+            profile: profile.clone(),
+            prompt: &writer_prompt,
+            now: TimestampMillis::new(NOW.get() + 10),
+        }),
+        Err(crate::StagedLorebookWriterAdmissionError::InvalidInput)
+    ));
+    assert!(matches!(
+        lettuce_creation::StagedLorebookWriterRunRepository::load_staged_lorebook_writer_run(
+            &database,
+            foreign_writer_request_id
+        ),
+        Err(lettuce_creation::StagedLorebookWriterRunRepositoryError::NotFound)
+    ));
+
     let cancelled_request_id = RequestId::new();
     let mut cancelled_request = make_request();
     cancelled_request.request_id = cancelled_request_id;
     cancelled_request.project_id = lettuce_types::CreationWorkflowId::new();
-    cancelled_request.now = TimestampMillis::new(NOW.get() + 8);
+    cancelled_request.now = TimestampMillis::new(NOW.get() + 11);
     coordinator
         .admit(cancelled_request)
         .expect("admit cancelled planner");
@@ -4237,14 +4313,14 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .start_planning(
             cancelled_request_id,
             Revision::new(1),
-            TimestampMillis::new(NOW.get() + 9),
+            TimestampMillis::new(NOW.get() + 12),
         )
         .expect("start cancelled planner");
     let cancelled_work = dispatcher
         .claim(
             cancelled_request_id,
             WorkerId::new(),
-            TimestampMillis::new(NOW.get() + 10),
+            TimestampMillis::new(NOW.get() + 13),
             Duration::from_secs(30),
             &ResourceAvailability::all(),
         )
@@ -4263,7 +4339,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             &prompt,
             &cancelled_work.handle,
             None,
-            TimestampMillis::new(NOW.get() + 11),
+            TimestampMillis::new(NOW.get() + 14),
         )
         .await
         .expect_err("cancel before provider dispatch");
@@ -4273,7 +4349,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 cancelled_work,
                 Err(cancelled),
                 CancellationReason::User,
-                TimestampMillis::new(NOW.get() + 11),
+                TimestampMillis::new(NOW.get() + 14),
             )
             .expect("settle cancelled planner"),
         crate::StagedLorebookPlannerSettledWork::Cancelled { ref job, .. }

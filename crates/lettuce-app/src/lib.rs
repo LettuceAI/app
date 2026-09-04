@@ -49,6 +49,7 @@ mod provider_runtime;
 mod staged_lorebook_dispatch;
 mod staged_lorebook_execution;
 mod staged_lorebook_job;
+mod staged_lorebook_writer_job;
 
 pub use built_in_prompts::*;
 pub use companion_consolidation_dispatch::*;
@@ -93,6 +94,7 @@ pub use provider_runtime::*;
 pub use staged_lorebook_dispatch::*;
 pub use staged_lorebook_execution::*;
 pub use staged_lorebook_job::*;
+pub use staged_lorebook_writer_job::*;
 
 #[cfg(test)]
 mod tests {

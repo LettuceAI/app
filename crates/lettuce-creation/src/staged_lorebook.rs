@@ -326,6 +326,60 @@ pub struct StagedLorebookPlannerAttempt {
     pub completed_at: TimestampMillis,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookWriterPromptValues {
+    pub brief: String,
+    pub outline: String,
+    pub entry_title: String,
+    pub entry_category: String,
+    pub entry_proposed_keys: String,
+    pub entry_rationale: String,
+    pub relevant_excerpts: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookWriterRun {
+    pub request_id: RequestId,
+    pub job_id: JobId,
+    pub project_request_id: RequestId,
+    pub project_id: CreationWorkflowId,
+    pub project_revision: Revision,
+    pub plan_id: LorebookEntryId,
+    pub profile: ResolvedInferenceProfile,
+    pub prompt_id: PromptDocumentId,
+    pub prompt_revision: Revision,
+    pub prompt_values: StagedLorebookWriterPromptValues,
+    pub created_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum StagedLorebookWriterRunRepositoryError {
+    #[error("staged lorebook writer run was not found")]
+    NotFound,
+    #[error("staged lorebook writer run conflicts with durable state")]
+    Conflict,
+    #[error("staged lorebook writer run is invalid")]
+    Invalid,
+    #[error("staged lorebook writer run storage failed")]
+    Failure,
+    #[error("staged lorebook writer run storage is corrupt")]
+    Corrupt,
+}
+
+pub trait StagedLorebookWriterRunRepository: Send + Sync {
+    fn admit_staged_lorebook_writer_run(
+        &self,
+        run: StagedLorebookWriterRun,
+    ) -> Result<StagedLorebookWriterRun, StagedLorebookWriterRunRepositoryError>;
+
+    fn load_staged_lorebook_writer_run(
+        &self,
+        request_id: RequestId,
+    ) -> Result<StagedLorebookWriterRun, StagedLorebookWriterRunRepositoryError>;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StagedLorebookRepositoryError {
     #[error("staged lorebook project was not found")]
@@ -412,6 +466,29 @@ impl StagedLorebookPlannerAttempt {
             || matches!(&self.decision, StagedLorebookPlannerDecision::Outline(outline) if validate_outline(outline, &project.excerpts).is_err())
         {
             return Err(StagedLorebookRepositoryError::Invalid);
+        }
+        Ok(())
+    }
+}
+
+impl StagedLorebookWriterRun {
+    pub fn validate(&self) -> Result<(), StagedLorebookWriterRunRepositoryError> {
+        let values = &self.prompt_values;
+        if self.project_revision.get() == 0
+            || self.prompt_revision.get() == 0
+            || self.created_at.get() < 0
+            || values.brief.trim().is_empty()
+            || values.brief != values.brief.trim()
+            || values.outline.is_empty()
+            || values.entry_title.trim().is_empty()
+            || values.entry_title != values.entry_title.trim()
+            || values.entry_category.trim().is_empty()
+            || values.entry_category != values.entry_category.trim()
+            || values.entry_proposed_keys.is_empty()
+            || values.relevant_excerpts.is_empty()
+            || serde_json::to_vec(&self.profile).is_err()
+        {
+            return Err(StagedLorebookWriterRunRepositoryError::Invalid);
         }
         Ok(())
     }

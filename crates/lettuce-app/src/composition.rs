@@ -185,6 +185,17 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn staged_lorebook_writer_coordinator(
+        &self,
+    ) -> crate::StagedLorebookWriterCoordinator<'_, Database, Database, Database> {
+        crate::StagedLorebookWriterCoordinator::new(
+            self.database.as_ref(),
+            self.database.as_ref(),
+            self.database.as_ref(),
+        )
+    }
+
+    #[must_use]
     pub const fn built_in_prompt_ids(&self) -> &BuiltInPromptIds {
         &self.built_in_prompt_ids
     }
