@@ -148,3 +148,9 @@ format, and generic job identity. Native and optional one-fallback decisions
 are immutable checkpoints with usage/provider diagnostics, allowing completed
 drafts to replay without another provider request. None of these contracts
 mutate a lorebook.
+
+The staged generator now has its first pure state slice: the exact legacy
+5-to-50 target clamp, bounded 20,000-character extracted excerpts, stable
+outline identities, owned source references, and legal created-to-planning-to-
+outline-review transitions. Persistence, source extraction, provider planning,
+drafting, coherence, and final apply remain explicit later slices.

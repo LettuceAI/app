@@ -1,0 +1,272 @@
+use std::collections::HashSet;
+
+use lettuce_types::{CreationWorkflowId, LorebookEntryId, Revision, TimestampMillis};
+use serde::{Deserialize, Serialize};
+
+pub const MIN_STAGED_LOREBOOK_TARGET_COUNT: u32 = 5;
+pub const MAX_STAGED_LOREBOOK_TARGET_COUNT: u32 = 50;
+pub const MAX_STAGED_LOREBOOK_EXCERPT_CHARS: usize = 20_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StagedLorebookStage {
+    Created,
+    Planning,
+    AwaitingOutlineApproval,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookSourceExcerpt {
+    pub source_id: String,
+    pub label: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookEntryPlan {
+    pub id: LorebookEntryId,
+    pub ordinal: u32,
+    pub title: String,
+    pub category: String,
+    pub proposed_keys: Vec<String>,
+    pub rationale: String,
+    pub source_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookProject {
+    pub id: CreationWorkflowId,
+    pub brief: String,
+    pub initial_lorebook_name: Option<String>,
+    pub target_count: u32,
+    pub excerpts: Vec<StagedLorebookSourceExcerpt>,
+    pub outline: Vec<StagedLorebookEntryPlan>,
+    pub stage: StagedLorebookStage,
+    pub revision: Revision,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum StagedLorebookError {
+    #[error("staged lorebook input is invalid")]
+    InvalidInput,
+    #[error("staged lorebook transition is invalid")]
+    InvalidTransition,
+    #[error("staged lorebook outline is invalid")]
+    InvalidOutline,
+}
+
+#[must_use]
+pub fn clamp_staged_lorebook_target_count(value: u32) -> u32 {
+    value.clamp(
+        MIN_STAGED_LOREBOOK_TARGET_COUNT,
+        MAX_STAGED_LOREBOOK_TARGET_COUNT,
+    )
+}
+
+impl StagedLorebookProject {
+    pub fn create(
+        id: CreationWorkflowId,
+        brief: String,
+        initial_lorebook_name: Option<String>,
+        target_count: u32,
+        excerpts: Vec<StagedLorebookSourceExcerpt>,
+        now: TimestampMillis,
+    ) -> Result<Self, StagedLorebookError> {
+        let project = Self {
+            id,
+            brief: brief.trim().to_owned(),
+            initial_lorebook_name: initial_lorebook_name
+                .map(|name| name.trim().to_owned())
+                .filter(|name| !name.is_empty()),
+            target_count: clamp_staged_lorebook_target_count(target_count),
+            excerpts,
+            outline: Vec::new(),
+            stage: StagedLorebookStage::Created,
+            revision: Revision::new(1),
+            created_at: now,
+            updated_at: now,
+        };
+        project.validate()?;
+        Ok(project)
+    }
+
+    pub fn start_planning(&self, now: TimestampMillis) -> Result<Self, StagedLorebookError> {
+        if self.stage != StagedLorebookStage::Created || now < self.updated_at {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        let mut next = self.clone();
+        next.stage = StagedLorebookStage::Planning;
+        next.updated_at = now;
+        next.revision = next
+            .revision
+            .next()
+            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        Ok(next)
+    }
+
+    pub fn submit_outline(
+        &self,
+        outline: Vec<StagedLorebookEntryPlan>,
+        now: TimestampMillis,
+    ) -> Result<Self, StagedLorebookError> {
+        if self.stage != StagedLorebookStage::Planning || now < self.updated_at {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        validate_outline(&outline, &self.excerpts)?;
+        let mut next = self.clone();
+        next.outline = outline;
+        next.stage = StagedLorebookStage::AwaitingOutlineApproval;
+        next.updated_at = now;
+        next.revision = next
+            .revision
+            .next()
+            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        Ok(next)
+    }
+
+    pub fn validate(&self) -> Result<(), StagedLorebookError> {
+        if self.brief.is_empty()
+            || self.brief != self.brief.trim()
+            || self.target_count < MIN_STAGED_LOREBOOK_TARGET_COUNT
+            || self.target_count > MAX_STAGED_LOREBOOK_TARGET_COUNT
+            || self.revision.get() == 0
+            || self.created_at.get() < 0
+            || self.updated_at < self.created_at
+        {
+            return Err(StagedLorebookError::InvalidInput);
+        }
+        let mut source_ids = HashSet::with_capacity(self.excerpts.len());
+        for excerpt in &self.excerpts {
+            if excerpt.source_id.trim().is_empty()
+                || excerpt.source_id != excerpt.source_id.trim()
+                || excerpt.label.trim().is_empty()
+                || excerpt.label != excerpt.label.trim()
+                || excerpt.content.chars().count() > MAX_STAGED_LOREBOOK_EXCERPT_CHARS
+                || !source_ids.insert(excerpt.source_id.as_str())
+            {
+                return Err(StagedLorebookError::InvalidInput);
+            }
+        }
+        match self.stage {
+            StagedLorebookStage::Created | StagedLorebookStage::Planning
+                if !self.outline.is_empty() =>
+            {
+                Err(StagedLorebookError::InvalidOutline)
+            }
+            StagedLorebookStage::AwaitingOutlineApproval => {
+                validate_outline(&self.outline, &self.excerpts)
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+fn validate_outline(
+    outline: &[StagedLorebookEntryPlan],
+    excerpts: &[StagedLorebookSourceExcerpt],
+) -> Result<(), StagedLorebookError> {
+    if outline.is_empty() {
+        return Err(StagedLorebookError::InvalidOutline);
+    }
+    let source_ids = excerpts
+        .iter()
+        .map(|excerpt| excerpt.source_id.as_str())
+        .collect::<HashSet<_>>();
+    let mut plan_ids = HashSet::with_capacity(outline.len());
+    for (ordinal, plan) in outline.iter().enumerate() {
+        if usize::try_from(plan.ordinal).ok() != Some(ordinal)
+            || plan.title.trim().is_empty()
+            || plan.title != plan.title.trim()
+            || plan.category.trim().is_empty()
+            || plan.category != plan.category.trim()
+            || plan.rationale.trim().is_empty()
+            || plan.rationale != plan.rationale.trim()
+            || !plan_ids.insert(plan.id)
+            || plan
+                .source_refs
+                .iter()
+                .any(|source| !source_ids.contains(source.as_str()))
+        {
+            return Err(StagedLorebookError::InvalidOutline);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_and_planner_transitions_preserve_legacy_boundaries() {
+        let project = StagedLorebookProject::create(
+            CreationWorkflowId::new(),
+            "  Harbour world  ".into(),
+            Some("  Harbour Canon  ".into()),
+            1,
+            vec![StagedLorebookSourceExcerpt {
+                source_id: "src_01".into(),
+                label: "Notes".into(),
+                content: "Ada keeps the harbour key.".into(),
+            }],
+            TimestampMillis::new(10),
+        )
+        .expect("create project");
+        assert_eq!(project.target_count, MIN_STAGED_LOREBOOK_TARGET_COUNT);
+        assert_eq!(project.brief, "Harbour world");
+        let planning = project
+            .start_planning(TimestampMillis::new(11))
+            .expect("start planning");
+        let reviewed = planning
+            .submit_outline(
+                vec![StagedLorebookEntryPlan {
+                    id: LorebookEntryId::new(),
+                    ordinal: 0,
+                    title: "Harbour Key".into(),
+                    category: "Artifact".into(),
+                    proposed_keys: vec!["key".into()],
+                    rationale: "Recurring durable object".into(),
+                    source_refs: vec!["src_01".into()],
+                }],
+                TimestampMillis::new(12),
+            )
+            .expect("submit outline");
+        assert_eq!(reviewed.stage, StagedLorebookStage::AwaitingOutlineApproval);
+        assert_eq!(reviewed.revision, Revision::new(3));
+    }
+
+    #[test]
+    fn outline_requires_stable_order_and_owned_source_refs() {
+        let project = StagedLorebookProject::create(
+            CreationWorkflowId::new(),
+            "World".into(),
+            None,
+            50,
+            Vec::new(),
+            TimestampMillis::new(10),
+        )
+        .expect("create project")
+        .start_planning(TimestampMillis::new(11))
+        .expect("start planning");
+        assert_eq!(
+            project.submit_outline(
+                vec![StagedLorebookEntryPlan {
+                    id: LorebookEntryId::new(),
+                    ordinal: 1,
+                    title: "Entry".into(),
+                    category: "Fact".into(),
+                    proposed_keys: Vec::new(),
+                    rationale: "Reason".into(),
+                    source_refs: vec!["foreign".into()],
+                }],
+                TimestampMillis::new(12),
+            ),
+            Err(StagedLorebookError::InvalidOutline)
+        );
+    }
+}
