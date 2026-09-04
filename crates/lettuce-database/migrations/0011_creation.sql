@@ -64,6 +64,16 @@ CREATE TABLE creation_lorebook_entry_runs (
     attempts_json TEXT NOT NULL CHECK (json_valid(attempts_json))
 ) STRICT;
 
+CREATE TABLE creation_lorebook_keyword_runs (
+    request_id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE,
+    model_profile_id TEXT NOT NULL REFERENCES model_profiles(id) ON DELETE RESTRICT,
+    prompt_id TEXT NOT NULL REFERENCES prompt_documents(id) ON DELETE RESTRICT,
+    prompt_revision INTEGER NOT NULL CHECK (prompt_revision >= 1),
+    created_at INTEGER NOT NULL,
+    run_json TEXT NOT NULL CHECK (json_valid(run_json))
+) STRICT;
+
 CREATE TABLE creation_apply_receipts (
     workflow_id TEXT PRIMARY KEY,
     workflow_revision INTEGER NOT NULL CHECK (workflow_revision >= 1),

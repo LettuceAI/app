@@ -3678,6 +3678,101 @@ fn lorebook_entry_admission_binds_one_restart_safe_creation_job() {
     ));
 }
 
+#[test]
+fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
+    let database = database_with_builtins();
+    let model_id = seed_model(&database, ProviderProtocol::Ollama, "lorebook-keyword");
+    let mut stored_profile = ModelProfileRepository::get(&database, model_id)
+        .expect("profile")
+        .expect("profile exists");
+    stored_profile.config.chat_parameters.temperature = None;
+    let account = ProviderAccountRepository::get(&database, stored_profile.provider_account_id)
+        .expect("account")
+        .expect("account exists");
+    let profile = ResolvedInferenceProfile {
+        chat_profile: lettuce_models::resolve_chat_profile(
+            &lettuce_models::ExpectedModelIdentity {
+                model_profile_id: stored_profile.id,
+                model_revision: stored_profile.revision,
+                provider_account_id: account.id,
+                provider_account_revision: account.revision,
+                external_model_id: stored_profile.external_model_id.clone(),
+                display_name: stored_profile.display_name.clone(),
+                provider_protocol: account.protocol,
+                model_kind: stored_profile.kind,
+            },
+            &stored_profile,
+            &account,
+            &lettuce_models::ChatParameterResolutionInput::default(),
+            &lettuce_models::ChatRequirements::default(),
+        )
+        .expect("resolve profile"),
+        tool_policy: ToolPolicy::Required,
+        output_policy: OutputPolicy::Plain,
+        safety_policy: SafetyContext::Standard,
+        correlation_id: None,
+    };
+    let prompt_id = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(TimestampMillis::new(NOW.get() + 1))
+        .expect("prompt ids")
+        .get(BuiltInPromptId::LorebookKeywordGenerator);
+    let prompt = PromptRepository::get(&database, prompt_id)
+        .expect("prompt")
+        .expect("prompt exists");
+    let request_id = RequestId::new();
+    let make_request = || crate::LorebookKeywordRequest {
+        request_id,
+        title: Some("   ".into()),
+        content: "  Ada keeps the brass harbour key.  ".into(),
+        direction_prompt: None,
+        existing_keywords: vec!["  harbour  ".into(), "".into(), " key ".into()],
+        profile: profile.clone(),
+        prompt: &prompt,
+        fallback_format: lettuce_creation::LorebookEntryFallbackFormat::Json,
+        now: TimestampMillis::new(NOW.get() + 2),
+    };
+    let coordinator = crate::LorebookKeywordCoordinator::new(&database, &database);
+    let mut invalid = make_request();
+    invalid.request_id = RequestId::new();
+    invalid.content = "  ".into();
+    assert!(matches!(
+        coordinator.prepare_and_admit(invalid),
+        Err(crate::LorebookKeywordAdmissionError::InvalidInput)
+    ));
+
+    let admitted = coordinator
+        .prepare_and_admit(make_request())
+        .expect("admit keyword run");
+    assert!(admitted.created);
+    assert_eq!(admitted.job.kind, JobKind::CreationRun);
+    assert_eq!(admitted.run.job_id, admitted.job.id);
+    assert_eq!(admitted.run.prompt_id, prompt.id);
+    assert_eq!(admitted.run.prompt_values.entry_title, "(untitled)");
+    assert_eq!(
+        admitted.run.prompt_values.entry_content,
+        "Ada keeps the brass harbour key."
+    );
+    assert_eq!(admitted.run.prompt_values.existing_keywords, "harbour, key");
+    assert_eq!(admitted.run.prompt_values.direction_prompt, "(none)");
+
+    let replay = coordinator
+        .prepare_and_admit(make_request())
+        .expect("replay keyword run");
+    assert!(!replay.created);
+    assert_eq!(replay.run, admitted.run);
+    assert_eq!(replay.job, admitted.job);
+
+    let mut changed = make_request();
+    changed.content = "Changed content".into();
+    assert!(matches!(
+        coordinator.prepare_and_admit(changed),
+        Err(crate::LorebookKeywordAdmissionError::Run(
+            lettuce_creation::LorebookKeywordRunRepositoryError::Conflict
+        ))
+    ));
+}
+
 #[tokio::test]
 async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_prompt_values() {
     let database = database_with_builtins();

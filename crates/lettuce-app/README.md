@@ -48,6 +48,11 @@ declared native result exists. Each decision, usage counters, and provider
 diagnostics are checkpointed before job settlement, so restart replays the
 durable entry-or-none result without dispatching again. Changed admission
 replay conflicts, and neither preparation nor execution mutates the lorebook.
+Keyword-draft preparation separately freezes the legacy title/content,
+existing-keyword, and direction values with the active keyword prompt and
+resolved text profile, then admits one restart-safe request-owned creation job.
+Exact replay returns the same run and changed replay conflicts; provider
+execution remains separate and no lorebook is mutated.
 
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct

@@ -142,6 +142,7 @@ falling through.
 The keyword draft's pure legacy contract is also preserved: one required
 `write_lorebook_keywords` declaration, the exact final instruction and JSON/XML
 fallback prompts, first matching writer-call selection, and first-spelling
-case-insensitive deduplication capped at 24 keywords. Durable request execution
-and result replay remain the next keyword slice; this contract does not mutate
-a lorebook.
+case-insensitive deduplication capped at 24 keywords. Its immutable run freezes
+the resolved profile, active prompt revision, exact prepared values, fallback
+format, and generic job identity. Provider execution remains the next keyword
+slice; none of these contracts mutate a lorebook.

@@ -42,6 +42,7 @@ mod lorebook_entry_dispatch;
 mod lorebook_entry_execution;
 mod lorebook_entry_job;
 mod lorebook_entry_preparation;
+mod lorebook_keyword_job;
 mod provider_runtime;
 
 pub use built_in_prompts::*;
@@ -80,6 +81,7 @@ pub use lorebook_entry_dispatch::*;
 pub use lorebook_entry_execution::*;
 pub use lorebook_entry_job::*;
 pub use lorebook_entry_preparation::*;
+pub use lorebook_keyword_job::*;
 pub use provider_runtime::*;
 
 #[cfg(test)]

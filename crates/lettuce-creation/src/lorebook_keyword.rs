@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
+use lettuce_conversations::ResolvedInferenceProfile;
 use lettuce_conversations::{ProposedToolCall, ToolChoice, ToolDefinition, ToolRequest};
+use lettuce_types::{JobId, PromptDocumentId, RequestId, Revision, TimestampMillis};
 use quick_xml::{
     Reader,
     escape::{resolve_xml_entity, unescape},
@@ -20,6 +22,75 @@ pub const LOREBOOK_KEYWORD_XML_FALLBACK_PROMPT: &str = r#"Return only XML. Forma
 #[serde(deny_unknown_fields)]
 pub struct LorebookKeywordDraft {
     pub keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookKeywordPromptValues {
+    pub entry_title: String,
+    pub entry_content: String,
+    pub existing_keywords: String,
+    pub direction_prompt: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookKeywordGenerationRun {
+    pub request_id: RequestId,
+    pub job_id: JobId,
+    pub profile: ResolvedInferenceProfile,
+    pub prompt_id: PromptDocumentId,
+    pub prompt_revision: Revision,
+    pub prompt_values: LorebookKeywordPromptValues,
+    pub fallback_format: LorebookEntryFallbackFormat,
+    pub created_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum LorebookKeywordRunRepositoryError {
+    #[error("lorebook keyword generation run was not found")]
+    NotFound,
+    #[error("lorebook keyword generation run conflicts with durable state")]
+    Conflict,
+    #[error("lorebook keyword generation run is invalid")]
+    Invalid,
+    #[error("lorebook keyword generation run storage failed")]
+    Failure,
+    #[error("lorebook keyword generation run storage is corrupt")]
+    Corrupt,
+}
+
+pub trait LorebookKeywordRunRepository: Send + Sync {
+    fn admit_lorebook_keyword_run(
+        &self,
+        run: LorebookKeywordGenerationRun,
+    ) -> Result<LorebookKeywordGenerationRun, LorebookKeywordRunRepositoryError>;
+
+    fn load_lorebook_keyword_run(
+        &self,
+        request_id: RequestId,
+    ) -> Result<LorebookKeywordGenerationRun, LorebookKeywordRunRepositoryError>;
+}
+
+impl LorebookKeywordGenerationRun {
+    pub fn validate(&self) -> Result<(), LorebookKeywordRunRepositoryError> {
+        let values = &self.prompt_values;
+        if self.prompt_revision.get() == 0
+            || self.created_at.get() < 0
+            || values.entry_title.trim().is_empty()
+            || values.entry_title != values.entry_title.trim()
+            || values.entry_content.trim().is_empty()
+            || values.entry_content != values.entry_content.trim()
+            || values.existing_keywords.trim().is_empty()
+            || values.existing_keywords != values.existing_keywords.trim()
+            || values.direction_prompt.trim().is_empty()
+            || values.direction_prompt != values.direction_prompt.trim()
+            || serde_json::to_vec(&self.profile).is_err()
+        {
+            return Err(LorebookKeywordRunRepositoryError::Invalid);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

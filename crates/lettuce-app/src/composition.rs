@@ -151,6 +151,13 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn lorebook_keyword_coordinator(
+        &self,
+    ) -> crate::LorebookKeywordCoordinator<'_, Database, Database> {
+        crate::LorebookKeywordCoordinator::new(self.database.as_ref(), self.database.as_ref())
+    }
+
+    #[must_use]
     pub const fn built_in_prompt_ids(&self) -> &BuiltInPromptIds {
         &self.built_in_prompt_ids
     }
