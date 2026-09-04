@@ -164,3 +164,7 @@ instruction are copied from legacy. Reduction selects the first matching call,
 preserves legacy field aliases/defaults and returned entry count, assigns
 deterministic stable entry IDs, and rejects empty outlines or foreign source
 references before the outline-review transition.
+Outline approval copies the legacy pending-draft initialization exactly: one
+ordered draft per stable plan ID, the plan title and proposed keys, empty
+content, `always_active = false`, pending status, and no revisions. The durable
+project then moves to drafting; writer execution remains separate.

@@ -133,6 +133,17 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             .start_staged_lorebook_planning(request_id, expected_revision, now)
             .map_err(Into::into)
     }
+
+    pub fn approve_outline(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookAdmissionError> {
+        self.repository
+            .approve_staged_lorebook_outline(request_id, expected_revision, now)
+            .map_err(Into::into)
+    }
 }
 
 fn same_admission(

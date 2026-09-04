@@ -82,7 +82,7 @@ CREATE TABLE creation_staged_lorebook_runs (
     model_profile_id TEXT NOT NULL REFERENCES model_profiles(id) ON DELETE RESTRICT,
     prompt_id TEXT NOT NULL REFERENCES prompt_documents(id) ON DELETE RESTRICT,
     prompt_revision INTEGER NOT NULL CHECK (prompt_revision >= 1),
-    stage TEXT NOT NULL CHECK (stage IN ('created', 'planning', 'awaiting_outline_approval')),
+    stage TEXT NOT NULL CHECK (stage IN ('created', 'planning', 'awaiting_outline_approval', 'drafting')),
     revision INTEGER NOT NULL CHECK (revision >= 1),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,

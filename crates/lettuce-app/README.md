@@ -67,6 +67,9 @@ required tool declaration. It makes one native request, accepts only typed tool
 calls, durably checkpoints calls, usage, and provider diagnostics, then applies
 the planning-to-outline-review CAS. Restart replays that checkpoint without
 redispatch, and the planner job succeeds while the project waits for review.
+Outline approval then performs one restart-safe project CAS that creates the
+ordered pending drafts from the reviewed plans and enters drafting. It does not
+dispatch writer inference or reopen the completed planner job.
 
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct

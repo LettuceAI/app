@@ -140,6 +140,7 @@ pub enum StagedLorebookStage {
     Created,
     Planning,
     AwaitingOutlineApproval,
+    Drafting,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,6 +163,32 @@ pub struct StagedLorebookEntryPlan {
     pub source_refs: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StagedLorebookDraftStatus {
+    Pending,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookDraftRevision {
+    pub feedback: String,
+    pub content: String,
+    pub timestamp: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookEntryDraft {
+    pub plan_id: LorebookEntryId,
+    pub title: String,
+    pub keywords: Vec<String>,
+    pub content: String,
+    pub always_active: bool,
+    pub status: StagedLorebookDraftStatus,
+    pub revisions: Vec<StagedLorebookDraftRevision>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StagedLorebookProject {
@@ -171,6 +198,8 @@ pub struct StagedLorebookProject {
     pub target_count: u32,
     pub excerpts: Vec<StagedLorebookSourceExcerpt>,
     pub outline: Vec<StagedLorebookEntryPlan>,
+    #[serde(default)]
+    pub drafts: Vec<StagedLorebookEntryDraft>,
     pub stage: StagedLorebookStage,
     pub revision: Revision,
     pub created_at: TimestampMillis,
@@ -271,6 +300,13 @@ pub trait StagedLorebookRepository: Send + Sync {
         request_id: RequestId,
         attempt: StagedLorebookPlannerAttempt,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn approve_staged_lorebook_outline(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
 }
 
 impl StagedLorebookPlanningRun {
@@ -336,6 +372,7 @@ impl StagedLorebookProject {
             target_count: clamp_staged_lorebook_target_count(target_count),
             excerpts,
             outline: Vec::new(),
+            drafts: Vec::new(),
             stage: StagedLorebookStage::Created,
             revision: Revision::new(1),
             created_at: now,
@@ -379,6 +416,36 @@ impl StagedLorebookProject {
         Ok(next)
     }
 
+    pub fn approve_outline(&self, now: TimestampMillis) -> Result<Self, StagedLorebookError> {
+        if self.stage != StagedLorebookStage::AwaitingOutlineApproval
+            || self.outline.is_empty()
+            || now < self.updated_at
+        {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        let mut next = self.clone();
+        next.drafts = self
+            .outline
+            .iter()
+            .map(|plan| StagedLorebookEntryDraft {
+                plan_id: plan.id,
+                title: plan.title.clone(),
+                keywords: plan.proposed_keys.clone(),
+                content: String::new(),
+                always_active: false,
+                status: StagedLorebookDraftStatus::Pending,
+                revisions: Vec::new(),
+            })
+            .collect();
+        next.stage = StagedLorebookStage::Drafting;
+        next.updated_at = now;
+        next.revision = next
+            .revision
+            .next()
+            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        Ok(next)
+    }
+
     pub fn validate(&self) -> Result<(), StagedLorebookError> {
         if self.brief.is_empty()
             || self.brief != self.brief.trim()
@@ -404,16 +471,45 @@ impl StagedLorebookProject {
         }
         match self.stage {
             StagedLorebookStage::Created | StagedLorebookStage::Planning
-                if !self.outline.is_empty() =>
+                if !self.outline.is_empty() || !self.drafts.is_empty() =>
             {
                 Err(StagedLorebookError::InvalidOutline)
             }
             StagedLorebookStage::AwaitingOutlineApproval => {
-                validate_outline(&self.outline, &self.excerpts)
+                validate_outline(&self.outline, &self.excerpts)?;
+                if self.drafts.is_empty() {
+                    Ok(())
+                } else {
+                    Err(StagedLorebookError::InvalidOutline)
+                }
+            }
+            StagedLorebookStage::Drafting => {
+                validate_outline(&self.outline, &self.excerpts)?;
+                validate_pending_drafts(&self.drafts, &self.outline)
             }
             _ => Ok(()),
         }
     }
+}
+
+fn validate_pending_drafts(
+    drafts: &[StagedLorebookEntryDraft],
+    outline: &[StagedLorebookEntryPlan],
+) -> Result<(), StagedLorebookError> {
+    if drafts.len() != outline.len()
+        || drafts.iter().zip(outline).any(|(draft, plan)| {
+            draft.plan_id != plan.id
+                || draft.title != plan.title
+                || draft.keywords != plan.proposed_keys
+                || !draft.content.is_empty()
+                || draft.always_active
+                || draft.status != StagedLorebookDraftStatus::Pending
+                || !draft.revisions.is_empty()
+        })
+    {
+        return Err(StagedLorebookError::InvalidOutline);
+    }
+    Ok(())
 }
 
 fn validate_outline(
@@ -497,6 +593,22 @@ mod tests {
             .expect("submit outline");
         assert_eq!(reviewed.stage, StagedLorebookStage::AwaitingOutlineApproval);
         assert_eq!(reviewed.revision, Revision::new(3));
+        let drafting = reviewed
+            .approve_outline(TimestampMillis::new(13))
+            .expect("approve outline");
+        assert_eq!(drafting.stage, StagedLorebookStage::Drafting);
+        assert_eq!(drafting.revision, Revision::new(4));
+        assert_eq!(drafting.drafts.len(), 1);
+        assert_eq!(drafting.drafts[0].plan_id, drafting.outline[0].id);
+        assert_eq!(drafting.drafts[0].title, "Harbour Key");
+        assert_eq!(drafting.drafts[0].keywords, ["key"]);
+        assert!(drafting.drafts[0].content.is_empty());
+        assert!(!drafting.drafts[0].always_active);
+        assert_eq!(
+            drafting.drafts[0].status,
+            StagedLorebookDraftStatus::Pending
+        );
+        assert!(drafting.drafts[0].revisions.is_empty());
     }
 
     #[test]

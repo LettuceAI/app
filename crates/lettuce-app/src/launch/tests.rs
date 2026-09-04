@@ -4189,12 +4189,47 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             lettuce_creation::StagedLorebookRepositoryError::Conflict
         ))
     ));
+    let drafting_at = TimestampMillis::new(NOW.get() + 6);
+    let drafting = coordinator
+        .approve_outline(request_id, Revision::new(3), drafting_at)
+        .expect("approve outline");
+    assert_eq!(
+        drafting.project.stage,
+        lettuce_creation::StagedLorebookStage::Drafting
+    );
+    assert_eq!(drafting.project.revision, Revision::new(4));
+    assert_eq!(drafting.project.drafts.len(), 1);
+    assert_eq!(
+        drafting.project.drafts[0].plan_id,
+        drafting.project.outline[0].id
+    );
+    assert_eq!(drafting.project.drafts[0].title, "Harbour Key");
+    assert_eq!(drafting.project.drafts[0].keywords, ["harbour key"]);
+    assert!(drafting.project.drafts[0].content.is_empty());
+    assert!(!drafting.project.drafts[0].always_active);
+    assert!(drafting.project.drafts[0].revisions.is_empty());
+    assert_eq!(
+        coordinator
+            .approve_outline(request_id, Revision::new(3), drafting_at)
+            .expect("replay outline approval"),
+        drafting
+    );
+    assert!(matches!(
+        coordinator.approve_outline(
+            request_id,
+            Revision::new(3),
+            TimestampMillis::new(NOW.get() + 7)
+        ),
+        Err(crate::StagedLorebookAdmissionError::Repository(
+            lettuce_creation::StagedLorebookRepositoryError::Conflict
+        ))
+    ));
 
     let cancelled_request_id = RequestId::new();
     let mut cancelled_request = make_request();
     cancelled_request.request_id = cancelled_request_id;
     cancelled_request.project_id = lettuce_types::CreationWorkflowId::new();
-    cancelled_request.now = TimestampMillis::new(NOW.get() + 6);
+    cancelled_request.now = TimestampMillis::new(NOW.get() + 8);
     coordinator
         .admit(cancelled_request)
         .expect("admit cancelled planner");
@@ -4202,14 +4237,14 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .start_planning(
             cancelled_request_id,
             Revision::new(1),
-            TimestampMillis::new(NOW.get() + 7),
+            TimestampMillis::new(NOW.get() + 9),
         )
         .expect("start cancelled planner");
     let cancelled_work = dispatcher
         .claim(
             cancelled_request_id,
             WorkerId::new(),
-            TimestampMillis::new(NOW.get() + 8),
+            TimestampMillis::new(NOW.get() + 10),
             Duration::from_secs(30),
             &ResourceAvailability::all(),
         )
@@ -4228,7 +4263,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             &prompt,
             &cancelled_work.handle,
             None,
-            TimestampMillis::new(NOW.get() + 9),
+            TimestampMillis::new(NOW.get() + 11),
         )
         .await
         .expect_err("cancel before provider dispatch");
@@ -4238,7 +4273,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 cancelled_work,
                 Err(cancelled),
                 CancellationReason::User,
-                TimestampMillis::new(NOW.get() + 9),
+                TimestampMillis::new(NOW.get() + 11),
             )
             .expect("settle cancelled planner"),
         crate::StagedLorebookPlannerSettledWork::Cancelled { ref job, .. }
