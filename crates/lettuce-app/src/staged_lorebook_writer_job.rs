@@ -11,7 +11,8 @@ use lettuce_jobs::{
     JobSubject, OutcomeRef, RecoveryPolicy, ResourceClass, StoreError, SubjectKind,
 };
 use lettuce_models::{CapabilityStatus, Modality};
-use lettuce_types::{LorebookEntryId, RequestId, TimestampMillis};
+use lettuce_types::{LorebookEntryId, RequestId, Revision, TimestampMillis};
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct StagedLorebookWriterRequest<'a> {
@@ -28,6 +29,12 @@ pub struct StagedLorebookWriterAdmission {
     pub run: StagedLorebookWriterRun,
     pub job: JobSnapshot,
     pub created: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StagedLorebookWriterBatchAdmission {
+    pub project: StagedLorebookPlanningRun,
+    pub writers: Vec<StagedLorebookWriterAdmission>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -140,6 +147,44 @@ where
             created: admitted.created,
         })
     }
+
+    pub fn start_batch(
+        &self,
+        project_request_id: RequestId,
+        expected_revision: Revision,
+        profile: ResolvedInferenceProfile,
+        prompt: &PromptDocument,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookWriterBatchAdmission, StagedLorebookWriterAdmissionError> {
+        let project = self.projects.start_staged_lorebook_draft_batch(
+            project_request_id,
+            expected_revision,
+            now,
+        )?;
+        let plan_ids = project
+            .project
+            .drafts
+            .iter()
+            .filter(|draft| draft.status == StagedLorebookDraftStatus::Drafting)
+            .map(|draft| draft.plan_id)
+            .collect::<Vec<_>>();
+        let mut writers = Vec::with_capacity(plan_ids.len());
+        for plan_id in plan_ids {
+            let request_id = RequestId::from_uuid(Uuid::new_v5(
+                &project.project.id.as_uuid(),
+                format!("writer-{plan_id}").as_bytes(),
+            ));
+            writers.push(self.prepare_and_admit(StagedLorebookWriterRequest {
+                request_id,
+                project_request_id,
+                plan_id,
+                profile: profile.clone(),
+                prompt,
+                now: project.project.updated_at,
+            })?);
+        }
+        Ok(StagedLorebookWriterBatchAdmission { project, writers })
+    }
 }
 
 fn validate_request(
@@ -187,7 +232,10 @@ fn prepare_values(
         .iter()
         .find(|draft| draft.plan_id == plan_id)
         .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
-    if draft.status != StagedLorebookDraftStatus::Pending {
+    if !matches!(
+        draft.status,
+        StagedLorebookDraftStatus::Pending | StagedLorebookDraftStatus::Drafting
+    ) {
         return Err(StagedLorebookWriterAdmissionError::InvalidInput);
     }
     Ok(StagedLorebookWriterPromptValues {

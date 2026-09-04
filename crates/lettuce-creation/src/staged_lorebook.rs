@@ -13,6 +13,7 @@ use uuid::Uuid;
 pub const MIN_STAGED_LOREBOOK_TARGET_COUNT: u32 = 5;
 pub const MAX_STAGED_LOREBOOK_TARGET_COUNT: u32 = 50;
 pub const MAX_STAGED_LOREBOOK_EXCERPT_CHARS: usize = 20_000;
+pub const STAGED_LOREBOOK_DRAFT_BATCH_SIZE: usize = 3;
 pub const STAGED_LOREBOOK_PLANNER_TOOL_NAME: &str = "propose_lorebook_outline";
 pub const STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION: &str =
     "Call propose_lorebook_outline now with exactly the requested number of entries.";
@@ -209,6 +210,7 @@ pub enum StagedLorebookStage {
     Planning,
     AwaitingOutlineApproval,
     Drafting,
+    DraftsReady,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -235,7 +237,9 @@ pub struct StagedLorebookEntryPlan {
 #[serde(rename_all = "snake_case")]
 pub enum StagedLorebookDraftStatus {
     Pending,
+    Drafting,
     Drafted,
+    Failed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -473,6 +477,20 @@ pub trait StagedLorebookRepository: Send + Sync {
         draft: StagedLorebookEntryDraft,
         now: TimestampMillis,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn start_staged_lorebook_draft_batch(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn fail_staged_lorebook_draft(
+        &self,
+        request_id: RequestId,
+        plan_id: LorebookEntryId,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
 }
 
 impl StagedLorebookPlanningRun {
@@ -670,16 +688,98 @@ impl StagedLorebookProject {
             .drafts
             .iter()
             .position(|stored| stored.plan_id == draft.plan_id)
-            .filter(|position| self.drafts[*position].status == StagedLorebookDraftStatus::Pending)
+            .filter(|position| {
+                matches!(
+                    self.drafts[*position].status,
+                    StagedLorebookDraftStatus::Pending | StagedLorebookDraftStatus::Drafting
+                )
+            })
             .ok_or(StagedLorebookError::InvalidTransition)?;
         let mut next = self.clone();
         next.drafts[position] = draft;
+        next.finish_drafting_if_terminal();
         next.updated_at = now;
         next.revision = next
             .revision
             .next()
             .map_err(|_| StagedLorebookError::InvalidTransition)?;
         Ok(next)
+    }
+
+    pub fn start_draft_batch(&self, now: TimestampMillis) -> Result<Self, StagedLorebookError> {
+        if !matches!(
+            self.stage,
+            StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady
+        ) || now < self.updated_at
+        {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        if self
+            .drafts
+            .iter()
+            .any(|draft| draft.status == StagedLorebookDraftStatus::Drafting)
+        {
+            return Ok(self.clone());
+        }
+        let mut next = self.clone();
+        let mut selected = 0;
+        for draft in &mut next.drafts {
+            if matches!(
+                draft.status,
+                StagedLorebookDraftStatus::Pending | StagedLorebookDraftStatus::Failed
+            ) && selected < STAGED_LOREBOOK_DRAFT_BATCH_SIZE
+            {
+                draft.status = StagedLorebookDraftStatus::Drafting;
+                selected += 1;
+            }
+        }
+        next.stage = StagedLorebookStage::Drafting;
+        if selected == 0 {
+            next.finish_drafting_if_terminal();
+        }
+        next.updated_at = now;
+        next.revision = next
+            .revision
+            .next()
+            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        Ok(next)
+    }
+
+    pub fn fail_draft(
+        &self,
+        plan_id: LorebookEntryId,
+        now: TimestampMillis,
+    ) -> Result<Self, StagedLorebookError> {
+        if self.stage != StagedLorebookStage::Drafting || now < self.updated_at {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        let position = self
+            .drafts
+            .iter()
+            .position(|draft| {
+                draft.plan_id == plan_id && draft.status == StagedLorebookDraftStatus::Drafting
+            })
+            .ok_or(StagedLorebookError::InvalidTransition)?;
+        let mut next = self.clone();
+        next.drafts[position].status = StagedLorebookDraftStatus::Failed;
+        next.finish_drafting_if_terminal();
+        next.updated_at = now;
+        next.revision = next
+            .revision
+            .next()
+            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        Ok(next)
+    }
+
+    fn finish_drafting_if_terminal(&mut self) {
+        if self.drafts.iter().all(|draft| {
+            !matches!(
+                draft.status,
+                StagedLorebookDraftStatus::Pending | StagedLorebookDraftStatus::Drafting
+            )
+        }) {
+            self.stage = StagedLorebookStage::DraftsReady;
+        }
     }
 
     pub fn validate(&self) -> Result<(), StagedLorebookError> {
@@ -719,9 +819,22 @@ impl StagedLorebookProject {
                     Err(StagedLorebookError::InvalidOutline)
                 }
             }
-            StagedLorebookStage::Drafting => {
+            StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady => {
                 validate_outline(&self.outline, &self.excerpts)?;
-                validate_drafts(&self.drafts, &self.outline)
+                validate_drafts(&self.drafts, &self.outline)?;
+                if self.stage == StagedLorebookStage::DraftsReady
+                    && self.drafts.iter().any(|draft| {
+                        matches!(
+                            draft.status,
+                            StagedLorebookDraftStatus::Pending
+                                | StagedLorebookDraftStatus::Drafting
+                        )
+                    })
+                {
+                    Err(StagedLorebookError::InvalidDraft)
+                } else {
+                    Ok(())
+                }
             }
             _ => Ok(()),
         }
@@ -745,6 +858,13 @@ fn validate_drafts(
                     }
                     StagedLorebookDraftStatus::Drafted => {
                         validate_written_draft(draft, plan.id).is_err()
+                    }
+                    StagedLorebookDraftStatus::Drafting | StagedLorebookDraftStatus::Failed => {
+                        draft.title != plan.title
+                            || draft.keywords != plan.proposed_keys
+                            || !draft.content.is_empty()
+                            || draft.always_active
+                            || !draft.revisions.is_empty()
                     }
                 }
         })
@@ -1015,5 +1135,114 @@ mod tests {
             ),
             Err(StagedLorebookError::InvalidDraft)
         );
+    }
+
+    #[test]
+    fn drafting_batches_keep_the_legacy_three_item_order_and_ready_gate() {
+        let project = StagedLorebookProject::create(
+            CreationWorkflowId::new(),
+            "World".into(),
+            None,
+            5,
+            Vec::new(),
+            TimestampMillis::new(1),
+        )
+        .expect("project")
+        .start_planning(TimestampMillis::new(2))
+        .expect("planning");
+        let outline = (0..5)
+            .map(|ordinal| StagedLorebookEntryPlan {
+                id: LorebookEntryId::new(),
+                ordinal,
+                title: format!("Entry {ordinal}"),
+                category: "fact".into(),
+                proposed_keys: vec![format!("key-{ordinal}")],
+                rationale: String::new(),
+                source_refs: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        let mut project = project
+            .submit_outline(outline, TimestampMillis::new(3))
+            .expect("outline")
+            .approve_outline(TimestampMillis::new(4))
+            .expect("approve");
+        project = project
+            .start_draft_batch(TimestampMillis::new(5))
+            .expect("first batch");
+        assert_eq!(
+            project
+                .drafts
+                .iter()
+                .filter(|draft| draft.status == StagedLorebookDraftStatus::Drafting)
+                .count(),
+            STAGED_LOREBOOK_DRAFT_BATCH_SIZE
+        );
+        assert!(
+            project.drafts[..3]
+                .iter()
+                .all(|draft| draft.status == StagedLorebookDraftStatus::Drafting)
+        );
+        assert!(
+            project.drafts[3..]
+                .iter()
+                .all(|draft| draft.status == StagedLorebookDraftStatus::Pending)
+        );
+        for (timestamp, index) in [(6, 0), (7, 1), (8, 2)] {
+            let pending = project.drafts[index].clone();
+            project = if index == 1 {
+                project
+                    .fail_draft(pending.plan_id, TimestampMillis::new(timestamp))
+                    .expect("fail")
+            } else {
+                project
+                    .settle_draft(
+                        StagedLorebookEntryDraft {
+                            plan_id: pending.plan_id,
+                            title: pending.title,
+                            keywords: pending.keywords,
+                            content: "Body".into(),
+                            always_active: false,
+                            status: StagedLorebookDraftStatus::Drafted,
+                            revisions: Vec::new(),
+                        },
+                        TimestampMillis::new(timestamp),
+                    )
+                    .expect("settle")
+            };
+        }
+        assert_eq!(project.stage, StagedLorebookStage::Drafting);
+        project = project
+            .start_draft_batch(TimestampMillis::new(9))
+            .expect("retry batch");
+        assert_eq!(
+            project.drafts[1].status,
+            StagedLorebookDraftStatus::Drafting
+        );
+        assert_eq!(
+            project.drafts[3].status,
+            StagedLorebookDraftStatus::Drafting
+        );
+        assert_eq!(
+            project.drafts[4].status,
+            StagedLorebookDraftStatus::Drafting
+        );
+        for (timestamp, index) in [(10, 1), (11, 3), (12, 4)] {
+            let pending = project.drafts[index].clone();
+            project = project
+                .settle_draft(
+                    StagedLorebookEntryDraft {
+                        plan_id: pending.plan_id,
+                        title: pending.title,
+                        keywords: pending.keywords,
+                        content: "Body".into(),
+                        always_active: false,
+                        status: StagedLorebookDraftStatus::Drafted,
+                        revisions: Vec::new(),
+                    },
+                    TimestampMillis::new(timestamp),
+                )
+                .expect("settle retry batch");
+        }
+        assert_eq!(project.stage, StagedLorebookStage::DraftsReady);
     }
 }

@@ -243,6 +243,10 @@ conflicts.
 Writer attempts are stored inside the immutable writer-run document before the
 separate stable-plan project CAS. Exact checkpoint and draft settlement replay
 without another provider request.
+Draft-batch start, independent stable-plan success/failure, and drafts-ready
+gating use project-row CAS updates. Parallel completions may advance the root
+revision independently without invalidating another run from the same frozen
+batch.
 Prepared companion sends reuse the conversation send transaction: the user
 message, generation turn/attempt, companion session and relationship revisions,
 operation, and outbox commit together. A stale state CAS or hook failure rolls

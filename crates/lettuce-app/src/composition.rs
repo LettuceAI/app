@@ -198,8 +198,9 @@ impl AppBackend {
     #[must_use]
     pub fn staged_lorebook_writer_dispatcher(
         &self,
-    ) -> crate::StagedLorebookWriterDispatchCoordinator<'_, Database, Database> {
+    ) -> crate::StagedLorebookWriterDispatchCoordinator<'_, Database, Database, Database> {
         crate::StagedLorebookWriterDispatchCoordinator::new(
+            self.database.as_ref(),
             self.database.as_ref(),
             self.database.as_ref(),
         )

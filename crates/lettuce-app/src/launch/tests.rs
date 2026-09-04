@@ -4233,21 +4233,21 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let writer_prompt = PromptRepository::get(&database, writer_prompt_id)
         .expect("writer prompt")
         .expect("writer prompt exists");
-    let writer_request_id = RequestId::new();
-    let make_writer_request = || crate::StagedLorebookWriterRequest {
-        request_id: writer_request_id,
-        project_request_id: request_id,
-        plan_id: drafting.project.outline[0].id,
-        profile: profile.clone(),
-        prompt: &writer_prompt,
-        now: TimestampMillis::new(NOW.get() + 9),
-    };
     let writer = crate::StagedLorebookWriterCoordinator::new(&database, &database, &database);
-    let admitted_writer = writer
-        .prepare_and_admit(make_writer_request())
-        .expect("admit staged writer");
+    let batch = writer
+        .start_batch(
+            request_id,
+            Revision::new(4),
+            profile.clone(),
+            &writer_prompt,
+            TimestampMillis::new(NOW.get() + 9),
+        )
+        .expect("start staged writer batch");
+    assert_eq!(batch.writers.len(), 1);
+    let admitted_writer = batch.writers[0].clone();
+    let writer_request_id = admitted_writer.run.request_id;
     assert!(admitted_writer.created);
-    assert_eq!(admitted_writer.run.project_revision, Revision::new(4));
+    assert_eq!(admitted_writer.run.project_revision, Revision::new(5));
     assert_eq!(admitted_writer.run.prompt_values.brief, "Harbour world");
     assert_eq!(
         admitted_writer.run.prompt_values.outline,
@@ -4269,18 +4269,17 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     );
     assert_eq!(admitted_writer.job.kind, JobKind::CreationRun);
     let writer_replay = writer
-        .prepare_and_admit(make_writer_request())
+        .start_batch(
+            request_id,
+            Revision::new(4),
+            profile.clone(),
+            &writer_prompt,
+            TimestampMillis::new(NOW.get() + 10),
+        )
         .expect("replay staged writer");
-    assert!(!writer_replay.created);
-    assert_eq!(writer_replay.run, admitted_writer.run);
-    let mut changed_writer = make_writer_request();
-    changed_writer.now = TimestampMillis::new(NOW.get() + 10);
-    assert!(matches!(
-        writer.prepare_and_admit(changed_writer),
-        Err(crate::StagedLorebookWriterAdmissionError::Run(
-            lettuce_creation::StagedLorebookWriterRunRepositoryError::Conflict
-        ))
-    ));
+    assert_eq!(writer_replay.writers.len(), 1);
+    assert!(!writer_replay.writers[0].created);
+    assert_eq!(writer_replay.writers[0].run, admitted_writer.run);
     let foreign_writer_request_id = RequestId::new();
     assert!(matches!(
         writer.prepare_and_admit(crate::StagedLorebookWriterRequest {
@@ -4332,7 +4331,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         requests: Mutex::new(Vec::new()),
     };
     let writer_dispatcher =
-        crate::StagedLorebookWriterDispatchCoordinator::new(&database, &database);
+        crate::StagedLorebookWriterDispatchCoordinator::new(&database, &database, &database);
     let writer_work = writer_dispatcher
         .claim(
             writer_request_id,
@@ -4360,7 +4359,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .await
         .expect("execute staged writer");
     assert!(!written.replayed);
-    assert_eq!(written.project.project.revision, Revision::new(5));
+    assert_eq!(written.project.project.revision, Revision::new(6));
     assert_eq!(written.project.project.drafts[0].title, "Harbour Key");
     assert_eq!(
         written.project.project.drafts[0].content,

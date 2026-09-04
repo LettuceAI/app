@@ -74,6 +74,11 @@ Claimed staged-writer execution renders those frozen values, appends the exact
 legacy final instruction, and makes one required native tool request. Its
 checkpoint is durable before the matching pending draft CAS; restart replays
 without redispatch, and the request-owned creation job settles normally.
+Batch admission selects the first three pending/failed drafts in outline order,
+marks them durably as drafting, and creates deterministic stable-ID writer
+runs/jobs. An active batch replays without selecting later work; terminal
+writer failure marks its draft failed, while transient job retry leaves it in
+the active batch.
 A pending stable plan can be prepared into one restart-safe writer admission.
 Preparation copies the legacy full-outline, proposed-key, and relevant-excerpt
 formatting into immutable values with the active writer prompt and resolved

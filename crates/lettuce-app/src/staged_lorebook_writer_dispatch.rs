@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::{StagedLorebookWriterExecutionError, StagedLorebookWriterExecutionResult};
 use lettuce_conversations::{PortError, ProviderFailureKind};
 use lettuce_creation::{
-    StagedLorebookWriterRun, StagedLorebookWriterRunRepository,
+    StagedLorebookRepository, StagedLorebookWriterRun, StagedLorebookWriterRunRepository,
     StagedLorebookWriterRunRepositoryError,
 };
 use lettuce_jobs::{
@@ -52,19 +52,27 @@ pub enum StagedLorebookWriterDispatchError {
 }
 
 #[derive(Debug)]
-pub struct StagedLorebookWriterDispatchCoordinator<'a, R: ?Sized, J: ?Sized> {
+pub struct StagedLorebookWriterDispatchCoordinator<'a, R: ?Sized, P: ?Sized, J: ?Sized> {
     runs: &'a R,
+    projects: &'a P,
     jobs: &'a J,
 }
-impl<'a, R: ?Sized, J: ?Sized> StagedLorebookWriterDispatchCoordinator<'a, R, J> {
+impl<'a, R: ?Sized, P: ?Sized, J: ?Sized> StagedLorebookWriterDispatchCoordinator<'a, R, P, J> {
     #[must_use]
-    pub const fn new(runs: &'a R, jobs: &'a J) -> Self {
-        Self { runs, jobs }
+    pub const fn new(runs: &'a R, projects: &'a P, jobs: &'a J) -> Self {
+        Self {
+            runs,
+            projects,
+            jobs,
+        }
     }
 }
 
-impl<R: StagedLorebookWriterRunRepository + ?Sized, J: JobStore + ?Sized>
-    StagedLorebookWriterDispatchCoordinator<'_, R, J>
+impl<
+    R: StagedLorebookWriterRunRepository + ?Sized,
+    P: StagedLorebookRepository + ?Sized,
+    J: JobStore + ?Sized,
+> StagedLorebookWriterDispatchCoordinator<'_, R, P, J>
 {
     pub fn claim(
         &self,
@@ -182,6 +190,9 @@ impl<R: StagedLorebookWriterRunRepository + ?Sized, J: JobStore + ?Sized>
                 Ok(StagedLorebookWriterSettledWork::RetryScheduled { error, job })
             }
             Err(error) => {
+                self.projects
+                    .fail_staged_lorebook_draft(work.run.project_request_id, work.run.plan_id, at)
+                    .map_err(|_| StagedLorebookWriterDispatchError::InvalidWork)?;
                 let job = self.jobs.append_and_transition(JobMutation::Fail {
                     claim: work.claim.claim,
                     error: job_error(&error),

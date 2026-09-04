@@ -178,6 +178,10 @@ Each admitted staged writer can now retain one immutable native attempt with
 typed calls, draft-or-invalid decision, usage, and provider diagnostics. A
 valid stable-ID result replaces only its matching pending draft through the
 project revision boundary.
+Draft progression preserves the legacy batch size of three and outline order.
+Pending or failed drafts enter drafting, independent completions advance the
+same durable project safely, and the project becomes drafts-ready only after no
+pending or drafting item remains.
 Each pending staged draft can now be represented by an immutable writer run
 that freezes its stable project/plan identity, project revision, resolved
 profile, writer prompt revision, exact rendered-input values, and generic job
