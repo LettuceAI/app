@@ -20,6 +20,23 @@ CREATE TABLE companion_relationship_states (
     CHECK (created_at <= updated_at)
 ) STRICT;
 
+CREATE TABLE companion_continuity_episodes (
+    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE RESTRICT,
+    character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE RESTRICT,
+    persona_key TEXT NOT NULL,
+    persona_id TEXT,
+    episode_index INTEGER NOT NULL CHECK (episode_index >= 1),
+    previous_conversation_id TEXT REFERENCES conversations(id) ON DELETE RESTRICT,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    updated_at INTEGER NOT NULL,
+    UNIQUE (character_id, persona_key, episode_index),
+    CHECK (
+        (persona_id IS NULL AND persona_key = '__default__') OR
+        (persona_id IS NOT NULL AND persona_key = persona_id)
+    )
+) STRICT;
+
 CREATE TABLE companion_session_states (
     conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE RESTRICT,
     character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE RESTRICT,

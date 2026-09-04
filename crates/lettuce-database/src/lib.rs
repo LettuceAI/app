@@ -3856,6 +3856,7 @@ mod tests {
                 "character_presentation_asset_refs",
                 "characters",
                 "companion_consolidation_runs",
+                "companion_continuity_episodes",
                 "companion_emotion_vectors",
                 "companion_growth_runs",
                 "companion_relationship_states",

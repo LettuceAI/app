@@ -27,9 +27,11 @@ Direct companion launch is now a usable storage-initialization path. The
 planner freezes the validated authored companion defaults and effective
 persona scope in a non-serializable prepared launch, and the database commits
 the conversation graph, artifacts, operation/outbox, fresh session emotion,
-and carried character/persona relationship in one transaction. Exact launch
-retries revalidate the initial-state request without resetting relationship
-continuity. Group companions and group growth scheduling remain deferred.
+carried character/persona relationship, and the next character/persona
+continuity episode in one transaction. The prior open episode is closed by the
+new launch. Exact launch retries revalidate the initial-state request without
+resetting relationship continuity or advancing the episode sequence. Group
+companions and group growth scheduling remain deferred.
 
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct
@@ -47,8 +49,9 @@ bundled companion prompt; a missing or archived inherited companion template
 also falls back without borrowing the ordinary direct-chat prompt. Context
 assembly reads the current authored Soul/prompting config, character-owned
 Soul state, conversation/persona-scoped runtime state, and current persona
-name, then renders the legacy prompt-state block at the source message's
-effective clock through the existing typed `companion_state` placeholder.
+name, then renders the legacy prompt-state block with the stored continuity
+episode at the source message's effective clock through the existing typed
+`companion_state` placeholder.
 Roleplay and group assembly do not read companion state. Missing or corrupt
 companion state fails assembly closed, and the composition root exposes the
 fully wired assembler over the shared database ports.

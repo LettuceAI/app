@@ -121,7 +121,9 @@ updates; exact operation retries return an immutable receipt. Branches inside
 one conversation naturally retain that conversation's immediate emotional
 state. `PreparedCompanionLaunch` and `CompanionConversationCreator` now let the
 application freeze that initial state and let storage commit it atomically with
-a direct conversation.
+a direct conversation. The same launch boundary persists the character/persona
+continuity sequence, and the state repository exposes the stored episode to
+prompt assembly without deriving it from message history.
 
 The pure emotion-classifier reducer copies the legacy GoEmotions behavior
 directly: only the first eight scored labels are considered, per-label
@@ -146,8 +148,8 @@ bands, top expressed/blocked dimensions, interaction and continuity wording,
 all twelve authored Soul categories, effective durable facts ordered by
 clamped weight-times-confidence, style notes, active signals, and regulation
 branches. It accepts typed state and an explicit effective clock. Context
-assembler insertion, companion prompt-template selection, scheduled notes, and
-time-awareness clock resolution remain later application slices.
+assembler insertion, companion prompt-template selection, scheduled notes,
+continuity episode hydration, and time-awareness clock resolution are wired.
 
 The authored companion configuration also preserves the legacy nested
 `prompting.promptTemplateId` and `prompting.styleNotes` fields. The template ID

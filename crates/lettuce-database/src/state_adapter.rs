@@ -2,16 +2,16 @@ use std::str::FromStr;
 
 use blake3::Hasher;
 use lettuce_companions::{
-    CompanionContinueRepositoryError, CompanionConversationContinuer, CompanionConversationCreator,
-    CompanionConversationSender, CompanionEffectSourceWindow, CompanionEmotionDelta,
-    CompanionLaunchRepositoryError, CompanionMemoryChanges, CompanionRuntimeState,
-    CompanionSendRepositoryError, CompanionSignalChanges, CompanionStateApplyReceipt,
-    CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
-    CompanionStateRepositoryError, CompanionStateSnapshot, CompanionTurnEffect,
-    CompanionTurnEffectOutcome, CompanionTurnEffectRepository, CompanionTurnEffectRepositoryError,
-    CompanionTurnEffectSeed, CompanionTurnEffectStatus, EmotionVector, EmotionalState,
-    PreparedCompanionContinue, PreparedCompanionLaunch, PreparedCompanionSend, RelationshipDelta,
-    RelationshipState, validate_runtime_state,
+    CompanionContinueRepositoryError, CompanionContinuityEpisode, CompanionConversationContinuer,
+    CompanionConversationCreator, CompanionConversationSender, CompanionEffectSourceWindow,
+    CompanionEmotionDelta, CompanionLaunchRepositoryError, CompanionMemoryChanges,
+    CompanionRuntimeState, CompanionSendRepositoryError, CompanionSignalChanges,
+    CompanionStateApplyReceipt, CompanionStateOwner, CompanionStateReplacement,
+    CompanionStateRepository, CompanionStateRepositoryError, CompanionStateSnapshot,
+    CompanionTurnEffect, CompanionTurnEffectOutcome, CompanionTurnEffectRepository,
+    CompanionTurnEffectRepositoryError, CompanionTurnEffectSeed, CompanionTurnEffectStatus,
+    EmotionVector, EmotionalState, PreparedCompanionContinue, PreparedCompanionLaunch,
+    PreparedCompanionSend, RelationshipDelta, RelationshipState, validate_runtime_state,
 };
 use lettuce_types::{
     CharacterId, CompanionEffectId, ConversationId, GenerationTurnId, MemoryId, MessageId,
@@ -45,6 +45,10 @@ fn persona_key(owner: CompanionStateOwner) -> String {
         .persona_id
         .map(|value| value.to_string())
         .unwrap_or_else(|| "__default__".to_owned())
+}
+
+fn parse_companion_id<T: FromStr>(value: String) -> Result<T, Error> {
+    value.parse().map_err(|_| Error::Corrupt)
 }
 
 fn sql_revision(value: Revision) -> Result<i64, Error> {
@@ -498,6 +502,71 @@ pub(crate) fn create_in(
     get_in(tx, owner)?.ok_or(Error::Corrupt)
 }
 
+fn ensure_continuity_episode_in(
+    tx: &Transaction<'_>,
+    owner: CompanionStateOwner,
+    now: TimestampMillis,
+) -> Result<(), Error> {
+    let conversation_id = owner.conversation_id.to_string();
+    let exists = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM companion_continuity_episodes WHERE conversation_id = ?1)",
+            [&conversation_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(failure)?;
+    if exists {
+        return Ok(());
+    }
+
+    let key = persona_key(owner);
+    let previous = tx
+        .query_row(
+            "SELECT conversation_id, episode_index
+             FROM companion_continuity_episodes
+             WHERE character_id = ?1 AND persona_key = ?2
+             ORDER BY episode_index DESC, started_at DESC
+             LIMIT 1",
+            params![owner.character_id.to_string(), key],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .optional()
+        .map_err(failure)?;
+    let (previous_conversation_id, episode_index) = match previous {
+        Some((previous_conversation_id, previous_index)) => {
+            tx.execute(
+                "UPDATE companion_continuity_episodes
+                 SET ended_at = ?1, updated_at = ?1
+                 WHERE conversation_id = ?2 AND ended_at IS NULL",
+                params![now.get(), previous_conversation_id],
+            )
+            .map_err(failure)?;
+            (
+                Some(previous_conversation_id),
+                previous_index.checked_add(1).ok_or(Error::Corrupt)?,
+            )
+        }
+        None => (None, 1),
+    };
+    tx.execute(
+        "INSERT INTO companion_continuity_episodes (
+           conversation_id, character_id, persona_key, persona_id, episode_index,
+           previous_conversation_id, started_at, ended_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?7)",
+        params![
+            conversation_id,
+            owner.character_id.to_string(),
+            key,
+            owner.persona_id.map(|id| id.to_string()),
+            episode_index,
+            previous_conversation_id,
+            now.get(),
+        ],
+    )
+    .map_err(failure)?;
+    Ok(())
+}
+
 pub(crate) fn replace_in(
     tx: &Transaction<'_>,
     owner: CompanionStateOwner,
@@ -592,6 +661,60 @@ impl CompanionStateRepository for Database {
         Ok(state)
     }
 
+    fn get_continuity_episode(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<CompanionContinuityEpisode>, Error> {
+        let connection = self.connection().map_err(failure)?;
+        let row = connection
+            .query_row(
+                "SELECT conversation_id, character_id, persona_id, episode_index,
+                        previous_conversation_id, started_at, ended_at, updated_at
+                 FROM companion_continuity_episodes WHERE conversation_id = ?1",
+                [conversation_id.to_string()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, i64>(5)?,
+                        row.get::<_, Option<i64>>(6)?,
+                        row.get::<_, i64>(7)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(failure)?;
+        row.map(
+            |(
+                conversation_id,
+                character_id,
+                persona_id,
+                episode_index,
+                previous_conversation_id,
+                started_at,
+                ended_at,
+                updated_at,
+            )| {
+                Ok(CompanionContinuityEpisode {
+                    conversation_id: parse_companion_id(conversation_id)?,
+                    character_id: parse_companion_id(character_id)?,
+                    persona_id: persona_id.map(parse_companion_id).transpose()?,
+                    episode_index: u32::try_from(episode_index).map_err(corrupt)?,
+                    previous_conversation_id: previous_conversation_id
+                        .map(parse_companion_id)
+                        .transpose()?,
+                    started_at: TimestampMillis::new(started_at),
+                    ended_at: ended_at.map(TimestampMillis::new),
+                    updated_at: TimestampMillis::new(updated_at),
+                })
+            },
+        )
+        .transpose()
+    }
+
     fn replace(
         &self,
         owner: CompanionStateOwner,
@@ -663,9 +786,8 @@ impl CompanionConversationCreator for Database {
     {
         let (conversation, owner, initial) = launch.into_parts();
         crate::conversation_creator::create_with_hook(self, conversation, now, |tx, _| {
-            create_in(tx, owner, &initial, now)
-                .map(|_| ())
-                .map_err(conversation_state_error)
+            create_in(tx, owner, &initial, now).map_err(conversation_state_error)?;
+            ensure_continuity_episode_in(tx, owner, now).map_err(conversation_state_error)
         })
         .map_err(CompanionLaunchRepositoryError::Conversation)
     }

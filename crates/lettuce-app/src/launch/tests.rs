@@ -2690,6 +2690,7 @@ async fn companion_context_assembles_live_prompt_state_deterministically() {
     ));
     assert!(text.contains("Soul essence: Quietly steadfast."));
     assert!(text.contains("Companion style notes: warm but reserved."));
+    assert!(text.contains("this chat is episode 1 of one continuous relationship"));
     assert!(text.contains(
         "[Background context you currently hold in mind]\n- Remember the station reunion."
     ));
@@ -3486,6 +3487,79 @@ fn an_identical_retry_replays_a_single_conversation() {
         .len(),
         1
     );
+}
+
+#[test]
+fn companion_launch_rolls_continuity_episode_once_per_persona() {
+    let database = database_with_builtins();
+    let first_persona = seed_persona(&database, "Mira");
+    let second_persona = seed_persona(&database, "Noor");
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let planner = ConversationLaunchPlanner::new(&database);
+
+    let mut first_request = request(character_id, "continuity-first");
+    first_request.persona = LaunchSelection::Explicit(first_persona);
+    let first = planner
+        .launch_direct(&first_request, NOW)
+        .expect("first episode");
+    let first_episode = database
+        .get_continuity_episode(first.value.conversation.id)
+        .expect("load first episode")
+        .expect("first episode exists");
+    assert_eq!(first_episode.episode_index, 1);
+    assert_eq!(first_episode.previous_conversation_id, None);
+    assert_eq!(first_episode.ended_at, None);
+
+    let mut second_request = request(character_id, "continuity-second");
+    second_request.persona = LaunchSelection::Explicit(first_persona);
+    let second_at = TimestampMillis::new(NOW.get() + 100);
+    let second = planner
+        .launch_direct(&second_request, second_at)
+        .expect("second episode");
+    let second_episode = database
+        .get_continuity_episode(second.value.conversation.id)
+        .expect("load second episode")
+        .expect("second episode exists");
+    assert_eq!(second_episode.episode_index, 2);
+    assert_eq!(
+        second_episode.previous_conversation_id,
+        Some(first.value.conversation.id)
+    );
+    assert_eq!(
+        database
+            .get_continuity_episode(first.value.conversation.id)
+            .expect("reload first episode")
+            .expect("first episode remains")
+            .ended_at,
+        Some(second_at)
+    );
+
+    planner
+        .launch_direct(&second_request, TimestampMillis::new(NOW.get() + 200))
+        .expect("replay second episode");
+    assert_eq!(
+        database
+            .get_continuity_episode(second.value.conversation.id)
+            .expect("reload second episode")
+            .expect("second episode remains")
+            .ended_at,
+        None
+    );
+
+    let mut isolated_request = request(character_id, "continuity-isolated-persona");
+    isolated_request.persona = LaunchSelection::Explicit(second_persona);
+    let isolated = planner
+        .launch_direct(&isolated_request, TimestampMillis::new(NOW.get() + 300))
+        .expect("isolated persona episode");
+    let isolated_episode = database
+        .get_continuity_episode(isolated.value.conversation.id)
+        .expect("load isolated episode")
+        .expect("isolated episode exists");
+    assert_eq!(isolated_episode.episode_index, 1);
+    assert_eq!(isolated_episode.previous_conversation_id, None);
 }
 
 #[test]

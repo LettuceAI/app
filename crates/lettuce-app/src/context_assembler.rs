@@ -380,6 +380,15 @@ where
         )
         .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
         .ok_or(ContextAssemblyError::ConversationUnavailable)?;
+        let episode = CompanionStateRepository::get_continuity_episode(
+            self.sources,
+            aggregate.conversation.id,
+        )
+        .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+        .filter(|episode| {
+            episode.character_id == character.character.id && episode.persona_id == persona_id
+        })
+        .ok_or(ContextAssemblyError::ConversationUnavailable)?;
         let soul = SoulRepository::get(self.sources, SoulOwner::Character(character.character.id))
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
             .ok_or(ContextAssemblyError::ConversationUnavailable)?;
@@ -396,7 +405,7 @@ where
             soul_state: &soul,
             runtime_state: &state.state,
             style_notes: &config.prompting.style_notes,
-            continuity_episode: 0,
+            continuity_episode: episode.episode_index,
             effective_at,
         })))
     }

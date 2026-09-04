@@ -220,6 +220,10 @@ The companion prepared-launch adapter now seeds those rows inside the existing
 conversation creation transaction. A state-seed failure rolls back the entire
 conversation launch, and replay validates the same frozen initial-state hash
 before returning the already committed conversation.
+Migration 13 also stores the legacy character/persona continuity sequence.
+Each fresh direct companion launch closes only the prior open episode and links
+the next index to it in that same transaction; exact launch replay leaves the
+sequence unchanged, and a different persona starts its own sequence.
 Prepared companion sends reuse the conversation send transaction: the user
 message, generation turn/attempt, companion session and relationship revisions,
 operation, and outbox commit together. A stale state CAS or hook failure rolls

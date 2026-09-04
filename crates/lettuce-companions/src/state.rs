@@ -380,12 +380,29 @@ pub trait CompanionStateRepository: Send + Sync {
         owner: CompanionStateOwner,
     ) -> Result<Option<CompanionStateSnapshot>, CompanionStateRepositoryError>;
 
+    fn get_continuity_episode(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<CompanionContinuityEpisode>, CompanionStateRepositoryError>;
+
     fn replace(
         &self,
         owner: CompanionStateOwner,
         operation_id: OperationRecordId,
         replacement: CompanionStateReplacement,
     ) -> Result<CompanionStateApplyReceipt, CompanionStateRepositoryError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompanionContinuityEpisode {
+    pub conversation_id: ConversationId,
+    pub character_id: CharacterId,
+    pub persona_id: Option<PersonaId>,
+    pub episode_index: u32,
+    pub previous_conversation_id: Option<ConversationId>,
+    pub started_at: TimestampMillis,
+    pub ended_at: Option<TimestampMillis>,
+    pub updated_at: TimestampMillis,
 }
 
 #[derive(Debug)]
