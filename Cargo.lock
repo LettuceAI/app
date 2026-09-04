@@ -848,6 +848,7 @@ dependencies = [
 name = "lettuce-companions"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "lettuce-conversations",
  "lettuce-types",
  "quick-xml",

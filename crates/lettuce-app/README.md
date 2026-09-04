@@ -193,6 +193,13 @@ frozen fallback profile. Cancellation, the eight-round hard cap, later
 provider failures, and generic job settlement never silently promote an
 incomplete draft. Character Soul mutation and frontend IPC remain outside this
 preview workflow.
+Direct companion context assembly now resolves scheduled notes from the
+character-owned repository at the source message's immutable effective time.
+The resulting block and `has_active_scheduled_note` condition are derived from
+that authoritative active set, replacing caller-supplied scheduled-note text;
+when an editable prompt does not consume `{{scheduled_notes}}`, the same legacy
+block is inserted at in-chat depth zero. Roleplay and group contexts do not read
+or inject companion scheduled notes.
 The claimed-job runner composes the existing run admission/recovery,
 first-round inference, bounded execution/continuation loop, and terminal
 settlement into one application path. Prompt/profile/policy inputs and stable

@@ -14,6 +14,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+chrono.workspace = true
 lettuce-conversations.workspace = true
 lettuce-types.workspace = true
 quick-xml.workspace = true

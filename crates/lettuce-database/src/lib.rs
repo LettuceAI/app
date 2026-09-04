@@ -23,6 +23,7 @@ mod memory_preparation_adapter;
 mod memory_round_adapter;
 mod persona_adapter;
 mod prompt_adapter;
+mod scheduled_note_adapter;
 mod soul_adapter;
 mod soul_writer_adapter;
 mod state_adapter;
@@ -3858,6 +3859,7 @@ mod tests {
                 "companion_emotion_vectors",
                 "companion_growth_runs",
                 "companion_relationship_states",
+                "companion_scheduled_notes",
                 "companion_session_states",
                 "companion_soul_apply_receipts",
                 "companion_soul_fact_sources",

@@ -125,3 +125,20 @@ CREATE TABLE companion_soul_writer_runs (
     run_json TEXT NOT NULL CHECK (json_valid(run_json)),
     rounds_json TEXT NOT NULL CHECK (json_valid(rounds_json))
 ) STRICT;
+
+CREATE TABLE companion_scheduled_notes (
+    id TEXT PRIMARY KEY,
+    character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    content TEXT NOT NULL CHECK (length(trim(content)) > 0),
+    available_at INTEGER NOT NULL CHECK (available_at >= 0),
+    expires_at INTEGER CHECK (expires_at IS NULL OR expires_at > available_at),
+    recurrence TEXT NOT NULL CHECK (recurrence IN ('none', 'daily', 'weekly', 'monthly', 'yearly')),
+    recurrence_window_ms INTEGER CHECK (recurrence_window_ms IS NULL OR recurrence_window_ms >= 0),
+    enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    created_at INTEGER NOT NULL CHECK (created_at >= 0),
+    updated_at INTEGER NOT NULL CHECK (updated_at >= 0)
+) STRICT;
+
+CREATE INDEX companion_scheduled_notes_character_idx
+    ON companion_scheduled_notes(character_id, available_at, id);

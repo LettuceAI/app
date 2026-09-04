@@ -10,8 +10,9 @@ use std::collections::{HashMap, HashSet};
 use async_trait::async_trait;
 use lettuce_characters::{CharacterRepository, PersonaRepository};
 use lettuce_companions::{
-    CompanionPromptStateInput, CompanionStateOwner, CompanionStateRepository, SoulOwner,
-    SoulRepository, render_prompt_state,
+    CompanionPromptStateInput, CompanionScheduledNoteRepository, CompanionStateOwner,
+    CompanionStateRepository, SoulOwner, SoulRepository, active_scheduled_notes,
+    render_prompt_state, render_scheduled_notes_block,
 };
 use lettuce_context::{
     DetectionPolicy, KeywordMatchMode, LorebookSnapshotActivationEntry,
@@ -58,7 +59,8 @@ where
         + CharacterRepository
         + PersonaRepository
         + SoulRepository
-        + CompanionStateRepository,
+        + CompanionStateRepository
+        + CompanionScheduledNoteRepository,
 {
     async fn assemble(
         &self,
@@ -106,8 +108,10 @@ where
         let (selected_window, omitted_messages, scene_timeline) =
             select_timeline(&aggregate, &request)?;
         let (scene, scene_direction) = snapshot.scene_values(&scene_timeline)?;
-        let companion_state =
-            self.companion_prompt_state(&aggregate, &snapshot, source_effective_time(&request)?)?;
+        let effective_at = source_effective_time(&request)?;
+        let companion_state = self.companion_prompt_state(&aggregate, &snapshot, effective_at)?;
+        let scheduled_notes =
+            self.companion_scheduled_notes(&aggregate, &snapshot, effective_at)?;
 
         let recent_text = selected_window
             .iter()
@@ -156,6 +160,7 @@ where
                     &recent_text,
                     selected_window.len(),
                     companion_state.is_some(),
+                    scheduled_notes.is_some(),
                 ),
                 values: prompt_values(
                     &aggregate,
@@ -167,6 +172,7 @@ where
                     &request,
                     request.swap_roles,
                     companion_state.as_deref(),
+                    scheduled_notes.as_deref(),
                 ),
             };
             let rendered = render_prompt_snapshot(&document, &render_context).map_err(|error| {
@@ -249,6 +255,13 @@ where
         } else if !memory_keys.trim().is_empty() {
             memory_used = true;
         }
+        let scheduled_notes_consumed =
+            rendered_entry_consumed(&rendered_prompt, prompt.as_ref(), &["{{scheduled_notes}}"]);
+        if let Some(notes) = scheduled_notes.as_deref()
+            && !scheduled_notes_consumed
+        {
+            in_chat_messages.push((0, text_message(MessageRole::System, notes)));
+        }
         if prompt
             .as_ref()
             .is_some_and(|(_, document)| document.condense)
@@ -323,7 +336,11 @@ where
 
 impl<S> ConversationContextAssembler<'_, S>
 where
-    S: CharacterRepository + PersonaRepository + SoulRepository + CompanionStateRepository,
+    S: CharacterRepository
+        + PersonaRepository
+        + SoulRepository
+        + CompanionStateRepository
+        + CompanionScheduledNoteRepository,
 {
     fn companion_prompt_state(
         &self,
@@ -382,6 +399,29 @@ where
             continuity_episode: 0,
             effective_at,
         })))
+    }
+
+    fn companion_scheduled_notes(
+        &self,
+        aggregate: &ConversationAggregate,
+        snapshot: &SnapshotBundle,
+        effective_at: TimestampMillis,
+    ) -> Result<Option<String>, ContextAssemblyError> {
+        let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
+            return Ok(None);
+        };
+        if snapshot.characters.first().is_none_or(|(_, character)| {
+            character.interaction_mode != lettuce_conversations::InteractionModeV1::Companion
+        }) {
+            return Ok(None);
+        }
+        let notes = self
+            .sources
+            .list_scheduled_notes(details.character.source_id)
+            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
+        let active = active_scheduled_notes(notes, effective_at)
+            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
+        Ok(render_scheduled_notes_block(&active))
     }
 }
 
@@ -1398,6 +1438,7 @@ fn prompt_conditions(
     recent_text: &[String],
     selected_message_count: usize,
     companion_mode_enabled: bool,
+    has_active_scheduled_note: bool,
 ) -> PromptConditionContext {
     let runtime = &request.prompt_runtime;
     let character = selected_character(snapshot, request);
@@ -1439,7 +1480,7 @@ fn prompt_conditions(
             .author_note
             .as_ref()
             .is_some_and(|value| !value.trim().is_empty()),
-        has_active_scheduled_note: runtime.has_active_scheduled_note,
+        has_active_scheduled_note,
         has_subject_description: character
             .and_then(|body| body.description.as_ref())
             .is_some_and(|value| !value.trim().is_empty()),
@@ -1483,6 +1524,7 @@ fn prompt_values(
     request: &ContextRequest,
     swap_roles: bool,
     companion_state: Option<&str>,
+    scheduled_notes: Option<&str>,
 ) -> PromptRenderValues {
     let character = selected_character(snapshot, request);
     let user = aggregate
@@ -1629,7 +1671,7 @@ fn prompt_values(
         ),
         (
             PromptVariable::ScheduledNotes,
-            request.prompt_values.scheduled_notes.clone(),
+            scheduled_notes.map(str::to_owned),
         ),
         (PromptVariable::Date, request.prompt_values.date.clone()),
         (

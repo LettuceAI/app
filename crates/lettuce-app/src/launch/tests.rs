@@ -9,10 +9,10 @@ use lettuce_characters::{
 };
 use lettuce_companions::{
     CompanionConsolidationRunRepository, CompanionConversationSender, CompanionGrowthRunRepository,
-    CompanionSoulWriterRunRepository, CompanionStateOwner, CompanionStateReplacement,
-    CompanionStateRepository, CompanionTurnEffectRepository, CompanionTurnEffectStatus,
-    CompanionTurnInput, EmotionClassification, EmotionLabelScore, PreparedCompanionSend,
-    SoulRepository, apply_turn,
+    CompanionScheduledNoteRepository, CompanionSoulWriterRunRepository, CompanionStateOwner,
+    CompanionStateReplacement, CompanionStateRepository, CompanionTurnEffectRepository,
+    CompanionTurnEffectStatus, CompanionTurnInput, EmotionClassification, EmotionLabelScore,
+    PreparedCompanionSend, SoulRepository, apply_turn,
 };
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
@@ -2636,6 +2636,30 @@ async fn companion_context_assembles_live_prompt_state_deterministically() {
             &CancellationToken::new(),
         )
         .expect("send companion message");
+    let note_id = uuid::Uuid::new_v4();
+    let stored_note = database
+        .upsert_scheduled_note(lettuce_companions::CompanionScheduledNote {
+            id: note_id,
+            character_id,
+            label: " Reunion ".into(),
+            content: " Remember the station reunion. ".into(),
+            available_at: TimestampMillis::new(0),
+            expires_at: None,
+            recurrence: lettuce_companions::ScheduledNoteRecurrence::None,
+            recurrence_window_ms: None,
+            enabled: true,
+            created_at: TimestampMillis::new(NOW.get() + 9),
+            updated_at: TimestampMillis::new(NOW.get() + 9),
+        })
+        .expect("store scheduled note");
+    assert_eq!(stored_note.label, "Reunion");
+    assert_eq!(stored_note.content, "Remember the station reunion.");
+    assert_eq!(
+        database
+            .list_scheduled_notes(character_id)
+            .expect("list scheduled notes"),
+        [stored_note]
+    );
     let source_message_id = match sent.value.turn.input {
         GenerationInput::UserMessage { message_id } => message_id,
         ref other => panic!("expected user-message input, got {other:?}"),
@@ -2666,8 +2690,20 @@ async fn companion_context_assembles_live_prompt_state_deterministically() {
     ));
     assert!(text.contains("Soul essence: Quietly steadfast."));
     assert!(text.contains("Companion style notes: warm but reserved."));
+    assert!(text.contains(
+        "[Background context you currently hold in mind]\n- Remember the station reunion."
+    ));
     assert!(text.contains("Stay with me."));
     assert!(first.attributions.prompt.is_some());
+    database
+        .delete_scheduled_note(note_id)
+        .expect("delete scheduled note");
+    assert!(
+        database
+            .list_scheduled_notes(character_id)
+            .expect("list deleted notes")
+            .is_empty()
+    );
 }
 
 #[tokio::test]

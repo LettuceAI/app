@@ -76,6 +76,15 @@ preview state has no character-Soul mutation capability. The structured
 fallback instructions are copied byte-for-byte from legacy alongside the
 parser and reducer; application code only chooses when to issue them.
 
+Character-owned scheduled notes now copy the legacy fields and recurrence
+semantics for one-time, daily, weekly, monthly, and yearly activation. Disabled,
+not-yet-available, and end-exclusive expired notes are filtered at the supplied
+effective time; recurrence windows are also end-exclusive. Active notes keep
+the legacy `available_at` then ID order, 1000-character per-note truncation,
+4000-character block cap, bullet format, and exact background-context heading.
+The repository port owns list/upsert/delete only; host scheduling and frontend
+commands remain outside this domain.
+
 Durable Soul state is character-owned, matching legacy continuity: companion
 Soul growth is shared across that character's sessions regardless of the
 separate shared-memory setting. `SoulRepository` owns create/load and atomic

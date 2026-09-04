@@ -197,6 +197,11 @@ fallback format, and creation time. Ordered primary/fallback round checkpoints
 are appended separately and exact checkpoint replay is idempotent, so a later
 provider failure retains only durable incomplete work for retry. This preview
 store does not mutate character-owned Soul state.
+Migration 12 also owns normalized character-scoped scheduled notes with the
+legacy recurrence, availability, expiry, enabled, and recurrence-window fields.
+The SQLite adapter rejects non-companion owners, lists in legacy
+`available_at`/ID order, normalizes authored label/content on upsert, and keeps
+delete idempotent.
 Creating a companion character now seeds its initial character-owned Soul root
 and normalized authored facts inside the same character aggregate transaction.
 An authored-fact failure rolls back the character and Soul rows together;
