@@ -20,6 +20,8 @@ pub const STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION: &str =
 pub const STAGED_LOREBOOK_WRITER_TOOL_NAME: &str = "write_lorebook_entry";
 pub const STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION: &str =
     "Call write_lorebook_entry now with the final entry.";
+pub const STAGED_LOREBOOK_REFINE_FINAL_INSTRUCTION: &str =
+    "Call write_lorebook_entry now with the revised entry.";
 
 #[must_use]
 pub fn staged_lorebook_planner_tool_request() -> ToolRequest {
@@ -350,6 +352,21 @@ pub struct StagedLorebookWriterPromptValues {
     pub entry_proposed_keys: String,
     pub entry_rationale: String,
     pub relevant_excerpts: String,
+    #[serde(default)]
+    pub entry_keywords: String,
+    #[serde(default)]
+    pub entry_always_active: String,
+    #[serde(default)]
+    pub entry_content: String,
+    #[serde(default)]
+    pub user_feedback: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookRefinement {
+    pub feedback: String,
+    pub base_draft: StagedLorebookEntryDraft,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -365,6 +382,8 @@ pub struct StagedLorebookWriterRun {
     pub prompt_id: PromptDocumentId,
     pub prompt_revision: Revision,
     pub prompt_values: StagedLorebookWriterPromptValues,
+    #[serde(default)]
+    pub refinement: Option<StagedLorebookRefinement>,
     pub created_at: TimestampMillis,
     #[serde(default)]
     pub attempt: Option<StagedLorebookWriterAttempt>,
@@ -518,6 +537,14 @@ pub trait StagedLorebookRepository: Send + Sync {
         approved: bool,
         now: TimestampMillis,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn settle_staged_lorebook_refinement(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        draft: StagedLorebookEntryDraft,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
 }
 
 impl StagedLorebookPlanningRun {
@@ -566,17 +593,34 @@ impl StagedLorebookWriterRun {
             || values.brief.trim().is_empty()
             || values.brief != values.brief.trim()
             || values.outline.is_empty()
-            || values.entry_title.trim().is_empty()
-            || values.entry_title != values.entry_title.trim()
-            || values.entry_category.trim().is_empty()
-            || values.entry_category != values.entry_category.trim()
-            || values.entry_proposed_keys.is_empty()
+            || (self.refinement.is_none()
+                && (values.entry_title.trim().is_empty()
+                    || values.entry_title != values.entry_title.trim()
+                    || values.entry_category.trim().is_empty()
+                    || values.entry_category != values.entry_category.trim()
+                    || values.entry_proposed_keys.is_empty()))
             || values.relevant_excerpts.is_empty()
+            || self.refinement.as_ref().is_some_and(|refinement| {
+                refinement.feedback.trim().is_empty()
+                    || refinement.feedback != refinement.feedback.trim()
+                    || refinement.base_draft.plan_id != self.plan_id
+                    || values.entry_title != refinement.base_draft.title
+                    || values.entry_keywords != format_keys(&refinement.base_draft.keywords)
+                    || values.entry_always_active != refinement.base_draft.always_active.to_string()
+                    || values.entry_content != refinement.base_draft.content
+                    || values.user_feedback != refinement.feedback
+                    || refinement
+                        .base_draft
+                        .keywords
+                        .iter()
+                        .any(|keyword| keyword.is_empty() || keyword != keyword.trim())
+                    || validate_draft_revisions(&refinement.base_draft.revisions).is_err()
+            })
             || serde_json::to_vec(&self.profile).is_err()
             || self
                 .attempt
                 .as_ref()
-                .is_some_and(|attempt| attempt.validate(self.plan_id).is_err())
+                .is_some_and(|attempt| attempt.validate(self).is_err())
         {
             return Err(StagedLorebookWriterRunRepositoryError::Invalid);
         }
@@ -587,14 +631,14 @@ impl StagedLorebookWriterRun {
 impl StagedLorebookWriterAttempt {
     pub fn validate(
         &self,
-        plan_id: LorebookEntryId,
+        run: &StagedLorebookWriterRun,
     ) -> Result<(), StagedLorebookWriterRunRepositoryError> {
         if self.completed_at.get() < 0
             || self
                 .calls
                 .iter()
                 .any(|call| call.provider_replay.is_some() || call.validate().is_err())
-            || matches!(&self.decision, StagedLorebookWriterDecision::Draft(draft) if validate_written_draft(draft, plan_id).is_err())
+            || matches!(&self.decision, StagedLorebookWriterDecision::Draft(draft) if validate_written_draft(draft, run.plan_id).is_err())
         {
             return Err(StagedLorebookWriterRunRepositoryError::Invalid);
         }
@@ -874,6 +918,35 @@ impl StagedLorebookProject {
         Ok(next)
     }
 
+    pub fn settle_refinement(
+        &self,
+        draft: StagedLorebookEntryDraft,
+        now: TimestampMillis,
+    ) -> Result<Self, StagedLorebookError> {
+        if !matches!(
+            self.stage,
+            StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady
+        ) || now < self.updated_at
+        {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        let position = self
+            .drafts
+            .iter()
+            .position(|stored| stored.plan_id == draft.plan_id)
+            .ok_or(StagedLorebookError::InvalidTransition)?;
+        validate_refined_draft(&draft, &self.drafts[position])?;
+        let mut next = self.clone();
+        next.drafts[position] = draft;
+        next.updated_at = now;
+        next.revision = next
+            .revision
+            .next()
+            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.validate()?;
+        Ok(next)
+    }
+
     fn finish_drafting_if_terminal(&mut self) {
         if self.drafts.iter().all(|draft| {
             !matches!(
@@ -961,10 +1034,13 @@ fn validate_drafts(
                     }
                     StagedLorebookDraftStatus::Drafted
                     | StagedLorebookDraftStatus::Approved
-                    | StagedLorebookDraftStatus::Drafting => draft
-                        .keywords
-                        .iter()
-                        .any(|keyword| keyword.is_empty() || keyword != keyword.trim()),
+                    | StagedLorebookDraftStatus::Drafting => {
+                        draft
+                            .keywords
+                            .iter()
+                            .any(|keyword| keyword.is_empty() || keyword != keyword.trim())
+                            || validate_draft_revisions(&draft.revisions).is_err()
+                    }
                     StagedLorebookDraftStatus::Failed => {
                         draft.title != plan.title
                             || draft.keywords != plan.proposed_keys
@@ -999,6 +1075,54 @@ fn validate_written_draft(
         return Err(StagedLorebookError::InvalidDraft);
     }
     Ok(())
+}
+
+fn validate_refined_draft(
+    draft: &StagedLorebookEntryDraft,
+    base: &StagedLorebookEntryDraft,
+) -> Result<(), StagedLorebookError> {
+    validate_written_draft(
+        &StagedLorebookEntryDraft {
+            revisions: Vec::new(),
+            ..draft.clone()
+        },
+        base.plan_id,
+    )?;
+    let Some(revision) = draft.revisions.strip_prefix(base.revisions.as_slice()) else {
+        return Err(StagedLorebookError::InvalidDraft);
+    };
+    if revision.len() != 1
+        || revision[0].feedback.trim().is_empty()
+        || revision[0].feedback != revision[0].feedback.trim()
+        || revision[0].content != draft.content
+        || revision[0].timestamp.get() < 0
+    {
+        return Err(StagedLorebookError::InvalidDraft);
+    }
+    Ok(())
+}
+
+fn validate_draft_revisions(
+    revisions: &[StagedLorebookDraftRevision],
+) -> Result<(), StagedLorebookError> {
+    if revisions.iter().any(|revision| {
+        revision.feedback.trim().is_empty()
+            || revision.feedback != revision.feedback.trim()
+            || revision.content.trim().is_empty()
+            || revision.content != revision.content.trim()
+            || revision.timestamp.get() < 0
+    }) {
+        return Err(StagedLorebookError::InvalidDraft);
+    }
+    Ok(())
+}
+
+fn format_keys(keys: &[String]) -> String {
+    if keys.is_empty() {
+        "(none)".to_owned()
+    } else {
+        keys.join(", ")
+    }
 }
 
 fn validate_outline(
@@ -1421,5 +1545,45 @@ mod tests {
             unapproved.drafts[0].status,
             StagedLorebookDraftStatus::Drafted
         );
+
+        let first_revision = StagedLorebookDraftRevision {
+            feedback: "First change".into(),
+            content: "First refined content".into(),
+            timestamp: TimestampMillis::new(8),
+        };
+        let refined = unapproved
+            .settle_refinement(
+                StagedLorebookEntryDraft {
+                    plan_id,
+                    title: "Refined title".into(),
+                    keywords: vec!["alpha".into()],
+                    content: first_revision.content.clone(),
+                    always_active: false,
+                    status: StagedLorebookDraftStatus::Drafted,
+                    revisions: vec![first_revision.clone()],
+                },
+                TimestampMillis::new(8),
+            )
+            .expect("first refinement");
+        let second_revision = StagedLorebookDraftRevision {
+            feedback: "Second change".into(),
+            content: "Second refined content".into(),
+            timestamp: TimestampMillis::new(9),
+        };
+        let refined_again = refined
+            .settle_refinement(
+                StagedLorebookEntryDraft {
+                    plan_id,
+                    title: "Refined title".into(),
+                    keywords: vec!["alpha".into()],
+                    content: second_revision.content.clone(),
+                    always_active: false,
+                    status: StagedLorebookDraftStatus::Drafted,
+                    revisions: vec![first_revision, second_revision],
+                },
+                TimestampMillis::new(9),
+            )
+            .expect("second refinement");
+        assert_eq!(refined_again.drafts[0].revisions.len(), 2);
     }
 }

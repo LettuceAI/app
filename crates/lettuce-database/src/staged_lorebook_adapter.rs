@@ -582,4 +582,41 @@ impl StagedLorebookRepository for Database {
         transaction.commit().map_err(failure)?;
         Ok(next)
     }
+
+    fn settle_staged_lorebook_refinement(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        draft: lettuce_creation::StagedLorebookEntryDraft,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let current =
+            load_in(&transaction, request_id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
+        let next_revision = expected_revision
+            .next()
+            .map_err(|_| StagedLorebookRepositoryError::Conflict)?;
+        if current.project.revision == next_revision
+            && current.project.updated_at == now
+            && current.project.drafts.iter().any(|stored| stored == &draft)
+        {
+            transaction.commit().map_err(failure)?;
+            return Ok(current);
+        }
+        if current.project.revision != expected_revision {
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        let mut next = current;
+        next.project = next
+            .project
+            .settle_refinement(draft, now)
+            .map_err(|_| StagedLorebookRepositoryError::Conflict)?;
+        let encoded = encode_versioned(&next, RUN_FORMAT_VERSION).map_err(failure)?;
+        if transaction.execute("UPDATE creation_staged_lorebook_runs SET stage = ?2, revision = ?3, updated_at = ?4, run_json = ?5 WHERE request_id = ?1 AND revision = ?6", params![request_id.to_string(), stage(next.project.stage), i64::try_from(next.project.revision.get()).map_err(failure)?, now.get(), encoded, i64::try_from(expected_revision.get()).map_err(failure)?]).map_err(failure)? != 1 { return Err(StagedLorebookRepositoryError::Conflict); }
+        transaction.commit().map_err(failure)?;
+        Ok(next)
+    }
 }

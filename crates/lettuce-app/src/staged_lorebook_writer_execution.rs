@@ -9,7 +9,8 @@ use lettuce_conversations::{
     ProviderReplayArtifactPort, ToolPolicy,
 };
 use lettuce_creation::{
-    STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION, StagedLorebookPlanningRun, StagedLorebookRepository,
+    STAGED_LOREBOOK_REFINE_FINAL_INSTRUCTION, STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION,
+    StagedLorebookDraftRevision, StagedLorebookPlanningRun, StagedLorebookRepository,
     StagedLorebookRepositoryError, StagedLorebookWriterAttempt, StagedLorebookWriterDecision,
     StagedLorebookWriterRun, StagedLorebookWriterRunRepository,
     StagedLorebookWriterRunRepositoryError, StagedLorebookWriterUsage,
@@ -168,17 +169,31 @@ fn settle<P: StagedLorebookRepository + ?Sized>(
     attempt: StagedLorebookWriterAttempt,
     replayed: bool,
 ) -> Result<StagedLorebookWriterExecutionResult, StagedLorebookWriterExecutionError> {
-    let StagedLorebookWriterDecision::Draft(draft) = attempt.decision else {
+    let StagedLorebookWriterDecision::Draft(mut draft) = attempt.decision else {
         return Err(StagedLorebookWriterExecutionError::InvalidResponse);
     };
-    let project = projects
-        .settle_staged_lorebook_draft(
+    let project = if let Some(refinement) = &run.refinement {
+        draft.revisions = refinement.base_draft.revisions.clone();
+        draft.revisions.push(StagedLorebookDraftRevision {
+            feedback: refinement.feedback.clone(),
+            content: draft.content.clone(),
+            timestamp: attempt.completed_at,
+        });
+        projects.settle_staged_lorebook_refinement(
             run.project_request_id,
             run.project_revision,
             draft,
             attempt.completed_at,
         )
-        .map_err(StagedLorebookWriterExecutionError::Project)?;
+    } else {
+        projects.settle_staged_lorebook_draft(
+            run.project_request_id,
+            run.project_revision,
+            draft,
+            attempt.completed_at,
+        )
+    }
+    .map_err(StagedLorebookWriterExecutionError::Project)?;
     Ok(StagedLorebookWriterExecutionResult { project, replayed })
 }
 
@@ -191,7 +206,12 @@ fn validate_ownership(
         || prompt.id != run.prompt_id
         || prompt.revision != run.prompt_revision
         || prompt.status != LifecycleStatus::Active
-        || prompt.purpose != PromptPurpose::LorebookGeneratorWriter
+        || prompt.purpose
+            != if run.refinement.is_some() {
+                PromptPurpose::LorebookGeneratorRefine
+            } else {
+                PromptPurpose::LorebookGeneratorWriter
+            }
     {
         return Err(StagedLorebookWriterExecutionError::InvalidOwnership);
     }
@@ -207,11 +227,13 @@ fn build_request(
     let mut profile = run.profile.clone();
     profile.tool_policy = ToolPolicy::Required;
     profile.output_policy = OutputPolicy::Plain;
+    let operation_name = if run.refinement.is_some() {
+        b"staged-lorebook-refine".as_slice()
+    } else {
+        b"staged-lorebook-writer".as_slice()
+    };
     let request = InferenceRequest {
-        turn_id: GenerationTurnId::from_uuid(Uuid::new_v5(
-            &run.job_id.as_uuid(),
-            b"staged-lorebook-writer",
-        )),
+        turn_id: GenerationTurnId::from_uuid(Uuid::new_v5(&run.job_id.as_uuid(), operation_name)),
         attempt_id: GenerationAttemptId::from_uuid(Uuid::new_v5(&run.job_id.as_uuid(), b"native")),
         operation: GenerationOperation::Send,
         profile,
@@ -244,6 +266,13 @@ fn render_context(
         ),
         (PromptVariable::EntryRationale, &values.entry_rationale),
         (PromptVariable::RelevantExcerpts, &values.relevant_excerpts),
+        (PromptVariable::EntryKeywords, &values.entry_keywords),
+        (
+            PromptVariable::EntryAlwaysActive,
+            &values.entry_always_active,
+        ),
+        (PromptVariable::EntryContent, &values.entry_content),
+        (PromptVariable::UserFeedback, &values.user_feedback),
     ] {
         render_values.purpose_values.insert(variable, value.clone());
     }
@@ -304,7 +333,11 @@ fn render_context(
     messages.push(ProviderNeutralMessage {
         role: MessageRole::User,
         parts: vec![ProviderContextPart::Text {
-            text: STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION.into(),
+            text: if run.refinement.is_some() {
+                STAGED_LOREBOOK_REFINE_FINAL_INSTRUCTION.into()
+            } else {
+                STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION.into()
+            },
         }],
     });
     let input_bytes = messages

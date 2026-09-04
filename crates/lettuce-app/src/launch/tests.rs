@@ -4515,6 +4515,186 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         lettuce_creation::StagedLorebookDraftStatus::Drafted
     );
 
+    let refine_prompt_id = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(TimestampMillis::new(NOW.get() + 17))
+        .expect("prompt ids")
+        .get(BuiltInPromptId::LorebookGeneratorRefine);
+    let refine_prompt = PromptRepository::get(&database, refine_prompt_id)
+        .expect("refine prompt")
+        .expect("refine prompt exists");
+    let refine_request_id = RequestId::new();
+    let refine_request = crate::StagedLorebookRefineRequest {
+        request_id: refine_request_id,
+        project_request_id: request_id,
+        plan_id,
+        feedback: "  Make it more precise.  ".into(),
+        profile: profile.clone(),
+        prompt: &refine_prompt,
+        now: TimestampMillis::new(NOW.get() + 17),
+    };
+    let admitted_refine = writer
+        .prepare_and_admit_refinement(refine_request.clone())
+        .expect("admit staged refinement");
+    assert!(admitted_refine.created);
+    assert_eq!(admitted_refine.run.project_revision, Revision::new(9));
+    assert_eq!(
+        admitted_refine
+            .run
+            .refinement
+            .as_ref()
+            .map(|refinement| refinement.feedback.as_str()),
+        Some("Make it more precise.")
+    );
+    assert_eq!(
+        admitted_refine.run.prompt_values.entry_title,
+        "  Manual title  "
+    );
+    assert_eq!(
+        admitted_refine.run.prompt_values.entry_content,
+        "  Manual content  "
+    );
+    assert_eq!(
+        admitted_refine.run.prompt_values.entry_keywords,
+        "harbour, key"
+    );
+    assert_eq!(
+        admitted_refine.run.prompt_values.entry_always_active,
+        "false"
+    );
+    assert!(
+        !writer
+            .prepare_and_admit_refinement(refine_request.clone())
+            .expect("replay staged refinement")
+            .created
+    );
+    let mut changed_refine = refine_request;
+    changed_refine.feedback = "Different".into();
+    assert!(matches!(
+        writer.prepare_and_admit_refinement(changed_refine),
+        Err(crate::StagedLorebookWriterAdmissionError::Run(
+            lettuce_creation::StagedLorebookWriterRunRepositoryError::Conflict
+        ))
+    ));
+
+    let refine_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: Vec::new(),
+                tool_calls: vec![ProposedToolCall {
+                    provider_call_id: Some("staged-refine".into()),
+                    name: lettuce_creation::STAGED_LOREBOOK_WRITER_TOOL_NAME.into(),
+                    arguments: serde_json::json!({
+                        "title": " Precise title ",
+                        "keywords": [" harbour ", "fact"],
+                        "content": " Precise revised content. ",
+                        "alwaysActive": true
+                    }),
+                    raw_arguments: None,
+                    provider_replay: None,
+                }],
+                provider_replay: None,
+            }],
+            usage: Some(InferenceUsage {
+                input_tokens: 40,
+                output_tokens: 12,
+            }),
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: Some("tool_calls".into()),
+            provider_request_id: Some("staged-refine-request".into()),
+            warning_codes: Vec::new(),
+        }])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let refine_work = writer_dispatcher
+        .claim(
+            refine_request_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 18),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim staged refinement")
+        .expect("staged refinement work");
+    let refine_executor = crate::StagedLorebookWriterExecutionCoordinator::new(
+        &database,
+        &database,
+        &refine_inference,
+    );
+    let refined = refine_executor
+        .run(
+            refine_request_id,
+            &refine_prompt,
+            &refine_work.handle,
+            None,
+            TimestampMillis::new(NOW.get() + 19),
+        )
+        .await
+        .expect("execute staged refinement");
+    assert_eq!(refined.project.project.revision, Revision::new(10));
+    assert_eq!(refined.project.project.drafts[0].title, "Precise title");
+    assert_eq!(
+        refined.project.project.drafts[0].content,
+        "Precise revised content."
+    );
+    assert_eq!(refined.project.project.drafts[0].revisions.len(), 1);
+    assert_eq!(
+        refined.project.project.drafts[0].revisions[0].feedback,
+        "Make it more precise."
+    );
+    assert_eq!(
+        refined.project.project.drafts[0].revisions[0].content,
+        "Precise revised content."
+    );
+    assert_eq!(
+        refined.project.project.drafts[0].revisions[0].timestamp,
+        TimestampMillis::new(NOW.get() + 19)
+    );
+    let refine_replay = refine_executor
+        .run(
+            refine_request_id,
+            &refine_prompt,
+            &refine_work.handle,
+            None,
+            TimestampMillis::new(NOW.get() + 20),
+        )
+        .await
+        .expect("replay staged refinement");
+    assert!(refine_replay.replayed);
+    assert_eq!(refine_replay.project, refined.project);
+    {
+        let refine_requests = refine_inference.requests.lock().expect("refine requests");
+        assert_eq!(refine_requests.len(), 1);
+        let refine_text = refine_requests[0]
+            .context
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                ProviderContextPart::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(refine_text.contains("  Manual title  "));
+        assert!(refine_text.contains("Make it more precise."));
+        assert!(refine_text.contains(lettuce_creation::STAGED_LOREBOOK_REFINE_FINAL_INSTRUCTION));
+    }
+    let mut changed_refined_draft = refined.project.project.drafts[0].clone();
+    changed_refined_draft.content = "Changed after settlement".into();
+    changed_refined_draft.revisions[0].content = changed_refined_draft.content.clone();
+    assert!(matches!(
+        lettuce_creation::StagedLorebookRepository::settle_staged_lorebook_refinement(
+            &database,
+            request_id,
+            Revision::new(9),
+            changed_refined_draft,
+            TimestampMillis::new(NOW.get() + 19),
+        ),
+        Err(lettuce_creation::StagedLorebookRepositoryError::Conflict)
+    ));
+
     let cancelled_request_id = RequestId::new();
     let mut cancelled_request = make_request();
     cancelled_request.request_id = cancelled_request_id;

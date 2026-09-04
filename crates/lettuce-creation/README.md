@@ -186,6 +186,10 @@ Manual editing preserves the legacy permissive behavior: title and content are
 stored verbatim, keywords are only trimmed with blank values removed, and only
 pending or failed drafts become drafted. Approval directly toggles the selected
 stable-ID draft between drafted and approved without new validation or limits.
+Refinement reuses the required writer tool contract and copies the legacy
+prompt inputs and final instruction. Successful output replaces the selected
+stable-ID draft as drafted and appends the trimmed feedback, revised content,
+and completion time to its preserved revision history.
 Each pending staged draft can now be represented by an immutable writer run
 that freezes its stable project/plan identity, project revision, resolved
 profile, writer prompt revision, exact rendered-input values, and generic job

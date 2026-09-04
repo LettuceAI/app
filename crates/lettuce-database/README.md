@@ -250,6 +250,9 @@ batch.
 Stable-plan manual draft edits and approval toggles use the same project-row
 revision CAS. Exact operation retries return the stored project, while stale or
 changed retries conflict.
+Refinement reuses the immutable staged-writer run table for its frozen input and
+attempt, then commits the revised draft plus one history record through a strict
+project-revision CAS. Exact settlement replay is restart-safe.
 Prepared companion sends reuse the conversation send transaction: the user
 message, generation turn/attempt, companion session and relationship revisions,
 operation, and outbox commit together. A stale state CAS or hook failure rolls

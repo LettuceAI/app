@@ -72,6 +72,10 @@ ordered pending drafts from the reviewed plans and enters drafting. It does not
 dispatch writer inference or reopen the completed planner job.
 The coordinator also exposes restart-safe stable-ID draft edits and approval
 toggles as project revision operations without dispatching inference.
+Refine admission freezes the selected draft, trimmed feedback, exact legacy
+render values, resolved profile, and active refine prompt. The shared writer
+executor checkpoints one typed attempt before applying the revised draft and
+revision-history append through the project CAS.
 Claimed staged-writer execution renders those frozen values, appends the exact
 legacy final instruction, and makes one required native tool request. Its
 checkpoint is durable before the matching pending draft CAS; restart replays

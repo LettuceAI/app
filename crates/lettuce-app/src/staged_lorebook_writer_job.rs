@@ -2,9 +2,10 @@ use lettuce_context::{LifecycleStatus, PromptDocument, PromptPurpose};
 use lettuce_conversations::ResolvedInferenceProfile;
 use lettuce_creation::{
     StagedLorebookDraftStatus, StagedLorebookEntryPlan, StagedLorebookPlanningRun,
-    StagedLorebookRepository, StagedLorebookRepositoryError, StagedLorebookSourceExcerpt,
-    StagedLorebookStage, StagedLorebookWriterPromptValues, StagedLorebookWriterRun,
-    StagedLorebookWriterRunRepository, StagedLorebookWriterRunRepositoryError,
+    StagedLorebookRefinement, StagedLorebookRepository, StagedLorebookRepositoryError,
+    StagedLorebookSourceExcerpt, StagedLorebookStage, StagedLorebookWriterPromptValues,
+    StagedLorebookWriterRun, StagedLorebookWriterRunRepository,
+    StagedLorebookWriterRunRepositoryError,
 };
 use lettuce_jobs::{
     CancellationPolicy, IdempotencyKey, JobKind, JobPriority, JobSnapshot, JobSpec, JobStore,
@@ -19,6 +20,17 @@ pub struct StagedLorebookWriterRequest<'a> {
     pub request_id: RequestId,
     pub project_request_id: RequestId,
     pub plan_id: LorebookEntryId,
+    pub profile: ResolvedInferenceProfile,
+    pub prompt: &'a PromptDocument,
+    pub now: TimestampMillis,
+}
+
+#[derive(Debug, Clone)]
+pub struct StagedLorebookRefineRequest<'a> {
+    pub request_id: RequestId,
+    pub project_request_id: RequestId,
+    pub plan_id: LorebookEntryId,
+    pub feedback: String,
     pub profile: ResolvedInferenceProfile,
     pub prompt: &'a PromptDocument,
     pub now: TimestampMillis,
@@ -136,6 +148,7 @@ where
             prompt_id: request.prompt.id,
             prompt_revision: request.prompt.revision,
             prompt_values: values,
+            refinement: None,
             created_at: request.now,
             attempt: None,
         };
@@ -185,6 +198,84 @@ where
         }
         Ok(StagedLorebookWriterBatchAdmission { project, writers })
     }
+
+    pub fn prepare_and_admit_refinement(
+        &self,
+        request: StagedLorebookRefineRequest<'_>,
+    ) -> Result<StagedLorebookWriterAdmission, StagedLorebookWriterAdmissionError> {
+        validate_refine_request(&request)?;
+        match self
+            .runs
+            .load_staged_lorebook_writer_run(request.request_id)
+        {
+            Ok(run) => {
+                if !same_refine_request(&run, &request) {
+                    return Err(StagedLorebookWriterRunRepositoryError::Conflict.into());
+                }
+                let job = self
+                    .jobs
+                    .get(run.job_id)?
+                    .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+                validate_job(&run, &job)?;
+                return Ok(StagedLorebookWriterAdmission {
+                    run,
+                    job,
+                    created: false,
+                });
+            }
+            Err(StagedLorebookWriterRunRepositoryError::NotFound) => {}
+            Err(error) => return Err(error.into()),
+        }
+        let project = self
+            .projects
+            .load_staged_lorebook(request.project_request_id)?;
+        let (values, refinement) =
+            prepare_refine_values(&project, request.plan_id, &request.feedback)?;
+        let admitted = self.jobs.create_or_get(
+            JobSpec::new(
+                JobKind::CreationRun,
+                JobSubject::new(SubjectKind::CreationProject, project.project.id.to_string())
+                    .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?,
+                OutcomeRef::Request(request.request_id),
+            )
+            .with_idempotency_key(
+                IdempotencyKey::new(format!("staged-lorebook-refine-{}", request.request_id))
+                    .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?,
+            )
+            .with_resources(vec![
+                ResourceClass::Network,
+                ResourceClass::ModelLoad,
+                ResourceClass::DiskRead,
+                ResourceClass::DiskWrite,
+                ResourceClass::Cpu,
+            ])
+            .with_priority(JobPriority::Interactive)
+            .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
+        )?;
+        let run = self
+            .runs
+            .admit_staged_lorebook_writer_run(StagedLorebookWriterRun {
+                request_id: request.request_id,
+                job_id: admitted.job.id,
+                project_request_id: request.project_request_id,
+                project_id: project.project.id,
+                project_revision: project.project.revision,
+                plan_id: request.plan_id,
+                profile: request.profile,
+                prompt_id: request.prompt.id,
+                prompt_revision: request.prompt.revision,
+                prompt_values: values,
+                refinement: Some(refinement),
+                created_at: request.now,
+                attempt: None,
+            })?;
+        validate_job(&run, &admitted.job)?;
+        Ok(StagedLorebookWriterAdmission {
+            run,
+            job: admitted.job,
+            created: admitted.created,
+        })
+    }
 }
 
 fn validate_request(
@@ -192,6 +283,33 @@ fn validate_request(
 ) -> Result<(), StagedLorebookWriterAdmissionError> {
     if request.prompt.status != LifecycleStatus::Active
         || request.prompt.purpose != PromptPurpose::LorebookGeneratorWriter
+        || request.prompt.revision.get() == 0
+        || request
+            .profile
+            .chat_profile
+            .capabilities
+            .input_modalities
+            .get(Modality::Text)
+            != CapabilityStatus::Supported
+        || request
+            .profile
+            .chat_profile
+            .capabilities
+            .output_modalities
+            .get(Modality::Text)
+            != CapabilityStatus::Supported
+    {
+        return Err(StagedLorebookWriterAdmissionError::InvalidInput);
+    }
+    Ok(())
+}
+
+fn validate_refine_request(
+    request: &StagedLorebookRefineRequest<'_>,
+) -> Result<(), StagedLorebookWriterAdmissionError> {
+    if request.feedback.trim().is_empty()
+        || request.prompt.status != LifecycleStatus::Active
+        || request.prompt.purpose != PromptPurpose::LorebookGeneratorRefine
         || request.prompt.revision.get() == 0
         || request
             .profile
@@ -246,7 +364,61 @@ fn prepare_values(
         entry_proposed_keys: format_keys(&plan.proposed_keys),
         entry_rationale: plan.rationale.clone(),
         relevant_excerpts: relevant_excerpts(plan, &run.project.excerpts),
+        entry_keywords: String::new(),
+        entry_always_active: String::new(),
+        entry_content: String::new(),
+        user_feedback: String::new(),
     })
+}
+
+fn prepare_refine_values(
+    run: &StagedLorebookPlanningRun,
+    plan_id: LorebookEntryId,
+    feedback: &str,
+) -> Result<
+    (StagedLorebookWriterPromptValues, StagedLorebookRefinement),
+    StagedLorebookWriterAdmissionError,
+> {
+    if !matches!(
+        run.project.stage,
+        StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady
+    ) {
+        return Err(StagedLorebookWriterAdmissionError::InvalidInput);
+    }
+    let plan = run
+        .project
+        .outline
+        .iter()
+        .find(|plan| plan.id == plan_id)
+        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+    let draft = run
+        .project
+        .drafts
+        .iter()
+        .find(|draft| draft.plan_id == plan_id)
+        .cloned()
+        .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+    let feedback = feedback.trim().to_owned();
+    let values = StagedLorebookWriterPromptValues {
+        brief: run.project.brief.clone(),
+        outline: format_outline(&run.project.outline),
+        entry_title: draft.title.clone(),
+        entry_category: String::new(),
+        entry_proposed_keys: String::new(),
+        entry_rationale: String::new(),
+        relevant_excerpts: relevant_excerpts(plan, &run.project.excerpts),
+        entry_keywords: format_keys(&draft.keywords),
+        entry_always_active: draft.always_active.to_string(),
+        entry_content: draft.content.clone(),
+        user_feedback: feedback.clone(),
+    };
+    Ok((
+        values,
+        StagedLorebookRefinement {
+            feedback,
+            base_draft: draft,
+        },
+    ))
 }
 
 fn format_outline(outline: &[StagedLorebookEntryPlan]) -> String {
@@ -321,6 +493,24 @@ fn same_request(run: &StagedLorebookWriterRun, request: &StagedLorebookWriterReq
         && run.prompt_id == request.prompt.id
         && run.prompt_revision == request.prompt.revision
         && run.created_at == request.now
+        && run.refinement.is_none()
+}
+
+fn same_refine_request(
+    run: &StagedLorebookWriterRun,
+    request: &StagedLorebookRefineRequest<'_>,
+) -> bool {
+    run.request_id == request.request_id
+        && run.project_request_id == request.project_request_id
+        && run.plan_id == request.plan_id
+        && run.profile == request.profile
+        && run.prompt_id == request.prompt.id
+        && run.prompt_revision == request.prompt.revision
+        && run.created_at == request.now
+        && run
+            .refinement
+            .as_ref()
+            .is_some_and(|refinement| refinement.feedback == request.feedback.trim())
 }
 
 fn validate_job(

@@ -164,7 +164,7 @@ impl StagedLorebookWriterRunRepository for Database {
             .map_err(failure)?;
         let mut run = load_in(&transaction, request_id)?
             .ok_or(StagedLorebookWriterRunRepositoryError::NotFound)?;
-        attempt.validate(run.plan_id)?;
+        attempt.validate(&run)?;
         if let Some(stored) = &run.attempt {
             if stored == &attempt {
                 transaction.commit().map_err(failure)?;
