@@ -174,6 +174,10 @@ matching-call selection, trimmed nonblank title/content, optional trimmed
 keywords without an added cap or deduplication, and both always-active aliases
 with a false default. Reduction returns a drafted payload bound to the stable
 plan ID but does not mutate the project.
+Each admitted staged writer can now retain one immutable native attempt with
+typed calls, draft-or-invalid decision, usage, and provider diagnostics. A
+valid stable-ID result replaces only its matching pending draft through the
+project revision boundary.
 Each pending staged draft can now be represented by an immutable writer run
 that freezes its stable project/plan identity, project revision, resolved
 profile, writer prompt revision, exact rendered-input values, and generic job

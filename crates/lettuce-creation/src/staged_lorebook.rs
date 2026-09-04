@@ -352,6 +352,33 @@ pub struct StagedLorebookWriterRun {
     pub prompt_revision: Revision,
     pub prompt_values: StagedLorebookWriterPromptValues,
     pub created_at: TimestampMillis,
+    #[serde(default)]
+    pub attempt: Option<StagedLorebookWriterAttempt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum StagedLorebookWriterDecision {
+    Draft(StagedLorebookEntryDraft),
+    Invalid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookWriterUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookWriterAttempt {
+    pub calls: Vec<ProposedToolCall>,
+    pub decision: StagedLorebookWriterDecision,
+    pub usage: Option<StagedLorebookWriterUsage>,
+    pub provider_finish_reason: Option<String>,
+    pub provider_request_id: Option<String>,
+    pub completed_at: TimestampMillis,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -377,6 +404,12 @@ pub trait StagedLorebookWriterRunRepository: Send + Sync {
     fn load_staged_lorebook_writer_run(
         &self,
         request_id: RequestId,
+    ) -> Result<StagedLorebookWriterRun, StagedLorebookWriterRunRepositoryError>;
+
+    fn commit_staged_lorebook_writer_attempt(
+        &self,
+        request_id: RequestId,
+        attempt: StagedLorebookWriterAttempt,
     ) -> Result<StagedLorebookWriterRun, StagedLorebookWriterRunRepositoryError>;
 }
 
@@ -430,6 +463,14 @@ pub trait StagedLorebookRepository: Send + Sync {
         &self,
         request_id: RequestId,
         expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn settle_staged_lorebook_draft(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        draft: StagedLorebookEntryDraft,
         now: TimestampMillis,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
 }
@@ -487,6 +528,28 @@ impl StagedLorebookWriterRun {
             || values.entry_proposed_keys.is_empty()
             || values.relevant_excerpts.is_empty()
             || serde_json::to_vec(&self.profile).is_err()
+            || self
+                .attempt
+                .as_ref()
+                .is_some_and(|attempt| attempt.validate(self.plan_id).is_err())
+        {
+            return Err(StagedLorebookWriterRunRepositoryError::Invalid);
+        }
+        Ok(())
+    }
+}
+
+impl StagedLorebookWriterAttempt {
+    pub fn validate(
+        &self,
+        plan_id: LorebookEntryId,
+    ) -> Result<(), StagedLorebookWriterRunRepositoryError> {
+        if self.completed_at.get() < 0
+            || self
+                .calls
+                .iter()
+                .any(|call| call.provider_replay.is_some() || call.validate().is_err())
+            || matches!(&self.decision, StagedLorebookWriterDecision::Draft(draft) if validate_written_draft(draft, plan_id).is_err())
         {
             return Err(StagedLorebookWriterRunRepositoryError::Invalid);
         }
@@ -594,6 +657,31 @@ impl StagedLorebookProject {
         Ok(next)
     }
 
+    pub fn settle_draft(
+        &self,
+        draft: StagedLorebookEntryDraft,
+        now: TimestampMillis,
+    ) -> Result<Self, StagedLorebookError> {
+        if self.stage != StagedLorebookStage::Drafting || now < self.updated_at {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        validate_written_draft(&draft, draft.plan_id)?;
+        let position = self
+            .drafts
+            .iter()
+            .position(|stored| stored.plan_id == draft.plan_id)
+            .filter(|position| self.drafts[*position].status == StagedLorebookDraftStatus::Pending)
+            .ok_or(StagedLorebookError::InvalidTransition)?;
+        let mut next = self.clone();
+        next.drafts[position] = draft;
+        next.updated_at = now;
+        next.revision = next
+            .revision
+            .next()
+            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        Ok(next)
+    }
+
     pub fn validate(&self) -> Result<(), StagedLorebookError> {
         if self.brief.is_empty()
             || self.brief != self.brief.trim()
@@ -633,29 +721,56 @@ impl StagedLorebookProject {
             }
             StagedLorebookStage::Drafting => {
                 validate_outline(&self.outline, &self.excerpts)?;
-                validate_pending_drafts(&self.drafts, &self.outline)
+                validate_drafts(&self.drafts, &self.outline)
             }
             _ => Ok(()),
         }
     }
 }
 
-fn validate_pending_drafts(
+fn validate_drafts(
     drafts: &[StagedLorebookEntryDraft],
     outline: &[StagedLorebookEntryPlan],
 ) -> Result<(), StagedLorebookError> {
     if drafts.len() != outline.len()
         || drafts.iter().zip(outline).any(|(draft, plan)| {
             draft.plan_id != plan.id
-                || draft.title != plan.title
-                || draft.keywords != plan.proposed_keys
-                || !draft.content.is_empty()
-                || draft.always_active
-                || draft.status != StagedLorebookDraftStatus::Pending
-                || !draft.revisions.is_empty()
+                || match draft.status {
+                    StagedLorebookDraftStatus::Pending => {
+                        draft.title != plan.title
+                            || draft.keywords != plan.proposed_keys
+                            || !draft.content.is_empty()
+                            || draft.always_active
+                            || !draft.revisions.is_empty()
+                    }
+                    StagedLorebookDraftStatus::Drafted => {
+                        validate_written_draft(draft, plan.id).is_err()
+                    }
+                }
         })
     {
         return Err(StagedLorebookError::InvalidOutline);
+    }
+    Ok(())
+}
+
+fn validate_written_draft(
+    draft: &StagedLorebookEntryDraft,
+    plan_id: LorebookEntryId,
+) -> Result<(), StagedLorebookError> {
+    if draft.plan_id != plan_id
+        || draft.status != StagedLorebookDraftStatus::Drafted
+        || draft.title.trim().is_empty()
+        || draft.title != draft.title.trim()
+        || draft.content.trim().is_empty()
+        || draft.content != draft.content.trim()
+        || draft
+            .keywords
+            .iter()
+            .any(|keyword| keyword.is_empty() || keyword != keyword.trim())
+        || !draft.revisions.is_empty()
+    {
+        return Err(StagedLorebookError::InvalidDraft);
     }
     Ok(())
 }

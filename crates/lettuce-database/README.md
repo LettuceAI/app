@@ -240,6 +240,9 @@ Migration 11 also stores immutable per-plan staged writer runs. Scalar
 project/job/plan/model/prompt projections are checked against versioned JSON,
 and exact request replay returns the original run while changed replay
 conflicts.
+Writer attempts are stored inside the immutable writer-run document before the
+separate stable-plan project CAS. Exact checkpoint and draft settlement replay
+without another provider request.
 Prepared companion sends reuse the conversation send transaction: the user
 message, generation turn/attempt, companion session and relationship revisions,
 operation, and outbox commit together. A stale state CAS or hook failure rolls

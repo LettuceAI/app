@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use lettuce_creation::{
-    StagedLorebookWriterRun, StagedLorebookWriterRunRepository,
+    StagedLorebookWriterAttempt, StagedLorebookWriterRun, StagedLorebookWriterRunRepository,
     StagedLorebookWriterRunRepositoryError,
 };
 use lettuce_types::{
@@ -149,6 +149,42 @@ impl StagedLorebookWriterRunRepository for Database {
             .map_err(failure)?;
         let run = load_in(&transaction, request_id)?
             .ok_or(StagedLorebookWriterRunRepositoryError::NotFound)?;
+        transaction.commit().map_err(failure)?;
+        Ok(run)
+    }
+
+    fn commit_staged_lorebook_writer_attempt(
+        &self,
+        request_id: RequestId,
+        attempt: StagedLorebookWriterAttempt,
+    ) -> Result<StagedLorebookWriterRun, StagedLorebookWriterRunRepositoryError> {
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let mut run = load_in(&transaction, request_id)?
+            .ok_or(StagedLorebookWriterRunRepositoryError::NotFound)?;
+        attempt.validate(run.plan_id)?;
+        if let Some(stored) = &run.attempt {
+            if stored == &attempt {
+                transaction.commit().map_err(failure)?;
+                return Ok(run);
+            }
+            return Err(StagedLorebookWriterRunRepositoryError::Conflict);
+        }
+        run.attempt = Some(attempt);
+        let encoded = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
+        if transaction
+            .execute(
+                "UPDATE creation_staged_lorebook_writer_runs SET run_json = ?2
+                 WHERE request_id = ?1",
+                params![request_id.to_string(), encoded],
+            )
+            .map_err(failure)?
+            != 1
+        {
+            return Err(StagedLorebookWriterRunRepositoryError::Conflict);
+        }
         transaction.commit().map_err(failure)?;
         Ok(run)
     }

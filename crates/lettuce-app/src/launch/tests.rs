@@ -4301,6 +4301,137 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         Err(lettuce_creation::StagedLorebookWriterRunRepositoryError::NotFound)
     ));
 
+    let writer_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: Vec::new(),
+                tool_calls: vec![ProposedToolCall {
+                    provider_call_id: Some("staged-writer".into()),
+                    name: lettuce_creation::STAGED_LOREBOOK_WRITER_TOOL_NAME.into(),
+                    arguments: serde_json::json!({
+                        "title": " Harbour Key ",
+                        "keywords": [" harbour ", "key"],
+                        "content": " Ada keeps the brass harbour key. ",
+                        "alwaysActive": true
+                    }),
+                    raw_arguments: None,
+                    provider_replay: None,
+                }],
+                provider_replay: None,
+            }],
+            usage: Some(InferenceUsage {
+                input_tokens: 60,
+                output_tokens: 20,
+            }),
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: Some("tool_calls".into()),
+            provider_request_id: Some("staged-writer-request".into()),
+            warning_codes: Vec::new(),
+        }])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let writer_dispatcher =
+        crate::StagedLorebookWriterDispatchCoordinator::new(&database, &database);
+    let writer_work = writer_dispatcher
+        .claim(
+            writer_request_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 11),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim staged writer")
+        .expect("staged writer work");
+    let writer_handle = writer_work.handle.clone();
+    let writer_executor = crate::StagedLorebookWriterExecutionCoordinator::new(
+        &database,
+        &database,
+        &writer_inference,
+    );
+    let written = writer_executor
+        .run(
+            writer_request_id,
+            &writer_prompt,
+            &writer_handle,
+            None,
+            TimestampMillis::new(NOW.get() + 12),
+        )
+        .await
+        .expect("execute staged writer");
+    assert!(!written.replayed);
+    assert_eq!(written.project.project.revision, Revision::new(5));
+    assert_eq!(written.project.project.drafts[0].title, "Harbour Key");
+    assert_eq!(
+        written.project.project.drafts[0].content,
+        "Ada keeps the brass harbour key."
+    );
+    let stored_writer =
+        lettuce_creation::StagedLorebookWriterRunRepository::load_staged_lorebook_writer_run(
+            &database,
+            writer_request_id,
+        )
+        .expect("stored writer");
+    assert_eq!(
+        stored_writer
+            .attempt
+            .as_ref()
+            .and_then(|attempt| attempt.usage.as_ref())
+            .map(|usage| (usage.input_tokens, usage.output_tokens)),
+        Some((60, 20))
+    );
+    {
+        let requests = writer_inference.requests.lock().expect("writer requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].profile.tool_policy, ToolPolicy::Required);
+        let text = requests[0]
+            .context
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                ProviderContextPart::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Harbour world"));
+        assert!(text.contains("[src_01] Notes\nAda keeps the harbour key."));
+        assert!(text.contains(lettuce_creation::STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION));
+    }
+    let written_replay = writer_executor
+        .run(
+            writer_request_id,
+            &writer_prompt,
+            &writer_handle,
+            None,
+            TimestampMillis::new(NOW.get() + 13),
+        )
+        .await
+        .expect("replay staged writer");
+    assert!(written_replay.replayed);
+    assert_eq!(written_replay.project, written.project);
+    assert_eq!(
+        writer_inference
+            .requests
+            .lock()
+            .expect("writer requests")
+            .len(),
+        1
+    );
+    assert!(matches!(
+        writer_dispatcher
+            .settle(
+                writer_work,
+                Ok(written),
+                CancellationReason::User,
+                TimestampMillis::new(NOW.get() + 13),
+            )
+            .expect("settle staged writer job"),
+        crate::StagedLorebookWriterSettledWork::Succeeded { ref job, .. }
+            if job.state == JobState::Succeeded
+    ));
+
     let cancelled_request_id = RequestId::new();
     let mut cancelled_request = make_request();
     cancelled_request.request_id = cancelled_request_id;

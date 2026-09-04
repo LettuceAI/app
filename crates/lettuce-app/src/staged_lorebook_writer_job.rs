@@ -130,6 +130,7 @@ where
             prompt_revision: request.prompt.revision,
             prompt_values: values,
             created_at: request.now,
+            attempt: None,
         };
         let run = self.runs.admit_staged_lorebook_writer_run(run)?;
         validate_job(&run, &admitted.job)?;
