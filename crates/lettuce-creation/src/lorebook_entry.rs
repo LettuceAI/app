@@ -1,7 +1,12 @@
 use std::collections::HashSet;
 
 use lettuce_conversations::{
-    ProposedToolCall, ToolChoice, ToolDefinition, ToolRequest, ValidationError,
+    ProposedToolCall, ResolvedInferenceProfile, ToolChoice, ToolDefinition, ToolRequest,
+    ValidationError,
+};
+use lettuce_types::{
+    CharacterId, ConversationId, JobId, LorebookId, MemoryId, MessageId, PersonaId,
+    PromptDocumentId, RequestId, Revision, TimestampMillis,
 };
 use quick_xml::{
     Reader,
@@ -27,6 +32,120 @@ pub const LOREBOOK_ENTRY_XML_FORCE_FALLBACK_PROMPT: &str = r#"Return only XML. F
 pub enum LorebookEntryFallbackFormat {
     Json,
     Xml,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LorebookEntrySource {
+    Messages,
+    Memory,
+    Mixed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookEntryPromptValues {
+    pub lorebook_name: String,
+    pub character_name: String,
+    pub session_title: String,
+    pub existing_entries: String,
+    pub direction_prompt: String,
+    pub selected_messages: String,
+    pub memory_summary: String,
+    pub selected_memories: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LorebookEntryGenerationRun {
+    pub request_id: RequestId,
+    pub job_id: JobId,
+    pub conversation_id: ConversationId,
+    pub lorebook_id: LorebookId,
+    pub character_id: CharacterId,
+    pub persona_id: Option<PersonaId>,
+    pub selected_message_ids: Vec<MessageId>,
+    pub selected_memory_ids: Vec<MemoryId>,
+    pub source: LorebookEntrySource,
+    pub include_memory_summary: bool,
+    pub force: bool,
+    pub profile: ResolvedInferenceProfile,
+    pub prompt_id: PromptDocumentId,
+    pub prompt_revision: Revision,
+    pub prompt_values: LorebookEntryPromptValues,
+    pub fallback_format: LorebookEntryFallbackFormat,
+    pub created_at: TimestampMillis,
+}
+
+impl LorebookEntryGenerationRun {
+    pub fn validate(&self) -> Result<(), LorebookEntryRunRepositoryError> {
+        let values = &self.prompt_values;
+        if self.prompt_revision.get() == 0
+            || self.created_at.get() < 0
+            || values.lorebook_name.trim().is_empty()
+            || values.character_name.trim().is_empty()
+            || values.session_title.trim().is_empty()
+            || serde_json::to_vec(&self.profile).is_err()
+            || has_duplicates(&self.selected_message_ids)
+            || has_duplicates(&self.selected_memory_ids)
+        {
+            return Err(LorebookEntryRunRepositoryError::Invalid);
+        }
+        match self.source {
+            LorebookEntrySource::Messages if self.selected_message_ids.is_empty() => {
+                Err(LorebookEntryRunRepositoryError::Invalid)
+            }
+            LorebookEntrySource::Memory
+                if self.selected_memory_ids.is_empty()
+                    && (!self.include_memory_summary
+                        || values.memory_summary.trim().is_empty()
+                        || values.memory_summary.trim() == "(none)") =>
+            {
+                Err(LorebookEntryRunRepositoryError::Invalid)
+            }
+            LorebookEntrySource::Mixed
+                if self.selected_message_ids.is_empty()
+                    && self.selected_memory_ids.is_empty()
+                    && (!self.include_memory_summary
+                        || values.memory_summary.trim().is_empty()
+                        || values.memory_summary.trim() == "(none)") =>
+            {
+                Err(LorebookEntryRunRepositoryError::Invalid)
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+fn has_duplicates<T: Eq + std::hash::Hash>(values: &[T]) -> bool {
+    let mut seen = HashSet::with_capacity(values.len());
+    values.iter().any(|value| !seen.insert(value))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum LorebookEntryRunRepositoryError {
+    #[error("lorebook entry generation run was not found")]
+    NotFound,
+    #[error("lorebook entry generation run conflicts with durable state")]
+    Conflict,
+    #[error("lorebook entry generation run is invalid")]
+    Invalid,
+    #[error("lorebook entry generation run storage failed")]
+    Failure,
+    #[error("lorebook entry generation run storage is corrupt")]
+    Corrupt,
+}
+
+pub trait LorebookEntryRunRepository: Send + Sync {
+    fn admit_lorebook_entry_run(
+        &self,
+        run: LorebookEntryGenerationRun,
+    ) -> Result<LorebookEntryGenerationRun, LorebookEntryRunRepositoryError>;
+
+    fn load_lorebook_entry_run(
+        &self,
+        request_id: RequestId,
+    ) -> Result<LorebookEntryGenerationRun, LorebookEntryRunRepositoryError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

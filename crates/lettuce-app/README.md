@@ -33,6 +33,13 @@ new launch. Exact launch retries revalidate the initial-state request without
 resetting relationship continuity or advancing the episode sequence. Group
 companions and group growth scheduling remain deferred.
 
+Single-entry lorebook generation now has a restart-safe admission boundary.
+After application preparation freezes the selected direct-conversation source
+and exact prompt/profile inputs, one interactive generic creation job and one
+immutable request-owned run bind those inputs before provider dispatch. Exact
+replay returns the same job/run and changed replay conflicts; this boundary
+does not call a provider or mutate the lorebook.
+
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct
 character/persona owner, reads the current authored companion config like the

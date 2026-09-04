@@ -224,6 +224,11 @@ Migration 13 also stores the legacy character/persona continuity sequence.
 Each fresh direct companion launch closes only the prior open episode and links
 the next index to it in that same transaction; exact launch replay leaves the
 sequence unchanged, and a different persona starts its own sequence.
+
+Migration 11 also stores immutable single-entry lorebook-generation runs. Each
+request is bound to one generic creation job plus the real conversation,
+lorebook, character/persona, model profile, and prompt revision; the complete
+frozen request remains versioned JSON and exact replay rejects any drift.
 Prepared companion sends reuse the conversation send transaction: the user
 message, generation turn/attempt, companion session and relationship revisions,
 operation, and outbox commit together. A stale state CAS or hook failure rolls

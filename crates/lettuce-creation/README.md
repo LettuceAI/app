@@ -125,3 +125,11 @@ and XML fallback prompts and parsers are also present, with force-mode
 `no_entry` rejected as undeclared. Request/context preparation, durable
 admission, provider dispatch, and draft return remain the next slice; this pure
 contract does not mutate a lorebook.
+
+The matching immutable run now freezes the direct conversation, lorebook,
+character/persona, selected message and memory identities, source mode,
+optional-summary choice, force flag, exact resolved inference profile, prompt
+revision, rendered input values, fallback format, and generic job identity.
+Messages/memory/mixed source gates are validated before admission. The SQLite
+adapter rejects changed request replay and the application admission boundary
+reuses the generic restart/cooperative-cancellation `CreationRun` job.

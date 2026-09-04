@@ -17,6 +17,7 @@ mod group_adapter;
 mod growth_adapter;
 mod job_adapter;
 mod lorebook_adapter;
+mod lorebook_entry_run_adapter;
 mod memory_adapter;
 mod memory_embedding_adapter;
 mod memory_preparation_adapter;
@@ -3900,6 +3901,7 @@ mod tests {
                 "creation_inference_attempts",
                 "creation_inference_rounds",
                 "creation_lorebook_apply_receipts",
+                "creation_lorebook_entry_runs",
                 "creation_proposals",
                 "creation_turns",
                 "creation_workflows",

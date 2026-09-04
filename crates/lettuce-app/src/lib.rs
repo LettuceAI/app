@@ -38,6 +38,7 @@ mod dynamic_memory_delete_after;
 mod embeddings;
 mod job_recovery;
 mod launch;
+mod lorebook_entry_job;
 mod provider_runtime;
 
 pub use built_in_prompts::*;
@@ -72,6 +73,7 @@ pub use dynamic_memory_delete_after::*;
 pub use embeddings::*;
 pub use job_recovery::*;
 pub use launch::*;
+pub use lorebook_entry_job::*;
 pub use provider_runtime::*;
 
 #[cfg(test)]
