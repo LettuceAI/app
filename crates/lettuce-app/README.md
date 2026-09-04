@@ -34,11 +34,16 @@ resetting relationship continuity or advancing the episode sequence. Group
 companions and group growth scheduling remain deferred.
 
 Single-entry lorebook generation now has a restart-safe admission boundary.
-After application preparation freezes the selected direct-conversation source
-and exact prompt/profile inputs, one interactive generic creation job and one
-immutable request-owned run bind those inputs before provider dispatch. Exact
-replay returns the same job/run and changed replay conflicts; this boundary
-does not call a provider or mutate the lorebook.
+Application preparation resolves the direct conversation's character and
+persona owners, reads the selected branch messages, conversation memory and
+summary, and target lorebook through their existing ports, then copies the
+legacy chronological message, durable memory, relative-time, existing-entry,
+and `(none)` formatting into immutable prompt values. Missing or foreign
+selected message and memory IDs fail closed instead of being silently omitted.
+One interactive generic creation job and one immutable request-owned run bind
+those inputs before provider dispatch. Exact replay returns the same job/run
+and changed replay conflicts; this boundary does not call a provider or mutate
+the lorebook.
 
 Direct user sends can now pass through `CompanionTurnCoordinator`. It detects a
 companion from its normalized runtime state, resolves the stored direct

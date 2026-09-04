@@ -39,6 +39,7 @@ mod embeddings;
 mod job_recovery;
 mod launch;
 mod lorebook_entry_job;
+mod lorebook_entry_preparation;
 mod provider_runtime;
 
 pub use built_in_prompts::*;
@@ -74,6 +75,7 @@ pub use embeddings::*;
 pub use job_recovery::*;
 pub use launch::*;
 pub use lorebook_entry_job::*;
+pub use lorebook_entry_preparation::*;
 pub use provider_runtime::*;
 
 #[cfg(test)]

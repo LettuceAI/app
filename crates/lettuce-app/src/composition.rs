@@ -134,10 +134,10 @@ impl AppBackend {
     }
 
     #[must_use]
-    pub fn lorebook_entry_admission(
+    pub fn lorebook_entry_preparation(
         &self,
-    ) -> crate::LorebookEntryAdmissionCoordinator<'_, Database, Database> {
-        crate::LorebookEntryAdmissionCoordinator::new(
+    ) -> crate::LorebookEntryPreparationCoordinator<'_, Database, Database> {
+        crate::LorebookEntryPreparationCoordinator::new(
             self.database.as_ref(),
             self.database.as_ref(),
         )

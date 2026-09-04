@@ -68,6 +68,7 @@ pub struct LorebookEntryGenerationRun {
     pub selected_memory_ids: Vec<MemoryId>,
     pub source: LorebookEntrySource,
     pub include_memory_summary: bool,
+    pub time_awareness_enabled: bool,
     pub force: bool,
     pub profile: ResolvedInferenceProfile,
     pub prompt_id: PromptDocumentId,

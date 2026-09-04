@@ -41,8 +41,9 @@ use lettuce_jobs::{
 };
 use lettuce_memory::{
     DynamicMemoryAttemptStatus, DynamicMemoryPreparationRepository, DynamicMemoryRoundFinishReason,
-    DynamicMemoryRunRepository, DynamicMemorySourceMessage, MemoryPolicy as DynamicMemoryPolicy,
-    MemoryRepository, MemorySpaceSnapshot, MemorySummaryRepository, NewDynamicMemoryInferenceRound,
+    DynamicMemoryRunRepository, DynamicMemorySourceMessage, MemoryCategory, MemoryChangeSet,
+    MemoryItem, MemoryPolicy as DynamicMemoryPolicy, MemoryRepository, MemorySpaceSnapshot,
+    MemorySummary, MemorySummaryChange, MemorySummaryRepository, NewDynamicMemoryInferenceRound,
     NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall, Score, dynamic_memory_tool_request,
 };
 use lettuce_models::{
@@ -3636,6 +3637,7 @@ fn lorebook_entry_admission_binds_one_restart_safe_creation_job() {
         selected_memory_ids: Vec::new(),
         source: lettuce_creation::LorebookEntrySource::Messages,
         include_memory_summary: true,
+        time_awareness_enabled: false,
         force: false,
         profile: profile.clone(),
         prompt: &prompt,
@@ -3674,6 +3676,277 @@ fn lorebook_entry_admission_binds_one_restart_safe_creation_job() {
             lettuce_creation::LorebookEntryRunRepositoryError::Conflict
         ))
     ));
+}
+
+#[test]
+fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_prompt_values() {
+    let database = database_with_builtins();
+    let model_id = seed_model(&database, ProviderProtocol::Ollama, "lorebook-entry-source");
+    let mut stored_profile = ModelProfileRepository::get(&database, model_id)
+        .expect("profile")
+        .expect("profile exists");
+    stored_profile.config.chat_parameters.temperature = None;
+    let account = ProviderAccountRepository::get(&database, stored_profile.provider_account_id)
+        .expect("account")
+        .expect("account exists");
+    let profile = ResolvedInferenceProfile {
+        chat_profile: lettuce_models::resolve_chat_profile(
+            &lettuce_models::ExpectedModelIdentity {
+                model_profile_id: stored_profile.id,
+                model_revision: stored_profile.revision,
+                provider_account_id: account.id,
+                provider_account_revision: account.revision,
+                external_model_id: stored_profile.external_model_id.clone(),
+                display_name: stored_profile.display_name.clone(),
+                provider_protocol: account.protocol,
+                model_kind: stored_profile.kind,
+            },
+            &stored_profile,
+            &account,
+            &lettuce_models::ChatParameterResolutionInput::default(),
+            &lettuce_models::ChatRequirements::default(),
+        )
+        .expect("resolve profile"),
+        tool_policy: ToolPolicy::Required,
+        output_policy: OutputPolicy::Plain,
+        safety_policy: SafetyContext::Standard,
+        correlation_id: None,
+    };
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.memory_policy = MemoryPolicy::Dynamic;
+    });
+    let first = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(character_id, "lorebook-entry-source-first"), NOW)
+        .expect("first launch")
+        .value
+        .conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(
+            &first,
+            "lorebook-entry-source-first-send",
+            "  We met by the harbour.  ",
+        ),
+        TimestampMillis::new(NOW.get() + 1),
+    )
+    .expect("first send");
+    let selected_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let second = ConversationLaunchPlanner::new(&database)
+        .launch_direct(
+            &request(character_id, "lorebook-entry-source-second"),
+            TimestampMillis::new(NOW.get() + 2),
+        )
+        .expect("second launch")
+        .value
+        .conversation;
+    let foreign = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(
+            &second,
+            "lorebook-entry-source-second-send",
+            "Foreign message.",
+        ),
+        TimestampMillis::new(NOW.get() + 3),
+    )
+    .expect("second send");
+    let foreign_message_id = match foreign.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let first_space = MemoryRepository::get_for_conversation(&database, first.id)
+        .expect("first memory space")
+        .expect("first memory space exists");
+    let selected_memory_id = MemoryId::new();
+    let memory_item = MemoryItem {
+        id: selected_memory_id,
+        text: "  Ada keeps the brass harbour key.  ".into(),
+        category: MemoryCategory::WorldDetail,
+        source_message_id: Some(selected_message_id),
+        source_role: Some(MessageRole::User),
+        observed_at: Some(TimestampMillis::new(NOW.get() + 1)),
+        observed_time_precision: Some("turn".into()),
+        superseded_by: None,
+        superseded_at: None,
+        supersedes: Vec::new(),
+        token_count: 8,
+        is_cold: false,
+        is_pinned: false,
+        importance: Score::ZERO,
+        persistence_importance: Score::ZERO,
+        prompt_importance: Score::ZERO,
+        volatility: Score::ZERO,
+        access_count: 0,
+        created_at: TimestampMillis::new(NOW.get() + 1),
+        last_accessed_at: TimestampMillis::new(NOW.get() + 1),
+    };
+    let first_space = MemoryRepository::compare_and_apply(
+        &database,
+        MemoryChangeSet {
+            space_id: first_space.id,
+            expected_revision: first_space.revision,
+            items: vec![memory_item],
+        },
+    )
+    .expect("store selected memory");
+    MemorySummaryRepository::compare_and_apply_summary(
+        &database,
+        MemorySummaryChange {
+            expected_revision: first_space.revision,
+            summary: MemorySummary {
+                space_id: first_space.id,
+                text: "  Harbour facts accumulated.  ".into(),
+                token_count: 4,
+                window_start: 0,
+                window_end: 1,
+                source_message_ids: vec![selected_message_id],
+                updated_at: TimestampMillis::new(NOW.get() + 4),
+            },
+        },
+    )
+    .expect("store memory summary");
+    let second_space = MemoryRepository::get_for_conversation(&database, second.id)
+        .expect("second memory space")
+        .expect("second memory space exists");
+    let foreign_memory_id = MemoryId::new();
+    MemoryRepository::compare_and_apply(
+        &database,
+        MemoryChangeSet {
+            space_id: second_space.id,
+            expected_revision: second_space.revision,
+            items: vec![MemoryItem {
+                id: foreign_memory_id,
+                text: "Foreign memory.".into(),
+                category: MemoryCategory::Other,
+                source_message_id: Some(foreign_message_id),
+                source_role: Some(MessageRole::User),
+                observed_at: Some(TimestampMillis::new(NOW.get() + 3)),
+                observed_time_precision: Some("turn".into()),
+                superseded_by: None,
+                superseded_at: None,
+                supersedes: Vec::new(),
+                token_count: 2,
+                is_cold: false,
+                is_pinned: false,
+                importance: Score::ZERO,
+                persistence_importance: Score::ZERO,
+                prompt_importance: Score::ZERO,
+                volatility: Score::ZERO,
+                access_count: 0,
+                created_at: TimestampMillis::new(NOW.get() + 3),
+                last_accessed_at: TimestampMillis::new(NOW.get() + 3),
+            }],
+        },
+    )
+    .expect("store foreign memory");
+    let lorebook_id = seed_lorebook(&database, "Harbour Canon");
+    let prompt_id = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(TimestampMillis::new(NOW.get() + 4))
+        .expect("prompt ids")
+        .get(BuiltInPromptId::LorebookEntryWriter);
+    let prompt = PromptRepository::get(&database, prompt_id)
+        .expect("prompt")
+        .expect("prompt exists");
+    let request_id = RequestId::new();
+    let make_request = |request_id, message_ids| crate::LorebookEntryPreparationRequest {
+        request_id,
+        conversation_id: first.id,
+        lorebook_id,
+        selected_message_ids: message_ids,
+        selected_memory_ids: Vec::new(),
+        source: lettuce_creation::LorebookEntrySource::Messages,
+        include_memory_summary: true,
+        direction_prompt: Some("  Focus on lasting facts.  ".into()),
+        force: false,
+        time_awareness_enabled: false,
+        profile: profile.clone(),
+        prompt: &prompt,
+        fallback_format: lettuce_creation::LorebookEntryFallbackFormat::Json,
+        now: TimestampMillis::new(NOW.get() + 5),
+    };
+    let coordinator = crate::LorebookEntryPreparationCoordinator::new(&database, &database);
+    let admitted = coordinator
+        .prepare_and_admit(make_request(request_id, vec![selected_message_id]))
+        .expect("prepare and admit");
+    assert!(admitted.created);
+    assert_eq!(admitted.run.character_id, character_id);
+    assert_eq!(admitted.run.prompt_values.lorebook_name, "Harbour Canon");
+    assert_eq!(admitted.run.prompt_values.character_name, "Ada");
+    assert_eq!(admitted.run.prompt_values.session_title, "Session");
+    assert_eq!(admitted.run.prompt_values.existing_entries, "(none)");
+    assert_eq!(
+        admitted.run.prompt_values.direction_prompt,
+        "Focus on lasting facts."
+    );
+    assert_eq!(
+        admitted.run.prompt_values.selected_messages,
+        "1. user: We met by the harbour."
+    );
+    assert_eq!(admitted.run.prompt_values.memory_summary, "(none)");
+    assert_eq!(admitted.run.prompt_values.selected_memories, "(none)");
+    let replay = coordinator
+        .prepare_and_admit(make_request(request_id, vec![selected_message_id]))
+        .expect("replay");
+    assert!(!replay.created);
+    assert_eq!(replay.run, admitted.run);
+
+    for rejected_message_id in [foreign_message_id, MessageId::new()] {
+        let rejected_request_id = RequestId::new();
+        assert!(matches!(
+            coordinator
+                .prepare_and_admit(make_request(rejected_request_id, vec![rejected_message_id])),
+            Err(crate::LorebookEntryPreparationError::InvalidInput)
+        ));
+        assert!(matches!(
+            lettuce_creation::LorebookEntryRunRepository::load_lorebook_entry_run(
+                &database,
+                rejected_request_id
+            ),
+            Err(lettuce_creation::LorebookEntryRunRepositoryError::NotFound)
+        ));
+    }
+    let mut memory_only = make_request(RequestId::new(), Vec::new());
+    memory_only.source = lettuce_creation::LorebookEntrySource::Memory;
+    memory_only.selected_memory_ids = vec![selected_memory_id];
+    let memory_admitted = coordinator
+        .prepare_and_admit(memory_only)
+        .expect("prepare memory source");
+    assert_eq!(
+        memory_admitted.run.prompt_values.selected_memories,
+        "1. Ada keeps the brass harbour key."
+    );
+    assert_eq!(
+        memory_admitted.run.prompt_values.memory_summary,
+        "Harbour facts accumulated."
+    );
+    for rejected_memory_id in [foreign_memory_id, MemoryId::new()] {
+        let rejected_request_id = RequestId::new();
+        let mut rejected = make_request(rejected_request_id, Vec::new());
+        rejected.source = lettuce_creation::LorebookEntrySource::Memory;
+        rejected.include_memory_summary = false;
+        rejected.selected_memory_ids = vec![rejected_memory_id];
+        assert!(matches!(
+            coordinator.prepare_and_admit(rejected),
+            Err(crate::LorebookEntryPreparationError::InvalidInput)
+        ));
+        assert!(matches!(
+            lettuce_creation::LorebookEntryRunRepository::load_lorebook_entry_run(
+                &database,
+                rejected_request_id
+            ),
+            Err(lettuce_creation::LorebookEntryRunRepositoryError::NotFound)
+        ));
+    }
+    assert_eq!(
+        LorebookRepository::get(&database, lorebook_id)
+            .expect("lorebook")
+            .expect("lorebook exists")
+            .entries,
+        Vec::new()
+    );
 }
 
 #[test]
