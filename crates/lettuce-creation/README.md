@@ -168,3 +168,9 @@ Outline approval copies the legacy pending-draft initialization exactly: one
 ordered draft per stable plan ID, the plan title and proposed keys, empty
 content, `always_active = false`, pending status, and no revisions. The durable
 project then moves to drafting; writer execution remains separate.
+The staged writer's pure provider contract is also copied from legacy: one
+required `write_lorebook_entry` declaration and exact final instruction, first
+matching-call selection, trimmed nonblank title/content, optional trimmed
+keywords without an added cap or deduplication, and both always-active aliases
+with a false default. Reduction returns a drafted payload bound to the stable
+plan ID but does not mutate the project.

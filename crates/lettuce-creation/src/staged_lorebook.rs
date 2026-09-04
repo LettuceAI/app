@@ -16,6 +16,9 @@ pub const MAX_STAGED_LOREBOOK_EXCERPT_CHARS: usize = 20_000;
 pub const STAGED_LOREBOOK_PLANNER_TOOL_NAME: &str = "propose_lorebook_outline";
 pub const STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION: &str =
     "Call propose_lorebook_outline now with exactly the requested number of entries.";
+pub const STAGED_LOREBOOK_WRITER_TOOL_NAME: &str = "write_lorebook_entry";
+pub const STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION: &str =
+    "Call write_lorebook_entry now with the final entry.";
 
 #[must_use]
 pub fn staged_lorebook_planner_tool_request() -> ToolRequest {
@@ -47,6 +50,62 @@ pub fn staged_lorebook_planner_tool_request() -> ToolRequest {
         }],
         choice: ToolChoice::Required,
     }
+}
+
+#[must_use]
+pub fn staged_lorebook_writer_tool_request() -> ToolRequest {
+    ToolRequest {
+        definitions: vec![ToolDefinition {
+            name: STAGED_LOREBOOK_WRITER_TOOL_NAME.to_owned(),
+            description: Some("Write the body of a single lorebook entry.".into()),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string" },
+                    "keywords": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    },
+                    "content": { "type": "string" },
+                    "alwaysActive": { "type": "boolean" }
+                },
+                "required": ["title", "content"]
+            }),
+            version: 1,
+        }],
+        choice: ToolChoice::Required,
+    }
+}
+
+pub fn reduce_staged_lorebook_writer_calls(
+    plan_id: LorebookEntryId,
+    calls: &[ProposedToolCall],
+) -> Result<StagedLorebookEntryDraft, StagedLorebookError> {
+    let call = calls
+        .iter()
+        .find(|call| call.name == STAGED_LOREBOOK_WRITER_TOOL_NAME)
+        .ok_or(StagedLorebookError::InvalidDraft)?;
+    let object = call
+        .arguments
+        .as_object()
+        .ok_or(StagedLorebookError::InvalidDraft)?;
+    let title = required_draft_text(object.get("title"))?;
+    let content = required_draft_text(object.get("content"))?;
+    let always_active = object
+        .get("alwaysActive")
+        .or_else(|| object.get("always_active"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let keywords = string_array(object.get("keywords"), true);
+    Ok(StagedLorebookEntryDraft {
+        plan_id,
+        title,
+        keywords,
+        content,
+        always_active,
+        status: StagedLorebookDraftStatus::Drafted,
+        revisions: Vec::new(),
+    })
 }
 
 pub fn reduce_staged_lorebook_planner_calls(
@@ -119,6 +178,15 @@ fn required_text(value: Option<&Value>) -> Result<String, StagedLorebookError> {
         .ok_or(StagedLorebookError::InvalidOutline)
 }
 
+fn required_draft_text(value: Option<&Value>) -> Result<String, StagedLorebookError> {
+    value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or(StagedLorebookError::InvalidDraft)
+}
+
 fn string_array(value: Option<&Value>, trim: bool) -> Vec<String> {
     value
         .and_then(Value::as_array)
@@ -167,6 +235,7 @@ pub struct StagedLorebookEntryPlan {
 #[serde(rename_all = "snake_case")]
 pub enum StagedLorebookDraftStatus {
     Pending,
+    Drafted,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -214,6 +283,8 @@ pub enum StagedLorebookError {
     InvalidTransition,
     #[error("staged lorebook outline is invalid")]
     InvalidOutline,
+    #[error("staged lorebook draft is invalid")]
+    InvalidDraft,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -692,6 +763,65 @@ mod tests {
         assert_eq!(
             outline[0].id,
             LorebookEntryId::from_uuid(Uuid::new_v5(&project.id.as_uuid(), b"outline-0"))
+        );
+    }
+
+    #[test]
+    fn writer_contract_and_reducer_copy_legacy_shape_without_extra_limits() {
+        let request = staged_lorebook_writer_tool_request();
+        assert_eq!(request.choice, ToolChoice::Required);
+        assert_eq!(request.definitions.len(), 1);
+        assert_eq!(
+            request.definitions[0].name,
+            STAGED_LOREBOOK_WRITER_TOOL_NAME
+        );
+        assert_eq!(
+            request.definitions[0].parameters["required"],
+            json!(["title", "content"])
+        );
+        let plan_id = LorebookEntryId::new();
+        let keywords = (0..30)
+            .map(|ordinal| Value::String(format!(" key {} ", ordinal % 2)))
+            .chain([Value::String(String::new())])
+            .collect::<Vec<_>>();
+        let draft = reduce_staged_lorebook_writer_calls(
+            plan_id,
+            &[
+                call("ignored", json!({})),
+                call(
+                    STAGED_LOREBOOK_WRITER_TOOL_NAME,
+                    json!({
+                        "title": " Harbour Key ",
+                        "keywords": keywords,
+                        "content": " Ada keeps the brass key. ",
+                        "always_active": true
+                    }),
+                ),
+                call(
+                    STAGED_LOREBOOK_WRITER_TOOL_NAME,
+                    json!({"title": "Later", "content": "Ignored"}),
+                ),
+            ],
+        )
+        .expect("draft");
+        assert_eq!(draft.plan_id, plan_id);
+        assert_eq!(draft.title, "Harbour Key");
+        assert_eq!(draft.content, "Ada keeps the brass key.");
+        assert_eq!(draft.keywords.len(), 30);
+        assert_eq!(draft.keywords[0], "key 0");
+        assert_eq!(draft.keywords[2], "key 0");
+        assert!(draft.always_active);
+        assert_eq!(draft.status, StagedLorebookDraftStatus::Drafted);
+        assert!(draft.revisions.is_empty());
+        assert_eq!(
+            reduce_staged_lorebook_writer_calls(
+                plan_id,
+                &[call(
+                    STAGED_LOREBOOK_WRITER_TOOL_NAME,
+                    json!({"title": " ", "content": "Body"}),
+                )],
+            ),
+            Err(StagedLorebookError::InvalidDraft)
         );
     }
 }
