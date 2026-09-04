@@ -3,6 +3,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod attempt;
+mod lorebook_entry;
 mod model;
 mod port;
 mod proposal;
@@ -17,6 +18,7 @@ pub use attempt::{
     NewCreationAttempt, NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationToolCall,
     NewCreationTurnAttempt, creation_inference_profile_fingerprint,
 };
+pub use lorebook_entry::*;
 pub use model::{
     ConfirmedCharacterApply, ConfirmedCharacterRevisionApply, ConfirmedLorebookApply,
     ConfirmedLorebookRevisionApply, ConfirmedPersonaApply, ConfirmedPersonaRevisionApply,

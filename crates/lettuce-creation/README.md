@@ -115,3 +115,13 @@ owns durable reviewed proposals; `lettuce-context` remains the only lorebook
 domain owner and final apply must use its expected-revision use cases atomically.
 Process-local job state, permissive free-text tool inference, positional draft
 identity, partial commit, and cancel-by-deletion are not preserved.
+
+The single-entry writer's pure provider contract is now copied from legacy:
+ordinary mode requires `write_lorebook_entry` or `no_entry`, force mode exposes
+only `write_lorebook_entry`, a later valid entry wins over an earlier no-entry
+call, and title/content/always-active plus case-insensitively deduplicated
+keywords use the same normalization and 24-keyword legacy cap. Its exact JSON
+and XML fallback prompts and parsers are also present, with force-mode
+`no_entry` rejected as undeclared. Request/context preparation, durable
+admission, provider dispatch, and draft return remain the next slice; this pure
+contract does not mutate a lorebook.
