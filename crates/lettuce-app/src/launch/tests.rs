@@ -6222,6 +6222,48 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         barrier: tokio::sync::Barrier::new(2),
         calls: std::sync::atomic::AtomicUsize::new(0),
     };
+    let denied = writer_dispatcher
+        .run_batch(
+            &retry,
+            &concurrent,
+            &writer_prompt,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 157),
+            Duration::from_secs(30),
+            &ResourceAvailability::none(),
+        )
+        .await;
+    assert_eq!(denied.len(), 2);
+    assert!(denied.iter().all(|outcome| matches!(outcome, Ok(None))));
+    for writer in &retry.writers {
+        assert_eq!(
+            lettuce_jobs::JobStore::get(&database, writer.job.id)
+                .expect("job")
+                .expect("exists"),
+            writer.job
+        );
+    }
+    let mut duplicate = retry.clone();
+    duplicate.writers[1] = duplicate.writers[0].clone();
+    let rejected = writer_dispatcher
+        .run_batch(
+            &duplicate,
+            &concurrent,
+            &writer_prompt,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 157),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .await;
+    assert!(matches!(
+        rejected.as_slice(),
+        [Err(crate::StagedLorebookWriterDispatchError::InvalidWork)]
+    ));
+    assert_eq!(
+        concurrent.calls.load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
     let outcomes = tokio::time::timeout(
         Duration::from_secs(5),
         writer_dispatcher.run_batch(
@@ -6274,6 +6316,65 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     assert_eq!(
         concurrent.calls.load(std::sync::atomic::Ordering::SeqCst),
         2
+    );
+
+    let finished =
+        lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, editable_id)
+            .expect("finished batch");
+    let cancel_batch = batch_coordinator
+        .start_batch(
+            editable_id,
+            finished.project.revision,
+            profile.clone(),
+            &writer_prompt,
+            finished
+                .project
+                .updated_at
+                .max(TimestampMillis::new(NOW.get() + 159)),
+        )
+        .expect("retry failed sibling");
+    assert_eq!(cancel_batch.writers.len(), 1);
+    let cancelled = coordinator
+        .cancel(
+            editable_id,
+            cancel_batch.project.project.revision,
+            cancel_batch
+                .project
+                .project
+                .updated_at
+                .max(TimestampMillis::new(NOW.get() + 160)),
+        )
+        .expect("cancel batch project");
+    let results = writer_dispatcher
+        .run_batch(
+            &cancel_batch,
+            &concurrent,
+            &writer_prompt,
+            WorkerId::new(),
+            cancelled
+                .project
+                .updated_at
+                .max(TimestampMillis::new(NOW.get() + 161)),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .await;
+    assert!(matches!(results.as_slice(), [Ok(None)]));
+    assert_eq!(
+        lettuce_jobs::JobStore::get(&database, cancel_batch.writers[0].job.id)
+            .expect("cancelled job")
+            .expect("job exists")
+            .state,
+        JobState::Cancelled
+    );
+    assert_eq!(
+        concurrent.calls.load(std::sync::atomic::Ordering::SeqCst),
+        2
+    );
+    assert_eq!(
+        lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, editable_id)
+            .expect("cancelled project unchanged"),
+        cancelled
     );
 
     let stale_draft = lettuce_creation::StagedLorebookEntryDraft {

@@ -42,6 +42,9 @@ is enforced, and duplicate or foreign project work is rejected. A barrier-backed
 SQLite regression verifies concurrent partial-retry execution, independent
 success/failure settlement and no redispatch of terminal jobs. Automatic host
 scheduling and lease renewal remain host responsibilities.
+The same scenario verifies resource denial leaves jobs unchanged, duplicate
+batch requests are rejected before inference, and a cancelled project's queued
+writer settles cancelled without inference or changes to saved drafts.
 
 PDF extraction accepts already-read bytes, keeps parser diagnostics out of
 public errors, and applies the same excerpt truncation as text. It is synchronous
