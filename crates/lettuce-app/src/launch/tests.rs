@@ -4249,7 +4249,19 @@ fn configured_lorebook_documents_retain_identity_and_replay_after_restart() {
         safety_policy: SafetyContext::Standard,
         now: TimestampMillis::new(NOW.get() + 2),
     }
-    .with_documents(&store, &[(asset.id, "Notes.txt".into())])
+    .with_intake(
+        &store,
+        &[
+            crate::StagedLorebookIntakeSource::Document {
+                asset_id: asset.id,
+                label: "Notes.txt",
+            },
+            crate::StagedLorebookIntakeSource::Text {
+                label: "Preface",
+                body: "Harbour history",
+            },
+        ],
+    )
     .expect("prepare documents");
     let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
     png.extend_from_slice(&13_u32.to_be_bytes());
@@ -4287,7 +4299,7 @@ fn configured_lorebook_documents_retain_identity_and_replay_after_restart() {
     ));
     let mut invalid = request.clone();
     let mut missing = invalid.excerpts[0].clone();
-    missing.source_id = "src_02".into();
+    missing.source_id = "src_03".into();
     missing.asset_id = Some(lettuce_types::AssetId::new());
     invalid.excerpts.push(missing);
     let invalid_result = coordinator.admit_configured(invalid, &builtins);
@@ -4309,6 +4321,9 @@ fn configured_lorebook_documents_retain_identity_and_replay_after_restart() {
         .expect("admit sources");
     assert!(!admitted.created, "the failed admission's job is reused");
     assert_eq!(admitted.run.project.excerpts[0].asset_id, Some(asset.id));
+    assert_eq!(admitted.run.project.excerpts[1].asset_id, None);
+    assert_eq!(admitted.run.project.excerpts[1].source_id, "src_02");
+    assert_eq!(admitted.run.project.excerpts[1].content, "Harbour history");
     let mut changed = request.clone();
     changed.excerpts[0].asset_id = None;
     assert!(matches!(
