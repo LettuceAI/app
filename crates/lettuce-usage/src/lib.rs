@@ -1,7 +1,9 @@
-//! Immutable usage ledger contracts. Pricing and cost calculation follow in
-//! later slices without changing recorded provider evidence.
+//! Immutable usage ledger contracts and legacy request cost calculation.
 
 #![deny(unsafe_op_in_unsafe_fn)]
+
+mod pricing;
+pub use pricing::*;
 
 use lettuce_conversations::UsageRecord;
 use lettuce_types::UsageEventId;
