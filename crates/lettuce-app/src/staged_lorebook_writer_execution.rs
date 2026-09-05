@@ -90,7 +90,9 @@ where
             .runs
             .load_staged_lorebook_writer_run(request_id)
             .map_err(StagedLorebookWriterExecutionError::Run)?;
-        validate_ownership(&run, prompt, handle)?;
+        if run.job_id != handle.id() {
+            return Err(StagedLorebookWriterExecutionError::InvalidOwnership);
+        }
         let project = self
             .projects
             .load_staged_lorebook(run.project_request_id)
@@ -101,6 +103,7 @@ where
         if let Some(attempt) = run.attempt.clone() {
             return settle(self.projects, &run, attempt, true);
         }
+        validate_ownership(&run, prompt, handle)?;
         if handle.cancellation_token().is_cancelled() {
             return Err(StagedLorebookWriterExecutionError::Cancelled);
         }

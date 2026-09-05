@@ -30,6 +30,9 @@ operation overrides atomically with batch start. Partial admission resumes from
 that checkpoint without resolving current settings, including entries that have
 no job yet. Resolved low-level callers cannot replace a frozen batch profile.
 Older low-level batches without this checkpoint still use their resolved API.
+Execution checkpoint replay checks job ownership and project cancellation but
+does not require the live prompt revision: no new inference uses that prompt.
+First inference still requires the admitted prompt ID/revision and purpose.
 Automatic host
 wiring remains pending.
 Writer batches validate prompt and text modalities before changing the project

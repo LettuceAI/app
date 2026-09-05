@@ -90,13 +90,16 @@ where
             .find(|run| run.request_id == coherence_request_id)
             .cloned()
             .ok_or(StagedLorebookCoherenceExecutionError::InvalidOwnership)?;
-        validate_ownership(&run, prompt, handle)?;
+        if run.job_id != handle.id() {
+            return Err(StagedLorebookCoherenceExecutionError::InvalidOwnership);
+        }
         if project.project.stage == lettuce_creation::StagedLorebookStage::Cancelled {
             return Err(StagedLorebookCoherenceExecutionError::Cancelled);
         }
         if let Some(attempt) = run.attempt.clone() {
             return settle(self.repository, project_request_id, &run, attempt, true);
         }
+        validate_ownership(&run, prompt, handle)?;
         if handle.cancellation_token().is_cancelled() {
             return Err(StagedLorebookCoherenceExecutionError::Cancelled);
         }

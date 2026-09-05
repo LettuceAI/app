@@ -83,13 +83,16 @@ where
             .repository
             .load_staged_lorebook(request_id)
             .map_err(StagedLorebookPlannerExecutionError::Repository)?;
-        validate_ownership(&run, prompt, handle)?;
+        if run.job_id != handle.id() {
+            return Err(StagedLorebookPlannerExecutionError::InvalidOwnership);
+        }
         if run.project.stage == StagedLorebookStage::Cancelled {
             return Err(StagedLorebookPlannerExecutionError::Cancelled);
         }
         if let Some(attempt) = run.planner_attempt.clone() {
             return settle_checkpoint(self.repository, run, attempt, true);
         }
+        validate_ownership(&run, prompt, handle)?;
         if run.project.stage != StagedLorebookStage::Planning {
             return Err(StagedLorebookPlannerExecutionError::InvalidOwnership);
         }

@@ -3827,10 +3827,15 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
     assert_eq!(result.result.keywords, ["Harbour", "Brass Key"]);
     assert_eq!(result.attempts, 1);
     assert!(!result.replayed);
+    let mut changed_planner_prompt = prompt.clone();
+    changed_planner_prompt.revision = prompt
+        .revision
+        .next()
+        .expect("next planner prompt revision");
     let replayed = executor
         .run(
             request_id,
-            &prompt,
+            &changed_planner_prompt,
             &handle,
             None,
             TimestampMillis::new(NOW.get() + 5),
@@ -4732,10 +4737,15 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         assert!(text.contains("[src_01] Notes\nAda keeps the harbour key."));
         assert!(text.contains(lettuce_creation::STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION));
     }
+    let mut changed_writer_prompt = writer_prompt.clone();
+    changed_writer_prompt.revision = writer_prompt
+        .revision
+        .next()
+        .expect("next writer prompt revision");
     let written_replay = writer_executor
         .run(
             writer_request_id,
-            &writer_prompt,
+            &changed_writer_prompt,
             &writer_handle,
             None,
             TimestampMillis::new(NOW.get() + 13),
@@ -5030,10 +5040,15 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         refined.project.project.drafts[0].revisions[0].timestamp,
         TimestampMillis::new(NOW.get() + 19)
     );
+    let mut changed_refine_prompt = refine_prompt.clone();
+    changed_refine_prompt.revision = refine_prompt
+        .revision
+        .next()
+        .expect("next refine prompt revision");
     let refine_replay = refine_executor
         .run(
             refine_request_id,
-            &refine_prompt,
+            &changed_refine_prompt,
             &refine_work.handle,
             None,
             TimestampMillis::new(NOW.get() + 20),
@@ -5311,11 +5326,16 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     assert!(!coherence_result.replayed);
     assert_eq!(coherence_result.run.project.revision, Revision::new(13));
     assert_eq!(coherence_result.run.project.coherence_proposals.len(), 1);
+    let mut changed_coherence_prompt = coherence_prompt.clone();
+    changed_coherence_prompt.revision = coherence_prompt
+        .revision
+        .next()
+        .expect("next coherence prompt revision");
     let coherence_replay = coherence_executor
         .run(
             request_id,
             coherence_request_id,
-            &coherence_prompt,
+            &changed_coherence_prompt,
             &coherence_work.handle,
             None,
             TimestampMillis::new(NOW.get() + 26),
