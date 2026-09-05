@@ -5150,6 +5150,170 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     }
 
     let mut editable_input = make_request();
+    let mut retry_input = make_request();
+    retry_input.request_id = RequestId::new();
+    retry_input.project_id = lettuce_types::CreationWorkflowId::new();
+    let retry_project_id = retry_input.request_id;
+    coordinator
+        .admit(retry_input)
+        .expect("admit planner retry fixture");
+    coordinator
+        .start_planning(
+            retry_project_id,
+            Revision::INITIAL,
+            TimestampMillis::new(NOW.get() + 499),
+        )
+        .expect("start retry fixture");
+    let at = TimestampMillis::new(NOW.get() + 500);
+    let work = dispatcher
+        .claim(
+            retry_project_id,
+            WorkerId::new(),
+            at,
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim invalid planner")
+        .expect("invalid planner work");
+    let at = work.job.updated_at;
+    let invalid_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            candidates: Vec::new(),
+            usage: None,
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: None,
+            provider_request_id: None,
+            warning_codes: Vec::new(),
+        }])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let invalid_result =
+        crate::StagedLorebookPlannerExecutionCoordinator::new(&database, &invalid_inference)
+            .run(retry_project_id, &prompt, &work.handle, None, at)
+            .await;
+    assert!(matches!(
+        invalid_result,
+        Err(crate::StagedLorebookPlannerExecutionError::InvalidResponse)
+    ));
+    let old_job_id = work.job.id;
+    dispatcher
+        .settle(work, invalid_result, CancellationReason::User, at)
+        .expect("fail invalid planner");
+    let failed_run = lettuce_creation::StagedLorebookRepository::load_staged_lorebook(
+        &database,
+        retry_project_id,
+    )
+    .expect("failed planner checkpoint");
+    let retry_id = RequestId::new();
+    let retried = coordinator
+        .retry_planner(retry_project_id, retry_id, failed_run.project.revision, at)
+        .expect("retry invalid planner");
+    assert_ne!(retried.job_id, old_job_id);
+    assert!(retried.planner_attempt.is_none());
+    assert_eq!(
+        retried.planner_retries[0].previous_attempt,
+        failed_run.planner_attempt
+    );
+    assert_eq!(retried.planner_retries[0].previous_job_id, old_job_id);
+    assert_eq!(
+        coordinator
+            .retry_planner(retry_project_id, retry_id, failed_run.project.revision, at)
+            .expect("replay retry admission"),
+        retried
+    );
+    assert!(
+        coordinator
+            .retry_planner(
+                retry_project_id,
+                RequestId::new(),
+                retried.project.revision,
+                at
+            )
+            .is_err(),
+        "active retry cannot be replaced"
+    );
+    let retry_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: Vec::new(),
+                provider_replay: None,
+                tool_calls: vec![ProposedToolCall {
+                    provider_call_id: Some("retry-outline".into()),
+                    name: lettuce_creation::STAGED_LOREBOOK_PLANNER_TOOL_NAME.into(),
+                    arguments: serde_json::json!({"entries": [{"title": "Harbour", "category": "place", "proposedKeys": ["harbour"], "rationale": "world", "sourceRefs": ["src_01"]}]}),
+                    raw_arguments: None,
+                    provider_replay: None,
+                }],
+            }],
+            usage: None,
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: None,
+            provider_request_id: None,
+            warning_codes: Vec::new(),
+        }])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let retry_work = dispatcher
+        .claim(
+            retry_project_id,
+            WorkerId::new(),
+            at,
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim retry")
+        .expect("retry work");
+    let retry_executor =
+        crate::StagedLorebookPlannerExecutionCoordinator::new(&database, &retry_inference);
+    let success = retry_executor
+        .run(
+            retry_project_id,
+            &prompt,
+            &retry_work.handle,
+            None,
+            retry_work.job.updated_at,
+        )
+        .await
+        .expect("successful planner retry");
+    assert_eq!(
+        success.run.project.stage,
+        lettuce_creation::StagedLorebookStage::AwaitingOutlineApproval
+    );
+    assert!(
+        retry_executor
+            .run(
+                retry_project_id,
+                &prompt,
+                &retry_work.handle,
+                None,
+                retry_work.job.updated_at
+            )
+            .await
+            .expect("replay retry result")
+            .replayed
+    );
+    assert_eq!(retry_inference.requests.lock().expect("requests").len(), 1);
+    assert!(
+        coordinator
+            .retry_planner(
+                retry_project_id,
+                RequestId::new(),
+                success.run.project.revision,
+                retry_work.job.updated_at
+            )
+            .is_err()
+    );
+    let settlement_at = retry_work.job.updated_at;
+    dispatcher
+        .settle(
+            retry_work,
+            Ok(success),
+            CancellationReason::User,
+            settlement_at,
+        )
+        .expect("settle successful retry");
+
     editable_input.request_id = RequestId::new();
     editable_input.project_id = lettuce_types::CreationWorkflowId::new();
     let editable_id = editable_input.request_id;

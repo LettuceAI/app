@@ -598,6 +598,8 @@ pub struct StagedLorebookPlanningRun {
     #[serde(default)]
     pub planner_attempt: Option<StagedLorebookPlannerAttempt>,
     #[serde(default)]
+    pub planner_retries: Vec<StagedLorebookPlannerRetry>,
+    #[serde(default)]
     pub coherence_runs: Vec<StagedLorebookCoherenceRun>,
 }
 
@@ -614,6 +616,16 @@ pub struct StagedLorebookCoherenceRun {
     pub created_at: TimestampMillis,
     #[serde(default)]
     pub attempt: Option<StagedLorebookCoherenceAttempt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookPlannerRetry {
+    pub retry_id: RequestId,
+    pub source_revision: Revision,
+    pub previous_job_id: JobId,
+    pub previous_attempt: Option<StagedLorebookPlannerAttempt>,
+    pub admitted_at: TimestampMillis,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -779,6 +791,14 @@ pub enum StagedLorebookRepositoryError {
 }
 
 pub trait StagedLorebookRepository: Send + Sync {
+    fn retry_staged_lorebook_planner(
+        &self,
+        request_id: RequestId,
+        retry_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
     fn edit_staged_lorebook_outline(
         &self,
         request_id: RequestId,
@@ -920,6 +940,24 @@ impl StagedLorebookPlanningRun {
             .validate()
             .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
         let mut coherence_request_ids = HashSet::with_capacity(self.coherence_runs.len());
+        let mut retry_ids = HashSet::new();
+        let mut previous_jobs = HashSet::new();
+        for retry in &self.planner_retries {
+            if !retry_ids.insert(retry.retry_id)
+                || !previous_jobs.insert(retry.previous_job_id)
+                || retry.previous_job_id == self.job_id
+                || retry.source_revision.get() == 0
+                || retry.source_revision >= self.project.revision
+                || retry.admitted_at < self.project.created_at
+                || retry.admitted_at > self.project.updated_at
+                || retry.previous_attempt.as_ref().is_some_and(|attempt| {
+                    attempt.validate(&self.project).is_err()
+                        || !matches!(attempt.decision, StagedLorebookPlannerDecision::Invalid)
+                })
+            {
+                return Err(StagedLorebookRepositoryError::Invalid);
+            }
+        }
         let mut coherence_job_ids = HashSet::with_capacity(self.coherence_runs.len());
         if self.planner_prompt_revision.get() == 0
             || self

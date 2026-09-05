@@ -317,6 +317,9 @@ Pre-approval outline replacement uses the same staged project CAS, reindexes
 the submitted order, and retains the immutable planner attempt.
 Batch settlement rejects a writer from an older batch after a failed draft is
 selected again. Terminal projects cannot reopen an unfinished batch.
+Explicit planner retry creates the new generic job and archives the previous
+planner attempt in the same transaction as the project revision/job binding.
+The old job remains stored; retries with the same request identity are deduplicated.
 
 Secrets are never stored here. Provider rows contain opaque `SecretRef` values
 only. Blob registration validates SQLite-representable metadata and preserves

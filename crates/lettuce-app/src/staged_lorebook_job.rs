@@ -253,6 +253,18 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             .map_err(Into::into)
     }
 
+    pub fn retry_planner(
+        &self,
+        request_id: RequestId,
+        retry_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookAdmissionError> {
+        self.repository
+            .retry_staged_lorebook_planner(request_id, retry_id, expected_revision, now)
+            .map_err(Into::into)
+    }
+
     pub fn cancel(
         &self,
         request_id: RequestId,
@@ -453,6 +465,7 @@ fn run_from(
         planner_prompt_id: request.planner_prompt.id,
         planner_prompt_revision: request.planner_prompt.revision,
         planner_attempt: None,
+        planner_retries: Vec::new(),
         coherence_runs: Vec::new(),
     }
 }

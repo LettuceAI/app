@@ -128,6 +128,72 @@ fn positive_revision(value: i64) -> Result<Revision, StagedLorebookRepositoryErr
 }
 
 impl StagedLorebookRepository for Database {
+    fn retry_staged_lorebook_planner(
+        &self,
+        request_id: RequestId,
+        retry_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let mut run =
+            load_in(&transaction, request_id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
+        if let Some(retry) = run
+            .planner_retries
+            .iter()
+            .find(|retry| retry.retry_id == retry_id)
+        {
+            if retry.source_revision == expected_revision && retry.admitted_at == now {
+                return Ok(run);
+            }
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        if run.project.stage != StagedLorebookStage::Planning
+            || run.project.revision != expected_revision
+            || now < run.project.updated_at
+            || matches!(
+                run.planner_attempt
+                    .as_ref()
+                    .map(|attempt| &attempt.decision),
+                Some(lettuce_creation::StagedLorebookPlannerDecision::Outline(_))
+            )
+        {
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        let job_id =
+            crate::job_adapter::retry_staged_planner_job(&transaction, run.job_id, retry_id)
+                .map_err(|error| match error {
+                    lettuce_jobs::StoreError::IllegalTransition => {
+                        StagedLorebookRepositoryError::Conflict
+                    }
+                    _ => StagedLorebookRepositoryError::Failure,
+                })?;
+        run.planner_retries
+            .push(lettuce_creation::StagedLorebookPlannerRetry {
+                retry_id,
+                source_revision: expected_revision,
+                previous_job_id: run.job_id,
+                previous_attempt: run.planner_attempt.take(),
+                admitted_at: now,
+            });
+        run.job_id = job_id;
+        run.project.revision = expected_revision
+            .next()
+            .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
+        run.project.updated_at = now;
+        run.validate()?;
+        let encoded = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
+        if transaction.execute(
+            "UPDATE creation_staged_lorebook_runs SET job_id = ?2, revision = ?3, updated_at = ?4, run_json = ?5 WHERE request_id = ?1 AND revision = ?6",
+            params![request_id.to_string(), job_id.to_string(), i64::try_from(run.project.revision.get()).map_err(failure)?, now.get(), encoded, i64::try_from(expected_revision.get()).map_err(failure)?],
+        ).map_err(failure)? != 1 { return Err(StagedLorebookRepositoryError::Conflict); }
+        transaction.commit().map_err(failure)?;
+        Ok(run)
+    }
+
     fn edit_staged_lorebook_outline(
         &self,
         request_id: RequestId,

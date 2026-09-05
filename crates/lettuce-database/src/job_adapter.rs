@@ -58,6 +58,29 @@ fn records_by_id(records: Vec<StoredJobRecord>) -> BTreeMap<JobId, StoredJobReco
         .collect()
 }
 
+pub(crate) fn retry_staged_planner_job(
+    transaction: &Transaction<'_>,
+    previous_job_id: JobId,
+    retry_id: lettuce_types::RequestId,
+) -> Result<JobId, StoreError> {
+    let store = load_store(transaction)?;
+    let before = records_by_id(store.stored_records());
+    let previous = before.get(&previous_job_id).ok_or(StoreError::NotFound)?;
+    if previous.snapshot.kind != lettuce_jobs::JobKind::CreationRun
+        || previous.snapshot.state != lettuce_jobs::JobState::Failed
+    {
+        return Err(StoreError::IllegalTransition);
+    }
+    let mut spec = previous.spec.clone();
+    spec.idempotency_key = Some(
+        lettuce_jobs::IdempotencyKey::new(format!("staged-planner-retry-{retry_id}"))
+            .map_err(|_| StoreError::InvalidData)?,
+    );
+    let created = store.create_or_get(spec)?;
+    persist_changes(transaction, &before, &records_by_id(store.stored_records()))?;
+    Ok(created.job.id)
+}
+
 pub(crate) fn cancel_creation_project_jobs(
     transaction: &Transaction<'_>,
     project_id: lettuce_types::CreationWorkflowId,
