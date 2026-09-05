@@ -142,6 +142,7 @@ impl<
                 &memory_ids,
             );
             let checkpoint = CompanionGrowthProposalCheckpoint {
+                usage: outcome.usage.clone(),
                 proposals,
                 reduced_at: now,
             };

@@ -46,6 +46,8 @@ pub struct CompanionGrowthRun {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompanionGrowthProposalCheckpoint {
+    #[serde(default)]
+    pub usage: Option<lettuce_conversations::InferenceUsage>,
     pub proposals: Vec<ProposedSoulFact>,
     pub reduced_at: TimestampMillis,
 }

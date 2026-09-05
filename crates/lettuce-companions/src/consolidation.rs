@@ -44,6 +44,8 @@ pub struct CompanionConsolidationRun {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompanionConsolidationProposalCheckpoint {
+    #[serde(default)]
+    pub usage: Option<lettuce_conversations::InferenceUsage>,
     pub proposal: ConsolidationProposal,
     pub reduced_at: TimestampMillis,
 }

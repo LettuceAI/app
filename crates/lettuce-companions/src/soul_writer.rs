@@ -126,6 +126,10 @@ pub struct CompanionSoulWriterRun {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompanionSoulWriterRoundCheckpoint {
+    #[serde(default)]
+    pub usage: Option<lettuce_conversations::InferenceUsage>,
+    #[serde(default)]
+    pub fallback_usage: Option<lettuce_conversations::InferenceUsage>,
     pub ordinal: u32,
     pub profile_target: SoulWriterProfileTarget,
     pub calls: Vec<ProposedToolCall>,

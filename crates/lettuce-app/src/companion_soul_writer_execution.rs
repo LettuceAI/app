@@ -205,13 +205,29 @@ impl<
                     }
                 };
                 cleanup(self.repository, &fallback_outcome)?;
-                *run = commit_round(self.repository, run, target, calls, now)?;
+                *run = commit_round(
+                    self.repository,
+                    run,
+                    target,
+                    calls,
+                    now,
+                    outcome.usage.clone(),
+                    fallback_outcome.usage.clone(),
+                )?;
                 if run.rounds.last().is_some_and(|round| round.completed) {
                     return completed_result(run, replayed);
                 }
                 return Err(CompanionSoulWriterExecutionError::InvalidResponse);
             }
-            *run = commit_round(self.repository, run, target, calls, now)?;
+            *run = commit_round(
+                self.repository,
+                run,
+                target,
+                calls,
+                now,
+                outcome.usage.clone(),
+                None,
+            )?;
             if run.rounds.last().is_some_and(|round| round.completed) {
                 return completed_result(run, replayed);
             }
@@ -289,6 +305,8 @@ fn commit_round<R: CompanionSoulWriterRunRepository + ?Sized>(
     profile_target: SoulWriterProfileTarget,
     calls: Vec<ProposedToolCall>,
     now: TimestampMillis,
+    usage: Option<lettuce_conversations::InferenceUsage>,
+    fallback_usage: Option<lettuce_conversations::InferenceUsage>,
 ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterExecutionError> {
     let current = run
         .rounds
@@ -299,6 +317,8 @@ fn commit_round<R: CompanionSoulWriterRunRepository + ?Sized>(
         .commit_companion_soul_writer_round(
             run.request_id,
             CompanionSoulWriterRoundCheckpoint {
+                usage,
+                fallback_usage,
                 ordinal: u32::try_from(run.rounds.len())
                     .map_err(|_| CompanionSoulWriterExecutionError::RoundLimit)?,
                 profile_target,

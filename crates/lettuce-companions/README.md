@@ -10,6 +10,17 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
+Growth and consolidation proposal checkpoints now retain optional normalized
+inference usage. Soul-writer rounds retain primary and structured-fallback usage
+separately, without changing draft reduction or counting replay as new inference.
+The existing InferenceUsage value is serializable; missing checkpoint usage
+defaults to None for older saved runs. Cached/reasoning details preserve absence
+versus explicit zero. SQLite app scenarios verify persisted details in all three
+workflows. These are successful checkpoint facts, not a complete attempt ledger:
+responses rejected or cancelled before checkpointing and primary calls followed
+by a failed fallback still need durable usage recording. Legacy recorded usage
+before checking response success; full parity requires that remaining path.
+
 Foundation scaffolding is active. Implement behavior with tests before exposing new public APIs, and keep compatibility code at explicit application or migration boundaries.
 
 The verified companion growth, consolidation, and Soul-writer behavior is

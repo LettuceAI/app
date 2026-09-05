@@ -1081,7 +1081,12 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     }],
                     provider_replay: None,
                 }],
-                usage: None,
+                usage: Some(InferenceUsage {
+                    input_tokens: 20,
+                    output_tokens: 5,
+                    cached_input_tokens: Some(0),
+                    reasoning_tokens: Some(2),
+                }),
                 finish_reason: lettuce_conversations::FinishReason::Stop,
                 provider_finish_reason: None,
                 provider_request_id: Some("soul-round-one".into()),
@@ -1109,7 +1114,12 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     ],
                     provider_replay: None,
                 }],
-                usage: None,
+                usage: Some(InferenceUsage {
+                    input_tokens: 20,
+                    output_tokens: 5,
+                    cached_input_tokens: Some(0),
+                    reasoning_tokens: Some(2),
+                }),
                 finish_reason: lettuce_conversations::FinishReason::Stop,
                 provider_finish_reason: None,
                 provider_request_id: Some("soul-round-two".into()),
@@ -1140,6 +1150,15 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .await
             .expect("execute Soul-writer preview");
     assert_eq!(soul_result.rounds, 2);
+    let saved_usage = database
+        .load_companion_soul_writer_run(soul_writer.run.request_id)
+        .expect("saved Soul writer");
+    assert!(saved_usage.rounds.iter().all(|round| {
+        round
+            .usage
+            .as_ref()
+            .is_some_and(|u| u.cached_input_tokens == Some(0) && u.reasoning_tokens == Some(2))
+    }));
     assert_eq!(soul_result.draft["soul"]["traits"], "Patient and observant");
     {
         let soul_requests = soul_inference.requests.lock().expect("Soul requests");
@@ -1882,7 +1901,12 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 }],
                 provider_replay: None,
             }],
-            usage: None,
+            usage: Some(InferenceUsage {
+                input_tokens: 20,
+                output_tokens: 5,
+                cached_input_tokens: Some(0),
+                reasoning_tokens: Some(2),
+            }),
             finish_reason: lettuce_conversations::FinishReason::Stop,
             provider_finish_reason: None,
             provider_request_id: Some("provider-growth".into()),
@@ -1916,6 +1940,16 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .map(|checkpoint| checkpoint.proposals.len()),
         Some(12)
     );
+    {
+        assert_eq!(
+            checkpointed
+                .proposal_checkpoint
+                .as_ref()
+                .and_then(|c| c.usage.as_ref())
+                .map(|u| (u.input_tokens, u.cached_input_tokens, u.reasoning_tokens)),
+            Some((20, Some(0), Some(2)))
+        );
+    };
     let replayed_growth =
         crate::CompanionGrowthExecutionCoordinator::new(&database, &UnavailableInference)
             .run(
@@ -2055,7 +2089,12 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 }],
                 provider_replay: None,
             }],
-            usage: None,
+            usage: Some(InferenceUsage {
+                input_tokens: 20,
+                output_tokens: 5,
+                cached_input_tokens: Some(0),
+                reasoning_tokens: Some(2),
+            }),
             finish_reason: lettuce_conversations::FinishReason::Stop,
             provider_finish_reason: None,
             provider_request_id: Some("provider-consolidation".into()),
@@ -2092,6 +2131,16 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             )),
         Some((1, 1))
     );
+    {
+        assert_eq!(
+            checkpointed_consolidation
+                .proposal_checkpoint
+                .as_ref()
+                .and_then(|c| c.usage.as_ref())
+                .map(|u| (u.input_tokens, u.cached_input_tokens, u.reasoning_tokens)),
+            Some((20, Some(0), Some(2)))
+        );
+    };
     let replayed_consolidation =
         crate::CompanionConsolidationExecutionCoordinator::new(&database, &UnavailableInference)
             .run(

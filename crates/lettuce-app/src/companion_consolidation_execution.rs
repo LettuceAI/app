@@ -125,6 +125,7 @@ impl<
                 })
                 .collect::<String>();
             let checkpoint = CompanionConsolidationProposalCheckpoint {
+                usage: outcome.usage.clone(),
                 proposal: parse_consolidation_proposal(
                     &candidate.tool_calls,
                     (!fallback.is_empty()).then_some(fallback.as_str()),
