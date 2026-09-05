@@ -222,6 +222,15 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             .map_err(Into::into)
     }
 
+    pub fn commit(
+        &self,
+        request: lettuce_creation::StagedLorebookCommitRequest,
+    ) -> Result<lettuce_creation::StagedLorebookCommitReceipt, StagedLorebookAdmissionError> {
+        self.repository
+            .commit_staged_lorebook(request)
+            .map_err(Into::into)
+    }
+
     pub fn admit_coherence(
         &self,
         request: StagedLorebookCoherenceRequest<'_>,

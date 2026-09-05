@@ -1384,6 +1384,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         interrupted_run.rounds[0].resulting_draft["soul"]["traits"],
         "Durable partial"
     );
+
     let cancelled_request_id = RequestId::new();
     let cancelled_writer =
         crate::CompanionSoulWriterAdmissionCoordinator::new(&database, &database)
@@ -4908,6 +4909,211 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         crate::StagedLorebookCoherenceSettledWork::Succeeded { ref job, .. }
             if job.state == JobState::Succeeded
     ));
+
+    let reviewed = coordinator
+        .apply_coherence(
+            request_id,
+            Revision::new(13),
+            vec!["change_0".into()],
+            TimestampMillis::new(NOW.get() + 27),
+        )
+        .expect("finish coherence review");
+    let accepted = coordinator
+        .set_draft_approved(
+            request_id,
+            reviewed.project.revision,
+            reviewed.project.drafts[0].plan_id,
+            true,
+            TimestampMillis::new(NOW.get() + 28),
+        )
+        .expect("approve final draft");
+    let destination = lettuce_types::LorebookId::new();
+    let commit = lettuce_creation::StagedLorebookCommitRequest {
+        project_request_id: request_id,
+        expected_project_revision: accepted.project.revision,
+        target: lettuce_creation::StagedLorebookCommitTarget::New {
+            id: destination,
+            name: Some("  ".into()),
+        },
+        now: TimestampMillis::new(NOW.get() + 29),
+    };
+    let receipt = coordinator
+        .commit(commit.clone())
+        .expect("commit staged book");
+    assert_eq!(
+        receipt.created_entry_ids,
+        vec![accepted.project.drafts[0].plan_id]
+    );
+    assert_eq!(
+        coordinator
+            .commit(commit.clone())
+            .expect("replay final commit"),
+        receipt
+    );
+    let book = lettuce_context::LorebookRepository::get(&database, destination)
+        .expect("staged commit fixture")
+        .expect("staged commit fixture");
+    assert_eq!(book.book.name, "Harbour Canon");
+    assert_eq!(book.entries.len(), 1);
+    assert_eq!(book.entries[0].content, accepted.project.drafts[0].content);
+    assert_eq!(
+        book.entries[0].keywords,
+        accepted.project.drafts[0].keywords
+    );
+    assert!(book.entries[0].enabled);
+    assert!(!book.entries[0].case_sensitive);
+    assert_eq!(book.entries[0].priority, 0);
+    assert_eq!(book.entries[0].ordinal, 0);
+    let mut changed_commit = commit;
+    changed_commit.now = TimestampMillis::new(NOW.get() + 30);
+    assert!(coordinator.commit(changed_commit).is_err());
+    let committed =
+        lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, request_id)
+            .expect("staged commit fixture");
+    assert_eq!(
+        committed.project.stage,
+        lettuce_creation::StagedLorebookStage::Committed
+    );
+
+    for case in ["collision", "new", "existing"] {
+        use lettuce_creation::{StagedLorebookCommitTarget, StagedLorebookRepository};
+        let at = TimestampMillis::new(NOW.get() + 100);
+        let mut input = make_request();
+        input.request_id = RequestId::new();
+        input.project_id = lettuce_types::CreationWorkflowId::new();
+        let id = input.request_id;
+        coordinator.admit(input).expect("staged commit fixture");
+        let planning = coordinator
+            .start_planning(id, Revision::INITIAL, at)
+            .expect("staged commit fixture");
+        let plans: Vec<_> = (0..3)
+            .map(|index| lettuce_creation::StagedLorebookEntryPlan {
+                id: if case == "collision" && index == 0 {
+                    receipt.created_entry_ids[0]
+                } else {
+                    lettuce_types::LorebookEntryId::new()
+                },
+                ordinal: index,
+                title: format!("Entry {index}"),
+                category: "place".into(),
+                proposed_keys: vec!["harbour".into()],
+                rationale: "world context".into(),
+                source_refs: Vec::new(),
+            })
+            .collect();
+        let outline = database
+            .submit_staged_lorebook_outline(id, planning.project.revision, plans, at)
+            .expect("staged commit fixture");
+        let mut run = coordinator
+            .approve_outline(id, outline.project.revision, at)
+            .expect("staged commit fixture");
+        for index in 0..3 {
+            run = coordinator
+                .edit_draft(
+                    id,
+                    run.project.revision,
+                    lettuce_creation::StagedLorebookDraftEdit {
+                        plan_id: run.project.drafts[index].plan_id,
+                        title: if index == 1 {
+                            " ".into()
+                        } else {
+                            " Kept title ".into()
+                        },
+                        content: if index == 1 {
+                            " ".into()
+                        } else {
+                            " Kept content ".into()
+                        },
+                        keywords: vec!["harbour".into()],
+                        always_active: true,
+                    },
+                    at,
+                )
+                .expect("staged commit fixture");
+            if index != 2 {
+                run = coordinator
+                    .set_draft_approved(
+                        id,
+                        run.project.revision,
+                        run.project.drafts[index].plan_id,
+                        true,
+                        at,
+                    )
+                    .expect("staged commit fixture");
+            }
+        }
+        run = database
+            .start_staged_lorebook_draft_batch(id, run.project.revision, at)
+            .expect("staged commit fixture");
+        let target_id = if case == "existing" {
+            destination
+        } else {
+            lettuce_types::LorebookId::new()
+        };
+        let request = lettuce_creation::StagedLorebookCommitRequest {
+            project_request_id: id,
+            expected_project_revision: run.project.revision,
+            target: if case == "existing" {
+                StagedLorebookCommitTarget::Existing {
+                    id: target_id,
+                    expected_revision: Revision::INITIAL,
+                }
+            } else {
+                StagedLorebookCommitTarget::New {
+                    id: target_id,
+                    name: Some(" Override name ".into()),
+                }
+            },
+            now: at,
+        };
+        if case == "collision" {
+            assert!(coordinator.commit(request).is_err());
+            assert!(
+                lettuce_context::LorebookRepository::get(&database, target_id)
+                    .expect("staged commit fixture")
+                    .is_none(),
+                "book insert rolls back when an entry ID already exists"
+            );
+            assert_eq!(
+                database
+                    .load_staged_lorebook(id)
+                    .expect("staged commit fixture"),
+                run
+            );
+            continue;
+        }
+        if case == "existing" {
+            let mut stale = request.clone();
+            stale.target = StagedLorebookCommitTarget::Existing {
+                id: target_id,
+                expected_revision: Revision::new(9),
+            };
+            assert!(coordinator.commit(stale).is_err());
+        }
+        let saved = coordinator
+            .commit(request.clone())
+            .expect("staged commit fixture");
+        assert_eq!(saved.created_entry_ids, vec![run.project.drafts[0].plan_id]);
+        assert_eq!(
+            coordinator.commit(request).expect("staged commit fixture"),
+            saved
+        );
+        let details = lettuce_context::LorebookRepository::get(&database, target_id)
+            .expect("staged commit fixture")
+            .expect("staged commit fixture");
+        let entry = details.entries.last().expect("staged commit fixture");
+        assert_eq!(entry.title, " Kept title ");
+        assert_eq!(entry.content, " Kept content ");
+        assert!(entry.always_active);
+        assert_eq!(entry.ordinal, u32::from(case == "existing"));
+        if case == "existing" {
+            assert_eq!(details.entries[0], book.entries[0]);
+            assert_eq!(details.book.name, book.book.name);
+            assert_eq!(details.book.revision, Revision::new(2));
+        } else {
+            assert_eq!(details.book.name, "Override name");
+        }
+    }
 
     let cancelled_request_id = RequestId::new();
     let mut cancelled_request = make_request();

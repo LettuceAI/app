@@ -14,6 +14,20 @@ use crate::{Database, decode_versioned, encode_versioned};
 
 const RUN_FORMAT_VERSION: u32 = 1;
 
+fn lorebook_error(
+    error: lettuce_context::LorebookRepositoryError,
+) -> StagedLorebookRepositoryError {
+    use lettuce_context::LorebookRepositoryError;
+    match error {
+        LorebookRepositoryError::NotFound | LorebookRepositoryError::EntryNotFound => {
+            StagedLorebookRepositoryError::NotFound
+        }
+        LorebookRepositoryError::Conflict => StagedLorebookRepositoryError::Conflict,
+        LorebookRepositoryError::Invalid(_) => StagedLorebookRepositoryError::Invalid,
+        LorebookRepositoryError::Failure(_) => StagedLorebookRepositoryError::Failure,
+    }
+}
+
 fn failure(_: impl std::fmt::Debug) -> StagedLorebookRepositoryError {
     StagedLorebookRepositoryError::Failure
 }
@@ -36,6 +50,7 @@ fn stage(value: StagedLorebookStage) -> &'static str {
         StagedLorebookStage::Drafting => "drafting",
         StagedLorebookStage::DraftsReady => "drafts_ready",
         StagedLorebookStage::CoherenceReview => "coherence_review",
+        StagedLorebookStage::Committed => "committed",
     }
 }
 
@@ -112,6 +127,150 @@ fn positive_revision(value: i64) -> Result<Revision, StagedLorebookRepositoryErr
 }
 
 impl StagedLorebookRepository for Database {
+    fn commit_staged_lorebook(
+        &self,
+        request: lettuce_creation::StagedLorebookCommitRequest,
+    ) -> Result<lettuce_creation::StagedLorebookCommitReceipt, StagedLorebookRepositoryError> {
+        use lettuce_context::{
+            DetectionPolicy, KeywordMatchMode, LifecycleStatus, Lorebook, LorebookBehaviorVersion,
+            LorebookDetails, LorebookEntry,
+        };
+        use lettuce_creation::{
+            StagedLorebookCommitReceipt, StagedLorebookCommitTarget, StagedLorebookDraftStatus,
+        };
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let mut run = load_in(&transaction, request.project_request_id)?
+            .ok_or(StagedLorebookRepositoryError::NotFound)?;
+        if let Some(receipt) = &run.project.commit_receipt {
+            if receipt.request != request {
+                return Err(StagedLorebookRepositoryError::Conflict);
+            }
+            return Ok(receipt.clone());
+        }
+        if run.project.revision != request.expected_project_revision
+            || run.project.stage != StagedLorebookStage::DraftsReady
+            || request.now < run.project.updated_at
+        {
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        let mut details = match &request.target {
+            StagedLorebookCommitTarget::New { id, name } => {
+                let name = name
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .or(run
+                        .project
+                        .initial_lorebook_name
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|name| !name.is_empty()))
+                    .ok_or(StagedLorebookRepositoryError::Invalid)?;
+                LorebookDetails {
+                    book: Lorebook {
+                        id: *id,
+                        status: LifecycleStatus::Active,
+                        name: name.to_owned(),
+                        detection_policy: DetectionPolicy::RecentMessageWindow,
+                        icon_asset_id: None,
+                        behavior_version: LorebookBehaviorVersion::LegacyV1,
+                        revision: Revision::INITIAL,
+                        created_at: request.now,
+                        updated_at: request.now,
+                    },
+                    entries: Vec::new(),
+                }
+            }
+            StagedLorebookCommitTarget::Existing {
+                id,
+                expected_revision,
+            } => {
+                let mut current = crate::lorebook_adapter::load_required(&transaction, *id)
+                    .map_err(lorebook_error)?;
+                if current.book.revision != *expected_revision
+                    || current.book.status != LifecycleStatus::Active
+                    || request.now < current.book.updated_at
+                {
+                    return Err(StagedLorebookRepositoryError::Conflict);
+                }
+                current.book.revision = expected_revision
+                    .next()
+                    .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
+                current.book.updated_at = request.now;
+                current
+            }
+        };
+        let mut created_entry_ids = Vec::new();
+        for draft in run
+            .project
+            .drafts
+            .iter()
+            .filter(|draft| draft.status == StagedLorebookDraftStatus::Approved)
+        {
+            if draft.title.trim().is_empty() && draft.content.trim().is_empty() {
+                continue;
+            }
+            details.entries.push(LorebookEntry {
+                id: draft.plan_id,
+                lorebook_id: details.book.id,
+                title: draft.title.clone(),
+                enabled: true,
+                always_active: draft.always_active,
+                keywords: draft.keywords.clone(),
+                case_sensitive: false,
+                match_mode: KeywordMatchMode::Literal,
+                content: draft.content.clone(),
+                priority: 0,
+                ordinal: u32::try_from(details.entries.len())
+                    .map_err(|_| StagedLorebookRepositoryError::Invalid)?,
+                revision: Revision::INITIAL,
+                created_at: request.now,
+                updated_at: request.now,
+            });
+            created_entry_ids.push(draft.plan_id);
+        }
+        match &request.target {
+            StagedLorebookCommitTarget::New { .. } => {
+                crate::lorebook_adapter::insert_lorebook_details(&transaction, &details)
+                    .map_err(lorebook_error)?;
+            }
+            StagedLorebookCommitTarget::Existing {
+                expected_revision, ..
+            } => {
+                crate::lorebook_adapter::replace_lorebook_details(
+                    &transaction,
+                    *expected_revision,
+                    &details,
+                )
+                .map_err(lorebook_error)?;
+            }
+        }
+        let receipt = StagedLorebookCommitReceipt {
+            request: request.clone(),
+            lorebook_id: details.book.id,
+            lorebook_revision: details.book.revision,
+            created_entry_ids,
+        };
+        run.project.commit_receipt = Some(receipt.clone());
+        run.project.stage = StagedLorebookStage::Committed;
+        run.project.revision = request
+            .expected_project_revision
+            .next()
+            .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
+        run.project.updated_at = request.now;
+        run.validate()?;
+        let encoded = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
+        if transaction.execute(
+            "UPDATE creation_staged_lorebook_runs SET stage = 'committed', revision = ?2, updated_at = ?3, run_json = ?4 WHERE request_id = ?1 AND revision = ?5",
+            params![request.project_request_id.to_string(), i64::try_from(run.project.revision.get()).map_err(failure)?, request.now.get(), encoded, i64::try_from(request.expected_project_revision.get()).map_err(failure)?],
+        ).map_err(failure)? != 1 { return Err(StagedLorebookRepositoryError::Conflict); }
+        transaction.commit().map_err(failure)?;
+        Ok(receipt)
+    }
+
     fn admit_staged_lorebook(
         &self,
         run: StagedLorebookPlanningRun,

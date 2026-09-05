@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use lettuce_conversations::ResolvedInferenceProfile;
 use lettuce_conversations::{ProposedToolCall, ToolChoice, ToolDefinition, ToolRequest};
 use lettuce_types::{
-    CreationWorkflowId, JobId, LorebookEntryId, PromptDocumentId, RequestId, Revision,
+    CreationWorkflowId, JobId, LorebookEntryId, LorebookId, PromptDocumentId, RequestId, Revision,
     TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
@@ -398,6 +398,7 @@ pub enum StagedLorebookStage {
     Drafting,
     DraftsReady,
     CoherenceReview,
+    Committed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -515,10 +516,43 @@ pub struct StagedLorebookProject {
     pub coherence_proposals: Vec<StagedLorebookCoherenceChange>,
     #[serde(default)]
     pub last_coherence_application: Option<StagedLorebookCoherenceApplication>,
+    #[serde(default)]
+    pub commit_receipt: Option<StagedLorebookCommitReceipt>,
     pub stage: StagedLorebookStage,
     pub revision: Revision,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum StagedLorebookCommitTarget {
+    New {
+        id: LorebookId,
+        name: Option<String>,
+    },
+    Existing {
+        id: LorebookId,
+        expected_revision: Revision,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookCommitRequest {
+    pub project_request_id: RequestId,
+    pub expected_project_revision: Revision,
+    pub target: StagedLorebookCommitTarget,
+    pub now: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookCommitReceipt {
+    pub request: StagedLorebookCommitRequest,
+    pub lorebook_id: LorebookId,
+    pub lorebook_revision: Revision,
+    pub created_entry_ids: Vec<LorebookEntryId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -733,6 +767,11 @@ pub enum StagedLorebookRepositoryError {
 }
 
 pub trait StagedLorebookRepository: Send + Sync {
+    fn commit_staged_lorebook(
+        &self,
+        request: StagedLorebookCommitRequest,
+    ) -> Result<StagedLorebookCommitReceipt, StagedLorebookRepositoryError>;
+
     fn admit_staged_lorebook(
         &self,
         run: StagedLorebookPlanningRun,
@@ -856,6 +895,11 @@ impl StagedLorebookPlanningRun {
         let mut coherence_request_ids = HashSet::with_capacity(self.coherence_runs.len());
         let mut coherence_job_ids = HashSet::with_capacity(self.coherence_runs.len());
         if self.planner_prompt_revision.get() == 0
+            || self
+                .project
+                .commit_receipt
+                .as_ref()
+                .is_some_and(|receipt| receipt.request.project_request_id != self.request_id)
             || serde_json::to_vec(&self.planner_profile).is_err()
             || self
                 .planner_attempt
@@ -1023,6 +1067,7 @@ impl StagedLorebookProject {
             drafts: Vec::new(),
             coherence_proposals: Vec::new(),
             last_coherence_application: None,
+            commit_receipt: None,
             stage: StagedLorebookStage::Created,
             revision: Revision::new(1),
             created_at: now,
@@ -1371,6 +1416,40 @@ impl StagedLorebookProject {
         {
             return Err(StagedLorebookError::InvalidInput);
         }
+        if (self.stage == StagedLorebookStage::Committed) != self.commit_receipt.is_some() {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        if let Some(receipt) = &self.commit_receipt {
+            let (id, revision) = match &receipt.request.target {
+                StagedLorebookCommitTarget::New { id, .. } => (*id, Revision::INITIAL),
+                StagedLorebookCommitTarget::Existing {
+                    id,
+                    expected_revision,
+                } => (
+                    *id,
+                    expected_revision
+                        .next()
+                        .map_err(|_| StagedLorebookError::InvalidInput)?,
+                ),
+            };
+            let accepted: Vec<_> = self
+                .drafts
+                .iter()
+                .filter(|draft| {
+                    draft.status == StagedLorebookDraftStatus::Approved
+                        && !(draft.title.trim().is_empty() && draft.content.trim().is_empty())
+                })
+                .map(|draft| draft.plan_id)
+                .collect();
+            if receipt.lorebook_id != id
+                || receipt.lorebook_revision != revision
+                || receipt.created_entry_ids != accepted
+                || receipt.request.now != self.updated_at
+                || receipt.request.expected_project_revision.next().ok() != Some(self.revision)
+            {
+                return Err(StagedLorebookError::InvalidInput);
+            }
+        }
         let mut source_ids = HashSet::with_capacity(self.excerpts.len());
         for excerpt in &self.excerpts {
             if excerpt.source_id.trim().is_empty()
@@ -1401,7 +1480,8 @@ impl StagedLorebookProject {
             }
             StagedLorebookStage::Drafting
             | StagedLorebookStage::DraftsReady
-            | StagedLorebookStage::CoherenceReview => {
+            | StagedLorebookStage::CoherenceReview
+            | StagedLorebookStage::Committed => {
                 validate_outline(&self.outline, &self.excerpts)?;
                 validate_drafts(&self.drafts, &self.outline)?;
                 validate_coherence_changes(&self.coherence_proposals, &self.drafts)?;

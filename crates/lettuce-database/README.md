@@ -305,6 +305,11 @@ reference store's idempotency, lease, cancellation, retry, progress, pagination,
 recovery, and retention behavior across process restart and concurrent database
 handles without creating a second scheduler state machine.
 
+Staged lorebook final apply reuses the existing lorebook aggregate insert/replace
+functions inside the project transaction. The committed project stores its
+request and result receipt in the versioned run; exact retries return the same
+entry identities, including after subsequent changes to the authored book.
+
 Secrets are never stored here. Provider rows contain opaque `SecretRef` values
 only. Blob registration validates SQLite-representable metadata and preserves
 the first immutable metadata record for a content hash; physical `BlobState`

@@ -202,3 +202,16 @@ Each pending staged draft can now be represented by an immutable writer run
 that freezes its stable project/plan identity, project revision, resolved
 profile, writer prompt revision, exact rendered-input values, and generic job
 identity. Provider execution and draft settlement remain separate.
+
+Final staged commit closes a drafts-ready project and retains its request and
+result receipt. Per the pinned scenario correction, only approved drafts are
+eligible; drafts with both title and content blank are skipped. Plan IDs become
+entry IDs, preserving identity across retries. Name selection keeps legacy
+explicit-name then initial-name precedence. Entry text, keys and always-active
+values are preserved, with enabled=true, case_sensitive=false, literal matching
+and priority=0. The existing authored lorebook validation still applies (for
+example, a nonblank content with blank title is rejected atomically).
+Eligible entries append in draft order using contiguous aggregate ordinals;
+this corrects legacy ordinal gaps and collisions with existing entries. Existing
+book metadata and entries are retained. New/existing book writes, project state
+and the receipt commit together; stale or changed retries conflict.

@@ -84,6 +84,9 @@ resolved profile, active prompt revision, project revision, and generic job.
 Claimed execution uses the required native tool contract, checkpoints one
 attempt, then submits the proposals; restart replays both checkpoints without a
 second provider request.
+Final staged commit accepts a new destination/name or an existing destination
+revision, and delegates one atomic apply to the creation repository. The
+committed project retains the result receipt for exact retries.
 Claimed staged-writer execution renders those frozen values, appends the exact
 legacy final instruction, and makes one required native tool request. Its
 checkpoint is durable before the matching pending draft CAS; restart replays
