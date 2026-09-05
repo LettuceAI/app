@@ -61,6 +61,9 @@ freezes the resolved planner profile and active planner prompt, and persists one
 stable project with a generic restart-safe creation job. Exact admission and
 created-to-planning CAS replay without duplicating state; source extraction
 remains a separate input boundary.
+Staged admission requests can prepare pasted text or already-read UTF-8 TXT/MD
+bytes through `with_sources`; validation and legacy excerpt truncation happen
+before job creation, and raw source bodies are not retained in the request.
 Claimed planner execution renders the frozen prompt with the exact legacy
 brief, decimal target count, source-excerpt formatting, final instruction, and
 required tool declaration. It makes one native request, accepts only typed tool

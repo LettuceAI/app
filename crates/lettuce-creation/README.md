@@ -219,3 +219,11 @@ and the receipt commit together; stale or changed retries conflict.
 Project cancellation is terminal and retains the previous stage, outlines,
 drafts, coherence proposals and immutable attempts. Committed projects cannot
 be cancelled. Exact cancellation retries preserve the same project revision.
+
+Text and UTF-8 TXT/MD source preparation copies legacy ordered `src_NN`
+identities, 50 MiB per-source and 200 MiB total byte bounds, and 20,000 Unicode
+character excerpts with the exact appended truncation marker. Excerpt validation
+accepts that marker in addition to the content limit. Labels follow the existing
+trimmed, nonblank project contract. Raw bodies are borrowed during preparation;
+only excerpts enter durable project state. Protected binary/PDF extraction is
+still deferred as recorded in the legacy scenario fixture.

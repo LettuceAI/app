@@ -4020,7 +4020,14 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     };
     let coordinator = crate::StagedLorebookCoordinator::new(&database, &database);
     let admitted = coordinator
-        .admit(make_request())
+        .admit(
+            make_request()
+                .with_sources(&[lettuce_creation::StagedLorebookSourceInput::Text {
+                    label: "Notes",
+                    body: "Ada keeps the harbour key.",
+                }])
+                .expect("prepare staged text sources"),
+        )
         .expect("admit staged project");
     assert!(admitted.created);
     assert_eq!(admitted.run.project.target_count, 5);

@@ -1504,7 +1504,7 @@ impl StagedLorebookProject {
                 || excerpt.source_id != excerpt.source_id.trim()
                 || excerpt.label.trim().is_empty()
                 || excerpt.label != excerpt.label.trim()
-                || excerpt.content.chars().count() > MAX_STAGED_LOREBOOK_EXCERPT_CHARS
+                || !crate::staged_lorebook_sources::valid_staged_excerpt(&excerpt.content)
                 || !source_ids.insert(excerpt.source_id.as_str())
             {
                 return Err(StagedLorebookError::InvalidInput);

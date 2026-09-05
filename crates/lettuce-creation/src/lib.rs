@@ -9,6 +9,7 @@ mod model;
 mod port;
 mod proposal;
 mod staged_lorebook;
+mod staged_lorebook_sources;
 mod tool;
 
 pub use attempt::{
@@ -39,6 +40,7 @@ pub use proposal::{
     CreationProposalError,
 };
 pub use staged_lorebook::*;
+pub use staged_lorebook_sources::*;
 pub use tool::{
     AdmittedCreationToolCall, CreationToolApply, CreationToolBatch, CreationToolCommit,
     CreationToolContractError, apply_creation_tool_calls, creation_tool_request,

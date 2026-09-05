@@ -25,6 +25,16 @@ pub struct StagedLorebookAdmissionRequest<'a> {
     pub now: TimestampMillis,
 }
 
+impl StagedLorebookAdmissionRequest<'_> {
+    pub fn with_sources(
+        mut self,
+        sources: &[lettuce_creation::StagedLorebookSourceInput<'_>],
+    ) -> Result<Self, lettuce_creation::StagedLorebookSourceError> {
+        self.excerpts = lettuce_creation::prepare_staged_lorebook_sources(sources)?;
+        Ok(self)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StagedLorebookAdmission {
     pub run: StagedLorebookPlanningRun,
