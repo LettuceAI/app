@@ -32,7 +32,12 @@ no job yet. Resolved low-level callers cannot replace a frozen batch profile.
 Older low-level batches without this checkpoint still use their resolved API.
 Execution checkpoint replay checks job ownership and project cancellation but
 does not require the live prompt revision: no new inference uses that prompt.
-First inference still requires the admitted prompt ID/revision and purpose.
+New admissions also persist the full validated prompt document in the existing
+run JSON (and configured batch checkpoint before per-entry admission). First
+inference uses that frozen document instead of the caller's live document;
+prompt edits affect newly admitted work only. Older runs without a snapshot
+still require the caller's exact admitted prompt revision. This deliberately
+replaces legacy's execution-time live template lookup with stable durable inputs.
 Automatic host
 wiring remains pending.
 Writer batches validate prompt and text modalities before changing the project

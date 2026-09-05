@@ -92,6 +92,7 @@ where
         if let Some(attempt) = run.planner_attempt.clone() {
             return settle_checkpoint(self.repository, run, attempt, true);
         }
+        let prompt = run.planner_prompt_snapshot.as_ref().unwrap_or(prompt);
         validate_ownership(&run, prompt, handle)?;
         if run.project.stage != StagedLorebookStage::Planning {
             return Err(StagedLorebookPlannerExecutionError::InvalidOwnership);

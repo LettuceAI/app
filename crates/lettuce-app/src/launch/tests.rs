@@ -3827,15 +3827,10 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
     assert_eq!(result.result.keywords, ["Harbour", "Brass Key"]);
     assert_eq!(result.attempts, 1);
     assert!(!result.replayed);
-    let mut changed_planner_prompt = prompt.clone();
-    changed_planner_prompt.revision = prompt
-        .revision
-        .next()
-        .expect("next planner prompt revision");
     let replayed = executor
         .run(
             request_id,
-            &changed_planner_prompt,
+            &prompt,
             &handle,
             None,
             TimestampMillis::new(NOW.get() + 5),
@@ -4344,8 +4339,11 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let handle = work.handle.clone();
     let executor = crate::StagedLorebookPlannerExecutionCoordinator::new(&database, &inference);
     let outlined_at = TimestampMillis::new(NOW.get() + 4);
+    let mut edited_live_prompt = prompt.clone();
+    edited_live_prompt.revision = prompt.revision.next().expect("edited live prompt revision");
+    edited_live_prompt.entries.clear();
     let result = executor
-        .run(request_id, &prompt, &handle, None, outlined_at)
+        .run(request_id, &edited_live_prompt, &handle, None, outlined_at)
         .await
         .expect("execute planner");
     assert!(!result.replayed);
@@ -4397,7 +4395,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let replayed = executor
         .run(
             request_id,
-            &prompt,
+            &edited_live_prompt,
             &handle,
             None,
             TimestampMillis::new(NOW.get() + 5),
@@ -4534,6 +4532,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             request_id,
             Revision::new(4),
             Some(lettuce_creation::StagedLorebookWriterBatchInputs {
+                prompt_snapshot: Some(writer_prompt.clone()),
                 overrides: Default::default(),
                 profile: profile.clone(),
                 prompt_id: writer_prompt.id,
@@ -4690,7 +4689,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let written = writer_executor
         .run(
             writer_request_id,
-            &writer_prompt,
+            &edited_live_prompt,
             &writer_handle,
             None,
             TimestampMillis::new(NOW.get() + 12),
@@ -5014,7 +5013,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let refined = refine_executor
         .run(
             refine_request_id,
-            &refine_prompt,
+            &edited_live_prompt,
             &refine_work.handle,
             None,
             TimestampMillis::new(NOW.get() + 19),
@@ -5316,7 +5315,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .run(
             request_id,
             coherence_request_id,
-            &coherence_prompt,
+            &edited_live_prompt,
             &coherence_work.handle,
             None,
             TimestampMillis::new(NOW.get() + 25),
@@ -5938,6 +5937,23 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let failed =
         lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, editable_id)
             .expect("load failed batch");
+    assert!(matches!(
+        batch_coordinator.start_batch(
+            editable_id,
+            approved.project.revision,
+            profile.clone(),
+            &writer_prompt,
+            TimestampMillis::new(NOW.get() + 155),
+        ),
+        Err(crate::StagedLorebookWriterAdmissionError::Project(
+            lettuce_creation::StagedLorebookRepositoryError::Conflict
+        ))
+    ));
+    assert_eq!(
+        lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, editable_id)
+            .expect("stale batch request leaves project unchanged"),
+        failed
+    );
     let retry = batch_coordinator
         .start_batch(
             editable_id,

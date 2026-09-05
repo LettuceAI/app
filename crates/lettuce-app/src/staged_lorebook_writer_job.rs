@@ -26,6 +26,7 @@ pub struct StagedLorebookWriterRequest<'a> {
 }
 
 struct WriterAdmissionInput {
+    prompt_snapshot: Option<PromptDocument>,
     request_id: RequestId,
     project_request_id: RequestId,
     plan_id: LorebookEntryId,
@@ -114,6 +115,7 @@ where
     ) -> Result<StagedLorebookWriterAdmission, StagedLorebookWriterAdmissionError> {
         validate_request(&request)?;
         self.admit_writer(WriterAdmissionInput {
+            prompt_snapshot: Some(request.prompt.clone()),
             request_id: request.request_id,
             project_request_id: request.project_request_id,
             plan_id: request.plan_id,
@@ -176,6 +178,7 @@ where
             .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
         )?;
         let run = StagedLorebookWriterRun {
+            prompt_snapshot: request.prompt_snapshot,
             configured_overrides: None,
             request_id: request.request_id,
             job_id: admitted.job.id,
@@ -237,6 +240,7 @@ where
                 inputs.profile,
                 inputs.prompt_id,
                 inputs.prompt_revision,
+                inputs.prompt_snapshot,
             );
         }
         let coordinator = crate::StagedLorebookCoordinator::new(self.projects, self.jobs);
@@ -249,6 +253,7 @@ where
         )?;
         validate_writer_inputs(&profile, &prompt)?;
         let inputs = lettuce_creation::StagedLorebookWriterBatchInputs {
+            prompt_snapshot: Some(prompt.clone()),
             overrides: overrides.clone(),
             profile: profile.clone(),
             prompt_id: prompt.id,
@@ -260,7 +265,7 @@ where
             Some(inputs),
             now,
         )?;
-        self.admit_batch_writers(project, profile, prompt.id, prompt.revision)
+        self.admit_batch_writers(project, profile, prompt.id, prompt.revision, Some(prompt))
     }
 
     pub fn start_batch(
@@ -278,7 +283,13 @@ where
             None,
             now,
         )?;
-        self.admit_batch_writers(project, profile, prompt.id, prompt.revision)
+        self.admit_batch_writers(
+            project,
+            profile,
+            prompt.id,
+            prompt.revision,
+            Some(prompt.clone()),
+        )
     }
 
     fn admit_batch_writers(
@@ -287,6 +298,7 @@ where
         profile: ResolvedInferenceProfile,
         prompt_id: lettuce_types::PromptDocumentId,
         prompt_revision: Revision,
+        prompt_snapshot: Option<PromptDocument>,
     ) -> Result<StagedLorebookWriterBatchAdmission, StagedLorebookWriterAdmissionError> {
         if project.writer_batch_inputs.as_ref().is_some_and(|inputs| {
             inputs.profile != profile
@@ -313,15 +325,22 @@ where
                 &project.project.id.as_uuid(),
                 format!("writer-{plan_id}-{}", batch.revision.get()).as_bytes(),
             ));
-            writers.push(self.admit_writer(WriterAdmissionInput {
-                request_id,
-                project_request_id: project.request_id,
-                plan_id,
-                profile: profile.clone(),
-                prompt_id,
-                prompt_revision,
-                now: batch.started_at,
-            })?);
+            writers.push(
+                self.admit_writer(WriterAdmissionInput {
+                    prompt_snapshot: project
+                        .writer_batch_inputs
+                        .as_ref()
+                        .and_then(|inputs| inputs.prompt_snapshot.clone())
+                        .or_else(|| prompt_snapshot.clone()),
+                    request_id,
+                    project_request_id: project.request_id,
+                    plan_id,
+                    profile: profile.clone(),
+                    prompt_id,
+                    prompt_revision,
+                    now: batch.started_at,
+                })?,
+            );
         }
         Ok(StagedLorebookWriterBatchAdmission { project, writers })
     }
@@ -457,6 +476,7 @@ where
         let run = self
             .runs
             .admit_staged_lorebook_writer_run(StagedLorebookWriterRun {
+                prompt_snapshot: Some(request.prompt.clone()),
                 configured_overrides,
                 request_id: request.request_id,
                 job_id: admitted.job.id,
@@ -491,7 +511,8 @@ fn validate_writer_inputs(
     profile: &ResolvedInferenceProfile,
     prompt: &PromptDocument,
 ) -> Result<(), StagedLorebookWriterAdmissionError> {
-    if prompt.status != LifecycleStatus::Active
+    if prompt.validate().is_err()
+        || prompt.status != LifecycleStatus::Active
         || prompt.purpose != PromptPurpose::LorebookGeneratorWriter
         || prompt.revision.get() == 0
         || profile
@@ -516,6 +537,7 @@ fn validate_refine_request(
     request: &StagedLorebookRefineRequest<'_>,
 ) -> Result<(), StagedLorebookWriterAdmissionError> {
     if request.feedback.trim().is_empty()
+        || request.prompt.validate().is_err()
         || request.prompt.status != LifecycleStatus::Active
         || request.prompt.purpose != PromptPurpose::LorebookGeneratorRefine
         || request.prompt.revision.get() == 0

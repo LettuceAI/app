@@ -99,6 +99,7 @@ where
         if let Some(attempt) = run.attempt.clone() {
             return settle(self.repository, project_request_id, &run, attempt, true);
         }
+        let prompt = run.prompt_snapshot.as_ref().unwrap_or(prompt);
         validate_ownership(&run, prompt, handle)?;
         if handle.cancellation_token().is_cancelled() {
             return Err(StagedLorebookCoherenceExecutionError::Cancelled);

@@ -899,6 +899,7 @@ name = "lettuce-creation"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "lettuce-context",
  "lettuce-conversations",
  "lettuce-settings",
  "lettuce-types",

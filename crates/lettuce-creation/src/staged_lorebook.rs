@@ -596,6 +596,8 @@ pub struct StagedLorebookPlanningRun {
     pub planner_prompt_id: PromptDocumentId,
     pub planner_prompt_revision: Revision,
     #[serde(default)]
+    pub planner_prompt_snapshot: Option<lettuce_context::PromptDocument>,
+    #[serde(default)]
     pub configured_inputs: Option<StagedLorebookConfiguredInputs>,
     #[serde(default)]
     pub writer_batch_inputs: Option<StagedLorebookWriterBatchInputs>,
@@ -621,6 +623,8 @@ pub struct StagedLorebookWriterBatchInputs {
     pub profile: ResolvedInferenceProfile,
     pub prompt_id: PromptDocumentId,
     pub prompt_revision: Revision,
+    #[serde(default)]
+    pub prompt_snapshot: Option<lettuce_context::PromptDocument>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -634,6 +638,8 @@ pub struct StagedLorebookCoherenceRun {
     pub configured_overrides: Option<lettuce_settings::LorebookGeneratorSelection>,
     pub prompt_id: PromptDocumentId,
     pub prompt_revision: Revision,
+    #[serde(default)]
+    pub prompt_snapshot: Option<lettuce_context::PromptDocument>,
     pub drafted_entries: String,
     pub created_at: TimestampMillis,
     #[serde(default)]
@@ -735,6 +741,8 @@ pub struct StagedLorebookWriterRun {
     pub configured_overrides: Option<lettuce_settings::LorebookGeneratorSelection>,
     pub prompt_id: PromptDocumentId,
     pub prompt_revision: Revision,
+    #[serde(default)]
+    pub prompt_snapshot: Option<lettuce_context::PromptDocument>,
     pub prompt_values: StagedLorebookWriterPromptValues,
     #[serde(default)]
     pub refinement: Option<StagedLorebookRefinement>,
@@ -960,6 +968,21 @@ pub trait StagedLorebookRepository: Send + Sync {
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
 }
 
+fn invalid_prompt_snapshot(
+    snapshot: Option<&lettuce_context::PromptDocument>,
+    id: PromptDocumentId,
+    revision: Revision,
+    purpose: lettuce_context::PromptPurpose,
+) -> bool {
+    snapshot.is_some_and(|prompt| {
+        prompt.id != id
+            || prompt.revision != revision
+            || prompt.purpose != purpose
+            || prompt.status != lettuce_context::LifecycleStatus::Active
+            || prompt.validate().is_err()
+    })
+}
+
 impl StagedLorebookPlanningRun {
     pub fn validate(&self) -> Result<(), StagedLorebookRepositoryError> {
         self.project
@@ -986,9 +1009,21 @@ impl StagedLorebookPlanningRun {
         }
         let mut coherence_job_ids = HashSet::with_capacity(self.coherence_runs.len());
         if self.planner_prompt_revision.get() == 0
+            || invalid_prompt_snapshot(
+                self.planner_prompt_snapshot.as_ref(),
+                self.planner_prompt_id,
+                self.planner_prompt_revision,
+                lettuce_context::PromptPurpose::LorebookGeneratorPlanner,
+            )
             || self.writer_batch_inputs.as_ref().is_some_and(|inputs| {
                 self.project.draft_batch.is_none()
                     || inputs.prompt_revision.get() == 0
+                    || invalid_prompt_snapshot(
+                        inputs.prompt_snapshot.as_ref(),
+                        inputs.prompt_id,
+                        inputs.prompt_revision,
+                        lettuce_context::PromptPurpose::LorebookGeneratorWriter,
+                    )
                     || serde_json::to_vec(&inputs.profile).is_err()
             })
             || self
@@ -1019,6 +1054,12 @@ impl StagedLorebookCoherenceRun {
         project: &StagedLorebookProject,
     ) -> Result<(), StagedLorebookRepositoryError> {
         if self.project_revision.get() == 0
+            || invalid_prompt_snapshot(
+                self.prompt_snapshot.as_ref(),
+                self.prompt_id,
+                self.prompt_revision,
+                lettuce_context::PromptPurpose::LorebookGeneratorCoherence,
+            )
             || self.project_revision > project.revision
             || self.prompt_revision.get() == 0
             || self.created_at.get() < 0
@@ -1076,6 +1117,16 @@ impl StagedLorebookWriterRun {
     pub fn validate(&self) -> Result<(), StagedLorebookWriterRunRepositoryError> {
         let values = &self.prompt_values;
         if self.project_revision.get() == 0
+            || invalid_prompt_snapshot(
+                self.prompt_snapshot.as_ref(),
+                self.prompt_id,
+                self.prompt_revision,
+                if self.refinement.is_some() {
+                    lettuce_context::PromptPurpose::LorebookGeneratorRefine
+                } else {
+                    lettuce_context::PromptPurpose::LorebookGeneratorWriter
+                },
+            )
             || self.prompt_revision.get() == 0
             || self.created_at.get() < 0
             || values.brief.trim().is_empty()

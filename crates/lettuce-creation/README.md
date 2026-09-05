@@ -22,6 +22,10 @@ configured admission replay, defaulting to None for older run documents.
 Configured writer batches keep their resolved profile, prompt identity/revision
 and original operation overrides alongside the current batch checkpoint. Batch
 start stores these in the same transaction before per-entry jobs are admitted.
+Planner, writer/refinement, coherence and configured batch inputs retain an
+optional admitted PromptDocument. The existing document validator checks its
+content and its identity/revision/purpose must match the run. Missing snapshots
+remain readable for earlier JSON. No prompt-history repository is introduced.
 
 The verified creation-helper progressive-edit and finalization behavior is
 pinned in

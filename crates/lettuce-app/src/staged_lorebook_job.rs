@@ -631,6 +631,7 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
         )?;
         let coherence = StagedLorebookCoherenceRun {
+            prompt_snapshot: Some(request.prompt.clone()),
             configured_overrides,
             request_id: request.request_id,
             job_id: admitted.job.id,
@@ -656,7 +657,8 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
 fn validate_coherence_request(
     request: &StagedLorebookCoherenceRequest<'_>,
 ) -> Result<(), StagedLorebookAdmissionError> {
-    if request.prompt.status != LifecycleStatus::Active
+    if request.prompt.validate().is_err()
+        || request.prompt.status != LifecycleStatus::Active
         || request.prompt.purpose != PromptPurpose::LorebookGeneratorCoherence
         || request
             .profile
@@ -736,7 +738,8 @@ fn same_admission(
 fn validate_request(
     request: &StagedLorebookAdmissionRequest<'_>,
 ) -> Result<(), StagedLorebookAdmissionError> {
-    if request.planner_prompt.status != LifecycleStatus::Active
+    if request.planner_prompt.validate().is_err()
+        || request.planner_prompt.status != LifecycleStatus::Active
         || request.planner_prompt.purpose != PromptPurpose::LorebookGeneratorPlanner
         || request
             .planner_profile
@@ -770,6 +773,7 @@ fn run_from(
         planner_profile: request.planner_profile.clone(),
         planner_prompt_id: request.planner_prompt.id,
         planner_prompt_revision: request.planner_prompt.revision,
+        planner_prompt_snapshot: Some(request.planner_prompt.clone()),
         configured_inputs: request.configured_inputs.clone(),
         writer_batch_inputs: None,
         planner_attempt: None,
