@@ -51,6 +51,19 @@ pub struct StagedLorebookAdmissionRequest<'a> {
     pub now: TimestampMillis,
 }
 
+#[derive(Debug, Clone)]
+pub struct StagedLorebookConfiguredRequest {
+    pub request_id: RequestId,
+    pub project_id: CreationWorkflowId,
+    pub brief: String,
+    pub initial_lorebook_name: Option<String>,
+    pub target_count: Option<u32>,
+    pub excerpts: Vec<StagedLorebookSourceExcerpt>,
+    pub overrides: lettuce_settings::LorebookGeneratorSelection,
+    pub safety_policy: lettuce_conversations::SafetyContext,
+    pub now: TimestampMillis,
+}
+
 impl StagedLorebookAdmissionRequest<'_> {
     pub fn with_sources(
         mut self,
@@ -88,6 +101,18 @@ pub struct StagedLorebookCoherenceAdmission {
 pub enum StagedLorebookAdmissionError {
     #[error("staged lorebook admission input is invalid")]
     InvalidInput,
+    #[error("no lorebook generator model is configured")]
+    MissingModel,
+    #[error("selected lorebook generator prompt does not exist")]
+    MissingPrompt,
+    #[error("lorebook generator settings could not be loaded: {0}")]
+    Settings(#[from] lettuce_settings::GlobalSettingsStoreError),
+    #[error("lorebook generator model could not be loaded: {0}")]
+    Model(#[from] lettuce_models::ModelRepositoryError),
+    #[error("lorebook generator model could not be resolved: {0}")]
+    Profile(#[from] lettuce_models::ChatProfileResolutionError),
+    #[error("lorebook generator prompt could not be loaded: {0}")]
+    Prompt(#[from] lettuce_context::PromptRepositoryError),
     #[error("staged lorebook persistence failed: {0}")]
     Repository(#[from] StagedLorebookRepositoryError),
     #[error("staged lorebook job persistence failed: {0}")]
@@ -110,6 +135,76 @@ impl<'a, R: ?Sized, J: ?Sized> StagedLorebookCoordinator<'a, R, J> {
 impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
     StagedLorebookCoordinator<'_, R, J>
 {
+    pub fn admit_configured(
+        &self,
+        request: StagedLorebookConfiguredRequest,
+        builtins: &crate::BuiltInPromptIds,
+    ) -> Result<StagedLorebookAdmission, StagedLorebookAdmissionError>
+    where
+        R: lettuce_settings::GlobalSettingsStore
+            + lettuce_models::ModelProfileRepository
+            + lettuce_models::ProviderAccountRepository
+            + lettuce_context::PromptRepository,
+    {
+        let settings = lettuce_settings::GlobalSettingsStore::load(self.repository)?;
+        let selected = select_staged_lorebook_settings(&settings, &request.overrides, builtins);
+        let model = lettuce_models::ModelProfileRepository::get(
+            self.repository,
+            selected
+                .model_profile_id
+                .ok_or(StagedLorebookAdmissionError::MissingModel)?,
+        )?
+        .ok_or(lettuce_models::ModelRepositoryError::NotFound)?;
+        let account = lettuce_models::ProviderAccountRepository::get(
+            self.repository,
+            model.provider_account_id,
+        )?
+        .ok_or(lettuce_models::ModelRepositoryError::AccountMissing)?;
+        let prompt = lettuce_context::PromptRepository::get(
+            self.repository,
+            selected
+                .planner_prompt_id
+                .ok_or(StagedLorebookAdmissionError::MissingPrompt)?,
+        )?
+        .ok_or(StagedLorebookAdmissionError::MissingPrompt)?;
+        let chat_profile = lettuce_models::resolve_chat_profile(
+            &lettuce_models::ExpectedModelIdentity {
+                model_profile_id: model.id,
+                model_revision: model.revision,
+                provider_account_id: account.id,
+                provider_account_revision: account.revision,
+                external_model_id: model.external_model_id.clone(),
+                display_name: model.display_name.clone(),
+                provider_protocol: account.protocol,
+                model_kind: model.kind,
+            },
+            &model,
+            &account,
+            &staged_lorebook_parameter_defaults(&settings.settings.lorebook_generator),
+            &lettuce_models::ChatRequirements::default(),
+        )?;
+        self.admit(StagedLorebookAdmissionRequest {
+            request_id: request.request_id,
+            project_id: request.project_id,
+            brief: request.brief,
+            initial_lorebook_name: request.initial_lorebook_name,
+            target_count: request
+                .target_count
+                .map(|count| count.clamp(5, 50))
+                .unwrap_or_else(|| settings.settings.lorebook_generator.target_count()),
+            excerpts: request.excerpts,
+            planner_profile: ResolvedInferenceProfile {
+                chat_profile,
+                tool_policy: lettuce_conversations::ToolPolicy::Required,
+                output_policy: lettuce_conversations::OutputPolicy::Plain,
+                safety_policy: request.safety_policy,
+                correlation_id: None,
+            },
+            planner_prompt: &prompt,
+            now: request.now,
+        })
+    }
+
     pub fn admit(
         &self,
         request: StagedLorebookAdmissionRequest<'_>,

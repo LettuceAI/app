@@ -3992,6 +3992,127 @@ fn staged_generator_settings_select_builtins_and_parameter_fallback() {
     assert_eq!(parameters.session, Default::default());
 }
 
+#[test]
+fn staged_lorebook_configured_admission_resolves_and_validates_before_job_creation() {
+    let database = database_with_builtins();
+    let model_id = seed_model(&database, ProviderProtocol::Ollama, "ollama");
+    let mut model = ModelProfileRepository::get(&database, model_id)
+        .expect("load model")
+        .expect("model exists");
+    model.config.chat_parameters.temperature = None;
+    ModelProfileRepository::upsert(&database, model.clone(), Some(model.revision))
+        .expect("save model");
+    set_application_default_model(&database, model_id);
+    let builtins = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(NOW)
+        .expect("builtins");
+    let coordinator = crate::StagedLorebookCoordinator::new(&database, &database);
+    let request = crate::StagedLorebookConfiguredRequest {
+        request_id: RequestId::new(),
+        project_id: lettuce_types::CreationWorkflowId::new(),
+        brief: "Harbour world".into(),
+        initial_lorebook_name: None,
+        target_count: None,
+        excerpts: Vec::new(),
+        overrides: Default::default(),
+        safety_policy: SafetyContext::Standard,
+        now: NOW,
+    };
+    let admitted = coordinator
+        .admit_configured(request.clone(), &builtins)
+        .expect("configured admission");
+    assert_eq!(admitted.run.project.target_count, 12);
+    assert_eq!(
+        admitted.run.planner_prompt_id,
+        builtins.lorebook_generator_planner
+    );
+    assert_eq!(
+        admitted.run.planner_profile.chat_profile.model_profile_id,
+        model_id
+    );
+    assert_eq!(
+        admitted
+            .run
+            .planner_profile
+            .chat_profile
+            .parameters
+            .visible_max_output_tokens,
+        Some(1024)
+    );
+    assert!(
+        !coordinator
+            .admit_configured(request.clone(), &builtins)
+            .expect("admission replay")
+            .created
+    );
+    let mut invalid = request.clone();
+    invalid.request_id = RequestId::new();
+    invalid.project_id = lettuce_types::CreationWorkflowId::new();
+    invalid.overrides.model_profile_id = Some(ModelProfileId::new());
+    assert!(matches!(
+        coordinator.admit_configured(invalid.clone(), &builtins),
+        Err(crate::StagedLorebookAdmissionError::Model(
+            lettuce_models::ModelRepositoryError::NotFound
+        ))
+    ));
+    invalid.overrides.model_profile_id = None;
+    invalid.overrides.planner_prompt_id = Some(lettuce_types::PromptDocumentId::new());
+    assert!(matches!(
+        coordinator.admit_configured(invalid.clone(), &builtins),
+        Err(crate::StagedLorebookAdmissionError::MissingPrompt)
+    ));
+    invalid.overrides.planner_prompt_id = Some(builtins.lorebook_generator_writer);
+    assert!(matches!(
+        coordinator.admit_configured(invalid.clone(), &builtins),
+        Err(crate::StagedLorebookAdmissionError::InvalidInput)
+    ));
+    invalid.overrides.planner_prompt_id = None;
+    assert_eq!(
+        lettuce_jobs::JobStore::list(&database, Default::default())
+            .expect("jobs")
+            .items
+            .len(),
+        1
+    );
+    invalid.target_count = Some(1);
+    assert_eq!(
+        coordinator
+            .admit_configured(invalid, &builtins)
+            .expect("clamped admission")
+            .run
+            .project
+            .target_count,
+        5
+    );
+
+    let stored = GlobalSettingsStore::load(&database).expect("settings");
+    let mut settings = stored.settings;
+    settings.lorebook_generator.default_target_count = Some(20);
+    settings.lorebook_generator.selection.model_profile_id = Some(ModelProfileId::new());
+    GlobalSettingsStore::save(&database, settings, Some(model_id), stored.revision)
+        .expect("save settings");
+    let mut configured = request;
+    configured.request_id = RequestId::new();
+    configured.project_id = lettuce_types::CreationWorkflowId::new();
+    assert!(matches!(
+        coordinator.admit_configured(configured.clone(), &builtins),
+        Err(crate::StagedLorebookAdmissionError::Model(
+            lettuce_models::ModelRepositoryError::NotFound
+        ))
+    ));
+    configured.overrides.model_profile_id = Some(model_id);
+    assert_eq!(
+        coordinator
+            .admit_configured(configured, &builtins)
+            .expect("explicit model overrides missing setting")
+            .run
+            .project
+            .target_count,
+        20
+    );
+}
+
 #[tokio::test]
 async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let database = database_with_builtins();

@@ -8,8 +8,12 @@ optional local OpenAI-compatible host API.
 Staged lorebook settings selection combines explicit overrides, persisted
 generator settings and packaged prompt IDs. Its token fallback is supplied to
 the existing model parameter resolver as a global default so authored model
-parameters can take precedence. Callers still resolve/load and validate the
-selected model and prompt before admission; automatic host wiring is pending.
+parameters can take precedence. `admit_configured` loads persisted settings,
+the selected model/account and planner prompt through existing ports, resolves
+the profile with the shared model resolver, applies legacy target-count defaults
+and bounds, then uses normal durable planner admission. Missing model/prompt
+references and incompatible profiles fail before job creation. Writer/refine/
+coherence admission still takes resolved inputs; automatic host wiring is pending.
 
 May wire all crates; no crate may depend on it. Host API handlers reuse the
 model and inference services without constructing product conversations.
