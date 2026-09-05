@@ -6185,6 +6185,97 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         retry.project
     );
     assert_eq!(retry.project.project.drafts[0], complete_draft);
+    struct ConcurrentWriters {
+        barrier: tokio::sync::Barrier,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    #[async_trait::async_trait]
+    impl InferencePort for ConcurrentWriters {
+        async fn run(&self, _request: InferenceRequest) -> Result<InferenceOutcome, PortError> {
+            let index = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.barrier.wait().await;
+            if index == 0 {
+                return Err(PortError::Empty);
+            }
+            Ok(InferenceOutcome {
+                candidates: vec![InferenceCandidate {
+                    ordinal: 0,
+                    parts: vec![],
+                    tool_calls: vec![ProposedToolCall {
+                        provider_call_id: Some("batch-writer".into()),
+                        name: lettuce_creation::STAGED_LOREBOOK_WRITER_TOOL_NAME.into(),
+                        arguments: serde_json::json!({"title":"Harbour", "content":"Harbour history", "keywords":["harbour"], "alwaysActive":false}),
+                        raw_arguments: None,
+                        provider_replay: None,
+                    }],
+                    provider_replay: None,
+                }],
+                usage: None,
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None,
+                provider_request_id: None,
+                warning_codes: vec![],
+            })
+        }
+    }
+    let concurrent = ConcurrentWriters {
+        barrier: tokio::sync::Barrier::new(2),
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    };
+    let outcomes = tokio::time::timeout(
+        Duration::from_secs(5),
+        writer_dispatcher.run_batch(
+            &retry,
+            &concurrent,
+            &writer_prompt,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 157),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        ),
+    )
+    .await
+    .expect("writers must execute concurrently");
+    assert_eq!(outcomes.len(), 2);
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|outcome| matches!(
+                outcome,
+                Ok(Some(
+                    crate::StagedLorebookWriterSettledWork::Succeeded { .. }
+                ))
+            ))
+            .count(),
+        1
+    );
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|outcome| matches!(
+                outcome,
+                Ok(Some(crate::StagedLorebookWriterSettledWork::Failed { .. }))
+            ))
+            .count(),
+        1
+    );
+    let replay = writer_dispatcher
+        .run_batch(
+            &retry,
+            &concurrent,
+            &writer_prompt,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 158),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .await;
+    assert!(replay.iter().all(|outcome| matches!(outcome, Ok(None))));
+    assert_eq!(
+        concurrent.calls.load(std::sync::atomic::Ordering::SeqCst),
+        2
+    );
+
     let stale_draft = lettuce_creation::StagedLorebookEntryDraft {
         plan_id: resumed.writers[0].run.plan_id,
         ..complete_draft

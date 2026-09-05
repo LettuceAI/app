@@ -34,6 +34,15 @@ live provider. Automatic host scheduling, progress IPC and frontend integration
 are still deferred.
 Backend scenario coverage does not mean the user-facing rewrite is complete.
 
+The app writer dispatch coordinator's `run_batch` concurrently claims, executes
+and settles the admitted batch using existing per-writer lifecycle methods.
+Results arrive in completion order; unclaimable jobs return None. One failed
+writer does not cancel siblings. The existing three-entry domain batch bound
+is enforced, and duplicate or foreign project work is rejected. A barrier-backed
+SQLite regression verifies concurrent partial-retry execution, independent
+success/failure settlement and no redispatch of terminal jobs. Automatic host
+scheduling and lease renewal remain host responsibilities.
+
 PDF extraction accepts already-read bytes, keeps parser diagnostics out of
 public errors, and applies the same excerpt truncation as text. It is synchronous
 CPU work for the host's worker, not the UI thread. Protected document reading is

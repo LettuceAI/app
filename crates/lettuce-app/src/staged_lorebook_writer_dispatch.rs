@@ -121,6 +121,68 @@ impl<
         }))
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub async fn run_batch<I: lettuce_conversations::InferencePort + ?Sized>(
+        &self,
+        batch: &crate::StagedLorebookWriterBatchAdmission,
+        inference: &I,
+        prompt: &lettuce_context::PromptDocument,
+        worker_id: WorkerId,
+        now: TimestampMillis,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Vec<Result<Option<StagedLorebookWriterSettledWork>, StagedLorebookWriterDispatchError>>
+    where
+        R: lettuce_conversations::ProviderReplayArtifactPort,
+    {
+        use futures_util::{StreamExt, stream::FuturesUnordered};
+
+        let mut requests = std::collections::HashSet::new();
+        if batch.writers.len() > lettuce_creation::STAGED_LOREBOOK_DRAFT_BATCH_SIZE
+            || batch
+                .writers
+                .iter()
+                .any(|writer| !requests.insert(writer.run.request_id))
+        {
+            return vec![Err(StagedLorebookWriterDispatchError::InvalidWork)];
+        }
+        let executor = crate::StagedLorebookWriterExecutionCoordinator::new(
+            self.runs,
+            self.projects,
+            inference,
+        );
+        let mut pending = FuturesUnordered::new();
+        for writer in &batch.writers {
+            let executor = &executor;
+            pending.push(async move {
+                let run = self
+                    .runs
+                    .load_staged_lorebook_writer_run(writer.run.request_id)?;
+                if run.project_request_id != batch.project.request_id
+                    || run.project_id != batch.project.project.id
+                    || run.refinement.is_some()
+                {
+                    return Err(StagedLorebookWriterDispatchError::InvalidWork);
+                }
+                let Some(work) =
+                    self.claim(writer.run.request_id, worker_id, now, lease_for, allowed)?
+                else {
+                    return Ok(None);
+                };
+                let result = executor
+                    .run(work.run.request_id, prompt, &work.handle, None, now)
+                    .await;
+                self.settle(work, result, CancellationReason::User, now)
+                    .map(Some)
+            });
+        }
+        let mut outcomes = Vec::with_capacity(batch.writers.len());
+        while let Some(outcome) = pending.next().await {
+            outcomes.push(outcome);
+        }
+        outcomes
+    }
+
     pub fn settle(
         &self,
         work: StagedLorebookWriterClaimedWork,

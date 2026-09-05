@@ -913,6 +913,7 @@ dependencies = [
  "async-trait",
  "blake3",
  "chrono",
+ "futures-util",
  "lettuce-characters",
  "lettuce-companions",
  "lettuce-context",

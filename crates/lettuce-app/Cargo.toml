@@ -15,6 +15,7 @@ workspace = true
 
 [dependencies]
 async-trait.workspace = true
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 lettuce-types.workspace = true
 lettuce-contracts.workspace = true
 lettuce-settings.workspace = true
