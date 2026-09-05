@@ -14,6 +14,8 @@ the profile with the shared model resolver, applies legacy target-count defaults
 and bounds, then uses normal durable planner admission. Missing model/prompt
 references and incompatible profiles fail before job creation. Writer/refine/
 coherence admission still takes resolved inputs; automatic host wiring is pending.
+Writer batches validate prompt and text modalities before changing the project
+or creating jobs, so invalid inputs leave the draft checkpoint unchanged.
 
 May wire all crates; no crate may depend on it. Host API handlers reuse the
 model and inference services without constructing product conversations.

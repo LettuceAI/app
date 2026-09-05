@@ -4396,6 +4396,38 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .expect("writer prompt")
         .expect("writer prompt exists");
     let writer = crate::StagedLorebookWriterCoordinator::new(&database, &database, &database);
+    let jobs_before_invalid_batch =
+        lettuce_jobs::JobStore::list(&database, Default::default()).expect("jobs before batch");
+    let mut invalid_profile = profile.clone();
+    invalid_profile
+        .chat_profile
+        .capabilities
+        .input_modalities
+        .text = lettuce_models::CapabilityStatus::Unsupported;
+    for (batch_profile, batch_prompt) in [
+        (profile.clone(), &prompt),
+        (invalid_profile, &writer_prompt),
+    ] {
+        assert!(matches!(
+            writer.start_batch(
+                request_id,
+                drafting.project.revision,
+                batch_profile,
+                batch_prompt,
+                TimestampMillis::new(NOW.get() + 9),
+            ),
+            Err(crate::StagedLorebookWriterAdmissionError::InvalidInput)
+        ));
+        assert_eq!(
+            lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, request_id)
+                .expect("unchanged project"),
+            drafting
+        );
+        assert_eq!(
+            lettuce_jobs::JobStore::list(&database, Default::default()).expect("unchanged jobs"),
+            jobs_before_invalid_batch
+        );
+    }
     let batch = writer
         .start_batch(
             request_id,

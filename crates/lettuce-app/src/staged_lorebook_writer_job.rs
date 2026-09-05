@@ -169,6 +169,7 @@ where
         prompt: &PromptDocument,
         now: TimestampMillis,
     ) -> Result<StagedLorebookWriterBatchAdmission, StagedLorebookWriterAdmissionError> {
+        validate_writer_inputs(&profile, prompt)?;
         let project = self.projects.start_staged_lorebook_draft_batch(
             project_request_id,
             expected_revision,
@@ -286,18 +287,23 @@ where
 fn validate_request(
     request: &StagedLorebookWriterRequest<'_>,
 ) -> Result<(), StagedLorebookWriterAdmissionError> {
-    if request.prompt.status != LifecycleStatus::Active
-        || request.prompt.purpose != PromptPurpose::LorebookGeneratorWriter
-        || request.prompt.revision.get() == 0
-        || request
-            .profile
+    validate_writer_inputs(&request.profile, request.prompt)
+}
+
+fn validate_writer_inputs(
+    profile: &ResolvedInferenceProfile,
+    prompt: &PromptDocument,
+) -> Result<(), StagedLorebookWriterAdmissionError> {
+    if prompt.status != LifecycleStatus::Active
+        || prompt.purpose != PromptPurpose::LorebookGeneratorWriter
+        || prompt.revision.get() == 0
+        || profile
             .chat_profile
             .capabilities
             .input_modalities
             .get(Modality::Text)
             != CapabilityStatus::Supported
-        || request
-            .profile
+        || profile
             .chat_profile
             .capabilities
             .output_modalities
