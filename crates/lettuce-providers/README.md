@@ -3,9 +3,15 @@
 OpenAI-compatible buffered and SSE responses preserve optional
 `prompt_tokens_details.cached_tokens` and
 `completion_tokens_details.reasoning_tokens` in normalized usage. Missing
-details remain None, distinct from a reported zero. Other protocol detail
-mappings, cache-write/search counts and provider-reported cost are not yet
-captured by this slice.
+details remain None, distinct from a reported zero. Anthropic buffered/SSE
+usage also preserves cache_read_input_tokens; it does not infer a reasoning
+count from thinking text. Gemini buffered/streaming usage preserves
+cachedContentTokenCount and thoughtsTokenCount. Native input/output totals
+remain unchanged: these details are evidence, not a conversion to OpenRouter
+billing semantics. In particular, Anthropic cache reads may exceed its native
+input_tokens, and Gemini thoughts may exceed candidatesTokenCount. Do not
+apply OpenRouter's inclusive-token cost formula to these native totals.
+Cache-write/search counts and provider-reported cost remain later work.
 
 Remote provider catalogs, request translation, stream parsing, and error mapping.
 

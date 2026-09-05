@@ -1000,8 +1000,8 @@ fn parse_response_with_replay(
         candidates,
         usage: parsed.usage_metadata.and_then(|usage| {
             Some(InferenceUsage {
-                cached_input_tokens: None,
-                reasoning_tokens: None,
+                cached_input_tokens: usage.cached_content_token_count,
+                reasoning_tokens: usage.thoughts_token_count,
                 input_tokens: usage.prompt_token_count?,
                 output_tokens: usage.candidates_token_count?,
             })
@@ -1262,6 +1262,10 @@ struct PromptFeedback {
 
 #[derive(Deserialize)]
 struct UsageMetadata {
+    #[serde(rename = "cachedContentTokenCount")]
+    cached_content_token_count: Option<u64>,
+    #[serde(rename = "thoughtsTokenCount")]
+    thoughts_token_count: Option<u64>,
     #[serde(rename = "promptTokenCount")]
     prompt_token_count: Option<u64>,
     #[serde(rename = "candidatesTokenCount")]
@@ -1835,7 +1839,7 @@ mod tests {
     #[test]
     fn preserves_thought_parts_and_reads_native_usage() {
         let outcome = parse_response(response(
-            r#"{"candidates":[{"content":{"parts":[{"text":"hidden","thought":true},{"text":"vis"},{"text":"ible"}],"role":"model"},"finishReason":"MAX_TOKENS"}],"usageMetadata":{"promptTokenCount":9,"candidatesTokenCount":4,"totalTokenCount":13}}"#,
+            r#"{"candidates":[{"content":{"parts":[{"text":"hidden","thought":true},{"text":"vis"},{"text":"ible"}],"role":"model"},"finishReason":"MAX_TOKENS"}],"usageMetadata":{"promptTokenCount":9,"candidatesTokenCount":4,"totalTokenCount":19,"cachedContentTokenCount":2,"thoughtsTokenCount":6}}"#,
         ))
         .expect("response");
         assert_eq!(
@@ -1853,8 +1857,8 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
-                cached_input_tokens: None,
-                reasoning_tokens: None,
+                cached_input_tokens: Some(2),
+                reasoning_tokens: Some(6),
                 input_tokens: 9,
                 output_tokens: 4
             })

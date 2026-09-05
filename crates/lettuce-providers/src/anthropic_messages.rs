@@ -1016,7 +1016,7 @@ fn parse_response_with_replay(
         }],
         usage: parsed.usage.and_then(|usage| {
             Some(InferenceUsage {
-                cached_input_tokens: None,
+                cached_input_tokens: usage.cache_read_input_tokens,
                 reasoning_tokens: None,
                 input_tokens: usage.input_tokens?,
                 output_tokens: usage.output_tokens?,
@@ -1206,6 +1206,7 @@ struct ContentBlock {
 
 #[derive(Deserialize)]
 struct Usage {
+    cache_read_input_tokens: Option<u64>,
     input_tokens: Option<u64>,
     output_tokens: Option<u64>,
 }
@@ -1521,7 +1522,7 @@ mod tests {
     #[test]
     fn joins_text_blocks_and_maps_stop_reasons() {
         let outcome = parse_response(response(
-            r#"{"content":[{"type":"text","text":"a"},{"type":"thinking","thinking":"x"},{"type":"text","text":"b"}],"stop_reason":"max_tokens","usage":{"input_tokens":3,"output_tokens":5}}"#,
+            r#"{"content":[{"type":"text","text":"a"},{"type":"thinking","thinking":"x"},{"type":"text","text":"b"}],"stop_reason":"max_tokens","usage":{"input_tokens":3,"output_tokens":5,"cache_read_input_tokens":8}}"#,
         ))
         .expect("response");
         assert_eq!(
@@ -1539,7 +1540,7 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
-                cached_input_tokens: None,
+                cached_input_tokens: Some(8),
                 reasoning_tokens: None,
                 input_tokens: 3,
                 output_tokens: 5

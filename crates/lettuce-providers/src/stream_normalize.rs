@@ -500,6 +500,7 @@ impl StreamNormalizer {
                     .and_then(|message| message.get("usage"))
                 {
                     self.input_tokens = token(usage, &["input_tokens"]);
+                    self.cached_input_tokens = token(usage, &["cache_read_input_tokens"]);
                     self.output_tokens = token(usage, &["output_tokens"]);
                 }
             }
@@ -760,6 +761,8 @@ impl StreamNormalizer {
         }
         if let Some(usage) = value.get("usageMetadata") {
             self.input_tokens = token(usage, &["promptTokenCount"]);
+            self.cached_input_tokens = token(usage, &["cachedContentTokenCount"]);
+            self.reasoning_tokens = token(usage, &["thoughtsTokenCount"]);
             self.output_tokens = token(usage, &["candidatesTokenCount"]);
         }
         let mut deltas = Vec::new();
@@ -1492,7 +1495,7 @@ mod tests {
     #[test]
     fn anthropic_uses_event_types_and_cumulative_usage() {
         let mut normalizer = StreamNormalizer::new(StreamProtocol::Anthropic, None);
-        normalizer.consume(&event("message_start", r#"{"type":"message_start","message":{"usage":{"input_tokens":7,"output_tokens":0}}}"#)).unwrap();
+        normalizer.consume(&event("message_start", r#"{"type":"message_start","message":{"usage":{"input_tokens":7,"output_tokens":0,"cache_read_input_tokens":9}}}"#)).unwrap();
         assert_eq!(normalizer.consume(&event("content_block_delta", r#"{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"why"}}"#)).unwrap(), vec![StreamDelta::Reasoning("why".to_owned())]);
         normalizer
             .consume(&event(
@@ -1505,7 +1508,11 @@ mod tests {
             .consume(&event("message_stop", r#"{"type":"message_stop"}"#))
             .unwrap();
         let (_, outcome) = normalizer.finish().unwrap();
-        assert_eq!(outcome.usage.unwrap().output_tokens, 4);
+        let usage = outcome.usage.unwrap();
+        assert_eq!(usage.output_tokens, 4);
+        assert_eq!(usage.input_tokens, 7);
+        assert_eq!(usage.cached_input_tokens, Some(9));
+        assert_eq!(usage.reasoning_tokens, None);
         assert!(matches!(
             outcome.candidates[0].parts[0],
             MessagePart::ReasoningSummary { .. }
@@ -1690,11 +1697,14 @@ mod tests {
     #[test]
     fn gemini_uses_only_primary_candidate_and_native_thought_parts() {
         let mut normalizer = StreamNormalizer::new(StreamProtocol::Gemini, None);
-        let deltas = normalizer.consume(&record(r#"{"candidates":[{"content":{"parts":[{"text":"why","thought":true},{"text":"answer"}]},"finishReason":"STOP"},{"content":{"parts":[{"text":"ignored"}]}}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":1}}"#)).unwrap();
+        let deltas = normalizer.consume(&record(r#"{"candidates":[{"content":{"parts":[{"text":"why","thought":true},{"text":"answer"}]},"finishReason":"STOP"},{"content":{"parts":[{"text":"ignored"}]}}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":1,"cachedContentTokenCount":0,"thoughtsTokenCount":3}}"#)).unwrap();
         assert!(deltas.contains(&StreamDelta::Reasoning("why".to_owned())));
         assert!(!deltas.contains(&StreamDelta::Text("ignored".to_owned())));
         let (_, outcome) = normalizer.finish().unwrap();
-        assert_eq!(outcome.usage.unwrap().output_tokens, 1);
+        let usage = outcome.usage.unwrap();
+        assert_eq!(usage.output_tokens, 1);
+        assert_eq!(usage.cached_input_tokens, Some(0));
+        assert_eq!(usage.reasoning_tokens, Some(3));
     }
 
     #[test]
