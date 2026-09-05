@@ -1,5 +1,12 @@
 # lettuce-providers
 
+OpenAI-compatible buffered and SSE responses preserve optional
+`prompt_tokens_details.cached_tokens` and
+`completion_tokens_details.reasoning_tokens` in normalized usage. Missing
+details remain None, distinct from a reported zero. Other protocol detail
+mappings, cache-write/search counts and provider-reported cost are not yet
+captured by this slice.
+
 Remote provider catalogs, request translation, stream parsing, and error mapping.
 
 ## Boundary

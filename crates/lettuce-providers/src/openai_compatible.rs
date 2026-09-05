@@ -733,6 +733,16 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         candidates,
         usage: parsed.usage.and_then(|usage| {
             Some(InferenceUsage {
+                cached_input_tokens: usage
+                    .prompt_tokens_details
+                    .as_ref()
+                    .and_then(|v| v.get("cached_tokens"))
+                    .and_then(serde_json::Value::as_u64),
+                reasoning_tokens: usage
+                    .completion_tokens_details
+                    .as_ref()
+                    .and_then(|v| v.get("reasoning_tokens"))
+                    .and_then(serde_json::Value::as_u64),
                 input_tokens: usage.input()?,
                 output_tokens: usage.output()?,
             })
@@ -985,6 +995,8 @@ impl MessageContent {
 
 #[derive(Deserialize)]
 struct OpenAiUsage {
+    prompt_tokens_details: Option<serde_json::Value>,
+    completion_tokens_details: Option<serde_json::Value>,
     prompt_tokens: Option<u64>,
     input_tokens: Option<u64>,
     prompt_eval_count: Option<u64>,
@@ -1365,7 +1377,7 @@ mod tests {
                     {"index":7,"message":{"role":"assistant","content":"first"},"finish_reason":"stop"},
                     {"index":2,"message":{"role":"assistant","content":"second"},"finish_reason":"length"}
                 ],
-                "usage":{"prompt_tokens":7,"completion_tokens":3}
+                "usage":{"prompt_tokens":7,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":1}}
             }"#,
         ))
         .expect("valid response");
@@ -1382,6 +1394,8 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                cached_input_tokens: Some(2),
+                reasoning_tokens: Some(1),
                 input_tokens: 7,
                 output_tokens: 3
             })
@@ -1420,6 +1434,8 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 2,
                 output_tokens: 3
             })

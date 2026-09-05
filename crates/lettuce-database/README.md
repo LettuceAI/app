@@ -1,5 +1,10 @@
 # lettuce-database
 
+Optional cached-input and reasoning token evidence survives usage ledger,
+creation inference-round, dynamic-memory inference-round and summary-checkpoint
+round trips. Original migrations 9/10/11 store nullable nonnegative counters.
+Raw counters are not clamped; billing applies its existing clamping policy.
+
 Migration 10 also retains immutable per-event usage-cost bases through
 `UsageCostLedger`: versioned prices, provenance and calculation inputs are
 stored separately from raw usage evidence. Exact retries are idempotent;

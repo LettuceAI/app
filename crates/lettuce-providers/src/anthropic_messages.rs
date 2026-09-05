@@ -1016,6 +1016,8 @@ fn parse_response_with_replay(
         }],
         usage: parsed.usage.and_then(|usage| {
             Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: usage.input_tokens?,
                 output_tokens: usage.output_tokens?,
             })
@@ -1537,6 +1539,8 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 3,
                 output_tokens: 5
             })

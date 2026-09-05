@@ -485,12 +485,20 @@ pub fn aggregate_inference_usage(
     }
     let mut input_tokens = 0u64;
     let mut output_tokens = 0u64;
+    let mut cached_input_tokens = Some(0u64);
+    let mut reasoning_tokens = Some(0u64);
     for outcome in outcomes {
         let Some(usage) = &outcome.usage else {
             return Ok(lettuce_conversations::UsageCounters::Unavailable(
                 lettuce_conversations::UsageUnavailableReason::ProviderOmitted,
             ));
         };
+        cached_input_tokens = cached_input_tokens
+            .zip(usage.cached_input_tokens)
+            .and_then(|(a, b)| a.checked_add(b));
+        reasoning_tokens = reasoning_tokens
+            .zip(usage.reasoning_tokens)
+            .and_then(|(a, b)| a.checked_add(b));
         input_tokens = input_tokens
             .checked_add(usage.input_tokens)
             .ok_or(DynamicMemoryContinuationError::UsageOverflow)?;
@@ -500,6 +508,8 @@ pub fn aggregate_inference_usage(
     }
     Ok(lettuce_conversations::UsageCounters::Known(
         lettuce_conversations::InferenceUsage {
+            cached_input_tokens,
+            reasoning_tokens,
             input_tokens,
             output_tokens,
         },
@@ -785,6 +795,8 @@ mod tests {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 4,
                 output_tokens: 1,
             }),
@@ -871,16 +883,22 @@ mod tests {
         assert_eq!(
             aggregate_inference_usage(&[
                 outcome(Some(InferenceUsage {
+                    cached_input_tokens: Some(2),
+                    reasoning_tokens: Some(1),
                     input_tokens: 10,
                     output_tokens: 2,
                 })),
                 outcome(Some(InferenceUsage {
+                    cached_input_tokens: Some(0),
+                    reasoning_tokens: None,
                     input_tokens: 7,
                     output_tokens: 3,
                 })),
             ])
             .expect("aggregate"),
             lettuce_conversations::UsageCounters::Known(InferenceUsage {
+                cached_input_tokens: Some(2),
+                reasoning_tokens: None,
                 input_tokens: 17,
                 output_tokens: 5,
             })

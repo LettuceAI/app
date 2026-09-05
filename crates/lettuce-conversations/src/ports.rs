@@ -1844,6 +1844,8 @@ impl InferenceCandidate {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferenceUsage {
+    pub cached_input_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
     pub input_tokens: u64,
     pub output_tokens: u64,
 }

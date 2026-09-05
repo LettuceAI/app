@@ -62,6 +62,8 @@ pub(crate) struct StreamNormalizer {
     reasoning: String,
     input_tokens: Option<u64>,
     output_tokens: Option<u64>,
+    cached_input_tokens: Option<u64>,
+    reasoning_tokens: Option<u64>,
     finish_reason: FinishReason,
     provider_finish_reason: Option<String>,
     warning_codes: Vec<InferenceWarningCode>,
@@ -123,6 +125,8 @@ impl StreamNormalizer {
             text: String::new(),
             reasoning: String::new(),
             input_tokens: None,
+            cached_input_tokens: None,
+            reasoning_tokens: None,
             output_tokens: None,
             finish_reason: FinishReason::Stop,
             provider_finish_reason: None,
@@ -250,6 +254,8 @@ impl StreamNormalizer {
         }
         let usage = match (self.input_tokens, self.output_tokens) {
             (Some(input_tokens), Some(output_tokens)) => Some(InferenceUsage {
+                cached_input_tokens: self.cached_input_tokens,
+                reasoning_tokens: self.reasoning_tokens,
                 input_tokens,
                 output_tokens,
             }),
@@ -366,6 +372,12 @@ impl StreamNormalizer {
         }
         if let Some(usage) = value.get("usage") {
             self.input_tokens = token(usage, &["prompt_tokens", "input_tokens"]);
+            self.cached_input_tokens = usage
+                .get("prompt_tokens_details")
+                .and_then(|v| token(v, &["cached_tokens"]));
+            self.reasoning_tokens = usage
+                .get("completion_tokens_details")
+                .and_then(|v| token(v, &["reasoning_tokens"]));
             self.output_tokens = token(usage, &["completion_tokens", "output_tokens"]);
         }
         let Some(choices) = value.get("choices").and_then(Value::as_array) else {
@@ -1368,7 +1380,7 @@ mod tests {
         assert!(
             normalizer
                 .consume(&record(
-                    r#"{"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2}}"#
+                    r#"{"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":1}}}"#
                 ))
                 .unwrap()
                 .is_empty()
@@ -1385,7 +1397,10 @@ mod tests {
         normalizer.consume(&record("[DONE]")).unwrap();
         let (_, outcome) = normalizer.finish().unwrap();
         assert_eq!(outcome.finish_reason, FinishReason::Length);
-        assert_eq!(outcome.usage.unwrap().input_tokens, 3);
+        let usage = outcome.usage.unwrap();
+        assert_eq!(usage.input_tokens, 3);
+        assert_eq!(usage.cached_input_tokens, Some(0));
+        assert_eq!(usage.reasoning_tokens, Some(1));
         assert!(
             outcome
                 .warning_codes

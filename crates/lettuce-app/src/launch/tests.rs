@@ -1559,6 +1559,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     provider_replay: None,
                 }],
                 usage: Some(InferenceUsage {
+                    cached_input_tokens: None,
+                    reasoning_tokens: None,
                     input_tokens: 20,
                     output_tokens: 3,
                 }),
@@ -1577,6 +1579,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     provider_replay: None,
                 }],
                 usage: Some(InferenceUsage {
+                    cached_input_tokens: None,
+                    reasoning_tokens: None,
                     input_tokens: 24,
                     output_tokens: 7,
                 }),
@@ -3813,6 +3817,8 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 20,
                 output_tokens: 5,
             }),
@@ -3936,6 +3942,8 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
                     provider_replay: None,
                 }],
                 usage: Some(InferenceUsage {
+                    cached_input_tokens: None,
+                    reasoning_tokens: None,
                     input_tokens: 22,
                     output_tokens: 6,
                 }),
@@ -4551,6 +4559,8 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 40,
                 output_tokens: 10,
             }),
@@ -4896,6 +4906,8 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 60,
                 output_tokens: 20,
             }),
@@ -5223,6 +5235,8 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 40,
                 output_tokens: 12,
             }),
@@ -5524,6 +5538,8 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 30,
                 output_tokens: 10,
             }),
@@ -6883,6 +6899,8 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 30,
                 output_tokens: 12,
             }),
@@ -7026,6 +7044,8 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                     provider_replay: None,
                 }],
                 usage: Some(InferenceUsage {
+                    cached_input_tokens: None,
+                    reasoning_tokens: None,
                     input_tokens: 25,
                     output_tokens: 10,
                 }),
@@ -7581,6 +7601,8 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
             provider_replay: None,
         }],
         usage: Some(InferenceUsage {
+            cached_input_tokens: None,
+            reasoning_tokens: None,
             input_tokens: 20,
             output_tokens: 5,
         }),
@@ -7676,6 +7698,8 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
                     provider_replay: None,
                 }],
                 usage: Some(InferenceUsage {
+                    cached_input_tokens: None,
+                    reasoning_tokens: None,
                     input_tokens: 7,
                     output_tokens: 2,
                 }),
@@ -7694,6 +7718,8 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
                     provider_replay: None,
                 }],
                 usage: Some(InferenceUsage {
+                    cached_input_tokens: None,
+                    reasoning_tokens: None,
                     input_tokens: 5,
                     output_tokens: 3,
                 }),
@@ -7881,6 +7907,8 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
     assert_eq!(
         usage.record.usage,
         lettuce_conversations::UsageCounters::Known(InferenceUsage {
+            cached_input_tokens: None,
+            reasoning_tokens: None,
             input_tokens: 32,
             output_tokens: 10,
         })

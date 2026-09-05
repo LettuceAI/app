@@ -6,6 +6,8 @@ CREATE TABLE usage_events (
     outcome TEXT NOT NULL CHECK (outcome IN ('succeeded', 'failed', 'cancelled', 'interrupted')),
     counters_kind TEXT NOT NULL CHECK (counters_kind IN ('known', 'unavailable')),
     input_tokens INTEGER CHECK (input_tokens IS NULL OR input_tokens >= 0),
+    cached_input_tokens INTEGER CHECK (cached_input_tokens IS NULL OR cached_input_tokens >= 0),
+    reasoning_tokens INTEGER CHECK (reasoning_tokens IS NULL OR reasoning_tokens >= 0),
     output_tokens INTEGER CHECK (output_tokens IS NULL OR output_tokens >= 0),
     unavailable_reason TEXT CHECK (
         unavailable_reason IS NULL OR unavailable_reason IN (

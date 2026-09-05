@@ -133,10 +133,14 @@ fn hydrate(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawUsageEvent> {
         provider_account_id: row.get(10)?,
         provider_account_revision: row.get(11)?,
         recorded_at: row.get(12)?,
+        cached_input_tokens: row.get(13)?,
+        reasoning_tokens: row.get(14)?,
     })
 }
 
 struct RawUsageEvent {
+    cached_input_tokens: Option<i64>,
+    reasoning_tokens: Option<i64>,
     id: String,
     turn_id: String,
     attempt_id: String,
@@ -156,6 +160,16 @@ impl RawUsageEvent {
     fn decode(self) -> Result<UsageEvent, UsageLedgerError> {
         let usage = match self.counters_kind.as_str() {
             "known" => UsageCounters::Known(InferenceUsage {
+                cached_input_tokens: self
+                    .cached_input_tokens
+                    .map(u64::try_from)
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?,
+                reasoning_tokens: self
+                    .reasoning_tokens
+                    .map(u64::try_from)
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?,
                 input_tokens: self
                     .input_tokens
                     .and_then(|value| u64::try_from(value).ok())
@@ -224,7 +238,7 @@ impl RawUsageEvent {
 
 const SELECT_EVENT: &str = "SELECT id, turn_id, attempt_id, outcome, counters_kind,
     input_tokens, output_tokens, unavailable_reason, model_profile_id, model_revision,
-    provider_account_id, provider_account_revision, recorded_at FROM usage_events";
+    provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens FROM usage_events";
 
 impl UsageLedger for Database {
     fn record(&self, record: UsageRecord) -> Result<UsageEvent, UsageLedgerError> {
@@ -268,6 +282,18 @@ impl UsageLedger for Database {
             return Ok(existing);
         }
         let id = UsageEventId::new();
+        let (cached, reasoning) = match &record.usage {
+            UsageCounters::Known(usage) => (usage.cached_input_tokens, usage.reasoning_tokens),
+            UsageCounters::Unavailable(_) => (None, None),
+        };
+        let cached = cached
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|_| UsageLedgerError::Invalid)?;
+        let reasoning = reasoning
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|_| UsageLedgerError::Invalid)?;
         let (kind, input, output, unavailable) = match record.usage {
             UsageCounters::Known(ref usage) => (
                 "known",
@@ -284,8 +310,8 @@ impl UsageLedger for Database {
                 "INSERT INTO usage_events (id, conversation_id, turn_id, attempt_id, outcome,
                     counters_kind, input_tokens, output_tokens, unavailable_reason,
                     model_profile_id, model_revision, provider_account_id,
-                    provider_account_revision, recorded_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     id.to_string(),
                     conversation_id,
@@ -309,6 +335,8 @@ impl UsageLedger for Database {
                             .map_err(|_| UsageLedgerError::Invalid))
                         .transpose()?,
                     record.recorded_at.get(),
+                    cached,
+                    reasoning,
                 ],
             )
             .map_err(|_| UsageLedgerError::Storage)?;
@@ -391,6 +419,8 @@ mod tests {
                 attempt_id,
                 outcome: UsageOutcome::Succeeded,
                 usage: UsageCounters::Known(InferenceUsage {
+                    cached_input_tokens: None,
+                    reasoning_tokens: None,
                     input_tokens: 120,
                     output_tokens: 30,
                 }),
@@ -405,8 +435,20 @@ mod tests {
 
     #[test]
     fn usage_event_round_trips_and_exact_retry_keeps_identity() {
-        let (database, record) = fixture();
+        let (database, mut record) = fixture();
+        if let UsageCounters::Known(usage) = &mut record.usage {
+            usage.cached_input_tokens = Some(0);
+            usage.reasoning_tokens = Some(12);
+        }
         let first = UsageLedger::record(&database, record.clone()).expect("record");
+        let mut changed = record.clone();
+        if let UsageCounters::Known(usage) = &mut changed.usage {
+            usage.cached_input_tokens = None;
+        }
+        assert_eq!(
+            UsageLedger::record(&database, changed),
+            Err(UsageLedgerError::Conflict)
+        );
         let retry = UsageLedger::record(&database, record).expect("retry");
         assert_eq!(retry, first);
         assert_eq!(UsageLedger::get(&database, first.id), Ok(Some(first)));
@@ -521,6 +563,8 @@ mod tests {
         let event = UsageLedger::record(&database, record.clone()).expect("record");
         let mut changed = record;
         changed.usage = UsageCounters::Known(InferenceUsage {
+            cached_input_tokens: None,
+            reasoning_tokens: None,
             input_tokens: 121,
             output_tokens: 30,
         });

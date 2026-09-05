@@ -22,6 +22,12 @@ impl UsageCostBasis {
             || event.record.provider_account_id != Some(self.provider_account_id)
             || tokens.input_tokens != self.input.prompt_tokens
             || tokens.output_tokens != self.input.completion_tokens
+            || tokens
+                .cached_input_tokens
+                .is_some_and(|value| value != self.input.cached_prompt_tokens)
+            || tokens
+                .reasoning_tokens
+                .is_some_and(|value| value != self.input.reasoning_tokens)
             || self
                 .input
                 .authoritative_total_cost

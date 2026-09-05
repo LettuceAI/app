@@ -567,6 +567,8 @@ fn aggregate_usage(
 ) -> Option<lettuce_conversations::InferenceUsage> {
     match (first, second) {
         (Some(first), Some(second)) => Some(lettuce_conversations::InferenceUsage {
+            cached_input_tokens: None,
+            reasoning_tokens: None,
             input_tokens: first.input_tokens.saturating_add(second.input_tokens),
             output_tokens: first.output_tokens.saturating_add(second.output_tokens),
         }),

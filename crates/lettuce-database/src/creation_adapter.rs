@@ -574,7 +574,7 @@ fn list_rounds_in(
         .prepare(
             "SELECT ordinal,first_call_ordinal,call_count,parts_json,\
                     provider_replay_artifact_id,provider_replay_retention,input_tokens,\
-                    output_tokens,finish_reason,provider_request_id,admitted_at \
+                    output_tokens,finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens \
              FROM creation_inference_rounds \
              WHERE workflow_id=?1 AND turn_id=?2 AND attempt_id=?3 ORDER BY ordinal",
         )
@@ -619,6 +619,16 @@ fn list_rounds_in(
                     usage: match (row.get::<_, Option<i64>>(6)?, row.get::<_, Option<i64>>(7)?) {
                         (Some(input_tokens), Some(output_tokens)) => {
                             Some(lettuce_conversations::InferenceUsage {
+                                cached_input_tokens: row
+                                    .get::<_, Option<i64>>(11)?
+                                    .map(u64::try_from)
+                                    .transpose()
+                                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                                reasoning_tokens: row
+                                    .get::<_, Option<i64>>(12)?
+                                    .map(u64::try_from)
+                                    .transpose()
+                                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
                                 input_tokens: u64::try_from(input_tokens)
                                     .map_err(|_| rusqlite::Error::InvalidQuery)?,
                                 output_tokens: u64::try_from(output_tokens)
@@ -2239,8 +2249,8 @@ impl CreationAttemptRepository for Database {
                 "INSERT INTO creation_inference_rounds \
                  (workflow_id,turn_id,attempt_id,ordinal,first_call_ordinal,call_count,parts_json,\
                   provider_replay_artifact_id,provider_replay_retention,input_tokens,output_tokens,\
-                  finish_reason,provider_request_id,admitted_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+                  finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
                 params![
                     requested.workflow_id.to_string(),
                     requested.turn_id.to_string(),
@@ -2261,6 +2271,8 @@ impl CreationAttemptRepository for Database {
                     },
                     requested.provider_request_id.as_deref(),
                     requested.admitted_at.get(),
+                    requested.usage.as_ref().and_then(|u| u.cached_input_tokens).map(sql_u64).transpose()?,
+                    requested.usage.as_ref().and_then(|u| u.reasoning_tokens).map(sql_u64).transpose()?,
                 ],
             )
             .map_err(|error| match error.sqlite_error_code() {
@@ -2441,6 +2453,8 @@ mod tests {
                 .unwrap_or_default(),
             provider_replay: replay,
             usage: Some(lettuce_conversations::InferenceUsage {
+                cached_input_tokens: Some(0),
+                reasoning_tokens: Some(1),
                 input_tokens: 10 + u64::from(ordinal),
                 output_tokens: 2 + u64::from(ordinal),
             }),

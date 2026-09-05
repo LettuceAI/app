@@ -651,12 +651,20 @@ fn aggregate_round_usage(
 ) -> Result<UsageCounters, CreationContinuationError> {
     let mut input_tokens = 0u64;
     let mut output_tokens = 0u64;
+    let mut cached_input_tokens = Some(0u64);
+    let mut reasoning_tokens = Some(0u64);
     for round in rounds {
         let Some(usage) = &round.usage else {
             return Ok(UsageCounters::Unavailable(
                 UsageUnavailableReason::ProviderOmitted,
             ));
         };
+        cached_input_tokens = cached_input_tokens
+            .zip(usage.cached_input_tokens)
+            .and_then(|(a, b)| a.checked_add(b));
+        reasoning_tokens = reasoning_tokens
+            .zip(usage.reasoning_tokens)
+            .and_then(|(a, b)| a.checked_add(b));
         input_tokens = input_tokens
             .checked_add(usage.input_tokens)
             .ok_or(CreationContinuationError::UsageOverflow)?;
@@ -666,6 +674,8 @@ fn aggregate_round_usage(
     }
     Ok(UsageCounters::Known(
         lettuce_conversations::InferenceUsage {
+            cached_input_tokens,
+            reasoning_tokens,
             input_tokens,
             output_tokens,
         },
@@ -872,6 +882,8 @@ mod tests {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: input,
                 output_tokens: output,
             }),
@@ -988,6 +1000,8 @@ mod tests {
         assert_eq!(
             result.usage,
             UsageCounters::Known(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 22,
                 output_tokens: 7,
             })
@@ -1193,6 +1207,8 @@ mod tests {
                     parts: Vec::new(),
                     provider_replay: None,
                     usage: Some(InferenceUsage {
+                        cached_input_tokens: None,
+                        reasoning_tokens: None,
                         input_tokens: 4,
                         output_tokens: 1,
                     }),

@@ -249,6 +249,8 @@ CREATE TABLE creation_inference_attempts (
 ) STRICT;
 
 CREATE TABLE creation_inference_rounds (
+    cached_input_tokens INTEGER CHECK (cached_input_tokens IS NULL OR cached_input_tokens >= 0),
+    reasoning_tokens INTEGER CHECK (reasoning_tokens IS NULL OR reasoning_tokens >= 0),
     workflow_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,

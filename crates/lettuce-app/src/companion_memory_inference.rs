@@ -910,6 +910,8 @@ mod tests {
                 Ok(text_outcome(
                     "plain prose",
                     Some(InferenceUsage {
+                        cached_input_tokens: None,
+                        reasoning_tokens: None,
                         input_tokens: 3,
                         output_tokens: 2,
                     }),
@@ -917,6 +919,8 @@ mod tests {
                 Ok(text_outcome(
                     "<memory_ops><done summary=\"captured\" /></memory_ops>",
                     Some(InferenceUsage {
+                        cached_input_tokens: None,
+                        reasoning_tokens: None,
                         input_tokens: 5,
                         output_tokens: 4,
                     }),
@@ -940,6 +944,8 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 8,
                 output_tokens: 6,
             })
@@ -1299,6 +1305,8 @@ mod tests {
                 provider_replay: None,
             }],
             usage: Some(lettuce_conversations::InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 10,
                 output_tokens: 2,
             }),

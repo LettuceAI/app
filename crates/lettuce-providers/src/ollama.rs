@@ -532,6 +532,8 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         }],
         usage: match (parsed.prompt_eval_count, parsed.eval_count) {
             (Some(input_tokens), Some(output_tokens)) => Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens,
                 output_tokens,
             }),
@@ -779,6 +781,8 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                cached_input_tokens: None,
+                reasoning_tokens: None,
                 input_tokens: 11,
                 output_tokens: 2
             })

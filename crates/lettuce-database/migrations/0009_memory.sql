@@ -246,6 +246,8 @@ CREATE TABLE dynamic_memory_run_attempts (
 ) STRICT;
 
 CREATE TABLE dynamic_memory_summary_checkpoints (
+    cached_input_tokens INTEGER CHECK (cached_input_tokens IS NULL OR cached_input_tokens >= 0),
+    reasoning_tokens INTEGER CHECK (reasoning_tokens IS NULL OR reasoning_tokens >= 0),
     run_id TEXT PRIMARY KEY REFERENCES dynamic_memory_runs(id) ON DELETE RESTRICT,
     attempt_id TEXT NOT NULL,
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
@@ -287,6 +289,8 @@ BEGIN
 END;
 
 CREATE TABLE dynamic_memory_inference_rounds (
+    cached_input_tokens INTEGER CHECK (cached_input_tokens IS NULL OR cached_input_tokens >= 0),
+    reasoning_tokens INTEGER CHECK (reasoning_tokens IS NULL OR reasoning_tokens >= 0),
     run_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
     ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 7),

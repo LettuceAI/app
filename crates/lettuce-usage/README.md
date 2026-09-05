@@ -33,9 +33,11 @@ totals, clamping, fallback and overflow.
 an existing usage event. The basis retains model/provider identities, source
 description, capture time, exact prices and explicitly supplied cost counters.
 Input/output counters must match the event; unavailable usage cannot be costed.
-Auxiliary cache/reasoning/search counters are supplied by the caller, not inferred
-from the current two-counter usage ledger. This is not yet automatic provider
-evidence capture. Nonfinite or negative authoritative totals are rejected at
+Known cache-read/reasoning counters in the event must also match the cost basis.
+Missing details stay unknown; search/cache-write counters are still supplied
+by the caller. OpenAI-compatible buffered/streaming normalization now captures
+standard cached/reasoning token details, and the usage ledger retains them.
+This is not yet automatic pricing capture. Nonfinite or negative authoritative totals are rejected at
 this persistence boundary rather than serialized lossily.
 
 SQLite stores the version-1 calculation basis separately from immutable raw
