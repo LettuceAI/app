@@ -183,9 +183,14 @@ where
             .collect::<Vec<_>>();
         let mut writers = Vec::with_capacity(plan_ids.len());
         for plan_id in plan_ids {
+            let batch = project
+                .project
+                .draft_batch
+                .as_ref()
+                .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
             let request_id = RequestId::from_uuid(Uuid::new_v5(
                 &project.project.id.as_uuid(),
-                format!("writer-{plan_id}").as_bytes(),
+                format!("writer-{plan_id}-{}", batch.revision.get()).as_bytes(),
             ));
             writers.push(self.prepare_and_admit(StagedLorebookWriterRequest {
                 request_id,
@@ -193,7 +198,7 @@ where
                 plan_id,
                 profile: profile.clone(),
                 prompt,
-                now: project.project.updated_at,
+                now: batch.started_at,
             })?);
         }
         Ok(StagedLorebookWriterBatchAdmission { project, writers })

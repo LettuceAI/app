@@ -521,6 +521,8 @@ pub struct StagedLorebookProject {
     pub commit_receipt: Option<StagedLorebookCommitReceipt>,
     #[serde(default)]
     pub cancelled_from: Option<StagedLorebookStage>,
+    #[serde(default)]
+    pub draft_batch: Option<StagedLorebookDraftBatch>,
     pub stage: StagedLorebookStage,
     pub revision: Revision,
     pub created_at: TimestampMillis,
@@ -563,6 +565,13 @@ pub struct StagedLorebookCommitReceipt {
 pub struct StagedLorebookCoherenceApplication {
     pub source_revision: Revision,
     pub accepted_change_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookDraftBatch {
+    pub revision: Revision,
+    pub started_at: TimestampMillis,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -1107,6 +1116,7 @@ impl StagedLorebookProject {
             last_coherence_application: None,
             commit_receipt: None,
             cancelled_from: None,
+            draft_batch: None,
             stage: StagedLorebookStage::Created,
             revision: Revision::new(1),
             created_at: now,
@@ -1264,6 +1274,14 @@ impl StagedLorebookProject {
         next.stage = StagedLorebookStage::Drafting;
         if selected == 0 {
             next.finish_drafting_if_terminal();
+        } else {
+            next.draft_batch = Some(StagedLorebookDraftBatch {
+                revision: self
+                    .revision
+                    .next()
+                    .map_err(|_| StagedLorebookError::InvalidTransition)?,
+                started_at: now,
+            });
         }
         next.updated_at = now;
         next.revision = next
@@ -1468,6 +1486,14 @@ impl StagedLorebookProject {
     }
 
     pub fn validate(&self) -> Result<(), StagedLorebookError> {
+        if self.draft_batch.as_ref().is_some_and(|batch| {
+            batch.revision.get() == 0
+                || batch.revision > self.revision
+                || batch.started_at < self.created_at
+                || batch.started_at > self.updated_at
+        }) {
+            return Err(StagedLorebookError::InvalidInput);
+        }
         if self.brief.is_empty()
             || self.brief != self.brief.trim()
             || self.target_count < MIN_STAGED_LOREBOOK_TARGET_COUNT

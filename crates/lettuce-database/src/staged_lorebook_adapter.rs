@@ -623,7 +623,13 @@ impl StagedLorebookRepository for Database {
             transaction.commit().map_err(failure)?;
             return Ok(current);
         }
-        if current.project.revision < expected_revision {
+        if current.project.revision < expected_revision
+            || current
+                .project
+                .draft_batch
+                .as_ref()
+                .is_some_and(|batch| expected_revision < batch.revision)
+        {
             return Err(StagedLorebookRepositoryError::Conflict);
         }
         let current_revision = current.project.revision;
@@ -669,6 +675,12 @@ impl StagedLorebookRepository for Database {
             .map_err(failure)?;
         let current =
             load_in(&transaction, request_id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
+        if !matches!(
+            current.project.stage,
+            StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady
+        ) {
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
         if current
             .project
             .drafts

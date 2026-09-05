@@ -64,6 +64,10 @@ remains a separate input boundary.
 Staged admission requests can prepare pasted text or already-read UTF-8 TXT/MD
 bytes through `with_sources`; validation and legacy excerpt truncation happen
 before job creation, and raw source bodies are not retained in the request.
+Writer batch requests derive identity from the stable plan ID and persisted
+batch revision, and replay with the frozen batch start time. Restart after a
+partial completion reuses unfinished runs; retrying failed drafts admits new
+jobs while completed drafts remain unchanged.
 Claimed planner execution renders the frozen prompt with the exact legacy
 brief, decimal target count, source-excerpt formatting, final instruction, and
 required tool declaration. It makes one native request, accepts only typed tool

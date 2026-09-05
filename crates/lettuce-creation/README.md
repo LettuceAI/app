@@ -186,6 +186,9 @@ Draft progression preserves the legacy batch size of three and outline order.
 Pending or failed drafts enter drafting, independent completions advance the
 same durable project safely, and the project becomes drafts-ready only after no
 pending or drafting item remains.
+Each batch freezes its revision and start time. Partial completion leaves that
+identity intact; selecting failed entries again creates a new batch identity
+without changing draft IDs or overwriting earlier writer evidence.
 Manual editing preserves the legacy permissive behavior: title and content are
 stored verbatim, keywords are only trimmed with blank values removed, and only
 pending or failed drafts become drafted. Approval directly toggles the selected

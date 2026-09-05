@@ -5256,6 +5256,101 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .is_err()
     );
 
+    let batch_coordinator =
+        crate::StagedLorebookWriterCoordinator::new(&database, &database, &database);
+    let first_batch = batch_coordinator
+        .start_batch(
+            editable_id,
+            approved.project.revision,
+            profile.clone(),
+            &writer_prompt,
+            TimestampMillis::new(NOW.get() + 151),
+        )
+        .expect("start multi-entry batch");
+    let successful = &first_batch.writers[0].run;
+    let complete_draft = lettuce_creation::StagedLorebookEntryDraft {
+        plan_id: successful.plan_id,
+        title: "Completed".into(),
+        content: "Complete content".into(),
+        keywords: vec![],
+        always_active: false,
+        status: lettuce_creation::StagedLorebookDraftStatus::Drafted,
+        revisions: vec![],
+    };
+    let partial = lettuce_creation::StagedLorebookRepository::settle_staged_lorebook_draft(
+        &database,
+        editable_id,
+        successful.project_revision,
+        complete_draft.clone(),
+        TimestampMillis::new(NOW.get() + 152),
+    )
+    .expect("complete first entry");
+    let resumed = batch_coordinator
+        .start_batch(
+            editable_id,
+            partial.project.revision,
+            profile.clone(),
+            &writer_prompt,
+            TimestampMillis::new(NOW.get() + 153),
+        )
+        .expect("resume partial batch");
+    assert_eq!(resumed.writers.len(), 2);
+    assert!(resumed.writers.iter().all(|writer| !writer.created));
+    assert_eq!(resumed.writers[0].run, first_batch.writers[1].run);
+    for writer in &resumed.writers {
+        let work = writer_dispatcher
+            .claim(
+                writer.run.request_id,
+                WorkerId::new(),
+                TimestampMillis::new(NOW.get() + 154),
+                Duration::from_secs(30),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim failing writer")
+            .expect("failing work");
+        assert!(
+            matches!(writer_dispatcher.settle(work, Err(crate::StagedLorebookWriterExecutionError::InvalidResponse), CancellationReason::User, TimestampMillis::new(NOW.get() + 154)).expect("settle failed writer"),
+            crate::StagedLorebookWriterSettledWork::Failed { ref job, .. } if job.state == JobState::Failed)
+        );
+    }
+    let failed =
+        lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, editable_id)
+            .expect("load failed batch");
+    let retry = batch_coordinator
+        .start_batch(
+            editable_id,
+            failed.project.revision,
+            profile.clone(),
+            &writer_prompt,
+            failed
+                .project
+                .updated_at
+                .max(TimestampMillis::new(NOW.get() + 155)),
+        )
+        .expect("retry failed batch");
+    assert_eq!(retry.writers.len(), 2);
+    assert!(retry.writers.iter().all(|writer| writer.created));
+    assert_ne!(
+        retry.writers[0].run.request_id,
+        resumed.writers[0].run.request_id
+    );
+    assert_ne!(retry.writers[0].job.id, resumed.writers[0].job.id);
+    assert_eq!(retry.project.project.drafts[0], complete_draft);
+    let stale_draft = lettuce_creation::StagedLorebookEntryDraft {
+        plan_id: resumed.writers[0].run.plan_id,
+        ..complete_draft
+    };
+    assert!(
+        lettuce_creation::StagedLorebookRepository::settle_staged_lorebook_draft(
+            &database,
+            editable_id,
+            resumed.writers[0].run.project_revision,
+            stale_draft,
+            TimestampMillis::new(NOW.get() + 156)
+        )
+        .is_err()
+    );
+
     let cancelled_request_id = RequestId::new();
     let mut cancelled_request = make_request();
     cancelled_request.request_id = cancelled_request_id;
