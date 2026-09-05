@@ -1016,7 +1016,7 @@ mod tests {
         assert_eq!(read_back, input);
         for (bytes, mime) in [
             (b"%PDF-1.7\nsource".as_slice(), "application/pdf"),
-            ("# Dünya\nSource notes".as_bytes(), "text/markdown"),
+            ("# World 🌍\nSource notes".as_bytes(), "text/markdown"),
         ] {
             let request = IngestRequest::new(
                 AssetKind::SourceDocument,

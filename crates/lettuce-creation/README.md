@@ -20,7 +20,7 @@ first-slice exclusions are still unimplemented. Current backend coverage:
 
 | Scenario group | Implemented boundary and evidence |
 | --- | --- |
-| Text/Markdown sources and byte/excerpt bounds | `staged_lorebook_sources` preserves legacy limits, order and Unicode truncation; binary/PDF intake is deferred. |
+| Text/Markdown/PDF sources and byte/excerpt bounds | `staged_lorebook_sources` preserves legacy limits, order and Unicode truncation; PDF text uses the legacy pdf-extract 0.7 implementation. |
 | Planner outline, required tool, approval and edits | `staged_lorebook` reducer/domain tests and app staged SQLite scenario cover nonempty plans, source ownership, stable IDs and review CAS. |
 | Three-entry batches, failure/retry and partial recovery | Existing batch checkpoint plus per-entry runs preserve completed drafts, retry failed identities under new jobs, and reject stale batch writes. |
 | Draft edits, refinement/history and coherence acceptance | Domain transitions and the SQLite execution scenario cover reviewed changes, append-only refinement history and selected stable-ID coherence proposals. |
@@ -30,9 +30,14 @@ first-slice exclusions are still unimplemented. Current backend coverage:
 Single-entry and keyword generation remain proposal-only, with native then
 structured fallback and their own admission/execution tests. The staged scenario
 uses scripted inference and repository reloads, not a process-kill test or a
-live provider. PDF extraction, protected raw-source asset ingestion, automatic
+live provider. Project-owned source associations, automatic
 host scheduling, progress IPC and frontend integration are still deferred.
 Backend scenario coverage does not mean the user-facing rewrite is complete.
+
+PDF extraction accepts already-read bytes, keeps parser diagnostics out of
+public errors, and applies the same excerpt truncation as text. It is synchronous
+CPU work for the host's worker, not the UI thread. Protected document reading is
+wired in lettuce-app; extraction neither creates assets nor retains raw bytes.
 
 Staged planning runs retain optional configured input provenance: explicit
 project model/four prompt overrides and the originally requested target count.

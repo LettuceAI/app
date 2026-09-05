@@ -5,6 +5,13 @@ optional local OpenAI-compatible host API.
 
 ## Boundary
 
+`prepare_staged_lorebook_documents` reads ready SourceDocument assets through
+the existing protected media handles, enforces legacy per-source/total byte
+limits, verifies content hashes, and prepares ordered bounded text/PDF excerpts.
+It returns extracted snapshots only; raw bytes and filesystem paths are not
+persisted in workflow state. Source assets retain their existing library or
+temporary retention policy; project-owned source associations remain pending.
+
 Staged lorebook settings selection combines explicit overrides, persisted
 generator settings and packaged prompt IDs. Model-owned lorebook-generator
 overrides use the existing operation parameter layer. Unset temperature/top-p

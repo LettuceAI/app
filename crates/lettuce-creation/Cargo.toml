@@ -20,6 +20,7 @@ lettuce-settings.workspace = true
 lettuce-types.workspace = true
 blake3.workspace = true
 quick-xml.workspace = true
+pdf-extract = "0.7"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

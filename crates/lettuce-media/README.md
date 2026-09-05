@@ -13,7 +13,8 @@ recognition is not structural validation, extraction or sanitization; a later
 extractor must reject malformed/encrypted documents as appropriate. Nothing is
 rendered or executed during ingestion. Existing size bounds and retention
 policies apply; feature-specific legacy source limits remain at intake.
-Creation-project source associations and PDF extraction are not yet wired.
+Lettuce-app can read source documents for legacy PDF/text extraction; creation
+project-owned source associations are not yet wired.
 
 Exposes asset IDs, never managed native paths.
 

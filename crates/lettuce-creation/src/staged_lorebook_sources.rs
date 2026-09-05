@@ -7,6 +7,7 @@ pub const STAGED_LOREBOOK_TRUNCATION_MARKER: &str = "\n[…truncated]";
 pub enum StagedLorebookSourceInput<'a> {
     Text { label: &'a str, body: &'a str },
     Utf8File { name: &'a str, bytes: &'a [u8] },
+    PdfFile { name: &'a str, bytes: &'a [u8] },
 }
 
 impl std::fmt::Debug for StagedLorebookSourceInput<'_> {
@@ -14,6 +15,7 @@ impl std::fmt::Debug for StagedLorebookSourceInput<'_> {
         let (kind, byte_len) = match self {
             Self::Text { body, .. } => ("Text", body.len()),
             Self::Utf8File { bytes, .. } => ("Utf8File", bytes.len()),
+            Self::PdfFile { bytes, .. } => ("PdfFile", bytes.len()),
         };
         f.debug_struct(kind)
             .field("byte_len", &byte_len)
@@ -31,6 +33,8 @@ pub enum StagedLorebookSourceError {
     TotalTooLarge,
     #[error("text file is not valid UTF-8")]
     InvalidUtf8,
+    #[error("PDF text extraction failed")]
+    InvalidPdf,
 }
 
 pub fn prepare_staged_lorebook_sources(
@@ -41,7 +45,8 @@ pub fn prepare_staged_lorebook_sources(
     for (index, source) in sources.iter().enumerate() {
         let (label, bytes) = match source {
             StagedLorebookSourceInput::Text { label, body } => (*label, body.as_bytes()),
-            StagedLorebookSourceInput::Utf8File { name, bytes } => (*name, *bytes),
+            StagedLorebookSourceInput::Utf8File { name, bytes }
+            | StagedLorebookSourceInput::PdfFile { name, bytes } => (*name, *bytes),
         };
         if bytes.len() > MAX_STAGED_LOREBOOK_SOURCE_BYTES {
             return Err(StagedLorebookSourceError::SourceTooLarge);
@@ -54,8 +59,14 @@ pub fn prepare_staged_lorebook_sources(
         if label.is_empty() {
             return Err(StagedLorebookSourceError::InvalidLabel);
         }
-        let text =
-            std::str::from_utf8(bytes).map_err(|_| StagedLorebookSourceError::InvalidUtf8)?;
+        let extracted;
+        let text = if matches!(source, StagedLorebookSourceInput::PdfFile { .. }) {
+            extracted = pdf_extract::extract_text_from_mem(bytes)
+                .map_err(|_| StagedLorebookSourceError::InvalidPdf)?;
+            extracted.as_str()
+        } else {
+            std::str::from_utf8(bytes).map_err(|_| StagedLorebookSourceError::InvalidUtf8)?
+        };
         let mut chars = text.chars();
         let mut content: String = chars
             .by_ref()
@@ -94,14 +105,14 @@ mod tests {
             },
             StagedLorebookSourceInput::Utf8File {
                 name: "world.md",
-                bytes: "# Dünya\n".as_bytes(),
+                bytes: "# World 🌍\n".as_bytes(),
             },
         ])
         .expect("prepare sources");
         assert_eq!(excerpts[0].source_id, "src_01");
         assert_eq!(excerpts[1].source_id, "src_02");
         assert_eq!(excerpts[0].label, "Notes");
-        assert_eq!(excerpts[1].content, "# Dünya\n");
+        assert_eq!(excerpts[1].content, "# World 🌍\n");
         assert_eq!(
             excerpts[0].content,
             format!(
