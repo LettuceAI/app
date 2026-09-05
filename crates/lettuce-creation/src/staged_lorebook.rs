@@ -876,6 +876,7 @@ pub trait StagedLorebookRepository: Send + Sync {
         &self,
         request_id: RequestId,
         plan_id: LorebookEntryId,
+        expected_revision: Revision,
         now: TimestampMillis,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
 

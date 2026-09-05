@@ -68,6 +68,9 @@ Writer batch requests derive identity from the stable plan ID and persisted
 batch revision, and replay with the frozen batch start time. Restart after a
 partial completion reuses unfinished runs; retrying failed drafts admits new
 jobs while completed drafts remain unchanged.
+Failed refinement closes its job while preserving the existing reviewed draft.
+Late failures from older draft batches close only their job; they cannot mark
+the newer retry's draft failed.
 Explicit planner retry admits a new job only after the previous planner job
 failed. The same project, sources, resolved profile and prompt are retained;
 retry admission and checkpoint replay do not issue duplicate provider calls.

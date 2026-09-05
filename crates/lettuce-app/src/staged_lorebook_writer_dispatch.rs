@@ -203,9 +203,17 @@ impl<
                 Ok(StagedLorebookWriterSettledWork::RetryScheduled { error, job })
             }
             Err(error) => {
-                self.projects
-                    .fail_staged_lorebook_draft(work.run.project_request_id, work.run.plan_id, at)
-                    .map_err(|_| StagedLorebookWriterDispatchError::InvalidWork)?;
+                if work.run.refinement.is_none() {
+                    match self.projects.fail_staged_lorebook_draft(
+                        work.run.project_request_id,
+                        work.run.plan_id,
+                        work.run.project_revision,
+                        at,
+                    ) {
+                        Ok(_) | Err(StagedLorebookRepositoryError::Conflict) => {}
+                        Err(error) => return Err(error.into()),
+                    }
+                }
                 let job = self.jobs.append_and_transition(JobMutation::Fail {
                     claim: work.claim.claim,
                     error: job_error(&error),

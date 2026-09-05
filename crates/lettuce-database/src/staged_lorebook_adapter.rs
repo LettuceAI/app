@@ -774,6 +774,7 @@ impl StagedLorebookRepository for Database {
         &self,
         request_id: RequestId,
         plan_id: lettuce_types::LorebookEntryId,
+        expected_revision: Revision,
         now: TimestampMillis,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
         let mut connection = self.connection().map_err(failure)?;
@@ -782,6 +783,15 @@ impl StagedLorebookRepository for Database {
             .map_err(failure)?;
         let current =
             load_in(&transaction, request_id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
+        if current.project.revision < expected_revision
+            || current
+                .project
+                .draft_batch
+                .as_ref()
+                .is_some_and(|batch| expected_revision < batch.revision)
+        {
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
         if current.project.drafts.iter().any(|draft| {
             draft.plan_id == plan_id
                 && draft.status == lettuce_creation::StagedLorebookDraftStatus::Failed

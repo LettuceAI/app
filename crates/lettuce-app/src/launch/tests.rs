@@ -4576,7 +4576,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .expect("replay staged refinement")
             .created
     );
-    let mut changed_refine = refine_request;
+    let mut changed_refine = refine_request.clone();
     changed_refine.feedback = "Different".into();
     assert!(matches!(
         writer.prepare_and_admit_refinement(changed_refine),
@@ -4703,6 +4703,32 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         Err(lettuce_creation::StagedLorebookRepositoryError::Conflict)
     ));
     let coherence_at = TimestampMillis::new(NOW.get() + 21);
+    let mut failed_refine_request = refine_request.clone();
+    failed_refine_request.request_id = RequestId::new();
+    failed_refine_request.now = TimestampMillis::new(NOW.get() + 20);
+    let failed_refine = writer
+        .prepare_and_admit_refinement(failed_refine_request)
+        .expect("admit failing refinement");
+    let failed_refine_work = writer_dispatcher
+        .claim(
+            failed_refine.run.request_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 20),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim failing refinement")
+        .expect("refinement work");
+    let failed_refine_at = failed_refine_work.job.updated_at;
+    assert!(matches!(writer_dispatcher.settle(
+        failed_refine_work, Err(crate::StagedLorebookWriterExecutionError::InvalidResponse),
+        CancellationReason::User, failed_refine_at,
+    ).expect("settle failed refinement"), crate::StagedLorebookWriterSettledWork::Failed { ref job, .. } if job.state == JobState::Failed));
+    assert_eq!(
+        lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, request_id)
+            .expect("retained refined project"),
+        refined.project
+    );
     let proposals = vec![
         lettuce_creation::StagedLorebookCoherenceChange::MergeKeys {
             id: "change_0".into(),
@@ -5499,6 +5525,22 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         resumed.writers[0].run.request_id
     );
     assert_ne!(retry.writers[0].job.id, resumed.writers[0].job.id);
+    assert!(
+        lettuce_creation::StagedLorebookRepository::fail_staged_lorebook_draft(
+            &database,
+            editable_id,
+            resumed.writers[0].run.plan_id,
+            resumed.writers[0].run.project_revision,
+            retry.project.project.updated_at,
+        )
+        .is_err(),
+        "old batch failure cannot fail the new retry"
+    );
+    assert_eq!(
+        lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, editable_id)
+            .expect("unchanged retry batch"),
+        retry.project
+    );
     assert_eq!(retry.project.project.drafts[0], complete_draft);
     let stale_draft = lettuce_creation::StagedLorebookEntryDraft {
         plan_id: resumed.writers[0].run.plan_id,
