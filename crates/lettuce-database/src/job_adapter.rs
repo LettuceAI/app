@@ -58,6 +58,39 @@ fn records_by_id(records: Vec<StoredJobRecord>) -> BTreeMap<JobId, StoredJobReco
         .collect()
 }
 
+pub(crate) fn cancel_creation_project_jobs(
+    transaction: &Transaction<'_>,
+    project_id: lettuce_types::CreationWorkflowId,
+    now: Timestamp,
+) -> Result<(), StoreError> {
+    use lettuce_jobs::{CancellationReason, JobKind, SubjectKind};
+    let store = load_store(transaction)?;
+    let before = records_by_id(store.stored_records());
+    let subject =
+        lettuce_jobs::JobSubject::new(SubjectKind::CreationProject, project_id.to_string())
+            .map_err(|_| StoreError::InvalidData)?;
+    for record in before.values().filter(|record| {
+        record.snapshot.kind == JobKind::CreationRun
+            && record.snapshot.subject.kind == subject.kind
+            && record.snapshot.subject.id == subject.id
+            && !record.snapshot.is_terminal()
+    }) {
+        let at = now.max(record.snapshot.updated_at);
+        store.append_and_transition(JobMutation::RequestCancellation {
+            id: record.snapshot.id,
+            reason: CancellationReason::User,
+            at,
+        })?;
+        if record.snapshot.claim.is_none() {
+            store.append_and_transition(JobMutation::FinishQueuedCancellation {
+                id: record.snapshot.id,
+                at,
+            })?;
+        }
+    }
+    persist_changes(transaction, &before, &records_by_id(store.stored_records()))
+}
+
 fn load_store(transaction: &Transaction<'_>) -> Result<InMemoryJobStore, StoreError> {
     let mut records = BTreeMap::new();
     {

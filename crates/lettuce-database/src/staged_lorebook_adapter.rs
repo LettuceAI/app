@@ -51,6 +51,7 @@ fn stage(value: StagedLorebookStage) -> &'static str {
         StagedLorebookStage::DraftsReady => "drafts_ready",
         StagedLorebookStage::CoherenceReview => "coherence_review",
         StagedLorebookStage::Committed => "committed",
+        StagedLorebookStage::Cancelled => "cancelled",
     }
 }
 
@@ -127,6 +128,42 @@ fn positive_revision(value: i64) -> Result<Revision, StagedLorebookRepositoryErr
 }
 
 impl StagedLorebookRepository for Database {
+    fn cancel_staged_lorebook(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let mut run =
+            load_in(&transaction, request_id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
+        if run.project.stage == StagedLorebookStage::Cancelled
+            && expected_revision.next().ok() == Some(run.project.revision)
+            && run.project.updated_at == now
+        {
+            return Ok(run);
+        }
+        if run.project.revision != expected_revision {
+            return Err(StagedLorebookRepositoryError::Conflict);
+        }
+        run.project = run
+            .project
+            .cancel(now)
+            .map_err(|_| StagedLorebookRepositoryError::Conflict)?;
+        crate::job_adapter::cancel_creation_project_jobs(&transaction, run.project.id, now)
+            .map_err(failure)?;
+        let encoded = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
+        if transaction.execute(
+            "UPDATE creation_staged_lorebook_runs SET stage = 'cancelled', revision = ?2, updated_at = ?3, run_json = ?4 WHERE request_id = ?1 AND revision = ?5",
+            params![request_id.to_string(), i64::try_from(run.project.revision.get()).map_err(failure)?, now.get(), encoded, i64::try_from(expected_revision.get()).map_err(failure)?],
+        ).map_err(failure)? != 1 { return Err(StagedLorebookRepositoryError::Conflict); }
+        transaction.commit().map_err(failure)?;
+        Ok(run)
+    }
+
     fn commit_staged_lorebook(
         &self,
         request: lettuce_creation::StagedLorebookCommitRequest,

@@ -309,6 +309,10 @@ Staged lorebook final apply reuses the existing lorebook aggregate insert/replac
 functions inside the project transaction. The committed project stores its
 request and result receipt in the versioned run; exact retries return the same
 entry identities, including after subsequent changes to the authored book.
+Staged project cancellation and its job cancellation events commit atomically,
+using the existing job reducer. Queued work settles immediately; claimed work
+keeps its lease for worker cleanup or startup expiry recovery. Late writer
+admission/checkpoints cannot mutate terminal projects.
 
 Secrets are never stored here. Provider rows contain opaque `SecretRef` values
 only. Blob registration validates SQLite-representable metadata and preserves

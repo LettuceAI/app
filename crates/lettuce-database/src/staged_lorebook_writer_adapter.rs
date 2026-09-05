@@ -109,6 +109,16 @@ impl StagedLorebookWriterRunRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(failure)?;
+        let project_stage = transaction
+            .query_row(
+                "SELECT stage FROM creation_staged_lorebook_runs WHERE request_id = ?1",
+                [run.project_request_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(failure)?;
+        if matches!(project_stage.as_str(), "cancelled" | "committed") {
+            return Err(StagedLorebookWriterRunRepositoryError::Conflict);
+        }
         let inserted = transaction
             .execute(
                 "INSERT OR IGNORE INTO creation_staged_lorebook_writer_runs (
@@ -170,6 +180,16 @@ impl StagedLorebookWriterRunRepository for Database {
                 transaction.commit().map_err(failure)?;
                 return Ok(run);
             }
+            return Err(StagedLorebookWriterRunRepositoryError::Conflict);
+        }
+        let project_stage = transaction
+            .query_row(
+                "SELECT stage FROM creation_staged_lorebook_runs WHERE request_id = ?1",
+                [run.project_request_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(failure)?;
+        if matches!(project_stage.as_str(), "cancelled" | "committed") {
             return Err(StagedLorebookWriterRunRepositoryError::Conflict);
         }
         run.attempt = Some(attempt);

@@ -91,6 +91,13 @@ where
             .load_staged_lorebook_writer_run(request_id)
             .map_err(StagedLorebookWriterExecutionError::Run)?;
         validate_ownership(&run, prompt, handle)?;
+        let project = self
+            .projects
+            .load_staged_lorebook(run.project_request_id)
+            .map_err(StagedLorebookWriterExecutionError::Project)?;
+        if project.project.stage == lettuce_creation::StagedLorebookStage::Cancelled {
+            return Err(StagedLorebookWriterExecutionError::Cancelled);
+        }
         if let Some(attempt) = run.attempt.clone() {
             return settle(self.projects, &run, attempt, true);
         }
@@ -147,6 +154,16 @@ where
         };
         cleanup_outcome_replays(self.runs, &outcome)
             .map_err(|_| StagedLorebookWriterExecutionError::ReplayCleanup)?;
+        if self
+            .projects
+            .load_staged_lorebook(run.project_request_id)
+            .map_err(StagedLorebookWriterExecutionError::Project)?
+            .project
+            .stage
+            == lettuce_creation::StagedLorebookStage::Cancelled
+        {
+            return Err(StagedLorebookWriterExecutionError::Cancelled);
+        }
         let stored = self
             .runs
             .commit_staged_lorebook_writer_attempt(request_id, attempt)

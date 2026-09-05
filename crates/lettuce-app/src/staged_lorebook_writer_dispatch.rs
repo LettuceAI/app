@@ -3,8 +3,8 @@ use std::time::Duration;
 use crate::{StagedLorebookWriterExecutionError, StagedLorebookWriterExecutionResult};
 use lettuce_conversations::{PortError, ProviderFailureKind};
 use lettuce_creation::{
-    StagedLorebookRepository, StagedLorebookWriterRun, StagedLorebookWriterRunRepository,
-    StagedLorebookWriterRunRepositoryError,
+    StagedLorebookRepository, StagedLorebookRepositoryError, StagedLorebookWriterRun,
+    StagedLorebookWriterRunRepository, StagedLorebookWriterRunRepositoryError,
 };
 use lettuce_jobs::{
     CancellationReason, Claim, FiniteFraction, JobError, JobErrorCode, JobKind, JobMutation,
@@ -43,6 +43,8 @@ pub enum StagedLorebookWriterSettledWork {
 
 #[derive(Debug, thiserror::Error)]
 pub enum StagedLorebookWriterDispatchError {
+    #[error("staged lorebook project operation failed: {0}")]
+    Project(#[from] StagedLorebookRepositoryError),
     #[error("staged lorebook writer job operation failed: {0}")]
     Jobs(#[from] StoreError),
     #[error("staged lorebook writer run operation failed: {0}")]
@@ -136,6 +138,17 @@ impl<
             return Err(StagedLorebookWriterDispatchError::InvalidWork);
         }
         let at = now.max(work.job.updated_at);
+        let result = if self
+            .projects
+            .load_staged_lorebook(work.run.project_request_id)?
+            .project
+            .stage
+            == lettuce_creation::StagedLorebookStage::Cancelled
+        {
+            Err(StagedLorebookWriterExecutionError::Cancelled)
+        } else {
+            result
+        };
         match result {
             Ok(result) => {
                 self.jobs.append_and_transition(JobMutation::Progress {

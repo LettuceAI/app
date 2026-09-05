@@ -399,6 +399,7 @@ pub enum StagedLorebookStage {
     DraftsReady,
     CoherenceReview,
     Committed,
+    Cancelled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -518,6 +519,8 @@ pub struct StagedLorebookProject {
     pub last_coherence_application: Option<StagedLorebookCoherenceApplication>,
     #[serde(default)]
     pub commit_receipt: Option<StagedLorebookCommitReceipt>,
+    #[serde(default)]
+    pub cancelled_from: Option<StagedLorebookStage>,
     pub stage: StagedLorebookStage,
     pub revision: Revision,
     pub created_at: TimestampMillis,
@@ -767,6 +770,13 @@ pub enum StagedLorebookRepositoryError {
 }
 
 pub trait StagedLorebookRepository: Send + Sync {
+    fn cancel_staged_lorebook(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
     fn commit_staged_lorebook(
         &self,
         request: StagedLorebookCommitRequest,
@@ -1047,6 +1057,26 @@ pub fn clamp_staged_lorebook_target_count(value: u32) -> u32 {
 }
 
 impl StagedLorebookProject {
+    pub fn cancel(&self, now: TimestampMillis) -> Result<Self, StagedLorebookError> {
+        if matches!(
+            self.stage,
+            StagedLorebookStage::Committed | StagedLorebookStage::Cancelled
+        ) || now < self.updated_at
+        {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        let mut next = self.clone();
+        next.cancelled_from = Some(self.stage);
+        next.stage = StagedLorebookStage::Cancelled;
+        next.updated_at = now;
+        next.revision = self
+            .revision
+            .next()
+            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        next.validate()?;
+        Ok(next)
+    }
+
     pub fn create(
         id: CreationWorkflowId,
         brief: String,
@@ -1068,6 +1098,7 @@ impl StagedLorebookProject {
             coherence_proposals: Vec::new(),
             last_coherence_application: None,
             commit_receipt: None,
+            cancelled_from: None,
             stage: StagedLorebookStage::Created,
             revision: Revision::new(1),
             created_at: now,
@@ -1416,7 +1447,24 @@ impl StagedLorebookProject {
         {
             return Err(StagedLorebookError::InvalidInput);
         }
-        if (self.stage == StagedLorebookStage::Committed) != self.commit_receipt.is_some() {
+        if self.stage == StagedLorebookStage::Cancelled {
+            let previous = self
+                .cancelled_from
+                .ok_or(StagedLorebookError::InvalidTransition)?;
+            if matches!(
+                previous,
+                StagedLorebookStage::Cancelled | StagedLorebookStage::Committed
+            ) {
+                return Err(StagedLorebookError::InvalidTransition);
+            }
+            let mut retained = self.clone();
+            retained.stage = previous;
+            retained.cancelled_from = None;
+            return retained.validate();
+        }
+        if self.cancelled_from.is_some()
+            || (self.stage == StagedLorebookStage::Committed) != self.commit_receipt.is_some()
+        {
             return Err(StagedLorebookError::InvalidTransition);
         }
         if let Some(receipt) = &self.commit_receipt {

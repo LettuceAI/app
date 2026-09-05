@@ -140,6 +140,17 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             return Err(StagedLorebookCoherenceDispatchError::InvalidWork);
         }
         let at = now.max(work.job.updated_at);
+        let result = if self
+            .repository
+            .load_staged_lorebook(work.project_request_id)?
+            .project
+            .stage
+            == lettuce_creation::StagedLorebookStage::Cancelled
+        {
+            Err(StagedLorebookCoherenceExecutionError::Cancelled)
+        } else {
+            result
+        };
         match result {
             Ok(result) => {
                 self.jobs.append_and_transition(JobMutation::Progress {

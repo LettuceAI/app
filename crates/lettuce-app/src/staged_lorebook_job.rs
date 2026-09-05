@@ -231,6 +231,17 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             .map_err(Into::into)
     }
 
+    pub fn cancel(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookAdmissionError> {
+        self.repository
+            .cancel_staged_lorebook(request_id, expected_revision, now)
+            .map_err(Into::into)
+    }
+
     pub fn admit_coherence(
         &self,
         request: StagedLorebookCoherenceRequest<'_>,

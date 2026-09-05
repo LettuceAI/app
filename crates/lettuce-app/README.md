@@ -87,6 +87,11 @@ second provider request.
 Final staged commit accepts a new destination/name or an existing destination
 revision, and delegates one atomic apply to the creation repository. The
 committed project retains the result receipt for exact retries.
+Project cancellation also cancels its queued jobs and requests cancellation of
+claimed jobs. All three staged executors check the durable project before and
+after inference; dispatch settlement recognizes cancellation that races with
+provider completion. The active host can additionally signal the job handle to
+abort transport promptly; durable cancellation alone discards a late response.
 Claimed staged-writer execution renders those frozen values, appends the exact
 legacy final instruction, and makes one required native tool request. Its
 checkpoint is durable before the matching pending draft CAS; restart replays

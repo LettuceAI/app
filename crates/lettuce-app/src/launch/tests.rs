@@ -5080,6 +5080,33 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                     .expect("staged commit fixture"),
                 run
             );
+            let cancelled = coordinator
+                .cancel(id, run.project.revision, at)
+                .expect("cancel reviewed project");
+            assert_eq!(cancelled.project.drafts, run.project.drafts);
+            assert_eq!(cancelled.project.outline, run.project.outline);
+            assert_eq!(
+                cancelled.project.stage,
+                lettuce_creation::StagedLorebookStage::Cancelled
+            );
+            assert_eq!(
+                coordinator
+                    .cancel(id, run.project.revision, at)
+                    .expect("replay cancellation"),
+                cancelled
+            );
+            assert_eq!(
+                lettuce_jobs::JobStore::get(&database, run.job_id)
+                    .expect("cancelled job")
+                    .expect("job exists")
+                    .state,
+                JobState::Cancelled
+            );
+            assert!(
+                coordinator
+                    .start_planning(id, cancelled.project.revision, at)
+                    .is_err()
+            );
             continue;
         }
         if case == "existing" {
@@ -5140,7 +5167,27 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         )
         .expect("claim cancelled planner")
         .expect("cancelled planner work");
-    cancelled_work.handle.request_cancel();
+    let cancelled_project = coordinator
+        .cancel(
+            cancelled_request_id,
+            Revision::new(2),
+            TimestampMillis::new(NOW.get() + 14),
+        )
+        .expect("cancel claimed project");
+    assert_eq!(
+        cancelled_project.project.stage,
+        lettuce_creation::StagedLorebookStage::Cancelled
+    );
+    assert!(
+        coordinator
+            .cancel(
+                request_id,
+                committed.project.revision,
+                TimestampMillis::new(NOW.get() + 101)
+            )
+            .is_err(),
+        "committed project cannot be cancelled"
+    );
     let cancelled_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::new()),
         requests: Mutex::new(Vec::new()),
@@ -5176,6 +5223,88 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .expect("requests")
             .is_empty()
     );
+
+    struct CancelDuringInference<'a> {
+        database: &'a lettuce_database::Database,
+        request_id: RequestId,
+        at: TimestampMillis,
+    }
+    #[async_trait::async_trait]
+    impl InferencePort for CancelDuringInference<'_> {
+        async fn run(&self, _: InferenceRequest) -> Result<InferenceOutcome, PortError> {
+            lettuce_creation::StagedLorebookRepository::cancel_staged_lorebook(
+                self.database,
+                self.request_id,
+                Revision::new(2),
+                self.at,
+            )
+            .expect("cancel while provider is running");
+            Ok(InferenceOutcome {
+                candidates: Vec::new(),
+                usage: None,
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None,
+                provider_request_id: None,
+                warning_codes: Vec::new(),
+            })
+        }
+    }
+    let mut input = make_request();
+    input.request_id = RequestId::new();
+    input.project_id = lettuce_types::CreationWorkflowId::new();
+    let during_id = input.request_id;
+    coordinator.admit(input).expect("admit cancellation race");
+    coordinator
+        .start_planning(
+            during_id,
+            Revision::INITIAL,
+            TimestampMillis::new(NOW.get() + 200),
+        )
+        .expect("start cancellation race");
+    let work = dispatcher
+        .claim(
+            during_id,
+            WorkerId::new(),
+            TimestampMillis::new(NOW.get() + 201),
+            Duration::from_secs(30),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim cancellation race")
+        .expect("race work");
+    let provider = CancelDuringInference {
+        database: &database,
+        request_id: during_id,
+        at: TimestampMillis::new(NOW.get() + 202),
+    };
+    let result = crate::StagedLorebookPlannerExecutionCoordinator::new(&database, &provider)
+        .run(
+            during_id,
+            &prompt,
+            &work.handle,
+            None,
+            TimestampMillis::new(NOW.get() + 202),
+        )
+        .await;
+    assert!(matches!(
+        result,
+        Err(crate::StagedLorebookPlannerExecutionError::Cancelled)
+    ));
+    assert!(matches!(
+        dispatcher
+            .settle(
+                work,
+                result,
+                CancellationReason::User,
+                TimestampMillis::new(NOW.get() + 203)
+            )
+            .expect("settle cancellation race"),
+        crate::StagedLorebookPlannerSettledWork::Cancelled { .. }
+    ));
+    let retained =
+        lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, during_id)
+            .expect("reload cancellation race");
+    assert!(retained.planner_attempt.is_none());
+    assert!(retained.project.outline.is_empty());
 }
 
 #[tokio::test]

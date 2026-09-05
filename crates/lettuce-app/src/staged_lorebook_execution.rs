@@ -84,6 +84,9 @@ where
             .load_staged_lorebook(request_id)
             .map_err(StagedLorebookPlannerExecutionError::Repository)?;
         validate_ownership(&run, prompt, handle)?;
+        if run.project.stage == StagedLorebookStage::Cancelled {
+            return Err(StagedLorebookPlannerExecutionError::Cancelled);
+        }
         if let Some(attempt) = run.planner_attempt.clone() {
             return settle_checkpoint(self.repository, run, attempt, true);
         }
@@ -141,6 +144,16 @@ where
         };
         cleanup_outcome_replays(self.repository, &outcome)
             .map_err(|_| StagedLorebookPlannerExecutionError::ReplayCleanup)?;
+        if self
+            .repository
+            .load_staged_lorebook(request_id)
+            .map_err(StagedLorebookPlannerExecutionError::Repository)?
+            .project
+            .stage
+            == StagedLorebookStage::Cancelled
+        {
+            return Err(StagedLorebookPlannerExecutionError::Cancelled);
+        }
         let stored = self
             .repository
             .commit_staged_lorebook_planner_attempt(request_id, attempt)

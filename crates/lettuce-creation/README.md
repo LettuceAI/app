@@ -215,3 +215,7 @@ Eligible entries append in draft order using contiguous aggregate ordinals;
 this corrects legacy ordinal gaps and collisions with existing entries. Existing
 book metadata and entries are retained. New/existing book writes, project state
 and the receipt commit together; stale or changed retries conflict.
+
+Project cancellation is terminal and retains the previous stage, outlines,
+drafts, coherence proposals and immutable attempts. Committed projects cannot
+be cancelled. Exact cancellation retries preserve the same project revision.
