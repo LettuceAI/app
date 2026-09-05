@@ -4332,14 +4332,57 @@ fn configured_lorebook_documents_retain_identity_and_replay_after_restart() {
             lettuce_creation::StagedLorebookRepositoryError::Conflict
         ))
     ));
+    let planning = coordinator
+        .start_planning(
+            request.request_id,
+            admitted.run.project.revision,
+            TimestampMillis::new(NOW.get() + 3),
+        )
+        .expect("start planning");
+    let review = database
+        .submit_staged_lorebook_outline(
+            request.request_id,
+            planning.project.revision,
+            vec![lettuce_creation::StagedLorebookEntryPlan {
+                id: lettuce_types::LorebookEntryId::new(),
+                ordinal: 0,
+                title: "Harbour history".into(),
+                category: "History".into(),
+                proposed_keys: vec!["harbour".into()],
+                rationale: "Connect the source notes".into(),
+                source_refs: vec!["src_01".into(), "src_02".into()],
+            }],
+            TimestampMillis::new(NOW.get() + 4),
+        )
+        .expect("save outline awaiting approval");
     drop(store);
     drop(database);
     let database = Database::open(&catalog).expect("reopen database");
+    let restored = database
+        .load_staged_lorebook(request.request_id)
+        .expect("load saved review");
+    assert_eq!(restored, review);
+    assert_eq!(
+        restored.project.stage,
+        lettuce_creation::StagedLorebookStage::AwaitingOutlineApproval
+    );
     let replay = crate::StagedLorebookCoordinator::new(&database, &database)
         .admit_configured(request, &builtins)
         .expect("replay without reading files");
     assert!(!replay.created);
-    assert_eq!(replay.run, admitted.run);
+    assert_eq!(replay.run, review);
+    let approved = crate::StagedLorebookCoordinator::new(&database, &database)
+        .approve_outline(
+            review.request_id,
+            review.project.revision,
+            TimestampMillis::new(NOW.get() + 5),
+        )
+        .expect("resume review after reopen");
+    assert_eq!(
+        approved.project.drafts[0].plan_id,
+        review.project.outline[0].id
+    );
+    assert_eq!(approved.project.excerpts, review.project.excerpts);
     drop(database);
     drop(authority);
     std::fs::remove_dir_all(root).expect("cleanup fixture");

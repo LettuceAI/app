@@ -55,6 +55,11 @@ Configured and resolved admission requests accept protected documents through
 `with_documents`. SQLite retains project/source/asset associations atomically
 with admission, rejects missing or non-document assets, and prevents referenced
 asset deletion. Replay uses saved excerpts without reopening source files.
+The on-disk source scenario also saves an outline awaiting approval, closes
+the database, reloads it by request identity, replays configured admission
+without resetting review state, and approves the restored outline. This covers
+known-ID resume, matching legacy's get-by-ID boundary; a project browser or
+host persistence of the selected project ID is not implemented here.
 The app's `with_intake` configured request accepts interleaved pasted text and
 protected documents. Both count toward the same legacy byte limits and source
 ordering; each document's raw buffer is released after extraction.
