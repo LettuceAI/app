@@ -6,6 +6,8 @@ mod pricing;
 pub use pricing::*;
 mod costing;
 pub use costing::*;
+mod job_usage;
+pub use job_usage::*;
 
 use lettuce_conversations::UsageRecord;
 use lettuce_types::UsageEventId;

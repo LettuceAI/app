@@ -74,7 +74,10 @@ impl<'a, R: ?Sized, I: ?Sized> CompanionSoulWriterExecutionCoordinator<'a, R, I>
 }
 
 impl<
-    R: CompanionSoulWriterRunRepository + ProviderReplayArtifactPort + ?Sized,
+    R: CompanionSoulWriterRunRepository
+        + ProviderReplayArtifactPort
+        + lettuce_usage::JobUsageLedger
+        + ?Sized,
     I: InferencePort + ?Sized,
 > CompanionSoulWriterExecutionCoordinator<'_, R, I>
 {
@@ -161,7 +164,15 @@ impl<
                 return Err(CompanionSoulWriterExecutionError::RoundLimit);
             }
             let request = build_request(run, prompt, handle, stream_sink, target, false)?;
-            let outcome = match self.inference.run(request).await {
+            let outcome = match crate::job_inference_usage::run_job_inference(
+                self.repository,
+                self.inference,
+                handle.id(),
+                request,
+                now,
+            )
+            .await
+            {
                 Ok(outcome) => outcome,
                 Err(PortError::Cancelled) => {
                     return Err(CompanionSoulWriterExecutionError::Cancelled);
@@ -184,7 +195,15 @@ impl<
             if calls.is_empty() {
                 cleanup(self.repository, &outcome)?;
                 let fallback = build_request(run, prompt, handle, stream_sink, target, true)?;
-                let fallback_outcome = self.inference.run(fallback).await.map_err(|error| {
+                let fallback_outcome = crate::job_inference_usage::run_job_inference(
+                    self.repository,
+                    self.inference,
+                    handle.id(),
+                    fallback,
+                    now,
+                )
+                .await
+                .map_err(|error| {
                     if matches!(error, PortError::Cancelled) {
                         CompanionSoulWriterExecutionError::Cancelled
                     } else {

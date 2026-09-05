@@ -11,6 +11,86 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::Database;
 
+impl lettuce_usage::JobUsageLedger for Database {
+    fn admit_job_usage(
+        &self,
+        record: lettuce_usage::JobInferenceUsage,
+    ) -> Result<(), UsageLedgerError> {
+        if record.result.is_some()
+            || record.model_revision.get() == 0
+            || record.provider_account_revision.get() == 0
+        {
+            return Err(UsageLedgerError::Invalid);
+        }
+        let encoded = crate::encode_versioned(&record, 1).map_err(|_| UsageLedgerError::Invalid)?;
+        let db = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        db.execute("INSERT OR IGNORE INTO job_inference_usage (id,job_id,admitted_at,record_json) SELECT ?1,?2,?3,?4 WHERE EXISTS (SELECT 1 FROM jobs WHERE id=?2)",
+            params![record.id.to_string(), record.job_id.to_string(), record.admitted_at.get(), encoded]).map_err(|_| UsageLedgerError::Storage)?;
+        let saved: Option<String> = db
+            .query_row(
+                "SELECT record_json FROM job_inference_usage WHERE id=?1",
+                [record.id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| UsageLedgerError::Storage)?;
+        if saved.as_deref() != Some(&encoded) {
+            return Err(UsageLedgerError::Conflict);
+        }
+        Ok(())
+    }
+    fn settle_job_usage(
+        &self,
+        id: UsageEventId,
+        result: lettuce_usage::JobInferenceUsageResult,
+    ) -> Result<(), UsageLedgerError> {
+        let encoded = crate::encode_versioned(&result, 1).map_err(|_| UsageLedgerError::Invalid)?;
+        let db = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        db.execute(
+            "UPDATE job_inference_usage SET result_json=?2 WHERE id=?1 AND result_json IS NULL",
+            params![id.to_string(), encoded],
+        )
+        .map_err(|_| UsageLedgerError::Storage)?;
+        let saved: Option<String> = db
+            .query_row(
+                "SELECT result_json FROM job_inference_usage WHERE id=?1",
+                [id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| UsageLedgerError::Storage)?
+            .flatten();
+        if saved.as_deref() != Some(&encoded) {
+            return Err(UsageLedgerError::Conflict);
+        }
+        Ok(())
+    }
+    fn job_usage(
+        &self,
+        job_id: lettuce_types::JobId,
+    ) -> Result<Vec<lettuce_usage::JobInferenceUsage>, UsageLedgerError> {
+        let db = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        let mut query = db.prepare("SELECT record_json,result_json FROM job_inference_usage WHERE job_id=?1 ORDER BY admitted_at,id").map_err(|_| UsageLedgerError::Storage)?;
+        query
+            .query_map([job_id.to_string()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })
+            .map_err(|_| UsageLedgerError::Storage)?
+            .map(|row| {
+                let (record, result) = row.map_err(|_| UsageLedgerError::Storage)?;
+                let mut record =
+                    crate::decode_versioned::<lettuce_usage::JobInferenceUsage>(&record, 1)
+                        .map_err(|_| UsageLedgerError::Storage)?;
+                record.result = result
+                    .map(|r| crate::decode_versioned(&r, 1))
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?;
+                Ok(record)
+            })
+            .collect()
+    }
+}
+
 impl lettuce_usage::UsageCostLedger for Database {
     fn record_cost(
         &self,
@@ -375,6 +455,80 @@ impl UsagePort for Database {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn job_dispatch_evidence_survives_reopen_and_rejects_mutation() {
+        use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, SubjectKind};
+        use lettuce_types::UsageEventId;
+        use lettuce_usage::{JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger};
+        let path =
+            std::env::temp_dir().join(format!("lettuce-job-usage-{}.sqlite", uuid::Uuid::new_v4()));
+        let database = Database::open(&path).expect("database");
+        let job = database
+            .create_or_get(
+                JobSpec::new(
+                    JobKind::ArtifactInstall,
+                    JobSubject::new(SubjectKind::ArtifactInstall, "usage-test").expect("subject"),
+                    OutcomeRef::ArtifactInstallation(lettuce_types::AssetId::new()),
+                )
+                .with_resources(vec![lettuce_jobs::ResourceClass::Network]),
+            )
+            .expect("job")
+            .job;
+        let record = JobInferenceUsage {
+            id: UsageEventId::new(),
+            job_id: job.id,
+            logical_attempt_id: GenerationAttemptId::new(),
+            model_profile_id: ModelProfileId::new(),
+            model_revision: Revision::new(1),
+            provider_account_id: ProviderAccountId::new(),
+            provider_account_revision: Revision::new(1),
+            admitted_at: TimestampMillis::new(1),
+            result: None,
+        };
+        let mut missing = record.clone();
+        missing.job_id = lettuce_types::JobId::new();
+        assert_eq!(
+            database.admit_job_usage(missing),
+            Err(UsageLedgerError::Conflict)
+        );
+        database.admit_job_usage(record.clone()).expect("admission");
+        drop(database);
+        let database = Database::open(&path).expect("reopen pending");
+        assert_eq!(
+            database.job_usage(job.id).expect("pending"),
+            std::slice::from_ref(&record)
+        );
+        database
+            .settle_job_usage(record.id, JobInferenceUsageResult::InferenceFailed)
+            .expect("settlement");
+        drop(database);
+        let database = Database::open(&path).expect("reopen settled");
+        let mut settled = record.clone();
+        settled.result = Some(JobInferenceUsageResult::InferenceFailed);
+        assert_eq!(
+            database.job_usage(job.id).expect("settled"),
+            std::slice::from_ref(&settled)
+        );
+        database
+            .admit_job_usage(record)
+            .expect("replay admission after settlement");
+        let db = database.connection().expect("connection");
+        assert!(
+            db.execute("UPDATE job_inference_usage SET result_json=NULL", [])
+                .is_err()
+        );
+        assert!(db.execute("DELETE FROM job_inference_usage", []).is_err());
+        db.execute("DELETE FROM jobs WHERE id=?1", [job.id.to_string()])
+            .expect("job retention cleanup");
+        drop(db);
+        assert_eq!(
+            database.job_usage(job.id).expect("usage after cleanup"),
+            [settled]
+        );
+        drop(database);
+        std::fs::remove_file(path).expect("remove test database");
+    }
+
     use lettuce_conversations::{InferenceUsage, UsageCounters, UsageOutcome, UsageRecord};
     use lettuce_types::{
         ConversationId, GenerationAttemptId, GenerationTurnId, ModelProfileId, ProviderAccountId,

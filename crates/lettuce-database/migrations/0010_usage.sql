@@ -34,6 +34,21 @@ CREATE TABLE usage_events (
     ))
 ) STRICT;
 
+CREATE TABLE job_inference_usage (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL,
+    admitted_at INTEGER NOT NULL,
+    record_json TEXT NOT NULL CHECK (json_valid(record_json)),
+    result_json TEXT CHECK (result_json IS NULL OR json_valid(result_json))
+) STRICT;
+CREATE INDEX job_inference_usage_job_idx ON job_inference_usage(job_id, admitted_at, id);
+CREATE TRIGGER job_inference_usage_guard BEFORE UPDATE ON job_inference_usage
+WHEN OLD.id != NEW.id OR OLD.job_id != NEW.job_id OR OLD.admitted_at != NEW.admitted_at
+    OR OLD.record_json != NEW.record_json OR OLD.result_json IS NOT NULL OR NEW.result_json IS NULL
+BEGIN SELECT RAISE(ABORT, 'usage evidence is immutable'); END;
+CREATE TRIGGER job_inference_usage_no_delete BEFORE DELETE ON job_inference_usage
+BEGIN SELECT RAISE(ABORT, 'usage evidence cannot be deleted'); END;
+
 CREATE INDEX usage_events_recorded_at_idx ON usage_events(recorded_at, id);
 CREATE TABLE usage_costs (
     event_id TEXT PRIMARY KEY REFERENCES usage_events(id) ON DELETE RESTRICT,

@@ -16,10 +16,13 @@ separately, without changing draft reduction or counting replay as new inference
 The existing InferenceUsage value is serializable; missing checkpoint usage
 defaults to None for older saved runs. Cached/reasoning details preserve absence
 versus explicit zero. SQLite app scenarios verify persisted details in all three
-workflows. These are successful checkpoint facts, not a complete attempt ledger:
-responses rejected or cancelled before checkpointing and primary calls followed
-by a failed fallback still need durable usage recording. Legacy recorded usage
-before checking response success; full parity requires that remaining path.
+workflows. A separate job-owned usage ledger admits each actual inference dispatch
+before calling the provider and records returned usage before response validation
+or checkpoint reduction. Primary and fallback calls, retries, inference errors,
+and cancellation therefore retain independent evidence. An interrupted dispatch
+without a returned result stays pending, not zero-cost or successful. This covers
+growth, consolidation and Soul-writer coordinators; provider-internal retries and
+automatic pricing capture are not implemented by this ledger.
 
 Foundation scaffolding is active. Implement behavior with tests before exposing new public APIs, and keep compatibility code at explicit application or migration boundaries.
 

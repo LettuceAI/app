@@ -16,6 +16,16 @@ changed counters, outcome, provenance, or timestamp conflict. Provider-missing
 counters remain an explicit unavailable reason; the ledger never invents zero
 usage. SQLite persistence lives in `lettuce-database`.
 
+`JobUsageLedger` retains non-conversation inference dispatches for companion
+growth, consolidation and Soul writing. Each dispatch has a fresh event identity
+and retains the logical attempt, owning job and resolved model/provider revisions.
+Admission precedes inference; a single immutable result preserves optional raw
+usage, cancellation or inference failure. Pending records explicitly mean the
+result is unknown. Exact admission/settlement replay is accepted; changed evidence
+conflicts. Retries never overwrite earlier dispatches. These records do not yet
+participate in the conversation-event cost ledger or automatic pricing capture.
+Admission verifies the job exists; evidence survives normal job retention cleanup.
+
 The pure OpenRouter request-cost calculator is copied from legacy
 `models/pricing/calc.rs`, with its pricing/result fields from `models/types.rs`.
 It preserves per-token USD units, cache counter clamping and cache-write price

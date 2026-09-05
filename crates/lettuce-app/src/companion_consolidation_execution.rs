@@ -70,7 +70,11 @@ impl<'a, R: ?Sized, I: ?Sized> CompanionConsolidationExecutionCoordinator<'a, R,
 }
 
 impl<
-    R: CompanionConsolidationRunRepository + SoulRepository + ProviderReplayArtifactPort + ?Sized,
+    R: CompanionConsolidationRunRepository
+        + SoulRepository
+        + ProviderReplayArtifactPort
+        + lettuce_usage::JobUsageLedger
+        + ?Sized,
     I: InferencePort + ?Sized,
 > CompanionConsolidationExecutionCoordinator<'_, R, I>
 {
@@ -94,14 +98,18 @@ impl<
             if handle.cancellation_token().is_cancelled() {
                 return Err(CompanionConsolidationExecutionError::Cancelled);
             }
-            let outcome = self
-                .inference
-                .run(build_request(&run, prompt, handle, stream_sink)?)
-                .await
-                .map_err(|error| match error {
-                    PortError::Cancelled => CompanionConsolidationExecutionError::Cancelled,
-                    other => CompanionConsolidationExecutionError::Inference(other),
-                })?;
+            let outcome = crate::job_inference_usage::run_job_inference(
+                self.repository,
+                self.inference,
+                job_id,
+                build_request(&run, prompt, handle, stream_sink)?,
+                now,
+            )
+            .await
+            .map_err(|error| match error {
+                PortError::Cancelled => CompanionConsolidationExecutionError::Cancelled,
+                other => CompanionConsolidationExecutionError::Inference(other),
+            })?;
             if handle.cancellation_token().is_cancelled()
                 || matches!(outcome.finish_reason, FinishReason::Cancelled)
             {

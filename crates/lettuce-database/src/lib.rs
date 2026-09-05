@@ -4014,6 +4014,7 @@ mod tests {
                 "group_starting_scenes",
                 "groups",
                 "job_events",
+                "job_inference_usage",
                 "jobs",
                 "lorebook_entries",
                 "lorebooks",

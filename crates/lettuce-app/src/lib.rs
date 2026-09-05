@@ -28,6 +28,7 @@ mod companion_soul_writer_dispatch;
 mod companion_soul_writer_execution;
 mod companion_soul_writer_job;
 mod companion_turn;
+mod job_inference_usage;
 mod composition;
 mod context_assembler;
 mod creation_apply;

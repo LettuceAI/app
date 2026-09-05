@@ -69,7 +69,11 @@ impl<'a, R: ?Sized, I: ?Sized> CompanionGrowthExecutionCoordinator<'a, R, I> {
 }
 
 impl<
-    R: CompanionGrowthRunRepository + SoulRepository + ProviderReplayArtifactPort + ?Sized,
+    R: CompanionGrowthRunRepository
+        + SoulRepository
+        + ProviderReplayArtifactPort
+        + lettuce_usage::JobUsageLedger
+        + ?Sized,
     I: InferencePort + ?Sized,
 > CompanionGrowthExecutionCoordinator<'_, R, I>
 {
@@ -94,14 +98,18 @@ impl<
                 return Err(CompanionGrowthExecutionError::Cancelled);
             }
             let request = build_request(&run, prompt, handle, stream_sink)?;
-            let outcome = self
-                .inference
-                .run(request)
-                .await
-                .map_err(|error| match error {
-                    PortError::Cancelled => CompanionGrowthExecutionError::Cancelled,
-                    other => CompanionGrowthExecutionError::Inference(other),
-                })?;
+            let outcome = crate::job_inference_usage::run_job_inference(
+                self.repository,
+                self.inference,
+                job_id,
+                request,
+                now,
+            )
+            .await
+            .map_err(|error| match error {
+                PortError::Cancelled => CompanionGrowthExecutionError::Cancelled,
+                other => CompanionGrowthExecutionError::Inference(other),
+            })?;
             if handle.cancellation_token().is_cancelled() {
                 cleanup(self.repository, &outcome)?;
                 return Err(CompanionGrowthExecutionError::Cancelled);
