@@ -1,5 +1,12 @@
 # lettuce-database
 
+Staged lorebook source documents are retained by project/source identity in
+migration 11. Admission writes their asset references and the project in one
+transaction, requiring ready source-document assets. Foreign keys protect the
+assets even when their original retention class is temporary; references live
+as long as the saved project, including cancelled and committed projects.
+Loading verifies the reference rows against excerpt provenance in the run JSON.
+
 Epoch-2 SQLite schema, migrations, maintenance, and repository adapters.
 
 ## Boundary

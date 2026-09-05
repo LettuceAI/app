@@ -99,6 +99,30 @@ fn load_in(
     };
     let run = decode_versioned::<StagedLorebookPlanningRun>(&encoded, RUN_FORMAT_VERSION)
         .map_err(corrupt)?;
+    let mut statement = transaction.prepare(
+        "SELECT source_id, asset_id FROM creation_staged_lorebook_sources WHERE project_id = ?1 ORDER BY source_id",
+    ).map_err(corrupt)?;
+    let stored_sources = statement
+        .query_map([&project_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(corrupt)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(corrupt)?;
+    let mut expected_sources = run
+        .project
+        .excerpts
+        .iter()
+        .filter_map(|excerpt| {
+            excerpt
+                .asset_id
+                .map(|id| (excerpt.source_id.clone(), id.to_string()))
+        })
+        .collect::<Vec<_>>();
+    expected_sources.sort();
+    if stored_sources != expected_sources {
+        return Err(StagedLorebookRepositoryError::Corrupt);
+    }
     let prompt_revision = positive_revision(prompt_revision)?;
     let revision = positive_revision(revision)?;
     if run.request_id != request_id
@@ -453,6 +477,24 @@ impl StagedLorebookRepository for Database {
                 ],
             )
             .map_err(failure)?;
+        if inserted != 0 {
+            for excerpt in &run.project.excerpts {
+                if let Some(asset_id) = excerpt.asset_id {
+                    let valid = transaction.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM media_assets a JOIN media_blobs b ON b.id = a.blob_id WHERE a.id = ?1 AND a.kind = 'source_document' AND b.state = 'ready')",
+                        [asset_id.to_string()],
+                        |row| row.get::<_, bool>(0),
+                    ).map_err(failure)?;
+                    if !valid {
+                        return Err(StagedLorebookRepositoryError::Invalid);
+                    }
+                    transaction.execute(
+                        "INSERT INTO creation_staged_lorebook_sources (project_id, source_id, asset_id) VALUES (?1, ?2, ?3)",
+                        params![run.project.id.to_string(), excerpt.source_id, asset_id.to_string()],
+                    ).map_err(failure)?;
+                }
+            }
+        }
         let stored =
             load_in(&transaction, run.request_id)?.ok_or(StagedLorebookRepositoryError::Failure)?;
         if inserted == 0 && stored != run {

@@ -4184,6 +4184,152 @@ fn staged_lorebook_configured_admission_resolves_and_validates_before_job_creati
     assert_eq!(parameters.reasoning_budget_tokens, None);
 }
 
+#[test]
+fn configured_lorebook_documents_retain_identity_and_replay_after_restart() {
+    use lettuce_creation::StagedLorebookRepository;
+    use lettuce_media::{
+        AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, LocalMediaBlobStore,
+        RetentionClass,
+    };
+    use lettuce_models::CapabilityStatus;
+    use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
+    let root = std::env::temp_dir().join(format!("lettuce-project-source-{}", RequestId::new()));
+    let snapshot = DirectorySnapshot::new(&root).expect("directories");
+    let authority = FilesystemAuthority::new(&snapshot).expect("authority");
+    let catalog = root.join("catalog.sqlite");
+    let database = Database::open(&catalog).expect("database");
+    let builtins = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(NOW)
+        .expect("builtins");
+    let model_id = seed_model(&database, ProviderProtocol::Ollama, "source-planner");
+    let mut model = ModelProfileRepository::get(&database, model_id)
+        .expect("model")
+        .expect("model exists");
+    let revision = model.revision;
+    model.config.capabilities.parameter_support.temperature = CapabilityStatus::Supported;
+    model.config.capabilities.parameter_support.top_p = CapabilityStatus::Supported;
+    ModelProfileRepository::upsert(&database, model, Some(revision)).expect("sampling support");
+    let store = LocalMediaBlobStore::new(
+        authority.managed_files(),
+        authority
+            .read_capability(ManagedRoot::MediaBlobs)
+            .expect("read authority"),
+        authority
+            .write_capability(ManagedRoot::MediaBlobs)
+            .expect("write authority"),
+        Database::open(&catalog).expect("blob catalog"),
+        Database::open(&catalog).expect("asset catalog"),
+    );
+    let asset = store
+        .ingest(
+            b"Ada keeps the harbour key.".as_slice(),
+            IngestRequest::new(
+                AssetKind::SourceDocument,
+                AssetOrigin::Upload,
+                RetentionClass::Temporary {
+                    expires_at: TimestampMillis::new(NOW.get() + 100),
+                },
+                AssetProvenanceV1::default(),
+            ),
+        )
+        .expect("ingest source")
+        .asset;
+    let request = crate::StagedLorebookConfiguredRequest {
+        request_id: RequestId::new(),
+        project_id: lettuce_types::CreationWorkflowId::new(),
+        brief: "Harbour world".into(),
+        initial_lorebook_name: None,
+        target_count: Some(5),
+        excerpts: Vec::new(),
+        overrides: lettuce_settings::LorebookGeneratorSelection {
+            model_profile_id: Some(model_id),
+            ..Default::default()
+        },
+        safety_policy: SafetyContext::Standard,
+        now: TimestampMillis::new(NOW.get() + 2),
+    }
+    .with_documents(&store, &[(asset.id, "Notes.txt".into())])
+    .expect("prepare documents");
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    png.extend_from_slice(&13_u32.to_be_bytes());
+    png.extend_from_slice(b"IHDR");
+    png.extend_from_slice(&2_u32.to_be_bytes());
+    png.extend_from_slice(&3_u32.to_be_bytes());
+    png.extend_from_slice(&[8, 6, 0, 0, 0]);
+    png.extend_from_slice(b"payload");
+    let image = store
+        .ingest(
+            png.as_slice(),
+            IngestRequest::new(
+                AssetKind::OtherImage,
+                AssetOrigin::Upload,
+                RetentionClass::Library,
+                AssetProvenanceV1::default(),
+            ),
+        )
+        .expect("image asset")
+        .asset;
+    assert!(matches!(
+        request
+            .clone()
+            .with_documents(&store, &[(image.id, "Image.png".into())]),
+        Err(crate::StagedLorebookDocumentError::InvalidDocument)
+    ));
+    let coordinator = crate::StagedLorebookCoordinator::new(&database, &database);
+    let mut wrong_role = request.clone();
+    wrong_role.excerpts[0].asset_id = Some(image.id);
+    assert!(matches!(
+        coordinator.admit_configured(wrong_role, &builtins),
+        Err(crate::StagedLorebookAdmissionError::Repository(
+            lettuce_creation::StagedLorebookRepositoryError::Invalid
+        ))
+    ));
+    let mut invalid = request.clone();
+    let mut missing = invalid.excerpts[0].clone();
+    missing.source_id = "src_02".into();
+    missing.asset_id = Some(lettuce_types::AssetId::new());
+    invalid.excerpts.push(missing);
+    let invalid_result = coordinator.admit_configured(invalid, &builtins);
+    assert!(
+        matches!(
+            invalid_result,
+            Err(crate::StagedLorebookAdmissionError::Repository(
+                lettuce_creation::StagedLorebookRepositoryError::Invalid
+            ))
+        ),
+        "{invalid_result:?}"
+    );
+    assert!(matches!(
+        database.load_staged_lorebook(request.request_id),
+        Err(lettuce_creation::StagedLorebookRepositoryError::NotFound)
+    ));
+    let admitted = coordinator
+        .admit_configured(request.clone(), &builtins)
+        .expect("admit sources");
+    assert!(!admitted.created, "the failed admission's job is reused");
+    assert_eq!(admitted.run.project.excerpts[0].asset_id, Some(asset.id));
+    let mut changed = request.clone();
+    changed.excerpts[0].asset_id = None;
+    assert!(matches!(
+        coordinator.admit_configured(changed, &builtins),
+        Err(crate::StagedLorebookAdmissionError::Repository(
+            lettuce_creation::StagedLorebookRepositoryError::Conflict
+        ))
+    ));
+    drop(store);
+    drop(database);
+    let database = Database::open(&catalog).expect("reopen database");
+    let replay = crate::StagedLorebookCoordinator::new(&database, &database)
+        .admit_configured(request, &builtins)
+        .expect("replay without reading files");
+    assert!(!replay.created);
+    assert_eq!(replay.run, admitted.run);
+    drop(database);
+    drop(authority);
+    std::fs::remove_dir_all(root).expect("cleanup fixture");
+}
+
 #[tokio::test]
 async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let database = database_with_builtins();
@@ -4261,6 +4407,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         initial_lorebook_name: Some(" Harbour Canon ".into()),
         target_count: 2,
         excerpts: vec![lettuce_creation::StagedLorebookSourceExcerpt {
+            asset_id: None,
             source_id: "src_01".into(),
             label: "Notes".into(),
             content: "Ada keeps the harbour key.".into(),

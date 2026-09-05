@@ -76,6 +76,7 @@ pub fn prepare_staged_lorebook_sources(
             content.push_str(STAGED_LOREBOOK_TRUNCATION_MARKER);
         }
         excerpts.push(StagedLorebookSourceExcerpt {
+            asset_id: None,
             source_id: format!("src_{:02}", index + 1),
             label: label.to_owned(),
             content,

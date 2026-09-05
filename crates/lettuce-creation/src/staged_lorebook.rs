@@ -406,6 +406,8 @@ pub enum StagedLorebookStage {
 #[serde(deny_unknown_fields)]
 pub struct StagedLorebookSourceExcerpt {
     pub source_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_id: Option<lettuce_types::AssetId>,
     pub label: String,
     pub content: String,
 }
@@ -1993,6 +1995,7 @@ mod tests {
             Some("  Harbour Canon  ".into()),
             1,
             vec![StagedLorebookSourceExcerpt {
+                asset_id: None,
                 source_id: "src_01".into(),
                 label: "Notes".into(),
                 content: "Ada keeps the harbour key.".into(),
@@ -2084,6 +2087,7 @@ mod tests {
             None,
             5,
             vec![StagedLorebookSourceExcerpt {
+                asset_id: None,
                 source_id: "src_01".into(),
                 label: "Notes".into(),
                 content: "Text".into(),

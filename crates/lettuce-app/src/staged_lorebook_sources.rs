@@ -61,7 +61,33 @@ pub fn prepare_staged_lorebook_documents<B: MediaBlobRepository, A: MediaAssetRe
             _ => Err(StagedLorebookDocumentError::InvalidDocument),
         })
         .collect::<Result<Vec<_>, _>>()?;
-    lettuce_creation::prepare_staged_lorebook_sources(&inputs).map_err(Into::into)
+    let mut excerpts = lettuce_creation::prepare_staged_lorebook_sources(&inputs)?;
+    for (excerpt, (id, _)) in excerpts.iter_mut().zip(sources) {
+        excerpt.asset_id = Some(*id);
+    }
+    Ok(excerpts)
+}
+
+impl crate::StagedLorebookConfiguredRequest {
+    pub fn with_documents<B: MediaBlobRepository, A: MediaAssetRepository>(
+        mut self,
+        store: &LocalMediaBlobStore<B, A>,
+        sources: &[(AssetId, String)],
+    ) -> Result<Self, StagedLorebookDocumentError> {
+        self.excerpts = prepare_staged_lorebook_documents(store, sources)?;
+        Ok(self)
+    }
+}
+
+impl crate::StagedLorebookAdmissionRequest<'_> {
+    pub fn with_documents<B: MediaBlobRepository, A: MediaAssetRepository>(
+        mut self,
+        store: &LocalMediaBlobStore<B, A>,
+        sources: &[(AssetId, String)],
+    ) -> Result<Self, StagedLorebookDocumentError> {
+        self.excerpts = prepare_staged_lorebook_documents(store, sources)?;
+        Ok(self)
+    }
 }
 
 #[cfg(test)]
@@ -136,9 +162,11 @@ mod tests {
         )
         .expect("extract protected sources");
         assert_eq!(excerpts[0].source_id, "src_01");
+        assert_eq!(excerpts[0].asset_id, Some(pdf_id));
         assert_eq!(excerpts[0].label, "Map.pdf");
         assert!(excerpts[0].content.contains("Harbour source text"));
         assert_eq!(excerpts[1].source_id, "src_02");
+        assert_eq!(excerpts[1].asset_id, Some(text_id));
         assert_eq!(excerpts[1].content, "# World 🌍\nHarbour notes");
         let malformed = ingest(b"%PDF-1.4\nnot a PDF");
         assert!(matches!(

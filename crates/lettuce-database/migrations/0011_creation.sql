@@ -90,6 +90,18 @@ CREATE TABLE creation_staged_lorebook_runs (
     CHECK (updated_at >= created_at)
 ) STRICT;
 
+CREATE TABLE creation_staged_lorebook_sources (
+    project_id TEXT NOT NULL REFERENCES creation_staged_lorebook_runs(project_id) ON DELETE CASCADE,
+    source_id TEXT NOT NULL CHECK (length(trim(source_id)) > 0),
+    asset_id TEXT NOT NULL,
+    blob_kind TEXT NOT NULL DEFAULT 'document' CHECK (blob_kind = 'document'),
+    PRIMARY KEY (project_id, source_id),
+    FOREIGN KEY (asset_id, blob_kind) REFERENCES media_assets(id, blob_kind) ON DELETE RESTRICT
+) STRICT;
+
+CREATE INDEX creation_staged_lorebook_sources_asset_idx
+    ON creation_staged_lorebook_sources(asset_id);
+
 CREATE TABLE creation_staged_lorebook_writer_runs (
     request_id TEXT PRIMARY KEY,
     job_id TEXT NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE,

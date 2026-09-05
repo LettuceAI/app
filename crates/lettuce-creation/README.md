@@ -30,14 +30,19 @@ first-slice exclusions are still unimplemented. Current backend coverage:
 Single-entry and keyword generation remain proposal-only, with native then
 structured fallback and their own admission/execution tests. The staged scenario
 uses scripted inference and repository reloads, not a process-kill test or a
-live provider. Project-owned source associations, automatic
-host scheduling, progress IPC and frontend integration are still deferred.
+live provider. Automatic host scheduling, progress IPC and frontend integration
+are still deferred.
 Backend scenario coverage does not mean the user-facing rewrite is complete.
 
 PDF extraction accepts already-read bytes, keeps parser diagnostics out of
 public errors, and applies the same excerpt truncation as text. It is synchronous
 CPU work for the host's worker, not the UI thread. Protected document reading is
 wired in lettuce-app; extraction neither creates assets nor retains raw bytes.
+Prepared document excerpts carry optional asset identities; pasted text has none.
+Configured and resolved admission requests accept protected documents through
+`with_documents`. SQLite retains project/source/asset associations atomically
+with admission, rejects missing or non-document assets, and prevents referenced
+asset deletion. Replay uses saved excerpts without reopening source files.
 
 Staged planning runs retain optional configured input provenance: explicit
 project model/four prompt overrides and the originally requested target count.
