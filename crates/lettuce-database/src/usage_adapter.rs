@@ -11,6 +11,75 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::Database;
 
+impl lettuce_usage::UsageCostLedger for Database {
+    fn record_cost(
+        &self,
+        event_id: UsageEventId,
+        basis: lettuce_usage::UsageCostBasis,
+    ) -> Result<lettuce_usage::UsageCost, UsageLedgerError> {
+        let event = UsageLedger::get(self, event_id)?.ok_or(UsageLedgerError::Invalid)?;
+        let cost = basis.calculate(&event)?;
+        let encoded = crate::encode_versioned(&basis, 1).map_err(|_| UsageLedgerError::Invalid)?;
+        let mut connection = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        let tx = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|_| UsageLedgerError::Storage)?;
+        tx.execute(
+            "INSERT OR IGNORE INTO usage_costs (event_id, basis_json) VALUES (?1, ?2)",
+            params![event_id.to_string(), encoded],
+        )
+        .map_err(|_| UsageLedgerError::Storage)?;
+        let stored: String = tx
+            .query_row(
+                "SELECT basis_json FROM usage_costs WHERE event_id=?1",
+                [event_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|_| UsageLedgerError::Storage)?;
+        let stored = crate::decode_versioned::<lettuce_usage::UsageCostBasis>(&stored, 1)
+            .map_err(|_| UsageLedgerError::Storage)?;
+        if stored != basis {
+            return Err(UsageLedgerError::Conflict);
+        }
+        tx.commit().map_err(|_| UsageLedgerError::Storage)?;
+        Ok(lettuce_usage::UsageCost {
+            event_id,
+            basis,
+            cost,
+        })
+    }
+
+    fn get_cost(
+        &self,
+        event_id: UsageEventId,
+    ) -> Result<Option<lettuce_usage::UsageCost>, UsageLedgerError> {
+        let stored: Option<String> = self
+            .connection()
+            .map_err(|_| UsageLedgerError::Storage)?
+            .query_row(
+                "SELECT basis_json FROM usage_costs WHERE event_id=?1",
+                [event_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| UsageLedgerError::Storage)?;
+        let Some(stored) = stored else {
+            return Ok(None);
+        };
+        let basis = crate::decode_versioned::<lettuce_usage::UsageCostBasis>(&stored, 1)
+            .map_err(|_| UsageLedgerError::Storage)?;
+        let event = UsageLedger::get(self, event_id)?.ok_or(UsageLedgerError::Storage)?;
+        let cost = basis
+            .calculate(&event)
+            .map_err(|_| UsageLedgerError::Storage)?;
+        Ok(Some(lettuce_usage::UsageCost {
+            event_id,
+            basis,
+            cost,
+        }))
+    }
+}
+
 fn outcome_name(value: UsageOutcome) -> &'static str {
     match value {
         UsageOutcome::Succeeded => "succeeded",
@@ -341,6 +410,109 @@ mod tests {
         let retry = UsageLedger::record(&database, record).expect("retry");
         assert_eq!(retry, first);
         assert_eq!(UsageLedger::get(&database, first.id), Ok(Some(first)));
+    }
+
+    #[test]
+    fn costs_retain_pricing_and_counters_without_rewriting_usage() {
+        use lettuce_usage::{ModelPricing, OpenRouterCostInput, UsageCostBasis, UsageCostLedger};
+        let (database, record) = fixture();
+        let event = UsageLedger::record(&database, record).expect("event");
+        let basis = UsageCostBasis {
+            model_profile_id: event.record.model_profile_id.expect("model"),
+            provider_account_id: event.record.provider_account_id.expect("provider"),
+            source: "OpenRouter endpoint snapshot".into(),
+            captured_at: TimestampMillis::new(11),
+            pricing: ModelPricing {
+                prompt: "0.001".into(),
+                completion: "0.002".into(),
+                request: String::new(),
+                image: String::new(),
+                image_output: String::new(),
+                web_search: String::new(),
+                internal_reasoning: String::new(),
+                input_cache_read: String::new(),
+                input_cache_write: String::new(),
+            },
+            input: OpenRouterCostInput {
+                prompt_tokens: 120,
+                completion_tokens: 30,
+                ..Default::default()
+            },
+        };
+        let cost = database.record_cost(event.id, basis.clone()).expect("cost");
+        assert!((cost.cost.total_cost - 0.18).abs() < 1e-12);
+        assert_eq!(
+            database
+                .record_cost(event.id, basis.clone())
+                .expect("retry")
+                .basis,
+            basis
+        );
+        assert_eq!(
+            database
+                .get_cost(event.id)
+                .expect("read")
+                .expect("cost")
+                .basis,
+            basis
+        );
+        let mut changed = basis.clone();
+        changed.pricing.prompt = "0.004".into();
+        assert!(matches!(
+            database.record_cost(event.id, changed),
+            Err(UsageLedgerError::Conflict)
+        ));
+        let mut wrong = basis.clone();
+        wrong.input.prompt_tokens = 121;
+        assert!(matches!(
+            database.record_cost(event.id, wrong),
+            Err(UsageLedgerError::Invalid)
+        ));
+        let mut wrong = basis.clone();
+        wrong.model_profile_id = ModelProfileId::new();
+        assert!(matches!(
+            database.record_cost(event.id, wrong),
+            Err(UsageLedgerError::Invalid)
+        ));
+        assert_eq!(
+            UsageLedger::get(&database, event.id).expect("raw event"),
+            Some(event.clone())
+        );
+        assert!(
+            database
+                .connection()
+                .expect("connection")
+                .execute(
+                    "UPDATE usage_costs SET basis_json='{}' WHERE event_id=?1",
+                    [event.id.to_string()]
+                )
+                .is_err()
+        );
+        assert!(
+            database
+                .connection()
+                .expect("connection")
+                .execute(
+                    "DELETE FROM usage_costs WHERE event_id=?1",
+                    [event.id.to_string()]
+                )
+                .is_err()
+        );
+        let (unknown_database, mut unknown) = fixture();
+        unknown.usage = UsageCounters::Unavailable(
+            lettuce_conversations::UsageUnavailableReason::ProviderOmitted,
+        );
+        let unknown = UsageLedger::record(&unknown_database, unknown).expect("unavailable event");
+        assert!(matches!(
+            unknown_database.record_cost(unknown.id, basis),
+            Err(UsageLedgerError::Invalid)
+        ));
+        assert!(
+            unknown_database
+                .get_cost(unknown.id)
+                .expect("no fabricated cost")
+                .is_none()
+        );
     }
 
     #[test]

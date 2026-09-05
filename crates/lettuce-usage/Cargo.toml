@@ -18,3 +18,4 @@ async-trait.workspace = true
 lettuce-conversations.workspace = true
 lettuce-types.workspace = true
 thiserror.workspace = true
+serde.workspace = true

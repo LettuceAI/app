@@ -1,5 +1,5 @@
 /// Pricing information for a model (values are USD costs expressed as strings).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelPricing {
     /// Price per input token in USD.
     pub prompt: String,
@@ -56,7 +56,7 @@ pub struct RequestCost {
     pub authoritative_total_cost: Option<f64>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OpenRouterCostInput {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,

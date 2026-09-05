@@ -4040,6 +4040,7 @@ mod tests {
                 "starter_messages",
                 "tool_executions",
                 "turn_lorebooks",
+                "usage_costs",
                 "usage_events",
             ]
         );

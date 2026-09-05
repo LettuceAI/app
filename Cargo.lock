@@ -1256,6 +1256,7 @@ dependencies = [
  "async-trait",
  "lettuce-conversations",
  "lettuce-types",
+ "serde",
  "thiserror 2.0.20",
 ]
 

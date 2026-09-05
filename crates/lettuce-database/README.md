@@ -1,5 +1,11 @@
 # lettuce-database
 
+Migration 10 also retains immutable per-event usage-cost bases through
+`UsageCostLedger`: versioned prices, provenance and calculation inputs are
+stored separately from raw usage evidence. Exact retries are idempotent;
+changed bases conflict and SQL updates/deletes are rejected. Costs are derived
+with the basis version's calculator rather than current provider prices.
+
 Staged lorebook source documents are retained by project/source identity in
 migration 11. Admission writes their asset references and the project in one
 transaction, requiring ready source-document assets. Foreign keys protect the
