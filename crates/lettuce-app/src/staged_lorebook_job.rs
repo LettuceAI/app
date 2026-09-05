@@ -12,6 +12,32 @@ use lettuce_jobs::{
 use lettuce_models::{CapabilityStatus, Modality};
 use lettuce_types::{CreationWorkflowId, LorebookEntryId, RequestId, Revision, TimestampMillis};
 
+pub fn select_staged_lorebook_settings(
+    settings: &lettuce_settings::StoredGlobalSettings,
+    overrides: &lettuce_settings::LorebookGeneratorSelection,
+    builtins: &crate::BuiltInPromptIds,
+) -> lettuce_settings::LorebookGeneratorSelection {
+    settings.settings.lorebook_generator.select(
+        overrides,
+        settings.default_model_profile_id,
+        &lettuce_settings::LorebookGeneratorSelection {
+            model_profile_id: None,
+            planner_prompt_id: Some(builtins.lorebook_generator_planner),
+            writer_prompt_id: Some(builtins.lorebook_generator_writer),
+            refine_prompt_id: Some(builtins.lorebook_generator_refine),
+            coherence_prompt_id: Some(builtins.lorebook_generator_coherence),
+        },
+    )
+}
+
+pub fn staged_lorebook_parameter_defaults(
+    settings: &lettuce_settings::LorebookGeneratorSettings,
+) -> lettuce_models::ChatParameterResolutionInput {
+    let mut parameters = lettuce_models::ChatParameterResolutionInput::default();
+    parameters.global.max_output_tokens = Some(settings.output_tokens());
+    parameters
+}
+
 #[derive(Debug, Clone)]
 pub struct StagedLorebookAdmissionRequest<'a> {
     pub request_id: RequestId,

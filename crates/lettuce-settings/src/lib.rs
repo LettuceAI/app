@@ -11,7 +11,7 @@ mod secrets;
 
 pub use global::{
     GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
-    PureMode, StoredGlobalSettings,
+    LorebookGeneratorSelection, LorebookGeneratorSettings, PureMode, StoredGlobalSettings,
 };
 
 pub use secrets::{

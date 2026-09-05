@@ -2767,6 +2767,28 @@ mod tests {
     }
 
     #[test]
+    fn generator_settings_round_trip_with_global_revision_cas() {
+        let database = Database::open_in_memory().expect("database");
+        let initial = GlobalSettingsStore::load(&database).expect("settings");
+        let mut settings = initial.settings;
+        settings.lorebook_generator.default_target_count = Some(20);
+        settings.lorebook_generator.max_output_tokens = Some(8192);
+        settings.lorebook_generator.selection.planner_prompt_id =
+            Some(lettuce_types::PromptDocumentId::new());
+        let saved = GlobalSettingsStore::save(&database, settings.clone(), None, initial.revision)
+            .expect("save generator settings");
+        assert_eq!(
+            GlobalSettingsStore::load(&database).expect("reload settings"),
+            saved
+        );
+        assert_eq!(saved.settings, settings);
+        assert_eq!(
+            GlobalSettingsStore::save(&database, settings, None, initial.revision),
+            Err(GlobalSettingsStoreError::StaleRevision)
+        );
+    }
+
+    #[test]
     fn missing_account_and_invalid_domain_values_are_distinct() {
         let database = Database::open_in_memory().expect("open database");
         let missing = ProviderAccountId::new();

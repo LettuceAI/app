@@ -1,4 +1,4 @@
-use lettuce_types::{ModelProfileId, Revision, TimestampMillis};
+use lettuce_types::{ModelProfileId, PromptDocumentId, Revision, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
 pub const GLOBAL_SETTINGS_FORMAT_VERSION: u32 = 1;
@@ -9,6 +9,8 @@ pub struct GlobalSettings {
     pub pure_mode: PureMode,
     pub analytics_enabled: bool,
     pub update_checks_enabled: bool,
+    #[serde(default)]
+    pub lorebook_generator: LorebookGeneratorSettings,
 }
 
 impl Default for GlobalSettings {
@@ -17,6 +19,72 @@ impl Default for GlobalSettings {
             pure_mode: PureMode::Standard,
             analytics_enabled: true,
             update_checks_enabled: true,
+            lorebook_generator: LorebookGeneratorSettings::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LorebookGeneratorSettings {
+    pub selection: LorebookGeneratorSelection,
+    pub default_target_count: Option<u32>,
+    pub max_output_tokens: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LorebookGeneratorSelection {
+    pub model_profile_id: Option<ModelProfileId>,
+    pub planner_prompt_id: Option<PromptDocumentId>,
+    pub writer_prompt_id: Option<PromptDocumentId>,
+    pub refine_prompt_id: Option<PromptDocumentId>,
+    pub coherence_prompt_id: Option<PromptDocumentId>,
+}
+
+impl LorebookGeneratorSettings {
+    #[must_use]
+    pub fn target_count(&self) -> u32 {
+        self.default_target_count
+            .map(|value| value.clamp(5, 50))
+            .unwrap_or(12)
+    }
+
+    #[must_use]
+    pub fn output_tokens(&self) -> u32 {
+        self.max_output_tokens
+            .map(|value| value.clamp(256, 32768))
+            .unwrap_or(4096)
+    }
+
+    #[must_use]
+    pub fn select(
+        &self,
+        overrides: &LorebookGeneratorSelection,
+        default_model: Option<ModelProfileId>,
+        builtins: &LorebookGeneratorSelection,
+    ) -> LorebookGeneratorSelection {
+        LorebookGeneratorSelection {
+            model_profile_id: overrides
+                .model_profile_id
+                .or(self.selection.model_profile_id)
+                .or(default_model),
+            planner_prompt_id: overrides
+                .planner_prompt_id
+                .or(self.selection.planner_prompt_id)
+                .or(builtins.planner_prompt_id),
+            writer_prompt_id: overrides
+                .writer_prompt_id
+                .or(self.selection.writer_prompt_id)
+                .or(builtins.writer_prompt_id),
+            refine_prompt_id: overrides
+                .refine_prompt_id
+                .or(self.selection.refine_prompt_id)
+                .or(builtins.refine_prompt_id),
+            coherence_prompt_id: overrides
+                .coherence_prompt_id
+                .or(self.selection.coherence_prompt_id)
+                .or(builtins.coherence_prompt_id),
         }
     }
 }
@@ -70,7 +138,57 @@ pub trait GlobalSettingsStore: Send + Sync {
 
 #[cfg(test)]
 mod tests {
-    use super::GlobalSettings;
+    use super::*;
+
+    #[test]
+    fn legacy_generator_defaults_and_selection_precedence() {
+        let legacy =
+            r#"{"pure_mode":"standard","analytics_enabled":true,"update_checks_enabled":true}"#;
+        let settings: GlobalSettings = serde_json::from_str(legacy).expect("old settings document");
+        assert_eq!(settings.lorebook_generator.target_count(), 12);
+        assert_eq!(settings.lorebook_generator.output_tokens(), 4096);
+        let mut generator = settings.lorebook_generator;
+        generator.default_target_count = Some(0);
+        generator.max_output_tokens = Some(u32::MAX);
+        assert_eq!(generator.target_count(), 5);
+        assert_eq!(generator.output_tokens(), 32768);
+        generator.default_target_count = Some(100);
+        generator.max_output_tokens = Some(0);
+        assert_eq!(generator.target_count(), 50);
+        assert_eq!(generator.output_tokens(), 256);
+        let default_model = ModelProfileId::new();
+        let configured_model = ModelProfileId::new();
+        let override_model = ModelProfileId::new();
+        let builtin = PromptDocumentId::new();
+        let configured = PromptDocumentId::new();
+        let explicit = PromptDocumentId::new();
+        let builtins = LorebookGeneratorSelection {
+            planner_prompt_id: Some(builtin),
+            ..Default::default()
+        };
+        assert_eq!(
+            generator
+                .select(&Default::default(), Some(default_model), &builtins)
+                .model_profile_id,
+            Some(default_model)
+        );
+        generator.selection.model_profile_id = Some(configured_model);
+        generator.selection.planner_prompt_id = Some(configured);
+        let selected = generator.select(&Default::default(), Some(default_model), &builtins);
+        assert_eq!(selected.model_profile_id, Some(configured_model));
+        assert_eq!(selected.planner_prompt_id, Some(configured));
+        let selected = generator.select(
+            &LorebookGeneratorSelection {
+                model_profile_id: Some(override_model),
+                planner_prompt_id: Some(explicit),
+                ..Default::default()
+            },
+            Some(default_model),
+            &builtins,
+        );
+        assert_eq!(selected.model_profile_id, Some(override_model));
+        assert_eq!(selected.planner_prompt_id, Some(explicit));
+    }
 
     #[test]
     fn settings_document_rejects_unknown_fields() {

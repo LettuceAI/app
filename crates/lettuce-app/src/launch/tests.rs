@@ -3959,6 +3959,39 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
     ));
 }
 
+#[test]
+fn staged_generator_settings_select_builtins_and_parameter_fallback() {
+    let database = database_with_builtins();
+    let settings = lettuce_settings::GlobalSettingsStore::load(&database).expect("settings");
+    let builtins = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(NOW)
+        .expect("builtins");
+    let selected =
+        crate::select_staged_lorebook_settings(&settings, &Default::default(), &builtins);
+    assert_eq!(
+        selected.planner_prompt_id,
+        Some(builtins.lorebook_generator_planner)
+    );
+    assert_eq!(
+        selected.writer_prompt_id,
+        Some(builtins.lorebook_generator_writer)
+    );
+    assert_eq!(
+        selected.refine_prompt_id,
+        Some(builtins.lorebook_generator_refine)
+    );
+    assert_eq!(
+        selected.coherence_prompt_id,
+        Some(builtins.lorebook_generator_coherence)
+    );
+    let parameters =
+        crate::staged_lorebook_parameter_defaults(&settings.settings.lorebook_generator);
+    assert_eq!(parameters.global.max_output_tokens, Some(4096));
+    assert_eq!(parameters.operation, Default::default());
+    assert_eq!(parameters.session, Default::default());
+}
+
 #[tokio::test]
 async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let database = database_with_builtins();

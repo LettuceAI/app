@@ -5,6 +5,12 @@ optional local OpenAI-compatible host API.
 
 ## Boundary
 
+Staged lorebook settings selection combines explicit overrides, persisted
+generator settings and packaged prompt IDs. Its token fallback is supplied to
+the existing model parameter resolver as a global default so authored model
+parameters can take precedence. Callers still resolve/load and validate the
+selected model and prompt before admission; automatic host wiring is pending.
+
 May wire all crates; no crate may depend on it. Host API handlers reuse the
 model and inference services without constructing product conversations.
 

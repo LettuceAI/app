@@ -12,6 +12,14 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
+Global settings retain lorebook-generator model/four prompt references and
+authored target-count/output-token defaults. Resolution copies legacy priority:
+explicit selection, generator setting, then default model or built-in prompt.
+Target count defaults to 12 and clamps to 5..50; output tokens default to 4096
+and clamp to 256..32768. These are existing legacy bounds. Missing fields in
+older settings documents deserialize to defaults. Reference existence is
+checked when the consumer resolves the selected model/prompt, not by JSON save.
+
 The first slice is intentionally small: one opaque serializable `SecretRef`, a
 bounded purpose vocabulary, redacted zeroizing `SecretValue`, metadata/status
 types, and one object-safe asynchronous `SecretStore` port. The in-memory store
