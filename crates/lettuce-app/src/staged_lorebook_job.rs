@@ -97,6 +97,15 @@ pub struct StagedLorebookCoherenceAdmission {
     pub created: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct StagedLorebookConfiguredCoherenceRequest {
+    pub request_id: RequestId,
+    pub project_request_id: RequestId,
+    pub overrides: lettuce_settings::LorebookGeneratorSelection,
+    pub safety_policy: lettuce_conversations::SafetyContext,
+    pub now: TimestampMillis,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum StagedLorebookAdmissionError {
     #[error("staged lorebook admission input is invalid")]
@@ -135,11 +144,13 @@ impl<'a, R: ?Sized, J: ?Sized> StagedLorebookCoordinator<'a, R, J> {
 impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
     StagedLorebookCoordinator<'_, R, J>
 {
-    pub fn admit_configured(
+    pub(crate) fn resolve_configured_stage(
         &self,
-        request: StagedLorebookConfiguredRequest,
+        overrides: &lettuce_settings::LorebookGeneratorSelection,
         builtins: &crate::BuiltInPromptIds,
-    ) -> Result<StagedLorebookAdmission, StagedLorebookAdmissionError>
+        purpose: PromptPurpose,
+        safety_policy: lettuce_conversations::SafetyContext,
+    ) -> Result<(ResolvedInferenceProfile, PromptDocument, u32), StagedLorebookAdmissionError>
     where
         R: lettuce_settings::GlobalSettingsStore
             + lettuce_models::ModelProfileRepository
@@ -147,7 +158,15 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             + lettuce_context::PromptRepository,
     {
         let settings = lettuce_settings::GlobalSettingsStore::load(self.repository)?;
-        let selected = select_staged_lorebook_settings(&settings, &request.overrides, builtins);
+        let selected = select_staged_lorebook_settings(&settings, overrides, builtins);
+        let prompt_id = match purpose {
+            PromptPurpose::LorebookGeneratorPlanner => selected.planner_prompt_id,
+            PromptPurpose::LorebookGeneratorWriter => selected.writer_prompt_id,
+            PromptPurpose::LorebookGeneratorRefine => selected.refine_prompt_id,
+            PromptPurpose::LorebookGeneratorCoherence => selected.coherence_prompt_id,
+            _ => return Err(StagedLorebookAdmissionError::InvalidInput),
+        }
+        .ok_or(StagedLorebookAdmissionError::MissingPrompt)?;
         let model = lettuce_models::ModelProfileRepository::get(
             self.repository,
             selected
@@ -160,13 +179,11 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             model.provider_account_id,
         )?
         .ok_or(lettuce_models::ModelRepositoryError::AccountMissing)?;
-        let prompt = lettuce_context::PromptRepository::get(
-            self.repository,
-            selected
-                .planner_prompt_id
-                .ok_or(StagedLorebookAdmissionError::MissingPrompt)?,
-        )?
-        .ok_or(StagedLorebookAdmissionError::MissingPrompt)?;
+        let prompt = lettuce_context::PromptRepository::get(self.repository, prompt_id)?
+            .ok_or(StagedLorebookAdmissionError::MissingPrompt)?;
+        if prompt.status != LifecycleStatus::Active || prompt.purpose != purpose {
+            return Err(StagedLorebookAdmissionError::InvalidInput);
+        }
         let chat_profile = lettuce_models::resolve_chat_profile(
             &lettuce_models::ExpectedModelIdentity {
                 model_profile_id: model.id,
@@ -183,6 +200,36 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             &staged_lorebook_parameter_defaults(&settings.settings.lorebook_generator),
             &lettuce_models::ChatRequirements::default(),
         )?;
+        Ok((
+            ResolvedInferenceProfile {
+                chat_profile,
+                tool_policy: lettuce_conversations::ToolPolicy::Required,
+                output_policy: lettuce_conversations::OutputPolicy::Plain,
+                safety_policy,
+                correlation_id: None,
+            },
+            prompt,
+            settings.settings.lorebook_generator.target_count(),
+        ))
+    }
+
+    pub fn admit_configured(
+        &self,
+        request: StagedLorebookConfiguredRequest,
+        builtins: &crate::BuiltInPromptIds,
+    ) -> Result<StagedLorebookAdmission, StagedLorebookAdmissionError>
+    where
+        R: lettuce_settings::GlobalSettingsStore
+            + lettuce_models::ModelProfileRepository
+            + lettuce_models::ProviderAccountRepository
+            + lettuce_context::PromptRepository,
+    {
+        let (planner_profile, prompt, target_count) = self.resolve_configured_stage(
+            &request.overrides,
+            builtins,
+            PromptPurpose::LorebookGeneratorPlanner,
+            request.safety_policy,
+        )?;
         self.admit(StagedLorebookAdmissionRequest {
             request_id: request.request_id,
             project_id: request.project_id,
@@ -191,15 +238,9 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             target_count: request
                 .target_count
                 .map(|count| count.clamp(5, 50))
-                .unwrap_or_else(|| settings.settings.lorebook_generator.target_count()),
+                .unwrap_or(target_count),
             excerpts: request.excerpts,
-            planner_profile: ResolvedInferenceProfile {
-                chat_profile,
-                tool_policy: lettuce_conversations::ToolPolicy::Required,
-                output_policy: lettuce_conversations::OutputPolicy::Plain,
-                safety_policy: request.safety_policy,
-                correlation_id: None,
-            },
+            planner_profile,
             planner_prompt: &prompt,
             now: request.now,
         })
@@ -395,6 +436,32 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
         self.repository
             .cancel_staged_lorebook(request_id, expected_revision, now)
             .map_err(Into::into)
+    }
+
+    pub fn admit_configured_coherence(
+        &self,
+        request: StagedLorebookConfiguredCoherenceRequest,
+        builtins: &crate::BuiltInPromptIds,
+    ) -> Result<StagedLorebookCoherenceAdmission, StagedLorebookAdmissionError>
+    where
+        R: lettuce_settings::GlobalSettingsStore
+            + lettuce_models::ModelProfileRepository
+            + lettuce_models::ProviderAccountRepository
+            + lettuce_context::PromptRepository,
+    {
+        let (profile, prompt, _) = self.resolve_configured_stage(
+            &request.overrides,
+            builtins,
+            PromptPurpose::LorebookGeneratorCoherence,
+            request.safety_policy,
+        )?;
+        self.admit_coherence(StagedLorebookCoherenceRequest {
+            request_id: request.request_id,
+            project_request_id: request.project_request_id,
+            profile,
+            prompt: &prompt,
+            now: request.now,
+        })
     }
 
     pub fn admit_coherence(

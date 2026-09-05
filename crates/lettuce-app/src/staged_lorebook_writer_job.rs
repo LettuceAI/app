@@ -43,6 +43,17 @@ pub struct StagedLorebookWriterAdmission {
     pub created: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct StagedLorebookConfiguredRefineRequest {
+    pub request_id: RequestId,
+    pub project_request_id: RequestId,
+    pub plan_id: LorebookEntryId,
+    pub feedback: String,
+    pub overrides: lettuce_settings::LorebookGeneratorSelection,
+    pub safety_policy: lettuce_conversations::SafetyContext,
+    pub now: TimestampMillis,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StagedLorebookWriterBatchAdmission {
     pub project: StagedLorebookPlanningRun,
@@ -53,6 +64,8 @@ pub struct StagedLorebookWriterBatchAdmission {
 pub enum StagedLorebookWriterAdmissionError {
     #[error("staged lorebook writer admission input is invalid")]
     InvalidInput,
+    #[error("staged lorebook configuration failed: {0}")]
+    Configuration(#[from] crate::StagedLorebookAdmissionError),
     #[error("staged lorebook project persistence failed: {0}")]
     Project(#[from] StagedLorebookRepositoryError),
     #[error("staged lorebook writer run persistence failed: {0}")]
@@ -161,6 +174,31 @@ where
         })
     }
 
+    pub fn start_configured_batch(
+        &self,
+        project_request_id: RequestId,
+        expected_revision: Revision,
+        overrides: &lettuce_settings::LorebookGeneratorSelection,
+        builtins: &crate::BuiltInPromptIds,
+        safety_policy: lettuce_conversations::SafetyContext,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookWriterBatchAdmission, StagedLorebookWriterAdmissionError>
+    where
+        P: lettuce_settings::GlobalSettingsStore
+            + lettuce_models::ModelProfileRepository
+            + lettuce_models::ProviderAccountRepository
+            + lettuce_context::PromptRepository,
+    {
+        let (profile, prompt, _) = crate::StagedLorebookCoordinator::new(self.projects, self.jobs)
+            .resolve_configured_stage(
+                overrides,
+                builtins,
+                PromptPurpose::LorebookGeneratorWriter,
+                safety_policy,
+            )?;
+        self.start_batch(project_request_id, expected_revision, profile, &prompt, now)
+    }
+
     pub fn start_batch(
         &self,
         project_request_id: RequestId,
@@ -203,6 +241,35 @@ where
             })?);
         }
         Ok(StagedLorebookWriterBatchAdmission { project, writers })
+    }
+
+    pub fn prepare_and_admit_configured_refinement(
+        &self,
+        request: StagedLorebookConfiguredRefineRequest,
+        builtins: &crate::BuiltInPromptIds,
+    ) -> Result<StagedLorebookWriterAdmission, StagedLorebookWriterAdmissionError>
+    where
+        P: lettuce_settings::GlobalSettingsStore
+            + lettuce_models::ModelProfileRepository
+            + lettuce_models::ProviderAccountRepository
+            + lettuce_context::PromptRepository,
+    {
+        let (profile, prompt, _) = crate::StagedLorebookCoordinator::new(self.projects, self.jobs)
+            .resolve_configured_stage(
+                &request.overrides,
+                builtins,
+                PromptPurpose::LorebookGeneratorRefine,
+                request.safety_policy,
+            )?;
+        self.prepare_and_admit_refinement(StagedLorebookRefineRequest {
+            request_id: request.request_id,
+            project_request_id: request.project_request_id,
+            plan_id: request.plan_id,
+            feedback: request.feedback,
+            profile,
+            prompt: &prompt,
+            now: request.now,
+        })
     }
 
     pub fn prepare_and_admit_refinement(

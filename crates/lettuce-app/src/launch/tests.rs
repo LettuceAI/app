@@ -4121,6 +4121,12 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .expect("profile")
         .expect("profile exists");
     stored_profile.config.chat_parameters.temperature = None;
+    let stored_profile = ModelProfileRepository::upsert(
+        &database,
+        stored_profile.clone(),
+        Some(stored_profile.revision),
+    )
+    .expect("save writer model parameters");
     let account = ProviderAccountRepository::get(&database, stored_profile.provider_account_id)
         .expect("account")
         .expect("account exists");
@@ -4387,11 +4393,11 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         ))
     ));
 
-    let writer_prompt_id = BuiltInPromptService::new(&database)
+    let writer_builtins = BuiltInPromptService::new(&database)
         .expect("prompt service")
         .bootstrap(TimestampMillis::new(NOW.get() + 8))
-        .expect("prompt ids")
-        .get(BuiltInPromptId::LorebookGeneratorWriter);
+        .expect("prompt ids");
+    let writer_prompt_id = writer_builtins.get(BuiltInPromptId::LorebookGeneratorWriter);
     let writer_prompt = PromptRepository::get(&database, writer_prompt_id)
         .expect("writer prompt")
         .expect("writer prompt exists");
@@ -4428,12 +4434,38 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             jobs_before_invalid_batch
         );
     }
+    assert!(matches!(
+        writer.start_configured_batch(
+            request_id,
+            drafting.project.revision,
+            &lettuce_settings::LorebookGeneratorSelection {
+                model_profile_id: Some(model_id),
+                writer_prompt_id: Some(lettuce_types::PromptDocumentId::new()),
+                ..Default::default()
+            },
+            &writer_builtins,
+            SafetyContext::Standard,
+            TimestampMillis::new(NOW.get() + 9),
+        ),
+        Err(crate::StagedLorebookWriterAdmissionError::Configuration(
+            crate::StagedLorebookAdmissionError::MissingPrompt
+        ))
+    ));
+    assert_eq!(
+        lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, request_id)
+            .expect("configuration failure leaves project unchanged"),
+        drafting
+    );
     let batch = writer
-        .start_batch(
+        .start_configured_batch(
             request_id,
             Revision::new(4),
-            profile.clone(),
-            &writer_prompt,
+            &lettuce_settings::LorebookGeneratorSelection {
+                model_profile_id: Some(model_id),
+                ..Default::default()
+            },
+            &writer_builtins,
+            SafetyContext::Standard,
             TimestampMillis::new(NOW.get() + 9),
         )
         .expect("start staged writer batch");
@@ -4728,7 +4760,21 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         now: TimestampMillis::new(NOW.get() + 17),
     };
     let admitted_refine = writer
-        .prepare_and_admit_refinement(refine_request.clone())
+        .prepare_and_admit_configured_refinement(
+            crate::StagedLorebookConfiguredRefineRequest {
+                request_id: refine_request.request_id,
+                project_request_id: refine_request.project_request_id,
+                plan_id: refine_request.plan_id,
+                feedback: refine_request.feedback.clone(),
+                overrides: lettuce_settings::LorebookGeneratorSelection {
+                    model_profile_id: Some(model_id),
+                    ..Default::default()
+                },
+                safety_policy: SafetyContext::Standard,
+                now: refine_request.now,
+            },
+            &writer_builtins,
+        )
         .expect("admit staged refinement");
     assert!(admitted_refine.created);
     assert_eq!(admitted_refine.run.project_revision, Revision::new(9));
@@ -5006,7 +5052,19 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         now: TimestampMillis::new(NOW.get() + 23),
     };
     let admitted_coherence = coordinator
-        .admit_coherence(coherence_request.clone())
+        .admit_configured_coherence(
+            crate::StagedLorebookConfiguredCoherenceRequest {
+                request_id: coherence_request.request_id,
+                project_request_id: coherence_request.project_request_id,
+                overrides: lettuce_settings::LorebookGeneratorSelection {
+                    model_profile_id: Some(model_id),
+                    ..Default::default()
+                },
+                safety_policy: SafetyContext::Standard,
+                now: coherence_request.now,
+            },
+            &writer_builtins,
+        )
         .expect("admit coherence inference");
     assert!(admitted_coherence.created);
     let coherence_run = admitted_coherence

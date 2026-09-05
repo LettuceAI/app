@@ -12,8 +12,12 @@ parameters can take precedence. `admit_configured` loads persisted settings,
 the selected model/account and planner prompt through existing ports, resolves
 the profile with the shared model resolver, applies legacy target-count defaults
 and bounds, then uses normal durable planner admission. Missing model/prompt
-references and incompatible profiles fail before job creation. Writer/refine/
-coherence admission still takes resolved inputs; automatic host wiring is pending.
+references and incompatible profiles fail before job creation.
+`start_configured_batch` reuses that selection/resolution path with the writer
+prompt, then starts the durable draft batch. Configured refinement and coherence
+admission use the same path with their own stage prompts. Each admission freezes
+its resolved inputs; callers supply per-operation overrides. Automatic host
+wiring and legacy per-feature sampling settings remain pending.
 Writer batches validate prompt and text modalities before changing the project
 or creating jobs, so invalid inputs leave the draft checkpoint unchanged.
 
