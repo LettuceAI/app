@@ -241,6 +241,18 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             .map_err(Into::into)
     }
 
+    pub fn edit_outline(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        outline: Vec<lettuce_creation::StagedLorebookEntryPlan>,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookAdmissionError> {
+        self.repository
+            .edit_staged_lorebook_outline(request_id, expected_revision, outline, now)
+            .map_err(Into::into)
+    }
+
     pub fn cancel(
         &self,
         request_id: RequestId,

@@ -5149,6 +5149,113 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         }
     }
 
+    let mut editable_input = make_request();
+    editable_input.request_id = RequestId::new();
+    editable_input.project_id = lettuce_types::CreationWorkflowId::new();
+    let editable_id = editable_input.request_id;
+    coordinator
+        .admit(editable_input)
+        .expect("admit editable outline");
+    let edit_at = TimestampMillis::new(NOW.get() + 150);
+    coordinator
+        .start_planning(editable_id, Revision::INITIAL, edit_at)
+        .expect("start editable outline");
+    let plans: Vec<_> = (0..3)
+        .map(|ordinal| lettuce_creation::StagedLorebookEntryPlan {
+            id: lettuce_types::LorebookEntryId::new(),
+            ordinal,
+            title: format!("Plan {ordinal}"),
+            category: "place".into(),
+            proposed_keys: vec!["harbour".into()],
+            rationale: String::new(),
+            source_refs: vec!["src_01".into()],
+        })
+        .collect();
+    let original = lettuce_creation::StagedLorebookRepository::submit_staged_lorebook_outline(
+        &database,
+        editable_id,
+        Revision::new(2),
+        plans.clone(),
+        edit_at,
+    )
+    .expect("submit editable outline");
+    let mut edited_plans = vec![plans[2].clone(), plans[0].clone()];
+    edited_plans[1].title = "Edited harbour".into();
+    let mut added = plans[1].clone();
+    added.id = lettuce_types::LorebookEntryId::new();
+    added.title = "New place".into();
+    edited_plans.push(added);
+    let edited = coordinator
+        .edit_outline(
+            editable_id,
+            original.project.revision,
+            edited_plans.clone(),
+            edit_at,
+        )
+        .expect("edit and reorder outline");
+    assert_eq!(
+        edited
+            .project
+            .outline
+            .iter()
+            .map(|plan| plan.ordinal)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+    assert_eq!(edited.project.outline[0].id, plans[2].id);
+    assert_eq!(edited.planner_attempt, original.planner_attempt);
+    assert_eq!(
+        coordinator
+            .edit_outline(
+                editable_id,
+                original.project.revision,
+                edited_plans.clone(),
+                edit_at
+            )
+            .expect("replay outline edit"),
+        edited
+    );
+    assert!(
+        coordinator
+            .edit_outline(editable_id, original.project.revision, plans, edit_at)
+            .is_err()
+    );
+    let mut foreign = edited_plans.clone();
+    foreign[0].source_refs = vec!["foreign".into()];
+    assert!(
+        coordinator
+            .edit_outline(editable_id, edited.project.revision, foreign, edit_at)
+            .is_err()
+    );
+    let approved = coordinator
+        .approve_outline(editable_id, edited.project.revision, edit_at)
+        .expect("approve edited outline");
+    assert_eq!(
+        approved
+            .project
+            .drafts
+            .iter()
+            .map(|draft| draft.plan_id)
+            .collect::<Vec<_>>(),
+        edited
+            .project
+            .outline
+            .iter()
+            .map(|plan| plan.id)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(approved.project.drafts[1].title, "Edited harbour");
+    assert!(
+        coordinator
+            .edit_outline(
+                editable_id,
+                approved.project.revision,
+                edited_plans,
+                edit_at
+            )
+            .is_err()
+    );
+
     let cancelled_request_id = RequestId::new();
     let mut cancelled_request = make_request();
     cancelled_request.request_id = cancelled_request_id;

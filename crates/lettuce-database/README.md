@@ -313,6 +313,8 @@ Staged project cancellation and its job cancellation events commit atomically,
 using the existing job reducer. Queued work settles immediately; claimed work
 keeps its lease for worker cleanup or startup expiry recovery. Late writer
 admission/checkpoints cannot mutate terminal projects.
+Pre-approval outline replacement uses the same staged project CAS, reindexes
+the submitted order, and retains the immutable planner attempt.
 
 Secrets are never stored here. Provider rows contain opaque `SecretRef` values
 only. Blob registration validates SQLite-representable metadata and preserves

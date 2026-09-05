@@ -168,6 +168,10 @@ Outline approval copies the legacy pending-draft initialization exactly: one
 ordered draft per stable plan ID, the plan title and proposed keys, empty
 content, `always_active = false`, pending status, and no revisions. The durable
 project then moves to drafting; writer execution remains separate.
+Before approval, outline edits can replace, add, remove and reorder plans.
+Ordinals are rebuilt from input order while stable plan IDs and field values
+are retained. Existing outline validation checks nonempty plans and owned
+source references; edits after approval are rejected to protect draft identity.
 The staged writer's pure provider contract is also copied from legacy: one
 required `write_lorebook_entry` declaration and exact final instruction, first
 matching-call selection, trimmed nonblank title/content, optional trimmed

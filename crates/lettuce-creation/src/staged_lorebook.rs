@@ -770,6 +770,14 @@ pub enum StagedLorebookRepositoryError {
 }
 
 pub trait StagedLorebookRepository: Send + Sync {
+    fn edit_staged_lorebook_outline(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        outline: Vec<StagedLorebookEntryPlan>,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
     fn cancel_staged_lorebook(
         &self,
         request_id: RequestId,
@@ -1166,6 +1174,29 @@ impl StagedLorebookProject {
         next.stage = StagedLorebookStage::Drafting;
         next.updated_at = now;
         next.revision = next
+            .revision
+            .next()
+            .map_err(|_| StagedLorebookError::InvalidTransition)?;
+        Ok(next)
+    }
+
+    pub fn edit_outline(
+        &self,
+        mut outline: Vec<StagedLorebookEntryPlan>,
+        now: TimestampMillis,
+    ) -> Result<Self, StagedLorebookError> {
+        if self.stage != StagedLorebookStage::AwaitingOutlineApproval || now < self.updated_at {
+            return Err(StagedLorebookError::InvalidTransition);
+        }
+        for (ordinal, plan) in outline.iter_mut().enumerate() {
+            plan.ordinal =
+                u32::try_from(ordinal).map_err(|_| StagedLorebookError::InvalidOutline)?;
+        }
+        validate_outline(&outline, &self.excerpts)?;
+        let mut next = self.clone();
+        next.outline = outline;
+        next.updated_at = now;
+        next.revision = self
             .revision
             .next()
             .map_err(|_| StagedLorebookError::InvalidTransition)?;
