@@ -1224,7 +1224,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     tool_calls: Vec::new(),
                     provider_replay: None,
                 }],
-                usage: None,
+                usage: Some(InferenceUsage { input_tokens: 30, output_tokens: 5, cached_input_tokens: None, reasoning_tokens: Some(0) }),
                 finish_reason: lettuce_conversations::FinishReason::Stop,
                 provider_finish_reason: None,
                 provider_request_id: Some("soul-no-tools".into()),
@@ -1239,7 +1239,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     tool_calls: Vec::new(),
                     provider_replay: None,
                 }],
-                usage: None,
+                usage: Some(InferenceUsage { input_tokens: 50, output_tokens: 5, cached_input_tokens: None, reasoning_tokens: Some(0) }),
                 finish_reason: lettuce_conversations::FinishReason::Stop,
                 provider_finish_reason: None,
                 provider_request_id: Some("soul-structured".into()),
@@ -1260,6 +1260,30 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .await
             .expect("execute structured fallback preview");
     assert_eq!(fallback_result.draft["soul"]["traits"], "Structured");
+    let saved = database
+        .load_companion_soul_writer_run(fallback_request_id)
+        .expect("fallback checkpoint");
+    assert_eq!(
+        saved.rounds[0].usage.as_ref().map(|u| u.input_tokens),
+        Some(30)
+    );
+    assert_eq!(
+        saved.rounds[0]
+            .fallback_usage
+            .as_ref()
+            .map(|u| u.input_tokens),
+        Some(50)
+    );
+    let mut legacy = serde_json::to_value(&saved.rounds[0]).expect("checkpoint JSON");
+    legacy.as_object_mut().expect("object").remove("usage");
+    legacy
+        .as_object_mut()
+        .expect("object")
+        .remove("fallback_usage");
+    let legacy: lettuce_companions::CompanionSoulWriterRoundCheckpoint =
+        serde_json::from_value(legacy).expect("legacy checkpoint");
+    assert!(legacy.usage.is_none());
+    assert!(legacy.fallback_usage.is_none());
     {
         let fallback_requests = fallback_inference
             .requests
