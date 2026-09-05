@@ -619,6 +619,8 @@ pub struct StagedLorebookCoherenceRun {
     pub job_id: JobId,
     pub project_revision: Revision,
     pub profile: ResolvedInferenceProfile,
+    #[serde(default)]
+    pub configured_overrides: Option<lettuce_settings::LorebookGeneratorSelection>,
     pub prompt_id: PromptDocumentId,
     pub prompt_revision: Revision,
     pub drafted_entries: String,
@@ -718,6 +720,8 @@ pub struct StagedLorebookWriterRun {
     pub project_revision: Revision,
     pub plan_id: LorebookEntryId,
     pub profile: ResolvedInferenceProfile,
+    #[serde(default)]
+    pub configured_overrides: Option<lettuce_settings::LorebookGeneratorSelection>,
     pub prompt_id: PromptDocumentId,
     pub prompt_revision: Revision,
     pub prompt_values: StagedLorebookWriterPromptValues,

@@ -525,6 +525,30 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             + lettuce_models::ProviderAccountRepository
             + lettuce_context::PromptRepository,
     {
+        let project = self
+            .repository
+            .load_staged_lorebook(request.project_request_id)?;
+        if let Some(run) = project
+            .coherence_runs
+            .iter()
+            .find(|run| run.request_id == request.request_id)
+        {
+            if run.created_at != request.now
+                || run.profile.safety_policy != request.safety_policy
+                || run.configured_overrides.as_ref() != Some(&request.overrides)
+            {
+                return Err(StagedLorebookRepositoryError::Conflict.into());
+            }
+            let job = self
+                .jobs
+                .get(run.job_id)?
+                .ok_or(StagedLorebookAdmissionError::InvalidInput)?;
+            return Ok(StagedLorebookCoherenceAdmission {
+                run: project,
+                job,
+                created: false,
+            });
+        }
         let overrides = self.project_overrides(request.project_request_id, &request.overrides)?;
         let (profile, prompt, _) = self.resolve_configured_stage(
             &overrides,
@@ -532,18 +556,29 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             PromptPurpose::LorebookGeneratorCoherence,
             request.safety_policy,
         )?;
-        self.admit_coherence(StagedLorebookCoherenceRequest {
-            request_id: request.request_id,
-            project_request_id: request.project_request_id,
-            profile,
-            prompt: &prompt,
-            now: request.now,
-        })
+        self.admit_coherence_with_overrides(
+            StagedLorebookCoherenceRequest {
+                request_id: request.request_id,
+                project_request_id: request.project_request_id,
+                profile,
+                prompt: &prompt,
+                now: request.now,
+            },
+            Some(request.overrides),
+        )
     }
 
     pub fn admit_coherence(
         &self,
         request: StagedLorebookCoherenceRequest<'_>,
+    ) -> Result<StagedLorebookCoherenceAdmission, StagedLorebookAdmissionError> {
+        self.admit_coherence_with_overrides(request, None)
+    }
+
+    fn admit_coherence_with_overrides(
+        &self,
+        request: StagedLorebookCoherenceRequest<'_>,
+        configured_overrides: Option<lettuce_settings::LorebookGeneratorSelection>,
     ) -> Result<StagedLorebookCoherenceAdmission, StagedLorebookAdmissionError> {
         validate_coherence_request(&request)?;
         let project = self
@@ -554,7 +589,11 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             .iter()
             .find(|run| run.request_id == request.request_id)
         {
-            if !same_coherence_request(stored, &request) {
+            if !same_coherence_request(stored, &request)
+                || configured_overrides.as_ref().is_some_and(|overrides| {
+                    stored.configured_overrides.as_ref() != Some(overrides)
+                })
+            {
                 return Err(StagedLorebookRepositoryError::Conflict.into());
             }
             let job = self
@@ -592,6 +631,7 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
         )?;
         let coherence = StagedLorebookCoherenceRun {
+            configured_overrides,
             request_id: request.request_id,
             job_id: admitted.job.id,
             project_revision: project.project.revision,

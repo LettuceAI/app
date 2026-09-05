@@ -151,6 +151,7 @@ where
             .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
         )?;
         let run = StagedLorebookWriterRun {
+            configured_overrides: None,
             request_id: request.request_id,
             job_id: admitted.job.id,
             project_request_id: request.project_request_id,
@@ -255,6 +256,35 @@ where
             + lettuce_models::ProviderAccountRepository
             + lettuce_context::PromptRepository,
     {
+        match self
+            .runs
+            .load_staged_lorebook_writer_run(request.request_id)
+        {
+            Ok(run) => {
+                if run.project_request_id != request.project_request_id
+                    || run.plan_id != request.plan_id
+                    || run.created_at != request.now
+                    || run.profile.safety_policy != request.safety_policy
+                    || run.configured_overrides.as_ref() != Some(&request.overrides)
+                    || run.refinement.as_ref().map(|value| value.feedback.as_str())
+                        != Some(request.feedback.trim())
+                {
+                    return Err(StagedLorebookWriterRunRepositoryError::Conflict.into());
+                }
+                let job = self
+                    .jobs
+                    .get(run.job_id)?
+                    .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+                validate_job(&run, &job)?;
+                return Ok(StagedLorebookWriterAdmission {
+                    run,
+                    job,
+                    created: false,
+                });
+            }
+            Err(StagedLorebookWriterRunRepositoryError::NotFound) => {}
+            Err(error) => return Err(error.into()),
+        }
         let coordinator = crate::StagedLorebookCoordinator::new(self.projects, self.jobs);
         let overrides =
             coordinator.project_overrides(request.project_request_id, &request.overrides)?;
@@ -264,20 +294,31 @@ where
             PromptPurpose::LorebookGeneratorRefine,
             request.safety_policy,
         )?;
-        self.prepare_and_admit_refinement(StagedLorebookRefineRequest {
-            request_id: request.request_id,
-            project_request_id: request.project_request_id,
-            plan_id: request.plan_id,
-            feedback: request.feedback,
-            profile,
-            prompt: &prompt,
-            now: request.now,
-        })
+        self.admit_refinement(
+            StagedLorebookRefineRequest {
+                request_id: request.request_id,
+                project_request_id: request.project_request_id,
+                plan_id: request.plan_id,
+                feedback: request.feedback,
+                profile,
+                prompt: &prompt,
+                now: request.now,
+            },
+            Some(request.overrides),
+        )
     }
 
     pub fn prepare_and_admit_refinement(
         &self,
         request: StagedLorebookRefineRequest<'_>,
+    ) -> Result<StagedLorebookWriterAdmission, StagedLorebookWriterAdmissionError> {
+        self.admit_refinement(request, None)
+    }
+
+    fn admit_refinement(
+        &self,
+        request: StagedLorebookRefineRequest<'_>,
+        configured_overrides: Option<lettuce_settings::LorebookGeneratorSelection>,
     ) -> Result<StagedLorebookWriterAdmission, StagedLorebookWriterAdmissionError> {
         validate_refine_request(&request)?;
         match self
@@ -285,7 +326,11 @@ where
             .load_staged_lorebook_writer_run(request.request_id)
         {
             Ok(run) => {
-                if !same_refine_request(&run, &request) {
+                if !same_refine_request(&run, &request)
+                    || configured_overrides.as_ref().is_some_and(|overrides| {
+                        run.configured_overrides.as_ref() != Some(overrides)
+                    })
+                {
                     return Err(StagedLorebookWriterRunRepositoryError::Conflict.into());
                 }
                 let job = self
@@ -331,6 +376,7 @@ where
         let run = self
             .runs
             .admit_staged_lorebook_writer_run(StagedLorebookWriterRun {
+                configured_overrides,
                 request_id: request.request_id,
                 job_id: admitted.job.id,
                 project_request_id: request.project_request_id,

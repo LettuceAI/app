@@ -4838,6 +4838,40 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         )
         .expect("admit staged refinement");
     assert!(admitted_refine.created);
+    let settings = GlobalSettingsStore::load(&database).expect("settings before refinement replay");
+    let mut changed_settings = settings.settings;
+    changed_settings
+        .lorebook_generator
+        .selection
+        .refine_prompt_id = Some(lettuce_types::PromptDocumentId::new());
+    GlobalSettingsStore::save(
+        &database,
+        changed_settings,
+        settings.default_model_profile_id,
+        settings.revision,
+    )
+    .expect("change live refinement prompt");
+    let mut replay_refine = crate::StagedLorebookConfiguredRefineRequest {
+        request_id: refine_request.request_id,
+        project_request_id: refine_request.project_request_id,
+        plan_id: refine_request.plan_id,
+        feedback: refine_request.feedback.clone(),
+        overrides: Default::default(),
+        safety_policy: SafetyContext::Standard,
+        now: refine_request.now,
+    };
+    let replay = writer
+        .prepare_and_admit_configured_refinement(replay_refine.clone(), &writer_builtins)
+        .expect("replay ignores missing live prompt");
+    assert!(!replay.created);
+    assert_eq!(replay.run, admitted_refine.run);
+    replay_refine.feedback = "different instruction".into();
+    assert!(matches!(
+        writer.prepare_and_admit_configured_refinement(replay_refine, &writer_builtins),
+        Err(crate::StagedLorebookWriterAdmissionError::Run(
+            lettuce_creation::StagedLorebookWriterRunRepositoryError::Conflict
+        ))
+    ));
     assert_eq!(admitted_refine.run.project_revision, Revision::new(9));
     assert_eq!(
         admitted_refine
@@ -5125,6 +5159,38 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         )
         .expect("admit coherence inference");
     assert!(admitted_coherence.created);
+    let settings = GlobalSettingsStore::load(&database).expect("settings before coherence replay");
+    let mut changed_settings = settings.settings;
+    changed_settings
+        .lorebook_generator
+        .selection
+        .coherence_prompt_id = Some(lettuce_types::PromptDocumentId::new());
+    GlobalSettingsStore::save(
+        &database,
+        changed_settings,
+        settings.default_model_profile_id,
+        settings.revision,
+    )
+    .expect("change live coherence prompt");
+    let mut replay_coherence = crate::StagedLorebookConfiguredCoherenceRequest {
+        request_id: coherence_request.request_id,
+        project_request_id: coherence_request.project_request_id,
+        overrides: Default::default(),
+        safety_policy: SafetyContext::Standard,
+        now: coherence_request.now,
+    };
+    let replay = coordinator
+        .admit_configured_coherence(replay_coherence.clone(), &writer_builtins)
+        .expect("coherence replay ignores missing live prompt");
+    assert!(!replay.created);
+    assert_eq!(replay.run, admitted_coherence.run);
+    replay_coherence.overrides.coherence_prompt_id = Some(coherence_prompt_id);
+    assert!(matches!(
+        coordinator.admit_configured_coherence(replay_coherence, &writer_builtins),
+        Err(crate::StagedLorebookAdmissionError::Repository(
+            lettuce_creation::StagedLorebookRepositoryError::Conflict
+        ))
+    ));
     let coherence_run = admitted_coherence
         .run
         .coherence_runs

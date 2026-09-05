@@ -17,6 +17,8 @@ project model/four prompt overrides and the originally requested target count.
 This is stored in the existing run JSON alongside the frozen planner profile.
 Missing provenance in earlier documents defaults to None. The selection type
 is reused from settings; no duplicate selection schema or storage port is added.
+Refinement and coherence runs also retain optional per-operation overrides for
+configured admission replay, defaulting to None for older run documents.
 
 The verified creation-helper progressive-edit and finalization behavior is
 pinned in
