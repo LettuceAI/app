@@ -313,7 +313,8 @@ fn render_context(
                 input_scopes: vec!["text".into()],
                 output_scopes: vec!["text".into()],
                 provider_id: Some(run.profile.chat_profile.provider_kind.clone()),
-                reasoning_enabled: run.profile.chat_profile.parameters.reasoning_mode.is_some()
+                reasoning_enabled: run.profile.chat_profile.parameters.reasoning_mode
+                    == Some(lettuce_models::ReasoningMode::Enabled)
                     || run
                         .profile
                         .chat_profile

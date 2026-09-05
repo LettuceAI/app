@@ -4218,9 +4218,17 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .bootstrap(TimestampMillis::new(NOW.get() + 1))
         .expect("prompt ids")
         .get(BuiltInPromptId::LorebookGeneratorPlanner);
-    let prompt = PromptRepository::get(&database, prompt_id)
+    let mut prompt = PromptRepository::get(&database, prompt_id)
         .expect("prompt")
         .expect("prompt exists");
+    for value in [false, true] {
+        prompt.entries.push(lettuce_context::PromptEntry {
+            name: format!("reasoning-{value}"),
+            content: format!("REASONING_CONDITION_{value}"),
+            conditions: Some(lettuce_context::PromptEntryCondition::ReasoningEnabled { value }),
+            ..Default::default()
+        });
+    }
     let request_id = RequestId::new();
     let project_id = lettuce_types::CreationWorkflowId::new();
     let make_request = || crate::StagedLorebookAdmissionRequest {
@@ -4387,6 +4395,8 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(rendered_text.contains("Harbour world"));
+        assert!(rendered_text.contains("REASONING_CONDITION_false"));
+        assert!(!rendered_text.contains("REASONING_CONDITION_true"));
         assert!(rendered_text.contains("[src_01] Notes\nAda keeps the harbour key."));
         assert!(
             rendered_text.contains(lettuce_creation::STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION)

@@ -271,12 +271,8 @@ fn render_context(
                 input_scopes: vec!["text".to_owned()],
                 output_scopes: vec!["text".to_owned()],
                 provider_id: Some(run.planner_profile.chat_profile.provider_kind.clone()),
-                reasoning_enabled: run
-                    .planner_profile
-                    .chat_profile
-                    .parameters
-                    .reasoning_mode
-                    .is_some()
+                reasoning_enabled: run.planner_profile.chat_profile.parameters.reasoning_mode
+                    == Some(lettuce_models::ReasoningMode::Enabled)
                     || run
                         .planner_profile
                         .chat_profile
