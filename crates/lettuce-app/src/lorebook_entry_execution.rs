@@ -224,6 +224,8 @@ fn native_checkpoint(
             .as_ref()
             .map(|usage| LorebookEntryAttemptUsage {
                 input_tokens: usage.input_tokens,
+                cached_input_tokens: usage.cached_input_tokens,
+                reasoning_tokens: usage.reasoning_tokens,
                 output_tokens: usage.output_tokens,
             }),
         outcome.provider_finish_reason.clone(),
@@ -267,6 +269,8 @@ fn fallback_checkpoint(
             .map(|usage| LorebookEntryAttemptUsage {
                 input_tokens: usage.input_tokens,
                 output_tokens: usage.output_tokens,
+                cached_input_tokens: usage.cached_input_tokens,
+                reasoning_tokens: usage.reasoning_tokens,
             }),
         outcome.provider_finish_reason.clone(),
         outcome.provider_request_id.clone(),

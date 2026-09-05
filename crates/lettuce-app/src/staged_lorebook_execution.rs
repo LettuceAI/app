@@ -140,6 +140,8 @@ where
                 .as_ref()
                 .map(|usage| StagedLorebookPlannerUsage {
                     input_tokens: usage.input_tokens,
+                    cached_input_tokens: usage.cached_input_tokens,
+                    reasoning_tokens: usage.reasoning_tokens,
                     output_tokens: usage.output_tokens,
                 }),
             provider_finish_reason: outcome.provider_finish_reason.clone(),

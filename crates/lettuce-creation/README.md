@@ -12,6 +12,13 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
+Lorebook entry/keyword primary and fallback checkpoints, and staged planner,
+writer/refinement/coherence checkpoints retain optional cached-input/reasoning
+token counters alongside native totals. Older JSON defaults missing details to
+None; explicit zero remains distinct. App mappings copy provider evidence
+without billing normalization. Tests cover old/new JSON for all four usage
+types and staged planner persistence/replay with reported details.
+
 ### Lorebook workflow scenario coverage
 
 The pinned `fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`

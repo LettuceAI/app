@@ -686,8 +686,40 @@ pub enum StagedLorebookPlannerDecision {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StagedLorebookPlannerUsage {
+    #[serde(default)]
+    pub cached_input_tokens: Option<u64>,
+    #[serde(default)]
+    pub reasoning_tokens: Option<u64>,
     pub input_tokens: u64,
     pub output_tokens: u64,
+}
+
+#[cfg(test)]
+#[test]
+fn lorebook_usage_details_round_trip_and_old_checkpoints_remain_readable() {
+    let old = serde_json::json!({"input_tokens": 10, "output_tokens": 4});
+    let detailed = serde_json::json!({
+        "input_tokens": 10, "output_tokens": 4,
+        "cached_input_tokens": 0, "reasoning_tokens": 2
+    });
+    macro_rules! check {
+        ($kind:ty) => {
+            let previous: $kind = serde_json::from_value(old.clone()).expect("old usage");
+            assert_eq!(previous.cached_input_tokens, None);
+            assert_eq!(previous.reasoning_tokens, None);
+            let current: $kind = serde_json::from_value(detailed.clone()).expect("usage details");
+            assert_eq!(current.cached_input_tokens, Some(0));
+            assert_eq!(current.reasoning_tokens, Some(2));
+            assert_eq!(
+                serde_json::to_value(current).expect("serialize usage"),
+                detailed
+            );
+        };
+    }
+    check!(StagedLorebookPlannerUsage);
+    check!(StagedLorebookWriterUsage);
+    check!(crate::LorebookEntryAttemptUsage);
+    check!(crate::LorebookKeywordAttemptUsage);
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -763,6 +795,10 @@ pub enum StagedLorebookWriterDecision {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StagedLorebookWriterUsage {
+    #[serde(default)]
+    pub cached_input_tokens: Option<u64>,
+    #[serde(default)]
+    pub reasoning_tokens: Option<u64>,
     pub input_tokens: u64,
     pub output_tokens: u64,
 }

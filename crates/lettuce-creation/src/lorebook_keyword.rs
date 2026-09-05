@@ -101,6 +101,10 @@ pub enum LorebookKeywordAttemptDecision {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LorebookKeywordAttemptUsage {
+    #[serde(default)]
+    pub cached_input_tokens: Option<u64>,
+    #[serde(default)]
+    pub reasoning_tokens: Option<u64>,
     pub input_tokens: u64,
     pub output_tokens: u64,
 }

@@ -4559,8 +4559,8 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
-                cached_input_tokens: None,
-                reasoning_tokens: None,
+                cached_input_tokens: Some(7),
+                reasoning_tokens: Some(2),
                 input_tokens: 40,
                 output_tokens: 10,
             }),
@@ -4605,8 +4605,13 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .planner_attempt
             .as_ref()
             .and_then(|attempt| attempt.usage.as_ref())
-            .map(|usage| (usage.input_tokens, usage.output_tokens)),
-        Some((40, 10))
+            .map(|usage| (
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cached_input_tokens,
+                usage.reasoning_tokens
+            )),
+        Some((40, 10, Some(7), Some(2)))
     );
     {
         let requests = inference.requests.lock().expect("requests");
