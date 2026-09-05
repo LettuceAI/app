@@ -12,6 +12,28 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
+### Lorebook workflow scenario coverage
+
+The pinned `fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`
+remains the legacy behavior baseline, not a statement that its original
+first-slice exclusions are still unimplemented. Current backend coverage:
+
+| Scenario group | Implemented boundary and evidence |
+| --- | --- |
+| Text/Markdown sources and byte/excerpt bounds | `staged_lorebook_sources` preserves legacy limits, order and Unicode truncation; binary/PDF intake is deferred. |
+| Planner outline, required tool, approval and edits | `staged_lorebook` reducer/domain tests and app staged SQLite scenario cover nonempty plans, source ownership, stable IDs and review CAS. |
+| Three-entry batches, failure/retry and partial recovery | Existing batch checkpoint plus per-entry runs preserve completed drafts, retry failed identities under new jobs, and reject stale batch writes. |
+| Draft edits, refinement/history and coherence acceptance | Domain transitions and the SQLite execution scenario cover reviewed changes, append-only refinement history and selected stable-ID coherence proposals. |
+| Explicit accepted-draft commit | SQLite creation repository applies new/existing book plus accepted entries and receipt in one transaction; stale requests and duplicate commit intent are checked. |
+| Cancellation and durable replay | App scenario covers job settlement, retained review state, late response cancellation, frozen model/prompt inputs and replay without inference redispatch. |
+
+Single-entry and keyword generation remain proposal-only, with native then
+structured fallback and their own admission/execution tests. The staged scenario
+uses scripted inference and repository reloads, not a process-kill test or a
+live provider. PDF extraction, protected raw-source asset ingestion, automatic
+host scheduling, progress IPC and frontend integration are still deferred.
+Backend scenario coverage does not mean the user-facing rewrite is complete.
+
 Staged planning runs retain optional configured input provenance: explicit
 project model/four prompt overrides and the originally requested target count.
 This is stored in the existing run JSON alongside the frozen planner profile.

@@ -11,7 +11,8 @@ overrides use the existing operation parameter layer. Unset temperature/top-p
 use legacy 0.3/1.0; unset output tokens use the generator setting (default 4096),
 not ordinary chat output tokens. Other unset fields inherit model parameters.
 Reasoning is disabled with effort/budget cleared as in legacy feature requests.
-Staged prompt conditions treat an explicit Disabled mode as reasoning off.
+Staged, single-entry and keyword prompt conditions treat an explicit Disabled
+mode as reasoning off.
 `admit_configured` loads persisted settings,
 the selected model/account and planner prompt through existing ports, resolves
 the profile with the shared model resolver, applies legacy target-count defaults

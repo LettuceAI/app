@@ -3688,6 +3688,8 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
         .expect("profile")
         .expect("profile exists");
     stored_profile.config.chat_parameters.temperature = None;
+    stored_profile.config.chat_parameters.reasoning_mode =
+        Some(lettuce_models::ReasoningMode::Disabled);
     let account = ProviderAccountRepository::get(&database, stored_profile.provider_account_id)
         .expect("account")
         .expect("account exists");
@@ -3719,9 +3721,17 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
         .bootstrap(TimestampMillis::new(NOW.get() + 1))
         .expect("prompt ids")
         .get(BuiltInPromptId::LorebookKeywordGenerator);
-    let prompt = PromptRepository::get(&database, prompt_id)
+    let mut prompt = PromptRepository::get(&database, prompt_id)
         .expect("prompt")
         .expect("prompt exists");
+    for value in [false, true] {
+        prompt.entries.push(lettuce_context::PromptEntry {
+            name: format!("reasoning-{value}"),
+            content: format!("KEYWORD_REASONING_{value}"),
+            conditions: Some(lettuce_context::PromptEntryCondition::ReasoningEnabled { value }),
+            ..Default::default()
+        });
+    }
     let request_id = RequestId::new();
     let make_request = || crate::LorebookKeywordRequest {
         request_id,
@@ -3841,6 +3851,19 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
     {
         let requests = native_inference.requests.lock().expect("keyword requests");
         assert_eq!(requests.len(), 1);
+        let text = requests[0]
+            .context
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                ProviderContextPart::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("KEYWORD_REASONING_false"));
+        assert!(!text.contains("KEYWORD_REASONING_true"));
         assert!(requests[0].tools.is_some());
         assert!(
             requests[0]
