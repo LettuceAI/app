@@ -25,6 +25,16 @@ pub struct StagedLorebookWriterRequest<'a> {
     pub now: TimestampMillis,
 }
 
+struct WriterAdmissionInput {
+    request_id: RequestId,
+    project_request_id: RequestId,
+    plan_id: LorebookEntryId,
+    profile: ResolvedInferenceProfile,
+    prompt_id: lettuce_types::PromptDocumentId,
+    prompt_revision: Revision,
+    now: TimestampMillis,
+}
+
 #[derive(Debug, Clone)]
 pub struct StagedLorebookRefineRequest<'a> {
     pub request_id: RequestId,
@@ -103,6 +113,21 @@ where
         request: StagedLorebookWriterRequest<'_>,
     ) -> Result<StagedLorebookWriterAdmission, StagedLorebookWriterAdmissionError> {
         validate_request(&request)?;
+        self.admit_writer(WriterAdmissionInput {
+            request_id: request.request_id,
+            project_request_id: request.project_request_id,
+            plan_id: request.plan_id,
+            profile: request.profile,
+            prompt_id: request.prompt.id,
+            prompt_revision: request.prompt.revision,
+            now: request.now,
+        })
+    }
+
+    fn admit_writer(
+        &self,
+        request: WriterAdmissionInput,
+    ) -> Result<StagedLorebookWriterAdmission, StagedLorebookWriterAdmissionError> {
         match self
             .runs
             .load_staged_lorebook_writer_run(request.request_id)
@@ -159,8 +184,8 @@ where
             project_revision: project.project.revision,
             plan_id: request.plan_id,
             profile: request.profile,
-            prompt_id: request.prompt.id,
-            prompt_revision: request.prompt.revision,
+            prompt_id: request.prompt_id,
+            prompt_revision: request.prompt_revision,
             prompt_values: values,
             refinement: None,
             created_at: request.now,
@@ -190,15 +215,52 @@ where
             + lettuce_models::ProviderAccountRepository
             + lettuce_context::PromptRepository,
     {
+        let current = self.projects.load_staged_lorebook(project_request_id)?;
+        if matches!(
+            current.project.stage,
+            StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady
+        ) && current
+            .project
+            .drafts
+            .iter()
+            .any(|draft| draft.status == StagedLorebookDraftStatus::Drafting)
+        {
+            let inputs = current
+                .writer_batch_inputs
+                .clone()
+                .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
+            if &inputs.overrides != overrides || inputs.profile.safety_policy != safety_policy {
+                return Err(StagedLorebookWriterRunRepositoryError::Conflict.into());
+            }
+            return self.admit_batch_writers(
+                current,
+                inputs.profile,
+                inputs.prompt_id,
+                inputs.prompt_revision,
+            );
+        }
         let coordinator = crate::StagedLorebookCoordinator::new(self.projects, self.jobs);
-        let overrides = coordinator.project_overrides(project_request_id, overrides)?;
+        let selected = coordinator.project_overrides(project_request_id, overrides)?;
         let (profile, prompt, _) = coordinator.resolve_configured_stage(
-            &overrides,
+            &selected,
             builtins,
             PromptPurpose::LorebookGeneratorWriter,
             safety_policy,
         )?;
-        self.start_batch(project_request_id, expected_revision, profile, &prompt, now)
+        validate_writer_inputs(&profile, &prompt)?;
+        let inputs = lettuce_creation::StagedLorebookWriterBatchInputs {
+            overrides: overrides.clone(),
+            profile: profile.clone(),
+            prompt_id: prompt.id,
+            prompt_revision: prompt.revision,
+        };
+        let project = self.projects.start_staged_lorebook_draft_batch(
+            project_request_id,
+            expected_revision,
+            Some(inputs),
+            now,
+        )?;
+        self.admit_batch_writers(project, profile, prompt.id, prompt.revision)
     }
 
     pub fn start_batch(
@@ -213,8 +275,26 @@ where
         let project = self.projects.start_staged_lorebook_draft_batch(
             project_request_id,
             expected_revision,
+            None,
             now,
         )?;
+        self.admit_batch_writers(project, profile, prompt.id, prompt.revision)
+    }
+
+    fn admit_batch_writers(
+        &self,
+        project: StagedLorebookPlanningRun,
+        profile: ResolvedInferenceProfile,
+        prompt_id: lettuce_types::PromptDocumentId,
+        prompt_revision: Revision,
+    ) -> Result<StagedLorebookWriterBatchAdmission, StagedLorebookWriterAdmissionError> {
+        if project.writer_batch_inputs.as_ref().is_some_and(|inputs| {
+            inputs.profile != profile
+                || inputs.prompt_id != prompt_id
+                || inputs.prompt_revision != prompt_revision
+        }) {
+            return Err(StagedLorebookWriterRunRepositoryError::Conflict.into());
+        }
         let plan_ids = project
             .project
             .drafts
@@ -233,12 +313,13 @@ where
                 &project.project.id.as_uuid(),
                 format!("writer-{plan_id}-{}", batch.revision.get()).as_bytes(),
             ));
-            writers.push(self.prepare_and_admit(StagedLorebookWriterRequest {
+            writers.push(self.admit_writer(WriterAdmissionInput {
                 request_id,
-                project_request_id,
+                project_request_id: project.request_id,
                 plan_id,
                 profile: profile.clone(),
-                prompt,
+                prompt_id,
+                prompt_revision,
                 now: batch.started_at,
             })?);
         }
@@ -612,13 +693,13 @@ fn format_excerpt(excerpt: &StagedLorebookSourceExcerpt) -> String {
     )
 }
 
-fn same_request(run: &StagedLorebookWriterRun, request: &StagedLorebookWriterRequest<'_>) -> bool {
+fn same_request(run: &StagedLorebookWriterRun, request: &WriterAdmissionInput) -> bool {
     run.request_id == request.request_id
         && run.project_request_id == request.project_request_id
         && run.plan_id == request.plan_id
         && run.profile == request.profile
-        && run.prompt_id == request.prompt.id
-        && run.prompt_revision == request.prompt.revision
+        && run.prompt_id == request.prompt_id
+        && run.prompt_revision == request.prompt_revision
         && run.created_at == request.now
         && run.refinement.is_none()
 }

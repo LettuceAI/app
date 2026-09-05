@@ -598,6 +598,8 @@ pub struct StagedLorebookPlanningRun {
     #[serde(default)]
     pub configured_inputs: Option<StagedLorebookConfiguredInputs>,
     #[serde(default)]
+    pub writer_batch_inputs: Option<StagedLorebookWriterBatchInputs>,
+    #[serde(default)]
     pub planner_attempt: Option<StagedLorebookPlannerAttempt>,
     #[serde(default)]
     pub planner_retries: Vec<StagedLorebookPlannerRetry>,
@@ -610,6 +612,15 @@ pub struct StagedLorebookPlanningRun {
 pub struct StagedLorebookConfiguredInputs {
     pub overrides: lettuce_settings::LorebookGeneratorSelection,
     pub target_count: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookWriterBatchInputs {
+    pub overrides: lettuce_settings::LorebookGeneratorSelection,
+    pub profile: ResolvedInferenceProfile,
+    pub prompt_id: PromptDocumentId,
+    pub prompt_revision: Revision,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -882,6 +893,7 @@ pub trait StagedLorebookRepository: Send + Sync {
         &self,
         request_id: RequestId,
         expected_revision: Revision,
+        inputs: Option<StagedLorebookWriterBatchInputs>,
         now: TimestampMillis,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
 
@@ -974,6 +986,11 @@ impl StagedLorebookPlanningRun {
         }
         let mut coherence_job_ids = HashSet::with_capacity(self.coherence_runs.len());
         if self.planner_prompt_revision.get() == 0
+            || self.writer_batch_inputs.as_ref().is_some_and(|inputs| {
+                self.project.draft_batch.is_none()
+                    || inputs.prompt_revision.get() == 0
+                    || serde_json::to_vec(&inputs.profile).is_err()
+            })
             || self
                 .project
                 .commit_receipt

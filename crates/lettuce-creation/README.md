@@ -19,6 +19,9 @@ Missing provenance in earlier documents defaults to None. The selection type
 is reused from settings; no duplicate selection schema or storage port is added.
 Refinement and coherence runs also retain optional per-operation overrides for
 configured admission replay, defaulting to None for older run documents.
+Configured writer batches keep their resolved profile, prompt identity/revision
+and original operation overrides alongside the current batch checkpoint. Batch
+start stores these in the same transaction before per-entry jobs are admitted.
 
 The verified creation-helper progressive-edit and finalization behavior is
 pinned in

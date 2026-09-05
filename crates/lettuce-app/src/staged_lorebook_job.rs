@@ -771,6 +771,7 @@ fn run_from(
         planner_prompt_id: request.planner_prompt.id,
         planner_prompt_revision: request.planner_prompt.revision,
         configured_inputs: request.configured_inputs.clone(),
+        writer_batch_inputs: None,
         planner_attempt: None,
         planner_retries: Vec::new(),
         coherence_runs: Vec::new(),

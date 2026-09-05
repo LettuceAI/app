@@ -25,7 +25,12 @@ and defaults. Planner admission replay uses its saved inputs/profile even after
 settings or model changes, rejecting changed request inputs. Configured refinement
 and coherence also persist per-operation overrides and replay before live
 configuration resolution; changed feedback, ownership, time, safety or overrides
-conflict. Writer batch replay after configuration changes remains pending. Automatic host
+conflict. Configured writer batches persist profile, prompt identity/revision and
+operation overrides atomically with batch start. Partial admission resumes from
+that checkpoint without resolving current settings, including entries that have
+no job yet. Resolved low-level callers cannot replace a frozen batch profile.
+Older low-level batches without this checkpoint still use their resolved API.
+Automatic host
 wiring remains pending.
 Writer batches validate prompt and text modalities before changing the project
 or creating jobs, so invalid inputs leave the draft checkpoint unchanged.

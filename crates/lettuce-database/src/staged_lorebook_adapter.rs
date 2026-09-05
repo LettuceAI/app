@@ -733,6 +733,7 @@ impl StagedLorebookRepository for Database {
         &self,
         request_id: RequestId,
         expected_revision: Revision,
+        inputs: Option<lettuce_creation::StagedLorebookWriterBatchInputs>,
         now: TimestampMillis,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
         let mut connection = self.connection().map_err(failure)?;
@@ -753,6 +754,9 @@ impl StagedLorebookRepository for Database {
             .iter()
             .any(|draft| draft.status == lettuce_creation::StagedLorebookDraftStatus::Drafting)
         {
+            if inputs.is_some() && current.writer_batch_inputs != inputs {
+                return Err(StagedLorebookRepositoryError::Conflict);
+            }
             transaction.commit().map_err(failure)?;
             return Ok(current);
         }
@@ -764,6 +768,11 @@ impl StagedLorebookRepository for Database {
             .project
             .start_draft_batch(now)
             .map_err(|_| StagedLorebookRepositoryError::Conflict)?;
+        next.writer_batch_inputs = inputs;
+        if next.project.draft_batch.is_none() {
+            next.writer_batch_inputs = None;
+        }
+        next.validate()?;
         let encoded = encode_versioned(&next, RUN_FORMAT_VERSION).map_err(failure)?;
         if transaction.execute("UPDATE creation_staged_lorebook_runs SET stage = ?2, revision = ?3, updated_at = ?4, run_json = ?5 WHERE request_id = ?1 AND revision = ?6", params![request_id.to_string(), stage(next.project.stage), i64::try_from(next.project.revision.get()).map_err(failure)?, now.get(), encoded, i64::try_from(expected_revision.get()).map_err(failure)?]).map_err(failure)? != 1 { return Err(StagedLorebookRepositoryError::Conflict); }
         transaction.commit().map_err(failure)?;

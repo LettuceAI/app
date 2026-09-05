@@ -4523,6 +4523,33 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .expect("configuration failure leaves project unchanged"),
         drafting
     );
+    let frozen_batch =
+        lettuce_creation::StagedLorebookRepository::start_staged_lorebook_draft_batch(
+            &database,
+            request_id,
+            Revision::new(4),
+            Some(lettuce_creation::StagedLorebookWriterBatchInputs {
+                overrides: Default::default(),
+                profile: profile.clone(),
+                prompt_id: writer_prompt.id,
+                prompt_revision: writer_prompt.revision,
+            }),
+            TimestampMillis::new(NOW.get() + 9),
+        )
+        .expect("persist configured batch before any writer admission");
+    let settings = GlobalSettingsStore::load(&database).expect("settings before batch restart");
+    let mut changed_settings = settings.settings;
+    changed_settings
+        .lorebook_generator
+        .selection
+        .writer_prompt_id = Some(lettuce_types::PromptDocumentId::new());
+    GlobalSettingsStore::save(
+        &database,
+        changed_settings,
+        settings.default_model_profile_id,
+        settings.revision,
+    )
+    .expect("change writer prompt before restart");
     let batch = writer
         .start_configured_batch(
             request_id,
@@ -4533,6 +4560,23 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             TimestampMillis::new(NOW.get() + 9),
         )
         .expect("start staged writer batch");
+    assert_eq!(batch.project, frozen_batch);
+    assert!(matches!(
+        writer.start_configured_batch(
+            request_id,
+            Revision::new(4),
+            &lettuce_settings::LorebookGeneratorSelection {
+                model_profile_id: Some(model_id),
+                ..Default::default()
+            },
+            &writer_builtins,
+            SafetyContext::Standard,
+            TimestampMillis::new(NOW.get() + 9),
+        ),
+        Err(crate::StagedLorebookWriterAdmissionError::Run(
+            lettuce_creation::StagedLorebookWriterRunRepositoryError::Conflict
+        ))
+    ));
     assert_eq!(batch.writers.len(), 1);
     let admitted_writer = batch.writers[0].clone();
     let writer_request_id = admitted_writer.run.request_id;
@@ -5444,7 +5488,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             }
         }
         run = database
-            .start_staged_lorebook_draft_batch(id, run.project.revision, at)
+            .start_staged_lorebook_draft_batch(id, run.project.revision, None, at)
             .expect("staged commit fixture");
         let target_id = if case == "existing" {
             destination
