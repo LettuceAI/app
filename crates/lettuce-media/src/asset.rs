@@ -31,6 +31,7 @@ pub enum AssetKind {
     SynthesizedSpeech,
     OtherImage,
     OtherAudio,
+    SourceDocument,
 }
 
 impl AssetKind {
@@ -38,6 +39,7 @@ impl AssetKind {
     #[must_use]
     pub const fn blob_kind(self) -> MediaKind {
         match self {
+            Self::SourceDocument => MediaKind::Document,
             Self::MessageAudio | Self::SynthesizedSpeech | Self::OtherAudio => MediaKind::Audio,
             Self::AvatarOriginal
             | Self::BackgroundImage

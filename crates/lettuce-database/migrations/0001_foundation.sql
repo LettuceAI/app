@@ -74,7 +74,7 @@ CREATE TABLE job_events (
 CREATE TABLE media_blobs (
     id TEXT PRIMARY KEY,
     content_hash TEXT NOT NULL UNIQUE CHECK (length(content_hash) = 64),
-    kind TEXT NOT NULL CHECK (kind IN ('image','audio','video')),
+    kind TEXT NOT NULL CHECK (kind IN ('image','audio','video','document')),
     mime_type TEXT NOT NULL CHECK (length(trim(mime_type)) > 0),
     byte_size INTEGER NOT NULL CHECK (byte_size >= 0),
     width INTEGER CHECK (width > 0),

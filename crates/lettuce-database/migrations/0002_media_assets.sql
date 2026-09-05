@@ -6,11 +6,11 @@ CREATE UNIQUE INDEX media_blobs_id_kind_unique ON media_blobs(id, kind);
 CREATE TABLE media_assets (
     id TEXT PRIMARY KEY,
     blob_id TEXT NOT NULL,
-    blob_kind TEXT NOT NULL CHECK (blob_kind IN ('image', 'audio')),
+    blob_kind TEXT NOT NULL CHECK (blob_kind IN ('image', 'audio', 'document')),
     kind TEXT NOT NULL CHECK (kind IN (
         'avatar_original', 'background_image', 'illustration', 'lorebook_icon',
         'message_image', 'message_audio', 'generated_image',
-        'synthesized_speech', 'other_image', 'other_audio'
+        'synthesized_speech', 'other_image', 'other_audio', 'source_document'
     )),
     origin TEXT NOT NULL CHECK (origin IN (
         'upload', 'import', 'remote_fetch', 'generated', 'synthesized', 'legacy'
@@ -29,6 +29,7 @@ CREATE TABLE media_assets (
         ) AND blob_kind = 'image')
         OR
         (kind IN ('message_audio', 'synthesized_speech', 'other_audio') AND blob_kind = 'audio')
+        OR (kind = 'source_document' AND blob_kind = 'document')
     ),
     FOREIGN KEY (blob_id, blob_kind)
         REFERENCES media_blobs(id, kind)

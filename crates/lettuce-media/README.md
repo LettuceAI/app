@@ -4,6 +4,17 @@ Content-addressed user media, validation, derivatives, serving, retention, and r
 
 ## Boundary
 
+Source documents use the existing content-addressed store and descriptor-backed
+`open_ready` path with `AssetKind::SourceDocument` / `MediaKind::Document`.
+PDF signatures (1.0–1.7 and 2.0) and UTF-8 text are accepted; Markdown shares
+canonical `text/plain` metadata so identical bytes deduplicate consistently.
+Invalid UTF-8 is not accepted as text, matching legacy text intake. PDF header
+recognition is not structural validation, extraction or sanitization; a later
+extractor must reject malformed/encrypted documents as appropriate. Nothing is
+rendered or executed during ingestion. Existing size bounds and retention
+policies apply; feature-specific legacy source limits remain at intake.
+Creation-project source associations and PDF extraction are not yet wired.
+
 Exposes asset IDs, never managed native paths.
 
 The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.

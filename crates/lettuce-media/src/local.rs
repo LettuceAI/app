@@ -185,7 +185,11 @@ where
             .validate()
             .map_err(|_| MediaStoreError::InvalidMetadata)?;
         let bytes = read_bounded(input)?;
-        let sniffed = sniff(&bytes)?;
+        let sniffed = if request.asset_kind == AssetKind::SourceDocument {
+            sniff_document(&bytes)?
+        } else {
+            sniff(&bytes)?
+        };
         if sniffed.kind != request.asset_kind.blob_kind() {
             return Err(MediaStoreError::KindMismatch);
         }
@@ -413,6 +417,29 @@ struct SniffedMedia {
 
 // This is bounded signature/header sniffing only. It does not decode bodies,
 // verify CRCs or prove that a complete media stream is present.
+fn sniff_document(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
+    let mime_type = if bytes.starts_with(b"%PDF-") {
+        if bytes.len() < 8
+            || !matches!(
+                &bytes[5..8],
+                b"1.0" | b"1.1" | b"1.2" | b"1.3" | b"1.4" | b"1.5" | b"1.6" | b"1.7" | b"2.0"
+            )
+        {
+            return Err(MediaStoreError::InvalidHeader);
+        }
+        "application/pdf"
+    } else {
+        std::str::from_utf8(bytes).map_err(|_| MediaStoreError::UnsupportedFormat)?;
+        "text/plain"
+    };
+    Ok(SniffedMedia {
+        kind: MediaKind::Document,
+        mime_type,
+        width: None,
+        height: None,
+    })
+}
+
 fn sniff(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         return sniff_png(bytes);
@@ -764,6 +791,9 @@ fn object_key(hash: &ContentHash) -> Result<ObjectKey, MediaStoreError> {
 }
 
 fn mime_matches(declared: &str, detected: &str) -> bool {
+    if detected == "text/plain" && declared.trim().eq_ignore_ascii_case("text/markdown") {
+        return true;
+    }
     let normalized = declared.trim();
     match detected {
         "image/jpeg" => {
@@ -984,6 +1014,48 @@ mod tests {
         let mut read_back = Vec::new();
         opened.reader.read_to_end(&mut read_back).expect("read");
         assert_eq!(read_back, input);
+        for (bytes, mime) in [
+            (b"%PDF-1.7\nsource".as_slice(), "application/pdf"),
+            ("# Dünya\nSource notes".as_bytes(), "text/markdown"),
+        ] {
+            let request = IngestRequest::new(
+                AssetKind::SourceDocument,
+                AssetOrigin::Upload,
+                RetentionClass::Library,
+                AssetProvenanceV1::default(),
+            )
+            .with_declared_mime_type(mime);
+            let document = store
+                .ingest(bytes, request.clone())
+                .expect("source document");
+            assert_eq!(document.blob.kind, MediaKind::Document);
+            let duplicate = store.ingest(bytes, request).expect("deduplicated source");
+            assert_eq!(document.blob.id, duplicate.blob.id);
+            let mut source = store
+                .open_ready(document.asset.id)
+                .expect("protected document reader");
+            let mut content = Vec::new();
+            source
+                .reader
+                .read_to_end(&mut content)
+                .expect("document bytes");
+            assert_eq!(content, bytes);
+        }
+        for bytes in [b"%PDF-x.y".as_slice(), &[0xff]] {
+            assert!(
+                store
+                    .ingest(
+                        bytes,
+                        IngestRequest::new(
+                            AssetKind::SourceDocument,
+                            AssetOrigin::Upload,
+                            RetentionClass::Library,
+                            AssetProvenanceV1::default(),
+                        )
+                    )
+                    .is_err()
+            );
+        }
         drop(store);
         fs::remove_dir_all(root).expect("cleanup");
     }

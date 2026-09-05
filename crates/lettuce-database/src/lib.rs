@@ -996,6 +996,7 @@ fn media_kind_name(value: MediaKind) -> &'static str {
         MediaKind::Image => "image",
         MediaKind::Audio => "audio",
         MediaKind::Video => "video",
+        MediaKind::Document => "document",
     }
 }
 fn blob_state_name(value: BlobState) -> &'static str {
@@ -1014,6 +1015,7 @@ fn media_from_row(row: &Row<'_>) -> rusqlite::Result<MediaBlob> {
         "image" => MediaKind::Image,
         "audio" => MediaKind::Audio,
         "video" => MediaKind::Video,
+        "document" => MediaKind::Document,
         _ => return Err(rusqlite::Error::InvalidQuery),
     };
     let state = match row.get::<_, String>(9)?.as_str() {
@@ -1241,6 +1243,7 @@ fn asset_kind_name(value: AssetKind) -> &'static str {
         AssetKind::SynthesizedSpeech => "synthesized_speech",
         AssetKind::OtherImage => "other_image",
         AssetKind::OtherAudio => "other_audio",
+        AssetKind::SourceDocument => "source_document",
     }
 }
 
@@ -1256,6 +1259,7 @@ fn asset_kind_from_name(value: &str) -> Option<AssetKind> {
         "synthesized_speech" => AssetKind::SynthesizedSpeech,
         "other_image" => AssetKind::OtherImage,
         "other_audio" => AssetKind::OtherAudio,
+        "source_document" => AssetKind::SourceDocument,
         _ => return None,
     })
 }
@@ -1306,6 +1310,7 @@ fn asset_from_row(row: &Row<'_>) -> rusqlite::Result<MediaAsset> {
     let blob_kind = match row.get::<_, String>(2)?.as_str() {
         "image" => MediaKind::Image,
         "audio" => MediaKind::Audio,
+        "document" => MediaKind::Document,
         _ => return Err(rusqlite::Error::InvalidQuery),
     };
     let kind = asset_kind_from_name(row.get::<_, String>(3)?.as_str())
@@ -1690,6 +1695,7 @@ mod tests {
                 MediaKind::Image => "image/webp",
                 MediaKind::Audio => "audio/mpeg",
                 MediaKind::Video => "video/mp4",
+                MediaKind::Document => "application/pdf",
             }
             .into(),
             byte_size: 42,
@@ -2207,6 +2213,25 @@ mod tests {
             Err(DatabaseError::MigrationChecksum { id: 8 })
         ));
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn source_document_catalog_round_trip_and_kind_guard() {
+        let database = Database::open_in_memory().expect("database");
+        let blob = MediaBlobRepository::register(&database, media_blob('d', MediaKind::Document))
+            .expect("document blob");
+        let blob = MediaBlobRepository::finalize_staged_to_ready(
+            &database, blob.id, TimestampMillis::new(100),
+        ).expect("ready document blob");
+        let asset = media_asset(AssetId::new(), blob.id, AssetKind::SourceDocument);
+        let stored = MediaAssetRepository::create(&database, asset.clone()).expect("document asset");
+        assert_eq!(stored, asset);
+        assert_eq!(
+            MediaAssetRepository::get(&database, asset.id).expect("reload"), Some(asset)
+        );
+        assert!(MediaAssetRepository::create(
+            &database, media_asset(AssetId::new(), blob.id, AssetKind::OtherImage)
+        ).is_err());
     }
 
     #[test]
