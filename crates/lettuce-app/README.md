@@ -19,7 +19,11 @@ references and incompatible profiles fail before job creation.
 `start_configured_batch` reuses that selection/resolution path with the writer
 prompt, then starts the durable draft batch. Configured refinement and coherence
 admission use the same path with their own stage prompts. Each admission freezes
-its resolved inputs; callers supply per-operation overrides. Automatic host
+its resolved inputs. Explicit project model/prompt overrides are persisted;
+follow-up selection uses operation override, project override, then live settings
+and defaults. Planner admission replay uses its saved inputs/profile even after
+settings or model changes, rejecting changed request inputs. Configured follow-up
+replay after such changes still needs separate verification. Automatic host
 wiring remains pending.
 Writer batches validate prompt and text modalities before changing the project
 or creating jobs, so invalid inputs leave the draft checkpoint unchanged.

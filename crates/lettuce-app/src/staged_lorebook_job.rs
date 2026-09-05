@@ -64,6 +64,7 @@ pub struct StagedLorebookAdmissionRequest<'a> {
     pub excerpts: Vec<StagedLorebookSourceExcerpt>,
     pub planner_profile: ResolvedInferenceProfile,
     pub planner_prompt: &'a PromptDocument,
+    pub configured_inputs: Option<lettuce_creation::StagedLorebookConfiguredInputs>,
     pub now: TimestampMillis,
 }
 
@@ -232,6 +233,22 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
         ))
     }
 
+    pub(crate) fn project_overrides(
+        &self,
+        project_request_id: RequestId,
+        overrides: &lettuce_settings::LorebookGeneratorSelection,
+    ) -> Result<lettuce_settings::LorebookGeneratorSelection, StagedLorebookAdmissionError> {
+        let project = self.repository.load_staged_lorebook(project_request_id)?;
+        let settings = lettuce_settings::LorebookGeneratorSettings {
+            selection: project
+                .configured_inputs
+                .map(|inputs| inputs.overrides)
+                .unwrap_or_default(),
+            ..Default::default()
+        };
+        Ok(settings.select(overrides, None, &Default::default()))
+    }
+
     pub fn admit_configured(
         &self,
         request: StagedLorebookConfiguredRequest,
@@ -243,6 +260,45 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             + lettuce_models::ProviderAccountRepository
             + lettuce_context::PromptRepository,
     {
+        let configured_inputs = lettuce_creation::StagedLorebookConfiguredInputs {
+            overrides: request.overrides.clone(),
+            target_count: request.target_count,
+        };
+        match self.repository.load_staged_lorebook(request.request_id) {
+            Ok(run) => {
+                let project = StagedLorebookProject::create(
+                    request.project_id,
+                    request.brief,
+                    request.initial_lorebook_name,
+                    request
+                        .target_count
+                        .map(|count| count.clamp(5, 50))
+                        .unwrap_or(run.project.target_count),
+                    request.excerpts,
+                    request.now,
+                )
+                .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?;
+                let mut expected = run.clone();
+                expected.project = project;
+                expected.configured_inputs = Some(configured_inputs);
+                expected.planner_profile.safety_policy = request.safety_policy;
+                if !same_admission(&run, &expected) {
+                    return Err(StagedLorebookRepositoryError::Conflict.into());
+                }
+                let job = self
+                    .jobs
+                    .get(run.job_id)?
+                    .ok_or(StagedLorebookAdmissionError::InvalidInput)?;
+                validate_job(&run, &job)?;
+                return Ok(StagedLorebookAdmission {
+                    run,
+                    job,
+                    created: false,
+                });
+            }
+            Err(StagedLorebookRepositoryError::NotFound) => {}
+            Err(error) => return Err(error.into()),
+        }
         let (planner_profile, prompt, target_count) = self.resolve_configured_stage(
             &request.overrides,
             builtins,
@@ -261,6 +317,7 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             excerpts: request.excerpts,
             planner_profile,
             planner_prompt: &prompt,
+            configured_inputs: Some(configured_inputs),
             now: request.now,
         })
     }
@@ -468,8 +525,9 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             + lettuce_models::ProviderAccountRepository
             + lettuce_context::PromptRepository,
     {
+        let overrides = self.project_overrides(request.project_request_id, &request.overrides)?;
         let (profile, prompt, _) = self.resolve_configured_stage(
-            &request.overrides,
+            &overrides,
             builtins,
             PromptPurpose::LorebookGeneratorCoherence,
             request.safety_policy,
@@ -622,6 +680,7 @@ fn same_admission(
     expected: &StagedLorebookPlanningRun,
 ) -> bool {
     stored.request_id == expected.request_id
+        && stored.configured_inputs == expected.configured_inputs
         && stored.job_id == expected.job_id
         && stored.planner_profile == expected.planner_profile
         && stored.planner_prompt_id == expected.planner_prompt_id
@@ -671,6 +730,7 @@ fn run_from(
         planner_profile: request.planner_profile.clone(),
         planner_prompt_id: request.planner_prompt.id,
         planner_prompt_revision: request.planner_prompt.revision,
+        configured_inputs: request.configured_inputs.clone(),
         planner_attempt: None,
         planner_retries: Vec::new(),
         coherence_runs: Vec::new(),

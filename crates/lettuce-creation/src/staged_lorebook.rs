@@ -596,11 +596,20 @@ pub struct StagedLorebookPlanningRun {
     pub planner_prompt_id: PromptDocumentId,
     pub planner_prompt_revision: Revision,
     #[serde(default)]
+    pub configured_inputs: Option<StagedLorebookConfiguredInputs>,
+    #[serde(default)]
     pub planner_attempt: Option<StagedLorebookPlannerAttempt>,
     #[serde(default)]
     pub planner_retries: Vec<StagedLorebookPlannerRetry>,
     #[serde(default)]
     pub coherence_runs: Vec<StagedLorebookCoherenceRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StagedLorebookConfiguredInputs {
+    pub overrides: lettuce_settings::LorebookGeneratorSelection,
+    pub target_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

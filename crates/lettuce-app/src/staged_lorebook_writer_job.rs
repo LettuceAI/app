@@ -189,13 +189,14 @@ where
             + lettuce_models::ProviderAccountRepository
             + lettuce_context::PromptRepository,
     {
-        let (profile, prompt, _) = crate::StagedLorebookCoordinator::new(self.projects, self.jobs)
-            .resolve_configured_stage(
-                overrides,
-                builtins,
-                PromptPurpose::LorebookGeneratorWriter,
-                safety_policy,
-            )?;
+        let coordinator = crate::StagedLorebookCoordinator::new(self.projects, self.jobs);
+        let overrides = coordinator.project_overrides(project_request_id, overrides)?;
+        let (profile, prompt, _) = coordinator.resolve_configured_stage(
+            &overrides,
+            builtins,
+            PromptPurpose::LorebookGeneratorWriter,
+            safety_policy,
+        )?;
         self.start_batch(project_request_id, expected_revision, profile, &prompt, now)
     }
 
@@ -254,13 +255,15 @@ where
             + lettuce_models::ProviderAccountRepository
             + lettuce_context::PromptRepository,
     {
-        let (profile, prompt, _) = crate::StagedLorebookCoordinator::new(self.projects, self.jobs)
-            .resolve_configured_stage(
-                &request.overrides,
-                builtins,
-                PromptPurpose::LorebookGeneratorRefine,
-                request.safety_policy,
-            )?;
+        let coordinator = crate::StagedLorebookCoordinator::new(self.projects, self.jobs);
+        let overrides =
+            coordinator.project_overrides(request.project_request_id, &request.overrides)?;
+        let (profile, prompt, _) = coordinator.resolve_configured_stage(
+            &overrides,
+            builtins,
+            PromptPurpose::LorebookGeneratorRefine,
+            request.safety_policy,
+        )?;
         self.prepare_and_admit_refinement(StagedLorebookRefineRequest {
             request_id: request.request_id,
             project_request_id: request.project_request_id,

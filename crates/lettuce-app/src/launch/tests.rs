@@ -4108,7 +4108,7 @@ fn staged_lorebook_configured_admission_resolves_and_validates_before_job_creati
     settings.lorebook_generator.selection.model_profile_id = Some(ModelProfileId::new());
     GlobalSettingsStore::save(&database, settings, Some(model_id), stored.revision)
         .expect("save settings");
-    let mut configured = request;
+    let mut configured = request.clone();
     configured.request_id = RequestId::new();
     configured.project_id = lettuce_types::CreationWorkflowId::new();
     assert!(matches!(
@@ -4130,6 +4130,21 @@ fn staged_lorebook_configured_admission_resolves_and_validates_before_job_creati
     model.config.chat_parameters.reasoning_budget_tokens = Some(100);
     ModelProfileRepository::upsert(&database, model.clone(), Some(model.revision))
         .expect("save feature model");
+    assert_eq!(
+        coordinator
+            .admit_configured(request.clone(), &builtins)
+            .expect("replay ignores changed model and settings")
+            .run,
+        admitted.run
+    );
+    let mut changed = request;
+    changed.overrides.model_profile_id = Some(model_id);
+    assert!(matches!(
+        coordinator.admit_configured(changed, &builtins),
+        Err(crate::StagedLorebookAdmissionError::Repository(
+            lettuce_creation::StagedLorebookRepositoryError::Conflict
+        ))
+    ));
     let configured = coordinator
         .admit_configured(configured, &builtins)
         .expect("explicit model overrides missing setting");
@@ -4220,6 +4235,13 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             content: "Ada keeps the harbour key.".into(),
         }],
         planner_profile: profile.clone(),
+        configured_inputs: Some(lettuce_creation::StagedLorebookConfiguredInputs {
+            overrides: lettuce_settings::LorebookGeneratorSelection {
+                model_profile_id: Some(model_id),
+                ..Default::default()
+            },
+            target_count: Some(2),
+        }),
         planner_prompt: &prompt,
         now: TimestampMillis::new(NOW.get() + 2),
     };
@@ -4505,10 +4527,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .start_configured_batch(
             request_id,
             Revision::new(4),
-            &lettuce_settings::LorebookGeneratorSelection {
-                model_profile_id: Some(model_id),
-                ..Default::default()
-            },
+            &Default::default(),
             &writer_builtins,
             SafetyContext::Standard,
             TimestampMillis::new(NOW.get() + 9),
@@ -4811,10 +4830,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 project_request_id: refine_request.project_request_id,
                 plan_id: refine_request.plan_id,
                 feedback: refine_request.feedback.clone(),
-                overrides: lettuce_settings::LorebookGeneratorSelection {
-                    model_profile_id: Some(model_id),
-                    ..Default::default()
-                },
+                overrides: Default::default(),
                 safety_policy: SafetyContext::Standard,
                 now: refine_request.now,
             },
@@ -5101,10 +5117,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             crate::StagedLorebookConfiguredCoherenceRequest {
                 request_id: coherence_request.request_id,
                 project_request_id: coherence_request.project_request_id,
-                overrides: lettuce_settings::LorebookGeneratorSelection {
-                    model_profile_id: Some(model_id),
-                    ..Default::default()
-                },
+                overrides: Default::default(),
                 safety_policy: SafetyContext::Standard,
                 now: coherence_request.now,
             },

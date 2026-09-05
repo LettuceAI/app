@@ -15,6 +15,7 @@ workspace = true
 
 [dependencies]
 lettuce-conversations.workspace = true
+lettuce-settings.workspace = true
 lettuce-types.workspace = true
 blake3.workspace = true
 quick-xml.workspace = true

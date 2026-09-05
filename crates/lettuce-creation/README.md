@@ -12,6 +12,12 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
+Staged planning runs retain optional configured input provenance: explicit
+project model/four prompt overrides and the originally requested target count.
+This is stored in the existing run JSON alongside the frozen planner profile.
+Missing provenance in earlier documents defaults to None. The selection type
+is reused from settings; no duplicate selection schema or storage port is added.
+
 The verified creation-helper progressive-edit and finalization behavior is
 pinned in
 `fixtures/legacy-import/creation-helper-tool-scenarios-v1.json`. The first
