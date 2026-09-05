@@ -32,9 +32,25 @@ pub fn select_staged_lorebook_settings(
 
 pub fn staged_lorebook_parameter_defaults(
     settings: &lettuce_settings::LorebookGeneratorSettings,
+    authored: &lettuce_models::ChatParameterOverrides,
 ) -> lettuce_models::ChatParameterResolutionInput {
-    let mut parameters = lettuce_models::ChatParameterResolutionInput::default();
-    parameters.global.max_output_tokens = Some(settings.output_tokens());
+    use lettuce_models::ParameterOverride::{Inherit, Set};
+    let mut parameters = lettuce_models::ChatParameterResolutionInput {
+        operation: authored.clone(),
+        ..Default::default()
+    };
+    if parameters.operation.temperature == Inherit {
+        parameters.operation.temperature = Set(0.3);
+    }
+    if parameters.operation.top_p == Inherit {
+        parameters.operation.top_p = Set(1.0);
+    }
+    if parameters.operation.max_output_tokens == Inherit {
+        parameters.operation.max_output_tokens = Set(settings.output_tokens());
+    }
+    parameters.operation.reasoning_mode = Set(lettuce_models::ReasoningMode::Disabled);
+    parameters.operation.reasoning_effort = lettuce_models::ParameterOverride::Clear;
+    parameters.operation.reasoning_budget_tokens = lettuce_models::ParameterOverride::Clear;
     parameters
 }
 
@@ -197,7 +213,10 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             },
             &model,
             &account,
-            &staged_lorebook_parameter_defaults(&settings.settings.lorebook_generator),
+            &staged_lorebook_parameter_defaults(
+                &settings.settings.lorebook_generator,
+                &model.config.lorebook_generator_parameters,
+            ),
             &lettuce_models::ChatRequirements::default(),
         )?;
         Ok((

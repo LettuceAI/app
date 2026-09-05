@@ -6,9 +6,12 @@ optional local OpenAI-compatible host API.
 ## Boundary
 
 Staged lorebook settings selection combines explicit overrides, persisted
-generator settings and packaged prompt IDs. Its token fallback is supplied to
-the existing model parameter resolver as a global default so authored model
-parameters can take precedence. `admit_configured` loads persisted settings,
+generator settings and packaged prompt IDs. Model-owned lorebook-generator
+overrides use the existing operation parameter layer. Unset temperature/top-p
+use legacy 0.3/1.0; unset output tokens use the generator setting (default 4096),
+not ordinary chat output tokens. Other unset fields inherit model parameters.
+Reasoning is disabled with effort/budget cleared as in legacy feature requests.
+`admit_configured` loads persisted settings,
 the selected model/account and planner prompt through existing ports, resolves
 the profile with the shared model resolver, applies legacy target-count defaults
 and bounds, then uses normal durable planner admission. Missing model/prompt
@@ -17,7 +20,7 @@ references and incompatible profiles fail before job creation.
 prompt, then starts the durable draft batch. Configured refinement and coherence
 admission use the same path with their own stage prompts. Each admission freezes
 its resolved inputs; callers supply per-operation overrides. Automatic host
-wiring and legacy per-feature sampling settings remain pending.
+wiring remains pending.
 Writer batches validate prompt and text modalities before changing the project
 or creating jobs, so invalid inputs leave the draft checkpoint unchanged.
 

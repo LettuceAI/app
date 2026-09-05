@@ -489,6 +489,8 @@ pub enum Modality {
 pub struct ModelProfileConfig {
     #[serde(default)]
     pub chat_parameters: ChatParameterProfile,
+    #[serde(default)]
+    pub lorebook_generator_parameters: ChatParameterOverrides,
     pub capabilities: ModelCapabilities,
 }
 

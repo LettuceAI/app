@@ -597,6 +597,7 @@ fn validate_profile(profile: &ModelProfile) -> Result<(), ModelRepositoryError> 
         || profile.display_name.trim().is_empty()
         || profile.revision.get() == 0
         || profile.config.chat_parameters.validate().is_err()
+        || profile.config.lorebook_generator_parameters.validate().is_err()
         || profile.config.capabilities.validate().is_err()
     {
         return Err(ModelRepositoryError::InvalidData);
@@ -1665,6 +1666,7 @@ mod tests {
             display_name: "Example".into(),
             kind: ModelKind::Chat,
             config: ModelProfileConfig {
+                lorebook_generator_parameters: Default::default(),
                 chat_parameters: lettuce_models::ChatParameterProfile {
                     temperature: Some(0.8),
                     context_length: Some(32_768),
@@ -2205,6 +2207,38 @@ mod tests {
             Err(DatabaseError::MigrationChecksum { id: 8 })
         ));
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn lorebook_feature_parameters_round_trip_and_validate() {
+        use lettuce_models::ParameterOverride::Set;
+        let database = Database::open_in_memory().expect("database");
+        let account = ProviderAccountRepository::upsert(&database, provider(), None).expect("account");
+        let mut model = profile(account.id);
+        let mut old = serde_json::to_value(&model.config).expect("config JSON");
+        old.as_object_mut()
+            .expect("object")
+            .remove("lorebook_generator_parameters");
+        let decoded: ModelProfileConfig = serde_json::from_value(old).expect("old model config");
+        assert_eq!(decoded.lorebook_generator_parameters, Default::default());
+        model.config.lorebook_generator_parameters.temperature = Set(0.6);
+        model.config.lorebook_generator_parameters.max_output_tokens = Set(8192);
+        let saved = ModelProfileRepository::upsert(&database, model, None)
+            .expect("save feature settings");
+        assert_eq!(
+            ModelProfileRepository::get(&database, saved.id).expect("reload"),
+            Some(saved.clone())
+        );
+        let mut invalid = saved.clone();
+        invalid.config.lorebook_generator_parameters.top_p = Set(2.0);
+        assert_eq!(
+            ModelProfileRepository::upsert(&database, invalid, Some(saved.revision)),
+            Err(ModelRepositoryError::InvalidData)
+        );
+        assert_eq!(
+            ModelProfileRepository::get(&database, saved.id).expect("unchanged"),
+            Some(saved)
+        );
     }
 
     #[test]

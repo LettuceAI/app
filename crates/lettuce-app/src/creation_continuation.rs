@@ -799,6 +799,7 @@ mod tests {
             display_name: "Test model".into(),
             kind: ModelKind::Chat,
             config: ModelProfileConfig {
+                lorebook_generator_parameters: Default::default(),
                 chat_parameters: Default::default(),
                 capabilities: ModelCapabilities {
                     input_modalities: lettuce_models::ModalityCapabilities {

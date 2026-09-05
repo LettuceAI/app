@@ -505,6 +505,7 @@ fn seed_model_with(
             display_name: "Vendor Model".into(),
             kind,
             config: ModelProfileConfig {
+                lorebook_generator_parameters: Default::default(),
                 chat_parameters: lettuce_models::ChatParameterProfile {
                     temperature: Some(0.7),
                     context_length: Some(8192),
@@ -3985,10 +3986,22 @@ fn staged_generator_settings_select_builtins_and_parameter_fallback() {
         selected.coherence_prompt_id,
         Some(builtins.lorebook_generator_coherence)
     );
-    let parameters =
-        crate::staged_lorebook_parameter_defaults(&settings.settings.lorebook_generator);
-    assert_eq!(parameters.global.max_output_tokens, Some(4096));
-    assert_eq!(parameters.operation, Default::default());
+    let parameters = crate::staged_lorebook_parameter_defaults(
+        &settings.settings.lorebook_generator,
+        &Default::default(),
+    );
+    assert_eq!(
+        parameters.operation.max_output_tokens,
+        lettuce_models::ParameterOverride::Set(4096)
+    );
+    assert_eq!(
+        parameters.operation.temperature,
+        lettuce_models::ParameterOverride::Set(0.3)
+    );
+    assert_eq!(
+        parameters.operation.top_p,
+        lettuce_models::ParameterOverride::Set(1.0)
+    );
     assert_eq!(parameters.session, Default::default());
 }
 
@@ -3999,7 +4012,9 @@ fn staged_lorebook_configured_admission_resolves_and_validates_before_job_creati
     let mut model = ModelProfileRepository::get(&database, model_id)
         .expect("load model")
         .expect("model exists");
-    model.config.chat_parameters.temperature = None;
+    model.config.capabilities.parameter_support.temperature =
+        lettuce_models::CapabilityStatus::Supported;
+    model.config.capabilities.parameter_support.top_p = lettuce_models::CapabilityStatus::Supported;
     ModelProfileRepository::upsert(&database, model.clone(), Some(model.revision))
         .expect("save model");
     set_application_default_model(&database, model_id);
@@ -4038,7 +4053,7 @@ fn staged_lorebook_configured_admission_resolves_and_validates_before_job_creati
             .chat_profile
             .parameters
             .visible_max_output_tokens,
-        Some(1024)
+        Some(4096)
     );
     assert!(
         !coordinator
@@ -4089,6 +4104,7 @@ fn staged_lorebook_configured_admission_resolves_and_validates_before_job_creati
     let stored = GlobalSettingsStore::load(&database).expect("settings");
     let mut settings = stored.settings;
     settings.lorebook_generator.default_target_count = Some(20);
+    settings.lorebook_generator.max_output_tokens = Some(8192);
     settings.lorebook_generator.selection.model_profile_id = Some(ModelProfileId::new());
     GlobalSettingsStore::save(&database, settings, Some(model_id), stored.revision)
         .expect("save settings");
@@ -4102,15 +4118,32 @@ fn staged_lorebook_configured_admission_resolves_and_validates_before_job_creati
         ))
     ));
     configured.overrides.model_profile_id = Some(model_id);
+    let mut model = ModelProfileRepository::get(&database, model_id)
+        .expect("load feature model")
+        .expect("feature model exists");
+    model.config.lorebook_generator_parameters.temperature =
+        lettuce_models::ParameterOverride::Set(0.6);
+    model.config.lorebook_generator_parameters.top_p = lettuce_models::ParameterOverride::Set(0.8);
+    model.config.lorebook_generator_parameters.max_output_tokens =
+        lettuce_models::ParameterOverride::Set(2048);
+    model.config.chat_parameters.reasoning_mode = Some(lettuce_models::ReasoningMode::Enabled);
+    model.config.chat_parameters.reasoning_budget_tokens = Some(100);
+    ModelProfileRepository::upsert(&database, model.clone(), Some(model.revision))
+        .expect("save feature model");
+    let configured = coordinator
+        .admit_configured(configured, &builtins)
+        .expect("explicit model overrides missing setting");
+    assert_eq!(configured.run.project.target_count, 20);
+    let parameters = &configured.run.planner_profile.chat_profile.parameters;
+    assert_eq!(parameters.temperature, Some(0.6));
+    assert_eq!(parameters.top_p, Some(0.8));
+    assert_eq!(parameters.visible_max_output_tokens, Some(2048));
+    assert_eq!(parameters.context_length, Some(8192));
     assert_eq!(
-        coordinator
-            .admit_configured(configured, &builtins)
-            .expect("explicit model overrides missing setting")
-            .run
-            .project
-            .target_count,
-        20
+        parameters.reasoning_mode,
+        Some(lettuce_models::ReasoningMode::Disabled)
     );
+    assert_eq!(parameters.reasoning_budget_tokens, None);
 }
 
 #[tokio::test]
@@ -4123,7 +4156,19 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     stored_profile.config.chat_parameters.temperature = None;
     let stored_profile = ModelProfileRepository::upsert(
         &database,
-        stored_profile.clone(),
+        {
+            let mut model = stored_profile.clone();
+            model.config.chat_parameters.temperature = Some(0.3);
+            model.config.chat_parameters.top_p = Some(1.0);
+            model.config.chat_parameters.max_output_tokens = Some(4096);
+            model.config.chat_parameters.reasoning_mode =
+                Some(lettuce_models::ReasoningMode::Disabled);
+            model.config.capabilities.parameter_support.temperature =
+                lettuce_models::CapabilityStatus::Supported;
+            model.config.capabilities.parameter_support.top_p =
+                lettuce_models::CapabilityStatus::Supported;
+            model
+        },
         Some(stored_profile.revision),
     )
     .expect("save writer model parameters");

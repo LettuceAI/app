@@ -38,6 +38,14 @@ controls, tail-free/typical/min-p sampling, mirostat, seed, and stop strings).
 This keeps provider-specific wire details typed without duplicating ordinary
 chat settings.
 
+`ModelProfileConfig.lorebook_generator_parameters` stores feature-specific
+sampling using the existing `ChatParameterOverrides` type. Older documents
+default to inherited values. SQLite validates and persists these with the model;
+ordinary chat resolution does not consume them. Staged generator admission
+supplies them to the operation layer with legacy feature defaults and reasoning
+disabled. Canonical explicit `Clear` remains supported; legacy unset fields map
+to `Inherit`. Embedded-runtime sampler controls remain outside this slice.
+
 Prompt caching uses a closed retention policy rather than arbitrary seconds or
 provider wire strings. It resolves `operation -> session -> model` with no
 global fallback, so ordinary sessions inherit the model while specialized
