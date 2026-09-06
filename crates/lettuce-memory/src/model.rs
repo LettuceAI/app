@@ -1,12 +1,23 @@
 use std::collections::HashSet;
 
-use lettuce_types::{MemoryId, MemorySpaceId, MessageId, Revision, TimestampMillis};
+use lettuce_types::{
+    MemoryId, MemoryRevisionId, MemorySpaceId, MessageId, Revision, TimestampMillis,
+};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_MEMORY_TEXT_BYTES: usize = 16 * 1024;
 pub const MAX_MEMORY_ITEMS: usize = 4096;
 pub const MAX_MEMORY_SUMMARY_BYTES: usize = 6000;
 pub const MAX_MEMORY_SUMMARY_SOURCE_MESSAGES: usize = 1024;
+
+#[must_use]
+pub fn memory_revision_id(space_id: MemorySpaceId, revision: Revision) -> MemoryRevisionId {
+    let name = format!("lettuce-memory:{space_id}:{}", revision.get());
+    MemoryRevisionId::from_uuid(uuid::Uuid::new_v5(
+        &uuid::Uuid::NAMESPACE_OID,
+        name.as_bytes(),
+    ))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,7 +74,7 @@ impl Score {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryCategory {
     CharacterTrait,
@@ -257,7 +268,21 @@ pub(crate) fn validate_memory_text(value: &str) -> Result<&str, MemoryValidation
 mod tests {
     use lettuce_types::{MemorySpaceId, MessageId, Revision, TimestampMillis};
 
-    use super::{MemorySpaceSnapshot, MemorySummary, MemoryValidationError, Score};
+    use super::{
+        MemorySpaceSnapshot, MemorySummary, MemoryValidationError, Score, memory_revision_id,
+    };
+
+    #[test]
+    fn memory_revision_identity_is_stable_and_revision_specific() {
+        let space_id = MemorySpaceId::new();
+        let first = memory_revision_id(space_id, Revision::INITIAL);
+        assert_eq!(first, memory_revision_id(space_id, Revision::INITIAL));
+        assert_ne!(first, memory_revision_id(space_id, Revision::new(2)));
+        assert_ne!(
+            first,
+            memory_revision_id(MemorySpaceId::new(), Revision::INITIAL)
+        );
+    }
 
     #[test]
     fn score_conversion_is_bounded() {

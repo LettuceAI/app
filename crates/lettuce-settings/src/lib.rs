@@ -10,8 +10,9 @@ mod global;
 mod secrets;
 
 pub use global::{
-    GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
-    LorebookGeneratorSelection, LorebookGeneratorSettings, PureMode, StoredGlobalSettings,
+    DynamicMemorySettings, GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore,
+    GlobalSettingsStoreError, LorebookGeneratorSelection, LorebookGeneratorSettings,
+    MemoryRetrievalStrategy, PureMode, StoredGlobalSettings,
 };
 
 pub use secrets::{

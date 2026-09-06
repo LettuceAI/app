@@ -678,14 +678,22 @@ reconstructible input boundary for an ordinary direct turn. It loads the durable
 turn and branch ancestry, trims a finalized replay back to the turn's original
 source message, resolves effective settings and the exact snapshotted live
 model/account, assembles provider-neutral context, derives unique media grants
-from that context, and invokes the claimed-job runner with tools disabled. Only
+from that context, and invokes the claimed-job runner. Only
 the stream sink and prompt runtime values remain caller-supplied; the sink stays
 outside the durable initial-dispatch fingerprint, so replay may use a new sink
 without another provider call. Context or model preparation failures map into
-the existing run settlement categories. Dynamic memory and selected manual
-memory still require a later input-retrieval slice because the launch snapshot
-does not contain the execution policy or selected memory text; this boundary
-fails explicitly instead of inventing those values.
+the existing run settlement categories. A dynamic direct turn resolves the
+persisted global policy, requires tool-capable inference, loads its authoritative
+conversation memory space and summary, embeds the current or enriched two-message
+query, and selects current projections with the legacy threshold, cold-memory
+penalty, category diversity, and smart recent/accessed fallbacks. Retrieved
+memory text and a stable identity derived from the exact space revision enter
+the context; the matching memory tool request, policy, and duplicate threshold
+enter the runner. The first admitted tool round freezes that policy in its
+existing durable preparation plan. Retrieval embedding unavailability preserves
+the legacy behavior of continuing without retrieved keys. Access/promotion
+updates, selected manual-memory text, launch-time policy snapshots, and durable
+request-body recovery remain later slices.
 `PrepareGeneration` records the resolved model and prompt/lorebook/memory
 attributions atomically before moving a preparing turn to ContextPrepared.
 The existing speaker-resolution mutation continues to own group speaker choice.

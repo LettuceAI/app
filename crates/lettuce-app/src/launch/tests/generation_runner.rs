@@ -5,6 +5,9 @@ use lettuce_conversations::{
     InitialInferenceRepository, InitialInferenceResult, ModelSelectionSnapshot, OperationKind,
     ToolExecutionOwner, UsageCounters, UsageOutcome, UsageUnavailableReason,
 };
+use lettuce_embeddings::{
+    EmbeddingDimensions, MemoryEmbeddingProjection, MemoryEmbeddingRepository,
+};
 use lettuce_jobs::{JobErrorCode, JobSnapshot, JobStore, events::JobEvent};
 use lettuce_types::{ConversationId, GenerationAttemptId, GenerationTurnId};
 use lettuce_usage::{JobInferenceUsageResult, JobUsageLedger, UsageEvent, UsageLedger};
@@ -47,6 +50,9 @@ fn scenario_with_resolvable_profile(
         let revision = model.revision;
         model.config.chat_parameters.temperature = None;
         model.config.capabilities.streaming = lettuce_models::CapabilityStatus::Supported;
+        if dynamic_memory {
+            model.config.capabilities.tools = lettuce_models::CapabilityStatus::Supported;
+        }
         ModelProfileRepository::upsert(database, model, Some(revision))
             .expect("resolvable model profile");
     }
@@ -463,6 +469,164 @@ async fn app_backend_builds_direct_send_input_and_replays_without_redispatch() {
     assert!(replay.replayed);
     assert_eq!(replay.candidate.id, result.candidate.id);
     assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+}
+
+#[tokio::test]
+async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let stored_settings = GlobalSettingsStore::load(backend.database()).expect("settings");
+    let mut settings = stored_settings.settings;
+    settings.dynamic_memory.max_entries = 12;
+    settings.dynamic_memory.hot_memory_token_budget = 321;
+    settings.dynamic_memory.duplicate_threshold_basis_points = 8_800;
+    GlobalSettingsStore::save(
+        backend.database(),
+        settings,
+        stored_settings.default_model_profile_id,
+        stored_settings.revision,
+    )
+    .expect("save dynamic memory settings");
+    let scenario =
+        scenario_with_resolvable_profile(backend.database(), true, "prepared-dynamic", true);
+    let space_id = scenario.space_id.expect("dynamic memory space");
+    let memory_id = MemoryId::new();
+    let stored = MemoryRepository::get(backend.database(), space_id)
+        .expect("memory")
+        .expect("memory exists");
+    let memory = MemoryItem {
+        id: memory_id,
+        text: "Mira prefers tea by the harbor.".into(),
+        category: MemoryCategory::Preference,
+        source_message_id: None,
+        source_role: None,
+        observed_at: None,
+        observed_time_precision: None,
+        superseded_by: None,
+        superseded_at: None,
+        supersedes: vec![],
+        token_count: 6,
+        is_cold: false,
+        is_pinned: false,
+        importance: Score::from_basis_points(8_000).expect("score"),
+        persistence_importance: Score::from_basis_points(8_000).expect("score"),
+        prompt_importance: Score::from_basis_points(8_000).expect("score"),
+        volatility: Score::LEGACY_VOLATILITY,
+        access_count: 2,
+        created_at: TimestampMillis::new(900),
+        last_accessed_at: TimestampMillis::new(900),
+    };
+    let stored = MemoryRepository::compare_and_apply(
+        backend.database(),
+        MemoryChangeSet {
+            space_id,
+            expected_revision: stored.revision,
+            items: vec![memory.clone()],
+        },
+    )
+    .expect("seed memory");
+    MemoryEmbeddingRepository::put_ready(
+        backend.database(),
+        MemoryEmbeddingProjection {
+            space_id,
+            memory_id,
+            source_text: memory.text.clone(),
+            vector: EmbeddingVector {
+                source_revision: "scenario-v1".into(),
+                values: {
+                    let mut values = vec![0.0; 128];
+                    values[0] = 1.0;
+                    values
+                },
+            },
+            dimensions: EmbeddingDimensions::D128,
+            updated_at: TimestampMillis::new(1_012),
+        },
+    )
+    .expect("seed projection");
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![
+        call_outcome(
+            "prepared-dynamic-tool",
+            "pin_memory",
+            serde_json::json!({"id": memory_id}),
+            (20, 5),
+        ),
+        text_outcome("prepared-dynamic-response", "I will remember that.", 5, 3),
+    ]);
+    let engine = ScenarioEmbeddingEngine;
+    let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+    let result = runner
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+            |_| vec![],
+        )
+        .await
+        .expect("prepared dynamic send");
+    assert_eq!(result.rounds, 1);
+    assert_eq!(result.outcomes.len(), 2);
+    let plans = DynamicMemoryPreparationRepository::list_preparation_plans(
+        backend.database(),
+        scenario.conversation_id,
+        scenario.turn_id,
+        scenario.attempt_id,
+    )
+    .expect("preparation plans");
+    assert_eq!(plans.len(), 1);
+    assert_eq!(plans[0].policy.max_entries, 12);
+    assert_eq!(plans[0].policy.hot_token_budget, 321);
+    assert_eq!(plans[0].duplicate_threshold.basis_points(), 8_800);
+    {
+        let requests = inference.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].tools, Some(dynamic_memory_tool_request()));
+        assert_eq!(requests[0].profile.tool_policy, ToolPolicy::Allowed);
+        assert!(requests[0].context.messages.iter().any(|message| {
+            message.parts.iter().any(|part| {
+                matches!(part, ProviderContextPart::Text { text } if text.contains("- Mira prefers tea by the harbor."))
+            })
+        }));
+    }
+    let prepared_turn =
+        ConversationReader::get_turn(backend.database(), scenario.turn_id).expect("prepared turn");
+    assert_eq!(
+        prepared_turn.memory,
+        Some(lettuce_conversations::MemoryAttribution {
+            revision_id: lettuce_memory::memory_revision_id(space_id, stored.revision),
+        })
+    );
+    let dispatch_evidence = backend
+        .database()
+        .job_usage(work.handle.id())
+        .expect("dispatch evidence");
+    assert_eq!(dispatch_evidence.len(), 2);
+    let aggregate_event = UsageLedger::get(backend.database(), result.usage_event_id)
+        .expect("usage")
+        .expect("usage exists");
+    assert_eq!(
+        aggregate_event.record.usage,
+        UsageCounters::Known(usage(25, 8).expect("aggregate usage"))
+    );
+    let replay = runner
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_030),
+            |_| vec![],
+        )
+        .await
+        .expect("prepared dynamic replay");
+    assert!(replay.replayed);
+    assert_eq!(replay.candidate.id, result.candidate.id);
+    assert_eq!(inference.requests.lock().expect("requests").len(), 2);
+    assert_eq!(
+        backend
+            .database()
+            .job_usage(work.handle.id())
+            .expect("unchanged dispatch evidence"),
+        dispatch_evidence
+    );
 }
 
 #[tokio::test]

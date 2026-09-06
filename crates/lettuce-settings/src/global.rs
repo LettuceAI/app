@@ -11,6 +11,8 @@ pub struct GlobalSettings {
     pub update_checks_enabled: bool,
     #[serde(default)]
     pub lorebook_generator: LorebookGeneratorSettings,
+    #[serde(default)]
+    pub dynamic_memory: DynamicMemorySettings,
 }
 
 impl Default for GlobalSettings {
@@ -20,6 +22,46 @@ impl Default for GlobalSettings {
             analytics_enabled: true,
             update_checks_enabled: true,
             lorebook_generator: LorebookGeneratorSettings::default(),
+            dynamic_memory: DynamicMemorySettings::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryRetrievalStrategy {
+    Smart,
+    Cosine,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DynamicMemorySettings {
+    pub max_entries: u32,
+    pub min_similarity_basis_points: u16,
+    pub retrieval_limit: u16,
+    pub retrieval_strategy: MemoryRetrievalStrategy,
+    pub hot_memory_token_budget: u32,
+    pub cold_threshold_basis_points: u16,
+    pub delete_confidence_basis_points: u16,
+    pub max_hard_delete_ratio_basis_points: u16,
+    pub duplicate_threshold_basis_points: u16,
+    pub context_enrichment_enabled: bool,
+}
+
+impl Default for DynamicMemorySettings {
+    fn default() -> Self {
+        Self {
+            max_entries: 50,
+            min_similarity_basis_points: 3_500,
+            retrieval_limit: 5,
+            retrieval_strategy: MemoryRetrievalStrategy::Smart,
+            hot_memory_token_budget: 2_000,
+            cold_threshold_basis_points: 3_000,
+            delete_confidence_basis_points: 5_000,
+            max_hard_delete_ratio_basis_points: 5_000,
+            duplicate_threshold_basis_points: 7_800,
+            context_enrichment_enabled: true,
         }
     }
 }
@@ -147,6 +189,7 @@ mod tests {
         let settings: GlobalSettings = serde_json::from_str(legacy).expect("old settings document");
         assert_eq!(settings.lorebook_generator.target_count(), 12);
         assert_eq!(settings.lorebook_generator.output_tokens(), 4096);
+        assert_eq!(settings.dynamic_memory, DynamicMemorySettings::default());
         let mut generator = settings.lorebook_generator;
         generator.default_target_count = Some(0);
         generator.max_output_tokens = Some(u32::MAX);

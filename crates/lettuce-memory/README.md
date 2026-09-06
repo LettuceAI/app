@@ -4,7 +4,11 @@ Memory provenance, extraction, retrieval, consolidation, and vector-index ports.
 
 ## Boundary
 
-Source truth is independent from rebuildable embeddings.
+Source truth is independent from rebuildable embeddings. Each authoritative
+space revision also has a stable UUIDv5 identity derived from the space ID and
+numeric revision. Conversation preparation can therefore record the exact
+revision it used without creating a parallel revision store or a random
+reference.
 
 The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
 

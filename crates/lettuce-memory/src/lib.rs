@@ -11,7 +11,7 @@ mod tool;
 pub use model::{
     DynamicMemoryPendingApproval, DynamicMemoryRunMode, MAX_MEMORY_SUMMARY_BYTES,
     MAX_MEMORY_SUMMARY_SOURCE_MESSAGES, MemoryCategory, MemoryItem, MemoryPolicy,
-    MemorySpaceSnapshot, MemorySummary, MemoryValidationError, Score,
+    MemorySpaceSnapshot, MemorySummary, MemoryValidationError, Score, memory_revision_id,
 };
 pub use port::{
     DynamicMemoryApprovalRepository, DynamicMemoryBackgroundRoundCommit,
