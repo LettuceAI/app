@@ -90,6 +90,18 @@ impl AppBackend {
         )
     }
 
+    pub fn prepared_conversation_generation_runner<'a, E: ?Sized, I: ?Sized>(
+        &'a self,
+        embedding: &'a E,
+        inference: &'a I,
+    ) -> crate::PreparedConversationGenerationJobRunner<'a, E, Database, I> {
+        crate::PreparedConversationGenerationJobRunner::new(
+            embedding,
+            self.database.as_ref(),
+            inference,
+        )
+    }
+
     #[must_use]
     pub fn companion_growth_admission(
         &self,

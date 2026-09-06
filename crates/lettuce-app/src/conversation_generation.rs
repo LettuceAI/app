@@ -180,6 +180,8 @@ pub enum ConversationGenerationRunError {
     InvalidWork,
     #[error("conversation generation input is invalid")]
     InvalidInput,
+    #[error("conversation generation input preparation failed: {code:?}")]
+    PreparationFailed { code: GenerationFailureCode },
     #[error("conversation generation was cancelled")]
     Cancelled { evidence: GenerationUsageEvidence },
     #[error("conversation generation dispatch is pending and requires attempt recovery")]
@@ -242,6 +244,7 @@ impl ConversationGenerationRunError {
         use ConversationGenerationTerminalFailure as Terminal;
         match self {
             Self::InvalidWork | Self::InvalidInput | Self::Validation(_) => Some(Terminal::Invalid),
+            Self::PreparationFailed { code } => Some(Terminal::Failed(*code)),
             Self::Cancelled { .. } => Some(Terminal::Cancelled),
             Self::Pending { .. } => Some(Terminal::Interrupted),
             Self::AlreadyFailed { code, .. } => Some(Terminal::Failed(*code)),

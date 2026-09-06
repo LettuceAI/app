@@ -670,9 +670,22 @@ Before each Preparing or Running stage append, the runner reads the latest
 durable checkpoint sequence for its attempt and allocates the next value. A
 pre-existing streaming progress checkpoint and process reopen therefore do not
 collide with runner-owned stages; the database still enforces contiguous
-uniqueness and operation replay. Context assembly, profile resolution, automatic
-scheduling, streaming progress emission, group speaker selection and frontend
-commands remain outside this runner.
+uniqueness and operation replay. Automatic scheduling, streaming progress
+emission, group speaker selection and frontend commands remain outside this
+runner.
+`PreparedConversationGenerationJobRunner`, exposed by `AppBackend`, now owns the
+reconstructible input boundary for an ordinary direct turn. It loads the durable
+turn and branch ancestry, trims a finalized replay back to the turn's original
+source message, resolves effective settings and the exact snapshotted live
+model/account, assembles provider-neutral context, derives unique media grants
+from that context, and invokes the claimed-job runner with tools disabled. Only
+the stream sink and prompt runtime values remain caller-supplied; the sink stays
+outside the durable initial-dispatch fingerprint, so replay may use a new sink
+without another provider call. Context or model preparation failures map into
+the existing run settlement categories. Dynamic memory and selected manual
+memory still require a later input-retrieval slice because the launch snapshot
+does not contain the execution policy or selected memory text; this boundary
+fails explicitly instead of inventing those values.
 `PrepareGeneration` records the resolved model and prompt/lorebook/memory
 attributions atomically before moving a preparing turn to ContextPrepared.
 The existing speaker-resolution mutation continues to own group speaker choice.

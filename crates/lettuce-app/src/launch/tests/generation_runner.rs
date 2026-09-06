@@ -14,7 +14,8 @@ use crate::{
     ConversationGenerationClaimedWork, ConversationGenerationDispatchCoordinator,
     ConversationGenerationDispatchError, ConversationGenerationInput,
     ConversationGenerationJobRunner, ConversationGenerationMemoryInput,
-    ConversationGenerationRunError, ConversationGenerationSettledWork, GenerationUsageEvidence,
+    ConversationGenerationRunError, ConversationGenerationRuntimeInput,
+    ConversationGenerationSettledWork, GenerationUsageEvidence,
 };
 
 const LEASE: Duration = Duration::from_secs(60);
@@ -29,7 +30,26 @@ struct Scenario {
 }
 
 fn scenario(database: &Database, dynamic_memory: bool, prefix: &str) -> Scenario {
+    scenario_with_resolvable_profile(database, dynamic_memory, prefix, false)
+}
+
+fn scenario_with_resolvable_profile(
+    database: &Database,
+    dynamic_memory: bool,
+    prefix: &str,
+    persist_resolvable_profile: bool,
+) -> Scenario {
     let model_id = seed_model(database, ProviderProtocol::Ollama, "ollama");
+    if persist_resolvable_profile {
+        let mut model = ModelProfileRepository::get(database, model_id)
+            .expect("model")
+            .expect("model exists");
+        let revision = model.revision;
+        model.config.chat_parameters.temperature = None;
+        model.config.capabilities.streaming = lettuce_models::CapabilityStatus::Supported;
+        ModelProfileRepository::upsert(database, model, Some(revision))
+            .expect("resolvable model profile");
+    }
     set_application_default_model(database, model_id);
     let character_id = if dynamic_memory {
         seed_character(database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
@@ -382,6 +402,67 @@ async fn plain_chat_runs_finalizes_settles_and_replays_without_redispatch() {
             .expect("claim settled job")
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn app_backend_builds_direct_send_input_and_replays_without_redispatch() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let scenario =
+        scenario_with_resolvable_profile(backend.database(), false, "prepared-input", true);
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![text_outcome(
+        "prepared-input-response",
+        "Prepared reply",
+        13,
+        4,
+    )]);
+    let engine = ScenarioEmbeddingEngine;
+    let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+    let stream_sink = RequestId::new();
+    let runtime = ConversationGenerationRuntimeInput {
+        stream_sink: Some(stream_sink),
+        ..Default::default()
+    };
+    let result = runner
+        .run(
+            &work,
+            runtime.clone(),
+            TimestampMillis::new(1_020),
+            |_| vec![],
+        )
+        .await
+        .expect("prepared direct send");
+    assert!(!result.replayed);
+    {
+        let requests = inference.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0].profile.chat_profile.model_profile_id,
+            scenario.model.source_id
+        );
+        assert_eq!(requests[0].stream_sink, Some(stream_sink));
+        assert!(requests[0].context.messages.iter().any(|message| {
+            message.parts.iter().any(
+                |part| matches!(part, ProviderContextPart::Text { text } if text == "Remember tea."),
+            )
+        }));
+    }
+
+    let replay = runner
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput {
+                stream_sink: Some(RequestId::new()),
+                ..runtime
+            },
+            TimestampMillis::new(1_030),
+            |_| vec![],
+        )
+        .await
+        .expect("prepared replay");
+    assert!(replay.replayed);
+    assert_eq!(replay.candidate.id, result.candidate.id);
+    assert_eq!(inference.requests.lock().expect("requests").len(), 1);
 }
 
 #[tokio::test]
