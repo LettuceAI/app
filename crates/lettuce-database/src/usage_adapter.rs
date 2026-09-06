@@ -658,6 +658,7 @@ mod tests {
             .expect("old response replay");
         legacy.result = Some(old);
         let basis = UsageCostBasis {
+            openrouter: None,
             model_profile_id: record.model_profile_id,
             provider_account_id: record.provider_account_id,
             source: "OpenRouter endpoint snapshot".into(),
@@ -956,6 +957,7 @@ mod tests {
         let (database, record) = fixture();
         let event = UsageLedger::record(&database, record).expect("event");
         let basis = UsageCostBasis {
+            openrouter: None,
             model_profile_id: event.record.model_profile_id.expect("model"),
             provider_account_id: event.record.provider_account_id.expect("provider"),
             source: "OpenRouter endpoint snapshot".into(),

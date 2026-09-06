@@ -83,3 +83,15 @@ separate from logical attempt and HTTP request identities. Older JSON defaults
 to None. Primary/fallback calls preserve their own IDs; settlement rejects
 changing a stored ID. This supplies generation lookup identity without altering
 usage counters. Automatic generation enrichment remains pending.
+
+`UsageCostBasis::from_openrouter_job` creates a basis from one matched routed
+endpoint and fetched generation evidence. The optional evidence is stored in
+the existing versioned basis JSON; older manual bases deserialize unchanged.
+Native prompt/completion counts are required. Native cache/reasoning and total
+cost take precedence over response details, retaining both sources separately.
+All remaining auxiliary counts must be known; missing details do not become
+zero. No/ambiguous provider match leaves cost unavailable. Matching is exact
+case-insensitive provider/display name, without punctuation stripping or a
+first-provider fallback. The existing calculator and its authoritative-total
+guard remain unchanged. Generation-enriched bases are job-only until other
+usage records retain response IDs.

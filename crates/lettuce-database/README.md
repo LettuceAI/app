@@ -376,3 +376,10 @@ is needed for this addition to the existing versioned response JSON.
 Job-result replay compares decoded versioned values, so an older stored response
 without the optional ID remains an exact replay of an absent-ID response. The
 regression exercises the old bytes directly without rewriting the evidence.
+
+Optional OpenRouter generation/endpoint evidence lives inside existing cost
+basis JSON. The usage domain validates response-ID binding, endpoint/price
+agreement and native billing counts while raw dispatch responses remain
+immutable. Existing get/record methods persist and replay the enriched basis;
+no schema change is needed. App file-backed tests cover differing raw/native
+counts and cost amounts surviving reopen without a second lookup.

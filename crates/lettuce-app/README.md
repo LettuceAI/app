@@ -535,3 +535,19 @@ The adjacent `v1.snap` pins a canonical digest for every individual entry,
 including its stable key, role, content, scheduling, conditions, payload, and
 system-prompt flag. A change to one legacy field therefore identifies the
 specific prompt entry instead of appearing only as a catalog-wide checksum.
+
+`AppBackend::usage_costs` exposes `UsageCostCoordinator::capture_job` for
+caller-triggered OpenRouter cost capture by job and dispatch ID. It reads
+immutable response identity, resolves the same-revision enabled OpenRouter
+account, fetches generation metadata and the actual model's endpoint prices,
+then writes an immutable basis using the existing usage ledger. Replays return
+before network/account lookup; another writer's completed basis wins a race.
+Provider errors leave raw usage and cost state untouched for retry. Missing
+account/identity/usage/native totals/auxiliary counts or ambiguous pricing
+returns no cost. No host polling, automatic post-inference scheduling or cache
+was added. The narrow app-owned billing port is implemented by RemoteProviders.
+
+SQLite scenarios cover native/normalized disagreement, preserved raw response
+amounts, routed endpoint selection, stored generation/price provenance, old
+basis JSON, changed-account gating, missing/error/ambiguous lookup retry and
+reopen with account deletion and no network replay.

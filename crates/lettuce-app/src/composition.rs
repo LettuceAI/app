@@ -58,6 +58,13 @@ impl AppBackend {
         self.database.as_ref()
     }
 
+    pub fn usage_costs<'a, P: crate::OpenRouterBillingPort + ?Sized>(
+        &'a self,
+        provider: &'a P,
+    ) -> crate::UsageCostCoordinator<'a, Database, P> {
+        crate::UsageCostCoordinator::new(self.database.as_ref(), provider)
+    }
+
     #[must_use]
     pub fn startup_job_recovery(&self) -> crate::StartupJobRecoveryCoordinator<'_, Database> {
         crate::StartupJobRecoveryCoordinator::new(self.database.as_ref())
