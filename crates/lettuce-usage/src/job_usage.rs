@@ -20,7 +20,11 @@ pub struct JobInferenceUsage {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum JobInferenceUsageResult {
-    Response { usage: Option<InferenceUsage> },
+    Response {
+        usage: Option<InferenceUsage>,
+        #[serde(default)]
+        provider_response_id: Option<String>,
+    },
     InferenceFailed,
     Cancelled,
 }

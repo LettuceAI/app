@@ -60,7 +60,13 @@ impl lettuce_usage::JobUsageLedger for Database {
             .optional()
             .map_err(|_| UsageLedgerError::Storage)?
             .flatten();
-        if saved.as_deref() != Some(&encoded) {
+        let saved = saved
+            .map(|value| {
+                crate::decode_versioned::<lettuce_usage::JobInferenceUsageResult>(&value, 1)
+            })
+            .transpose()
+            .map_err(|_| UsageLedgerError::Storage)?;
+        if saved.as_ref() != Some(&result) {
             return Err(UsageLedgerError::Conflict);
         }
         Ok(())
@@ -590,6 +596,15 @@ mod tests {
             JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger, ModelPricing,
             OpenRouterCostInput, UsageCostBasis, UsageCostLedger,
         };
+        let old: JobInferenceUsageResult =
+            serde_json::from_str(r#"{"Response":{"usage":null}}"#).expect("old response");
+        assert_eq!(
+            old,
+            JobInferenceUsageResult::Response {
+                usage: None,
+                provider_response_id: None
+            }
+        );
         let path =
             std::env::temp_dir().join(format!("lettuce-job-usage-{}.sqlite", uuid::Uuid::new_v4()));
         let database = Database::open(&path).expect("database");
@@ -622,6 +637,26 @@ mod tests {
             Err(UsageLedgerError::Conflict)
         );
         database.admit_job_usage(record.clone()).expect("admission");
+        let mut legacy = record.clone();
+        legacy.id = UsageEventId::new();
+        database
+            .admit_job_usage(legacy.clone())
+            .expect("legacy admission");
+        let encoded = crate::encode_versioned(&old, 1).expect("legacy envelope");
+        let encoded = encoded.replace(",\"provider_response_id\":null", "");
+        assert!(!encoded.contains("provider_response_id"));
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE job_inference_usage SET result_json=?2 WHERE id=?1",
+                rusqlite::params![legacy.id.to_string(), encoded],
+            )
+            .expect("legacy response");
+        database
+            .settle_job_usage(legacy.id, old.clone())
+            .expect("old response replay");
+        legacy.result = Some(old);
         let basis = UsageCostBasis {
             model_profile_id: record.model_profile_id,
             provider_account_id: record.provider_account_id,
@@ -657,10 +692,10 @@ mod tests {
         }
         drop(database);
         let database = Database::open(&path).expect("reopen pending");
-        assert_eq!(
-            database.job_usage(job.id).expect("pending"),
-            std::slice::from_ref(&record)
-        );
+        let pending = database.job_usage(job.id).expect("pending");
+        assert_eq!(pending.len(), 2);
+        assert!(pending.contains(&record));
+        assert!(pending.contains(&legacy));
         database
             .settle_job_usage(record.id, JobInferenceUsageResult::InferenceFailed)
             .expect("settlement");
@@ -668,10 +703,10 @@ mod tests {
         let database = Database::open(&path).expect("reopen settled");
         let mut settled = record.clone();
         settled.result = Some(JobInferenceUsageResult::InferenceFailed);
-        assert_eq!(
-            database.job_usage(job.id).expect("settled"),
-            std::slice::from_ref(&settled)
-        );
+        let saved = database.job_usage(job.id).expect("settled");
+        assert_eq!(saved.len(), 2);
+        assert!(saved.contains(&settled));
+        assert!(saved.contains(&legacy));
         database
             .admit_job_usage(record.clone())
             .expect("replay admission after settlement");
@@ -681,7 +716,10 @@ mod tests {
         ));
         for result in [
             JobInferenceUsageResult::Cancelled,
-            JobInferenceUsageResult::Response { usage: None },
+            JobInferenceUsageResult::Response {
+                usage: None,
+                provider_response_id: None,
+            },
         ] {
             let mut unavailable = record.clone();
             unavailable.id = UsageEventId::new();
@@ -702,6 +740,7 @@ mod tests {
             .admit_job_usage(retry.clone())
             .expect("retry dispatch");
         let result = JobInferenceUsageResult::Response {
+            provider_response_id: Some("gen-retry".into()),
             usage: Some(InferenceUsage {
                 input_tokens: 120,
                 output_tokens: 30,
@@ -715,6 +754,18 @@ mod tests {
         database
             .settle_job_usage(retry.id, result.clone())
             .expect("response");
+        let mut changed_identity = result.clone();
+        if let JobInferenceUsageResult::Response {
+            provider_response_id,
+            ..
+        } = &mut changed_identity
+        {
+            *provider_response_id = Some("gen-other".into());
+        }
+        assert_eq!(
+            database.settle_job_usage(retry.id, changed_identity),
+            Err(UsageLedgerError::Conflict)
+        );
         retry.result = Some(result);
         for field in 0..10 {
             let mut wrong = basis.clone();

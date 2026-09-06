@@ -801,6 +801,7 @@ mod tests {
     #[test]
     fn continuation_requires_one_successful_provider_candidate() {
         let outcome = InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: vec![MessagePart::Text {
@@ -849,6 +850,7 @@ mod tests {
             })
             .expect("stage replay");
         let outcome = InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -884,6 +886,7 @@ mod tests {
     #[test]
     fn usage_aggregation_never_invents_missing_provider_counters() {
         let outcome = |usage| InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: vec![MessagePart::Text {

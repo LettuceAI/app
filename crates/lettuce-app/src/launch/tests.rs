@@ -1069,6 +1069,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let soul_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: Vec::new(),
@@ -1096,6 +1097,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 warning_codes: Vec::new(),
             },
             InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: Vec::new(),
@@ -1222,6 +1224,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let fallback_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {
+                provider_response_id: Some("gen-primary".into()),
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -1237,6 +1240,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 warning_codes: Vec::new(),
             },
             InferenceOutcome {
+                provider_response_id: Some("gen-fallback".into()),
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -1270,11 +1274,17 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let evidence = database.job_usage(fallback_writer.job.id).expect("dispatch usage");
     assert_eq!(evidence.len(), 2);
     let mut inputs = evidence.iter().map(|entry| match &entry.result {
-        Some(JobInferenceUsageResult::Response { usage: Some(usage) }) => usage.input_tokens,
+        Some(JobInferenceUsageResult::Response { usage: Some(usage), .. }) => usage.input_tokens,
         other => panic!("unexpected usage result: {other:?}"),
     }).collect::<Vec<_>>();
     inputs.sort_unstable();
     assert_eq!(inputs, [30, 50]);
+    for (input, expected_id) in [(30, "gen-primary"), (50, "gen-fallback")] {
+        assert!(evidence.iter().any(|entry| matches!(&entry.result,
+            Some(JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(id) })
+                if usage.input_tokens == input && id == expected_id)));
+    }
+
     let repeated = crate::CompanionSoulWriterExecutionCoordinator::new(&database, &fallback_inference)
         .run(fallback_request_id, &soul_writer_prompt, &JobHandle::new(fallback_writer.job.id), None, NOW)
         .await.expect("replay completed preview");
@@ -1356,6 +1366,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         outcomes: Mutex::new(VecDeque::from([
             Err(PortError::Unavailable),
             Ok(InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: Vec::new(),
@@ -1391,7 +1402,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     assert_eq!(alternate_usage.len(), 2);
     assert!(alternate_usage.iter().any(|entry| entry.result == Some(JobInferenceUsageResult::InferenceFailed)
         && entry.model_profile_id == profile.chat_profile.model_profile_id));
-    assert!(alternate_usage.iter().any(|entry| entry.result == Some(JobInferenceUsageResult::Response { usage: None })
+    assert!(alternate_usage.iter().any(|entry| entry.result == Some(JobInferenceUsageResult::Response { usage: None, provider_response_id: None })
         && entry.model_profile_id == alternate_profile.chat_profile.model_profile_id));
     {
         let alternate_requests = alternate_inference
@@ -1424,6 +1435,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .expect("admit interrupted preview");
     let interrupted_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -1477,6 +1489,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     };
     let failed_response = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            provider_response_id: None,
             candidates: Vec::new(),
             usage: Some(failed_usage.clone()),
             finish_reason: lettuce_conversations::FinishReason::Error,
@@ -1496,7 +1509,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let retries = database.job_usage(interrupted_writer.job.id).expect("retry usage");
     assert_eq!(retries.len(), 4);
     assert_eq!(retries.iter().filter(|entry| entry.logical_attempt_id == retry_request.attempt_id).count(), 4);
-    assert!(retries.iter().any(|entry| entry.result == Some(JobInferenceUsageResult::Response { usage: Some(failed_usage.clone()) })));
+    assert!(retries.iter().any(|entry| entry.result == Some(JobInferenceUsageResult::Response { usage: Some(failed_usage.clone()), provider_response_id: None })));
     assert!(retries.iter().any(|entry| entry.result == Some(JobInferenceUsageResult::Cancelled)));
     assert_eq!(
         interrupted_run.rounds[0].resulting_draft["soul"]["traits"],
@@ -1554,6 +1567,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .expect("admit capped preview");
     let capped_outcomes = (0..8)
         .map(|ordinal| InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -1667,6 +1681,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let scripted = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -1690,6 +1705,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 warning_codes: Vec::new(),
             },
             InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -1713,6 +1729,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 warning_codes: Vec::new(),
             },
             InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: Vec::new(),
@@ -1736,6 +1753,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 warning_codes: Vec::new(),
             },
             InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: Vec::new(),
@@ -1993,6 +2011,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .lock()
         .expect("growth outcome")
         .push_back(InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -2176,6 +2195,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .lock()
         .expect("consolidation outcome")
         .push_back(InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -3961,6 +3981,7 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
     let handle = native_work.handle.clone();
     let native_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -4076,6 +4097,7 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
     let fallback_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -4091,6 +4113,7 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
                 warning_codes: Vec::new(),
             },
             InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -4705,6 +4728,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     );
     let inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -5063,6 +5087,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
 
     let writer_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -5395,6 +5420,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
 
     let refine_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -5701,6 +5727,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     );
     let coherence_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -6073,6 +6100,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let at = work.job.updated_at;
     let invalid_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            provider_response_id: None,
             candidates: Vec::new(),
             usage: None,
             finish_reason: lettuce_conversations::FinishReason::Stop,
@@ -6129,6 +6157,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     );
     let retry_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -6441,6 +6470,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 return Err(PortError::Empty);
             }
             Ok(InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![],
@@ -6733,6 +6763,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             )
             .expect("cancel while provider is running");
             Ok(InferenceOutcome {
+                provider_response_id: None,
                 candidates: Vec::new(),
                 usage: None,
                 finish_reason: lettuce_conversations::FinishReason::Stop,
@@ -7065,6 +7096,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
 
     let native_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -7196,6 +7228,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
     let fallback_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -7211,6 +7244,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                 warning_codes: Vec::new(),
             },
             InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -7775,6 +7809,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
         attempt_id: attempt.id,
     };
     let initial_outcome = InferenceOutcome {
+        provider_response_id: None,
         candidates: vec![InferenceCandidate {
             ordinal: 0,
             parts: vec![],
@@ -7878,6 +7913,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
     let scripted = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![],
@@ -7905,6 +7941,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
                 warning_codes: vec![],
             },
             InferenceOutcome {
+                provider_response_id: None,
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -8322,6 +8359,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
         .expect("first round");
     let scripted = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),

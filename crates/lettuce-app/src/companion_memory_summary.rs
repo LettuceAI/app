@@ -690,6 +690,7 @@ mod tests {
     #[test]
     fn summary_response_accepts_legacy_tool_or_plain_text() {
         let outcome = |parts, tool_calls| InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts,

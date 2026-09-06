@@ -997,6 +997,7 @@ fn parse_response_with_replay(
         });
     }
     Ok(InferenceOutcome {
+        provider_response_id: None,
         candidates,
         usage: parsed.usage_metadata.and_then(|usage| {
             Some(InferenceUsage {

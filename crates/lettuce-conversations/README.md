@@ -136,3 +136,9 @@ execution rather than exposing a partially running or terminal round.
 Launch snapshots stay frozen for the conversation lifetime. Current participant
 policy and settings are explicit mutable state; this contract does not derive
 live values from cross-conversation sources.
+
+InferenceOutcome carries optional provider_response_id independently of the
+HTTP provider_request_id. OpenAI buffered/SSE adapters populate it for billing
+lookups; it is not an internal attempt or candidate identity. Durable companion
+dispatch responses retain it; conversation/creation/memory checkpoints do not
+yet persist this additional field.

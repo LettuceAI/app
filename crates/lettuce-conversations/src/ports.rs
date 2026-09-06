@@ -1894,6 +1894,7 @@ pub struct InferenceUsage {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferenceOutcome {
+    pub provider_response_id: Option<String>,
     pub candidates: Vec<InferenceCandidate>,
     pub usage: Option<InferenceUsage>,
     pub finish_reason: FinishReason,

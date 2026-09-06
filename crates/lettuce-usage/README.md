@@ -77,3 +77,9 @@ OpenRouter endpoint-price and generation-detail result types retain routed
 provider identity, endpoint tags and separate native/normalized counters for the
 provider adapter's billing reads. They do not select a provider or overwrite
 immutable event counters. Automatic capture and reconciliation remain pending.
+
+Companion dispatch responses also retain an optional provider response-body ID,
+separate from logical attempt and HTTP request identities. Older JSON defaults
+to None. Primary/fallback calls preserve their own IDs; settlement rejects
+changing a stored ID. This supplies generation lookup identity without altering
+usage counters. Automatic generation enrichment remains pending.

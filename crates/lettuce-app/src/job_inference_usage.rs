@@ -33,6 +33,7 @@ pub(crate) async fn run_job_inference<
     let result = match &outcome {
         Ok(outcome) => JobInferenceUsageResult::Response {
             usage: outcome.usage.clone(),
+            provider_response_id: outcome.provider_response_id.clone(),
         },
         Err(PortError::Cancelled) => JobInferenceUsageResult::Cancelled,
         Err(_) => JobInferenceUsageResult::InferenceFailed,

@@ -890,6 +890,7 @@ mod tests {
         output: u64,
     ) -> InferenceOutcome {
         InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts,

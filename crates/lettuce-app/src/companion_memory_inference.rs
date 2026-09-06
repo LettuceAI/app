@@ -907,6 +907,7 @@ mod tests {
 
     fn text_outcome(text: &str, usage: Option<InferenceUsage>) -> InferenceOutcome {
         InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: vec![MessagePart::Text {
@@ -1302,6 +1303,7 @@ mod tests {
             budget: Default::default(),
         };
         let empty = InferenceOutcome {
+            provider_response_id: None,
             candidates: Vec::new(),
             usage: None,
             finish_reason: FinishReason::Stop,
@@ -1321,6 +1323,7 @@ mod tests {
         ));
 
         let outcome = InferenceOutcome {
+            provider_response_id: None,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),

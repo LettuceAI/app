@@ -367,3 +367,12 @@ Logical assets store only versioned, redacted provenance and retention; asset
 mutations use revision CAS. Library pagination uses an opaque
 `(updated_at, id)` keyset cursor. It is deliberately non-snapshot pagination:
 rows added or updated between page requests may move relative to a prior page.
+
+Job dispatch result JSON retains optional provider response IDs with serde
+default compatibility. The file-backed usage scenario rejects changed-ID
+settlement and verifies the identity survives reopen/job cleanup. No migration
+is needed for this addition to the existing versioned response JSON.
+
+Job-result replay compares decoded versioned values, so an older stored response
+without the optional ID remains an exact replay of an absent-ID response. The
+regression exercises the old bytes directly without rewriting the evidence.

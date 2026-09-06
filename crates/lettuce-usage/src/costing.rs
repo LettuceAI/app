@@ -30,6 +30,7 @@ impl UsageCostBasis {
     ) -> Result<RequestCost, UsageLedgerError> {
         let Some(crate::JobInferenceUsageResult::Response {
             usage: Some(tokens),
+            ..
         }) = &event.result
         else {
             return Err(UsageLedgerError::Invalid);

@@ -730,6 +730,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         return Err(AdapterError::EmptyResponse);
     }
     let outcome = InferenceOutcome {
+        provider_response_id: parsed.id,
         candidates,
         usage: parsed.usage.and_then(|usage| {
             let (cached_input_tokens, reasoning_tokens) =
@@ -929,6 +930,7 @@ impl Serialize for WireMessage {
 
 #[derive(Deserialize)]
 struct OpenAiResponse {
+    id: Option<String>,
     choices: Vec<OpenAiChoice>,
     usage: Option<OpenAiUsage>,
 }
@@ -1486,6 +1488,7 @@ mod tests {
         })
         .expect("valid response");
         assert_eq!(outcome.provider_request_id.as_deref(), Some("request-id"));
+        assert_eq!(outcome.provider_response_id.as_deref(), Some("response-id"));
         assert_eq!(outcome.provider_finish_reason.as_deref(), Some("stop"));
     }
 

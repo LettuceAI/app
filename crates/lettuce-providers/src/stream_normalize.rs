@@ -71,6 +71,7 @@ pub(crate) struct StreamNormalizer {
     provider_finish_reason: Option<String>,
     warning_codes: Vec<InferenceWarningCode>,
     provider_request_id: Option<String>,
+    provider_response_id: Option<String>,
     openai_tool_calls: BTreeMap<u64, PendingOpenAiToolCall>,
     anthropic_tool_calls: BTreeMap<u64, PendingAnthropicToolCall>,
     anthropic_replay_blocks: BTreeMap<u64, AnthropicReplayBlock>,
@@ -138,6 +139,7 @@ impl StreamNormalizer {
             provider_finish_reason: None,
             warning_codes: Vec::new(),
             provider_request_id,
+            provider_response_id: None,
             openai_tool_calls: BTreeMap::new(),
             anthropic_tool_calls: BTreeMap::new(),
             anthropic_replay_blocks: BTreeMap::new(),
@@ -271,6 +273,7 @@ impl StreamNormalizer {
             _ => None,
         };
         let outcome = InferenceOutcome {
+            provider_response_id: self.provider_response_id,
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts,
@@ -391,6 +394,17 @@ impl StreamNormalizer {
         let value = parse_json(&record.data)?;
         if let Some(error) = provider_error(&value) {
             return Err(error);
+        }
+        if let Some(id) = value.get("id").filter(|id| !id.is_null()) {
+            let id = id.as_str().ok_or(StreamNormalizeError::MalformedJson)?;
+            if self
+                .provider_response_id
+                .as_deref()
+                .is_some_and(|saved| saved != id)
+            {
+                return Err(StreamNormalizeError::MalformedJson);
+            }
+            self.provider_response_id = Some(id.to_owned());
         }
         if let Some(usage) = value.get("usage") {
             self.provider_reported_cost = usage
@@ -1406,6 +1420,40 @@ mod tests {
         StreamRecord {
             event: Some(event.to_owned()),
             data: data.to_owned(),
+        }
+    }
+
+    #[test]
+    fn openai_response_identity_survives_omitted_frames_and_rejects_changes() {
+        let mut stream = StreamNormalizer::new(StreamProtocol::OpenAi, Some("http-request".into()));
+        stream
+            .consume(&record(
+                r#"{"id":"gen-one","choices":[{"delta":{"content":"ok"}}]}"#,
+            ))
+            .unwrap();
+        stream
+            .consume(&record(
+                r#"{"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}"#,
+            ))
+            .unwrap();
+        stream
+            .consume(&record(
+                r#"{"id":null,"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+            ))
+            .unwrap();
+        stream.consume(&record("[DONE]")).unwrap();
+        let (_, outcome) = stream.finish().unwrap();
+        assert_eq!(outcome.provider_response_id.as_deref(), Some("gen-one"));
+        assert_eq!(outcome.provider_request_id.as_deref(), Some("http-request"));
+        for next in [
+            r#"{"id":"gen-other","choices":[]}"#,
+            r#"{"id":123,"choices":[]}"#,
+        ] {
+            let mut stream = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+            stream
+                .consume(&record(r#"{"id":"gen-one","choices":[]}"#))
+                .unwrap();
+            assert!(stream.consume(&record(next)).is_err());
         }
     }
 

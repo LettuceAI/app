@@ -999,6 +999,7 @@ fn parse_response_with_replay(
         return Err(AdapterError::EmptyResponse);
     }
     let outcome = InferenceOutcome {
+        provider_response_id: None,
         candidates: vec![InferenceCandidate {
             ordinal: 0,
             parts: {

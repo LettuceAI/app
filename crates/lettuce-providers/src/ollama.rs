@@ -524,6 +524,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         parts.push(MessagePart::Text { text });
     }
     Ok(InferenceOutcome {
+        provider_response_id: None,
         candidates: vec![InferenceCandidate {
             ordinal: 0,
             parts,

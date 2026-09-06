@@ -160,11 +160,16 @@ remain typed errors. Native and normalized token counts remain separate; absent
 counts never become zero. Endpoint names/tags and exact price strings are retained
 without selecting a fallback provider. Required prices and monetary evidence must
 be finite and nonnegative. Wire response structs remain private; usage owns the
-billing result types. No cache, automatic cost writes or inference response-ID
-retention is added by these reads.
+billing result types. These reads do not add a cache or automatic cost writes.
 
 Contracts checked against the official [endpoint pricing documentation](https://openrouter.ai/docs/api/api-reference/endpoints/list-all-endpoints-for-a-model)
 and [generation metadata documentation](https://openrouter.ai/docs/api/api-reference/generations/get-request-&-usage-metadata-for-a-generation).
 Local HTTP fixtures cover bearer auth, base-path/version handling, encoded query
 IDs, 404 versus 401, free prices and separate native/normalized counters; parser
 tests reject wrong identities and malformed required evidence.
+
+OpenAI buffered/SSE outcomes retain the response-body `id` separately from the
+HTTP `provider_request_id`. Omitted/null SSE IDs preserve the earlier identity;
+changed or non-string IDs reject the stream. Other native adapters currently
+leave response identity unknown. Companion dispatch evidence retains this ID
+before workflow validation; other workflow checkpoints are not yet wired to it.
