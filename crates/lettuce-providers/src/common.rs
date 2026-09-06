@@ -51,6 +51,31 @@ pub(crate) fn openai_usage_details(
     });
     (cached, reasoning)
 }
+pub(crate) fn openai_usage_extras(
+    usage: &serde_json::Map<String, serde_json::Value>,
+) -> (Option<u64>, Option<u64>) {
+    let first = |value: &serde_json::Value, fields: &[&str]| {
+        fields
+            .iter()
+            .find_map(|field| value.get(*field).and_then(serde_json::Value::as_u64))
+    };
+    (
+        usage
+            .get("prompt_tokens_details")
+            .and_then(|v| first(v, &["cache_write_tokens", "cacheWriteTokens"])),
+        usage.get("server_tool_use").and_then(|v| {
+            first(
+                v,
+                &[
+                    "web_search_requests",
+                    "webSearchRequests",
+                    "search_requests",
+                ],
+            )
+        }),
+    )
+}
+
 pub(crate) const ACCEPT_ONLY: [JsonStaticHeader; 1] = [JsonStaticHeader {
     name: "accept",
     value: "application/json",

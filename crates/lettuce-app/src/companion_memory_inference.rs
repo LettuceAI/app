@@ -281,6 +281,14 @@ where
     if let Some(primary_usage) = primary.as_ref().and_then(|outcome| outcome.usage.as_ref()) {
         match &mut outcome.usage {
             Some(usage) => {
+                usage.cache_write_tokens = usage
+                    .cache_write_tokens
+                    .zip(primary_usage.cache_write_tokens)
+                    .and_then(|(a, b)| a.checked_add(b));
+                usage.web_search_requests = usage
+                    .web_search_requests
+                    .zip(primary_usage.web_search_requests)
+                    .and_then(|(a, b)| a.checked_add(b));
                 usage.cached_input_tokens = usage
                     .cached_input_tokens
                     .zip(primary_usage.cached_input_tokens)
@@ -918,6 +926,8 @@ mod tests {
                 Ok(text_outcome(
                     "plain prose",
                     Some(InferenceUsage {
+                        cache_write_tokens: None,
+                        web_search_requests: None,
                         cached_input_tokens: Some(0),
                         reasoning_tokens: Some(1),
                         input_tokens: 3,
@@ -927,6 +937,8 @@ mod tests {
                 Ok(text_outcome(
                     "<memory_ops><done summary=\"captured\" /></memory_ops>",
                     Some(InferenceUsage {
+                        cache_write_tokens: None,
+                        web_search_requests: None,
                         cached_input_tokens: Some(2),
                         reasoning_tokens: Some(3),
                         input_tokens: 5,
@@ -952,6 +964,8 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                cache_write_tokens: None,
+                web_search_requests: None,
                 cached_input_tokens: Some(2),
                 reasoning_tokens: Some(4),
                 input_tokens: 8,
@@ -1313,6 +1327,8 @@ mod tests {
                 provider_replay: None,
             }],
             usage: Some(lettuce_conversations::InferenceUsage {
+                cache_write_tokens: None,
+                web_search_requests: None,
                 cached_input_tokens: None,
                 reasoning_tokens: None,
                 input_tokens: 10,

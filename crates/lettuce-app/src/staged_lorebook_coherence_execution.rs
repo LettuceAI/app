@@ -148,6 +148,8 @@ where
                     input_tokens: usage.input_tokens,
                     cached_input_tokens: usage.cached_input_tokens,
                     reasoning_tokens: usage.reasoning_tokens,
+                    cache_write_tokens: usage.cache_write_tokens,
+                    web_search_requests: usage.web_search_requests,
                     output_tokens: usage.output_tokens,
                 }),
             provider_finish_reason: outcome.provider_finish_reason.clone(),

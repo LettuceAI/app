@@ -221,7 +221,7 @@ pub(crate) fn load_summary_checkpoint_in(
         .query_row(
             "SELECT attempt_id,space_id,expected_memory_revision,resulting_memory_revision,
                     summary_text,token_count,request_context_json,input_tokens,output_tokens,
-                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens
+                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests
                FROM dynamic_memory_summary_checkpoints WHERE run_id=?1",
             [run_id.to_string()],
             |row| {
@@ -250,6 +250,8 @@ pub(crate) fn load_summary_checkpoint_in(
                         .map(u64::try_from)
                         .transpose()
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    row.get::<_, Option<i64>>(13)?.map(u64::try_from).transpose().map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    row.get::<_, Option<i64>>(14)?.map(u64::try_from).transpose().map_err(|_| rusqlite::Error::InvalidQuery)?,
                 ))
             },
         )
@@ -269,6 +271,8 @@ pub(crate) fn load_summary_checkpoint_in(
         settled_at,
         cached_input_tokens,
         reasoning_tokens,
+        cache_write_tokens,
+        web_search_requests,
     )) = row
     else {
         return Ok(None);
@@ -281,6 +285,8 @@ pub(crate) fn load_summary_checkpoint_in(
     }
     let usage = match (input_tokens, output_tokens) {
         (Some(input), Some(output)) => Some(InferenceUsage {
+            cache_write_tokens,
+            web_search_requests,
             cached_input_tokens,
             reasoning_tokens,
             input_tokens: u64::try_from(input).map_err(storage)?,
@@ -383,7 +389,7 @@ fn list_rounds_in(
         .prepare(
             "SELECT ordinal,first_call_ordinal,call_count,request_context_json,parts_json,provider_replay_artifact_id,\
                     provider_replay_retention,input_tokens,output_tokens,finish_reason,\
-                    provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens \
+                    provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests \
              FROM dynamic_memory_inference_rounds \
              WHERE run_id=?1 AND attempt_id=?2 ORDER BY ordinal",
         )
@@ -424,6 +430,16 @@ fn list_rounds_in(
                 .map_err(|_| rusqlite::Error::InvalidQuery)?,
                 usage: match (row.get::<_, Option<i64>>(7)?, row.get::<_, Option<i64>>(8)?) {
                     (Some(input), Some(output)) => Some(InferenceUsage {
+                        cache_write_tokens: row
+                            .get::<_, Option<i64>>(14)?
+                            .map(u64::try_from)
+                            .transpose()
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        web_search_requests: row
+                            .get::<_, Option<i64>>(15)?
+                            .map(u64::try_from)
+                            .transpose()
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
                         cached_input_tokens: row
                             .get::<_, Option<i64>>(12)?
                             .map(u64::try_from)
@@ -614,8 +630,8 @@ fn insert_round_in(
             "INSERT INTO dynamic_memory_inference_rounds \
              (run_id,attempt_id,ordinal,first_call_ordinal,call_count,request_context_json,parts_json,\
               provider_replay_artifact_id,provider_replay_retention,input_tokens,output_tokens,\
-              finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+              finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
             params![
                 round.run_id.to_string(),
                 round.attempt_id.to_string(),
@@ -636,6 +652,8 @@ fn insert_round_in(
                 round.admitted_at.get(),
                 round.usage.as_ref().and_then(|u| u.cached_input_tokens).map(sql_u64).transpose()?,
                 round.usage.as_ref().and_then(|u| u.reasoning_tokens).map(sql_u64).transpose()?,
+                round.usage.as_ref().and_then(|u| u.cache_write_tokens).map(sql_u64).transpose()?,
+                round.usage.as_ref().and_then(|u| u.web_search_requests).map(sql_u64).transpose()?,
             ],
         )
         .map_err(storage)?;
@@ -1446,8 +1464,8 @@ impl DynamicMemoryRunRepository for Database {
                     run_id,attempt_id,space_id,expected_memory_revision,
                     resulting_memory_revision,summary_text,token_count,
                     request_context_json,input_tokens,output_tokens,
-                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens
-                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests
+                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
                 params![
                     run.id.to_string(),
                     attempt.id.to_string(),
@@ -1473,6 +1491,8 @@ impl DynamicMemoryRunRepository for Database {
                         .and_then(|u| u.reasoning_tokens)
                         .map(sql_u64)
                         .transpose()?,
+                    commit.usage.as_ref().and_then(|u| u.cache_write_tokens).map(sql_u64).transpose()?,
+                    commit.usage.as_ref().and_then(|u| u.web_search_requests).map(sql_u64).transpose()?,
                 ],
             )
             .map_err(storage)?;
@@ -1895,6 +1915,8 @@ mod tests {
                 budget: Default::default(),
             },
             usage: Some(InferenceUsage {
+                cache_write_tokens: Some(3),
+                web_search_requests: Some(0),
                 cached_input_tokens: Some(0),
                 reasoning_tokens: Some(1),
                 input_tokens: 20,

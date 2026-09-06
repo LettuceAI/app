@@ -1318,6 +1318,8 @@ mod tests {
             attempt_id: GenerationAttemptId::new(),
             outcome: UsageOutcome::Succeeded,
             usage: UsageCounters::Known(InferenceUsage {
+                cache_write_tokens: None,
+                web_search_requests: None,
                 cached_input_tokens: None,
                 reasoning_tokens: None,
                 input_tokens: 1,

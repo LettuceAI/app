@@ -14,7 +14,10 @@ remain unchanged: these details are evidence, not a conversion to OpenRouter
 billing semantics. In particular, Anthropic cache reads may exceed its native
 input_tokens, and Gemini thoughts may exceed candidatesTokenCount. Do not
 apply OpenRouter's inclusive-token cost formula to these native totals.
-Cache-write/search counts and provider-reported cost remain later work.
+OpenAI-compatible buffered/SSE usage also preserves legacy nested cache-write
+and server-tool web-search counters, including their camelCase aliases. Other
+native adapters leave these new counters unknown; provider-reported monetary
+cost remains later work.
 
 Remote provider catalogs, request translation, stream parsing, and error mapping.
 

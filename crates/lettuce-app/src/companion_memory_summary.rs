@@ -567,6 +567,14 @@ fn aggregate_usage(
 ) -> Option<lettuce_conversations::InferenceUsage> {
     match (first, second) {
         (Some(first), Some(second)) => Some(lettuce_conversations::InferenceUsage {
+            cache_write_tokens: first
+                .cache_write_tokens
+                .zip(second.cache_write_tokens)
+                .and_then(|(a, b)| a.checked_add(b)),
+            web_search_requests: first
+                .web_search_requests
+                .zip(second.web_search_requests)
+                .and_then(|(a, b)| a.checked_add(b)),
             cached_input_tokens: first
                 .cached_input_tokens
                 .zip(second.cached_input_tokens)
@@ -644,6 +652,8 @@ mod tests {
     fn fallback_usage_preserves_known_details_without_inventing_missing_counts() {
         let usage = |cached, reasoning| {
             Some(lettuce_conversations::InferenceUsage {
+                cache_write_tokens: None,
+                web_search_requests: None,
                 input_tokens: 10,
                 output_tokens: 5,
                 cached_input_tokens: cached,

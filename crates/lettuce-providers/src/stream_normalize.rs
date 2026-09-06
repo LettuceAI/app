@@ -64,6 +64,8 @@ pub(crate) struct StreamNormalizer {
     output_tokens: Option<u64>,
     cached_input_tokens: Option<u64>,
     reasoning_tokens: Option<u64>,
+    cache_write_tokens: Option<u64>,
+    web_search_requests: Option<u64>,
     finish_reason: FinishReason,
     provider_finish_reason: Option<String>,
     warning_codes: Vec<InferenceWarningCode>,
@@ -127,6 +129,8 @@ impl StreamNormalizer {
             input_tokens: None,
             cached_input_tokens: None,
             reasoning_tokens: None,
+            cache_write_tokens: None,
+            web_search_requests: None,
             output_tokens: None,
             finish_reason: FinishReason::Stop,
             provider_finish_reason: None,
@@ -254,6 +258,8 @@ impl StreamNormalizer {
         }
         let usage = match (self.input_tokens, self.output_tokens) {
             (Some(input_tokens), Some(output_tokens)) => Some(InferenceUsage {
+                cache_write_tokens: self.cache_write_tokens,
+                web_search_requests: self.web_search_requests,
                 cached_input_tokens: self.cached_input_tokens,
                 reasoning_tokens: self.reasoning_tokens,
                 input_tokens,
@@ -371,6 +377,10 @@ impl StreamNormalizer {
             return Err(error);
         }
         if let Some(usage) = value.get("usage") {
+            (self.cache_write_tokens, self.web_search_requests) = usage
+                .as_object()
+                .map(crate::common::openai_usage_extras)
+                .unwrap_or_default();
             self.input_tokens = token(usage, &["prompt_tokens", "input_tokens"]);
             (self.cached_input_tokens, self.reasoning_tokens) = usage
                 .as_object()

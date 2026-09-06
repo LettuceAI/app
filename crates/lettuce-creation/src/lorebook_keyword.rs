@@ -105,6 +105,10 @@ pub struct LorebookKeywordAttemptUsage {
     pub cached_input_tokens: Option<u64>,
     #[serde(default)]
     pub reasoning_tokens: Option<u64>,
+    #[serde(default)]
+    pub cache_write_tokens: Option<u64>,
+    #[serde(default)]
+    pub web_search_requests: Option<u64>,
     pub input_tokens: u64,
     pub output_tokens: u64,
 }

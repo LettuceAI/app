@@ -734,7 +734,11 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         usage: parsed.usage.and_then(|usage| {
             let (cached_input_tokens, reasoning_tokens) =
                 crate::common::openai_usage_details(&usage.details);
+            let (cache_write_tokens, web_search_requests) =
+                crate::common::openai_usage_extras(&usage.details);
             Some(InferenceUsage {
+                cache_write_tokens,
+                web_search_requests,
                 cached_input_tokens,
                 reasoning_tokens,
                 input_tokens: usage.input()?,
@@ -1389,6 +1393,12 @@ mod tests {
             ),
         ];
         for (mut usage, cached, reasoning) in cases {
+            usage["server_tool_use"] =
+                serde_json::json!({"web_search_requests": -1, "webSearchRequests": 0});
+            if usage.get("prompt_tokens_details").is_none() {
+                usage["prompt_tokens_details"] = serde_json::json!({});
+            }
+            usage["prompt_tokens_details"]["cacheWriteTokens"] = 3.into();
             usage["prompt_tokens"] = 10.into();
             usage["completion_tokens"] = 5.into();
             let buffered = serde_json::json!({"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":usage});
@@ -1414,6 +1424,8 @@ mod tests {
             assert_eq!(streamed.usage, Some(buffered.clone()));
             assert_eq!(buffered.cached_input_tokens, cached);
             assert_eq!(buffered.reasoning_tokens, reasoning);
+            assert_eq!(buffered.cache_write_tokens, Some(3));
+            assert_eq!(buffered.web_search_requests, Some(0));
         }
     }
 
@@ -1443,6 +1455,8 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                cache_write_tokens: None,
+                web_search_requests: None,
                 cached_input_tokens: Some(2),
                 reasoning_tokens: Some(1),
                 input_tokens: 7,
@@ -1483,6 +1497,8 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                cache_write_tokens: None,
+                web_search_requests: None,
                 cached_input_tokens: None,
                 reasoning_tokens: None,
                 input_tokens: 2,

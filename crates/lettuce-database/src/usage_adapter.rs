@@ -215,10 +215,14 @@ fn hydrate(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawUsageEvent> {
         recorded_at: row.get(12)?,
         cached_input_tokens: row.get(13)?,
         reasoning_tokens: row.get(14)?,
+        cache_write_tokens: row.get(15)?,
+        web_search_requests: row.get(16)?,
     })
 }
 
 struct RawUsageEvent {
+    cache_write_tokens: Option<i64>,
+    web_search_requests: Option<i64>,
     cached_input_tokens: Option<i64>,
     reasoning_tokens: Option<i64>,
     id: String,
@@ -240,6 +244,16 @@ impl RawUsageEvent {
     fn decode(self) -> Result<UsageEvent, UsageLedgerError> {
         let usage = match self.counters_kind.as_str() {
             "known" => UsageCounters::Known(InferenceUsage {
+                cache_write_tokens: self
+                    .cache_write_tokens
+                    .map(u64::try_from)
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?,
+                web_search_requests: self
+                    .web_search_requests
+                    .map(u64::try_from)
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?,
                 cached_input_tokens: self
                     .cached_input_tokens
                     .map(u64::try_from)
@@ -318,7 +332,7 @@ impl RawUsageEvent {
 
 const SELECT_EVENT: &str = "SELECT id, turn_id, attempt_id, outcome, counters_kind,
     input_tokens, output_tokens, unavailable_reason, model_profile_id, model_revision,
-    provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens FROM usage_events";
+    provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests FROM usage_events";
 
 impl UsageLedger for Database {
     fn record(&self, record: UsageRecord) -> Result<UsageEvent, UsageLedgerError> {
@@ -362,9 +376,14 @@ impl UsageLedger for Database {
             return Ok(existing);
         }
         let id = UsageEventId::new();
-        let (cached, reasoning) = match &record.usage {
-            UsageCounters::Known(usage) => (usage.cached_input_tokens, usage.reasoning_tokens),
-            UsageCounters::Unavailable(_) => (None, None),
+        let (cached, reasoning, cache_write, web_search) = match &record.usage {
+            UsageCounters::Known(usage) => (
+                usage.cached_input_tokens,
+                usage.reasoning_tokens,
+                usage.cache_write_tokens,
+                usage.web_search_requests,
+            ),
+            UsageCounters::Unavailable(_) => (None, None, None, None),
         };
         let cached = cached
             .map(i64::try_from)
@@ -390,8 +409,8 @@ impl UsageLedger for Database {
                 "INSERT INTO usage_events (id, conversation_id, turn_id, attempt_id, outcome,
                     counters_kind, input_tokens, output_tokens, unavailable_reason,
                     model_profile_id, model_revision, provider_account_id,
-                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
                 params![
                     id.to_string(),
                     conversation_id,
@@ -417,6 +436,8 @@ impl UsageLedger for Database {
                     record.recorded_at.get(),
                     cached,
                     reasoning,
+                    cache_write.map(i64::try_from).transpose().map_err(|_| UsageLedgerError::Invalid)?,
+                    web_search.map(i64::try_from).transpose().map_err(|_| UsageLedgerError::Invalid)?,
                 ],
             )
             .map_err(|_| UsageLedgerError::Storage)?;
@@ -573,6 +594,8 @@ mod tests {
                 attempt_id,
                 outcome: UsageOutcome::Succeeded,
                 usage: UsageCounters::Known(InferenceUsage {
+                    cache_write_tokens: None,
+                    web_search_requests: None,
                     cached_input_tokens: None,
                     reasoning_tokens: None,
                     input_tokens: 120,
@@ -593,6 +616,8 @@ mod tests {
         if let UsageCounters::Known(usage) = &mut record.usage {
             usage.cached_input_tokens = Some(0);
             usage.reasoning_tokens = Some(12);
+            usage.cache_write_tokens = Some(3);
+            usage.web_search_requests = Some(0);
         }
         let first = UsageLedger::record(&database, record.clone()).expect("record");
         let mut changed = record.clone();
@@ -636,6 +661,24 @@ mod tests {
             },
         };
         let cost = database.record_cost(event.id, basis.clone()).expect("cost");
+        let mut detailed = event.clone();
+        if let UsageCounters::Known(usage) = &mut detailed.record.usage {
+            usage.cache_write_tokens = Some(0);
+            usage.web_search_requests = Some(0);
+        }
+        assert!(basis.calculate(&detailed).is_ok());
+        let mut mismatched = basis.clone();
+        mismatched.input.cache_write_tokens = 1;
+        assert!(matches!(
+            mismatched.calculate(&detailed),
+            Err(UsageLedgerError::Invalid)
+        ));
+        mismatched.input.cache_write_tokens = 0;
+        mismatched.input.web_search_requests = 1;
+        assert!(matches!(
+            mismatched.calculate(&detailed),
+            Err(UsageLedgerError::Invalid)
+        ));
         assert!((cost.cost.total_cost - 0.18).abs() < 1e-12);
         assert_eq!(
             database
@@ -717,6 +760,8 @@ mod tests {
         let event = UsageLedger::record(&database, record.clone()).expect("record");
         let mut changed = record;
         changed.usage = UsageCounters::Known(InferenceUsage {
+            cache_write_tokens: None,
+            web_search_requests: None,
             cached_input_tokens: None,
             reasoning_tokens: None,
             input_tokens: 121,

@@ -23,6 +23,12 @@ impl UsageCostBasis {
             || tokens.input_tokens != self.input.prompt_tokens
             || tokens.output_tokens != self.input.completion_tokens
             || tokens
+                .cache_write_tokens
+                .is_some_and(|value| value != self.input.cache_write_tokens)
+            || tokens
+                .web_search_requests
+                .is_some_and(|value| value != self.input.web_search_requests)
+            || tokens
                 .cached_input_tokens
                 .is_some_and(|value| value != self.input.cached_prompt_tokens)
             || tokens

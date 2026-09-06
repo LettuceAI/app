@@ -44,8 +44,8 @@ an existing usage event. The basis retains model/provider identities, source
 description, capture time, exact prices and explicitly supplied cost counters.
 Input/output counters must match the event; unavailable usage cannot be costed.
 Known cache-read/reasoning counters in the event must also match the cost basis.
-Missing details stay unknown; search/cache-write counters are still supplied
-by the caller. OpenAI-compatible buffered/streaming normalization now captures
+Missing details stay unknown; known search/cache-write counters must also match
+the supplied cost basis. OpenAI-compatible buffered/streaming normalization now captures
 standard cached/reasoning token details, and the usage ledger retains them.
 This is not yet automatic pricing capture. Nonfinite or negative authoritative totals are rejected at
 this persistence boundary rather than serialized lossily.

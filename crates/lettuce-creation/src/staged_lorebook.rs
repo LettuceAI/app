@@ -690,6 +690,10 @@ pub struct StagedLorebookPlannerUsage {
     pub cached_input_tokens: Option<u64>,
     #[serde(default)]
     pub reasoning_tokens: Option<u64>,
+    #[serde(default)]
+    pub cache_write_tokens: Option<u64>,
+    #[serde(default)]
+    pub web_search_requests: Option<u64>,
     pub input_tokens: u64,
     pub output_tokens: u64,
 }
@@ -700,16 +704,21 @@ fn lorebook_usage_details_round_trip_and_old_checkpoints_remain_readable() {
     let old = serde_json::json!({"input_tokens": 10, "output_tokens": 4});
     let detailed = serde_json::json!({
         "input_tokens": 10, "output_tokens": 4,
-        "cached_input_tokens": 0, "reasoning_tokens": 2
+        "cached_input_tokens": 0, "reasoning_tokens": 2,
+        "cache_write_tokens": 3, "web_search_requests": 0
     });
     macro_rules! check {
         ($kind:ty) => {
             let previous: $kind = serde_json::from_value(old.clone()).expect("old usage");
             assert_eq!(previous.cached_input_tokens, None);
             assert_eq!(previous.reasoning_tokens, None);
+            assert_eq!(previous.cache_write_tokens, None);
+            assert_eq!(previous.web_search_requests, None);
             let current: $kind = serde_json::from_value(detailed.clone()).expect("usage details");
             assert_eq!(current.cached_input_tokens, Some(0));
             assert_eq!(current.reasoning_tokens, Some(2));
+            assert_eq!(current.cache_write_tokens, Some(3));
+            assert_eq!(current.web_search_requests, Some(0));
             assert_eq!(
                 serde_json::to_value(current).expect("serialize usage"),
                 detailed
@@ -799,6 +808,10 @@ pub struct StagedLorebookWriterUsage {
     pub cached_input_tokens: Option<u64>,
     #[serde(default)]
     pub reasoning_tokens: Option<u64>,
+    #[serde(default)]
+    pub cache_write_tokens: Option<u64>,
+    #[serde(default)]
+    pub web_search_requests: Option<u64>,
     pub input_tokens: u64,
     pub output_tokens: u64,
 }

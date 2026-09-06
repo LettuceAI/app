@@ -1845,6 +1845,10 @@ impl InferenceCandidate {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InferenceUsage {
     #[serde(default)]
+    pub cache_write_tokens: Option<u64>,
+    #[serde(default)]
+    pub web_search_requests: Option<u64>,
+    #[serde(default)]
     pub cached_input_tokens: Option<u64>,
     #[serde(default)]
     pub reasoning_tokens: Option<u64>,
