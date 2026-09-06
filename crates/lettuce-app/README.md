@@ -608,3 +608,13 @@ persisted in the same store as the usage repository. Completed replay adds no
 dispatch. SQLite tests cover these boundaries and separate two-round evidence
 from the existing aggregate. Legacy creation_helper/service.rs also accounted
 for initial/continuation responses before accepting their generated content.
+
+Conversation-owned dynamic-memory continuation also records each actual dispatch
+under the generation attempt's attached durable job before validating the
+response. Provider failures and rejected/cancelled responses survive a failed
+loop. Its terminal UsagePort still records the existing whole-attempt aggregate,
+including the externally supplied initial response; that aggregate overlaps
+with dispatch evidence and must not be added to it as an extra charge. This
+coordinator does not dispatch or fabricate evidence for that initial response.
+The SQLite two-round scenario verifies retained failures, separate successful
+response IDs/counters and unchanged terminal aggregate/replay.

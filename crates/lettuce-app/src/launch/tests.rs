@@ -7919,7 +7919,11 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
             TimestampMillis::new(1_010),
         )
         .expect("begin send");
-    let job_id = JobId::new();
+    let job_id = lettuce_jobs::JobStore::create_or_get(&database, lettuce_jobs::JobSpec::new(
+        lettuce_jobs::JobKind::MemoryExtraction,
+        lettuce_jobs::JobSubject::new(lettuce_jobs::SubjectKind::Conversation, conversation_id.to_string()).expect("subject"),
+        OutcomeRef::GenerationTurn(started.value.turn.id),
+    ).with_resources(vec![ResourceClass::Network])).expect("durable memory job").job.id;
     database
         .attach_attempt_job(
             &AttachAttemptJob {
@@ -8107,7 +8111,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
     let scripted = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {
-                provider_response_id: None,
+                provider_response_id: Some("gen-provider-second".into()),
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![],
@@ -8135,7 +8139,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
                 warning_codes: vec![],
             },
             InferenceOutcome {
-                provider_response_id: None,
+                provider_response_id: Some("gen-provider-final".into()),
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -8181,6 +8185,33 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
         media_grants: vec![],
         tools: Some(dynamic_memory_tool_request()),
     };
+    for error in [PortError::Unavailable, PortError::Cancelled] {
+        let failed = FallibleScriptedInference {
+            outcomes: Mutex::new(VecDeque::from([Err(error.clone())])), requests: Mutex::new(Vec::new()),
+        };
+        assert!(matches!(crate::DynamicMemoryContinuationCoordinator::new(&database, &failed)
+            .continue_after_settled_round(conversation_id, &attempt, &handle, inference_request.clone(),
+                &initial_round.settled_executions, 1, 1, TimestampMillis::new(1_017)).await,
+            Err(crate::DynamicMemoryContinuationError::Inference(actual)) if actual == error));
+    }
+    let failed_evidence = lettuce_usage::JobUsageLedger::job_usage(&database, job_id).expect("failed evidence");
+    assert_eq!(failed_evidence.len(), 2);
+    assert!(failed_evidence.iter().any(|event| event.result == Some(lettuce_usage::JobInferenceUsageResult::InferenceFailed)));
+    assert!(failed_evidence.iter().any(|event| event.result == Some(lettuce_usage::JobInferenceUsageResult::Cancelled)));
+    for finish in [lettuce_conversations::FinishReason::Error, lettuce_conversations::FinishReason::Cancelled] {
+        let mut response = initial_outcome.clone();
+        response.finish_reason = finish;
+        response.provider_response_id = Some("gen-invalid-continuation".into());
+        let expected = lettuce_usage::JobInferenceUsageResult::Response { usage: response.usage.clone(), provider_response_id: response.provider_response_id.clone() };
+        let invalid = FallibleScriptedInference {
+            outcomes: Mutex::new(VecDeque::from([Ok(response)])), requests: Mutex::new(Vec::new()),
+        };
+        let result = crate::DynamicMemoryContinuationCoordinator::new(&database, &invalid)
+            .continue_after_settled_round(conversation_id, &attempt, &handle, inference_request.clone(),
+                &initial_round.settled_executions, 1, 1, TimestampMillis::new(1_017)).await;
+        assert!(matches!(result, Err(crate::DynamicMemoryContinuationError::Cancelled | crate::DynamicMemoryContinuationError::ProviderFailed)));
+        assert!(lettuce_usage::JobUsageLedger::job_usage(&database, job_id).expect("invalid response evidence").iter().any(|event| event.result.as_ref() == Some(&expected)));
+    }
     let continuation = crate::DynamicMemoryContinuationCoordinator::new(&database, &scripted);
     let result = continuation
         .continue_until_terminal(
@@ -8206,6 +8237,14 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
         crate::DynamicMemoryContinuationTerminal::Complete { .. }
     ));
     assert_eq!(result.outcomes.len(), 3);
+    let evidence = lettuce_usage::JobUsageLedger::job_usage(&database, job_id).expect("continuation evidence");
+    assert_eq!(evidence.len(), 6);
+    for (id, input, output) in [("gen-provider-second", 7, 2), ("gen-provider-final", 5, 3)] {
+        assert!(evidence.iter().any(|event| matches!(&event.result,
+            Some(lettuce_usage::JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(actual) })
+                if actual == id && usage.input_tokens == input && usage.output_tokens == output)));
+    }
+
     let replay_counts = {
         let requests = scripted.requests.lock().expect("requests");
         assert_eq!(requests.len(), 2);
@@ -8329,6 +8368,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
     assert_eq!(first.value.candidate.id, retry.value.candidate.id);
     assert_eq!(first.value.usage_event_id, retry.value.usage_event_id);
     assert_eq!(first.value.usage_event_id, done_usage_event_id);
+    assert_eq!(lettuce_usage::JobUsageLedger::job_usage(&database, job_id).expect("terminal replay evidence"), evidence);
     let usage = lettuce_usage::UsageLedger::get(&database, first.value.usage_event_id)
         .expect("read usage")
         .expect("usage exists");

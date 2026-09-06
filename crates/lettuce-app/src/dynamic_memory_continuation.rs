@@ -1,3 +1,4 @@
+use crate::job_inference_usage::{JobInferenceError, run_job_inference};
 use lettuce_conversations::{
     ConversationManager, ConversationRepository, FinalizationDraft, GenerationAttempt,
     GenerationAttemptStatus, GenerationCheckpointEvent, GenerationFinalizationResult,
@@ -9,6 +10,7 @@ use lettuce_conversations::{
 use lettuce_jobs::handle::JobHandle;
 use lettuce_memory::{MemoryToolArguments, MemoryToolOutcome, dynamic_memory_tool_request};
 use lettuce_types::{ConversationId, Revision, TimestampMillis, UsageEventId};
+use lettuce_usage::JobUsageLedger;
 
 pub const MAX_DYNAMIC_MEMORY_TOOL_ROUNDS: u8 = 4;
 pub const MAX_DYNAMIC_MEMORY_TOOL_CALLS: u16 = 64;
@@ -189,7 +191,7 @@ pub struct DynamicMemoryContinuationCoordinator<'a, R: ?Sized, I: ?Sized> {
 
 impl<
     'a,
-    R: ToolExecutionRepository + ProviderReplayArtifactPort + ?Sized,
+    R: ToolExecutionRepository + ProviderReplayArtifactPort + JobUsageLedger + ?Sized,
     I: InferencePort + ?Sized,
 > DynamicMemoryContinuationCoordinator<'a, R, I>
 {
@@ -244,7 +246,20 @@ impl<
         }
 
         request.validate()?;
-        let outcome = self.inference.run(request.clone()).await?;
+        let outcome = run_job_inference(
+            self.repository,
+            self.inference,
+            handle.id(),
+            request.clone(),
+            at,
+        )
+        .await
+        .map_err(|error| match error {
+            JobInferenceError::Provider(error) => DynamicMemoryContinuationError::Inference(error),
+            JobInferenceError::Evidence => DynamicMemoryContinuationError::Repository(
+                lettuce_conversations::ConversationRepositoryError::Storage,
+            ),
+        })?;
         if handle.cancellation_token().is_cancelled() {
             cleanup_provider_replays(self.repository, &outcome)?;
             return Err(DynamicMemoryContinuationError::Cancelled);

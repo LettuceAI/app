@@ -19,8 +19,10 @@ changed counters, outcome, provenance, or timestamp conflict. Provider-missing
 counters remain an explicit unavailable reason; the ledger never invents zero
 usage. SQLite persistence lives in `lettuce-database`.
 
-`JobUsageLedger` retains non-conversation inference dispatches for companion
-growth, consolidation and Soul writing. Each dispatch has a fresh event identity
+`JobUsageLedger` retains job-owned inference dispatches for companion, lorebook,
+creation-helper and conversation memory-continuation workflows. Conversation
+terminal events may aggregate these same dispatches; reports must not add both
+as independent charges. Each dispatch has a fresh event identity
 and retains the logical attempt, owning job and resolved model/provider revisions.
 Admission precedes inference; a single immutable result preserves optional raw
 usage, cancellation or inference failure. Pending records explicitly mean the
