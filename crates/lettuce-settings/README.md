@@ -58,5 +58,7 @@ synchronous persistence port. It currently holds global safety/telemetry/update
 preferences only; frontend appearance is deliberately excluded.
 The application default and dynamic-memory model selections are separate typed
 IDs with foreign keys and optimistic revision checks, not arbitrary setting
-keys. Dynamic-memory selection has a narrow CAS setter so a successful retry
-can update only that feature route without rewriting unrelated preferences.
+keys. The dedicated group speaker-selection model is a third normalized route.
+Dynamic-memory and group-speaker selection have narrow CAS setters so a
+successful retry can update only that feature route without rewriting unrelated
+preferences.

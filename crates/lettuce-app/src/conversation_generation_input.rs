@@ -362,8 +362,15 @@ where
         let selected_speaker = if details.group.speaker_selection
             == lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm
         {
-            self.select_speaker_via_llm(work, &aggregate.conversation, &turn, &policy_request, now)
-                .await?
+            self.select_speaker_via_llm(
+                work,
+                &aggregate.conversation,
+                &turn,
+                &policy_request,
+                details.group.speaker_selection_model.as_ref(),
+                now,
+            )
+            .await?
         } else {
             select_group_speaker(&policy_request, details.group.speaker_selection)
                 .map_err(|_| ConversationGenerationInputError::SpeakerUnavailable)?
@@ -395,6 +402,7 @@ where
         conversation: &lettuce_conversations::Conversation,
         turn: &lettuce_conversations::GenerationTurn,
         policy: &SpeakerPolicyRequest,
+        selection_model: Option<&lettuce_conversations::ModelSelectionSnapshot>,
         now: TimestampMillis,
     ) -> Result<SelectedSpeakerDecision, ConversationGenerationInputError> {
         let available = conversation
@@ -409,33 +417,22 @@ where
         if available.is_empty() {
             return Err(ConversationGenerationInputError::SpeakerUnavailable);
         }
-        let settings = GlobalSettingsStore::load(self.repository)
-            .map_err(ConversationGenerationInputError::Settings)?;
-        let Some(model_id) = settings.default_model_profile_id else {
-            return heuristic_fallback(policy, None);
+        let Some(selection_model) = selection_model else {
+            return heuristic_fallback(policy, None, None);
         };
-        let Some(model) = ModelProfileRepository::get(self.repository, model_id)
+        let Some(model) = ModelProfileRepository::get(self.repository, selection_model.source_id)
             .map_err(ConversationGenerationInputError::ModelRepository)?
         else {
-            return heuristic_fallback(policy, None);
+            return heuristic_fallback(policy, None, None);
         };
         let Some(account) =
             ProviderAccountRepository::get(self.repository, model.provider_account_id)
                 .map_err(ConversationGenerationInputError::ModelRepository)?
         else {
-            return heuristic_fallback(policy, None);
+            return heuristic_fallback(policy, None, None);
         };
         let profile = match lettuce_models::resolve_chat_profile(
-            &lettuce_models::ExpectedModelIdentity {
-                model_profile_id: model.id,
-                model_revision: model.revision,
-                provider_account_id: account.id,
-                provider_account_revision: account.revision,
-                external_model_id: model.external_model_id.clone(),
-                display_name: model.display_name.clone(),
-                provider_protocol: account.protocol,
-                model_kind: lettuce_models::ModelKind::Chat,
-            },
+            &selection_model.expected_chat_identity(),
             &model,
             &account,
             &ChatParameterResolutionInput::default(),
@@ -445,7 +442,7 @@ where
             },
         ) {
             Ok(profile) => profile,
-            Err(_) => return heuristic_fallback(policy, None),
+            Err(_) => return heuristic_fallback(policy, None, None),
         };
         let prompt = speaker_selection_prompt(conversation, policy, &available);
         let tools = speaker_selection_tools(&available);
@@ -505,19 +502,28 @@ where
         )
         .await;
         let mut decision = match outcome {
-            Ok(ref outcome) => {
-                llm_speaker_decision(outcome, &available, admission.record.usage_event_id)
-                    .unwrap_or_else(|| {
-                        heuristic_fallback(policy, Some(admission.record.usage_event_id))
-                            .expect("available speaker has a heuristic fallback")
-                    })
-            }
+            Ok(ref outcome) => llm_speaker_decision(
+                outcome,
+                &available,
+                selection_model,
+                admission.record.usage_event_id,
+            )
+            .unwrap_or_else(|| {
+                heuristic_fallback(
+                    policy,
+                    Some(selection_model),
+                    Some(admission.record.usage_event_id),
+                )
+                .expect("available speaker has a heuristic fallback")
+            }),
             Err(crate::job_inference_usage::JobInferenceError::Provider(
                 lettuce_conversations::PortError::Cancelled,
             )) => return Err(ConversationGenerationInputError::Cancelled),
-            Err(crate::job_inference_usage::JobInferenceError::Provider(_)) => {
-                heuristic_fallback(policy, Some(admission.record.usage_event_id))?
-            }
+            Err(crate::job_inference_usage::JobInferenceError::Provider(_)) => heuristic_fallback(
+                policy,
+                Some(selection_model),
+                Some(admission.record.usage_event_id),
+            )?,
             Err(crate::job_inference_usage::JobInferenceError::Evidence) => {
                 return Err(ConversationGenerationInputError::Repository(
                     ConversationRepositoryError::Storage,
@@ -1224,6 +1230,7 @@ fn speaker_selection_tools(
 fn llm_speaker_decision(
     outcome: &lettuce_conversations::InferenceOutcome,
     available: &[&lettuce_conversations::ConversationParticipant],
+    selection_model: &lettuce_conversations::ModelSelectionSnapshot,
     usage_event_id: UsageEventId,
 ) -> Option<SelectedSpeakerDecision> {
     for call in outcome
@@ -1261,7 +1268,7 @@ fn llm_speaker_decision(
             fallback: SpeakerFallback::None,
             reference: None,
             rationale_summary,
-            decision_model: None,
+            decision_model: Some(selection_model.clone()),
             usage_event_id: Some(usage_event_id),
         });
     }
@@ -1270,6 +1277,7 @@ fn llm_speaker_decision(
 
 fn heuristic_fallback(
     policy: &SpeakerPolicyRequest,
+    selection_model: Option<&lettuce_conversations::ModelSelectionSnapshot>,
     usage_event_id: Option<UsageEventId>,
 ) -> Result<SelectedSpeakerDecision, ConversationGenerationInputError> {
     let mut decision = select_group_speaker(
@@ -1279,6 +1287,7 @@ fn heuristic_fallback(
     .map_err(|_| ConversationGenerationInputError::SpeakerUnavailable)?;
     decision.method = SpeakerDecisionMethod::Llm;
     decision.fallback = SpeakerFallback::Heuristic;
+    decision.decision_model = selection_model.cloned();
     decision.usage_event_id = usage_event_id;
     Ok(decision)
 }

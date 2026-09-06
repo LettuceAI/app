@@ -199,10 +199,10 @@ pending/skipped state. Repeating discovery at the same unsummarized count is a
 no-op; skip clears pending but retains the baseline, and a later full interval
 advances the durable prompt count. Automatic or approved forced job admission
 clears the row.
-The foundation settings row keeps the dynamic-memory model as a typed model
-profile foreign key beside the application default. Its narrow CAS update is
-idempotent, and model/profile graph deletion clears either selection in the
-same transaction before removing the referenced profile.
+The foundation settings row keeps the dynamic-memory and group speaker models
+as typed model-profile foreign keys beside the application default. Their
+narrow CAS updates are idempotent, and model/profile graph deletion clears all
+matching routes in the same transaction before removing the referenced profile.
 CAS attempts provide
 created/processing/succeeded/failed/cancelled/interrupted state; ordered rounds
 and calls retain their exact provider-neutral request context, bounded usage,

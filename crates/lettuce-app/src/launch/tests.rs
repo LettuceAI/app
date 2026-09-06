@@ -10554,7 +10554,39 @@ fn a_member_without_any_model_falls_back_to_the_group_model() {
 }
 
 #[test]
-fn a_broken_application_default_is_untouched_when_no_member_needs_it() {
+fn a_broken_application_default_is_untouched_when_no_group_operation_needs_it() {
+    let backend = backend();
+    let database = backend.database();
+    let broken = seed_model_with(
+        database,
+        ProviderProtocol::Anthropic,
+        "anthropic",
+        ModelKind::Chat,
+        false,
+    );
+    set_application_default_model(database, broken);
+    let usable = seed_model(database, ProviderProtocol::Gemini, "gemini");
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.model_profile_id = Some(usable);
+    });
+    let second = seed_named_character(database, "Bea");
+    let mut overridden = member(second, 1);
+    overridden.model_profile_override = Some(usable);
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), overridden],
+        None,
+        |group| group.speaker_selection = lettuce_characters::SpeakerSelection::RoundRobin,
+    );
+    let plan = group_plan_for(database, &group_request(group_id, "group-model-unneeded"));
+    assert_eq!(
+        group_details(&plan).group.model,
+        SnapshotSelection::Disabled
+    );
+}
+
+#[test]
+fn a_broken_application_default_is_rejected_when_llm_speaker_selection_needs_it() {
     let backend = backend();
     let database = backend.database();
     let broken = seed_model_with(
@@ -10573,10 +10605,17 @@ fn a_broken_application_default_is_untouched_when_no_member_needs_it() {
     let mut overridden = member(second, 1);
     overridden.model_profile_override = Some(usable);
     let group_id = seed_group(database, vec![member(first, 0), overridden], None, |_| {});
-    let plan = group_plan_for(database, &group_request(group_id, "group-model-unneeded"));
+    let provider_account_id = ModelProfileRepository::get(database, broken)
+        .expect("profile")
+        .expect("profile exists")
+        .provider_account_id;
     assert_eq!(
-        group_details(&plan).group.model,
-        SnapshotSelection::Disabled
+        ConversationLaunchPlanner::new(database)
+            .prepare_group(&group_request(group_id, "group-speaker-model-needed"), NOW)
+            .expect_err("disabled speaker-selection provider"),
+        ConversationLaunchError::ProviderDisabled {
+            provider_account_id
+        }
     );
 }
 

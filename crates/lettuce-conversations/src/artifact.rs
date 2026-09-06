@@ -709,6 +709,9 @@ pub fn conversation_snapshot_references(kind: &ConversationKind) -> Vec<&Protect
             {
                 refs.push(&value.snapshot_ref);
             }
+            if let Some(value) = &group.speaker_selection_model {
+                refs.push(&value.snapshot_ref);
+            }
         }
     }
     refs

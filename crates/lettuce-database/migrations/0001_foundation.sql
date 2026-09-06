@@ -34,6 +34,7 @@ CREATE TABLE app_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     default_model_profile_id TEXT REFERENCES model_profiles(id) ON DELETE RESTRICT,
     dynamic_memory_model_profile_id TEXT REFERENCES model_profiles(id) ON DELETE RESTRICT,
+    group_speaker_model_profile_id TEXT REFERENCES model_profiles(id) ON DELETE RESTRICT,
     format_version INTEGER NOT NULL CHECK (format_version >= 1),
     payload_json TEXT NOT NULL,
     revision INTEGER NOT NULL CHECK (revision >= 1),

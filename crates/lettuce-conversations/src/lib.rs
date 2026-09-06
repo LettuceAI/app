@@ -2110,6 +2110,7 @@ mod tests {
                 members,
                 chat_mode: GroupChatModeSnapshot::Conversation,
                 speaker_selection: GroupSpeakerSelectionSnapshot::RoundRobin,
+                speaker_selection_model: None,
                 memory: SnapshotSelection::Disabled,
                 disable_character_lorebook: false,
                 persona: SnapshotSelection::Disabled,

@@ -489,6 +489,7 @@ mod tests {
             members: vec![first_member, second_member],
             chat_mode: mode,
             speaker_selection: GroupSpeakerSelectionSnapshot::RoundRobin,
+            speaker_selection_model: None,
             memory: SnapshotSelection::Explicit(memory()),
             disable_character_lorebook: false,
             persona: SnapshotSelection::Explicit(persona(PersonaId::new())),

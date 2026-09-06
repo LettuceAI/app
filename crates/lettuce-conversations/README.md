@@ -173,3 +173,8 @@ tool request. Admission returns the usage-event identity for the actual provider
 call; settlement stores only the validated final speaker decision. A pending
 record blocks redispatch, while a settled record can replay the decision without
 retaining a second copy of the provider response.
+An LLM group launch may retain a dedicated speaker-selection model snapshot.
+The optional field is backward-compatible for existing snapshot documents and
+is valid only with the LLM policy. Its protected model artifact freezes the
+model and provider-account revisions independently from the responding member's
+generation model.

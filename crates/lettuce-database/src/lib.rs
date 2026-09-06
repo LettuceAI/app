@@ -362,15 +362,15 @@ impl GlobalSettingsStore for Database {
         self.connection()
             .map_err(|_| GlobalSettingsStoreError::Storage)?
             .query_row(
-                "SELECT default_model_profile_id, dynamic_memory_model_profile_id, format_version, payload_json, revision, created_at, updated_at \
+                "SELECT default_model_profile_id, dynamic_memory_model_profile_id, group_speaker_model_profile_id, format_version, payload_json, revision, created_at, updated_at \
                  FROM app_settings WHERE id = 1",
                 [],
                 |row| {
-                    let format_version: u32 = row.get(2)?;
+                    let format_version: u32 = row.get(3)?;
                     if format_version != GLOBAL_SETTINGS_FORMAT_VERSION {
                         return Err(rusqlite::Error::InvalidQuery);
                     }
-                    let payload: String = row.get(3)?;
+                    let payload: String = row.get(4)?;
                     Ok(StoredGlobalSettings {
                         settings: serde_json::from_str(&payload)
                             .map_err(|_| rusqlite::Error::InvalidQuery)?,
@@ -382,9 +382,13 @@ impl GlobalSettingsStore for Database {
                             .get::<_, Option<String>>(1)?
                             .map(parse_id)
                             .transpose()?,
-                        revision: to_revision(row.get(4)?)?,
-                        created_at: TimestampMillis::new(row.get(5)?),
-                        updated_at: TimestampMillis::new(row.get(6)?),
+                        group_speaker_model_profile_id: row
+                            .get::<_, Option<String>>(2)?
+                            .map(parse_id)
+                            .transpose()?,
+                        revision: to_revision(row.get(5)?)?,
+                        created_at: TimestampMillis::new(row.get(6)?),
+                        updated_at: TimestampMillis::new(row.get(7)?),
                     })
                 },
             )
@@ -451,6 +455,43 @@ impl GlobalSettingsStore for Database {
             .map_err(|_| GlobalSettingsStoreError::Storage)?
             .execute(
                 "UPDATE app_settings SET dynamic_memory_model_profile_id=?1, revision=revision+1, updated_at=?2 WHERE id=1 AND revision=?3",
+                params![
+                    model_profile_id.map(|id| id.to_string()),
+                    now().map_err(|_| GlobalSettingsStoreError::Storage)?.get(),
+                    to_i64(expected_revision.get()).map_err(|_| GlobalSettingsStoreError::Storage)?,
+                ],
+            )
+            .map_err(|error| match error {
+                rusqlite::Error::SqliteFailure(code, _)
+                    if code.code == rusqlite::ErrorCode::ConstraintViolation =>
+                {
+                    GlobalSettingsStoreError::ModelProfileMissing
+                }
+                _ => GlobalSettingsStoreError::Storage,
+            })?;
+        if changed == 0 {
+            return Err(GlobalSettingsStoreError::StaleRevision);
+        }
+        self.load()
+    }
+
+    fn set_group_speaker_model_profile(
+        &self,
+        model_profile_id: Option<ModelProfileId>,
+        expected_revision: Revision,
+    ) -> Result<StoredGlobalSettings, GlobalSettingsStoreError> {
+        let current = self.load()?;
+        if current.revision != expected_revision {
+            return Err(GlobalSettingsStoreError::StaleRevision);
+        }
+        if current.group_speaker_model_profile_id == model_profile_id {
+            return Ok(current);
+        }
+        let changed = self
+            .connection()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?
+            .execute(
+                "UPDATE app_settings SET group_speaker_model_profile_id=?1, revision=revision+1, updated_at=?2 WHERE id=1 AND revision=?3",
                 params![
                     model_profile_id.map(|id| id.to_string()),
                     now().map_err(|_| GlobalSettingsStoreError::Storage)?.get(),
@@ -823,8 +864,9 @@ impl Database {
                 "UPDATE app_settings SET \
                  default_model_profile_id=CASE WHEN default_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1) THEN NULL ELSE default_model_profile_id END, \
                  dynamic_memory_model_profile_id=CASE WHEN dynamic_memory_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1) THEN NULL ELSE dynamic_memory_model_profile_id END, \
+                 group_speaker_model_profile_id=CASE WHEN group_speaker_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1) THEN NULL ELSE group_speaker_model_profile_id END, \
                  revision=revision+1, updated_at=?2 \
-                 WHERE id=1 AND (default_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1) OR dynamic_memory_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1))",
+                 WHERE id=1 AND (default_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1) OR dynamic_memory_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1) OR group_speaker_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1))",
                 params![id.to_string(), now().map_err(model_error)?.get()],
             )
             .map_err(model_error)?;
@@ -977,8 +1019,9 @@ impl Database {
                 "UPDATE app_settings SET \
                  default_model_profile_id=CASE WHEN default_model_profile_id=?1 THEN NULL ELSE default_model_profile_id END, \
                  dynamic_memory_model_profile_id=CASE WHEN dynamic_memory_model_profile_id=?1 THEN NULL ELSE dynamic_memory_model_profile_id END, \
+                 group_speaker_model_profile_id=CASE WHEN group_speaker_model_profile_id=?1 THEN NULL ELSE group_speaker_model_profile_id END, \
                  revision=revision+1, updated_at=?2 \
-                 WHERE id=1 AND (default_model_profile_id=?1 OR dynamic_memory_model_profile_id=?1)",
+                 WHERE id=1 AND (default_model_profile_id=?1 OR dynamic_memory_model_profile_id=?1 OR group_speaker_model_profile_id=?1)",
                 params![id.to_string(), now().map_err(model_error)?.get()],
             )
             .map_err(model_error)?;
@@ -2293,6 +2336,14 @@ mod tests {
             ),
             Err(GlobalSettingsStoreError::ModelProfileMissing)
         );
+        assert_eq!(
+            GlobalSettingsStore::set_group_speaker_model_profile(
+                &database,
+                Some(ModelProfileId::new()),
+                settings.revision,
+            ),
+            Err(GlobalSettingsStoreError::ModelProfileMissing)
+        );
         GlobalSettingsStore::set_dynamic_memory_model_profile(
             &database,
             Some(profile.id),
@@ -2300,6 +2351,12 @@ mod tests {
         )
         .expect("select dynamic memory model");
         let selected = GlobalSettingsStore::load(&database).expect("selected settings");
+        let selected = GlobalSettingsStore::set_group_speaker_model_profile(
+            &database,
+            Some(profile.id),
+            selected.revision,
+        )
+        .expect("select group speaker model");
         assert_eq!(
             GlobalSettingsStore::set_dynamic_memory_model_profile(
                 &database,
@@ -2323,8 +2380,11 @@ mod tests {
                 GlobalSettingsStore::load(&database)
                     .expect("load settings")
                     .dynamic_memory_model_profile_id,
+                GlobalSettingsStore::load(&database)
+                    .expect("load settings")
+                    .group_speaker_model_profile_id,
             ),
-            (None, None)
+            (None, None, None)
         );
         ProviderAccountRepository::delete(&database, account.id).expect("delete unused account");
     }

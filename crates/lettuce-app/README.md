@@ -726,19 +726,22 @@ before preparing context. Disabled participants are ineligible and muted
 participants are excluded from automatic choice. Group invariants keep at least
 one enabled unmuted member available; the pure policy retains its defensive
 no-speaker error. The persisted selection and completed generation replay after
-process reopen without selecting or dispatching again. LLM selection uses the
-current application-default chat model when it supports tools, a bounded
-provider-neutral legacy-shaped participant/recent-message prompt, and a required
+process reopen without selecting or dispatching again. Group launch freezes the
+dedicated speaker-selection model when configured, otherwise the application
+default, including its exact model/account revisions and protected artifact.
+LLM selection uses that frozen identity when the live revision supports tools,
+a bounded provider-neutral legacy-shaped participant/recent-message prompt, and a required
 `select_next_speaker` tool whose enum contains only enabled unmuted participants.
 The provider call is admitted under a separate immutable selection checkpoint
 and job-usage record before dispatch. A valid call persists its participant and
 bounded rationale; invalid output or non-cancellation provider failure retains
 that usage and falls back to the existing heuristic. Cancellation stops instead
 of starting fallback. The settled decision and subsequent generation replay
-after reopen without repeating either dispatch. The legacy dedicated selection
-model setting has no current normalized setting/foreign-key owner and remains
-deferred to the launch-time policy/settings slice rather than being stored as an
-unchecked ID in settings JSON.
+after reopen without repeating either dispatch. Clearing or changing the live
+setting after launch does not change that conversation; a missing or unusable
+frozen model falls back heuristically without provider usage. The legacy final
+fallback to the first configured model is deliberately omitted because it had
+no explicit selection provenance.
 The selection and generation job-usage rows are raw dispatch evidence for the
 same attempt. Their counters overlap the terminal `UsageLedger` aggregate and
 must not be summed with it as independent charges. Required-tool output is

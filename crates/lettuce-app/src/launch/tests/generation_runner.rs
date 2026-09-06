@@ -307,6 +307,24 @@ fn group_scenario(
     stored_model.config.capabilities.tools = lettuce_models::CapabilityStatus::Supported;
     ModelProfileRepository::upsert(database, stored_model, Some(model_revision))
         .expect("resolvable model profile");
+    if speaker_selection == lettuce_characters::SpeakerSelection::Llm {
+        let selection_model_id = seed_model(database, ProviderProtocol::Ollama, "speaker");
+        let mut selection_model = ModelProfileRepository::get(database, selection_model_id)
+            .expect("selection model")
+            .expect("selection model exists");
+        let selection_revision = selection_model.revision;
+        selection_model.config.chat_parameters.temperature = None;
+        selection_model.config.capabilities.tools = lettuce_models::CapabilityStatus::Supported;
+        ModelProfileRepository::upsert(database, selection_model, Some(selection_revision))
+            .expect("resolvable selection model");
+        let settings = GlobalSettingsStore::load(database).expect("settings");
+        GlobalSettingsStore::set_group_speaker_model_profile(
+            database,
+            Some(selection_model_id),
+            settings.revision,
+        )
+        .expect("select group speaker model");
+    }
     let first = seed_named_character_with(database, "Ada", |defaults| {
         defaults.model_profile_id = Some(model_id);
     });
@@ -907,6 +925,13 @@ async fn app_backend_checkpoints_llm_group_selection_and_falls_back_to_heuristic
             lettuce_characters::SpeakerSelection::Llm,
             selection.is_none(),
         );
+        let settings = GlobalSettingsStore::load(backend.database()).expect("settings");
+        GlobalSettingsStore::set_group_speaker_model_profile(
+            backend.database(),
+            None,
+            settings.revision,
+        )
+        .expect("clear live selection model after launch");
         let selected_id = selection
             .map(|index| speakers[index])
             .unwrap_or_else(lettuce_types::ConversationParticipantId::new);
@@ -941,6 +966,10 @@ async fn app_backend_checkpoints_llm_group_selection_and_falls_back_to_heuristic
         assert_eq!(decision.method, expected_method);
         assert_eq!(decision.fallback, expected_fallback);
         assert!(decision.usage_event_id.is_some());
+        let decision_model = decision
+            .decision_model
+            .as_ref()
+            .expect("frozen selection model");
         let selection_request = {
             let requests = inference.requests.lock().expect("requests");
             assert_eq!(requests.len(), 2);
@@ -973,6 +1002,14 @@ async fn app_backend_checkpoints_llm_group_selection_and_falls_back_to_heuristic
             assert_eq!(selection_prompt.matches("Hello cast.").count(), 1);
             assert_eq!(requests[0].stream_sink, None);
             assert_eq!(requests[1].tools, None);
+            assert_ne!(
+                requests[0].profile.chat_profile.model_profile_id,
+                requests[1].profile.chat_profile.model_profile_id
+            );
+            assert_eq!(
+                requests[0].profile.chat_profile.model_profile_id,
+                decision_model.source_id
+            );
             requests[0].clone()
         };
         let binding =

@@ -532,6 +532,8 @@ pub struct GroupLaunchSnapshot {
     pub members: Vec<GroupMemberLaunchSnapshot>,
     pub chat_mode: GroupChatModeSnapshot,
     pub speaker_selection: GroupSpeakerSelectionSnapshot,
+    #[serde(default)]
+    pub speaker_selection_model: Option<ModelSelectionSnapshot>,
     pub memory: SnapshotSelection<MemorySettingsSnapshot>,
     pub disable_character_lorebook: bool,
     pub persona: SnapshotSelection<PersonaLaunchSnapshot>,
@@ -606,6 +608,16 @@ impl GroupLaunchSnapshot {
             });
         }
         self.prompt.validate("group.prompt")?;
+        if self.speaker_selection_model.is_some()
+            && self.speaker_selection != GroupSpeakerSelectionSnapshot::Llm
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "group.speaker_selection_model",
+            });
+        }
+        if let Some(model) = &self.speaker_selection_model {
+            model.validate_snapshot("group.speaker_selection_model")?;
+        }
         self.model.validate("group.model")?;
         validate_lorebooks(&self.lorebooks, "group.lorebooks")
     }

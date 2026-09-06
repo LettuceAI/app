@@ -900,6 +900,7 @@ where
         check_display("title", &title)?;
 
         let chat_mode = policy::group_chat_mode(group.group.chat_mode);
+        let speaker_selection = policy::group_speaker_selection(group.group.speaker_selection);
         let memory_mode = policy::memory_mode_of(group.group.memory_policy);
         let persona = self.resolve_group_persona(request.persona, &group.group.persona)?;
         let scene = match chat_mode {
@@ -999,18 +1000,27 @@ where
                 policy::member_model_choice(member, &details.character.defaults)
             })
             .collect();
+        let settings =
+            GlobalSettingsStore::load(self.sources).map_err(LaunchSourceError::Settings)?;
         let group_model_choice = if policy::group_model_needed(&member_model_choices) {
-            let settings =
-                GlobalSettingsStore::load(self.sources).map_err(LaunchSourceError::Settings)?;
             policy::application_model_choice(settings.default_model_profile_id)
         } else {
             Selected::Disabled
         };
+        let speaker_selection_model_choice = (speaker_selection
+            == lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm)
+            .then_some(
+                settings
+                    .group_speaker_model_profile_id
+                    .or(settings.default_model_profile_id),
+            )
+            .flatten();
         let mut model_registry = ModelRegistry::default();
         for id in group_model_choice
             .value()
             .into_iter()
             .chain(member_model_choices.iter().filter_map(Selected::value))
+            .chain(speaker_selection_model_choice.as_ref())
         {
             model_registry.register(*id);
         }
@@ -1211,6 +1221,8 @@ where
         let group_model_snapshot = group_model_choice
             .map(|id| collect_model(id, &model_snapshots))
             .into_snapshot();
+        let speaker_selection_model =
+            speaker_selection_model_choice.map(|id| collect_model(id, &model_snapshots));
 
         let mut entries = Vec::new();
         if let (Some(draft), Some(text)) = (scene_draft.as_ref(), scene_text.clone()) {
@@ -1278,7 +1290,8 @@ where
                 name: group.group.name.clone(),
                 members: member_snapshots,
                 chat_mode,
-                speaker_selection: policy::group_speaker_selection(group.group.speaker_selection),
+                speaker_selection,
+                speaker_selection_model,
                 memory: SnapshotSelection::Inherited(MemorySettingsSnapshot {
                     policy_ref: None,
                     mode: memory_mode,
