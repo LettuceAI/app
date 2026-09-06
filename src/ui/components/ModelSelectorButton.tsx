@@ -6,6 +6,7 @@ import type { Model } from "../../core/storage/schemas";
 import { useI18n } from "../../core/i18n/context";
 import GroqIcon from "../../assets/groq.svg";
 import CerebrasIcon from "../../assets/cerebras.svg";
+import ConcentrateIcon from "../../assets/concentrate.svg";
 
 // Provider icons - matching the character settings
 function getProviderIcon(providerId: string) {
@@ -40,6 +41,8 @@ function getProviderIcon(providerId: string) {
       );
     case "groq":
       return <img src={GroqIcon} alt="Groq" className={iconClass} />;
+    case "concentrate":
+      return <img src={ConcentrateIcon} alt="Concentrate" className={iconClass} />;
     default:
       return <Cpu className={iconClass + " text-white/50"} />;
   }

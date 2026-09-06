@@ -33,6 +33,7 @@ import LlamaCppIcon from "../../assets/llama-cpp.svg";
 import IntenserpIcon from "../../assets/intenserp.png";
 import GroqIcon from "../../assets/groq.svg";
 import PollinationsIcon from "../../assets/pollinations.svg";
+import ConcentrateIcon from "../../assets/concentrate.svg";
 import StableDiffusionCppIcon from "../../assets/stable-diffusion-cpp.png";
 
 const ICON_MAP: Record<string, ReactElement> = {
@@ -57,6 +58,7 @@ const ICON_MAP: Record<string, ReactElement> = {
   featherless: <img src={FeatherlessIcon} alt="Featherless" className="h-6 w-6" />,
   nvidia: <img src={NvidiaIcon} alt="NVIDIA" className="h-6 w-6" />,
   chutes: <img src={ChutesAIIcon} alt="Chutes" className="h-6 w-6" />,
+  concentrate: <img src={ConcentrateIcon} alt="Concentrate" className="h-6 w-6" />,
   ollama: <img src={OllamaIcon} alt="Ollama" className="h-6 w-6" />,
   lmstudio: <img src={LMStudioIcon} alt="LM Studio" className="h-6 w-6" />,
   intenserp: <img src={IntenserpIcon} alt="IntenseRP Next" className="h-6 w-6" />,
