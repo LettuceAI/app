@@ -412,10 +412,45 @@ async fn plain_chat_runs_finalizes_settles_and_replays_without_redispatch() {
 }
 
 #[tokio::test]
-async fn app_backend_builds_direct_send_input_and_replays_without_redispatch() {
+async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
     let scenario =
         scenario_with_resolvable_profile(backend.database(), false, "prepared-input", true);
+    let manual_space =
+        MemoryRepository::get_for_conversation(backend.database(), scenario.conversation_id)
+            .expect("manual memory space")
+            .expect("manual memory exists");
+    let manual_item = MemoryItem {
+        id: MemoryId::new(),
+        text: "Mira keeps a handwritten tea journal.".into(),
+        category: MemoryCategory::Preference,
+        source_message_id: None,
+        source_role: None,
+        observed_at: None,
+        observed_time_precision: None,
+        superseded_by: None,
+        superseded_at: None,
+        supersedes: vec![],
+        token_count: 6,
+        is_cold: false,
+        is_pinned: false,
+        importance: Score::FULL,
+        persistence_importance: Score::FULL,
+        prompt_importance: Score::FULL,
+        volatility: Score::LEGACY_VOLATILITY,
+        access_count: 0,
+        created_at: TimestampMillis::new(1_012),
+        last_accessed_at: TimestampMillis::new(1_012),
+    };
+    let manual_space = MemoryRepository::compare_and_apply(
+        backend.database(),
+        MemoryChangeSet {
+            space_id: manual_space.id,
+            expected_revision: manual_space.revision,
+            items: vec![manual_item.clone()],
+        },
+    )
+    .expect("store manual memory");
     let work = admit_and_claim(backend.database(), &scenario, 1_015);
     let inference = scripted(vec![text_outcome(
         "prepared-input-response",
@@ -448,12 +483,151 @@ async fn app_backend_builds_direct_send_input_and_replays_without_redispatch() {
             scenario.model.source_id
         );
         assert_eq!(requests[0].stream_sink, Some(stream_sink));
+        assert_eq!(requests[0].tools, None);
         assert!(requests[0].context.messages.iter().any(|message| {
             message.parts.iter().any(
                 |part| matches!(part, ProviderContextPart::Text { text } if text == "Remember tea."),
             )
         }));
+        assert!(requests[0].context.messages.iter().any(|message| {
+            message.parts.iter().any(|part| {
+                matches!(part, ProviderContextPart::Text { text } if text.contains("- Mira keeps a handwritten tea journal."))
+            })
+        }));
     }
+    let prepared_turn =
+        ConversationReader::get_turn(backend.database(), scenario.turn_id).expect("prepared turn");
+    assert_eq!(
+        prepared_turn.memory,
+        Some(lettuce_conversations::MemoryAttribution {
+            revision_id: lettuce_memory::memory_revision_id(manual_space.id, manual_space.revision,),
+        })
+    );
+    assert_eq!(
+        MemoryRepository::get(backend.database(), manual_space.id)
+            .expect("manual memory after generation")
+            .expect("manual memory remains"),
+        manual_space
+    );
+
+    let operation = |name: &str| OperationToken {
+        key: key(name),
+        request_digest: ContentHash::parse("cd".repeat(32)).expect("operation digest"),
+    };
+    let current = ConversationReader::get(backend.database(), scenario.conversation_id)
+        .expect("conversation after send")
+        .conversation;
+    let continued = backend
+        .database()
+        .begin_continue(
+            &ContinueConversation {
+                conversation_id: current.id,
+                branch_id: current.active_branch_id,
+                expected_revision: current.revision,
+                forced_speaker: None,
+                swap_roles: false,
+                operation: operation("prepared-manual-continue"),
+            },
+            TimestampMillis::new(1_025),
+        )
+        .expect("begin manual continuation")
+        .value;
+    let continued_scenario = Scenario {
+        conversation_id: scenario.conversation_id,
+        turn_id: continued.turn.id,
+        attempt_id: continued.attempt.id,
+        model: scenario.model.clone(),
+        profile: scenario.profile.clone(),
+        space_id: None,
+    };
+    let continued_work = admit_and_claim(backend.database(), &continued_scenario, 1_026);
+    let continued_inference = scripted(vec![text_outcome(
+        "prepared-manual-continue-response",
+        "Continued reply",
+        8,
+        3,
+    )]);
+    let continued_result = backend
+        .prepared_conversation_generation_runner(&engine, &continued_inference)
+        .run(
+            &continued_work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_027),
+            |_| vec![],
+        )
+        .await
+        .expect("run manual continuation");
+    assert!(continued_inference
+        .requests
+        .lock()
+        .expect("continuation requests")[0]
+        .context
+        .messages
+        .iter()
+        .any(|message| message.parts.iter().any(|part| {
+            matches!(part, ProviderContextPart::Text { text } if text.contains("- Mira keeps a handwritten tea journal."))
+        })));
+
+    let current = ConversationReader::get(backend.database(), scenario.conversation_id)
+        .expect("conversation after continuation")
+        .conversation;
+    let regenerated = backend
+        .database()
+        .begin_regenerate(
+            &lettuce_conversations::RegenerateCandidate {
+                conversation_id: current.id,
+                branch_id: current.active_branch_id,
+                message_id: continued_result.candidate.message_id,
+                turn_id: continued_result.turn.id,
+                expected_revision: current.revision,
+                expected_turn_revision: continued_result.turn.revision,
+                operation: operation("prepared-manual-regenerate"),
+                active_candidate_id: continued_result.candidate.id,
+                guidance: None,
+                model_override: None,
+                forced_speaker: None,
+                swap_roles: false,
+            },
+            TimestampMillis::new(1_028),
+        )
+        .expect("begin manual regeneration")
+        .value;
+    let regenerated_scenario = Scenario {
+        conversation_id: scenario.conversation_id,
+        turn_id: regenerated.turn.id,
+        attempt_id: regenerated.attempt.id,
+        model: scenario.model.clone(),
+        profile: scenario.profile.clone(),
+        space_id: None,
+    };
+    let regenerated_work = admit_and_claim(backend.database(), &regenerated_scenario, 1_029);
+    let regenerated_inference = scripted(vec![text_outcome(
+        "prepared-manual-regenerate-response",
+        "Regenerated reply",
+        9,
+        3,
+    )]);
+    let regenerated_result = backend
+        .prepared_conversation_generation_runner(&engine, &regenerated_inference)
+        .run(
+            &regenerated_work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_030),
+            |_| vec![],
+        )
+        .await
+        .expect("run manual regeneration");
+    assert_eq!(regenerated_result.candidate.ordinal, 1);
+    assert!(regenerated_inference
+        .requests
+        .lock()
+        .expect("regeneration requests")[0]
+        .context
+        .messages
+        .iter()
+        .any(|message| message.parts.iter().any(|part| {
+            matches!(part, ProviderContextPart::Text { text } if text.contains("- Mira keeps a handwritten tea journal."))
+        })));
 
     let replay = runner
         .run(
@@ -462,7 +636,7 @@ async fn app_backend_builds_direct_send_input_and_replays_without_redispatch() {
                 stream_sink: Some(RequestId::new()),
                 ..runtime
             },
-            TimestampMillis::new(1_030),
+            TimestampMillis::new(1_031),
             |_| vec![],
         )
         .await
@@ -470,6 +644,12 @@ async fn app_backend_builds_direct_send_input_and_replays_without_redispatch() {
     assert!(replay.replayed);
     assert_eq!(replay.candidate.id, result.candidate.id);
     assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+    assert_eq!(
+        MemoryRepository::get(backend.database(), manual_space.id)
+            .expect("manual memory after replay")
+            .expect("manual memory remains after replay"),
+        manual_space
+    );
 }
 
 #[tokio::test]

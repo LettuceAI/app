@@ -696,9 +696,15 @@ now atomically promotes selected cold items and records the legacy access count,
 time and importance updates exactly once under the preparation attempt. The
 resulting memory revision is the context attribution and tool-round input.
 Terminal replay bypasses input reconstruction, so it does not repeat embedding
-or access side effects; changed or stale retrieval input fails closed. Selected
-manual-memory text, launch-time policy snapshots, and durable request-body
-recovery remain later slices.
+or access side effects; changed or stale retrieval input fails closed. Manual
+mode now reads every active item from the conversation-owned memory root in
+stored order and renders the legacy `- text` lines without summary, tools,
+embedding, promotion, or access-count changes. Its exact root revision is the
+turn attribution for send, continuation, and regeneration. Legacy manual memory
+has no selected-revision concept, and the current snapshot field has no writer
+or content authority, so a nonempty `selected_revision_ids` still fails closed
+instead of inventing a second store. Launch-time policy snapshots and durable
+request-body recovery remain later slices.
 `PrepareGeneration` records the resolved model and prompt/lorebook/memory
 attributions atomically before moving a preparing turn to ContextPrepared.
 The existing speaker-resolution mutation continues to own group speaker choice.
@@ -709,3 +715,6 @@ Exact operation replay preserves the stored preparation; changed input conflicts
 Recovery can reuse matching preparation under the child's attached job, while
 changing the prepared model or attributions requires a new turn. Full automated
 send/regenerate/retry orchestration and durable request-body replay remain later.
+Generation finalization derives a regenerated candidate's persisted ordinal
+from the prior candidate instead of trusting the provider-local response index;
+this preserves dense alternatives while new-assistant turns still begin at zero.

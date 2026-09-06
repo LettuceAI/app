@@ -4,15 +4,15 @@ use lettuce_conversations::{
     ArtifactError, AttachAttemptJob, CancelGeneration, ContextAttributions, ConversationManager,
     ConversationReader, ConversationRepository, ConversationRepositoryError,
     ConversationServiceError, GenerationAttempt, GenerationAttemptStatus,
-    GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationFailureCode, GenerationTurn,
-    GenerationTurnStatus, InferenceOutcome, InferencePort, InferenceRequest,
-    InitialInferenceBinding, InitialInferenceRepository, InitialInferenceResult, MessageCandidate,
-    MessagePart, ModelSelectionSnapshot, OperationToken, PortError, ProviderFailureKind,
-    ProviderNeutralContext, ProviderReplayArtifactPort, ResolvedInferenceProfile,
-    SettleCancellation, ToolExecution, ToolExecutionOwner, ToolExecutionRepository,
-    ToolExecutionStatus, ToolExecutionTransition, ToolRequest, UsageCounters, UsageOutcome,
-    UsagePort, UsageRecord, UsageUnavailableReason, ValidationError, attempt_job_idempotency_key,
-    context_with_settled_tool_round,
+    GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationFailureCode,
+    GenerationTarget, GenerationTurn, GenerationTurnStatus, InferenceOutcome, InferencePort,
+    InferenceRequest, InitialInferenceBinding, InitialInferenceRepository, InitialInferenceResult,
+    MessageCandidate, MessagePart, ModelSelectionSnapshot, OperationToken, PortError,
+    ProviderFailureKind, ProviderNeutralContext, ProviderReplayArtifactPort,
+    ResolvedInferenceProfile, SettleCancellation, ToolExecution, ToolExecutionOwner,
+    ToolExecutionRepository, ToolExecutionStatus, ToolExecutionTransition, ToolRequest,
+    UsageCounters, UsageOutcome, UsagePort, UsageRecord, UsageUnavailableReason, ValidationError,
+    attempt_job_idempotency_key, context_with_settled_tool_round,
 };
 use lettuce_embeddings::MemoryEmbeddingRepository;
 use lettuce_jobs::{
@@ -666,7 +666,7 @@ impl<
             | lettuce_conversations::FinishReason::Length => {}
         }
         let candidate = outcome.candidates[0].clone();
-        let (loop_result, rounds) = if candidate.tool_calls.is_empty() {
+        let (mut loop_result, rounds) = if candidate.tool_calls.is_empty() {
             if !candidate
                 .parts
                 .iter()
@@ -823,6 +823,20 @@ impl<
         let turn = self.repository.get_turn(work.turn_id)?;
         if turn.status == GenerationTurnStatus::CancellationRequested {
             return Err(ConversationGenerationRunError::Cancelled { evidence });
+        }
+        if let DynamicMemoryContinuationTerminal::Complete { candidate } = &mut loop_result.terminal
+        {
+            candidate.ordinal = match turn.target {
+                GenerationTarget::NewAssistant { .. } => 0,
+                GenerationTarget::ExistingCandidate {
+                    prior_candidate_id, ..
+                } => self
+                    .repository
+                    .get_candidate(prior_candidate_id)?
+                    .ordinal
+                    .checked_add(1)
+                    .ok_or(ConversationGenerationRunError::InvalidInput)?,
+            };
         }
         let attempt = attempt_of(&turn, work.attempt_id)?;
         let commit = DynamicMemoryTerminalCoordinator::new(self.repository, self.repository)

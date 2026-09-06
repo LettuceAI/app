@@ -154,10 +154,12 @@ where
         {
             return Err(ConversationGenerationInputError::MemoryInputUnavailable);
         }
-        let dynamic_memory = settings
+        let memory_mode = settings
             .memory
             .as_ref()
-            .is_some_and(|memory| memory.mode == MemoryModeSnapshot::Dynamic);
+            .map(|memory| memory.mode)
+            .unwrap_or(MemoryModeSnapshot::Disabled);
+        let dynamic_memory = memory_mode == MemoryModeSnapshot::Dynamic;
         let model = turn
             .resolved_model
             .clone()
@@ -189,13 +191,15 @@ where
         };
         let mut timeline = self.timeline(work.conversation_id, turn.branch_id)?;
         retain_source_ancestry(&mut timeline.items, source_message_id)?;
-        let (memory_contribution, memory_input) = if dynamic_memory {
-            let prepared = self
-                .dynamic_memory_input(work, &timeline.items, now)
-                .await?;
-            (prepared.0, Some(prepared.1))
-        } else {
-            (None, None)
+        let (memory_contribution, memory_input) = match memory_mode {
+            MemoryModeSnapshot::Dynamic => {
+                let prepared = self
+                    .dynamic_memory_input(work, &timeline.items, now)
+                    .await?;
+                (prepared.0, Some(prepared.1))
+            }
+            MemoryModeSnapshot::Manual => (self.manual_memory_input(work.conversation_id)?, None),
+            MemoryModeSnapshot::Disabled => (None, None),
         };
         let prompt_runtime = PromptRuntimeFacts {
             provider_id: Some(account.provider_kind),
@@ -359,6 +363,28 @@ where
                 duplicate_threshold,
             },
         ))
+    }
+
+    fn manual_memory_input(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+    ) -> Result<Option<MemoryContribution>, ConversationGenerationInputError> {
+        let memory = MemoryRepository::get_for_conversation(self.repository, conversation_id)
+            .map_err(ConversationGenerationInputError::Memory)?
+            .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
+        let key_memories = memory
+            .items
+            .iter()
+            .filter(|item| item.superseded_by.is_none())
+            .map(|item| format!("- {}", item.text.trim()))
+            .collect::<Vec<_>>();
+        Ok((!key_memories.is_empty()).then(|| MemoryContribution {
+            attribution: MemoryAttribution {
+                revision_id: memory_revision_id(memory.id, memory.revision),
+            },
+            summary: None,
+            key_memories,
+        }))
     }
 
     async fn retrieve_memories(
