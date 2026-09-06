@@ -118,6 +118,34 @@ CREATE TABLE memory_embedding_projections (
 CREATE INDEX memory_embedding_projections_lookup_idx
     ON memory_embedding_projections(space_id, source_revision, dimensions, status, memory_id);
 
+CREATE TABLE memory_retrieval_accesses (
+    conversation_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
+    expected_revision INTEGER NOT NULL CHECK (expected_revision >= 1),
+    resulting_revision INTEGER NOT NULL CHECK (resulting_revision = expected_revision + 1),
+    selected_memory_ids_json TEXT NOT NULL CHECK (
+        json_valid(selected_memory_ids_json)
+        AND json_type(selected_memory_ids_json) = 'array'
+        AND json_array_length(selected_memory_ids_json) BETWEEN 1 AND 4096
+    ),
+    accessed_at INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, turn_id, attempt_id),
+    FOREIGN KEY (conversation_id, turn_id, attempt_id)
+        REFERENCES generation_attempts(conversation_id, turn_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id, space_id)
+        REFERENCES conversation_memory_spaces(conversation_id, space_id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE TRIGGER memory_retrieval_accesses_immutable
+BEFORE UPDATE ON memory_retrieval_accesses
+BEGIN SELECT RAISE(ABORT, 'memory retrieval access is immutable'); END;
+
+CREATE TRIGGER memory_retrieval_accesses_delete_restricted
+BEFORE DELETE ON memory_retrieval_accesses
+BEGIN SELECT RAISE(ABORT, 'memory retrieval access cannot be deleted'); END;
+
 -- Authoritative restart input for a dynamic-memory tool round. The JSON owns
 -- the full versioned plan; relational projections bind it to the exact
 -- attempt, job, and memory revision that were used to prepare it.

@@ -22,7 +22,8 @@ pub use port::{
     DynamicMemoryRunRepositoryError, DynamicMemorySuffixRewind, DynamicMemorySuffixRewindError,
     DynamicMemorySuffixRewindReceipt, DynamicMemorySuffixRewindRepository,
     DynamicMemorySummaryCheckpoint, DynamicMemorySummaryCommit, MemoryChangeSet, MemoryRepository,
-    MemoryRepositoryError, MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository,
+    MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalAccessReceipt,
+    MemoryRetrievalRepository, MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository,
     PersistedMemoryCreatePreparation,
 };
 pub use run::{

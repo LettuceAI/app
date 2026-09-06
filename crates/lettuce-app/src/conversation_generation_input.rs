@@ -14,8 +14,9 @@ use lettuce_conversations::{
 use lettuce_embeddings::{EmbeddingDimensions, EmbeddingRequest, MemoryEmbeddingRepository};
 use lettuce_memory::{
     DynamicMemoryPreparationRepository, DynamicMemoryRoundRepository, MemoryPolicy,
-    MemoryRepository, MemoryRepositoryError, MemorySpaceSnapshot, MemorySummaryRepository, Score,
-    dynamic_memory_tool_request, memory_revision_id,
+    MemoryRepository, MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalRepository,
+    MemorySpaceSnapshot, MemorySummaryRepository, Score, dynamic_memory_tool_request,
+    memory_revision_id,
 };
 use lettuce_models::{
     CapabilityStatus, ChatParameterResolutionInput, ChatProfileResolutionError, ChatRequirements,
@@ -94,6 +95,7 @@ where
         + DynamicMemoryPreparationRepository
         + MemoryEmbeddingRepository
         + MemoryRepository
+        + MemoryRetrievalRepository
         + MemorySummaryRepository
         + GlobalSettingsStore,
     I: InferencePort + ?Sized,
@@ -108,19 +110,23 @@ where
     where
         F: FnMut(&[lettuce_conversations::ToolExecution]) -> Vec<MemoryCreateSeed>,
     {
+        let runner =
+            ConversationGenerationJobRunner::new(self.embedding, self.repository, self.inference);
+        if let Some(replay) = runner.replay_terminal(work)? {
+            return Ok(replay);
+        }
         let input = self
-            .build_input(work, runtime)
+            .build_input(work, runtime, now)
             .await
             .map_err(ConversationGenerationInputError::into_run_error)?;
-        ConversationGenerationJobRunner::new(self.embedding, self.repository, self.inference)
-            .run(work, input, now, seeds_for_round)
-            .await
+        runner.run(work, input, now, seeds_for_round).await
     }
 
     async fn build_input(
         &self,
         work: &ConversationGenerationClaimedWork,
         runtime: ConversationGenerationRuntimeInput,
+        now: TimestampMillis,
     ) -> Result<ConversationGenerationInput, ConversationGenerationInputError> {
         let aggregate = ConversationReader::get(self.repository, work.conversation_id)
             .map_err(ConversationGenerationInputError::Repository)?;
@@ -184,7 +190,9 @@ where
         let mut timeline = self.timeline(work.conversation_id, turn.branch_id)?;
         retain_source_ancestry(&mut timeline.items, source_message_id)?;
         let (memory_contribution, memory_input) = if dynamic_memory {
-            let prepared = self.dynamic_memory_input(work, &timeline.items).await?;
+            let prepared = self
+                .dynamic_memory_input(work, &timeline.items, now)
+                .await?;
             (prepared.0, Some(prepared.1))
         } else {
             (None, None)
@@ -262,6 +270,7 @@ where
         &self,
         work: &ConversationGenerationClaimedWork,
         timeline: &[lettuce_conversations::TimelineItem],
+        now: TimestampMillis,
     ) -> Result<
         (
             Option<MemoryContribution>,
@@ -280,13 +289,64 @@ where
         let summary = MemorySummaryRepository::get_summary(self.repository, memory.id)
             .map_err(ConversationGenerationInputError::Memory)?
             .map(|summary| summary.text);
-        let key_memories = self
-            .retrieve_memories(work, timeline, &memory, &settings)
-            .await?;
+        let prior_access = MemoryRetrievalRepository::get_retrieval_access(
+            self.repository,
+            work.conversation_id,
+            work.turn_id,
+            work.attempt_id,
+        )
+        .map_err(ConversationGenerationInputError::Memory)?;
+        let (selected, revision) = if let Some(receipt) = prior_access {
+            if receipt.access.space_id != memory.id || receipt.resulting_revision != memory.revision
+            {
+                return Err(ConversationGenerationInputError::MemoryInputUnavailable);
+            }
+            let selected = receipt
+                .access
+                .selected_memory_ids
+                .iter()
+                .map(|id| {
+                    memory
+                        .items
+                        .iter()
+                        .find(|item| item.id == *id && item.superseded_by.is_none())
+                        .cloned()
+                        .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            (selected, receipt.resulting_revision)
+        } else {
+            let selected = self
+                .retrieve_memories(work, timeline, &memory, &settings)
+                .await?;
+            let revision = if selected.is_empty() {
+                memory.revision
+            } else {
+                MemoryRetrievalRepository::apply_retrieval_access(
+                    self.repository,
+                    MemoryRetrievalAccess {
+                        conversation_id: work.conversation_id,
+                        turn_id: work.turn_id,
+                        attempt_id: work.attempt_id,
+                        space_id: memory.id,
+                        expected_revision: memory.revision,
+                        selected_memory_ids: selected.iter().map(|item| item.id).collect(),
+                        accessed_at: now,
+                    },
+                )
+                .map_err(ConversationGenerationInputError::Memory)?
+                .resulting_revision
+            };
+            (selected, revision)
+        };
+        let key_memories = selected
+            .into_iter()
+            .map(|item| format!("- {}", item.text.trim()))
+            .collect::<Vec<_>>();
         let contribution =
             (summary.is_some() || !key_memories.is_empty()).then(|| MemoryContribution {
                 attribution: MemoryAttribution {
-                    revision_id: memory_revision_id(memory.id, memory.revision),
+                    revision_id: memory_revision_id(memory.id, revision),
                 },
                 summary,
                 key_memories,
@@ -307,7 +367,7 @@ where
         timeline: &[lettuce_conversations::TimelineItem],
         memory: &MemorySpaceSnapshot,
         settings: &DynamicMemorySettings,
-    ) -> Result<Vec<String>, ConversationGenerationInputError> {
+    ) -> Result<Vec<lettuce_memory::MemoryItem>, ConversationGenerationInputError> {
         let active = memory
             .items
             .iter()
@@ -356,10 +416,7 @@ where
             threshold,
             settings.retrieval_strategy,
         );
-        Ok(selected
-            .into_iter()
-            .map(|item| format!("- {}", item.text.trim()))
-            .collect())
+        Ok(selected.into_iter().cloned().collect())
     }
 
     fn timeline(

@@ -9,6 +9,7 @@ use lettuce_embeddings::{
     EmbeddingDimensions, MemoryEmbeddingProjection, MemoryEmbeddingRepository,
 };
 use lettuce_jobs::{JobErrorCode, JobSnapshot, JobStore, events::JobEvent};
+use lettuce_memory::{MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalRepository};
 use lettuce_types::{ConversationId, GenerationAttemptId, GenerationTurnId};
 use lettuce_usage::{JobInferenceUsageResult, JobUsageLedger, UsageEvent, UsageLedger};
 
@@ -478,6 +479,7 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
     let mut settings = stored_settings.settings;
     settings.dynamic_memory.max_entries = 12;
     settings.dynamic_memory.hot_memory_token_budget = 321;
+    settings.dynamic_memory.retrieval_limit = 1;
     settings.dynamic_memory.duplicate_threshold_basis_points = 8_800;
     GlobalSettingsStore::save(
         backend.database(),
@@ -505,9 +507,9 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
         superseded_at: None,
         supersedes: vec![],
         token_count: 6,
-        is_cold: false,
+        is_cold: true,
         is_pinned: false,
-        importance: Score::from_basis_points(8_000).expect("score"),
+        importance: Score::from_basis_points(3_000).expect("score"),
         persistence_importance: Score::from_basis_points(8_000).expect("score"),
         prompt_importance: Score::from_basis_points(8_000).expect("score"),
         volatility: Score::LEGACY_VOLATILITY,
@@ -515,12 +517,34 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
         created_at: TimestampMillis::new(900),
         last_accessed_at: TimestampMillis::new(900),
     };
+    let untouched_memory = MemoryItem {
+        id: MemoryId::new(),
+        text: "Mira catalogued the northern lighthouse.".into(),
+        category: MemoryCategory::WorldDetail,
+        source_message_id: None,
+        source_role: None,
+        observed_at: None,
+        observed_time_precision: None,
+        superseded_by: None,
+        superseded_at: None,
+        supersedes: vec![],
+        token_count: 5,
+        is_cold: false,
+        is_pinned: false,
+        importance: Score::from_basis_points(4_000).expect("score"),
+        persistence_importance: Score::from_basis_points(4_000).expect("score"),
+        prompt_importance: Score::from_basis_points(4_000).expect("score"),
+        volatility: Score::LEGACY_VOLATILITY,
+        access_count: 7,
+        created_at: TimestampMillis::new(800),
+        last_accessed_at: TimestampMillis::new(850),
+    };
     let stored = MemoryRepository::compare_and_apply(
         backend.database(),
         MemoryChangeSet {
             space_id,
             expected_revision: stored.revision,
-            items: vec![memory.clone()],
+            items: vec![memory.clone(), untouched_memory.clone()],
         },
     )
     .expect("seed memory");
@@ -590,11 +614,77 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
     }
     let prepared_turn =
         ConversationReader::get_turn(backend.database(), scenario.turn_id).expect("prepared turn");
+    let accessed_revision = stored.revision.next().expect("retrieval revision");
     assert_eq!(
         prepared_turn.memory,
         Some(lettuce_conversations::MemoryAttribution {
-            revision_id: lettuce_memory::memory_revision_id(space_id, stored.revision),
+            revision_id: lettuce_memory::memory_revision_id(space_id, accessed_revision),
         })
+    );
+    let accessed = MemoryRepository::get(backend.database(), space_id)
+        .expect("memory after retrieval")
+        .expect("memory exists after retrieval");
+    let accessed_item = accessed
+        .items
+        .iter()
+        .find(|item| item.id == memory_id)
+        .expect("retrieved memory remains");
+    assert_eq!(accessed_item.access_count, 4);
+    assert_eq!(accessed_item.last_accessed_at, TimestampMillis::new(1_020));
+    assert_eq!(accessed_item.importance, Score::FULL);
+    assert!(accessed_item.is_pinned);
+    assert!(!accessed_item.is_cold);
+    assert_eq!(
+        accessed
+            .items
+            .iter()
+            .find(|item| item.id == untouched_memory.id),
+        Some(&untouched_memory)
+    );
+    let retrieval_access = MemoryRetrievalAccess {
+        conversation_id: scenario.conversation_id,
+        turn_id: scenario.turn_id,
+        attempt_id: scenario.attempt_id,
+        space_id,
+        expected_revision: stored.revision,
+        selected_memory_ids: vec![memory_id],
+        accessed_at: TimestampMillis::new(1_020),
+    };
+    assert_eq!(
+        MemoryRetrievalRepository::get_retrieval_access(
+            backend.database(),
+            scenario.conversation_id,
+            scenario.turn_id,
+            scenario.attempt_id,
+        )
+        .expect("read retrieval access")
+        .expect("retrieval access exists")
+        .access,
+        retrieval_access
+    );
+    assert_eq!(
+        MemoryRetrievalRepository::apply_retrieval_access(
+            backend.database(),
+            retrieval_access.clone(),
+        )
+        .expect("replay retrieval access")
+        .resulting_revision,
+        accessed_revision
+    );
+    let mut conflicting_selection = retrieval_access.clone();
+    conflicting_selection.selected_memory_ids = vec![MemoryId::new()];
+    assert_eq!(
+        MemoryRetrievalRepository::apply_retrieval_access(
+            backend.database(),
+            conflicting_selection,
+        ),
+        Err(MemoryRepositoryError::Conflict)
+    );
+    let mut stale_access = retrieval_access;
+    stale_access.expected_revision = accessed_revision;
+    assert_eq!(
+        MemoryRetrievalRepository::apply_retrieval_access(backend.database(), stale_access),
+        Err(MemoryRepositoryError::Conflict)
     );
     let dispatch_evidence = backend
         .database()
@@ -620,6 +710,12 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
     assert!(replay.replayed);
     assert_eq!(replay.candidate.id, result.candidate.id);
     assert_eq!(inference.requests.lock().expect("requests").len(), 2);
+    assert_eq!(
+        MemoryRepository::get(backend.database(), space_id)
+            .expect("memory after replay")
+            .expect("memory exists after replay"),
+        accessed
+    );
     assert_eq!(
         backend
             .database()

@@ -4026,6 +4026,7 @@ mod tests {
                 "media_blobs",
                 "memory_embedding_projections",
                 "memory_items",
+                "memory_retrieval_accesses",
                 "memory_spaces",
                 "memory_summaries",
                 "memory_summary_source_messages",

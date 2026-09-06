@@ -405,6 +405,37 @@ impl<
     I: InferencePort + ?Sized,
 > ConversationGenerationJobRunner<'_, E, R, I>
 {
+    pub(crate) fn replay_terminal(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+    ) -> Result<Option<ConversationGenerationRunResult>, ConversationGenerationRunError> {
+        let job_id = work.handle.id();
+        if work.claim.claim.job_id != job_id || work.job.id != job_id {
+            return Err(ConversationGenerationRunError::InvalidWork);
+        }
+        let turn = self.repository.get_turn(work.turn_id)?;
+        let attempt = attempt_of(&turn, work.attempt_id)?;
+        if turn.conversation_id != work.conversation_id || attempt.job_id != Some(job_id) {
+            return Err(ConversationGenerationRunError::InvalidWork);
+        }
+        match attempt.status {
+            GenerationAttemptStatus::Succeeded => self.replay_succeeded(turn, attempt).map(Some),
+            GenerationAttemptStatus::Failed => Err(ConversationGenerationRunError::AlreadyFailed {
+                code: attempt.failure.unwrap_or(GenerationFailureCode::Internal),
+                evidence: GenerationUsageEvidence::event(attempt.usage_event_id),
+            }),
+            GenerationAttemptStatus::Cancelled => Err(ConversationGenerationRunError::Cancelled {
+                evidence: GenerationUsageEvidence::event(attempt.usage_event_id),
+            }),
+            GenerationAttemptStatus::Interrupted => Err(ConversationGenerationRunError::Pending {
+                evidence: GenerationUsageEvidence::event(attempt.usage_event_id),
+            }),
+            GenerationAttemptStatus::Created
+            | GenerationAttemptStatus::Preparing
+            | GenerationAttemptStatus::Running => Ok(None),
+        }
+    }
+
     pub async fn run<F>(
         &self,
         work: &ConversationGenerationClaimedWork,

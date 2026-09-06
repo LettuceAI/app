@@ -1,6 +1,6 @@
 use lettuce_types::{
     CompanionEffectId, ConversationId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId,
-    JobId, MemorySpaceId, OperationId, Revision, TimestampMillis, ToolExecutionId,
+    JobId, MemoryId, MemorySpaceId, OperationId, Revision, TimestampMillis, ToolExecutionId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -85,6 +85,39 @@ pub trait MemoryRepository: Send + Sync {
         &self,
         change: MemoryChangeSet,
     ) -> Result<MemorySpaceSnapshot, MemoryRepositoryError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryRetrievalAccess {
+    pub conversation_id: ConversationId,
+    pub turn_id: GenerationTurnId,
+    pub attempt_id: GenerationAttemptId,
+    pub space_id: MemorySpaceId,
+    pub expected_revision: Revision,
+    pub selected_memory_ids: Vec<MemoryId>,
+    pub accessed_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryRetrievalAccessReceipt {
+    pub access: MemoryRetrievalAccess,
+    pub resulting_revision: Revision,
+}
+
+pub trait MemoryRetrievalRepository: Send + Sync {
+    fn get_retrieval_access(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+    ) -> Result<Option<MemoryRetrievalAccessReceipt>, MemoryRepositoryError>;
+
+    fn apply_retrieval_access(
+        &self,
+        access: MemoryRetrievalAccess,
+    ) -> Result<MemoryRetrievalAccessReceipt, MemoryRepositoryError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -62,6 +62,12 @@ The same port exposes one atomic interrupted-parent to immediate-child recovery
 operation. It returns newly identified running child executions plus their
 remapped immutable plan, while preserving exact call arguments and prepared
 semantic evidence from the terminal parent.
+The retrieval-access port owns the narrow mutation applied after assistant
+generation selects dynamic memories. It binds the exact ordered selection,
+source revision and access time to one conversation turn attempt, promotes
+selected cold items, updates only selected access metadata, and returns the
+resulting root revision. Exact retries return the immutable receipt; stale
+revisions or changed selections conflict before any item changes.
 
 Background post-turn extraction now has a separate memory-owned durable run
 boundary instead of fabricating a visible conversation generation turn. A run

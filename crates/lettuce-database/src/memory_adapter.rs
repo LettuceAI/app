@@ -2,7 +2,8 @@ use std::str::FromStr;
 
 use lettuce_memory::{
     DynamicMemoryApprovalRepository, DynamicMemoryPendingApproval, MemoryCategory, MemoryChangeSet,
-    MemoryItem, MemoryRepository, MemoryRepositoryError, MemorySpaceSnapshot, MemorySummary,
+    MemoryItem, MemoryRepository, MemoryRepositoryError, MemoryRetrievalAccess,
+    MemoryRetrievalAccessReceipt, MemoryRetrievalRepository, MemorySpaceSnapshot, MemorySummary,
     MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository, Score,
 };
 use lettuce_types::{ConversationId, MemorySpaceId, MessageId, Revision, TimestampMillis};
@@ -503,6 +504,196 @@ impl MemoryRepository for Database {
         let snapshot = compare_and_apply_in(&transaction, &change)?;
         transaction.commit().map_err(storage)?;
         Ok(snapshot)
+    }
+}
+
+impl MemoryRetrievalRepository for Database {
+    fn get_retrieval_access(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        turn_id: lettuce_types::GenerationTurnId,
+        attempt_id: lettuce_types::GenerationAttemptId,
+    ) -> Result<Option<MemoryRetrievalAccessReceipt>, MemoryRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        connection
+            .query_row(
+                "SELECT space_id,expected_revision,resulting_revision,selected_memory_ids_json,accessed_at
+                   FROM memory_retrieval_accesses
+                  WHERE conversation_id=?1 AND turn_id=?2 AND attempt_id=?3",
+                params![
+                    conversation_id.to_string(),
+                    turn_id.to_string(),
+                    attempt_id.to_string(),
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(storage)?
+            .map(|(space_id, expected, resulting, selected_json, accessed_at)| {
+                Ok(MemoryRetrievalAccessReceipt {
+                    access: MemoryRetrievalAccess {
+                        conversation_id,
+                        turn_id,
+                        attempt_id,
+                        space_id: parse_id(space_id)?,
+                        expected_revision: parse_revision(expected)?,
+                        selected_memory_ids: serde_json::from_str(&selected_json).map_err(storage)?,
+                        accessed_at: TimestampMillis::new(accessed_at),
+                    },
+                    resulting_revision: parse_revision(resulting)?,
+                })
+            })
+            .transpose()
+    }
+
+    fn apply_retrieval_access(
+        &self,
+        access: MemoryRetrievalAccess,
+    ) -> Result<MemoryRetrievalAccessReceipt, MemoryRepositoryError> {
+        if access.expected_revision.get() == 0
+            || access.selected_memory_ids.is_empty()
+            || access.selected_memory_ids.len() > 4096
+            || access
+                .selected_memory_ids
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                != access.selected_memory_ids.len()
+        {
+            return Err(MemoryRepositoryError::Conflict);
+        }
+        let selected_json = serde_json::to_string(&access.selected_memory_ids).map_err(storage)?;
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let existing = transaction
+            .query_row(
+                "SELECT space_id,expected_revision,resulting_revision,selected_memory_ids_json,accessed_at
+                   FROM memory_retrieval_accesses
+                  WHERE conversation_id=?1 AND turn_id=?2 AND attempt_id=?3",
+                params![
+                    access.conversation_id.to_string(),
+                    access.turn_id.to_string(),
+                    access.attempt_id.to_string(),
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(storage)?;
+        if let Some((space_id, expected, resulting, stored_json, accessed_at)) = existing {
+            if parse_id::<MemorySpaceId>(space_id)? != access.space_id
+                || parse_revision(expected)? != access.expected_revision
+                || stored_json != selected_json
+                || TimestampMillis::new(accessed_at) != access.accessed_at
+            {
+                return Err(MemoryRepositoryError::Conflict);
+            }
+            transaction.commit().map_err(storage)?;
+            return Ok(MemoryRetrievalAccessReceipt {
+                access,
+                resulting_revision: parse_revision(resulting)?,
+            });
+        }
+        let current_revision = transaction
+            .query_row(
+                "SELECT revision FROM memory_spaces WHERE id=?1",
+                [access.space_id.to_string()],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(storage)?
+            .ok_or(MemoryRepositoryError::NotFound)?;
+        if parse_revision(current_revision)? != access.expected_revision {
+            return Err(MemoryRepositoryError::Conflict);
+        }
+        let selected_count = access.selected_memory_ids.iter().try_fold(0_usize, |count, id| {
+            let exists = transaction
+                .query_row(
+                    "SELECT 1 FROM memory_items WHERE space_id=?1 AND id=?2 AND superseded_by IS NULL",
+                    params![access.space_id.to_string(), id.to_string()],
+                    |_| Ok(()),
+                )
+                .optional()
+                .map_err(storage)?
+                .is_some();
+            Ok::<_, MemoryRepositoryError>(count + usize::from(exists))
+        })?;
+        if selected_count != access.selected_memory_ids.len() {
+            return Err(MemoryRepositoryError::Conflict);
+        }
+        for id in &access.selected_memory_ids {
+            let updated = transaction
+                .execute(
+                    "UPDATE memory_items
+                        SET importance=CASE WHEN is_cold=1 THEN 9000 ELSE min(10000,importance+2000) END,
+                            access_count=min(4294967295,access_count+CASE WHEN is_cold=1 THEN 2 ELSE 1 END),
+                            is_cold=0,
+                            last_accessed_at=?3
+                      WHERE space_id=?1 AND id=?2 AND superseded_by IS NULL",
+                    params![access.space_id.to_string(), id.to_string(), access.accessed_at.get()],
+                )
+                .map_err(storage)?;
+            if updated != 1 {
+                return Err(MemoryRepositoryError::Conflict);
+            }
+        }
+        let resulting_revision = access
+            .expected_revision
+            .next()
+            .map_err(|_| MemoryRepositoryError::Conflict)?;
+        let updated = transaction
+            .execute(
+                "UPDATE memory_spaces SET revision=?2 WHERE id=?1 AND revision=?3",
+                params![
+                    access.space_id.to_string(),
+                    sql_revision(resulting_revision)?,
+                    sql_revision(access.expected_revision)?,
+                ],
+            )
+            .map_err(storage)?;
+        if updated != 1 {
+            return Err(MemoryRepositoryError::Conflict);
+        }
+        transaction
+            .execute(
+                "INSERT INTO memory_retrieval_accesses (
+                    conversation_id,turn_id,attempt_id,space_id,expected_revision,
+                    resulting_revision,selected_memory_ids_json,accessed_at
+                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![
+                    access.conversation_id.to_string(),
+                    access.turn_id.to_string(),
+                    access.attempt_id.to_string(),
+                    access.space_id.to_string(),
+                    sql_revision(access.expected_revision)?,
+                    sql_revision(resulting_revision)?,
+                    selected_json,
+                    access.accessed_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        transaction.commit().map_err(storage)?;
+        Ok(MemoryRetrievalAccessReceipt {
+            access,
+            resulting_revision,
+        })
     }
 }
 

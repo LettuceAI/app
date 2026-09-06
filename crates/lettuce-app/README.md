@@ -691,9 +691,14 @@ memory text and a stable identity derived from the exact space revision enter
 the context; the matching memory tool request, policy, and duplicate threshold
 enter the runner. The first admitted tool round freezes that policy in its
 existing durable preparation plan. Retrieval embedding unavailability preserves
-the legacy behavior of continuing without retrieved keys. Access/promotion
-updates, selected manual-memory text, launch-time policy snapshots, and durable
-request-body recovery remain later slices.
+the legacy behavior of continuing without retrieved keys. A nonempty selection
+now atomically promotes selected cold items and records the legacy access count,
+time and importance updates exactly once under the preparation attempt. The
+resulting memory revision is the context attribution and tool-round input.
+Terminal replay bypasses input reconstruction, so it does not repeat embedding
+or access side effects; changed or stale retrieval input fails closed. Selected
+manual-memory text, launch-time policy snapshots, and durable request-body
+recovery remain later slices.
 `PrepareGeneration` records the resolved model and prompt/lorebook/memory
 attributions atomically before moving a preparing turn to ContextPrepared.
 The existing speaker-resolution mutation continues to own group speaker choice.
