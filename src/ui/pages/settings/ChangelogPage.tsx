@@ -26,6 +26,20 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "2.2.4 / 2.2.4",
+    date: "2026-09-06",
+    title: "2.2.4 — Hotfix for Companion-Relationships",
+    description:
+    "Companion-relationships evolve again, instead of remaining static.",
+    changes: [
+      {
+        type: "bugfix",
+        description:
+        "There was an error that prevented the companions current relationship metrics (Trust, Closeness, Affection, Tension) to change, rendering them in a static, default state. This bug was fixed.",
+      }
+    ],
+  },
+  {
     version: "2.2.3 / 2.2.3",
     date: "2026-09-02",
     title: "2.2.3 — Companion Prompt Fixes & Richer Relationship State",
