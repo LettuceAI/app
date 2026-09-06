@@ -18,6 +18,9 @@ OpenAI-compatible buffered/SSE usage also preserves legacy nested cache-write
 and server-tool web-search counters, including their camelCase aliases. Other
 native adapters leave these new counters unknown; provider-reported monetary
 cost remains later work.
+OpenAI streaming usage frames update only counters they actually supply; partial
+or null usage frames retain earlier facts. Explicit zero replaces a prior count,
+and cumulative frames are not summed as separate requests.
 
 Remote provider catalogs, request translation, stream parsing, and error mapping.
 

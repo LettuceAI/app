@@ -377,16 +377,22 @@ impl StreamNormalizer {
             return Err(error);
         }
         if let Some(usage) = value.get("usage") {
-            (self.cache_write_tokens, self.web_search_requests) = usage
+            let (cache_write_tokens, web_search_requests) = usage
                 .as_object()
                 .map(crate::common::openai_usage_extras)
                 .unwrap_or_default();
-            self.input_tokens = token(usage, &["prompt_tokens", "input_tokens"]);
-            (self.cached_input_tokens, self.reasoning_tokens) = usage
+            self.cache_write_tokens = cache_write_tokens.or(self.cache_write_tokens);
+            self.web_search_requests = web_search_requests.or(self.web_search_requests);
+            self.input_tokens =
+                token(usage, &["prompt_tokens", "input_tokens"]).or(self.input_tokens);
+            let (cached_input_tokens, reasoning_tokens) = usage
                 .as_object()
                 .map(crate::common::openai_usage_details)
                 .unwrap_or_default();
-            self.output_tokens = token(usage, &["completion_tokens", "output_tokens"]);
+            self.cached_input_tokens = cached_input_tokens.or(self.cached_input_tokens);
+            self.reasoning_tokens = reasoning_tokens.or(self.reasoning_tokens);
+            self.output_tokens =
+                token(usage, &["completion_tokens", "output_tokens"]).or(self.output_tokens);
         }
         let Some(choices) = value.get("choices").and_then(Value::as_array) else {
             return Ok(Vec::new());
@@ -1383,6 +1389,26 @@ mod tests {
             event: Some(event.to_owned()),
             data: data.to_owned(),
         }
+    }
+
+    #[test]
+    fn openai_partial_usage_frames_preserve_prior_counts_and_replace_explicit_values() {
+        let mut stream = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        stream.consume(&record(r#"{"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":10,"prompt_tokens_details":{"cached_tokens":4,"cache_write_tokens":3},"server_tool_use":{"web_search_requests":2}}}"#)).unwrap();
+        stream.consume(&record(r#"{"choices":[],"usage":{"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":1}}}"#)).unwrap();
+        stream
+            .consume(&record(r#"{"choices":[],"usage":null}"#))
+            .unwrap();
+        stream.consume(&record(r#"{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"completion_tokens":6,"prompt_tokens_details":{"cached_tokens":0},"server_tool_use":{"web_search_requests":0}}}"#)).unwrap();
+        stream.consume(&record("[DONE]")).unwrap();
+        let (_, outcome) = stream.finish().unwrap();
+        let usage = outcome.usage.unwrap();
+        assert_eq!(usage.input_tokens, 10);
+        assert_eq!(usage.output_tokens, 6);
+        assert_eq!(usage.cached_input_tokens, Some(0));
+        assert_eq!(usage.cache_write_tokens, Some(3));
+        assert_eq!(usage.reasoning_tokens, Some(1));
+        assert_eq!(usage.web_search_requests, Some(0));
     }
 
     #[test]
