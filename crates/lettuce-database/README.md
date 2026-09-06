@@ -1,5 +1,12 @@
 # lettuce-database
 
+Conversation preparation now writes the existing turn model/prompt/memory fields
+and ordered lorebook attribution rows in the mutation-kernel transaction. Job
+ownership, preparing state and revisions are checked before writes; a failed
+attribution insert rolls back the entire preparation. Exact replay verifies the
+stored values, and recovery may reuse matching preparation under a child attempt.
+The original conversation migration includes the preparation operation kind.
+
 Optional cached-input and reasoning token evidence survives usage ledger,
 creation inference-round, dynamic-memory inference-round and summary-checkpoint
 round trips. Original migrations 9/10/11 store nullable nonnegative counters.

@@ -1,5 +1,12 @@
 # lettuce-conversations
 
+Generation preparation uses `PrepareGeneration` through the existing repository
+and manager. It binds the resolved model and context attributions to the turn,
+checks attached attempt/job ownership and revisions, and advances ContextPrepared
+atomically. Operation replay is idempotent; different preparation conflicts.
+Existing group speaker resolution remains separate. Preparation stores provenance,
+not the full provider request or resolved generation parameters.
+
 InferenceUsage retains optional provider-reported cost with a validated finite,
 nonnegative value type. JSON round trips preserve the existing f64 precision;
 unknown amounts remain distinct from zero. Invalid numeric values cannot enter

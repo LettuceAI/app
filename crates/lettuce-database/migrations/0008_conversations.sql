@@ -747,7 +747,7 @@ CREATE TABLE conversation_usage_refs (
 CREATE TABLE conversation_operations (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
-    kind TEXT NOT NULL CHECK (kind IN ('create', 'send', 'continue', 'regenerate', 'retry', 'checkpoint', 'cancel', 'finalize', 'fail', 'interrupt', 'recover', 'choose_candidate', 'edit', 'flags', 'fork', 'select_branch', 'tombstone', 'archive', 'restore', 'rename', 'participant_policy', 'settings', 'attach_job', 'resolve_speaker')),
+    kind TEXT NOT NULL CHECK (kind IN ('create', 'send', 'continue', 'regenerate', 'retry', 'checkpoint', 'cancel', 'finalize', 'fail', 'interrupt', 'recover', 'choose_candidate', 'edit', 'flags', 'fork', 'select_branch', 'tombstone', 'archive', 'restore', 'rename', 'participant_policy', 'settings', 'attach_job', 'prepare_generation', 'resolve_speaker')),
     operation_key TEXT NOT NULL CHECK (length(trim(operation_key)) > 0),
     request_digest TEXT NOT NULL CHECK (length(request_digest) = 64 AND lower(request_digest) = request_digest AND request_digest NOT GLOB '*[^0-9a-f]*'),
     result_kind TEXT NOT NULL CHECK (result_kind IN ('conversation', 'turn', 'message', 'candidate', 'branch')),

@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::{
     ArchiveConversation, AttachAttemptJob, ChooseCandidate, ContinueConversation, EditMessage,
-    ForkBranch, RegenerateCandidate, RenameConversation, RestoreConversation, RetryGeneration,
-    SelectBranch, SendConversation, SettleCancellation, TombstoneMessage, UpdateMessageFlags,
+    ForkBranch, PrepareGeneration, RegenerateCandidate, RenameConversation, RestoreConversation,
+    RetryGeneration, SelectBranch, SendConversation, SettleCancellation, TombstoneMessage,
+    UpdateMessageFlags,
 };
 use crate::content::{
     MediaAssetRole, Message, MessageCandidate, MessagePart, MessageRevision, MessageRole,
@@ -850,6 +851,7 @@ pub enum OperationKind {
     ParticipantPolicy,
     Settings,
     AttachJob,
+    PrepareGeneration,
     ResolveSpeaker,
 }
 
@@ -1129,6 +1131,11 @@ pub trait ConversationRepository: ConversationCreator {
         command: &AttachAttemptJob,
         now: TimestampMillis,
     ) -> Result<AttachAttemptJobResult, ConversationRepositoryError>;
+    fn prepare_generation(
+        &self,
+        command: &PrepareGeneration,
+        now: TimestampMillis,
+    ) -> Result<MutationCommit<GenerationTurn>, ConversationRepositoryError>;
     fn recover_generation(
         &self,
         turn_id: GenerationTurnId,
@@ -1695,6 +1702,49 @@ pub struct ContextAttributions {
     pub prompt: Option<PromptAttribution>,
     pub lorebooks: Vec<LorebookAttribution>,
     pub memory: Option<MemoryAttribution>,
+}
+
+impl ContextAttributions {
+    pub fn validate(&self) -> Result<(), crate::ValidationError> {
+        if let Some(prompt) = &self.prompt {
+            if prompt.revision.get() == 0 {
+                return Err(crate::ValidationError::ZeroRevision);
+            }
+            crate::validation::validate_collection(
+                "context_attributions.prompt_entries",
+                &prompt.selected_entry_ids,
+                crate::validation::MAX_DOCUMENT_ENTRIES,
+            )?;
+            crate::validation::validate_unique(
+                "context_attributions.prompt_entries",
+                prompt.selected_entry_ids.iter().copied(),
+            )?;
+        }
+        crate::validation::validate_collection(
+            "context_attributions.lorebooks",
+            &self.lorebooks,
+            crate::validation::MAX_LOREBOOKS,
+        )?;
+        crate::validation::validate_unique(
+            "context_attributions.lorebooks",
+            self.lorebooks.iter().map(|book| book.lorebook_id),
+        )?;
+        for book in &self.lorebooks {
+            if book.revision.get() == 0 {
+                return Err(crate::ValidationError::ZeroRevision);
+            }
+            crate::validation::validate_collection(
+                "context_attributions.lorebook_entries",
+                &book.activated_entry_ids,
+                crate::validation::MAX_DOCUMENT_ENTRIES,
+            )?;
+            crate::validation::validate_unique(
+                "context_attributions.lorebook_entries",
+                book.activated_entry_ids.iter().copied(),
+            )?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

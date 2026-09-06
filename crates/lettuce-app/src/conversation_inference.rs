@@ -52,7 +52,11 @@ impl<
         {
             return Err(ConversationInitialInferenceError::InvalidOwnership);
         }
-        if let Some(model) = &turn.resolved_model {
+        {
+            let model = turn
+                .resolved_model
+                .as_ref()
+                .ok_or(ConversationInitialInferenceError::InvalidModel)?;
             let profile = &request.profile.chat_profile;
             if model.source_id != profile.model_profile_id
                 || model.source_revision != profile.model_revision
@@ -63,6 +67,12 @@ impl<
             {
                 return Err(ConversationInitialInferenceError::InvalidModel);
             }
+        }
+        if turn.prompt != request.context.attributions.prompt
+            || turn.lorebooks != request.context.attributions.lorebooks
+            || turn.memory != request.context.attributions.memory
+        {
+            return Err(ConversationInitialInferenceError::InvalidOwnership);
         }
         if handle.cancellation_token().is_cancelled() {
             return Err(ConversationInitialInferenceError::Cancelled);

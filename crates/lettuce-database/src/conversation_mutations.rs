@@ -23,7 +23,7 @@ use lettuce_conversations::{
     GenerationFinalizationResult, GenerationInput, GenerationInterruptionResult,
     GenerationOperation, GenerationRecovery, GenerationRecoveryResult, GenerationTarget,
     GenerationTurn, GenerationTurnStatus, Message, MessageCandidate, MessagePart, OperationKind,
-    OperationResultRef, OperationToken, ParticipantPolicyResult,
+    OperationResultRef, OperationToken, ParticipantPolicyResult, PrepareGeneration,
     PreparedConversationSettingsUpdate, RegenerateCandidate, RegenerateCandidateResult,
     RenameConversation, RenameConversationResult, RequestCancellationResult, ResolveGroupSpeaker,
     ResolveGroupSpeakerResult, RestoreConversation, RestoreConversationResult, RetryGeneration,
@@ -2453,6 +2453,171 @@ impl ConversationRepository for Database {
                     return Err(ConversationRepositoryError::Conflict);
                 }
                 Ok(attempt)
+            },
+        )
+    }
+
+    fn prepare_generation(
+        &self,
+        command: &PrepareGeneration,
+        now: TimestampMillis,
+    ) -> Result<lettuce_conversations::MutationCommit<GenerationTurn>, ConversationRepositoryError>
+    {
+        command
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        kernel::run_mutation(
+            self,
+            command.conversation_id,
+            OperationKind::PrepareGeneration,
+            &command.operation,
+            now,
+            |transaction, context| {
+                let conversation = kernel::cas_conversation(
+                    transaction,
+                    context.conversation_id,
+                    command.expected_revision,
+                )?;
+                require_settleable(conversation.lifecycle)?;
+                cas_turn(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    command.expected_turn_revision,
+                )?;
+                let attempt: Option<(Option<String>, String)> = transaction
+                    .query_row(
+                        "SELECT job_id, status FROM generation_attempts WHERE conversation_id = ?1 AND turn_id = ?2 AND id = ?3",
+                        params![
+                            context.conversation_id.to_string(),
+                            command.turn_id.to_string(),
+                            command.attempt_id.to_string(),
+                        ],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .optional()
+                    .map_err(slice::db)?;
+                if attempt != Some((Some(command.job_id.to_string()), "preparing".to_owned())) {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                let prior = load_turn(transaction, context.conversation_id, command.turn_id)?;
+                if !matches!(
+                    prior.status,
+                    GenerationTurnStatus::Preparing | GenerationTurnStatus::SelectingSpeaker
+                ) || (prior.status == GenerationTurnStatus::SelectingSpeaker
+                    && prior.selected_speaker.is_none())
+                {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                if prior.resolved_model.is_some() {
+                    if prior.resolved_model.as_ref() != Some(&command.model)
+                        || prior.prompt != command.attributions.prompt
+                        || prior.lorebooks != command.attributions.lorebooks
+                        || prior.memory != command.attributions.memory
+                    {
+                        return Err(ConversationRepositoryError::Conflict);
+                    }
+                } else {
+                    let model = slice::encode(&command.model)?;
+                    let prompt_id = command
+                        .attributions
+                        .prompt
+                        .as_ref()
+                        .map(|prompt| prompt.document_id.to_string());
+                    let prompt_revision = command
+                        .attributions
+                        .prompt
+                        .as_ref()
+                        .map(|prompt| i64::try_from(prompt.revision.get()))
+                        .transpose()
+                        .map_err(|_| ConversationRepositoryError::Storage)?;
+                    let prompt_entries = command
+                        .attributions
+                        .prompt
+                        .as_ref()
+                        .map(|prompt| slice::encode(&prompt.selected_entry_ids))
+                        .transpose()?;
+                    let memory_revision = command
+                        .attributions
+                        .memory
+                        .as_ref()
+                        .map(|memory| memory.revision_id.to_string());
+                    let changed = transaction
+                    .execute(
+                        "UPDATE conversation_turns SET resolved_model_json = ?3, prompt_document_id = ?4, prompt_revision = ?5, prompt_entry_ids_json = ?6, memory_revision_id = ?7 WHERE conversation_id = ?1 AND id = ?2 AND resolved_model_json IS NULL AND prompt_document_id IS NULL AND prompt_revision IS NULL AND prompt_entry_ids_json IS NULL AND memory_revision_id IS NULL AND NOT EXISTS (SELECT 1 FROM turn_lorebooks WHERE conversation_id = ?1 AND turn_id = ?2)",
+                        params![
+                            context.conversation_id.to_string(),
+                            command.turn_id.to_string(),
+                            model,
+                            prompt_id,
+                            prompt_revision,
+                            prompt_entries,
+                            memory_revision,
+                        ],
+                    )
+                    .map_err(kernel::map_constraint)?;
+                    if changed != 1 {
+                        return Err(ConversationRepositoryError::Conflict);
+                    }
+                    for (ordinal, lorebook) in command.attributions.lorebooks.iter().enumerate() {
+                        transaction
+                        .execute(
+                            "INSERT INTO turn_lorebooks (conversation_id, turn_id, lorebook_id, revision, ordinal, activated_entry_ids_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                            params![
+                                context.conversation_id.to_string(),
+                                command.turn_id.to_string(),
+                                lorebook.lorebook_id.to_string(),
+                                i64::try_from(lorebook.revision.get())
+                                    .map_err(|_| ConversationRepositoryError::Storage)?,
+                                i64::try_from(ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
+                                slice::encode(&lorebook.activated_entry_ids)?,
+                            ],
+                        )
+                        .map_err(kernel::map_constraint)?;
+                    }
+                }
+                advance_attempt_stage(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    command.attempt_id,
+                    GenerationTurnStatus::ContextPrepared,
+                    context.now,
+                )?;
+                advance_turn(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    Some(GenerationTurnStatus::ContextPrepared),
+                    context.now,
+                )?;
+                kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let value = load_turn(transaction, context.conversation_id, command.turn_id)?;
+                Ok(kernel::Staged {
+                    value,
+                    result: OperationResultRef::Turn(command.turn_id),
+                    events: Vec::new(),
+                })
+            },
+            |transaction, operation| {
+                let replayed = replayed_turn(operation)?;
+                if replayed != command.turn_id {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                let turn = load_turn(transaction, command.conversation_id, replayed)?;
+                let attempt = turn
+                    .attempts
+                    .iter()
+                    .find(|attempt| attempt.id == command.attempt_id);
+                if attempt.is_none_or(|attempt| attempt.job_id != Some(command.job_id))
+                    || turn.resolved_model.as_ref() != Some(&command.model)
+                    || turn.prompt != command.attributions.prompt
+                    || turn.lorebooks != command.attributions.lorebooks
+                    || turn.memory != command.attributions.memory
+                {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                Ok(turn)
             },
         )
     }

@@ -621,12 +621,16 @@ response IDs/counters and unchanged terminal aggregate/replay.
 
 `ConversationInitialInferenceCoordinator` supplies the initial provider
 dispatch boundary for a running conversation generation attempt. It reloads the
-durable turn, verifies the turn/attempt/job/request identities and, when the turn
-already contains a resolved model, verifies the request against that snapshot.
+durable turn, verifies the turn/attempt/job/request identities and requires the
+request's model and context attributions to match the prepared turn.
 It records the raw response or provider failure through the existing job ledger.
 Cancellation before dispatch produces no evidence; cancellation after a response
 retains evidence and cleans orphan replay artifacts. Response interpretation,
 tool admission and terminal aggregation stay with their existing coordinators.
-The conversation repository currently has no preparation mutation that writes
-`GenerationTurn::resolved_model`; that durable preparation boundary remains a
-prerequisite for full send/regenerate/retry orchestration.
+`PrepareGeneration` records the resolved model and prompt/lorebook/memory
+attributions atomically before moving a preparing turn to ContextPrepared.
+The existing speaker-resolution mutation continues to own group speaker choice.
+Exact operation replay preserves the stored preparation; changed input conflicts.
+Recovery can reuse matching preparation under the child's attached job, while
+changing the prepared model or attributions requires a new turn. Full automated
+send/regenerate/retry orchestration and durable request-body replay remain later.

@@ -375,6 +375,17 @@ impl<R: ConversationRepository> ConversationManager<R> {
             .map_err(Into::into)
     }
 
+    pub fn prepare_generation(
+        &self,
+        command: &crate::commands::PrepareGeneration,
+        now: TimestampMillis,
+    ) -> Result<crate::ports::MutationCommit<crate::GenerationTurn>, ConversationServiceError> {
+        command.validate()?;
+        self.repository
+            .prepare_generation(command, now)
+            .map_err(Into::into)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn finalize_generation(
         &self,

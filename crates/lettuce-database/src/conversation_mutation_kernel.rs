@@ -101,6 +101,7 @@ pub(crate) fn operation_kind_name(value: OperationKind) -> &'static str {
         OperationKind::ParticipantPolicy => "participant_policy",
         OperationKind::Settings => "settings",
         OperationKind::AttachJob => "attach_job",
+        OperationKind::PrepareGeneration => "prepare_generation",
         OperationKind::ResolveSpeaker => "resolve_speaker",
     }
 }

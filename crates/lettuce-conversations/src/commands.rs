@@ -9,6 +9,7 @@ use crate::content::{Message, MessagePart, MessageRenderSource, MessageRole, Mes
 use crate::error::ValidationError;
 use crate::generation::{GenerationOperation, IdempotencyKey};
 use crate::model::{ConversationKind, ParticipantRole, ParticipantSource};
+use crate::ports::ContextAttributions;
 use crate::snapshot::{
     LorebookLaunchSnapshot, ModelSelectionSnapshot, PersonaLaunchSnapshot, PromptLaunchSnapshot,
     ProtectedSnapshotRef, SceneLaunchSnapshot, ValidateSnapshot,
@@ -655,6 +656,31 @@ impl AttachAttemptJob {
             return Err(ValidationError::ZeroRevision);
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrepareGeneration {
+    pub conversation_id: ConversationId,
+    pub turn_id: GenerationTurnId,
+    pub attempt_id: GenerationAttemptId,
+    pub job_id: lettuce_types::JobId,
+    pub expected_revision: Revision,
+    pub expected_turn_revision: Revision,
+    pub operation: OperationToken,
+    pub model: ModelSelectionSnapshot,
+    pub attributions: ContextAttributions,
+}
+
+impl PrepareGeneration {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.expected_revision.get() == 0 || self.expected_turn_revision.get() == 0 {
+            return Err(ValidationError::ZeroRevision);
+        }
+        self.model
+            .validate_snapshot("generation_preparation.model")?;
+        self.attributions.validate()
     }
 }
 

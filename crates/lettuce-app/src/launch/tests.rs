@@ -7939,35 +7939,91 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
         )
         .expect("attach job");
     let mut turn = ConversationReader::get_turn(&database, started.value.turn.id).expect("turn");
-    for (sequence, status) in [
-        GenerationTurnStatus::Preparing,
-        GenerationTurnStatus::ContextPrepared,
-        GenerationTurnStatus::Running,
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let prior_status = turn.status;
-        turn = database
-            .append_event(
-                turn.id,
-                turn.revision,
-                &operation(&format!("terminal-stage-{sequence}")),
-                GenerationCheckpointEnvelope {
-                    turn_id: turn.id,
-                    attempt_id: started.value.attempt.id,
-                    job_id: Some(job_id),
-                    correlation_id: None,
-                    sequence: u64::try_from(sequence + 1).expect("sequence"),
-                    event: GenerationCheckpointEvent::Stage { status },
+    turn = database
+        .append_event(
+            turn.id,
+            turn.revision,
+            &operation("terminal-stage-preparing"),
+            GenerationCheckpointEnvelope {
+                turn_id: turn.id,
+                attempt_id: started.value.attempt.id,
+                job_id: Some(job_id),
+                correlation_id: None,
+                sequence: 1,
+                event: GenerationCheckpointEvent::Stage {
+                    status: GenerationTurnStatus::Preparing,
                 },
-                TimestampMillis::new(1_012 + i64::try_from(sequence).expect("time")),
-            )
-            .unwrap_or_else(|error| {
-                panic!("stage {sequence} from {prior_status:?} failed: {error:?}")
-            })
-            .value;
-    }
+            },
+            TimestampMillis::new(1_012),
+        )
+        .expect("prepare stage")
+        .value;
+    let attributions = lettuce_conversations::ContextAttributions {
+        memory: Some(lettuce_conversations::MemoryAttribution {
+            revision_id: lettuce_types::MemoryRevisionId::new(),
+        }),
+        ..Default::default()
+    };
+    let aggregate = ConversationReader::get(&database, conversation_id).expect("aggregate");
+    let preparation = lettuce_conversations::PrepareGeneration {
+        conversation_id,
+        turn_id: turn.id,
+        attempt_id: started.value.attempt.id,
+        job_id,
+        expected_revision: aggregate.conversation.revision,
+        expected_turn_revision: turn.revision,
+        operation: operation("terminal-prepare-generation"),
+        model: model.clone(),
+        attributions: attributions.clone(),
+    };
+    let mut wrong_owner = preparation.clone();
+    wrong_owner.job_id = JobId::new();
+    assert!(matches!(database.prepare_generation(&wrong_owner, TimestampMillis::new(1_013)),
+        Err(lettuce_conversations::ConversationRepositoryError::Conflict)));
+    let mut stale = preparation.clone();
+    stale.expected_turn_revision = Revision::INITIAL;
+    assert!(database.prepare_generation(&stale, TimestampMillis::new(1_013)).is_err());
+    let mut invalid_book = preparation.clone();
+    invalid_book.attributions.lorebooks.push(lettuce_conversations::LorebookAttribution {
+        lorebook_id: lettuce_types::LorebookId::new(), revision: Revision::INITIAL,
+        activated_entry_ids: Vec::new(),
+    });
+    assert!(database.prepare_generation(&invalid_book, TimestampMillis::new(1_013)).is_err());
+    assert_eq!(ConversationReader::get_turn(&database, turn.id).expect("rolled back preparation"), turn);
+    turn = database
+        .prepare_generation(&preparation, TimestampMillis::new(1_013))
+        .expect("persist generation preparation")
+        .value;
+    assert_eq!(
+        database
+            .prepare_generation(&preparation, TimestampMillis::new(1_099))
+            .expect("replay generation preparation")
+            .value,
+        turn
+    );
+    let mut changed_preparation = preparation.clone();
+    changed_preparation.attributions.memory = None;
+    assert!(matches!(database.prepare_generation(&changed_preparation, TimestampMillis::new(1_099)),
+        Err(lettuce_conversations::ConversationRepositoryError::Conflict)));
+    turn = database
+        .append_event(
+            turn.id,
+            turn.revision,
+            &operation("terminal-stage-running"),
+            GenerationCheckpointEnvelope {
+                turn_id: turn.id,
+                attempt_id: started.value.attempt.id,
+                job_id: Some(job_id),
+                correlation_id: None,
+                sequence: 2,
+                event: GenerationCheckpointEvent::Stage {
+                    status: GenerationTurnStatus::Running,
+                },
+            },
+            TimestampMillis::new(1_014),
+        )
+        .expect("running stage")
+        .value;
     let attempt = turn.attempts[0].clone();
     let mut stored_profile = ModelProfileRepository::get(&database, model.source_id)
         .expect("profile")
@@ -8050,7 +8106,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
                     text: "Remember this.".into(),
                 }],
             }],
-            attributions: lettuce_conversations::ContextAttributions::default(),
+            attributions: attributions.clone(),
             budget: lettuce_conversations::ContextBudgetReport::default(),
         },
         cancellation: Some(job_id),
@@ -8064,6 +8120,16 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
     };
     let mut wrong_request = inference_request.clone();
     wrong_request.attempt_id = lettuce_types::GenerationAttemptId::new();
+    let mut wrong_model = inference_request.clone();
+    wrong_model.profile.chat_profile.external_model_id = "other-model".into();
+    assert!(matches!(crate::ConversationInitialInferenceCoordinator::new(&database, &initial_inference)
+        .run(conversation_id, &handle, wrong_model, TimestampMillis::new(1_014)).await,
+        Err(crate::ConversationInitialInferenceError::InvalidModel)));
+    let mut wrong_context = inference_request.clone();
+    wrong_context.context.attributions.memory = None;
+    assert!(matches!(crate::ConversationInitialInferenceCoordinator::new(&database, &initial_inference)
+        .run(conversation_id, &handle, wrong_context, TimestampMillis::new(1_014)).await,
+        Err(crate::ConversationInitialInferenceError::InvalidOwnership)));
     assert!(matches!(
         crate::ConversationInitialInferenceCoordinator::new(&database, &initial_inference)
             .run(
