@@ -55,6 +55,12 @@ fn resolve_companion_state_json(
             character_id,
             mode,
         )?;
+    // A session that already carries its own companion state owns the
+    // authoritative (and possibly freshly evolved) relationship bond, so we must
+    // not let the merge overwrite it with the stored value. A fresh session with
+    // no state yet should still inherit the shared relationship.
+    let session_carries_state =
+        matches!(session_value.get("companionState"), Some(v) if !v.is_null());
     let state = match session_value.get("companionState") {
         Some(v) if !v.is_null() => Some(v.clone()),
         _ if !is_companion => None,
@@ -79,6 +85,7 @@ fn resolve_companion_state_json(
         character_id,
         persona_id,
         state,
+        !session_carries_state,
     )
     .map(|state| state.and_then(|value| serde_json::to_string(&value).ok()))
 }
@@ -106,6 +113,7 @@ fn hydrate_stored_companion_state(
         character_id,
         if persona_disabled { None } else { persona_id },
         state,
+        true,
     )
 }
 
