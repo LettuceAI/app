@@ -1,9 +1,9 @@
 use super::*;
 use lettuce_conversations::ToolExecution;
 use lettuce_conversations::{
-    GenerationAttemptStatus, GenerationFailureCode, InitialInferenceBinding,
+    ConversationManager, GenerationAttemptStatus, GenerationFailureCode, InitialInferenceBinding,
     InitialInferenceRepository, InitialInferenceResult, ModelSelectionSnapshot, OperationKind,
-    UsageCounters, UsageOutcome, UsageUnavailableReason,
+    ToolExecutionOwner, UsageCounters, UsageOutcome, UsageUnavailableReason,
 };
 use lettuce_jobs::{JobErrorCode, JobSnapshot, JobStore, events::JobEvent};
 use lettuce_types::{ConversationId, GenerationAttemptId, GenerationTurnId};
@@ -549,7 +549,7 @@ async fn two_round_memory_path_runs_through_the_runner_and_replays_once() {
 }
 
 #[tokio::test]
-async fn settled_tool_rounds_are_not_resumed_or_recovered_into_a_child() {
+async fn settled_tool_round_is_replayed_before_continuation_without_reapplying_memory() {
     let database = database();
     let scenario = scenario(&database, true, "unrecoverable");
     let space_id = scenario.space_id.expect("space");
@@ -563,7 +563,19 @@ async fn settled_tool_rounds_are_not_resumed_or_recovered_into_a_child() {
                 serde_json::json!({"text": "Mira prefers tea", "category": "preference"}),
                 (20, 5),
             )),
+            Ok(call_outcome(
+                "round-second",
+                "pin_memory",
+                serde_json::json!({"id": memory_id}),
+                (8, 2),
+            )),
             Err(PortError::Unavailable),
+            Ok(text_outcome(
+                "round-recovered",
+                "I will remember that.",
+                7,
+                3,
+            )),
         ])),
         requests: Mutex::new(vec![]),
     };
@@ -572,6 +584,7 @@ async fn settled_tool_rounds_are_not_resumed_or_recovered_into_a_child() {
     let seeds = |executions: &[ToolExecution]| {
         executions
             .iter()
+            .filter(|execution| execution.definition_name == "create_memory")
             .map(|execution| crate::MemoryCreateSeed {
                 execution_id: execution.id,
                 id: memory_id,
@@ -593,27 +606,12 @@ async fn settled_tool_rounds_are_not_resumed_or_recovered_into_a_child() {
         first,
         ConversationGenerationRunError::Continuation { .. }
     ));
-    assert_eq!(inference.requests.lock().expect("requests").len(), 2);
+    assert_eq!(inference.requests.lock().expect("requests").len(), 3);
     let stored_memory = MemoryRepository::get(&database, space_id)
         .expect("memory")
         .expect("memory exists");
-    assert_eq!(stored_memory.revision, Revision::new(2));
-    let dispatch_id = database
-        .job_usage(work.handle.id())
-        .expect("job usage")
-        .into_iter()
-        .find(|record| {
-            matches!(
-                &record.result,
-                Some(JobInferenceUsageResult::Response {
-                    provider_response_id: Some(id),
-                    ..
-                }) if id == "round-initial"
-            )
-        })
-        .expect("initial dispatch evidence")
-        .id;
-    let rerun = runner
+    assert_eq!(stored_memory.revision, Revision::new(3));
+    let result = runner
         .run(
             &work,
             input(&scenario, true),
@@ -621,45 +619,275 @@ async fn settled_tool_rounds_are_not_resumed_or_recovered_into_a_child() {
             seeds,
         )
         .await
-        .expect_err("settled rounds cannot be resumed");
-    let ConversationGenerationRunError::ToolRoundsUnrecoverable { evidence } = rerun else {
-        panic!("expected unrecoverable rounds: {rerun:?}");
-    };
-    assert_eq!(evidence, GenerationUsageEvidence::Dispatch(dispatch_id));
-    assert_eq!(inference.requests.lock().expect("requests").len(), 2);
+        .expect("resume settled round");
+    assert_eq!(result.rounds, 2);
+    assert_eq!(result.outcomes.len(), 2);
+    assert_eq!(inference.requests.lock().expect("requests").len(), 4);
+    let replayed_parts = inference.requests.lock().expect("requests")[3]
+        .context
+        .messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .filter(|part| {
+            matches!(
+                part,
+                ProviderContextPart::ToolCall(_) | ProviderContextPart::ToolResult(_)
+            )
+        })
+        .count();
+    assert_eq!(replayed_parts, 4);
     let job_id = work.handle.id();
     let settled = ConversationGenerationDispatchCoordinator::new(&database, &database)
         .settle(
             work,
-            Err(ConversationGenerationRunError::Pending { evidence }),
+            Ok(result),
             CancellationReason::Recovery,
             TimestampMillis::new(1_022),
         )
         .expect("settle");
-    let ConversationGenerationSettledWork::Failed { job, .. } = settled else {
-        panic!("expected failure instead of a recovery child: {settled:?}");
+    let ConversationGenerationSettledWork::Succeeded { job, .. } = settled else {
+        panic!("expected resumed success: {settled:?}");
     };
-    assert_eq!(job.state, JobState::Failed);
-    assert_eq!(persisted_job(&database, job_id).state, JobState::Failed);
+    assert_eq!(job.state, JobState::Succeeded);
+    assert_eq!(persisted_job(&database, job_id).state, JobState::Succeeded);
     let turn = ConversationReader::get_turn(&database, scenario.turn_id).expect("turn");
-    assert_eq!(turn.status, GenerationTurnStatus::Failed);
-    assert_eq!(
-        turn.failure,
-        Some(GenerationFailureCode::RecoveryUnavailable)
-    );
+    assert_eq!(turn.status, GenerationTurnStatus::Succeeded);
     assert_eq!(turn.attempts.len(), 1);
     let usage_event = attempt_usage(&database, scenario.turn_id, 0);
-    assert_eq!(usage_event.record.outcome, UsageOutcome::Failed);
+    assert_eq!(usage_event.record.outcome, UsageOutcome::Succeeded);
     assert_eq!(
         usage_event.record.usage,
-        UsageCounters::Known(usage(20, 5).expect("usage"))
+        UsageCounters::Unavailable(UsageUnavailableReason::TransportFailed)
     );
     assert_eq!(
         MemoryRepository::get(&database, space_id)
             .expect("memory")
             .expect("memory exists")
             .revision,
-        Revision::new(2)
+        Revision::new(3)
+    );
+}
+
+#[tokio::test]
+async fn rejected_round_recovery_still_fails_closed_without_redispatch() {
+    let database = database();
+    let scenario = scenario(&database, true, "rejected-round");
+    let space_id = scenario.space_id.expect("space");
+    let work = admit_and_claim(&database, &scenario, 1_015);
+    let inference = scripted(vec![call_outcome(
+        "rejected-round-initial",
+        "create_memory",
+        serde_json::json!({"text": "Mira prefers tea", "category": "preference"}),
+        (20, 5),
+    )]);
+    let engine = ScenarioEmbeddingEngine;
+    let runner = ConversationGenerationJobRunner::new(&engine, &database, &inference);
+    let first = runner
+        .run(
+            &work,
+            input(&scenario, true),
+            TimestampMillis::new(1_020),
+            |_| vec![],
+        )
+        .await
+        .expect_err("missing create seed rejects the round");
+    assert!(matches!(
+        first,
+        ConversationGenerationRunError::Round { .. }
+    ));
+    let rerun = runner
+        .run(
+            &work,
+            input(&scenario, true),
+            TimestampMillis::new(1_021),
+            |_| vec![],
+        )
+        .await
+        .expect_err("rejected round cannot be resumed");
+    assert!(matches!(
+        rerun,
+        ConversationGenerationRunError::ToolRoundsUnrecoverable { .. }
+    ));
+    assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+    assert_eq!(
+        MemoryRepository::get(&database, space_id)
+            .expect("memory")
+            .expect("memory exists")
+            .revision,
+        Revision::INITIAL
+    );
+}
+
+#[tokio::test]
+async fn interrupted_planned_tail_is_cloned_and_continued_in_the_child() {
+    let database = database();
+    let scenario = scenario(&database, true, "interrupted-tail");
+    let space_id = scenario.space_id.expect("space");
+    let memory_id = MemoryId::new();
+    let work = admit_and_claim(&database, &scenario, 1_015);
+    let inference = FallibleScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([
+            Ok(call_outcome(
+                "interrupted-initial",
+                "create_memory",
+                serde_json::json!({"text": "Mira prefers tea", "category": "preference"}),
+                (20, 5),
+            )),
+            Err(PortError::Unavailable),
+            Ok(text_outcome(
+                "interrupted-recovered",
+                "I kept that in mind.",
+                6,
+                3,
+            )),
+        ])),
+        requests: Mutex::new(vec![]),
+    };
+    let engine = ScenarioEmbeddingEngine;
+    let runner = ConversationGenerationJobRunner::new(&engine, &database, &inference);
+    let first = runner
+        .run(
+            &work,
+            input(&scenario, true),
+            TimestampMillis::new(1_020),
+            |executions| {
+                executions
+                    .iter()
+                    .map(|execution| crate::MemoryCreateSeed {
+                        execution_id: execution.id,
+                        id: memory_id,
+                        token_count: 4,
+                        created_at: TimestampMillis::new(1_016),
+                    })
+                    .collect()
+            },
+        )
+        .await
+        .expect_err("continuation provider failed");
+    let evidence = first.evidence();
+    let requested = ConversationManager::new(&database)
+        .request_tool_executions(
+            ToolExecutionOwner {
+                conversation_id: scenario.conversation_id,
+                turn_id: scenario.turn_id,
+                attempt_id: scenario.attempt_id,
+            },
+            &dynamic_memory_tool_request(),
+            vec![ProposedToolCall {
+                provider_call_id: Some("interrupted-pin".into()),
+                name: "pin_memory".into(),
+                arguments: serde_json::json!({"id": memory_id}),
+                raw_arguments: None,
+                provider_replay: None,
+            }],
+            TimestampMillis::new(1_021),
+        )
+        .expect("admit interrupted tail");
+    let validated = database
+        .transition_tool_execution_batch(
+            &[ToolExecutionTransition {
+                id: requested[0].id,
+                expected_revision: requested[0].revision,
+                next: ToolExecutionStatus::Validated,
+                output: None,
+                failure: None,
+            }],
+            TimestampMillis::new(1_022),
+        )
+        .expect("validate interrupted tail");
+    let running = crate::DynamicMemoryHandler::new(&database)
+        .start_validated_round(&validated, TimestampMillis::new(1_023))
+        .expect("start interrupted tail");
+    let snapshot = MemoryRepository::get(&database, space_id)
+        .expect("memory")
+        .expect("memory exists");
+    let memory_input = memory_input(space_id);
+    crate::DynamicMemoryCreatePreparer::new(&engine, &database)
+        .prepare_and_persist_admitted(
+            space_id,
+            snapshot.revision,
+            &memory_input.policy,
+            &running,
+            &[],
+            memory_input.duplicate_threshold,
+            &work.claim,
+            &work.handle,
+        )
+        .expect("persist interrupted plan");
+    let parent_job_id = work.handle.id();
+    let interrupted = ConversationGenerationDispatchCoordinator::new(&database, &database)
+        .settle(
+            work,
+            Err(ConversationGenerationRunError::Pending { evidence }),
+            CancellationReason::Recovery,
+            TimestampMillis::new(1_024),
+        )
+        .expect("recover child");
+    let ConversationGenerationSettledWork::Interrupted {
+        child_attempt_id,
+        child_job,
+        ..
+    } = interrupted
+    else {
+        panic!("expected interrupted parent: {interrupted:?}");
+    };
+    assert_eq!(
+        persisted_job(&database, parent_job_id).state,
+        JobState::Interrupted
+    );
+    let parent_usage = attempt_usage(&database, scenario.turn_id, 0);
+    assert_eq!(parent_usage.record.outcome, UsageOutcome::Interrupted);
+    assert_eq!(
+        parent_usage.record.usage,
+        UsageCounters::Unavailable(UsageUnavailableReason::TransportFailed)
+    );
+    let child_work = ConversationGenerationDispatchCoordinator::new(&database, &database)
+        .claim(
+            scenario.turn_id,
+            child_attempt_id,
+            WorkerId::new(),
+            TimestampMillis::new(1_025),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("claim child")
+        .expect("child work");
+    assert_eq!(child_work.handle.id(), child_job.id);
+    let result = runner
+        .run(
+            &child_work,
+            input(&scenario, true),
+            TimestampMillis::new(1_026),
+            |_| vec![],
+        )
+        .await
+        .expect("continue child");
+    assert_eq!(result.rounds, 2);
+    assert_eq!(result.outcomes.len(), 1);
+    assert_eq!(inference.requests.lock().expect("requests").len(), 3);
+    let memory = MemoryRepository::get(&database, space_id)
+        .expect("memory")
+        .expect("memory exists");
+    assert_eq!(memory.revision, Revision::new(3));
+    assert!(memory.items[0].is_pinned);
+    let child_executions = ToolExecutionRepository::list_tool_executions(
+        &database,
+        scenario.conversation_id,
+        scenario.turn_id,
+        child_attempt_id,
+    )
+    .expect("child executions");
+    assert_eq!(child_executions.len(), 1);
+    assert_eq!(
+        child_executions[0].provider_call_id.as_deref(),
+        Some("interrupted-pin")
+    );
+    assert_eq!(child_executions[0].status, ToolExecutionStatus::Succeeded);
+    let child_usage = attempt_usage(&database, scenario.turn_id, 1);
+    assert_eq!(child_usage.record.outcome, UsageOutcome::Succeeded);
+    assert_eq!(
+        child_usage.record.usage,
+        UsageCounters::Known(usage(6, 3).expect("usage"))
     );
 }
 

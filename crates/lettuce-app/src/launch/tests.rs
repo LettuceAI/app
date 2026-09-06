@@ -8345,7 +8345,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
         };
         assert!(matches!(crate::DynamicMemoryContinuationCoordinator::new(&database, &failed)
             .continue_after_settled_round(conversation_id, &attempt, &handle, inference_request.clone(),
-                &initial_round.settled_executions, 1, 1, TimestampMillis::new(1_017)).await,
+                &initial_round.settled_executions, 1, 0, 1, TimestampMillis::new(1_017)).await,
             Err(crate::DynamicMemoryContinuationError::Inference(actual)) if actual == error));
     }
     let failed_evidence = lettuce_usage::JobUsageLedger::job_usage(&database, job_id).expect("failed evidence");
@@ -8362,7 +8362,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
         };
         let result = crate::DynamicMemoryContinuationCoordinator::new(&database, &invalid)
             .continue_after_settled_round(conversation_id, &attempt, &handle, inference_request.clone(),
-                &initial_round.settled_executions, 1, 1, TimestampMillis::new(1_017)).await;
+                &initial_round.settled_executions, 1, 0, 1, TimestampMillis::new(1_017)).await;
         assert!(matches!(result, Err(crate::DynamicMemoryContinuationError::Cancelled | crate::DynamicMemoryContinuationError::ProviderFailed)));
         assert!(lettuce_usage::JobUsageLedger::job_usage(&database, job_id).expect("invalid response evidence").iter().any(|event| event.result.as_ref() == Some(&expected)));
     }
@@ -8376,6 +8376,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
             initial_round.settled_executions,
             vec![initial_outcome],
             1,
+            0,
             1,
             TimestampMillis::new(1_018),
             |executions, handle, at| {
@@ -8492,6 +8493,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
                     summary: Some("memory updated".into()),
                 },
                 outcomes: result.outcomes.clone(),
+                usage: crate::aggregate_inference_usage(&result.outcomes).expect("usage"),
             },
             context.clone(),
         )

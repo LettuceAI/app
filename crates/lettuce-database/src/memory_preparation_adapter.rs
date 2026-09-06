@@ -31,6 +31,7 @@ fn verify_durable_identity(
     transaction: &Transaction<'_>,
     plan: &DynamicMemoryPreparationPlan,
     require_running: bool,
+    require_current_memory_revision: bool,
 ) -> Result<(), DynamicMemoryPreparationPlanError> {
     let attempt_job = transaction
         .query_row(
@@ -57,10 +58,12 @@ fn verify_durable_identity(
         )
         .optional()
         .map_err(storage)?;
-    if memory_revision
+    let memory_revision = memory_revision
         .and_then(|value| u64::try_from(value).ok())
         .map(Revision::new)
-        != Some(plan.expected_memory_revision)
+        .ok_or(DynamicMemoryPreparationPlanError::Conflict)?;
+    if (require_current_memory_revision && memory_revision != plan.expected_memory_revision)
+        || (!require_current_memory_revision && memory_revision < plan.expected_memory_revision)
     {
         return Err(DynamicMemoryPreparationPlanError::Conflict);
     }
@@ -160,6 +163,7 @@ fn hydrate_verified(
     turn_id: GenerationTurnId,
     attempt_id: GenerationAttemptId,
     first_execution_ordinal: Option<u16>,
+    require_current_memory_revision: bool,
 ) -> Result<Option<DynamicMemoryPreparationPlan>, DynamicMemoryPreparationPlanError> {
     let row = transaction
         .query_row(
@@ -209,7 +213,7 @@ fn hydrate_verified(
     {
         return Err(DynamicMemoryPreparationPlanError::Storage);
     }
-    verify_durable_identity(transaction, &plan, false)?;
+    verify_durable_identity(transaction, &plan, false, require_current_memory_revision)?;
     Ok(Some(plan))
 }
 
@@ -338,6 +342,7 @@ impl DynamicMemoryPreparationRepository for Database {
                 plan.turn_id,
                 plan.attempt_id,
                 Some(plan.first_execution_ordinal),
+                true,
             )?
             .ok_or(DynamicMemoryPreparationPlanError::Storage)?;
             if stored == plan {
@@ -346,7 +351,7 @@ impl DynamicMemoryPreparationRepository for Database {
             }
             return Err(DynamicMemoryPreparationPlanError::Conflict);
         }
-        verify_durable_identity(&transaction, &plan, true)?;
+        verify_durable_identity(&transaction, &plan, true, true)?;
         insert_plan_in(&transaction, &plan)?;
         transaction.commit().map_err(storage)?;
         Ok(plan)
@@ -362,9 +367,67 @@ impl DynamicMemoryPreparationRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(storage)?;
-        let plan = hydrate_verified(&transaction, conversation_id, turn_id, attempt_id, None)?;
+        let plan = hydrate_verified(
+            &transaction,
+            conversation_id,
+            turn_id,
+            attempt_id,
+            None,
+            true,
+        )?;
         transaction.commit().map_err(storage)?;
         Ok(plan)
+    }
+
+    fn list_preparation_plans(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+    ) -> Result<Vec<DynamicMemoryPreparationPlan>, DynamicMemoryPreparationPlanError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
+        let ordinals = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT first_execution_ordinal
+                       FROM dynamic_memory_preparation_plans
+                      WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3
+                      ORDER BY first_execution_ordinal",
+                )
+                .map_err(storage)?;
+            statement
+                .query_map(
+                    params![
+                        conversation_id.to_string(),
+                        turn_id.to_string(),
+                        attempt_id.to_string()
+                    ],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(storage)?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(storage)?
+        };
+        let plans = ordinals
+            .into_iter()
+            .map(|ordinal| {
+                let ordinal = u16::try_from(ordinal).map_err(storage)?;
+                hydrate_verified(
+                    &transaction,
+                    conversation_id,
+                    turn_id,
+                    attempt_id,
+                    Some(ordinal),
+                    false,
+                )?
+                .ok_or(DynamicMemoryPreparationPlanError::Storage)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        transaction.commit().map_err(storage)?;
+        Ok(plans)
     }
 
     fn recover_preparation_into_child(
@@ -386,6 +449,7 @@ impl DynamicMemoryPreparationRepository for Database {
             turn_id,
             parent_attempt_id,
             None,
+            true,
         )?
         .ok_or(DynamicMemoryPreparationPlanError::Conflict)?;
         let child_identity = transaction
@@ -444,6 +508,7 @@ impl DynamicMemoryPreparationRepository for Database {
                 turn_id,
                 child_attempt_id,
                 Some(0),
+                true,
             )?
             .ok_or(DynamicMemoryPreparationPlanError::Conflict)?;
             let expected = remap_plan(
@@ -528,7 +593,7 @@ impl DynamicMemoryPreparationRepository for Database {
                 .map(|execution| execution.id)
                 .collect::<Vec<_>>(),
         )?;
-        verify_durable_identity(&transaction, &plan, true)?;
+        verify_durable_identity(&transaction, &plan, true, true)?;
         insert_plan_in(&transaction, &plan)?;
         transaction.commit().map_err(storage)?;
         Ok(DynamicMemoryRecoveredChild {
@@ -914,7 +979,7 @@ mod tests {
                 .database
                 .get_preparation_plan(second.conversation_id, second.turn_id, second.attempt_id,)
                 .expect("latest plan"),
-            Some(second)
+            Some(second.clone())
         );
         let count = fixture
             .database
@@ -927,6 +992,17 @@ mod tests {
             )
             .expect("plan count");
         assert_eq!(count, 2);
+        assert_eq!(
+            fixture
+                .database
+                .list_preparation_plans(
+                    fixture.plan.conversation_id,
+                    fixture.plan.turn_id,
+                    fixture.plan.attempt_id,
+                )
+                .expect("ordered plans"),
+            vec![fixture.plan, second]
+        );
     }
 
     #[test]

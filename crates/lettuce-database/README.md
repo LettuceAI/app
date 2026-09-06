@@ -163,6 +163,10 @@ adapter verifies the attached job, exact ordered durable round slice and create
 arguments, and unchanged memory revision. Multiple rounds in one attempt retain
 separate evidence; an exact insert retry returns its stored plan, while changed
 bytes or mutable dependencies conflict before recovery can restart the handler.
+Ordered history reads verify every plan digest, relational identity and exact
+execution slice. Settled older plans may name an earlier memory revision, so
+history accepts only revisions at or behind the current root while the latest
+active-plan read continues to require exact equality.
 Interrupted recovery validates the existing conversation child-attempt link and
 attached child job, then clones the exact parent call payloads under new child
 execution IDs, advances them to running, remaps create preparations, and inserts

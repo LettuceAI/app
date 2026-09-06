@@ -43,6 +43,7 @@ pub struct DynamicMemoryContinuationLoopResult {
     /// Every provider response in request order. Kept intact so the later
     /// usage/finalization boundary can aggregate without inventing counters.
     pub outcomes: Vec<InferenceOutcome>,
+    pub(crate) usage: lettuce_conversations::UsageCounters,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,14 +99,13 @@ impl<'a, R: ConversationRepository + ?Sized, U: UsagePort + ?Sized>
                 DynamicMemoryContinuationTerminal::Complete { .. }
             ),
         )?;
-        let usage = aggregate_inference_usage(&result.outcomes)?;
         let usage_event_id = self
             .usage
             .record(UsageRecord {
                 turn_id: attempt.turn_id,
                 attempt_id: attempt.id,
                 outcome: UsageOutcome::Succeeded,
-                usage,
+                usage: result.usage,
                 model_profile_id: Some(profile.chat_profile.model_profile_id),
                 model_revision: Some(profile.chat_profile.model_revision),
                 provider_account_id: Some(profile.chat_profile.provider_account_id),
@@ -212,6 +212,7 @@ impl<
         mut request: InferenceRequest,
         settled_round: &[ToolExecution],
         completed_rounds: u8,
+        prior_attempt_tool_calls: u16,
         total_tool_calls: u16,
         at: TimestampMillis,
     ) -> Result<DynamicMemoryContinuationResult, DynamicMemoryContinuationError> {
@@ -221,13 +222,14 @@ impl<
             handle,
             &request,
             completed_rounds,
+            prior_attempt_tool_calls,
             total_tool_calls,
             settled_round,
         )?;
         let durable =
             self.repository
                 .list_tool_executions(conversation_id, attempt.turn_id, attempt.id)?;
-        if durable.len() != usize::from(total_tool_calls)
+        if durable.len() + usize::from(prior_attempt_tool_calls) != usize::from(total_tool_calls)
             || durable.len() < settled_round.len()
             || durable[..durable.len() - settled_round.len()]
                 .iter()
@@ -358,6 +360,7 @@ impl<
         initial_settled_round: Vec<ToolExecution>,
         mut outcomes: Vec<InferenceOutcome>,
         mut completed_rounds: u8,
+        prior_attempt_tool_calls: u16,
         mut total_tool_calls: u16,
         at: TimestampMillis,
         mut execute_round: F,
@@ -382,22 +385,27 @@ impl<
                     request,
                     &settled_round,
                     completed_rounds,
+                    prior_attempt_tool_calls,
                     total_tool_calls,
                     at,
                 )
                 .await?
             {
                 DynamicMemoryContinuationResult::Done { summary } => {
+                    let usage = aggregate_inference_usage(&outcomes)?;
                     return Ok(DynamicMemoryContinuationLoopResult {
                         terminal: DynamicMemoryContinuationTerminal::Done { summary },
                         outcomes,
+                        usage,
                     });
                 }
                 DynamicMemoryContinuationResult::Complete { candidate, outcome } => {
                     outcomes.push(outcome);
+                    let usage = aggregate_inference_usage(&outcomes)?;
                     return Ok(DynamicMemoryContinuationLoopResult {
                         terminal: DynamicMemoryContinuationTerminal::Complete { candidate },
                         outcomes,
+                        usage,
                     });
                 }
                 DynamicMemoryContinuationResult::NextRound {
@@ -493,7 +501,18 @@ fn validate_admitted_round<R: ToolExecutionRepository + ?Sized>(
 pub fn aggregate_inference_usage(
     outcomes: &[InferenceOutcome],
 ) -> Result<lettuce_conversations::UsageCounters, DynamicMemoryContinuationError> {
-    if outcomes.is_empty() {
+    aggregate_usage(
+        &outcomes
+            .iter()
+            .map(|outcome| outcome.usage.clone())
+            .collect::<Vec<_>>(),
+    )
+}
+
+pub(crate) fn aggregate_usage(
+    usages: &[Option<lettuce_conversations::InferenceUsage>],
+) -> Result<lettuce_conversations::UsageCounters, DynamicMemoryContinuationError> {
+    if usages.is_empty() {
         return Ok(lettuce_conversations::UsageCounters::Unavailable(
             lettuce_conversations::UsageUnavailableReason::NotAdmitted,
         ));
@@ -505,8 +524,8 @@ pub fn aggregate_inference_usage(
     let mut cache_write_tokens = Some(0u64);
     let mut web_search_requests = Some(0u64);
     let mut provider_reported_cost = lettuce_conversations::ProviderReportedCost::new(0.0);
-    for outcome in outcomes {
-        let Some(usage) = &outcome.usage else {
+    for usage in usages {
+        let Some(usage) = usage else {
             return Ok(lettuce_conversations::UsageCounters::Unavailable(
                 lettuce_conversations::UsageUnavailableReason::ProviderOmitted,
             ));
@@ -576,6 +595,7 @@ fn validate_ownership(
     handle: &JobHandle,
     request: &InferenceRequest,
     completed_rounds: u8,
+    prior_attempt_tool_calls: u16,
     total_tool_calls: u16,
     settled_round: &[ToolExecution],
 ) -> Result<(), DynamicMemoryContinuationError> {
@@ -589,6 +609,7 @@ fn validate_ownership(
         || completed_rounds > MAX_DYNAMIC_MEMORY_TOOL_ROUNDS
         || total_tool_calls == 0
         || total_tool_calls > MAX_DYNAMIC_MEMORY_TOOL_CALLS
+        || prior_attempt_tool_calls >= total_tool_calls
         || usize::from(total_tool_calls) < settled_round.len()
     {
         return Err(DynamicMemoryContinuationError::InvalidOwnership);

@@ -654,12 +654,17 @@ onto the job store: success, cancellation through the two-phase turn cancel,
 failure through `fail_generation`, and a pending dispatch through interrupt and
 recover into a child attempt with its own job (linked as a child of the parent).
 Non-success settlement records a real usage event for the attempt from the
-dispatch evidence (known counters when a response was retained, otherwise an
-unavailable reason) so no attempt ever references a fabricated usage id.
+complete ordered dispatch evidence (known counters only when every admitted
+response reported them, otherwise an unavailable reason) so no attempt ever
+references a fabricated usage id or sums the aggregate event as another charge.
 A recovered child on an already prepared turn moves straight to Running and
-never re-prepares. Attempts that already hold durable tool executions are not
-resumed or recovered: they fail with `RecoveryUnavailable` so memory writes are
-never applied twice; resuming settled rounds is a later slice. Turn-side
+never re-prepares. A re-claimed attempt classifies its durable tool tail, reads
+all immutable per-round plans, rebuilds the request with every succeeded round,
+and continues after the last result without applying those memory changes
+again. Validated tails execute normally; running tails settle from their stored
+plan. An interrupted parent's active planned tail is atomically cloned and
+settled in its immediate child before continuation. Rejected, mixed, missing-plan
+or otherwise unverified states still fail with `RecoveryUnavailable`. Turn-side
 settlement errors schedule a job retry instead of leaving the claim running.
 Context assembly, profile resolution, automatic scheduling, streaming progress
 checkpoints (the runner assumes it is the only checkpoint writer for its

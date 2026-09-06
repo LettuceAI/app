@@ -52,6 +52,8 @@ and duplicate threshold, ordered execution IDs, and every create seed, exact sou
 source/dimensions, and qualified semantic evidence. Exact retries are
 idempotent per provider round; changed identity conflicts so interrupted
 recovery cannot silently recompute evidence against a different snapshot.
+The repository also returns every plan in execution order so restart logic can
+rebuild all already-settled provider context before it resumes the latest tail.
 The same port exposes one atomic interrupted-parent to immediate-child recovery
 operation. It returns newly identified running child executions plus their
 remapped immutable plan, while preserving exact call arguments and prepared

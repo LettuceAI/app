@@ -455,6 +455,13 @@ pub trait DynamicMemoryPreparationRepository: Send + Sync {
         attempt_id: GenerationAttemptId,
     ) -> Result<Option<DynamicMemoryPreparationPlan>, DynamicMemoryPreparationPlanError>;
 
+    fn list_preparation_plans(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+    ) -> Result<Vec<DynamicMemoryPreparationPlan>, DynamicMemoryPreparationPlanError>;
+
     /// Atomically clones an interrupted parent's exact tool calls and
     /// preparation into its already-running immediate recovery child.
     fn recover_preparation_into_child(
