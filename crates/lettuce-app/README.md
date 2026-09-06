@@ -630,6 +630,9 @@ tool admission and terminal aggregation stay with their existing coordinators.
 `PrepareGeneration` records the resolved model and prompt/lorebook/memory
 attributions atomically before moving a preparing turn to ContextPrepared.
 The existing speaker-resolution mutation continues to own group speaker choice.
+Preparation also accepts the explicit director target or original regeneration
+author without requiring a new selection decision; mentions remain explicit
+decisions rather than automatic selector requests.
 Exact operation replay preserves the stored preparation; changed input conflicts.
 Recovery can reuse matching preparation under the child's attached job, while
 changing the prepared model or attributions requires a new turn. Full automated

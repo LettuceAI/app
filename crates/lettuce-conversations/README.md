@@ -4,7 +4,10 @@ Generation preparation uses `PrepareGeneration` through the existing repository
 and manager. It binds the resolved model and context attributions to the turn,
 checks attached attempt/job ownership and revisions, and advances ContextPrepared
 atomically. Operation replay is idempotent; different preparation conflicts.
-Existing group speaker resolution remains separate. Preparation stores provenance,
+Existing group speaker resolution remains separate. Explicit director targets and
+original regeneration authors can prepare without another selection step; mention
+decisions need no automatic selection. The database verifies attached model
+artifact provenance. Preparation stores provenance,
 not the full provider request or resolved generation parameters.
 
 InferenceUsage retains optional provider-reported cost with a validated finite,

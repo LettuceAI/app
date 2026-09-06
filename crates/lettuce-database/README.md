@@ -7,6 +7,22 @@ attribution insert rolls back the entire preparation. Exact replay verifies the
 stored values, and recovery may reuse matching preparation under a child attempt.
 The original conversation migration includes the preparation operation kind.
 
+Preparation verifies the model artifact's stored reference, digest, and attachment
+to the conversation using the existing snapshot verifier. Missing, foreign, or
+forged artifacts cannot become turn provenance. Group preparation reuses the
+candidate-author resolver: an explicit director target, a persisted mention or
+automatic decision, or the original regeneration author supplies the identity.
+It does not require an automatic selector or a SelectingSpeaker checkpoint.
+Unresolved multi-character turns fail before preparation writes.
+
+A file-backed lifecycle scenario covers direct, automatic group, explicit mention,
+and director continuation preparation; ordered prompt/lorebook entry attribution;
+reopen; interruption and child-job reuse; changed child rejection without writes;
+and child finalization. Group regeneration also prepares and finalizes without
+reselecting the original author. Historical attribution revisions are retained
+without consulting current authored entries. This is repository recovery coverage,
+not host scheduling or response checkpoint replay.
+
 Optional cached-input and reasoning token evidence survives usage ledger,
 creation inference-round, dynamic-memory inference-round and summary-checkpoint
 round trips. Original migrations 9/10/11 store nullable nonnegative counters.

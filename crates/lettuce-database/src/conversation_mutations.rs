@@ -2504,11 +2504,23 @@ impl ConversationRepository for Database {
                 if !matches!(
                     prior.status,
                     GenerationTurnStatus::Preparing | GenerationTurnStatus::SelectingSpeaker
-                ) || (prior.status == GenerationTurnStatus::SelectingSpeaker
-                    && prior.selected_speaker.is_none())
-                {
+                ) {
                     return Err(ConversationRepositoryError::Conflict);
                 }
+                if is_group(transaction, context.conversation_id)? {
+                    if prior.selected_speaker.is_none()
+                        && prior.forced_speaker.is_none()
+                        && !matches!(prior.target, GenerationTarget::ExistingCandidate { .. })
+                    {
+                        return Err(ConversationRepositoryError::Conflict);
+                    }
+                    resolve_candidate_author(transaction, context.conversation_id, &prior)?;
+                }
+                verify_settings_snapshot(
+                    transaction,
+                    context.conversation_id,
+                    &command.model.snapshot_ref,
+                )?;
                 if prior.resolved_model.is_some() {
                     if prior.resolved_model.as_ref() != Some(&command.model)
                         || prior.prompt != command.attributions.prompt
@@ -4720,7 +4732,12 @@ mod tests {
     }
 
     fn group_fixture() -> Fixture {
-        let database = std::rc::Rc::new(Database::open_in_memory().expect("database"));
+        group_fixture_on(std::rc::Rc::new(
+            Database::open_in_memory().expect("database"),
+        ))
+    }
+
+    fn group_fixture_on(database: std::rc::Rc<Database>) -> Fixture {
         let conversation_id = ConversationId::new();
         let group_id = GroupId::new();
         let first_character = CharacterId::new();
@@ -6037,6 +6054,465 @@ mod tests {
             ),
             Err(invalid("generation_turn.direct_speaker"))
         );
+    }
+
+    #[test]
+    fn preparation_attribution_and_recovery_survive_reopen() {
+        for mode in ["direct", "automatic", "mention", "director"] {
+            let group = mode != "direct";
+            let path = std::env::temp_dir()
+                .join(format!("lettuce-preparation-{}.db", ConversationId::new()));
+            let database = std::rc::Rc::new(Database::open(&path).expect("file database"));
+            let mut fixture = if group {
+                group_fixture_on(database)
+            } else {
+                direct_fixture_on(database)
+            };
+            let sent = fixture
+                .database
+                .begin_send(
+                    &send_command(&fixture, "prepare-send", "cd", text("hello")),
+                    TimestampMillis::new(11),
+                )
+                .expect("send")
+                .value;
+            let sent = if mode == "director" {
+                settle_cancelled(&fixture, &sent.turn, 12);
+                fixture
+                    .database
+                    .begin_continue(
+                        &ContinueConversation {
+                            conversation_id: fixture.conversation_id,
+                            branch_id: fixture.branch_id,
+                            expected_revision: conversation_revision(&fixture),
+                            operation: token("prepare-director", "cd"),
+                            forced_speaker: Some(*fixture.characters.last().expect("speaker")),
+                            swap_roles: false,
+                        },
+                        TimestampMillis::new(15),
+                    )
+                    .expect("director continuation")
+                    .value
+            } else {
+                sent
+            };
+            let turn_id = sent.turn.id;
+            let parent_id = sent.attempt.id;
+            let parent_job = JobId::new();
+            fixture
+                .database
+                .attach_attempt_job(
+                    &AttachAttemptJob {
+                        conversation_id: fixture.conversation_id,
+                        turn_id,
+                        attempt_id: parent_id,
+                        expected_revision: conversation_revision(&fixture),
+                        expected_turn_revision: sent.turn.revision,
+                        operation: token("prepare-attach", "cd"),
+                        job_id: parent_job,
+                    },
+                    TimestampMillis::new(21),
+                )
+                .expect("attach parent");
+            drive(
+                &fixture,
+                turn_id,
+                parent_id,
+                &[GenerationTurnStatus::Preparing],
+                "prepare-stage",
+                22,
+            );
+            let model = staged_model(&fixture.database);
+            let prompt_id = lettuce_types::PromptDocumentId::new();
+            let books = [
+                lettuce_types::LorebookId::new(),
+                lettuce_types::LorebookId::new(),
+            ];
+            {
+                let connection = fixture.database.connection().expect("connection");
+                connection.execute("INSERT INTO prompt_documents (id, status, name, purpose, condense, behavior_version, provenance_kind, provenance_json, revision, created_at, updated_at) VALUES (?1, 'active', 'Prompt', 'direct_chat', 0, 'deterministic_v2', 'user', '{}', 1, 0, 0)", [prompt_id.to_string()]).expect("prompt");
+                for book in books {
+                    connection.execute("INSERT INTO lorebooks (id, status, name, detection_policy, behavior_version, revision, created_at, updated_at) VALUES (?1, 'active', 'Lorebook', 'latest_user_message', 'deterministic_v2', 1, 0, 0)", [book.to_string()]).expect("lorebook");
+                }
+            }
+            let mut command = PrepareGeneration {
+                conversation_id: fixture.conversation_id,
+                turn_id,
+                attempt_id: parent_id,
+                job_id: parent_job,
+                expected_revision: conversation_revision(&fixture),
+                expected_turn_revision: turn_revision(&fixture, turn_id),
+                operation: token("prepare-parent", "cd"),
+                model: model.clone(),
+                attributions: lettuce_conversations::ContextAttributions {
+                    prompt: Some(lettuce_conversations::PromptAttribution {
+                        document_id: prompt_id,
+                        revision: Revision::new(3),
+                        selected_entry_ids: vec![
+                            lettuce_types::PromptEntryId::new(),
+                            lettuce_types::PromptEntryId::new(),
+                        ],
+                    }),
+                    lorebooks: books
+                        .into_iter()
+                        .map(|lorebook_id| lettuce_conversations::LorebookAttribution {
+                            lorebook_id,
+                            revision: Revision::new(2),
+                            activated_entry_ids: vec![
+                                lettuce_types::LorebookEntryId::new(),
+                                lettuce_types::LorebookEntryId::new(),
+                            ],
+                        })
+                        .collect(),
+                    memory: Some(lettuce_conversations::MemoryAttribution {
+                        revision_id: lettuce_types::MemoryRevisionId::new(),
+                    }),
+                },
+            };
+            if group && mode != "director" {
+                assert_eq!(
+                    fixture
+                        .database
+                        .prepare_generation(&command, TimestampMillis::new(25)),
+                    Err(ConversationRepositoryError::Conflict)
+                );
+                drive(
+                    &fixture,
+                    turn_id,
+                    parent_id,
+                    &[GenerationTurnStatus::SelectingSpeaker],
+                    "prepare-select",
+                    26,
+                );
+                command.expected_turn_revision = turn_revision(&fixture, turn_id);
+                assert_eq!(
+                    fixture
+                        .database
+                        .prepare_generation(&command, TimestampMillis::new(30)),
+                    Err(ConversationRepositoryError::Conflict)
+                );
+                fixture
+                    .database
+                    .resolve_group_speaker(
+                        &resolve_speaker_command(
+                            &fixture,
+                            turn_id,
+                            command.expected_turn_revision,
+                            *fixture.characters.last().expect("speaker"),
+                            if mode == "mention" {
+                                SpeakerDecisionMethod::Explicit
+                            } else {
+                                SpeakerDecisionMethod::Heuristic
+                            },
+                            "prepare-speaker",
+                        ),
+                        TimestampMillis::new(31),
+                    )
+                    .expect("select second speaker");
+                command.expected_turn_revision = turn_revision(&fixture, turn_id);
+            }
+            let before =
+                ConversationReader::get_turn(fixture.database.as_ref(), turn_id).expect("before");
+            assert!(matches!(
+                fixture
+                    .database
+                    .prepare_generation(&command, TimestampMillis::new(35)),
+                Err(ConversationRepositoryError::ArtifactReference(_))
+            ));
+            assert_eq!(
+                ConversationReader::get_turn(fixture.database.as_ref(), turn_id)
+                    .expect("unchanged"),
+                before
+            );
+            fixture.database.connection().expect("connection").execute(
+                "INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                params![fixture.conversation_id.to_string(), model.snapshot_ref.artifact_id.to_string()],
+            ).expect("attach model provenance");
+            let mut forged = command.clone();
+            forged.model.snapshot_ref.digest = ContentHash::parse("ef".repeat(32)).expect("digest");
+            assert!(matches!(
+                fixture
+                    .database
+                    .prepare_generation(&forged, TimestampMillis::new(35)),
+                Err(ConversationRepositoryError::ArtifactReference(_))
+            ));
+            let prepared = fixture
+                .database
+                .prepare_generation(&command, TimestampMillis::new(36))
+                .expect("prepare")
+                .value;
+            assert_eq!(prepared.status, GenerationTurnStatus::ContextPrepared);
+            assert_eq!(prepared.prompt, command.attributions.prompt);
+            assert_eq!(prepared.lorebooks, command.attributions.lorebooks);
+            assert_eq!(prepared.memory, command.attributions.memory);
+            assert_eq!(prepared.resolved_model, Some(model.clone()));
+            assert_eq!(prepared.selected_speaker, before.selected_speaker);
+            fixture.database = std::rc::Rc::new(Database::open_in_memory().expect("release file"));
+            fixture.database = std::rc::Rc::new(Database::open(&path).expect("reopen prepared"));
+            assert_eq!(
+                ConversationReader::get_turn(fixture.database.as_ref(), turn_id)
+                    .expect("restored preparation"),
+                prepared
+            );
+            assert_eq!(
+                fixture
+                    .database
+                    .prepare_generation(&command, TimestampMillis::new(40))
+                    .expect("parent replay")
+                    .value,
+                prepared
+            );
+            let running_revision = drive(
+                &fixture,
+                turn_id,
+                parent_id,
+                &[GenerationTurnStatus::Running],
+                "prepare-running",
+                41,
+            );
+            let interrupted = fixture
+                .database
+                .interrupt_generation(
+                    turn_id,
+                    parent_id,
+                    conversation_revision(&fixture),
+                    running_revision,
+                    &token("prepare-interrupt", "cd"),
+                    UsageEventId::new(),
+                    TimestampMillis::new(50),
+                )
+                .expect("interrupt")
+                .value;
+            let recovery = fixture
+                .database
+                .recover_generation(
+                    turn_id,
+                    parent_id,
+                    conversation_revision(&fixture),
+                    interrupted.revision,
+                    &token("prepare-recover", "cd"),
+                    TimestampMillis::new(51),
+                )
+                .expect("recover")
+                .value;
+            let child_id = recovery.attempt.id;
+            let child_job = JobId::new();
+            fixture
+                .database
+                .attach_attempt_job(
+                    &AttachAttemptJob {
+                        conversation_id: fixture.conversation_id,
+                        turn_id,
+                        attempt_id: child_id,
+                        expected_revision: conversation_revision(&fixture),
+                        expected_turn_revision: recovery.turn.revision,
+                        operation: token("prepare-child-attach", "cd"),
+                        job_id: child_job,
+                    },
+                    TimestampMillis::new(52),
+                )
+                .expect("attach child");
+            drive(
+                &fixture,
+                turn_id,
+                child_id,
+                &[GenerationTurnStatus::Preparing],
+                "prepare-child-stage",
+                53,
+            );
+            let child_command = PrepareGeneration {
+                attempt_id: child_id,
+                job_id: child_job,
+                expected_revision: conversation_revision(&fixture),
+                expected_turn_revision: turn_revision(&fixture, turn_id),
+                operation: token("prepare-child", "cd"),
+                ..command.clone()
+            };
+            let before_child = ConversationReader::get_turn(fixture.database.as_ref(), turn_id)
+                .expect("child before preparation");
+            for change in 0..6 {
+                let mut changed = child_command.clone();
+                match change {
+                    0 => changed.model.external_model_id = "another-model".into(),
+                    1 => changed
+                        .attributions
+                        .prompt
+                        .as_mut()
+                        .expect("prompt")
+                        .selected_entry_ids
+                        .reverse(),
+                    2 => changed.attributions.lorebooks.reverse(),
+                    3 => changed.attributions.lorebooks[0]
+                        .activated_entry_ids
+                        .reverse(),
+                    4 => changed.attributions.memory = None,
+                    _ => changed.job_id = parent_job,
+                }
+                assert_eq!(
+                    fixture
+                        .database
+                        .prepare_generation(&changed, TimestampMillis::new(56)),
+                    Err(ConversationRepositoryError::Conflict)
+                );
+                assert_eq!(
+                    ConversationReader::get_turn(fixture.database.as_ref(), turn_id)
+                        .expect("child unchanged"),
+                    before_child
+                );
+            }
+            let child_prepared = fixture
+                .database
+                .prepare_generation(&child_command, TimestampMillis::new(57))
+                .expect("reuse preparation")
+                .value;
+            assert_eq!(child_prepared.resolved_model, prepared.resolved_model);
+            assert_eq!(child_prepared.prompt, prepared.prompt);
+            assert_eq!(child_prepared.lorebooks, prepared.lorebooks);
+            assert_eq!(child_prepared.selected_speaker, prepared.selected_speaker);
+            assert_eq!(child_prepared.attempts[0], before_child.attempts[0]);
+            assert_eq!(
+                child_prepared.attempts[1].parent_attempt_id,
+                Some(parent_id)
+            );
+            fixture.database = std::rc::Rc::new(Database::open_in_memory().expect("release file"));
+            fixture.database = std::rc::Rc::new(Database::open(&path).expect("reopen child"));
+            assert_eq!(
+                fixture
+                    .database
+                    .prepare_generation(&child_command, TimestampMillis::new(60))
+                    .expect("child replay")
+                    .value,
+                child_prepared
+            );
+            let revision = drive(
+                &fixture,
+                turn_id,
+                child_id,
+                &[GenerationTurnStatus::Running],
+                "prepare-child-running",
+                61,
+            );
+            let finalized = fixture
+                .database
+                .finalize_generation(
+                    turn_id,
+                    child_id,
+                    conversation_revision(&fixture),
+                    revision,
+                    &token("prepare-finalize", "cd"),
+                    FinalizationDraft {
+                        model,
+                        ..finalization_draft(text("recovered response"), 0)
+                    },
+                    UsageEventId::new(),
+                    TimestampMillis::new(70),
+                )
+                .expect("finalize child")
+                .value;
+            assert_eq!(finalized.turn.prompt, prepared.prompt);
+            assert_eq!(finalized.turn.lorebooks, prepared.lorebooks);
+            if group {
+                assert_eq!(
+                    finalized.assistant_message.author_participant_id,
+                    Some(*fixture.characters.last().expect("speaker"))
+                );
+            }
+            if group {
+                let regenerated = fixture
+                    .database
+                    .begin_regenerate(
+                        &RegenerateCandidate {
+                            conversation_id: fixture.conversation_id,
+                            branch_id: fixture.branch_id,
+                            message_id: finalized.assistant_message.id,
+                            turn_id,
+                            expected_revision: conversation_revision(&fixture),
+                            expected_turn_revision: finalized.turn.revision,
+                            operation: token("prepare-regenerate", "cd"),
+                            active_candidate_id: finalized.candidate.id,
+                            guidance: None,
+                            model_override: None,
+                            forced_speaker: None,
+                            swap_roles: false,
+                        },
+                        TimestampMillis::new(71),
+                    )
+                    .expect("regenerate original author")
+                    .value;
+                let job_id = JobId::new();
+                fixture
+                    .database
+                    .attach_attempt_job(
+                        &AttachAttemptJob {
+                            conversation_id: fixture.conversation_id,
+                            turn_id: regenerated.turn.id,
+                            attempt_id: regenerated.attempt.id,
+                            expected_revision: conversation_revision(&fixture),
+                            expected_turn_revision: regenerated.turn.revision,
+                            operation: token("prepare-regenerate-attach", "cd"),
+                            job_id,
+                        },
+                        TimestampMillis::new(72),
+                    )
+                    .expect("attach regenerate");
+                drive(
+                    &fixture,
+                    regenerated.turn.id,
+                    regenerated.attempt.id,
+                    &[GenerationTurnStatus::Preparing],
+                    "prepare-regenerate-stage",
+                    73,
+                );
+                let regenerated_preparation = PrepareGeneration {
+                    turn_id: regenerated.turn.id,
+                    attempt_id: regenerated.attempt.id,
+                    job_id,
+                    expected_revision: conversation_revision(&fixture),
+                    expected_turn_revision: turn_revision(&fixture, regenerated.turn.id),
+                    operation: token("prepare-regenerate-context", "cd"),
+                    ..command.clone()
+                };
+                let ready = fixture
+                    .database
+                    .prepare_generation(&regenerated_preparation, TimestampMillis::new(76))
+                    .expect("prepare without reselecting original author")
+                    .value;
+                assert!(ready.selected_speaker.is_none());
+                assert!(ready.forced_speaker.is_none());
+                let revision = drive(
+                    &fixture,
+                    ready.id,
+                    regenerated.attempt.id,
+                    &[GenerationTurnStatus::Running],
+                    "prepare-regenerate-running",
+                    77,
+                );
+                let result = fixture
+                    .database
+                    .finalize_generation(
+                        ready.id,
+                        regenerated.attempt.id,
+                        conversation_revision(&fixture),
+                        revision,
+                        &token("prepare-regenerate-final", "cd"),
+                        FinalizationDraft {
+                            model: command.model.clone(),
+                            ..finalization_draft(text("regenerated response"), 1)
+                        },
+                        UsageEventId::new(),
+                        TimestampMillis::new(80),
+                    )
+                    .expect("finalize same author")
+                    .value;
+                assert_eq!(result.assistant_message.id, finalized.assistant_message.id);
+                assert_eq!(
+                    result.assistant_message.author_participant_id,
+                    Some(*fixture.characters.last().expect("speaker"))
+                );
+            }
+            drop(fixture);
+            std::fs::remove_file(&path).expect("remove test database");
+        }
     }
 
     #[test]
