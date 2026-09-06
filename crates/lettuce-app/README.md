@@ -1,5 +1,9 @@
 # lettuce-app
 
+Memory structured fallback and summary fallback preserve cache-read/reasoning
+details when both responses supply them. Missing or overflowing detail sums stay
+unknown. Input/output aggregation retains the existing fallback behavior.
+
 The sole composition root, application workflows, desktop IPC boundary, and
 optional local OpenAI-compatible host API.
 

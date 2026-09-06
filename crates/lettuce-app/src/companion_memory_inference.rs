@@ -281,6 +281,14 @@ where
     if let Some(primary_usage) = primary.as_ref().and_then(|outcome| outcome.usage.as_ref()) {
         match &mut outcome.usage {
             Some(usage) => {
+                usage.cached_input_tokens = usage
+                    .cached_input_tokens
+                    .zip(primary_usage.cached_input_tokens)
+                    .and_then(|(a, b)| a.checked_add(b));
+                usage.reasoning_tokens = usage
+                    .reasoning_tokens
+                    .zip(primary_usage.reasoning_tokens)
+                    .and_then(|(a, b)| a.checked_add(b));
                 usage.input_tokens = usage
                     .input_tokens
                     .saturating_add(primary_usage.input_tokens);
@@ -910,8 +918,8 @@ mod tests {
                 Ok(text_outcome(
                     "plain prose",
                     Some(InferenceUsage {
-                        cached_input_tokens: None,
-                        reasoning_tokens: None,
+                        cached_input_tokens: Some(0),
+                        reasoning_tokens: Some(1),
                         input_tokens: 3,
                         output_tokens: 2,
                     }),
@@ -919,8 +927,8 @@ mod tests {
                 Ok(text_outcome(
                     "<memory_ops><done summary=\"captured\" /></memory_ops>",
                     Some(InferenceUsage {
-                        cached_input_tokens: None,
-                        reasoning_tokens: None,
+                        cached_input_tokens: Some(2),
+                        reasoning_tokens: Some(3),
                         input_tokens: 5,
                         output_tokens: 4,
                     }),
@@ -944,8 +952,8 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
-                cached_input_tokens: None,
-                reasoning_tokens: None,
+                cached_input_tokens: Some(2),
+                reasoning_tokens: Some(4),
                 input_tokens: 8,
                 output_tokens: 6,
             })

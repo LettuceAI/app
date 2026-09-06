@@ -567,8 +567,14 @@ fn aggregate_usage(
 ) -> Option<lettuce_conversations::InferenceUsage> {
     match (first, second) {
         (Some(first), Some(second)) => Some(lettuce_conversations::InferenceUsage {
-            cached_input_tokens: None,
-            reasoning_tokens: None,
+            cached_input_tokens: first
+                .cached_input_tokens
+                .zip(second.cached_input_tokens)
+                .and_then(|(a, b)| a.checked_add(b)),
+            reasoning_tokens: first
+                .reasoning_tokens
+                .zip(second.reasoning_tokens)
+                .and_then(|(a, b)| a.checked_add(b)),
             input_tokens: first.input_tokens.saturating_add(second.input_tokens),
             output_tokens: first.output_tokens.saturating_add(second.output_tokens),
         }),
@@ -633,6 +639,27 @@ mod tests {
     use serde_json::json;
 
     use super::{summary_from_outcome, validate_summary_text};
+
+    #[test]
+    fn fallback_usage_preserves_known_details_without_inventing_missing_counts() {
+        let usage = |cached, reasoning| {
+            Some(lettuce_conversations::InferenceUsage {
+                input_tokens: 10,
+                output_tokens: 5,
+                cached_input_tokens: cached,
+                reasoning_tokens: reasoning,
+            })
+        };
+        let combined = super::aggregate_usage(usage(Some(0), Some(2)), usage(Some(3), Some(4)))
+            .expect("combined usage");
+        assert_eq!(combined.input_tokens, 20);
+        assert_eq!(combined.cached_input_tokens, Some(3));
+        assert_eq!(combined.reasoning_tokens, Some(6));
+        let partial = super::aggregate_usage(usage(None, Some(u64::MAX)), usage(Some(3), Some(1)))
+            .expect("partial usage");
+        assert_eq!(partial.cached_input_tokens, None);
+        assert_eq!(partial.reasoning_tokens, None);
+    }
 
     #[test]
     fn legacy_summary_validation_strips_fences_thinking_and_whitespace() {
