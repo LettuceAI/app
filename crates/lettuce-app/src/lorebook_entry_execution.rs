@@ -70,7 +70,10 @@ impl<'a, R: ?Sized, I: ?Sized> LorebookEntryExecutionCoordinator<'a, R, I> {
 
 impl<R, I> LorebookEntryExecutionCoordinator<'_, R, I>
 where
-    R: LorebookEntryRunRepository + ProviderReplayArtifactPort + ?Sized,
+    R: LorebookEntryRunRepository
+        + ProviderReplayArtifactPort
+        + lettuce_usage::JobUsageLedger
+        + ?Sized,
     I: InferencePort + ?Sized,
 {
     pub async fn run(
@@ -99,7 +102,15 @@ where
                 return Err(LorebookEntryExecutionError::Cancelled);
             }
             let request = build_request(&run, prompt, handle, stream_sink, false)?;
-            match self.inference.run(request).await {
+            match crate::job_inference_usage::run_job_inference(
+                self.repository,
+                self.inference,
+                run.job_id,
+                request,
+                now,
+            )
+            .await
+            {
                 Ok(outcome) => {
                     if handle.cancellation_token().is_cancelled()
                         || matches!(outcome.finish_reason, FinishReason::Cancelled)
@@ -114,7 +125,14 @@ where
                         .commit_lorebook_entry_attempt(request_id, checkpoint)
                         .map_err(LorebookEntryExecutionError::Run)?;
                 }
-                Err(PortError::Cancelled) => return Err(LorebookEntryExecutionError::Cancelled),
+                Err(crate::job_inference_usage::JobInferenceError::Provider(
+                    PortError::Cancelled,
+                )) => return Err(LorebookEntryExecutionError::Cancelled),
+                Err(crate::job_inference_usage::JobInferenceError::Evidence) => {
+                    return Err(LorebookEntryExecutionError::Inference(
+                        PortError::Unavailable,
+                    ));
+                }
                 Err(_) => {
                     attempts = self
                         .repository
@@ -152,7 +170,16 @@ where
             return Err(LorebookEntryExecutionError::Cancelled);
         }
         let request = build_request(&run, prompt, handle, stream_sink, true)?;
-        let outcome = self.inference.run(request).await.map_err(|error| {
+        let outcome = crate::job_inference_usage::run_job_inference(
+            self.repository,
+            self.inference,
+            run.job_id,
+            request,
+            now,
+        )
+        .await
+        .map_err(PortError::from)
+        .map_err(|error| {
             if matches!(error, PortError::Cancelled) {
                 LorebookEntryExecutionError::Cancelled
             } else {

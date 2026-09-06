@@ -106,6 +106,7 @@ impl<
                 now,
             )
             .await
+            .map_err(PortError::from)
             .map_err(|error| match error {
                 PortError::Cancelled => CompanionGrowthExecutionError::Cancelled,
                 other => CompanionGrowthExecutionError::Inference(other),

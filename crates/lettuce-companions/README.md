@@ -193,3 +193,9 @@ Delete-after rewind marks affected effects as invalidated through an immutable
 overlay. Their original processing/ready/failed evidence remains unchanged for
 audit, while invalidated processing effects no longer appear in the worker
 queue and cannot be settled later.
+
+Soul-writer model fallback stops on run persistence, dispatch evidence and replay
+cleanup failures. Only provider/content failures continue through the existing
+alternate-model policy. Admission/settlement fault injection verifies no extra
+provider call or false checkpoint; a successful later retry retains the pending
+usage record independently from completed dispatches.

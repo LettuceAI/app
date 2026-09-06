@@ -329,3 +329,19 @@ these dispatches corrects that accounting omission. Legacy single-entry primary
 and fallback requests recorded usage before checking response success; their
 new dispatch-ledger integration remains a separate follow-up. No new schema,
 worker, pricing formula or host scheduling was introduced.
+
+Lorebook entry and keyword native/fallback executions also use job dispatch
+evidence. The shared helper distinguishes evidence persistence failure from
+provider failure. Entry/keyword stop on evidence failure without writing a
+false failed-native checkpoint or dispatching a fallback; provider failures
+retain the existing fallback policy. Primary/fallback IDs and optional usage
+remain separate, and successful replay adds no dispatch. Legacy entry generation
+recorded both requests before response validation; legacy keyword generation
+omitted that recording, which this corrects.
+
+The same distinction fixes Soul-writer alternate-model fallback after evidence
+or run-persistence/replay-cleanup failure. Other companion/staged callers retain
+their existing public provider-error mapping. Fault-injection scenarios prove
+admission failure sends zero requests, settlement failure sends one, no false
+checkpoint is written, and later retry preserves the pending evidence. Existing
+entry tests also prove provider-error fallback, cancellation and replay.

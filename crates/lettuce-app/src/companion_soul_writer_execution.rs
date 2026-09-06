@@ -122,6 +122,10 @@ impl<
             Err(CompanionSoulWriterExecutionError::Cancelled) => {
                 Err(CompanionSoulWriterExecutionError::Cancelled)
             }
+            Err(
+                error @ (CompanionSoulWriterExecutionError::Run(_)
+                | CompanionSoulWriterExecutionError::ReplayCleanup),
+            ) => Err(error),
             Err(_primary_error)
                 if target == SoulWriterProfileTarget::Primary
                     && run.fallback_profile.as_ref().is_some_and(|fallback| {
@@ -174,10 +178,19 @@ impl<
             .await
             {
                 Ok(outcome) => outcome,
-                Err(PortError::Cancelled) => {
+                Err(crate::job_inference_usage::JobInferenceError::Evidence) => {
+                    return Err(CompanionSoulWriterExecutionError::Run(
+                        CompanionSoulWriterRunRepositoryError::Failure,
+                    ));
+                }
+                Err(crate::job_inference_usage::JobInferenceError::Provider(
+                    PortError::Cancelled,
+                )) => {
                     return Err(CompanionSoulWriterExecutionError::Cancelled);
                 }
-                Err(error) => return Err(CompanionSoulWriterExecutionError::Inference(error)),
+                Err(crate::job_inference_usage::JobInferenceError::Provider(error)) => {
+                    return Err(CompanionSoulWriterExecutionError::Inference(error));
+                }
             };
             if handle.cancellation_token().is_cancelled()
                 || matches!(outcome.finish_reason, FinishReason::Cancelled)
@@ -204,6 +217,14 @@ impl<
                 )
                 .await
                 .map_err(|error| {
+                    let error = match error {
+                        crate::job_inference_usage::JobInferenceError::Evidence => {
+                            return CompanionSoulWriterExecutionError::Run(
+                                CompanionSoulWriterRunRepositoryError::Failure,
+                            );
+                        }
+                        crate::job_inference_usage::JobInferenceError::Provider(error) => error,
+                    };
                     if matches!(error, PortError::Cancelled) {
                         CompanionSoulWriterExecutionError::Cancelled
                     } else {

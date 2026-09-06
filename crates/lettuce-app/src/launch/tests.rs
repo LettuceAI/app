@@ -589,6 +589,64 @@ fn lorebook_names(
     }
 }
 
+struct FailingUsageRepository<'a> {
+    database: &'a lettuce_database::Database,
+    fail_admission: bool,
+}
+
+impl lettuce_usage::JobUsageLedger for FailingUsageRepository<'_> {
+    fn admit_job_usage(&self, record: lettuce_usage::JobInferenceUsage) -> Result<(), lettuce_usage::UsageLedgerError> {
+        if self.fail_admission { return Err(lettuce_usage::UsageLedgerError::Storage); }
+        lettuce_usage::JobUsageLedger::admit_job_usage(self.database, record)
+    }
+    fn settle_job_usage(&self, _: lettuce_types::UsageEventId, _: lettuce_usage::JobInferenceUsageResult) -> Result<(), lettuce_usage::UsageLedgerError> {
+        Err(lettuce_usage::UsageLedgerError::Storage)
+    }
+    fn job_usage(&self, job: lettuce_types::JobId) -> Result<Vec<lettuce_usage::JobInferenceUsage>, lettuce_usage::UsageLedgerError> {
+        lettuce_usage::JobUsageLedger::job_usage(self.database, job)
+    }
+}
+
+impl lettuce_conversations::ProviderReplayArtifactPort for FailingUsageRepository<'_> {
+    fn stage_provider_replay(&self, draft: lettuce_conversations::ReplayArtifactDraft) -> Result<lettuce_conversations::ReplayArtifactRef, lettuce_conversations::ArtifactError> {
+        lettuce_conversations::ProviderReplayArtifactPort::stage_provider_replay(self.database, draft)
+    }
+    fn materialize_provider_replay(&self, reference: &lettuce_conversations::ReplayArtifactRef) -> Result<lettuce_conversations::ProtectedArtifactBytes, lettuce_conversations::ArtifactError> {
+        lettuce_conversations::ProviderReplayArtifactPort::materialize_provider_replay(self.database, reference)
+    }
+    fn cleanup_orphan_provider_replay(&self, id: lettuce_types::ReplayArtifactId) -> Result<(), lettuce_conversations::ArtifactError> {
+        lettuce_conversations::ProviderReplayArtifactPort::cleanup_orphan_provider_replay(self.database, id)
+    }
+}
+
+impl lettuce_creation::LorebookEntryRunRepository for FailingUsageRepository<'_> {
+    fn admit_lorebook_entry_run(&self, run: lettuce_creation::LorebookEntryGenerationRun) -> Result<lettuce_creation::LorebookEntryGenerationRun, lettuce_creation::LorebookEntryRunRepositoryError> {
+        lettuce_creation::LorebookEntryRunRepository::admit_lorebook_entry_run(self.database, run)
+    }
+    fn load_lorebook_entry_run(&self, id: RequestId) -> Result<lettuce_creation::LorebookEntryGenerationRun, lettuce_creation::LorebookEntryRunRepositoryError> {
+        lettuce_creation::LorebookEntryRunRepository::load_lorebook_entry_run(self.database, id)
+    }
+    fn load_lorebook_entry_attempts(&self, id: RequestId) -> Result<Vec<lettuce_creation::LorebookEntryAttemptCheckpoint>, lettuce_creation::LorebookEntryRunRepositoryError> {
+        lettuce_creation::LorebookEntryRunRepository::load_lorebook_entry_attempts(self.database, id)
+    }
+    fn commit_lorebook_entry_attempt(&self, id: RequestId, checkpoint: lettuce_creation::LorebookEntryAttemptCheckpoint) -> Result<Vec<lettuce_creation::LorebookEntryAttemptCheckpoint>, lettuce_creation::LorebookEntryRunRepositoryError> {
+        lettuce_creation::LorebookEntryRunRepository::commit_lorebook_entry_attempt(self.database, id, checkpoint)
+    }
+}
+
+impl CompanionSoulWriterRunRepository for FailingUsageRepository<'_> {
+    fn admit_companion_soul_writer_run(&self, run: lettuce_companions::CompanionSoulWriterRun) -> Result<lettuce_companions::CompanionSoulWriterRun, lettuce_companions::CompanionSoulWriterRunRepositoryError> {
+        self.database.admit_companion_soul_writer_run(run)
+    }
+    fn load_companion_soul_writer_run(&self, id: RequestId) -> Result<lettuce_companions::CompanionSoulWriterRun, lettuce_companions::CompanionSoulWriterRunRepositoryError> {
+        self.database.load_companion_soul_writer_run(id)
+    }
+    fn commit_companion_soul_writer_round(&self, id: RequestId, checkpoint: lettuce_companions::CompanionSoulWriterRoundCheckpoint) -> Result<lettuce_companions::CompanionSoulWriterRun, lettuce_companions::CompanionSoulWriterRunRepositoryError> {
+        self.database.commit_companion_soul_writer_round(id, checkpoint)
+    }
+}
+
+
 #[test]
 fn happy_path_direct_launch_has_two_participants_and_an_empty_timeline() {
     let database = database();
@@ -1362,6 +1420,22 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 now: TimestampMillis::new(NOW.get() + 18),
             })
             .expect("admit alternate profile preview");
+    for fail_admission in [true, false] {
+        let failed_store = FailingUsageRepository { database: &database, fail_admission };
+        let failed_inference = ScriptedInference {
+            outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+                provider_response_id: Some("gen-soul-unpersisted".into()),
+                candidates: Vec::new(), usage: None,
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None, provider_request_id: None, warning_codes: Vec::new(),
+            }])), requests: Mutex::new(Vec::new()),
+        };
+        assert!(matches!(crate::CompanionSoulWriterExecutionCoordinator::new(&failed_store, &failed_inference)
+            .run(alternate_request_id, &soul_writer_prompt, &JobHandle::new(alternate_writer.job.id), None, NOW).await,
+            Err(crate::CompanionSoulWriterExecutionError::Run(lettuce_companions::CompanionSoulWriterRunRepositoryError::Failure))));
+        assert_eq!(failed_inference.requests.lock().expect("failed requests").len(), usize::from(!fail_admission));
+        assert!(database.load_companion_soul_writer_run(alternate_request_id).expect("no false checkpoint").rounds.is_empty());
+    }
     let alternate_inference = FallibleScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             Err(PortError::Unavailable),
@@ -1399,7 +1473,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .await
         .expect("execute alternate profile preview");
     let alternate_usage = database.job_usage(alternate_writer.job.id).expect("alternate usage");
-    assert_eq!(alternate_usage.len(), 2);
+    assert_eq!(alternate_usage.len(), 3);
+    assert_eq!(alternate_usage.iter().filter(|entry| entry.result.is_none()).count(), 1);
     assert!(alternate_usage.iter().any(|entry| entry.result == Some(JobInferenceUsageResult::InferenceFailed)
         && entry.model_profile_id == profile.chat_profile.model_profile_id));
     assert!(alternate_usage.iter().any(|entry| entry.result == Some(JobInferenceUsageResult::Response { usage: None, provider_response_id: None })
@@ -1505,7 +1580,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         outcomes: Mutex::new(VecDeque::from([Err(PortError::Cancelled)])),
         requests: Mutex::new(Vec::new()),
     };
-    assert!(matches!(crate::job_inference_usage::run_job_inference(&database, &cancelled_response, interrupted_writer.job.id, retry_request.clone(), NOW).await, Err(PortError::Cancelled)));
+    assert!(matches!(crate::job_inference_usage::run_job_inference(&database, &cancelled_response, interrupted_writer.job.id, retry_request.clone(), NOW).await.map_err(PortError::from), Err(PortError::Cancelled)));
     let retries = database.job_usage(interrupted_writer.job.id).expect("retry usage");
     assert_eq!(retries.len(), 4);
     assert_eq!(retries.iter().filter(|entry| entry.logical_attempt_id == retry_request.attempt_id).count(), 4);
@@ -4097,7 +4172,7 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
     let fallback_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {
-                provider_response_id: None,
+                provider_response_id: Some("gen-keyword-primary".into()),
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -4113,7 +4188,7 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
                 warning_codes: Vec::new(),
             },
             InferenceOutcome {
-                provider_response_id: None,
+                provider_response_id: Some("gen-keyword-fallback".into()),
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -4153,6 +4228,17 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
         )
         .await
         .expect("execute fallback keywords");
+    use lettuce_usage::{JobUsageLedger, JobInferenceUsageResult};
+    let evidence = database.job_usage(fallback_admitted.job.id).expect("keyword dispatch evidence");
+    assert_eq!(evidence.len(), 2);
+    for id in ["gen-keyword-primary", "gen-keyword-fallback"] {
+        assert!(evidence.iter().any(|event| matches!(&event.result,
+            Some(JobInferenceUsageResult::Response { provider_response_id: Some(value), .. }) if value == id)));
+    }
+    let replay = crate::LorebookKeywordExecutionCoordinator::new(&database, &fallback_inference)
+        .run(fallback_request_id, &prompt, &fallback_work.handle, None, TimestampMillis::new(NOW.get() + 10)).await.expect("fallback checkpoint replay");
+    assert!(replay.replayed);
+    assert_eq!(database.job_usage(fallback_admitted.job.id).expect("replayed evidence"), evidence);
     assert_eq!(fallback.result.keywords, ["Ada", "Harbour Key"]);
     assert_eq!(fallback.attempts, 2);
     assert_eq!(
@@ -7253,10 +7339,26 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
     let fallback_admitted = coordinator
         .prepare_and_admit(make_request(fallback_request_id, vec![selected_message_id]))
         .expect("admit fallback run");
+    for fail_admission in [true, false] {
+        let failed_store = FailingUsageRepository { database: &database, fail_admission };
+        let failed_inference = ScriptedInference {
+            outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
+                provider_response_id: Some("gen-unpersisted".into()),
+                candidates: Vec::new(), usage: None,
+                finish_reason: lettuce_conversations::FinishReason::Stop,
+                provider_finish_reason: None, provider_request_id: None, warning_codes: Vec::new(),
+            }])), requests: Mutex::new(Vec::new()),
+        };
+        assert!(matches!(crate::LorebookEntryExecutionCoordinator::new(&failed_store, &failed_inference)
+            .run(fallback_request_id, &prompt, &JobHandle::new(fallback_admitted.job.id), None, NOW).await,
+            Err(crate::LorebookEntryExecutionError::Inference(PortError::Unavailable))));
+        assert_eq!(failed_inference.requests.lock().expect("failed requests").len(), usize::from(!fail_admission));
+        assert!(lettuce_creation::LorebookEntryRunRepository::load_lorebook_entry_attempts(&database, fallback_request_id).expect("no false native checkpoint").is_empty());
+    }
     let fallback_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {
-                provider_response_id: None,
+                provider_response_id: Some("gen-entry-primary".into()),
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -7272,7 +7374,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                 warning_codes: Vec::new(),
             },
             InferenceOutcome {
-                provider_response_id: None,
+                provider_response_id: Some("gen-entry-fallback".into()),
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -7309,6 +7411,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
         ])),
         requests: Mutex::new(Vec::new()),
     };
+    let valid_fallback = fallback_inference.outcomes.lock().expect("fallback fixture").back().expect("fallback response").clone();
     let fallback_work = dispatcher
         .claim(
             fallback_admitted.run.request_id,
@@ -7332,6 +7435,17 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
         )
         .await
         .expect("execute structured fallback");
+    use lettuce_usage::{JobUsageLedger, JobInferenceUsageResult};
+    let evidence = database.job_usage(fallback_admitted.job.id).expect("entry dispatch evidence");
+    assert_eq!(evidence.len(), 3);
+    for id in ["gen-entry-primary", "gen-entry-fallback"] {
+        assert!(evidence.iter().any(|event| matches!(&event.result,
+            Some(JobInferenceUsageResult::Response { provider_response_id: Some(value), .. }) if value == id)));
+    }
+    let replay = crate::LorebookEntryExecutionCoordinator::new(&database, &fallback_inference)
+        .run(fallback_request_id, &prompt, &fallback_handle, None, TimestampMillis::new(NOW.get() + 10)).await.expect("fallback checkpoint replay");
+    assert!(replay.replayed);
+    assert_eq!(database.job_usage(fallback_admitted.job.id).expect("replayed evidence"), evidence);
     assert_eq!(fallback_result.attempts, 2);
     assert!(matches!(
         &fallback_result.result,
@@ -7369,6 +7483,29 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
             .expect("settle fallback entry"),
         crate::LorebookEntrySettledWork::Succeeded { .. }
     ));
+
+    for error in [PortError::Unavailable, PortError::Cancelled] {
+        let failed_id = RequestId::new();
+        let admitted = coordinator.prepare_and_admit(make_request(failed_id, vec![selected_message_id])).expect("admit failed provider");
+        let inference = FallibleScriptedInference {
+            outcomes: Mutex::new(VecDeque::from([Err(error.clone()), Ok(valid_fallback.clone())])),
+            requests: Mutex::new(Vec::new()),
+        };
+        let result = crate::LorebookEntryExecutionCoordinator::new(&database, &inference)
+            .run(failed_id, &prompt, &JobHandle::new(admitted.job.id), None, NOW).await;
+        let evidence = database.job_usage(admitted.job.id).expect("failed provider evidence");
+        if matches!(error, PortError::Cancelled) {
+            assert!(matches!(result, Err(crate::LorebookEntryExecutionError::Cancelled)));
+            assert_eq!(evidence.len(), 1);
+            assert_eq!(evidence[0].result, Some(JobInferenceUsageResult::Cancelled));
+            assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+        } else {
+            assert_eq!(result.expect("provider error fallback").attempts, 2);
+            assert_eq!(evidence.len(), 2);
+            assert!(evidence.iter().any(|event| event.result == Some(JobInferenceUsageResult::InferenceFailed)));
+            assert!(evidence.iter().any(|event| matches!(event.result, Some(JobInferenceUsageResult::Response { .. }))));
+        }
+    }
 
     let cancelled_request_id = RequestId::new();
     let cancelled_admitted = coordinator

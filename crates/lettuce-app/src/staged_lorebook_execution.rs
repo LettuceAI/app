@@ -112,6 +112,7 @@ where
             now,
         )
         .await
+        .map_err(PortError::from)
         .map_err(|error| {
             if matches!(error, PortError::Cancelled) {
                 StagedLorebookPlannerExecutionError::Cancelled

@@ -4,6 +4,21 @@ use lettuce_conversations::{
 use lettuce_types::{JobId, TimestampMillis, UsageEventId};
 use lettuce_usage::{JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger};
 
+#[derive(Debug)]
+pub(crate) enum JobInferenceError {
+    Evidence,
+    Provider(PortError),
+}
+
+impl From<JobInferenceError> for PortError {
+    fn from(error: JobInferenceError) -> Self {
+        match error {
+            JobInferenceError::Evidence => Self::Unavailable,
+            JobInferenceError::Provider(error) => error,
+        }
+    }
+}
+
 pub(crate) async fn run_job_inference<
     R: JobUsageLedger + ProviderReplayArtifactPort + ?Sized,
     I: InferencePort + ?Sized,
@@ -13,7 +28,7 @@ pub(crate) async fn run_job_inference<
     job_id: JobId,
     request: InferenceRequest,
     now: TimestampMillis,
-) -> Result<InferenceOutcome, PortError> {
+) -> Result<InferenceOutcome, JobInferenceError> {
     let profile = &request.profile.chat_profile;
     let id = UsageEventId::new();
     repository
@@ -28,7 +43,7 @@ pub(crate) async fn run_job_inference<
             admitted_at: now,
             result: None,
         })
-        .map_err(|_| PortError::Unavailable)?;
+        .map_err(|_| JobInferenceError::Evidence)?;
     let outcome = inference.run(request).await;
     let result = match &outcome {
         Ok(outcome) => JobInferenceUsageResult::Response {
@@ -41,9 +56,9 @@ pub(crate) async fn run_job_inference<
     if repository.settle_job_usage(id, result).is_err() {
         if let Ok(outcome) = &outcome {
             crate::cleanup_outcome_replays(repository, outcome)
-                .map_err(|_| PortError::Unavailable)?;
+                .map_err(|_| JobInferenceError::Evidence)?;
         }
-        return Err(PortError::Unavailable);
+        return Err(JobInferenceError::Evidence);
     }
-    outcome
+    outcome.map_err(JobInferenceError::Provider)
 }
