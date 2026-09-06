@@ -4015,6 +4015,7 @@ mod tests {
                 "groups",
                 "job_events",
                 "job_inference_usage",
+                "job_usage_costs",
                 "jobs",
                 "lorebook_entries",
                 "lorebooks",

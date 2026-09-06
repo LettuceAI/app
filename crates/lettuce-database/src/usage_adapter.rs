@@ -158,6 +158,98 @@ impl lettuce_usage::UsageCostLedger for Database {
             cost,
         }))
     }
+    fn record_job_cost(
+        &self,
+        event_id: UsageEventId,
+        basis: lettuce_usage::UsageCostBasis,
+    ) -> Result<lettuce_usage::UsageCost, UsageLedgerError> {
+        let event = load_job_usage(self, event_id)?.ok_or(UsageLedgerError::Invalid)?;
+        let cost = basis.calculate_job(&event)?;
+        let encoded = crate::encode_versioned(&basis, 1).map_err(|_| UsageLedgerError::Invalid)?;
+        let mut connection = self.connection().map_err(|_| UsageLedgerError::Storage)?;
+        let tx = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|_| UsageLedgerError::Storage)?;
+        tx.execute(
+            "INSERT OR IGNORE INTO job_usage_costs (event_id, basis_json) VALUES (?1, ?2)",
+            params![event_id.to_string(), encoded],
+        )
+        .map_err(|_| UsageLedgerError::Storage)?;
+        let stored: String = tx
+            .query_row(
+                "SELECT basis_json FROM job_usage_costs WHERE event_id=?1",
+                [event_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|_| UsageLedgerError::Storage)?;
+        let stored = crate::decode_versioned::<lettuce_usage::UsageCostBasis>(&stored, 1)
+            .map_err(|_| UsageLedgerError::Storage)?;
+        if stored != basis {
+            return Err(UsageLedgerError::Conflict);
+        }
+        tx.commit().map_err(|_| UsageLedgerError::Storage)?;
+        Ok(lettuce_usage::UsageCost {
+            event_id,
+            basis,
+            cost,
+        })
+    }
+
+    fn get_job_cost(
+        &self,
+        event_id: UsageEventId,
+    ) -> Result<Option<lettuce_usage::UsageCost>, UsageLedgerError> {
+        let stored: Option<String> = self
+            .connection()
+            .map_err(|_| UsageLedgerError::Storage)?
+            .query_row(
+                "SELECT basis_json FROM job_usage_costs WHERE event_id=?1",
+                [event_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| UsageLedgerError::Storage)?;
+        let Some(stored) = stored else {
+            return Ok(None);
+        };
+        let basis = crate::decode_versioned::<lettuce_usage::UsageCostBasis>(&stored, 1)
+            .map_err(|_| UsageLedgerError::Storage)?;
+        let event = load_job_usage(self, event_id)?.ok_or(UsageLedgerError::Storage)?;
+        let cost = basis
+            .calculate_job(&event)
+            .map_err(|_| UsageLedgerError::Storage)?;
+        Ok(Some(lettuce_usage::UsageCost {
+            event_id,
+            basis,
+            cost,
+        }))
+    }
+}
+
+fn load_job_usage(
+    database: &Database,
+    event_id: UsageEventId,
+) -> Result<Option<lettuce_usage::JobInferenceUsage>, UsageLedgerError> {
+    let raw: Option<(String, Option<String>)> = database
+        .connection()
+        .map_err(|_| UsageLedgerError::Storage)?
+        .query_row(
+            "SELECT record_json, result_json FROM job_inference_usage WHERE id=?1",
+            [event_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|_| UsageLedgerError::Storage)?;
+    raw.map(|(record, result)| {
+        let mut record = crate::decode_versioned::<lettuce_usage::JobInferenceUsage>(&record, 1)
+            .map_err(|_| UsageLedgerError::Storage)?;
+        record.result = result
+            .map(|result| crate::decode_versioned(&result, 1))
+            .transpose()
+            .map_err(|_| UsageLedgerError::Storage)?;
+        Ok(record)
+    })
+    .transpose()
 }
 
 fn outcome_name(value: UsageOutcome) -> &'static str {
@@ -494,7 +586,10 @@ mod tests {
     fn job_dispatch_evidence_survives_reopen_and_rejects_mutation() {
         use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, SubjectKind};
         use lettuce_types::UsageEventId;
-        use lettuce_usage::{JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger};
+        use lettuce_usage::{
+            JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger, ModelPricing,
+            OpenRouterCostInput, UsageCostBasis, UsageCostLedger,
+        };
         let path =
             std::env::temp_dir().join(format!("lettuce-job-usage-{}.sqlite", uuid::Uuid::new_v4()));
         let database = Database::open(&path).expect("database");
@@ -527,6 +622,39 @@ mod tests {
             Err(UsageLedgerError::Conflict)
         );
         database.admit_job_usage(record.clone()).expect("admission");
+        let basis = UsageCostBasis {
+            model_profile_id: record.model_profile_id,
+            provider_account_id: record.provider_account_id,
+            source: "OpenRouter endpoint snapshot".into(),
+            captured_at: TimestampMillis::new(2),
+            pricing: ModelPricing {
+                prompt: "0.001".into(),
+                completion: "0.002".into(),
+                request: String::new(),
+                image: String::new(),
+                image_output: String::new(),
+                web_search: String::new(),
+                internal_reasoning: String::new(),
+                input_cache_read: String::new(),
+                input_cache_write: String::new(),
+            },
+            input: OpenRouterCostInput {
+                prompt_tokens: 120,
+                completion_tokens: 30,
+                cached_prompt_tokens: 10,
+                cache_write_tokens: 5,
+                reasoning_tokens: 2,
+                web_search_requests: 0,
+                authoritative_total_cost: Some(0.25),
+            },
+        };
+        for id in [record.id, UsageEventId::new()] {
+            assert!(matches!(
+                database.record_job_cost(id, basis.clone()),
+                Err(UsageLedgerError::Invalid)
+            ));
+            assert!(database.get_job_cost(id).expect("no cost").is_none());
+        }
         drop(database);
         let database = Database::open(&path).expect("reopen pending");
         assert_eq!(
@@ -545,9 +673,106 @@ mod tests {
             std::slice::from_ref(&settled)
         );
         database
-            .admit_job_usage(record)
+            .admit_job_usage(record.clone())
             .expect("replay admission after settlement");
+        assert!(matches!(
+            database.record_job_cost(record.id, basis.clone()),
+            Err(UsageLedgerError::Invalid)
+        ));
+        for result in [
+            JobInferenceUsageResult::Cancelled,
+            JobInferenceUsageResult::Response { usage: None },
+        ] {
+            let mut unavailable = record.clone();
+            unavailable.id = UsageEventId::new();
+            database
+                .admit_job_usage(unavailable.clone())
+                .expect("admit");
+            database
+                .settle_job_usage(unavailable.id, result)
+                .expect("settle");
+            assert!(matches!(
+                database.record_job_cost(unavailable.id, basis.clone()),
+                Err(UsageLedgerError::Invalid)
+            ));
+        }
+        let mut retry = record.clone();
+        retry.id = UsageEventId::new();
+        database
+            .admit_job_usage(retry.clone())
+            .expect("retry dispatch");
+        let result = JobInferenceUsageResult::Response {
+            usage: Some(InferenceUsage {
+                input_tokens: 120,
+                output_tokens: 30,
+                cached_input_tokens: Some(10),
+                cache_write_tokens: Some(5),
+                reasoning_tokens: Some(2),
+                web_search_requests: Some(0),
+                provider_reported_cost: lettuce_conversations::ProviderReportedCost::new(0.25),
+            }),
+        };
+        database
+            .settle_job_usage(retry.id, result.clone())
+            .expect("response");
+        retry.result = Some(result);
+        for field in 0..10 {
+            let mut wrong = basis.clone();
+            match field {
+                0 => wrong.model_profile_id = ModelProfileId::new(),
+                1 => wrong.provider_account_id = ProviderAccountId::new(),
+                2 => wrong.input.prompt_tokens += 1,
+                3 => wrong.input.completion_tokens += 1,
+                4 => wrong.input.cached_prompt_tokens += 1,
+                5 => wrong.input.cache_write_tokens += 1,
+                6 => wrong.input.reasoning_tokens += 1,
+                7 => wrong.input.web_search_requests += 1,
+                8 => wrong.input.authoritative_total_cost = None,
+                _ => wrong.source.clear(),
+            }
+            assert!(matches!(
+                database.record_job_cost(retry.id, wrong),
+                Err(UsageLedgerError::Invalid)
+            ));
+        }
+        assert!(
+            database
+                .get_job_cost(retry.id)
+                .expect("no invalid cost")
+                .is_none()
+        );
+        let cost = database
+            .record_job_cost(retry.id, basis.clone())
+            .expect("cost");
+        assert_eq!(cost.cost.total_cost, 0.25);
+        assert_eq!(
+            database
+                .record_job_cost(retry.id, basis.clone())
+                .expect("replay")
+                .basis,
+            basis
+        );
+        let mut changed = basis.clone();
+        changed.pricing.prompt = "0.004".into();
+        assert!(matches!(
+            database.record_job_cost(retry.id, changed),
+            Err(UsageLedgerError::Conflict)
+        ));
+        assert!(
+            database
+                .get_cost(retry.id)
+                .expect("separate conversation ledger")
+                .is_none()
+        );
+        let evidence = database.job_usage(job.id).expect("retained evidence");
+        assert!(evidence.contains(&settled));
+        assert!(evidence.contains(&retry));
         let db = database.connection().expect("connection");
+        assert!(
+            db.execute("UPDATE job_usage_costs SET basis_json='{}'", [])
+                .is_err()
+        );
+        assert!(db.execute("DELETE FROM job_usage_costs", []).is_err());
         assert!(
             db.execute("UPDATE job_inference_usage SET result_json=NULL", [])
                 .is_err()
@@ -558,7 +783,32 @@ mod tests {
         drop(db);
         assert_eq!(
             database.job_usage(job.id).expect("usage after cleanup"),
-            [settled]
+            evidence
+        );
+        drop(database);
+        let database = Database::open(&path).expect("reopen costs after cleanup");
+        let cost = database
+            .get_job_cost(retry.id)
+            .expect("read cost")
+            .expect("saved cost");
+        assert_eq!(cost.basis, basis);
+        assert_eq!(cost.cost.total_cost, 0.25);
+        assert_eq!(
+            database
+                .record_job_cost(retry.id, basis)
+                .expect("replay after cleanup")
+                .basis,
+            cost.basis
+        );
+        assert_eq!(
+            database.job_usage(job.id).expect("unchanged evidence"),
+            evidence
+        );
+        assert!(
+            database
+                .get_job_cost(record.id)
+                .expect("failed dispatch")
+                .is_none()
         );
         drop(database);
         std::fs::remove_file(path).expect("remove test database");

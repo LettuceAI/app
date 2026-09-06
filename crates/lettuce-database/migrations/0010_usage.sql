@@ -62,6 +62,15 @@ CREATE TRIGGER usage_costs_immutable_update BEFORE UPDATE ON usage_costs
 BEGIN SELECT RAISE(ABORT, 'usage cost is immutable'); END;
 CREATE TRIGGER usage_costs_immutable_delete BEFORE DELETE ON usage_costs
 BEGIN SELECT RAISE(ABORT, 'usage cost cannot be deleted'); END;
+
+CREATE TABLE job_usage_costs (
+    event_id TEXT PRIMARY KEY REFERENCES job_inference_usage(id) ON DELETE RESTRICT,
+    basis_json TEXT NOT NULL CHECK (json_valid(basis_json))
+) STRICT;
+CREATE TRIGGER job_usage_costs_immutable_update BEFORE UPDATE ON job_usage_costs
+BEGIN SELECT RAISE(ABORT, 'usage cost is immutable'); END;
+CREATE TRIGGER job_usage_costs_immutable_delete BEFORE DELETE ON job_usage_costs
+BEGIN SELECT RAISE(ABORT, 'usage cost cannot be deleted'); END;
 CREATE INDEX usage_events_model_idx ON usage_events(model_profile_id, recorded_at, id);
 CREATE INDEX usage_events_provider_idx ON usage_events(provider_account_id, recorded_at, id);
 

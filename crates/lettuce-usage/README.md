@@ -25,8 +25,11 @@ and retains the logical attempt, owning job and resolved model/provider revision
 Admission precedes inference; a single immutable result preserves optional raw
 usage, cancellation or inference failure. Pending records explicitly mean the
 result is unknown. Exact admission/settlement replay is accepted; changed evidence
-conflicts. Retries never overwrite earlier dispatches. These records do not yet
-participate in the conversation-event cost ledger or automatic pricing capture.
+conflicts. Retries never overwrite earlier dispatches. The cost ledger accepts
+an explicit immutable price basis for each returned response with known usage through `record_job_cost` and `get_job_cost`. It reuses
+the conversation cost validation and calculator; pending, failed, cancelled and
+usage-missing dispatches cannot receive a cost. Separate dispatch IDs preserve
+retry and fallback charges independently. Automatic pricing capture remains pending.
 Admission verifies the job exists; evidence survives normal job retention cleanup.
 
 The pure OpenRouter request-cost calculator is copied from legacy
@@ -61,3 +64,11 @@ retention, replay, conflicts, mismatched ownership/counters, raw-event preservat
 SQL immutability and unavailable usage. Provider price fetching, automatic
 inference-finalization wiring, adjustments, budgets, summaries and non-text
 costing remain later work.
+
+Job costs retain the same version-1 basis in a separate table referencing the
+immutable dispatch evidence. Both survive job cleanup. File-backed tests cover
+reopen, exact replay, conflicting prices, ownership and all known counter
+mismatches, absent usage, SQL immutability and unchanged raw evidence. This
+preserves legacy companion response accounting independently of workflow
+validation; callers still supply verified OpenRouter pricing and cost inputs.
+Native-provider billing normalization and price fetching remain later work.

@@ -20,6 +20,15 @@ job and settles its versioned result once. Pending and settled evidence survives
 database reopen and job retention cleanup. SQL guards reject evidence mutation
 and deletion; exact admission/settlement replay remains idempotent.
 
+`UsageCostLedger::record_job_cost` and `get_job_cost` attach the existing
+version-1 pricing basis to known response usage in `job_inference_usage`.
+Migration 10 stores it in `job_usage_costs` with an evidence FK and immutable
+update/delete guards. Job cleanup retains both evidence and costs. The same
+domain validation checks model/provider identity and all known counters and
+reported amounts; unavailable dispatch usage is rejected. The file-backed
+usage regression verifies cost replay after reopen and job deletion, conflicting
+bases, invalid evidence, and unchanged raw usage. Prices remain caller supplied.
+
 Staged lorebook source documents are retained by project/source identity in
 migration 11. Admission writes their asset references and the project in one
 transaction, requiring ready source-document assets. Foreign keys protect the

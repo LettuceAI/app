@@ -17,9 +17,39 @@ impl UsageCostBasis {
         let lettuce_conversations::UsageCounters::Known(tokens) = &event.record.usage else {
             return Err(UsageLedgerError::Invalid);
         };
+        self.calculate_usage(
+            event.record.model_profile_id,
+            event.record.provider_account_id,
+            tokens,
+        )
+    }
+
+    pub fn calculate_job(
+        &self,
+        event: &crate::JobInferenceUsage,
+    ) -> Result<RequestCost, UsageLedgerError> {
+        let Some(crate::JobInferenceUsageResult::Response {
+            usage: Some(tokens),
+        }) = &event.result
+        else {
+            return Err(UsageLedgerError::Invalid);
+        };
+        self.calculate_usage(
+            Some(event.model_profile_id),
+            Some(event.provider_account_id),
+            tokens,
+        )
+    }
+
+    fn calculate_usage(
+        &self,
+        model_profile_id: Option<ModelProfileId>,
+        provider_account_id: Option<ProviderAccountId>,
+        tokens: &lettuce_conversations::InferenceUsage,
+    ) -> Result<RequestCost, UsageLedgerError> {
         if self.source.trim().is_empty()
-            || event.record.model_profile_id != Some(self.model_profile_id)
-            || event.record.provider_account_id != Some(self.provider_account_id)
+            || model_profile_id != Some(self.model_profile_id)
+            || provider_account_id != Some(self.provider_account_id)
             || tokens.input_tokens != self.input.prompt_tokens
             || tokens.output_tokens != self.input.completion_tokens
             || tokens
@@ -63,4 +93,11 @@ pub trait UsageCostLedger: Send + Sync {
         basis: UsageCostBasis,
     ) -> Result<UsageCost, UsageLedgerError>;
     fn get_cost(&self, event_id: UsageEventId) -> Result<Option<UsageCost>, UsageLedgerError>;
+
+    fn record_job_cost(
+        &self,
+        event_id: UsageEventId,
+        basis: UsageCostBasis,
+    ) -> Result<UsageCost, UsageLedgerError>;
+    fn get_job_cost(&self, event_id: UsageEventId) -> Result<Option<UsageCost>, UsageLedgerError>;
 }
