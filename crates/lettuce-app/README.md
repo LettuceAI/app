@@ -589,7 +589,8 @@ and continuation now retain each dispatch through the same job ledger. Responses
 are saved before summary/tool validation or checkpoint aggregation; transport
 failures and cancellation remain distinct. Summary/round totals keep their
 existing meaning and are not additional billable dispatches. Evidence failures
-stop fallback; a cancelled primary response also stops fallback. The job store
+stop fallback; a cancelled primary response or job cancellation during a
+tool-less response also stops fallback. The job store
 and evidence repository must share durable job ownership.
 
 SQLite scenarios cover summary fallback totals versus separate raw responses,

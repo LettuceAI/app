@@ -123,7 +123,7 @@ impl<
         let outcome = match run_memory_request_with_fallback(
             self.repository,
             self.inference,
-            handle.id(),
+            handle,
             request,
             run.structured_fallback_format,
             now,
