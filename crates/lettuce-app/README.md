@@ -598,3 +598,13 @@ failed memory primary/fallback calls, continuation and terminal replay, missing
 usage, storage failure without fallback, and cancellation with retained response
 evidence. Legacy memory/flow.rs recorded summary and memory responses before
 validation; this restores that boundary. No schema or scheduler was added.
+
+Creation-helper continuation rounds retain each actual provider dispatch in the
+existing job usage ledger before response validation. Successful round totals
+remain unchanged; rejected/cancelled responses retain raw usage and response
+identity even without a round checkpoint. Evidence storage failure stops the
+run without classifying it as a provider failure. The caller must supply a job
+persisted in the same store as the usage repository. Completed replay adds no
+dispatch. SQLite tests cover these boundaries and separate two-round evidence
+from the existing aggregate. Legacy creation_helper/service.rs also accounted
+for initial/continuation responses before accepting their generated content.

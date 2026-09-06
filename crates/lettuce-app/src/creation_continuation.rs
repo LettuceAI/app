@@ -1,3 +1,4 @@
+use crate::job_inference_usage::{JobInferenceError, run_job_inference};
 use lettuce_conversations::{
     ContextAttributions, ContextBudgetReport, FinishReason, GenerationOperation, InferenceOutcome,
     InferencePort, InferenceRequest, MessagePart, MessageRole, PortError, ProviderContextPart,
@@ -20,6 +21,7 @@ use lettuce_types::{
     CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, GenerationTurnId,
     RequestId, Revision, TimestampMillis,
 };
+use lettuce_usage::JobUsageLedger;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreationTurnDispatchRequest {
@@ -99,7 +101,10 @@ pub struct CreationContinuationCoordinator<'a, R: ?Sized, I: ?Sized> {
 
 impl<
     'a,
-    R: CreationWorkflowRepository + CreationAttemptRepository + ProviderReplayArtifactPort,
+    R: CreationWorkflowRepository
+        + CreationAttemptRepository
+        + ProviderReplayArtifactPort
+        + JobUsageLedger,
     I: InferencePort + ?Sized,
 > CreationContinuationCoordinator<'a, R, I>
 {
@@ -195,13 +200,24 @@ impl<
                 return Err(CreationContinuationError::Cancelled);
             }
             request.validate()?;
-            let outcome = match self.inference.run(request.clone()).await {
+            let outcome = match run_job_inference(
+                self.repository,
+                self.inference,
+                handle.id(),
+                request.clone(),
+                now,
+            )
+            .await
+            {
                 Ok(outcome) => outcome,
-                Err(PortError::Cancelled) => {
+                Err(JobInferenceError::Provider(PortError::Cancelled)) => {
                     self.cancel_attempt(&attempt, now)?;
                     return Err(CreationContinuationError::Cancelled);
                 }
-                Err(error) => {
+                Err(JobInferenceError::Evidence) => {
+                    return Err(CreationRepositoryError::Storage.into());
+                }
+                Err(JobInferenceError::Provider(error)) => {
                     let code = match error {
                         PortError::Rejected => CreationAttemptFailureCode::ProviderRejected,
                         PortError::Empty => CreationAttemptFailureCode::EmptyResponse,
@@ -890,7 +906,7 @@ mod tests {
         output: u64,
     ) -> InferenceOutcome {
         InferenceOutcome {
-            provider_response_id: None,
+            provider_response_id: Some(format!("gen-creation-{input}")),
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts,
@@ -911,6 +927,28 @@ mod tests {
             provider_request_id: Some(format!("request-{input}")),
             warning_codes: Vec::<InferenceWarningCode>::new(),
         }
+    }
+
+    fn job_handle(database: &Database) -> JobHandle {
+        use lettuce_jobs::{
+            JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, ResourceClass, SubjectKind,
+        };
+        let job = database
+            .create_or_get(
+                JobSpec::new(
+                    JobKind::CreationRun,
+                    JobSubject::new(
+                        SubjectKind::CreationProject,
+                        GenerationAttemptId::new().to_string(),
+                    )
+                    .expect("job subject"),
+                    OutcomeRef::Request(RequestId::new()),
+                )
+                .with_resources(vec![ResourceClass::Network]),
+            )
+            .expect("durable creation job")
+            .job;
+        JobHandle::new(job.id)
     }
 
     fn setup(
@@ -964,7 +1002,7 @@ mod tests {
     #[tokio::test]
     async fn runs_two_native_rounds_and_replays_the_committed_result_exactly() {
         let database = Database::open_in_memory().expect("database");
-        let handle = JobHandle::new(JobId::new());
+        let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
         let inference = ScriptedInference {
@@ -1016,6 +1054,14 @@ mod tests {
         assert_eq!(result.attempt.status, CreationAttemptStatus::Succeeded);
         assert_eq!(result.workflow.stage, CreationStage::AwaitingReview);
         assert_eq!(result.rounds.len(), 2);
+        let evidence = database.job_usage(handle.id()).expect("dispatches");
+        assert_eq!(evidence.len(), 2);
+        for (input, output) in [(10, 4), (12, 3)] {
+            assert!(evidence.iter().any(|event| matches!(&event.result,
+                Some(lettuce_usage::JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(id) })
+                    if id == &format!("gen-creation-{input}") && usage.input_tokens == input && usage.output_tokens == output)));
+        }
+
         assert_eq!(
             result.usage,
             UsageCounters::Known(InferenceUsage {
@@ -1091,6 +1137,12 @@ mod tests {
             .expect("exact completed replay");
         assert_eq!(replay.proposal, result.proposal);
         assert_eq!(replay.rounds, result.rounds);
+        assert_eq!(
+            database
+                .job_usage(handle.id())
+                .expect("replayed dispatches"),
+            evidence
+        );
         assert_eq!(inference.requests.lock().expect("requests").len(), 2);
     }
 
@@ -1111,7 +1163,7 @@ mod tests {
                 now: TimestampMillis::new(1),
             })
             .expect("workflow");
-        let handle = JobHandle::new(JobId::new());
+        let handle = job_handle(&database);
         let request = CreationTurnDispatchRequest {
             workflow_id,
             expected_workflow_revision: workflow.revision,
@@ -1379,7 +1431,7 @@ mod tests {
     #[tokio::test]
     async fn text_only_completion_succeeds_without_fabricating_a_proposal() {
         let database = Database::open_in_memory().expect("database");
-        let handle = JobHandle::new(JobId::new());
+        let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
         let inference = ScriptedInference {
@@ -1412,7 +1464,7 @@ mod tests {
     #[tokio::test]
     async fn cancellation_settles_the_attempt_before_provider_dispatch() {
         let database = Database::open_in_memory().expect("database");
-        let handle = JobHandle::new(JobId::new());
+        let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
         let inference = ScriptedInference {
@@ -1445,7 +1497,7 @@ mod tests {
     #[tokio::test]
     async fn provider_unavailability_fails_the_attempt_without_a_round() {
         let database = Database::open_in_memory().expect("database");
-        let handle = JobHandle::new(JobId::new());
+        let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
         let inference = ScriptedInference {
@@ -1466,6 +1518,13 @@ mod tests {
         ));
         let attempt = database.load_creation_attempt(attempt_id).expect("attempt");
         assert_eq!(attempt.status, CreationAttemptStatus::Failed);
+        let evidence = database.job_usage(handle.id()).expect("failed dispatch");
+        assert_eq!(evidence.len(), 1);
+        assert_eq!(
+            evidence[0].result,
+            Some(lettuce_usage::JobInferenceUsageResult::InferenceFailed)
+        );
+
         assert_eq!(
             attempt.failure,
             Some(CreationAttemptFailureCode::ProviderUnavailable)
@@ -1485,9 +1544,93 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dispatch_rejects_the_wrong_job_or_resolved_profile_before_starting() {
+    async fn rejected_and_cancelled_responses_keep_usage_without_checkpointing() {
+        for finish in [FinishReason::Error, FinishReason::Cancelled] {
+            let database = Database::open_in_memory().expect("database");
+            let handle = job_handle(&database);
+            let profile = profile();
+            let attempt_id = setup(&database, &handle, &profile);
+            let mut response = outcome(
+                vec![MessagePart::Text {
+                    text: "partial".into(),
+                }],
+                Vec::new(),
+                9,
+                2,
+            );
+            response.finish_reason = finish;
+            let expected = lettuce_usage::JobInferenceUsageResult::Response {
+                usage: response.usage.clone(),
+                provider_response_id: response.provider_response_id.clone(),
+            };
+            let inference = ScriptedInference {
+                outcomes: Mutex::new(VecDeque::from([Ok(response)])),
+                requests: Mutex::new(Vec::new()),
+            };
+            let result = CreationContinuationCoordinator::new(&database, &inference)
+                .run(attempt_id, profile, &handle, None, TimestampMillis::new(4))
+                .await;
+            if finish == FinishReason::Cancelled {
+                assert!(matches!(result, Err(CreationContinuationError::Cancelled)));
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(CreationContinuationError::ProviderFailed)
+                ));
+            }
+            let evidence = database.job_usage(handle.id()).expect("response evidence");
+            assert_eq!(evidence.len(), 1);
+            assert_eq!(evidence[0].result, Some(expected));
+            let attempt = database.load_creation_attempt(attempt_id).expect("attempt");
+            assert!(
+                database
+                    .list_creation_inference_rounds(
+                        CreationAttemptOwner {
+                            workflow_id: attempt.workflow_id,
+                            turn_id: attempt.turn_id,
+                        },
+                        attempt_id
+                    )
+                    .expect("rounds")
+                    .is_empty()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_durable_job_stops_dispatch_without_provider_failure() {
         let database = Database::open_in_memory().expect("database");
         let handle = JobHandle::new(JobId::new());
+        let profile = profile();
+        let attempt_id = setup(&database, &handle, &profile);
+        let inference = ScriptedInference {
+            outcomes: Mutex::new(VecDeque::new()),
+            requests: Mutex::new(Vec::new()),
+        };
+        assert!(matches!(
+            CreationContinuationCoordinator::new(&database, &inference)
+                .run(attempt_id, profile, &handle, None, TimestampMillis::new(4))
+                .await,
+            Err(CreationContinuationError::Repository(
+                CreationRepositoryError::Storage
+            ))
+        ));
+        assert!(inference.requests.lock().expect("requests").is_empty());
+        let attempt = database.load_creation_attempt(attempt_id).expect("attempt");
+        assert_eq!(attempt.status, CreationAttemptStatus::Running);
+        assert!(attempt.failure.is_none());
+        assert!(
+            database
+                .job_usage(handle.id())
+                .expect("no dispatch")
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn dispatch_rejects_the_wrong_job_or_resolved_profile_before_starting() {
+        let database = Database::open_in_memory().expect("database");
+        let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
         let inference = ScriptedInference {
@@ -1531,7 +1674,7 @@ mod tests {
     #[tokio::test]
     async fn eight_non_terminal_rounds_fail_with_the_durable_round_limit() {
         let database = Database::open_in_memory().expect("database");
-        let handle = JobHandle::new(JobId::new());
+        let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
         let outcomes = (0..MAX_CREATION_INFERENCE_ROUNDS)
