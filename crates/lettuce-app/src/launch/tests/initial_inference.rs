@@ -387,32 +387,12 @@ async fn initial_checkpoint_reopens_with_exact_response_usage_and_signed_replay(
     std::fs::remove_file(path).expect("remove database");
 }
 
-struct BlockingInference {
-    entered: tokio::sync::Notify,
-    release: tokio::sync::Notify,
-    calls: std::sync::atomic::AtomicUsize,
-}
-
-#[async_trait::async_trait]
-impl InferencePort for BlockingInference {
-    async fn run(&self, _: InferenceRequest) -> Result<InferenceOutcome, PortError> {
-        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        self.entered.notify_one();
-        self.release.notified().await;
-        Ok(outcome())
-    }
-}
-
 #[tokio::test]
 async fn initial_pending_admission_blocks_concurrent_and_reopened_dispatch() {
     let path = std::env::temp_dir().join(format!("lettuce-pending-{}.db", ConversationId::new()));
     let database = Database::open(&path).expect("database");
     let (conversation_id, request, handle) = fixture(&database);
-    let inference = BlockingInference {
-        entered: tokio::sync::Notify::new(),
-        release: tokio::sync::Notify::new(),
-        calls: Default::default(),
-    };
+    let inference = BlockingInference::new(outcome());
     let coordinator = crate::ConversationInitialInferenceCoordinator::new(&database, &inference);
     {
         let run = coordinator.run(
@@ -692,11 +672,7 @@ async fn initial_checkpoint_failure_stays_pending_until_a_fresh_recovery_attempt
 async fn initial_cancellation_during_provider_retains_usage_without_response_replay() {
     let database = database();
     let (conversation_id, request, handle) = fixture(&database);
-    let inference = BlockingInference {
-        entered: tokio::sync::Notify::new(),
-        release: tokio::sync::Notify::new(),
-        calls: Default::default(),
-    };
+    let inference = BlockingInference::new(outcome());
     let coordinator = crate::ConversationInitialInferenceCoordinator::new(&database, &inference);
     let run = coordinator.run(
         conversation_id,

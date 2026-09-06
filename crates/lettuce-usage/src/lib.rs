@@ -12,7 +12,7 @@ mod job_usage;
 pub use job_usage::*;
 
 use lettuce_conversations::UsageRecord;
-use lettuce_types::UsageEventId;
+use lettuce_types::{GenerationAttemptId, GenerationTurnId, UsageEventId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageEvent {
@@ -26,6 +26,12 @@ pub trait UsageLedger: Send + Sync {
     fn record(&self, record: UsageRecord) -> Result<UsageEvent, UsageLedgerError>;
 
     fn get(&self, id: UsageEventId) -> Result<Option<UsageEvent>, UsageLedgerError>;
+
+    fn get_for_attempt(
+        &self,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+    ) -> Result<Option<UsageEvent>, UsageLedgerError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

@@ -57,6 +57,7 @@ impl From<JobKind> for JobKindKey {
             JobKind::CompanionGrowth => 19,
             JobKind::CompanionConsolidation => 20,
             JobKind::CompanionSoulWriter => 21,
+            JobKind::ConversationGeneration => 22,
         })
     }
 }
@@ -83,5 +84,72 @@ impl JobRegistry {
     #[must_use]
     pub fn policy(&self, kind: JobKind) -> Option<&JobPolicy> {
         self.policies.get(&kind.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{JobKind, JobKindKey};
+
+    const ALL_KINDS: [JobKind; 23] = [
+        JobKind::ArtifactInstall,
+        JobKind::ArtifactVerify,
+        JobKind::RuntimePrepare,
+        JobKind::ModelLoad,
+        JobKind::MemoryExtraction,
+        JobKind::MemoryConsolidation,
+        JobKind::CompanionGrowth,
+        JobKind::CompanionConsolidation,
+        JobKind::CompanionSoulWriter,
+        JobKind::ConversationGeneration,
+        JobKind::VectorIndexBuild,
+        JobKind::CreationRun,
+        JobKind::ImageGenerate,
+        JobKind::MediaTransform,
+        JobKind::TransferImport,
+        JobKind::TransferExport,
+        JobKind::BackupExport,
+        JobKind::BackupRestore,
+        JobKind::SyncSession,
+        JobKind::SpeechTranscribe,
+        JobKind::SpeechSynthesize,
+        JobKind::EmbeddingBenchmark,
+        JobKind::Maintenance,
+    ];
+
+    #[test]
+    fn every_kind_has_a_distinct_registry_key() {
+        let mut keys = ALL_KINDS.map(JobKindKey::from);
+        keys.sort();
+        assert!(keys.windows(2).all(|pair| pair[0] != pair[1]));
+        assert_eq!(keys.len(), ALL_KINDS.len());
+        for kind in ALL_KINDS {
+            let listed = match kind {
+                JobKind::ArtifactInstall
+                | JobKind::ArtifactVerify
+                | JobKind::RuntimePrepare
+                | JobKind::ModelLoad
+                | JobKind::MemoryExtraction
+                | JobKind::MemoryConsolidation
+                | JobKind::CompanionGrowth
+                | JobKind::CompanionConsolidation
+                | JobKind::CompanionSoulWriter
+                | JobKind::ConversationGeneration
+                | JobKind::VectorIndexBuild
+                | JobKind::CreationRun
+                | JobKind::ImageGenerate
+                | JobKind::MediaTransform
+                | JobKind::TransferImport
+                | JobKind::TransferExport
+                | JobKind::BackupExport
+                | JobKind::BackupRestore
+                | JobKind::SyncSession
+                | JobKind::SpeechTranscribe
+                | JobKind::SpeechSynthesize
+                | JobKind::EmbeddingBenchmark
+                | JobKind::Maintenance => true,
+            };
+            assert!(listed);
+        }
     }
 }

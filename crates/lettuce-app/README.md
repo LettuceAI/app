@@ -637,6 +637,34 @@ and the child attempt dispatches fresh under its own job while the parent record
 and evidence are retained. Cancellation before admission produces no evidence.
 Response interpretation, tool admission and terminal aggregation stay with their
 existing coordinators.
+
+`ConversationGenerationDispatchCoordinator` and `ConversationGenerationJobRunner`
+compose those pieces into one claimed-job pipeline for a direct conversation
+attempt. Admission creates or reuses the `ConversationGeneration` job keyed by
+the attempt's job idempotency key and attaches it; claim starts the job and its
+stage; the runner then stages Preparing, prepares the turn from the supplied
+model and attributions, stages Running, dispatches through the initial
+coordinator, admits and executes dynamic-memory tool rounds when the response
+carries tool calls, and commits through the terminal coordinator with the usage
+timestamp frozen to the dispatch checkpoint. Every mutation the runner owns uses
+an operation token derived from conversation, turn, attempt, job and step, so a
+re-run replays instead of conflicting; a finalized attempt replays its candidate
+and usage event without touching the provider. Settlement maps the run outcome
+onto the job store: success, cancellation through the two-phase turn cancel,
+failure through `fail_generation`, and a pending dispatch through interrupt and
+recover into a child attempt with its own job (linked as a child of the parent).
+Non-success settlement records a real usage event for the attempt from the
+dispatch evidence (known counters when a response was retained, otherwise an
+unavailable reason) so no attempt ever references a fabricated usage id.
+A recovered child on an already prepared turn moves straight to Running and
+never re-prepares. Attempts that already hold durable tool executions are not
+resumed or recovered: they fail with `RecoveryUnavailable` so memory writes are
+never applied twice; resuming settled rounds is a later slice. Turn-side
+settlement errors schedule a job retry instead of leaving the claim running.
+Context assembly, profile resolution, automatic scheduling, streaming progress
+checkpoints (the runner assumes it is the only checkpoint writer for its
+attempt), group speaker selection and frontend commands remain outside this
+runner.
 `PrepareGeneration` records the resolved model and prompt/lorebook/memory
 attributions atomically before moving a preparing turn to ContextPrepared.
 The existing speaker-resolution mutation continues to own group speaker choice.

@@ -1,3 +1,4 @@
+mod generation_runner;
 mod initial_inference;
 
 use std::time::Duration;
@@ -110,6 +111,34 @@ struct ScriptedInference {
 struct FallibleScriptedInference {
     outcomes: Mutex<VecDeque<Result<InferenceOutcome, PortError>>>,
     requests: Mutex<Vec<InferenceRequest>>,
+}
+
+struct BlockingInference {
+    entered: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+    calls: std::sync::atomic::AtomicUsize,
+    outcome: InferenceOutcome,
+}
+
+impl BlockingInference {
+    fn new(outcome: InferenceOutcome) -> Self {
+        Self {
+            entered: tokio::sync::Notify::new(),
+            release: tokio::sync::Notify::new(),
+            calls: Default::default(),
+            outcome,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl InferencePort for BlockingInference {
+    async fn run(&self, _: InferenceRequest) -> Result<InferenceOutcome, PortError> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.entered.notify_one();
+        self.release.notified().await;
+        Ok(self.outcome.clone())
+    }
 }
 
 struct UnavailableInference;

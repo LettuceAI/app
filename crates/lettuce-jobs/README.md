@@ -48,6 +48,10 @@ nonempty, deduplicated classes; kind/subject compatibility is intentionally
 registration-owned so a remote image executor can declare network rather than
 GPU admission without a universal default baked into this crate.
 
+`ConversationGeneration` is the durable kind for one direct conversation
+generation attempt; its registry key is appended, and a test asserts every kind
+maps to a distinct key so a mid-enum insertion cannot alias two policies.
+
 `CompanionGrowth` is a distinct durable kind because Soul growth is derived
 after memory success and must fail or retry without changing the completed
 memory job. Its feature input and checkpoints remain application-owned.

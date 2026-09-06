@@ -1,5 +1,8 @@
 # lettuce-database
 
+The usage ledger also reads the terminal usage event by turn and attempt
+(`get_for_attempt`) through the existing event query; it adds no schema.
+
 Initial generation dispatch is checkpointed in the original conversation
 migration: `generation_initial_dispatches` holds one pending row per running
 prepared attempt, bound to its job, request fingerprint and the job usage event

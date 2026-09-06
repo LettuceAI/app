@@ -9,6 +9,9 @@ Provider-reported amounts are raw evidence carried by InferenceUsage, separate
 from calculated costs. Known amounts must match the supplied authoritative total
 in a cost basis. This does not fetch prices or generation details automatically.
 
+`UsageLedger::get_for_attempt` reads the single terminal usage event an attempt
+owns, so settlement paths can reuse it instead of recording a conflicting one.
+
 The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
 
 ## Status

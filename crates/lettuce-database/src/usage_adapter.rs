@@ -572,6 +572,24 @@ impl UsageLedger for Database {
             .map(RawUsageEvent::decode)
             .transpose()
     }
+
+    fn get_for_attempt(
+        &self,
+        turn_id: lettuce_types::GenerationTurnId,
+        attempt_id: lettuce_types::GenerationAttemptId,
+    ) -> Result<Option<UsageEvent>, UsageLedgerError> {
+        self.connection()
+            .map_err(|_| UsageLedgerError::Storage)?
+            .query_row(
+                &format!("{SELECT_EVENT} WHERE turn_id = ?1 AND attempt_id = ?2"),
+                params![turn_id.to_string(), attempt_id.to_string()],
+                hydrate,
+            )
+            .optional()
+            .map_err(|_| UsageLedgerError::Storage)?
+            .map(RawUsageEvent::decode)
+            .transpose()
+    }
 }
 
 #[async_trait]

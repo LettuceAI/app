@@ -81,6 +81,16 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn conversation_generation_dispatcher(
+        &self,
+    ) -> crate::ConversationGenerationDispatchCoordinator<'_, Database, Database> {
+        crate::ConversationGenerationDispatchCoordinator::new(
+            self.database.as_ref(),
+            self.database.as_ref(),
+        )
+    }
+
+    #[must_use]
     pub fn companion_growth_admission(
         &self,
     ) -> crate::CompanionGrowthJobAdmissionCoordinator<'_, Database, Database> {
