@@ -7,10 +7,12 @@ use lettuce_companions::{
 use lettuce_conversations::{
     ContextAssembler, ContextAssemblyError, ContextRequest, ConversationKind, ConversationReader,
     ConversationRepository, ConversationRepositoryError, ConversationSnapshotMaterializer,
-    GenerationInput, GenerationTarget, InferencePort, MemoryAttribution, MemoryContribution,
-    MemoryModeSnapshot, MessageRole, OutputPolicy, PromptRuntimeFacts, PromptRuntimeValues,
-    ProviderContextPart, ResolvedInferenceProfile, SafetyContext, SelectedSpeakerDecision,
-    SpeakerDecisionMethod, SpeakerDecisionReference, SpeakerFallback, ToolPolicy,
+    GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationInput, GenerationTarget,
+    GenerationTurnStatus, InferencePort, MemoryAttribution, MemoryContribution, MemoryModeSnapshot,
+    MessageRole, OutputPolicy, PromptRuntimeFacts, PromptRuntimeValues, ProviderContextPart,
+    ResolveGroupSpeaker, ResolvedInferenceProfile, SafetyContext, SelectedSpeakerDecision,
+    SpeakerDecisionMethod, SpeakerDecisionReference, SpeakerFallback, SpeakerParticipantState,
+    SpeakerPolicyRequest, ToolPolicy, select_group_speaker,
 };
 use lettuce_embeddings::{EmbeddingDimensions, EmbeddingRequest, MemoryEmbeddingRepository};
 use lettuce_memory::{
@@ -32,8 +34,9 @@ use lettuce_usage::JobUsageLedger;
 use crate::{
     ConversationContextAssembler, ConversationGenerationClaimedWork, ConversationGenerationInput,
     ConversationGenerationJobRunner, ConversationGenerationMemoryInput,
-    ConversationGenerationRunError, ConversationGenerationRunResult, EmbeddingGenerationError,
-    MemoryCreateSeed, MemoryEmbeddingEngine,
+    ConversationGenerationOperation, ConversationGenerationRunError,
+    ConversationGenerationRunResult, EmbeddingGenerationError, MemoryCreateSeed,
+    MemoryEmbeddingEngine, operation_token,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -116,11 +119,162 @@ where
         if let Some(replay) = runner.replay_terminal(work)? {
             return Ok(replay);
         }
+        self.resolve_automatic_speaker(work, now)
+            .map_err(ConversationGenerationInputError::into_run_error)?;
         let input = self
             .build_input(work, runtime, now)
             .await
             .map_err(ConversationGenerationInputError::into_run_error)?;
         runner.run(work, input, now, seeds_for_round).await
+    }
+
+    fn resolve_automatic_speaker(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        now: TimestampMillis,
+    ) -> Result<(), ConversationGenerationInputError> {
+        let aggregate = ConversationReader::get(self.repository, work.conversation_id)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        let ConversationKind::Group(details) = &aggregate.conversation.kind else {
+            return Ok(());
+        };
+        let mut turn = ConversationReader::get_turn(self.repository, work.turn_id)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        if turn.selected_speaker.is_some()
+            || turn.forced_speaker.is_some()
+            || matches!(turn.target, GenerationTarget::ExistingCandidate { .. })
+        {
+            return Ok(());
+        }
+        if !matches!(
+            details.group.speaker_selection,
+            lettuce_conversations::GroupSpeakerSelectionSnapshot::Heuristic
+                | lettuce_conversations::GroupSpeakerSelectionSnapshot::RoundRobin
+        ) {
+            return Ok(());
+        }
+        let stages = match turn.status {
+            GenerationTurnStatus::Created => vec![
+                (
+                    GenerationTurnStatus::Preparing,
+                    ConversationGenerationOperation::StagePreparing,
+                ),
+                (
+                    GenerationTurnStatus::SelectingSpeaker,
+                    ConversationGenerationOperation::StageSelectingSpeaker,
+                ),
+            ],
+            GenerationTurnStatus::Preparing => vec![(
+                GenerationTurnStatus::SelectingSpeaker,
+                ConversationGenerationOperation::StageSelectingSpeaker,
+            )],
+            GenerationTurnStatus::SelectingSpeaker => Vec::new(),
+            _ => return Err(ConversationGenerationInputError::InvalidTurn),
+        };
+        for (status, operation) in stages {
+            let sequence = self
+                .repository
+                .latest_checkpoint_sequence(work.turn_id, work.attempt_id)
+                .map_err(ConversationGenerationInputError::Repository)?
+                .unwrap_or(0)
+                .checked_add(1)
+                .ok_or(ConversationGenerationInputError::InvalidTurn)?;
+            turn = self
+                .repository
+                .append_event(
+                    work.turn_id,
+                    turn.revision,
+                    &operation_token(
+                        work.conversation_id,
+                        work.turn_id,
+                        work.attempt_id,
+                        work.handle.id(),
+                        operation,
+                    ),
+                    GenerationCheckpointEnvelope {
+                        turn_id: work.turn_id,
+                        attempt_id: work.attempt_id,
+                        job_id: Some(work.handle.id()),
+                        correlation_id: None,
+                        sequence,
+                        event: GenerationCheckpointEvent::Stage { status },
+                    },
+                    now,
+                )
+                .map_err(ConversationGenerationInputError::Repository)?
+                .value;
+        }
+        let source_message_id = match turn.input {
+            GenerationInput::UserMessage { message_id } => message_id,
+            GenerationInput::ExistingHead { head_message_id } => head_message_id,
+            GenerationInput::ExistingCandidate { message_id, .. } => message_id,
+        };
+        let mut timeline = self.timeline(work.conversation_id, turn.branch_id)?;
+        retain_source_ancestry(&mut timeline.items, source_message_id)?;
+        let prior_speaker = timeline.items.iter().rev().find_map(|item| {
+            (item.message.role == MessageRole::Assistant)
+                .then_some(item.message.author_participant_id)
+                .flatten()
+        });
+        let participants = aggregate
+            .conversation
+            .participants
+            .iter()
+            .filter(|participant| {
+                participant.role == lettuce_conversations::ParticipantRole::Character
+            })
+            .map(|participant| SpeakerParticipantState {
+                id: participant.id,
+                eligible: participant.enabled,
+                muted: participant.muted,
+                speak_count: u32::try_from(
+                    timeline
+                        .items
+                        .iter()
+                        .filter(|item| {
+                            item.message.role == MessageRole::Assistant
+                                && item.message.author_participant_id == Some(participant.id)
+                        })
+                        .count(),
+                )
+                .unwrap_or(u32::MAX),
+                last_spoke_turn: None,
+                last_spoke_at: None,
+            })
+            .collect();
+        let selected_speaker = select_group_speaker(
+            &SpeakerPolicyRequest {
+                conversation_id: work.conversation_id,
+                branch_id: turn.branch_id,
+                operation: turn.operation,
+                forced_speaker: None,
+                mention_source: None,
+                participants,
+                prior_speaker,
+                timeline: timeline.items,
+            },
+            details.group.speaker_selection,
+        )
+        .map_err(|_| ConversationGenerationInputError::SpeakerUnavailable)?;
+        self.repository
+            .resolve_group_speaker(
+                &ResolveGroupSpeaker {
+                    conversation_id: work.conversation_id,
+                    turn_id: work.turn_id,
+                    expected_turn_revision: turn.revision,
+                    operation: operation_token(
+                        work.conversation_id,
+                        work.turn_id,
+                        work.attempt_id,
+                        work.handle.id(),
+                        ConversationGenerationOperation::ResolveSpeaker,
+                    ),
+                    selected_speaker,
+                },
+                now,
+            )
+            .map_err(ConversationGenerationInputError::Repository)?;
+        Ok(())
     }
 
     async fn build_input(

@@ -270,6 +270,8 @@ fn admit_and_claim(
 fn group_scenario(
     backend: &AppBackend,
     prefix: &str,
+    speaker_selection: lettuce_characters::SpeakerSelection,
+    mute_second: bool,
 ) -> (Scenario, Vec<lettuce_types::ConversationParticipantId>) {
     let database = backend.database();
     let model_id = seed_model(database, ProviderProtocol::Ollama, "ollama");
@@ -288,9 +290,9 @@ fn group_scenario(
         defaults.model_profile_id = Some(model_id);
     });
     let mut muted = member(second, 1);
-    muted.muted = true;
+    muted.muted = mute_second;
     let group_id = seed_group(database, vec![member(first, 0), muted], None, |group| {
-        group.speaker_selection = lettuce_characters::SpeakerSelection::Director;
+        group.speaker_selection = speaker_selection;
     });
     let launched = ConversationLaunchPlanner::new(database)
         .launch_group(&group_request(group_id, &format!("{prefix}-launch")), NOW)
@@ -735,9 +737,79 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
 }
 
 #[tokio::test]
+async fn app_backend_selects_deterministic_group_speakers_before_generation() {
+    for (name, policy, method) in [
+        (
+            "heuristic",
+            lettuce_characters::SpeakerSelection::Heuristic,
+            SpeakerDecisionMethod::Heuristic,
+        ),
+        (
+            "round-robin",
+            lettuce_characters::SpeakerSelection::RoundRobin,
+            SpeakerDecisionMethod::RoundRobin,
+        ),
+    ] {
+        let path =
+            std::env::temp_dir().join(format!("lettuce-group-{name}-{}.db", RequestId::new()));
+        let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+        let (scenario, speakers) = group_scenario(&backend, name, policy, true);
+        let work = admit_and_claim(backend.database(), &scenario, 1_015);
+        let inference = scripted(vec![text_outcome(
+            &format!("{name}-response"),
+            "Ada answers.",
+            10,
+            3,
+        )]);
+        let engine = ScenarioEmbeddingEngine;
+        let result = {
+            let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+            runner
+                .run(
+                    &work,
+                    ConversationGenerationRuntimeInput::default(),
+                    TimestampMillis::new(1_020),
+                    |_| vec![],
+                )
+                .await
+                .expect("run automatically selected group speaker")
+        };
+        assert_eq!(result.candidate.author_participant_id, speakers[0]);
+        let decision = result.turn.selected_speaker.expect("selected speaker");
+        assert_eq!(decision.participant_id, speakers[0]);
+        assert_eq!(decision.method, method);
+        assert_eq!(decision.fallback, SpeakerFallback::None);
+        assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+        drop(backend);
+        let reopened =
+            AppBackend::open(&path, TimestampMillis::new(1_021)).expect("reopen backend");
+        let replay = reopened
+            .prepared_conversation_generation_runner(&engine, &inference)
+            .run(
+                &work,
+                ConversationGenerationRuntimeInput::default(),
+                TimestampMillis::new(1_021),
+                |_| vec![],
+            )
+            .await
+            .expect("replay automatically selected group speaker");
+        assert!(replay.replayed);
+        assert_eq!(replay.candidate.id, result.candidate.id);
+        assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+        drop(reopened);
+        std::fs::remove_file(path).expect("remove test database");
+    }
+}
+
+#[tokio::test]
 async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
-    let (scenario, speakers) = group_scenario(&backend, "prepared-group");
+    let (scenario, speakers) = group_scenario(
+        &backend,
+        "prepared-group",
+        lettuce_characters::SpeakerSelection::Director,
+        true,
+    );
     let work = admit_and_claim(backend.database(), &scenario, 1_015);
     let operation = |name: &str| OperationToken {
         key: key(name),
@@ -940,7 +1012,12 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
 
     let unresolved_backend =
         AppBackend::open_in_memory(TimestampMillis::new(1)).expect("unresolved backend");
-    let (unresolved, _) = group_scenario(&unresolved_backend, "unresolved-group");
+    let (unresolved, _) = group_scenario(
+        &unresolved_backend,
+        "unresolved-group",
+        lettuce_characters::SpeakerSelection::Director,
+        true,
+    );
     let unresolved_work = admit_and_claim(unresolved_backend.database(), &unresolved, 1_015);
     let unresolved_inference = scripted(vec![text_outcome(
         "unresolved-group-response",

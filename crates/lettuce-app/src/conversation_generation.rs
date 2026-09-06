@@ -51,7 +51,9 @@ const STAGE_LABEL: &str = "conversation-generation";
 pub(crate) enum ConversationGenerationOperation {
     AttachJob,
     StagePreparing,
+    StageSelectingSpeaker,
     StageRunning,
+    ResolveSpeaker,
     Prepare,
     Finalize,
     Fail,
@@ -66,7 +68,9 @@ impl ConversationGenerationOperation {
         match self {
             Self::AttachJob => "attach-job",
             Self::StagePreparing => "stage-preparing",
+            Self::StageSelectingSpeaker => "stage-selecting-speaker",
             Self::StageRunning => "stage-running",
+            Self::ResolveSpeaker => "resolve-speaker",
             Self::Prepare => "prepare",
             Self::Finalize => "finalize",
             Self::Fail => "fail",

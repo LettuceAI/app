@@ -710,6 +710,16 @@ has no selected-revision concept, and the current snapshot field has no writer
 or content authority, so a nonempty `selected_revision_ids` still fails closed
 instead of inventing a second store. Launch-time policy snapshots and durable
 request-body recovery remain later slices.
+For unresolved group turns using the frozen heuristic or round-robin policy,
+the prepared runner now derives participation counts and the prior speaker from
+the durable active-branch timeline, stages `SelectingSpeaker`, applies the
+existing pure policy, and persists the decision through `ResolveGroupSpeaker`
+before preparing context. Disabled participants are ineligible and muted
+participants are excluded from automatic choice. Group invariants keep at least
+one enabled unmuted member available; the pure policy retains its defensive
+no-speaker error. The persisted selection and completed generation replay after
+process reopen without selecting or dispatching again. LLM speaker selection
+remains a separate provider-backed slice.
 `PrepareGeneration` records the resolved model and prompt/lorebook/memory
 attributions atomically before moving a preparing turn to ContextPrepared.
 The existing speaker-resolution mutation continues to own group speaker choice.
