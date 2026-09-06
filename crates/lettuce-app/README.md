@@ -618,3 +618,15 @@ with dispatch evidence and must not be added to it as an extra charge. This
 coordinator does not dispatch or fabricate evidence for that initial response.
 The SQLite two-round scenario verifies retained failures, separate successful
 response IDs/counters and unchanged terminal aggregate/replay.
+
+`ConversationInitialInferenceCoordinator` supplies the initial provider
+dispatch boundary for a running conversation generation attempt. It reloads the
+durable turn, verifies the turn/attempt/job/request identities and, when the turn
+already contains a resolved model, verifies the request against that snapshot.
+It records the raw response or provider failure through the existing job ledger.
+Cancellation before dispatch produces no evidence; cancellation after a response
+retains evidence and cleans orphan replay artifacts. Response interpretation,
+tool admission and terminal aggregation stay with their existing coordinators.
+The conversation repository currently has no preparation mutation that writes
+`GenerationTurn::resolved_model`; that durable preparation boundary remains a
+prerequisite for full send/regenerate/retry orchestration.

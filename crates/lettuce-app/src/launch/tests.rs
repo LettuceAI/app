@@ -8006,8 +8006,8 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
         turn_id: attempt.turn_id,
         attempt_id: attempt.id,
     };
-    let initial_outcome = InferenceOutcome {
-        provider_response_id: None,
+    let expected_initial_outcome = InferenceOutcome {
+        provider_response_id: Some("gen-provider-initial".into()),
         candidates: vec![InferenceCandidate {
             ordinal: 0,
             parts: vec![],
@@ -8037,6 +8037,83 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
         provider_request_id: Some("provider-initial".into()),
         warning_codes: vec![],
     };
+    let handle = JobHandle::new(job_id);
+    let inference_request = InferenceRequest {
+        turn_id: attempt.turn_id,
+        attempt_id: attempt.id,
+        operation: lettuce_conversations::GenerationOperation::Send,
+        profile: profile.clone(),
+        context: lettuce_conversations::ProviderNeutralContext {
+            messages: vec![lettuce_conversations::ProviderNeutralMessage {
+                role: MessageRole::User,
+                parts: vec![ProviderContextPart::Text {
+                    text: "Remember this.".into(),
+                }],
+            }],
+            attributions: lettuce_conversations::ContextAttributions::default(),
+            budget: lettuce_conversations::ContextBudgetReport::default(),
+        },
+        cancellation: Some(job_id),
+        stream_sink: None,
+        media_grants: vec![],
+        tools: Some(dynamic_memory_tool_request()),
+    };
+    let initial_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([expected_initial_outcome.clone()])),
+        requests: Mutex::new(vec![]),
+    };
+    let mut wrong_request = inference_request.clone();
+    wrong_request.attempt_id = lettuce_types::GenerationAttemptId::new();
+    assert!(matches!(
+        crate::ConversationInitialInferenceCoordinator::new(&database, &initial_inference)
+            .run(
+                conversation_id,
+                &handle,
+                wrong_request,
+                TimestampMillis::new(1_014),
+            )
+            .await,
+        Err(crate::ConversationInitialInferenceError::InvalidOwnership)
+    ));
+    assert!(
+        initial_inference
+            .requests
+            .lock()
+            .expect("requests")
+            .is_empty()
+    );
+    let cancelled_handle = JobHandle::new(job_id);
+    cancelled_handle.request_cancel();
+    assert!(matches!(
+        crate::ConversationInitialInferenceCoordinator::new(&database, &initial_inference)
+            .run(
+                conversation_id,
+                &cancelled_handle,
+                inference_request.clone(),
+                TimestampMillis::new(1_014),
+            )
+            .await,
+        Err(crate::ConversationInitialInferenceError::Cancelled)
+    ));
+    assert!(
+        lettuce_usage::JobUsageLedger::job_usage(&database, job_id)
+            .expect("no cancelled dispatch")
+            .is_empty()
+    );
+    let initial_outcome = crate::ConversationInitialInferenceCoordinator::new(
+        &database,
+        &initial_inference,
+    )
+    .run(
+        conversation_id,
+        &handle,
+        inference_request.clone(),
+        TimestampMillis::new(1_014),
+    )
+    .await
+    .expect("dispatch initial inference");
+    assert_eq!(initial_outcome, expected_initial_outcome);
+    assert_eq!(initial_inference.requests.lock().expect("requests").len(), 1);
     let initial_requested = lettuce_conversations::ConversationManager::new(&database)
         .request_tool_executions(
             owner,
@@ -8077,7 +8154,6 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
             ResourceClass::Cpu,
         ],
     };
-    let handle = JobHandle::new(job_id);
     let policy = DynamicMemoryPolicy {
         max_entries: 10,
         hot_token_budget: 100,
@@ -8165,26 +8241,6 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
         ])),
         requests: Mutex::new(vec![]),
     };
-    let inference_request = InferenceRequest {
-        turn_id: attempt.turn_id,
-        attempt_id: attempt.id,
-        operation: lettuce_conversations::GenerationOperation::Send,
-        profile: profile.clone(),
-        context: lettuce_conversations::ProviderNeutralContext {
-            messages: vec![lettuce_conversations::ProviderNeutralMessage {
-                role: MessageRole::User,
-                parts: vec![ProviderContextPart::Text {
-                    text: "Remember this.".into(),
-                }],
-            }],
-            attributions: lettuce_conversations::ContextAttributions::default(),
-            budget: lettuce_conversations::ContextBudgetReport::default(),
-        },
-        cancellation: Some(job_id),
-        stream_sink: None,
-        media_grants: vec![],
-        tools: Some(dynamic_memory_tool_request()),
-    };
     for error in [PortError::Unavailable, PortError::Cancelled] {
         let failed = FallibleScriptedInference {
             outcomes: Mutex::new(VecDeque::from([Err(error.clone())])), requests: Mutex::new(Vec::new()),
@@ -8195,7 +8251,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
             Err(crate::DynamicMemoryContinuationError::Inference(actual)) if actual == error));
     }
     let failed_evidence = lettuce_usage::JobUsageLedger::job_usage(&database, job_id).expect("failed evidence");
-    assert_eq!(failed_evidence.len(), 2);
+    assert_eq!(failed_evidence.len(), 3);
     assert!(failed_evidence.iter().any(|event| event.result == Some(lettuce_usage::JobInferenceUsageResult::InferenceFailed)));
     assert!(failed_evidence.iter().any(|event| event.result == Some(lettuce_usage::JobInferenceUsageResult::Cancelled)));
     for finish in [lettuce_conversations::FinishReason::Error, lettuce_conversations::FinishReason::Cancelled] {
@@ -8238,7 +8294,14 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
     ));
     assert_eq!(result.outcomes.len(), 3);
     let evidence = lettuce_usage::JobUsageLedger::job_usage(&database, job_id).expect("continuation evidence");
-    assert_eq!(evidence.len(), 6);
+    assert_eq!(evidence.len(), 7);
+    assert!(evidence.iter().any(|event| matches!(&event.result,
+        Some(lettuce_usage::JobInferenceUsageResult::Response {
+            usage: Some(usage),
+            provider_response_id: Some(id),
+        }) if id == "gen-provider-initial"
+            && usage.input_tokens == 20
+            && usage.output_tokens == 5)));
     for (id, input, output) in [("gen-provider-second", 7, 2), ("gen-provider-final", 5, 3)] {
         assert!(evidence.iter().any(|event| matches!(&event.result,
             Some(lettuce_usage::JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(actual) })
