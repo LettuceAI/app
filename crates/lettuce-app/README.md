@@ -670,9 +670,17 @@ Before each Preparing or Running stage append, the runner reads the latest
 durable checkpoint sequence for its attempt and allocates the next value. A
 pre-existing streaming progress checkpoint and process reopen therefore do not
 collide with runner-owned stages; the database still enforces contiguous
-uniqueness and operation replay. Automatic scheduling, streaming progress
-emission, automatic group speaker selection and frontend commands remain
-outside this runner.
+uniqueness and operation replay. Streaming progress emission and frontend
+commands remain outside this runner. The prepared runner exposes one synchronous
+command-facing execution operation for an already durable turn and attempt. It
+admits the existing idempotent job, claims that exact job with caller-supplied
+resource availability and a shared cancellation token, runs the prepared
+pipeline, and settles through the same dispatcher. A succeeded job returns its
+durable candidate and usage as an exact replay without another claim or provider
+call; other terminal jobs and temporarily unclaimable jobs are distinct typed
+outcomes. The caller remains responsible for creating the turn, supplying
+dynamic-memory create seeds, and deciding when to invoke the operation; no
+second scheduler or background loop is introduced.
 `PreparedConversationGenerationJobRunner`, exposed by `AppBackend`, now owns the
 reconstructible input boundary for an ordinary direct or resolved group turn. It
 loads the durable turn and branch ancestry, trims a finalized replay back to the

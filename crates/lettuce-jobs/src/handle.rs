@@ -62,6 +62,11 @@ impl JobHandle {
     }
 
     #[must_use]
+    pub fn with_cancellation(id: JobId, cancellation: CancellationToken) -> Self {
+        Self { id, cancellation }
+    }
+
+    #[must_use]
     pub const fn id(&self) -> JobId {
         self.id
     }

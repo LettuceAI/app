@@ -20,7 +20,7 @@ use lettuce_jobs::{
     JobError, JobErrorCode, JobKind, JobMutation, JobOutcome, JobPriority, JobSnapshot, JobSpec,
     JobState, JobStore, JobSubject, OutcomeRef, ProgressSnapshot, RecoveryPolicy,
     ResourceAvailability, ResourceClass, StageSnapshot, StoreError, SubjectKind, WorkerId,
-    handle::JobHandle,
+    handle::{CancellationToken, JobHandle},
 };
 use lettuce_memory::{
     DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError,
@@ -139,6 +139,12 @@ pub struct ConversationGenerationClaimedWork {
     pub claim: Claim,
     pub handle: JobHandle,
     pub job: JobSnapshot,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConversationGenerationClaimContext {
+    pub worker_id: WorkerId,
+    pub cancellation: CancellationToken,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -438,6 +444,24 @@ impl<
             | GenerationAttemptStatus::Preparing
             | GenerationAttemptStatus::Running => Ok(None),
         }
+    }
+
+    pub(crate) fn replay_succeeded_attempt(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        job_id: JobId,
+    ) -> Result<ConversationGenerationRunResult, ConversationGenerationRunError> {
+        let turn = self.repository.get_turn(turn_id)?;
+        let attempt = attempt_of(&turn, attempt_id)?;
+        if turn.conversation_id != conversation_id
+            || attempt.job_id != Some(job_id)
+            || attempt.status != GenerationAttemptStatus::Succeeded
+        {
+            return Err(ConversationGenerationRunError::InvalidWork);
+        }
+        self.replay_succeeded(turn, attempt)
     }
 
     pub async fn run<F>(
@@ -1442,6 +1466,29 @@ impl<
         allowed: &ResourceAvailability,
     ) -> Result<Option<ConversationGenerationClaimedWork>, ConversationGenerationDispatchError>
     {
+        self.claim_with_cancellation(
+            turn_id,
+            attempt_id,
+            ConversationGenerationClaimContext {
+                worker_id,
+                cancellation: CancellationToken::new(),
+            },
+            now,
+            lease_for,
+            allowed,
+        )
+    }
+
+    pub fn claim_with_cancellation(
+        &self,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        context: ConversationGenerationClaimContext,
+        now: TimestampMillis,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Option<ConversationGenerationClaimedWork>, ConversationGenerationDispatchError>
+    {
         let turn = self.conversations.get_turn(turn_id)?;
         let attempt = turn
             .attempts
@@ -1459,13 +1506,16 @@ impl<
             return Err(ConversationGenerationDispatchError::InvalidWork);
         }
         let at = now.max(job.updated_at);
-        let Some(claim) = self.jobs.claim(job_id, worker_id, at, lease_for, allowed)? else {
+        let Some(claim) = self
+            .jobs
+            .claim(job_id, context.worker_id, at, lease_for, allowed)?
+        else {
             return Ok(None);
         };
         if claim.input_ref != OutcomeRef::GenerationTurn(turn_id) {
             return Err(ConversationGenerationDispatchError::InvalidWork);
         }
-        let handle = JobHandle::new(job_id);
+        let handle = JobHandle::with_cancellation(job_id, context.cancellation);
         self.jobs.append_and_transition(JobMutation::Start {
             claim: claim.claim.clone(),
             at,

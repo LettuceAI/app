@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 use lettuce_characters::{CharacterRepository, PersonaRepository};
 use lettuce_companions::{
@@ -17,6 +20,9 @@ use lettuce_conversations::{
     ToolRequest, select_group_speaker,
 };
 use lettuce_embeddings::{EmbeddingDimensions, EmbeddingRequest, MemoryEmbeddingRepository};
+use lettuce_jobs::{
+    CancellationReason, Clock, ResourceAvailability, WorkerId, handle::CancellationToken,
+};
 use lettuce_memory::{
     DynamicMemoryPreparationRepository, DynamicMemoryRoundRepository, MemoryPolicy,
     MemoryRepository, MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalRepository,
@@ -34,17 +40,51 @@ use lettuce_types::{PageLimit, PageRequest, RequestId, TimestampMillis, UsageEve
 use lettuce_usage::JobUsageLedger;
 
 use crate::{
-    ConversationContextAssembler, ConversationGenerationClaimedWork, ConversationGenerationInput,
+    ConversationContextAssembler, ConversationGenerationClaimContext,
+    ConversationGenerationClaimedWork, ConversationGenerationDispatchCoordinator,
+    ConversationGenerationDispatchError, ConversationGenerationInput,
     ConversationGenerationJobRunner, ConversationGenerationMemoryInput,
     ConversationGenerationOperation, ConversationGenerationRunError,
-    ConversationGenerationRunResult, EmbeddingGenerationError, MemoryCreateSeed,
-    MemoryEmbeddingEngine, operation_token,
+    ConversationGenerationRunResult, ConversationGenerationSettledWork, EmbeddingGenerationError,
+    MemoryCreateSeed, MemoryEmbeddingEngine, operation_token,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ConversationGenerationRuntimeInput {
     pub stream_sink: Option<RequestId>,
     pub prompt_values: PromptRuntimeValues,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConversationGenerationExecutionRequest {
+    pub conversation_id: lettuce_types::ConversationId,
+    pub turn_id: lettuce_types::GenerationTurnId,
+    pub attempt_id: lettuce_types::GenerationAttemptId,
+    pub worker_id: WorkerId,
+    pub lease_for: Duration,
+    pub resources: ResourceAvailability,
+    pub runtime: ConversationGenerationRuntimeInput,
+    pub cancellation: CancellationToken,
+    pub cancellation_reason: CancellationReason,
+}
+
+#[derive(Debug)]
+pub enum ConversationGenerationExecutionOutcome {
+    Settled(ConversationGenerationSettledWork),
+    Replayed {
+        result: Box<ConversationGenerationRunResult>,
+        job: lettuce_jobs::JobSnapshot,
+    },
+    Terminal(crate::ConversationGenerationAdmission),
+    NotClaimed(crate::ConversationGenerationAdmission),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConversationGenerationExecutionError {
+    #[error("conversation generation dispatch failed: {0}")]
+    Dispatch(#[from] ConversationGenerationDispatchError),
+    #[error("conversation generation replay failed: {0}")]
+    Replay(#[from] ConversationGenerationRunError),
 }
 
 #[derive(Debug)]
@@ -108,6 +148,68 @@ where
         + GlobalSettingsStore,
     I: InferencePort + ?Sized,
 {
+    pub async fn execute<F, C>(
+        &self,
+        request: ConversationGenerationExecutionRequest,
+        clock: &C,
+        seeds_for_round: F,
+    ) -> Result<ConversationGenerationExecutionOutcome, ConversationGenerationExecutionError>
+    where
+        F: FnMut(&[lettuce_conversations::ToolExecution]) -> Vec<MemoryCreateSeed>,
+        C: Clock + ?Sized,
+        R: lettuce_jobs::JobStore + lettuce_usage::UsageLedger,
+    {
+        let dispatcher =
+            ConversationGenerationDispatchCoordinator::new(self.repository, self.repository);
+        let admission = dispatcher.admit(
+            request.conversation_id,
+            request.turn_id,
+            request.attempt_id,
+            clock.now(),
+        )?;
+        if admission.job.state == lettuce_jobs::JobState::Succeeded {
+            let result = ConversationGenerationJobRunner::new(
+                self.embedding,
+                self.repository,
+                self.inference,
+            )
+            .replay_succeeded_attempt(
+                request.conversation_id,
+                request.turn_id,
+                request.attempt_id,
+                admission.job.id,
+            )?;
+            return Ok(ConversationGenerationExecutionOutcome::Replayed {
+                result: Box::new(result),
+                job: admission.job,
+            });
+        }
+        if admission.job.state.is_terminal() {
+            return Ok(ConversationGenerationExecutionOutcome::Terminal(admission));
+        }
+        let Some(work) = dispatcher.claim_with_cancellation(
+            request.turn_id,
+            request.attempt_id,
+            ConversationGenerationClaimContext {
+                worker_id: request.worker_id,
+                cancellation: request.cancellation,
+            },
+            clock.now(),
+            request.lease_for,
+            &request.resources,
+        )?
+        else {
+            return Ok(ConversationGenerationExecutionOutcome::NotClaimed(
+                admission,
+            ));
+        };
+        let result = self
+            .run(&work, request.runtime, clock.now(), seeds_for_round)
+            .await;
+        let settled = dispatcher.settle(work, result, request.cancellation_reason, clock.now())?;
+        Ok(ConversationGenerationExecutionOutcome::Settled(settled))
+    }
+
     pub async fn run<F>(
         &self,
         work: &ConversationGenerationClaimedWork,

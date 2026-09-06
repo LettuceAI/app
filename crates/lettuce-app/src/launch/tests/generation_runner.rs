@@ -10,7 +10,10 @@ use lettuce_conversations::{
 use lettuce_embeddings::{
     EmbeddingDimensions, MemoryEmbeddingProjection, MemoryEmbeddingRepository,
 };
-use lettuce_jobs::{JobErrorCode, JobSnapshot, JobStore, events::JobEvent};
+use lettuce_jobs::{
+    CancellationReason, FakeClock, JobErrorCode, JobSnapshot, JobState, JobStore,
+    ResourceAvailability, WorkerId, events::JobEvent, handle::CancellationToken,
+};
 use lettuce_memory::{MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalRepository};
 use lettuce_types::{ConversationId, GenerationAttemptId, GenerationTurnId};
 use lettuce_usage::{JobInferenceUsageResult, JobUsageLedger, UsageEvent, UsageLedger};
@@ -18,7 +21,8 @@ use lettuce_usage::{JobInferenceUsageResult, JobUsageLedger, UsageEvent, UsageLe
 use crate::conversation_generation::{ConversationGenerationOperation, operation_token};
 use crate::{
     ConversationGenerationClaimedWork, ConversationGenerationDispatchCoordinator,
-    ConversationGenerationDispatchError, ConversationGenerationInput,
+    ConversationGenerationDispatchError, ConversationGenerationExecutionOutcome,
+    ConversationGenerationExecutionRequest, ConversationGenerationInput,
     ConversationGenerationJobRunner, ConversationGenerationMemoryInput,
     ConversationGenerationRunError, ConversationGenerationRuntimeInput,
     ConversationGenerationSettledWork, GenerationUsageEvidence,
@@ -268,6 +272,23 @@ fn admit_and_claim(
     claim(database, scenario, scenario.attempt_id, now + 1)
 }
 
+fn execution_request(
+    scenario: &Scenario,
+    cancellation: CancellationToken,
+) -> ConversationGenerationExecutionRequest {
+    ConversationGenerationExecutionRequest {
+        conversation_id: scenario.conversation_id,
+        turn_id: scenario.turn_id,
+        attempt_id: scenario.attempt_id,
+        worker_id: WorkerId::new(),
+        lease_for: LEASE,
+        resources: ResourceAvailability::all(),
+        runtime: ConversationGenerationRuntimeInput::default(),
+        cancellation,
+        cancellation_reason: CancellationReason::User,
+    }
+}
+
 fn group_scenario(
     backend: &AppBackend,
     prefix: &str,
@@ -495,6 +516,128 @@ async fn plain_chat_runs_finalizes_settles_and_replays_without_redispatch() {
             )
             .expect("claim settled job")
             .is_none()
+    );
+}
+
+#[tokio::test]
+async fn app_backend_executes_and_settles_one_durable_generation_operation() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let scenario = scenario_with_resolvable_profile(backend.database(), false, "scheduled", true);
+    let inference = scripted(vec![text_outcome(
+        "scheduled-response",
+        "Scheduled reply.",
+        12,
+        3,
+    )]);
+    let engine = ScenarioEmbeddingEngine;
+    let clock = FakeClock::new(TimestampMillis::new(1_020));
+    let outcome = backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .execute(
+            execution_request(&scenario, CancellationToken::new()),
+            &clock,
+            |_| vec![],
+        )
+        .await
+        .expect("execute generation");
+    let ConversationGenerationExecutionOutcome::Settled(
+        ConversationGenerationSettledWork::Succeeded { job, result },
+    ) = outcome
+    else {
+        panic!("generation succeeds");
+    };
+    assert_eq!(job.state, JobState::Succeeded);
+    assert_eq!(result.turn.status, GenerationTurnStatus::Succeeded);
+    assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+
+    let replay = backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .execute(
+            execution_request(&scenario, CancellationToken::new()),
+            &clock,
+            |_| vec![],
+        )
+        .await
+        .expect("replay execution");
+    let ConversationGenerationExecutionOutcome::Replayed {
+        result: replayed,
+        job: replayed_job,
+    } = replay
+    else {
+        panic!("settled generation replays");
+    };
+    assert!(replayed.replayed);
+    assert_eq!(replayed.candidate.id, result.candidate.id);
+    assert_eq!(replayed.usage_event_id, result.usage_event_id);
+    assert_eq!(replayed_job.state, JobState::Succeeded);
+    assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+
+    let cancelled =
+        scenario_with_resolvable_profile(backend.database(), false, "scheduled-cancel", true);
+    let cancelled_inference = scripted(vec![]);
+    let cancellation = CancellationToken::new();
+    cancellation.cancel();
+    let outcome = backend
+        .prepared_conversation_generation_runner(&engine, &cancelled_inference)
+        .execute(
+            execution_request(&cancelled, cancellation),
+            &clock,
+            |_| vec![],
+        )
+        .await
+        .expect("settle cancelled generation");
+    assert!(matches!(
+        outcome,
+        ConversationGenerationExecutionOutcome::Settled(
+            ConversationGenerationSettledWork::Cancelled { ref job, .. }
+        ) if job.state == JobState::Cancelled
+    ));
+    assert!(
+        cancelled_inference
+            .requests
+            .lock()
+            .expect("requests")
+            .is_empty()
+    );
+    let terminal = backend
+        .prepared_conversation_generation_runner(&engine, &cancelled_inference)
+        .execute(
+            execution_request(&cancelled, CancellationToken::new()),
+            &clock,
+            |_| vec![],
+        )
+        .await
+        .expect("read terminal generation");
+    assert!(matches!(
+        terminal,
+        ConversationGenerationExecutionOutcome::Terminal(ref admission)
+            if admission.job.state == JobState::Cancelled
+                && admission.attempt.status == GenerationAttemptStatus::Cancelled
+    ));
+
+    let blocked =
+        scenario_with_resolvable_profile(backend.database(), false, "scheduled-blocked", true);
+    let blocked_inference = scripted(vec![]);
+    let mut request = execution_request(&blocked, CancellationToken::new());
+    request.resources = ResourceAvailability::none();
+    let outcome = backend
+        .prepared_conversation_generation_runner(&engine, &blocked_inference)
+        .execute(request, &clock, |_| vec![])
+        .await
+        .expect("leave unavailable generation queued");
+    assert!(matches!(
+        outcome,
+        ConversationGenerationExecutionOutcome::NotClaimed(ref admission)
+            if admission.created
+                && admission.job.state == JobState::Queued
+                && admission.attempt.job_id == Some(admission.job.id)
+    ));
+    assert!(
+        blocked_inference
+            .requests
+            .lock()
+            .expect("requests")
+            .is_empty()
     );
 }
 

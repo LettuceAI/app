@@ -33,6 +33,9 @@ claims while leaving unrelated queued work untouched.
 Request handles expose a cloneable cancellation token with both an atomic
 instant check and an async notification, allowing executors to interrupt
 blocked I/O without polling.
+Hosts may construct a job handle with an existing cancellation token when a
+command lifetime must propagate cancellation into the claimed executor. The job
+identity remains explicit and the durable store still owns lifecycle state.
 
 The in-memory store is deterministic when constructed with `FakeClock`; the
 SQLite implementation lives in `lettuce-database` and restores every durable
