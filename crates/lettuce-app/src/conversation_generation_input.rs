@@ -8,11 +8,13 @@ use lettuce_conversations::{
     ContextAssembler, ContextAssemblyError, ContextRequest, ConversationKind, ConversationReader,
     ConversationRepository, ConversationRepositoryError, ConversationSnapshotMaterializer,
     GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationInput, GenerationTarget,
-    GenerationTurnStatus, InferencePort, MemoryAttribution, MemoryContribution, MemoryModeSnapshot,
-    MessageRole, OutputPolicy, PromptRuntimeFacts, PromptRuntimeValues, ProviderContextPart,
-    ResolveGroupSpeaker, ResolvedInferenceProfile, SafetyContext, SelectedSpeakerDecision,
-    SpeakerDecisionMethod, SpeakerDecisionReference, SpeakerFallback, SpeakerParticipantState,
-    SpeakerPolicyRequest, ToolPolicy, select_group_speaker,
+    GenerationTurnStatus, InferencePort, InferenceRequest, MemoryAttribution, MemoryContribution,
+    MemoryModeSnapshot, MessageRole, OutputPolicy, PromptRuntimeFacts, PromptRuntimeValues,
+    ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage, ResolveGroupSpeaker,
+    ResolvedInferenceProfile, SafetyContext, SelectedSpeakerDecision, SpeakerDecisionMethod,
+    SpeakerDecisionReference, SpeakerFallback, SpeakerInferenceBinding, SpeakerInferenceRepository,
+    SpeakerParticipantState, SpeakerPolicyRequest, ToolChoice, ToolDefinition, ToolPolicy,
+    ToolRequest, select_group_speaker,
 };
 use lettuce_embeddings::{EmbeddingDimensions, EmbeddingRequest, MemoryEmbeddingRepository};
 use lettuce_memory::{
@@ -28,7 +30,7 @@ use lettuce_models::{
 use lettuce_settings::{
     DynamicMemorySettings, GlobalSettingsStore, GlobalSettingsStoreError, MemoryRetrievalStrategy,
 };
-use lettuce_types::{PageLimit, PageRequest, RequestId, TimestampMillis};
+use lettuce_types::{PageLimit, PageRequest, RequestId, TimestampMillis, UsageEventId};
 use lettuce_usage::JobUsageLedger;
 
 use crate::{
@@ -58,6 +60,7 @@ enum ConversationGenerationInputError {
     Cancelled,
     MemoryInputUnavailable,
     SpeakerUnavailable,
+    SpeakerPending(UsageEventId),
     InvalidTurn,
 }
 
@@ -91,6 +94,7 @@ where
         + ModelProfileRepository
         + ProviderAccountRepository
         + lettuce_conversations::InitialInferenceRepository
+        + SpeakerInferenceRepository
         + lettuce_conversations::ToolExecutionRepository
         + lettuce_conversations::ProviderReplayArtifactPort
         + JobUsageLedger
@@ -120,6 +124,7 @@ where
             return Ok(replay);
         }
         self.resolve_automatic_speaker(work, now)
+            .await
             .map_err(ConversationGenerationInputError::into_run_error)?;
         let input = self
             .build_input(work, runtime, now)
@@ -128,7 +133,7 @@ where
         runner.run(work, input, now, seeds_for_round).await
     }
 
-    fn resolve_automatic_speaker(
+    async fn resolve_automatic_speaker(
         &self,
         work: &ConversationGenerationClaimedWork,
         now: TimestampMillis,
@@ -146,10 +151,10 @@ where
         {
             return Ok(());
         }
-        if !matches!(
+        if matches!(
             details.group.speaker_selection,
-            lettuce_conversations::GroupSpeakerSelectionSnapshot::Heuristic
-                | lettuce_conversations::GroupSpeakerSelectionSnapshot::RoundRobin
+            lettuce_conversations::GroupSpeakerSelectionSnapshot::Director
+                | lettuce_conversations::GroupSpeakerSelectionSnapshot::DirectorAction
         ) {
             return Ok(());
         }
@@ -242,20 +247,25 @@ where
                 last_spoke_at: None,
             })
             .collect();
-        let selected_speaker = select_group_speaker(
-            &SpeakerPolicyRequest {
-                conversation_id: work.conversation_id,
-                branch_id: turn.branch_id,
-                operation: turn.operation,
-                forced_speaker: None,
-                mention_source: None,
-                participants,
-                prior_speaker,
-                timeline: timeline.items,
-            },
-            details.group.speaker_selection,
-        )
-        .map_err(|_| ConversationGenerationInputError::SpeakerUnavailable)?;
+        let policy_request = SpeakerPolicyRequest {
+            conversation_id: work.conversation_id,
+            branch_id: turn.branch_id,
+            operation: turn.operation,
+            forced_speaker: None,
+            mention_source: None,
+            participants,
+            prior_speaker,
+            timeline: timeline.items,
+        };
+        let selected_speaker = if details.group.speaker_selection
+            == lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm
+        {
+            self.select_speaker_via_llm(work, &aggregate.conversation, &turn, &policy_request, now)
+                .await?
+        } else {
+            select_group_speaker(&policy_request, details.group.speaker_selection)
+                .map_err(|_| ConversationGenerationInputError::SpeakerUnavailable)?
+        };
         self.repository
             .resolve_group_speaker(
                 &ResolveGroupSpeaker {
@@ -275,6 +285,153 @@ where
             )
             .map_err(ConversationGenerationInputError::Repository)?;
         Ok(())
+    }
+
+    async fn select_speaker_via_llm(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        conversation: &lettuce_conversations::Conversation,
+        turn: &lettuce_conversations::GenerationTurn,
+        policy: &SpeakerPolicyRequest,
+        now: TimestampMillis,
+    ) -> Result<SelectedSpeakerDecision, ConversationGenerationInputError> {
+        let available = conversation
+            .participants
+            .iter()
+            .filter(|participant| {
+                participant.role == lettuce_conversations::ParticipantRole::Character
+                    && participant.enabled
+                    && !participant.muted
+            })
+            .collect::<Vec<_>>();
+        if available.is_empty() {
+            return Err(ConversationGenerationInputError::SpeakerUnavailable);
+        }
+        let settings = GlobalSettingsStore::load(self.repository)
+            .map_err(ConversationGenerationInputError::Settings)?;
+        let Some(model_id) = settings.default_model_profile_id else {
+            return heuristic_fallback(policy, None);
+        };
+        let Some(model) = ModelProfileRepository::get(self.repository, model_id)
+            .map_err(ConversationGenerationInputError::ModelRepository)?
+        else {
+            return heuristic_fallback(policy, None);
+        };
+        let Some(account) =
+            ProviderAccountRepository::get(self.repository, model.provider_account_id)
+                .map_err(ConversationGenerationInputError::ModelRepository)?
+        else {
+            return heuristic_fallback(policy, None);
+        };
+        let profile = match lettuce_models::resolve_chat_profile(
+            &lettuce_models::ExpectedModelIdentity {
+                model_profile_id: model.id,
+                model_revision: model.revision,
+                provider_account_id: account.id,
+                provider_account_revision: account.revision,
+                external_model_id: model.external_model_id.clone(),
+                display_name: model.display_name.clone(),
+                provider_protocol: account.protocol,
+                model_kind: lettuce_models::ModelKind::Chat,
+            },
+            &model,
+            &account,
+            &ChatParameterResolutionInput::default(),
+            &ChatRequirements {
+                require_tools: true,
+                ..Default::default()
+            },
+        ) {
+            Ok(profile) => profile,
+            Err(_) => return heuristic_fallback(policy, None),
+        };
+        let prompt = speaker_selection_prompt(conversation, policy, &available);
+        let tools = speaker_selection_tools(&available);
+        let request = InferenceRequest {
+            turn_id: turn.id,
+            attempt_id: work.attempt_id,
+            operation: turn.operation,
+            profile: ResolvedInferenceProfile {
+                chat_profile: profile,
+                tool_policy: ToolPolicy::Allowed,
+                output_policy: OutputPolicy::Plain,
+                safety_policy: SafetyContext::Standard,
+                correlation_id: None,
+            },
+            context: ProviderNeutralContext {
+                messages: vec![ProviderNeutralMessage {
+                    role: MessageRole::User,
+                    parts: vec![ProviderContextPart::Text { text: prompt }],
+                }],
+                attributions: Default::default(),
+                budget: Default::default(),
+            },
+            cancellation: Some(work.handle.id()),
+            stream_sink: None,
+            media_grants: Vec::new(),
+            tools: Some(tools),
+        };
+        let binding = SpeakerInferenceBinding::from_request(work.conversation_id, &request)
+            .map_err(|_| ConversationGenerationInputError::InvalidTurn)?;
+        if let Some(record) = self
+            .repository
+            .speaker_inference(&binding)
+            .map_err(ConversationGenerationInputError::Repository)?
+        {
+            return record
+                .decision
+                .ok_or(ConversationGenerationInputError::SpeakerPending(
+                    record.usage_event_id,
+                ));
+        }
+        let admission = self
+            .repository
+            .admit_speaker_inference(work.conversation_id, &request, now)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        if !admission.created {
+            return admission.record.decision.ok_or(
+                ConversationGenerationInputError::SpeakerPending(admission.record.usage_event_id),
+            );
+        }
+        let outcome = crate::job_inference_usage::run_job_inference_with_id(
+            self.repository,
+            self.inference,
+            work.handle.id(),
+            request,
+            now,
+            admission.record.usage_event_id,
+        )
+        .await;
+        let mut decision = match outcome {
+            Ok(ref outcome) => {
+                llm_speaker_decision(outcome, &available, admission.record.usage_event_id)
+                    .unwrap_or_else(|| {
+                        heuristic_fallback(policy, Some(admission.record.usage_event_id))
+                            .expect("available speaker has a heuristic fallback")
+                    })
+            }
+            Err(crate::job_inference_usage::JobInferenceError::Provider(
+                lettuce_conversations::PortError::Cancelled,
+            )) => return Err(ConversationGenerationInputError::Cancelled),
+            Err(crate::job_inference_usage::JobInferenceError::Provider(_)) => {
+                heuristic_fallback(policy, Some(admission.record.usage_event_id))?
+            }
+            Err(crate::job_inference_usage::JobInferenceError::Evidence) => {
+                return Err(ConversationGenerationInputError::Repository(
+                    ConversationRepositoryError::Storage,
+                ));
+            }
+        };
+        if let Ok(outcome) = outcome {
+            crate::cleanup_outcome_replays(self.repository, &outcome).map_err(|_| {
+                ConversationGenerationInputError::Repository(ConversationRepositoryError::Storage)
+            })?;
+        }
+        decision.usage_event_id = Some(admission.record.usage_event_id);
+        self.repository
+            .settle_speaker_inference(&binding, &decision, now)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        Ok(decision)
     }
 
     async fn build_input(
@@ -768,6 +925,9 @@ impl ConversationGenerationInputError {
             Self::SpeakerUnavailable => ConversationGenerationRunError::PreparationFailed {
                 code: lettuce_conversations::GenerationFailureCode::SpeakerUnavailable,
             },
+            Self::SpeakerPending(usage_event_id) => ConversationGenerationRunError::Pending {
+                evidence: crate::GenerationUsageEvidence::Dispatch(usage_event_id),
+            },
             Self::MemoryInputUnavailable | Self::InvalidTurn => {
                 ConversationGenerationRunError::InvalidInput
             }
@@ -835,6 +995,190 @@ fn memory_query(timeline: &[lettuce_conversations::TimelineItem], enriched: bool
         .collect::<Vec<_>>();
     messages.reverse();
     messages.join("\n")
+}
+
+fn speaker_selection_prompt(
+    conversation: &lettuce_conversations::Conversation,
+    policy: &SpeakerPolicyRequest,
+    available: &[&lettuce_conversations::ConversationParticipant],
+) -> String {
+    let total = policy
+        .participants
+        .iter()
+        .map(|participant| u64::from(participant.speak_count))
+        .sum::<u64>();
+    let mut prompt = String::from(
+        "You are selecting which character should respond next in a group conversation.\n\n## Participants\n",
+    );
+    for participant in available {
+        let count = policy
+            .participants
+            .iter()
+            .find(|state| state.id == participant.id)
+            .map_or(0, |state| state.speak_count);
+        prompt.push_str(&format!(
+            "\n- Name: {}\n  ID: {}\n  Participation: {count} of {total} assistant messages\n",
+            participant.display_name, participant.id
+        ));
+        if let Some(description) = &participant.authored_description {
+            let excerpt = description.chars().take(1_000).collect::<String>();
+            if !excerpt.trim().is_empty() {
+                prompt.push_str(&format!("  Description: {}\n", excerpt.trim()));
+            }
+        }
+    }
+    let new_user_message = (policy.operation == lettuce_conversations::GenerationOperation::Send)
+        .then(|| policy.timeline.last())
+        .flatten()
+        .filter(|item| item.message.role == MessageRole::User);
+    let recent_end = policy.timeline.len() - usize::from(new_user_message.is_some());
+    prompt.push_str("\n## Recent Conversation\n");
+    for item in policy.timeline[..recent_end].iter().rev().take(10).rev() {
+        let speaker = if item.message.role == MessageRole::User {
+            "User"
+        } else {
+            item.message
+                .author_participant_id
+                .and_then(|id| {
+                    conversation
+                        .participants
+                        .iter()
+                        .find(|participant| participant.id == id)
+                        .map(|participant| participant.display_name.as_str())
+                })
+                .unwrap_or("System")
+        };
+        let text = timeline_item_text(item);
+        if !text.is_empty() {
+            prompt.push_str(&format!(
+                "\n- {speaker}: {}",
+                text.chars().take(1_000).collect::<String>()
+            ));
+        }
+    }
+    if let Some(item) = new_user_message {
+        let text = timeline_item_text(item);
+        if !text.is_empty() {
+            prompt.push_str("\n\n## New Message from User\n\n");
+            prompt.push_str(&text.chars().take(1_000).collect::<String>());
+        }
+    }
+    prompt.push_str(
+        "\n\nChoose for relevance, expertise, participation balance, and natural flow. Use the select_next_speaker tool.",
+    );
+    prompt
+}
+
+fn timeline_item_text(item: &lettuce_conversations::TimelineItem) -> String {
+    item.active_revision
+        .as_ref()
+        .map(|revision| revision.parts.as_slice())
+        .or_else(|| {
+            item.active_candidate
+                .as_ref()
+                .map(|candidate| candidate.parts.as_slice())
+        })
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|part| match part {
+            lettuce_conversations::MessagePart::Text { text } => Some(text.trim()),
+            _ => None,
+        })
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn speaker_selection_tools(
+    available: &[&lettuce_conversations::ConversationParticipant],
+) -> ToolRequest {
+    ToolRequest {
+        definitions: vec![ToolDefinition {
+            name: "select_next_speaker".into(),
+            description: Some(
+                "Select which character should respond next in the group conversation.".into(),
+            ),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "character_id": {
+                        "type": "string",
+                        "description": "ID of the character who should respond",
+                        "enum": available.iter().map(|participant| participant.id.to_string()).collect::<Vec<_>>()
+                    },
+                    "reasoning": {
+                        "type": "string",
+                        "description": "Brief explanation of why this character should speak"
+                    }
+                },
+                "required": ["character_id"]
+            }),
+            version: 1,
+        }],
+        choice: ToolChoice::Required,
+    }
+}
+
+fn llm_speaker_decision(
+    outcome: &lettuce_conversations::InferenceOutcome,
+    available: &[&lettuce_conversations::ConversationParticipant],
+    usage_event_id: UsageEventId,
+) -> Option<SelectedSpeakerDecision> {
+    for call in outcome
+        .candidates
+        .iter()
+        .flat_map(|candidate| &candidate.tool_calls)
+    {
+        if call.name != "select_next_speaker" {
+            continue;
+        }
+        let Some(participant_id) = call
+            .arguments
+            .get("character_id")
+            .and_then(|value| value.as_str())
+            .and_then(|value| value.parse().ok())
+        else {
+            continue;
+        };
+        if !available
+            .iter()
+            .any(|participant| participant.id == participant_id)
+        {
+            continue;
+        }
+        let rationale_summary = call
+            .arguments
+            .get("reasoning")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && value.len() <= 4_096)
+            .map(str::to_owned);
+        return Some(SelectedSpeakerDecision {
+            participant_id,
+            method: SpeakerDecisionMethod::Llm,
+            fallback: SpeakerFallback::None,
+            reference: None,
+            rationale_summary,
+            decision_model: None,
+            usage_event_id: Some(usage_event_id),
+        });
+    }
+    None
+}
+
+fn heuristic_fallback(
+    policy: &SpeakerPolicyRequest,
+    usage_event_id: Option<UsageEventId>,
+) -> Result<SelectedSpeakerDecision, ConversationGenerationInputError> {
+    let mut decision = select_group_speaker(
+        policy,
+        lettuce_conversations::GroupSpeakerSelectionSnapshot::Heuristic,
+    )
+    .map_err(|_| ConversationGenerationInputError::SpeakerUnavailable)?;
+    decision.method = SpeakerDecisionMethod::Llm;
+    decision.fallback = SpeakerFallback::Heuristic;
+    decision.usage_event_id = usage_event_id;
+    Ok(decision)
 }
 
 fn select_memories<'a>(

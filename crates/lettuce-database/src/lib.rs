@@ -29,6 +29,7 @@ mod prompt_adapter;
 mod scheduled_note_adapter;
 mod soul_adapter;
 mod soul_writer_adapter;
+mod speaker_inference_adapter;
 mod staged_lorebook_adapter;
 mod staged_lorebook_writer_adapter;
 mod state_adapter;
@@ -4009,6 +4010,7 @@ mod tests {
                 "generation_checkpoints",
                 "generation_initial_dispatches",
                 "generation_initial_replay_refs",
+                "generation_speaker_dispatches",
                 "group_lorebook_bindings",
                 "group_members",
                 "group_presentation_asset_refs",

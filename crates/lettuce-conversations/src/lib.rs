@@ -17,6 +17,7 @@ mod model;
 mod ports;
 mod service;
 mod snapshot;
+mod speaker_inference;
 mod speaker_policy;
 mod tool;
 mod validation;
@@ -33,6 +34,7 @@ pub use model::*;
 pub use ports::*;
 pub use service::*;
 pub use snapshot::*;
+pub use speaker_inference::*;
 pub use speaker_policy::*;
 pub use tool::*;
 

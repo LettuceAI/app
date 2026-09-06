@@ -1319,3 +1319,48 @@ WHEN NOT EXISTS (
       AND result_json IS NOT NULL
 )
 BEGIN SELECT RAISE(ABORT, 'initial settlement requires retained dispatch usage'); END;
+
+CREATE TABLE generation_speaker_dispatches (
+    usage_event_id TEXT NOT NULL UNIQUE,
+    conversation_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    job_id TEXT NOT NULL,
+    request_fingerprint BLOB NOT NULL CHECK (length(request_fingerprint) = 32),
+    admitted_at INTEGER NOT NULL,
+    decision_json TEXT CHECK (decision_json IS NULL OR (json_valid(decision_json) AND json_extract(decision_json, '$.format_version') = 1)),
+    settled_at INTEGER,
+    PRIMARY KEY (conversation_id, turn_id, attempt_id),
+    FOREIGN KEY (conversation_id, turn_id, attempt_id) REFERENCES generation_attempts(conversation_id, turn_id, id) ON DELETE RESTRICT,
+    CHECK ((decision_json IS NULL) = (settled_at IS NULL)),
+    CHECK (settled_at IS NULL OR settled_at >= admitted_at)
+) STRICT;
+CREATE TRIGGER speaker_dispatch_admission
+BEFORE INSERT ON generation_speaker_dispatches
+WHEN NEW.decision_json IS NOT NULL OR NOT EXISTS (
+    SELECT 1 FROM generation_attempts AS attempt JOIN conversation_turns AS turn
+    ON turn.conversation_id = attempt.conversation_id AND turn.id = attempt.turn_id
+    WHERE attempt.conversation_id = NEW.conversation_id AND attempt.turn_id = NEW.turn_id
+      AND attempt.id = NEW.attempt_id AND attempt.job_id = NEW.job_id
+      AND attempt.status = 'preparing' AND turn.status = 'selecting_speaker'
+      AND turn.selected_speaker_participant_id IS NULL
+)
+BEGIN SELECT RAISE(ABORT, 'speaker dispatch requires unresolved selecting attempt'); END;
+CREATE TRIGGER speaker_dispatch_immutable
+BEFORE UPDATE ON generation_speaker_dispatches
+WHEN OLD.decision_json IS NOT NULL OR NEW.decision_json IS NULL
+  OR NEW.conversation_id IS NOT OLD.conversation_id OR NEW.turn_id IS NOT OLD.turn_id
+  OR NEW.attempt_id IS NOT OLD.attempt_id OR NEW.job_id IS NOT OLD.job_id
+  OR NEW.request_fingerprint IS NOT OLD.request_fingerprint OR NEW.admitted_at IS NOT OLD.admitted_at
+  OR NEW.usage_event_id IS NOT OLD.usage_event_id
+BEGIN SELECT RAISE(ABORT, 'speaker dispatch is immutable except first settlement'); END;
+CREATE TRIGGER speaker_dispatch_no_delete
+BEFORE DELETE ON generation_speaker_dispatches
+BEGIN SELECT RAISE(ABORT, 'speaker dispatch evidence is immutable'); END;
+CREATE TRIGGER speaker_dispatch_usage_settlement
+BEFORE UPDATE OF decision_json ON generation_speaker_dispatches
+WHEN NOT EXISTS (
+    SELECT 1 FROM job_inference_usage WHERE id = NEW.usage_event_id AND job_id = NEW.job_id
+      AND result_json IS NOT NULL
+)
+BEGIN SELECT RAISE(ABORT, 'speaker settlement requires retained dispatch usage'); END;

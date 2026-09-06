@@ -376,6 +376,13 @@ full repository must validate projection equality on every write and hydrate.
 Usage rows are references owned by the external `UsagePort`, not copied usage
 records.
 
+Migration 8 also stores one immutable provider-backed speaker-selection
+dispatch per generation attempt. Admission requires the attached attempt to be
+preparing at `SelectingSpeaker`; settlement requires the linked job inference
+evidence to be terminal and the selected participant to be enabled and unmuted.
+The row retains the exact request fingerprint, usage-event identity and final
+decision, so process reopen replays selection without another provider call.
+
 Sessions, conversation assembly/resolution, starter-link normalization,
 import/export, hard purge, sync/backup, FTS, and legacy text-column retrofits
 remain outside this slice. Existing prompt/lorebook text columns are not

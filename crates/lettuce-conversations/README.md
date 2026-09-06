@@ -165,3 +165,11 @@ HTTP provider_request_id. OpenAI buffered/SSE adapters populate it for billing
 lookups; it is not an internal attempt or candidate identity. Durable companion
 dispatch responses retain it; conversation/creation/memory checkpoints do not
 yet persist this additional field.
+
+Provider-backed group speaker selection has a separate immutable checkpoint
+contract from the initial generation dispatch. Its request binding covers the
+conversation, turn, attempt, job, resolved profile, prompt context and required
+tool request. Admission returns the usage-event identity for the actual provider
+call; settlement stores only the validated final speaker decision. A pending
+record blocks redispatch, while a settled record can replay the decision without
+retaining a second copy of the provider response.

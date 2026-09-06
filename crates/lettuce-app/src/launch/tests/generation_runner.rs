@@ -4,7 +4,8 @@ use lettuce_conversations::{
     ConversationManager, GenerationAttemptStatus, GenerationFailureCode, InitialInferenceBinding,
     InitialInferenceRepository, InitialInferenceResult, ModelSelectionSnapshot, OperationKind,
     ResolveGroupSpeaker, SelectedSpeakerDecision, SpeakerDecisionMethod, SpeakerFallback,
-    ToolExecutionOwner, UsageCounters, UsageOutcome, UsageUnavailableReason,
+    SpeakerInferenceBinding, SpeakerInferenceRepository, ToolExecutionOwner, UsageCounters,
+    UsageOutcome, UsageUnavailableReason,
 };
 use lettuce_embeddings::{
     EmbeddingDimensions, MemoryEmbeddingProjection, MemoryEmbeddingRepository,
@@ -275,12 +276,14 @@ fn group_scenario(
 ) -> (Scenario, Vec<lettuce_types::ConversationParticipantId>) {
     let database = backend.database();
     let model_id = seed_model(database, ProviderProtocol::Ollama, "ollama");
+    set_application_default_model(database, model_id);
     let mut stored_model = ModelProfileRepository::get(database, model_id)
         .expect("model")
         .expect("model exists");
     let model_revision = stored_model.revision;
     stored_model.config.chat_parameters.temperature = None;
     stored_model.config.capabilities.streaming = lettuce_models::CapabilityStatus::Supported;
+    stored_model.config.capabilities.tools = lettuce_models::CapabilityStatus::Supported;
     ModelProfileRepository::upsert(database, stored_model, Some(model_revision))
         .expect("resolvable model profile");
     let first = seed_named_character_with(database, "Ada", |defaults| {
@@ -734,6 +737,150 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
             .expect("manual memory remains after replay"),
         manual_space
     );
+}
+
+#[tokio::test]
+async fn app_backend_checkpoints_llm_group_selection_and_falls_back_to_heuristic() {
+    for (name, selection, expected_method, expected_fallback) in [
+        (
+            "llm-selected",
+            Some(1usize),
+            SpeakerDecisionMethod::Llm,
+            SpeakerFallback::None,
+        ),
+        (
+            "llm-fallback",
+            None,
+            SpeakerDecisionMethod::Llm,
+            SpeakerFallback::Heuristic,
+        ),
+    ] {
+        let path =
+            std::env::temp_dir().join(format!("lettuce-group-llm-{name}-{}.db", RequestId::new()));
+        let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+        let (scenario, speakers) = group_scenario(
+            &backend,
+            name,
+            lettuce_characters::SpeakerSelection::Llm,
+            selection.is_none(),
+        );
+        let selected_id = selection
+            .map(|index| speakers[index])
+            .unwrap_or_else(lettuce_types::ConversationParticipantId::new);
+        let work = admit_and_claim(backend.database(), &scenario, 1_015);
+        let inference = scripted(vec![
+            call_outcome(
+                &format!("{name}-selection"),
+                "select_next_speaker",
+                serde_json::json!({
+                    "character_id": selected_id,
+                    "reasoning": "This participant fits the conversation."
+                }),
+                (15, 2),
+            ),
+            text_outcome(&format!("{name}-generation"), "Group reply.", 20, 4),
+        ]);
+        let engine = ScenarioEmbeddingEngine;
+        let result = backend
+            .prepared_conversation_generation_runner(&engine, &inference)
+            .run(
+                &work,
+                ConversationGenerationRuntimeInput::default(),
+                TimestampMillis::new(1_020),
+                |_| vec![],
+            )
+            .await
+            .expect("run LLM-selected group generation");
+        let expected_speaker = selection.map_or(speakers[0], |index| speakers[index]);
+        assert_eq!(result.candidate.author_participant_id, expected_speaker);
+        let decision = result.turn.selected_speaker.expect("speaker decision");
+        assert_eq!(decision.participant_id, expected_speaker);
+        assert_eq!(decision.method, expected_method);
+        assert_eq!(decision.fallback, expected_fallback);
+        assert!(decision.usage_event_id.is_some());
+        let selection_request = {
+            let requests = inference.requests.lock().expect("requests");
+            assert_eq!(requests.len(), 2);
+            let selection_tools = requests[0].tools.as_ref().expect("selection tools");
+            assert_eq!(
+                selection_tools.choice,
+                lettuce_conversations::ToolChoice::Required
+            );
+            assert_eq!(selection_tools.definitions[0].name, "select_next_speaker");
+            let choices =
+                selection_tools.definitions[0].parameters["properties"]["character_id"]["enum"]
+                    .as_array()
+                    .expect("speaker enum");
+            assert_eq!(choices.len(), if selection.is_some() { 2 } else { 1 });
+            if selection.is_none() {
+                assert!(
+                    !choices
+                        .iter()
+                        .any(|value| value == &serde_json::json!(speakers[1]))
+                );
+            }
+            let ProviderContextPart::Text {
+                text: selection_prompt,
+            } = &requests[0].context.messages[0].parts[0]
+            else {
+                panic!("selection prompt is text");
+            };
+            assert!(selection_prompt.contains("## Recent Conversation"));
+            assert!(selection_prompt.contains("## New Message from User\n\nHello cast."));
+            assert_eq!(selection_prompt.matches("Hello cast.").count(), 1);
+            assert_eq!(requests[0].stream_sink, None);
+            assert_eq!(requests[1].tools, None);
+            requests[0].clone()
+        };
+        let binding =
+            SpeakerInferenceBinding::from_request(scenario.conversation_id, &selection_request)
+                .expect("speaker binding");
+        let checkpoint =
+            SpeakerInferenceRepository::speaker_inference(backend.database(), &binding)
+                .expect("speaker checkpoint")
+                .expect("speaker checkpoint exists");
+        assert_eq!(checkpoint.decision, Some(decision.clone()));
+        assert_eq!(
+            checkpoint.usage_event_id,
+            decision.usage_event_id.expect("decision usage")
+        );
+        let mut changed_request = selection_request;
+        changed_request.context.messages[0].parts = vec![ProviderContextPart::Text {
+            text: "Changed selection prompt.".into(),
+        }];
+        let changed_binding =
+            SpeakerInferenceBinding::from_request(scenario.conversation_id, &changed_request)
+                .expect("changed binding");
+        assert!(matches!(
+            SpeakerInferenceRepository::speaker_inference(backend.database(), &changed_binding),
+            Err(lettuce_conversations::ConversationRepositoryError::Conflict)
+        ));
+        assert_eq!(
+            backend
+                .database()
+                .job_usage(work.handle.id())
+                .expect("usage")
+                .len(),
+            2
+        );
+        drop(backend);
+        let reopened = AppBackend::open(&path, TimestampMillis::new(1_030)).expect("reopen");
+        let replay = reopened
+            .prepared_conversation_generation_runner(&engine, &inference)
+            .run(
+                &work,
+                ConversationGenerationRuntimeInput::default(),
+                TimestampMillis::new(1_031),
+                |_| vec![],
+            )
+            .await
+            .expect("replay LLM-selected group generation");
+        assert!(replay.replayed);
+        assert_eq!(replay.candidate.id, result.candidate.id);
+        assert_eq!(inference.requests.lock().expect("requests").len(), 2);
+        drop(reopened);
+        std::fs::remove_file(path).expect("remove test database");
+    }
 }
 
 #[tokio::test]

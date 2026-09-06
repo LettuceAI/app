@@ -718,8 +718,24 @@ before preparing context. Disabled participants are ineligible and muted
 participants are excluded from automatic choice. Group invariants keep at least
 one enabled unmuted member available; the pure policy retains its defensive
 no-speaker error. The persisted selection and completed generation replay after
-process reopen without selecting or dispatching again. LLM speaker selection
-remains a separate provider-backed slice.
+process reopen without selecting or dispatching again. LLM selection uses the
+current application-default chat model when it supports tools, a bounded
+provider-neutral legacy-shaped participant/recent-message prompt, and a required
+`select_next_speaker` tool whose enum contains only enabled unmuted participants.
+The provider call is admitted under a separate immutable selection checkpoint
+and job-usage record before dispatch. A valid call persists its participant and
+bounded rationale; invalid output or non-cancellation provider failure retains
+that usage and falls back to the existing heuristic. Cancellation stops instead
+of starting fallback. The settled decision and subsequent generation replay
+after reopen without repeating either dispatch. The legacy dedicated selection
+model setting has no current normalized setting/foreign-key owner and remains
+deferred to the launch-time policy/settings slice rather than being stored as an
+unchecked ID in settings JSON.
+The selection and generation job-usage rows are raw dispatch evidence for the
+same attempt. Their counters overlap the terminal `UsageLedger` aggregate and
+must not be summed with it as independent charges. Required-tool output is
+validated structurally; missing, malformed or foreign calls use the heuristic
+fallback instead of accepting arbitrary response text as a speaker identity.
 `PrepareGeneration` records the resolved model and prompt/lorebook/memory
 attributions atomically before moving a preparing turn to ContextPrepared.
 The existing speaker-resolution mutation continues to own group speaker choice.
