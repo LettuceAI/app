@@ -68,7 +68,10 @@ impl<'a, R: ?Sized, I: ?Sized> StagedLorebookPlannerExecutionCoordinator<'a, R, 
 
 impl<R, I> StagedLorebookPlannerExecutionCoordinator<'_, R, I>
 where
-    R: StagedLorebookRepository + ProviderReplayArtifactPort + ?Sized,
+    R: StagedLorebookRepository
+        + ProviderReplayArtifactPort
+        + lettuce_usage::JobUsageLedger
+        + ?Sized,
     I: InferencePort + ?Sized,
 {
     pub async fn run(
@@ -101,7 +104,15 @@ where
             return Err(StagedLorebookPlannerExecutionError::Cancelled);
         }
         let request = build_request(&run, prompt, handle, stream_sink)?;
-        let outcome = self.inference.run(request).await.map_err(|error| {
+        let outcome = crate::job_inference_usage::run_job_inference(
+            self.repository,
+            self.inference,
+            run.job_id,
+            request,
+            now,
+        )
+        .await
+        .map_err(|error| {
             if matches!(error, PortError::Cancelled) {
                 StagedLorebookPlannerExecutionError::Cancelled
             } else {

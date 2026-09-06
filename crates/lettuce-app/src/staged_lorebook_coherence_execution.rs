@@ -68,7 +68,10 @@ impl<'a, R: ?Sized, I: ?Sized> StagedLorebookCoherenceExecutionCoordinator<'a, R
 
 impl<R, I> StagedLorebookCoherenceExecutionCoordinator<'_, R, I>
 where
-    R: StagedLorebookRepository + ProviderReplayArtifactPort + ?Sized,
+    R: StagedLorebookRepository
+        + ProviderReplayArtifactPort
+        + lettuce_usage::JobUsageLedger
+        + ?Sized,
     I: InferencePort + ?Sized,
 {
     pub async fn run(
@@ -104,17 +107,21 @@ where
         if handle.cancellation_token().is_cancelled() {
             return Err(StagedLorebookCoherenceExecutionError::Cancelled);
         }
-        let outcome = self
-            .inference
-            .run(build_request(&run, prompt, handle, stream_sink)?)
-            .await
-            .map_err(|error| {
-                if matches!(error, PortError::Cancelled) {
-                    StagedLorebookCoherenceExecutionError::Cancelled
-                } else {
-                    StagedLorebookCoherenceExecutionError::Inference(error)
-                }
-            })?;
+        let outcome = crate::job_inference_usage::run_job_inference(
+            self.repository,
+            self.inference,
+            run.job_id,
+            build_request(&run, prompt, handle, stream_sink)?,
+            now,
+        )
+        .await
+        .map_err(|error| {
+            if matches!(error, PortError::Cancelled) {
+                StagedLorebookCoherenceExecutionError::Cancelled
+            } else {
+                StagedLorebookCoherenceExecutionError::Inference(error)
+            }
+        })?;
         if handle.cancellation_token().is_cancelled()
             || matches!(outcome.finish_reason, FinishReason::Cancelled)
         {

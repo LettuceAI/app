@@ -95,3 +95,19 @@ case-insensitive provider/display name, without punctuation stripping or a
 first-provider fallback. The existing calculator and its authoritative-total
 guard remain unchanged. Generation-enriched bases are job-only until other
 usage records retain response IDs.
+
+Staged lorebook planner, writer/refinement and coherence execution now reuse
+the existing job-dispatch usage ledger before provider invocation and before
+response reduction/checkpointing. Every actual dispatch preserves its response
+ID and optional usage, including invalid responses and project cancellation
+during inference; returned transport failures remain explicit failed evidence.
+Checkpoint replay creates no second dispatch record. Existing successful
+checkpoint usage stays unchanged. The staged SQLite lifecycle scenario covers
+all four stages, invalid planner usage, cancellation after response, independent
+concurrent-writer failure evidence and replay without duplicated charges.
+
+Legacy staged pipeline.rs called the provider without recording usage; recording
+these dispatches corrects that accounting omission. Legacy single-entry primary
+and fallback requests recorded usage before checking response success; their
+new dispatch-ledger integration remains a separate follow-up. No new schema,
+worker, pricing formula or host scheduling was introduced.

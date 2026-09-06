@@ -133,7 +133,7 @@ impl<
         allowed: &ResourceAvailability,
     ) -> Vec<Result<Option<StagedLorebookWriterSettledWork>, StagedLorebookWriterDispatchError>>
     where
-        R: lettuce_conversations::ProviderReplayArtifactPort,
+        R: lettuce_conversations::ProviderReplayArtifactPort + lettuce_usage::JobUsageLedger,
     {
         use futures_util::{StreamExt, stream::FuturesUnordered};
 

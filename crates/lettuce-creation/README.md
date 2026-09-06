@@ -313,3 +313,19 @@ accepts that marker in addition to the content limit. Labels follow the existing
 trimmed, nonblank project contract. Raw bodies are borrowed during preparation;
 only excerpts enter durable project state. Protected binary/PDF extraction is
 still deferred as recorded in the legacy scenario fixture.
+
+Staged lorebook planner, writer/refinement and coherence execution now reuse
+the existing job-dispatch usage ledger before provider invocation and before
+response reduction/checkpointing. Every actual dispatch preserves its response
+ID and optional usage, including invalid responses and project cancellation
+during inference; returned transport failures remain explicit failed evidence.
+Checkpoint replay creates no second dispatch record. Existing successful
+checkpoint usage stays unchanged. The staged SQLite lifecycle scenario covers
+all four stages, invalid planner usage, cancellation after response, independent
+concurrent-writer failure evidence and replay without duplicated charges.
+
+Legacy staged pipeline.rs called the provider without recording usage; recording
+these dispatches corrects that accounting omission. Legacy single-entry primary
+and fallback requests recorded usage before checking response success; their
+new dispatch-ledger integration remains a separate follow-up. No new schema,
+worker, pricing formula or host scheduling was introduced.

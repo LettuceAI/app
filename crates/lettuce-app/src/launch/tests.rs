@@ -4586,6 +4586,14 @@ fn configured_lorebook_documents_retain_identity_and_replay_after_restart() {
 
 #[tokio::test]
 async fn staged_lorebook_admission_and_planning_are_restart_safe() {
+    use lettuce_usage::{JobInferenceUsageResult, JobUsageLedger};
+    let assert_evidence = |database: &lettuce_database::Database, job_id, expected_id: &str, input| {
+        let evidence = database.job_usage(job_id).expect("staged dispatch evidence");
+        assert_eq!(evidence.len(), 1);
+        assert!(matches!(&evidence[0].result,
+            Some(JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(id) })
+                if id == expected_id && usage.input_tokens == input));
+    };
     let database = database_with_builtins();
     let model_id = seed_model(&database, ProviderProtocol::Ollama, "staged-lorebook");
     let mut stored_profile = ModelProfileRepository::get(&database, model_id)
@@ -4728,7 +4736,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     );
     let inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
-            provider_response_id: None,
+            provider_response_id: Some("gen-planner".into()),
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -4874,6 +4882,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             lettuce_creation::StagedLorebookRepositoryError::Conflict
         ))
     ));
+    assert_evidence(&database, handle.id(), "gen-planner", 40);
     let drafting_at = TimestampMillis::new(NOW.get() + 6);
     let drafting = coordinator
         .approve_outline(request_id, Revision::new(3), drafting_at)
@@ -5087,7 +5096,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
 
     let writer_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
-            provider_response_id: None,
+            provider_response_id: Some("gen-writer".into()),
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -5205,6 +5214,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .await
         .expect("replay staged writer");
     assert!(written_replay.replayed);
+    assert_evidence(&database, writer_handle.id(), "gen-writer", 60);
     assert_eq!(written_replay.project, written.project);
     assert_eq!(
         writer_inference
@@ -5420,7 +5430,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
 
     let refine_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
-            provider_response_id: None,
+            provider_response_id: Some("gen-refine".into()),
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -5479,6 +5489,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         )
         .await
         .expect("execute staged refinement");
+    assert_evidence(&database, refine_work.handle.id(), "gen-refine", 40);
     assert_eq!(refined.project.project.revision, Revision::new(10));
     assert_eq!(refined.project.project.drafts[0].title, "Precise title");
     assert_eq!(
@@ -5514,6 +5525,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .await
         .expect("replay staged refinement");
     assert!(refine_replay.replayed);
+    assert_evidence(&database, refine_work.handle.id(), "gen-refine", 40);
     assert_eq!(refine_replay.project, refined.project);
     {
         let refine_requests = refine_inference.requests.lock().expect("refine requests");
@@ -5727,7 +5739,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     );
     let coherence_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
-            provider_response_id: None,
+            provider_response_id: Some("gen-coherence".into()),
             candidates: vec![InferenceCandidate {
                 ordinal: 0,
                 parts: Vec::new(),
@@ -5807,6 +5819,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         .await
         .expect("replay coherence inference");
     assert!(coherence_replay.replayed);
+    assert_evidence(&database, coherence_work.handle.id(), "gen-coherence", 30);
     assert_eq!(coherence_replay.run, coherence_result.run);
     {
         let requests = coherence_inference.requests.lock().expect("requests");
@@ -6100,9 +6113,13 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let at = work.job.updated_at;
     let invalid_inference = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([InferenceOutcome {
-            provider_response_id: None,
+            provider_response_id: Some("gen-invalid-planner".into()),
             candidates: Vec::new(),
-            usage: None,
+            usage: Some(InferenceUsage {
+                input_tokens: 6, output_tokens: 1, cached_input_tokens: None,
+                cache_write_tokens: None, reasoning_tokens: None, web_search_requests: None,
+                provider_reported_cost: None,
+            }),
             finish_reason: lettuce_conversations::FinishReason::Stop,
             provider_finish_reason: None,
             provider_request_id: None,
@@ -6119,6 +6136,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         Err(crate::StagedLorebookPlannerExecutionError::InvalidResponse)
     ));
     let old_job_id = work.job.id;
+    assert_evidence(&database, old_job_id, "gen-invalid-planner", 6);
     dispatcher
         .settle(work, invalid_result, CancellationReason::User, at)
         .expect("fail invalid planner");
@@ -6591,6 +6609,11 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         2
     );
 
+    let batch_evidence = retry.writers.iter().flat_map(|writer| database.job_usage(writer.run.job_id).expect("batch evidence")).collect::<Vec<_>>();
+    assert_eq!(batch_evidence.len(), 2);
+    assert_eq!(batch_evidence.iter().filter(|event| event.result == Some(JobInferenceUsageResult::InferenceFailed)).count(), 1);
+    assert_eq!(batch_evidence.iter().filter(|event| matches!(event.result, Some(JobInferenceUsageResult::Response { .. }))).count(), 1);
+
     let finished =
         lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, editable_id)
             .expect("finished batch");
@@ -6763,9 +6786,13 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             )
             .expect("cancel while provider is running");
             Ok(InferenceOutcome {
-                provider_response_id: None,
+                provider_response_id: Some("gen-cancelled-response".into()),
                 candidates: Vec::new(),
-                usage: None,
+                usage: Some(InferenceUsage {
+                    input_tokens: 9, output_tokens: 2, cached_input_tokens: None,
+                    cache_write_tokens: None, reasoning_tokens: None, web_search_requests: None,
+                    provider_reported_cost: lettuce_conversations::ProviderReportedCost::new(0.01),
+                }),
                 finish_reason: lettuce_conversations::FinishReason::Stop,
                 provider_finish_reason: None,
                 provider_request_id: None,
@@ -6827,6 +6854,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     let retained =
         lettuce_creation::StagedLorebookRepository::load_staged_lorebook(&database, during_id)
             .expect("reload cancellation race");
+    assert_evidence(&database, retained.job_id, "gen-cancelled-response", 9);
     assert!(retained.planner_attempt.is_none());
     assert!(retained.project.outline.is_empty());
 }
