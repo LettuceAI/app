@@ -1016,8 +1016,12 @@ fn parse_response_with_replay(
         }],
         usage: parsed.usage.and_then(|usage| {
             Some(InferenceUsage {
-                cache_write_tokens: None,
-                web_search_requests: None,
+                cache_write_tokens: usage.cache_creation_input_tokens,
+                web_search_requests: usage.server_tool_use.and_then(|value| {
+                    value
+                        .get("web_search_requests")
+                        .and_then(serde_json::Value::as_u64)
+                }),
                 cached_input_tokens: usage.cache_read_input_tokens,
                 reasoning_tokens: None,
                 input_tokens: usage.input_tokens?,
@@ -1208,6 +1212,8 @@ struct ContentBlock {
 
 #[derive(Deserialize)]
 struct Usage {
+    cache_creation_input_tokens: Option<u64>,
+    server_tool_use: Option<serde_json::Value>,
     cache_read_input_tokens: Option<u64>,
     input_tokens: Option<u64>,
     output_tokens: Option<u64>,
@@ -1524,7 +1530,7 @@ mod tests {
     #[test]
     fn joins_text_blocks_and_maps_stop_reasons() {
         let outcome = parse_response(response(
-            r#"{"content":[{"type":"text","text":"a"},{"type":"thinking","thinking":"x"},{"type":"text","text":"b"}],"stop_reason":"max_tokens","usage":{"input_tokens":3,"output_tokens":5,"cache_read_input_tokens":8}}"#,
+            r#"{"content":[{"type":"text","text":"a"},{"type":"thinking","thinking":"x"},{"type":"text","text":"b"}],"stop_reason":"max_tokens","usage":{"input_tokens":3,"output_tokens":5,"cache_read_input_tokens":8,"cache_creation_input_tokens":10,"server_tool_use":{"web_search_requests":0}}}"#,
         ))
         .expect("response");
         assert_eq!(
@@ -1542,8 +1548,8 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
-                cache_write_tokens: None,
-                web_search_requests: None,
+                cache_write_tokens: Some(10),
+                web_search_requests: Some(0),
                 cached_input_tokens: Some(8),
                 reasoning_tokens: None,
                 input_tokens: 3,

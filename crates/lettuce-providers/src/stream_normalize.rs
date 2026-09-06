@@ -361,6 +361,19 @@ impl StreamNormalizer {
             .map_err(|_| StreamNormalizeError::MalformedJson)
     }
 
+    fn update_anthropic_usage(&mut self, usage: &Value) {
+        self.input_tokens = token(usage, &["input_tokens"]).or(self.input_tokens);
+        self.output_tokens = token(usage, &["output_tokens"]).or(self.output_tokens);
+        self.cached_input_tokens =
+            token(usage, &["cache_read_input_tokens"]).or(self.cached_input_tokens);
+        self.cache_write_tokens =
+            token(usage, &["cache_creation_input_tokens"]).or(self.cache_write_tokens);
+        self.web_search_requests = usage
+            .get("server_tool_use")
+            .and_then(|value| token(value, &["web_search_requests"]))
+            .or(self.web_search_requests);
+    }
+
     fn consume_openai(
         &mut self,
         record: &StreamRecord,
@@ -513,9 +526,7 @@ impl StreamNormalizer {
                     .get("message")
                     .and_then(|message| message.get("usage"))
                 {
-                    self.input_tokens = token(usage, &["input_tokens"]);
-                    self.cached_input_tokens = token(usage, &["cache_read_input_tokens"]);
-                    self.output_tokens = token(usage, &["output_tokens"]);
+                    self.update_anthropic_usage(usage);
                 }
             }
             Some("content_block_delta") => {
@@ -631,7 +642,7 @@ impl StreamNormalizer {
                     self.set_finish_reason(reason, FinishFamily::Anthropic);
                 }
                 if let Some(usage) = value.get("usage") {
-                    self.output_tokens = token(usage, &["output_tokens"]);
+                    self.update_anthropic_usage(usage);
                 }
             }
             Some("message_stop") => self.terminal = true,
@@ -1529,7 +1540,7 @@ mod tests {
     #[test]
     fn anthropic_uses_event_types_and_cumulative_usage() {
         let mut normalizer = StreamNormalizer::new(StreamProtocol::Anthropic, None);
-        normalizer.consume(&event("message_start", r#"{"type":"message_start","message":{"usage":{"input_tokens":7,"output_tokens":0,"cache_read_input_tokens":9}}}"#)).unwrap();
+        normalizer.consume(&event("message_start", r#"{"type":"message_start","message":{"usage":{"input_tokens":7,"output_tokens":0,"cache_read_input_tokens":9,"cache_creation_input_tokens":12,"server_tool_use":{"web_search_requests":0}}}}"#)).unwrap();
         assert_eq!(normalizer.consume(&event("content_block_delta", r#"{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"why"}}"#)).unwrap(), vec![StreamDelta::Reasoning("why".to_owned())]);
         normalizer
             .consume(&event(
@@ -1537,7 +1548,7 @@ mod tests {
                 r#"{"type":"content_block_delta","delta":{"type":"text_delta","text":"answer"}}"#,
             ))
             .unwrap();
-        normalizer.consume(&event("message_delta", r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}"#)).unwrap();
+        normalizer.consume(&event("message_delta", r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4,"server_tool_use":{"web_search_requests":1}}}"#)).unwrap();
         normalizer
             .consume(&event("message_stop", r#"{"type":"message_stop"}"#))
             .unwrap();
@@ -1546,6 +1557,8 @@ mod tests {
         assert_eq!(usage.output_tokens, 4);
         assert_eq!(usage.input_tokens, 7);
         assert_eq!(usage.cached_input_tokens, Some(9));
+        assert_eq!(usage.cache_write_tokens, Some(12));
+        assert_eq!(usage.web_search_requests, Some(1));
         assert_eq!(usage.reasoning_tokens, None);
         assert!(matches!(
             outcome.candidates[0].parts[0],

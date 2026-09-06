@@ -15,8 +15,12 @@ billing semantics. In particular, Anthropic cache reads may exceed its native
 input_tokens, and Gemini thoughts may exceed candidatesTokenCount. Do not
 apply OpenRouter's inclusive-token cost formula to these native totals.
 OpenAI-compatible buffered/SSE usage also preserves legacy nested cache-write
-and server-tool web-search counters, including their camelCase aliases. Other
-native adapters leave these new counters unknown; provider-reported monetary
+and server-tool web-search counters, including their camelCase aliases. Anthropic
+buffered/SSE responses preserve cache_creation_input_tokens and
+server_tool_use.web_search_requests. Both message_start and message_delta update
+the cumulative native counters; omitted fields keep earlier evidence, while an
+explicit zero replaces it. Gemini/Ollama leave these new counters unknown;
+provider-reported monetary
 cost remains later work.
 OpenAI streaming usage frames update only counters they actually supply; partial
 or null usage frames retain earlier facts. Explicit zero replaces a prior count,
