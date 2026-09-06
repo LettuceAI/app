@@ -22,6 +22,7 @@ lettuce-models.workspace = true
 lettuce-network.workspace = true
 lettuce-settings.workspace = true
 lettuce-types.workspace = true
+lettuce-usage.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

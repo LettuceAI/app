@@ -1197,6 +1197,7 @@ dependencies = [
  "lettuce-network",
  "lettuce-settings",
  "lettuce-types",
+ "lettuce-usage",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

@@ -2,6 +2,8 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod openrouter;
+pub use openrouter::*;
 mod pricing;
 pub use pricing::*;
 mod costing;

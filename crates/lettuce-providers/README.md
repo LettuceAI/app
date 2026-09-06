@@ -150,3 +150,21 @@ Approved corrections of legacy tables: custom Anthropic accounts no longer
 advertise frequency/presence penalties (the Messages body never carried them);
 Gemini uses header-only `x-goog-api-key` (legacy also copied the key into the
 query string).
+
+OpenRouter billing reads use `openrouter_endpoint_pricing` and
+`openrouter_generation_details` on the existing RemoteProviders adapter. They
+reuse account-owned credentials, the bounded JSON client and its 10-second probe
+policy. Endpoint/model and generation response identities must match the request;
+404 generation lookup returns None, while authentication and transport failures
+remain typed errors. Native and normalized token counts remain separate; absent
+counts never become zero. Endpoint names/tags and exact price strings are retained
+without selecting a fallback provider. Required prices and monetary evidence must
+be finite and nonnegative. Wire response structs remain private; usage owns the
+billing result types. No cache, automatic cost writes or inference response-ID
+retention is added by these reads.
+
+Contracts checked against the official [endpoint pricing documentation](https://openrouter.ai/docs/api/api-reference/endpoints/list-all-endpoints-for-a-model)
+and [generation metadata documentation](https://openrouter.ai/docs/api/api-reference/generations/get-request-&-usage-metadata-for-a-generation).
+Local HTTP fixtures cover bearer auth, base-path/version handling, encoded query
+IDs, 404 versus 401, free prices and separate native/normalized counters; parser
+tests reject wrong identities and malformed required evidence.

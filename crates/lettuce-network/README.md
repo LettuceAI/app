@@ -30,3 +30,9 @@ validated chat path is joined beneath the endpoint base path
 and encoded separators are rejected. Provider-owned non-secret query values
 use a bounded typed parameter list instead of being embedded in paths; secret
 query authentication remains a separate redacted credential type.
+
+`get_json_with_query` uses the same validated parameter list as streaming POST.
+Values can borrow request-local strings; they are percent encoded by the central
+client. Existing GET callers delegate with an empty list. OpenRouter's HTTP
+fixture verifies a generation ID containing plus, ampersand and equals signs
+cannot create another query parameter. Existing query and response bounds apply.

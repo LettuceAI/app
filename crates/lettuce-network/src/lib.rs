@@ -58,9 +58,9 @@ pub struct JsonStaticHeader {
 /// A non-secret provider-owned query value. Secret query authentication stays
 /// in `JsonAuth::Query` so credentials cannot enter reusable URL strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct JsonQueryParameter {
-    pub name: &'static str,
-    pub value: &'static str,
+pub struct JsonQueryParameter<'a> {
+    pub name: &'a str,
+    pub value: &'a str,
 }
 
 impl fmt::Debug for JsonSecretHeader {
@@ -239,7 +239,38 @@ impl JsonClient {
         secret_headers: Vec<JsonSecretHeader>,
         policy: RequestPolicy,
     ) -> Result<JsonResponse, JsonClientError> {
-        let url = build_url(endpoint, path)?;
+        self.get_json_with_query(
+            endpoint,
+            path,
+            &[],
+            static_headers,
+            auth,
+            secret_headers,
+            policy,
+        )
+        .await
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is a distinct transport concern; bundling them hides the policy"
+    )]
+    pub async fn get_json_with_query(
+        &self,
+        endpoint: &str,
+        path: &str,
+        query: &[JsonQueryParameter<'_>],
+        static_headers: &[JsonStaticHeader],
+        auth: JsonAuth,
+        secret_headers: Vec<JsonSecretHeader>,
+        policy: RequestPolicy,
+    ) -> Result<JsonResponse, JsonClientError> {
+        let mut url = build_url(endpoint, path)?;
+        validate_query(query)?;
+        if !query.is_empty() {
+            url.query_pairs_mut()
+                .extend_pairs(query.iter().map(|entry| (entry.name, entry.value)));
+        }
         validate_header_collection(static_headers, &auth, &secret_headers)?;
         let request = self.client(policy).get(url).timeout(timeout_for(policy));
         let request = apply_static_headers(request, static_headers)?;
@@ -323,7 +354,7 @@ impl JsonClient {
         endpoint: &str,
         path: &str,
         body: Vec<u8>,
-        query: &[JsonQueryParameter],
+        query: &[JsonQueryParameter<'_>],
         static_headers: &[JsonStaticHeader],
         auth: JsonAuth,
         secret_headers: Vec<JsonSecretHeader>,
@@ -685,7 +716,7 @@ fn is_extra_reserved_header(name: &str) -> bool {
         )
 }
 
-fn validate_query(query: &[JsonQueryParameter]) -> Result<(), JsonClientError> {
+fn validate_query(query: &[JsonQueryParameter<'_>]) -> Result<(), JsonClientError> {
     if query.len() > 16 {
         return Err(JsonClientError::InvalidRequest);
     }

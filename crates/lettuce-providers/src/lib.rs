@@ -30,6 +30,7 @@ mod ollama;
 mod openai;
 mod openai_compatible;
 mod openrouter;
+mod openrouter_pricing;
 mod pollinations;
 mod qwen;
 mod stream_framing;
@@ -2605,6 +2606,113 @@ mod integration_tests {
             .await
             .expect("store key");
         (store, owner, key_ref)
+    }
+
+    #[tokio::test]
+    async fn openrouter_billing_lookups_preserve_identity_and_encode_generation_query() {
+        let (store, owner, key_ref) = keyed_store().await;
+        let providers = RemoteProviders::new(store, Arc::new(JsonClient::new().expect("client")));
+        let generation_id = "gen+canary&other=value";
+        let bodies = [
+            serde_json::json!({"data":{"id":"author/model:free","endpoints":[
+                {"provider_name":"First","tag":"first/fp8","pricing":{"prompt":"0.01","completion":0.02}},
+                {"provider_name":"Second","tag":"second","pricing":{"prompt":"0","completion":"0"}}
+            ]}}),
+            serde_json::json!({"data":{"id":generation_id,"model":"author/model:free",
+                "provider_name":"Second","native_tokens_prompt":12,"tokens_prompt":10,
+                "native_tokens_completion":null,"tokens_completion":5,"native_tokens_cached":0,
+                "native_tokens_reasoning":2,"total_cost":0}}),
+        ];
+        let mut responses = bodies
+            .iter()
+            .map(|body| {
+                let body = body.to_string();
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+            })
+            .collect::<Vec<_>>();
+        responses.push("HTTP/1.1 404 Not Found\r\nContent-Length: 2\r\n\r\n{}".into());
+        responses.push("HTTP/1.1 401 Unauthorized\r\nContent-Length: 2\r\n\r\n{}".into());
+        let (endpoint, captured) = test_server_many(responses).await;
+        let mut account = account(
+            "openrouter",
+            ProviderProtocol::OpenAiCompatible,
+            Some(format!("{endpoint}/api")),
+            ProviderConfig::Standard,
+            Some(key_ref),
+            owner,
+        );
+        let prices = providers
+            .openrouter_endpoint_pricing(&account, "author/model:free")
+            .await
+            .expect("prices");
+        assert_eq!(prices.len(), 2);
+        assert_eq!(prices[0].provider_name, "First");
+        assert_eq!(prices[0].pricing.completion, "0.02");
+        assert_eq!(prices[1].tag.as_deref(), Some("second"));
+        account.endpoint = Some(format!("{endpoint}/api/v1"));
+        let details = providers
+            .openrouter_generation_details(&account, generation_id)
+            .await
+            .expect("lookup")
+            .expect("generation");
+        assert_eq!(details.generation_id, generation_id);
+        assert_eq!(details.native_prompt_tokens, Some(12));
+        assert_eq!(details.normalized_prompt_tokens, Some(10));
+        assert_eq!(details.native_completion_tokens, None);
+        assert_eq!(details.normalized_completion_tokens, Some(5));
+        assert_eq!(details.native_cached_tokens, Some(0));
+        assert_eq!(details.total_cost.map(|cost| cost.get()), Some(0.0));
+        assert!(
+            providers
+                .openrouter_generation_details(&account, "missing")
+                .await
+                .expect("missing generation")
+                .is_none()
+        );
+        assert!(
+            providers
+                .openrouter_generation_details(&account, "denied")
+                .await
+                .is_err()
+        );
+        let requests = captured.await.expect("requests");
+        let requests = requests
+            .iter()
+            .map(|bytes| String::from_utf8_lossy(bytes))
+            .collect::<Vec<_>>();
+        assert!(requests[0].starts_with("GET /api/v1/models/author/model:free/endpoints HTTP/1.1"));
+        assert!(
+            requests[1]
+                .starts_with("GET /api/v1/generation?id=gen%2Bcanary%26other%3Dvalue HTTP/1.1")
+        );
+        assert!(requests.iter().all(|request| {
+            request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer key-canary")
+        }));
+        for model in [
+            "missing-slash",
+            "author/../model",
+            "author/..",
+            "author/model?query=x",
+        ] {
+            assert!(
+                providers
+                    .openrouter_endpoint_pricing(&account, model)
+                    .await
+                    .is_err()
+            );
+        }
+        account.provider_kind = "anthropic".into();
+        assert!(
+            providers
+                .openrouter_endpoint_pricing(&account, "author/model")
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]

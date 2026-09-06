@@ -72,3 +72,8 @@ mismatches, absent usage, SQL immutability and unchanged raw evidence. This
 preserves legacy companion response accounting independently of workflow
 validation; callers still supply verified OpenRouter pricing and cost inputs.
 Native-provider billing normalization and price fetching remain later work.
+
+OpenRouter endpoint-price and generation-detail result types retain routed
+provider identity, endpoint tags and separate native/normalized counters for the
+provider adapter's billing reads. They do not select a provider or overwrite
+immutable event counters. Automatic capture and reconciliation remain pending.

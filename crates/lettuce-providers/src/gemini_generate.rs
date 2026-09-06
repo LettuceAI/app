@@ -389,7 +389,7 @@ async fn send_generate_stream<S: SecretStore + ?Sized>(
     path: &str,
     body: Vec<u8>,
 ) -> Result<JsonResponseStream, AdapterError> {
-    const SSE_QUERY: [JsonQueryParameter; 1] = [JsonQueryParameter {
+    const SSE_QUERY: [JsonQueryParameter<'static>; 1] = [JsonQueryParameter {
         name: "alt",
         value: "sse",
     }];
