@@ -23,6 +23,9 @@ impl UsageCostBasis {
             || tokens.input_tokens != self.input.prompt_tokens
             || tokens.output_tokens != self.input.completion_tokens
             || tokens
+                .provider_reported_cost
+                .is_some_and(|value| Some(value.get()) != self.input.authoritative_total_cost)
+            || tokens
                 .cache_write_tokens
                 .is_some_and(|value| value != self.input.cache_write_tokens)
             || tokens

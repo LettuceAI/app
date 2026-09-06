@@ -1,5 +1,10 @@
 # lettuce-conversations
 
+InferenceUsage retains optional provider-reported cost with a validated finite,
+nonnegative value type. JSON round trips preserve the existing f64 precision;
+unknown amounts remain distinct from zero. Invalid numeric values cannot enter
+the type, so usage records retain their equality contract.
+
 Unified direct and group conversations, messages, revisions, branches, and generation turns.
 
 ## Boundary

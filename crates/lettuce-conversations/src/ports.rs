@@ -1842,8 +1842,44 @@ impl InferenceCandidate {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct ProviderReportedCost(f64);
+
+impl Eq for ProviderReportedCost {}
+
+impl ProviderReportedCost {
+    pub fn new(value: f64) -> Option<Self> {
+        (value.is_finite() && value >= 0.0).then_some(Self(value))
+    }
+
+    pub fn get(self) -> f64 {
+        self.0
+    }
+
+    pub fn checked_add(self, other: Self) -> Option<Self> {
+        Self::new(self.0 + other.0)
+    }
+}
+
+impl TryFrom<f64> for ProviderReportedCost {
+    type Error = &'static str;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("provider cost must be finite and nonnegative")
+    }
+}
+
+impl From<ProviderReportedCost> for f64 {
+    fn from(value: ProviderReportedCost) -> Self {
+        value.get()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InferenceUsage {
+    #[serde(default)]
+    pub provider_reported_cost: Option<ProviderReportedCost>,
     #[serde(default)]
     pub cache_write_tokens: Option<u64>,
     #[serde(default)]

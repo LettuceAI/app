@@ -281,6 +281,10 @@ where
     if let Some(primary_usage) = primary.as_ref().and_then(|outcome| outcome.usage.as_ref()) {
         match &mut outcome.usage {
             Some(usage) => {
+                usage.provider_reported_cost = usage
+                    .provider_reported_cost
+                    .zip(primary_usage.provider_reported_cost)
+                    .and_then(|(a, b)| a.checked_add(b));
                 usage.cache_write_tokens = usage
                     .cache_write_tokens
                     .zip(primary_usage.cache_write_tokens)
@@ -926,6 +930,7 @@ mod tests {
                 Ok(text_outcome(
                     "plain prose",
                     Some(InferenceUsage {
+                        provider_reported_cost: None,
                         cache_write_tokens: None,
                         web_search_requests: None,
                         cached_input_tokens: Some(0),
@@ -937,6 +942,7 @@ mod tests {
                 Ok(text_outcome(
                     "<memory_ops><done summary=\"captured\" /></memory_ops>",
                     Some(InferenceUsage {
+                        provider_reported_cost: None,
                         cache_write_tokens: None,
                         web_search_requests: None,
                         cached_input_tokens: Some(2),
@@ -964,6 +970,7 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
                 cached_input_tokens: Some(2),
@@ -1327,6 +1334,7 @@ mod tests {
                 provider_replay: None,
             }],
             usage: Some(lettuce_conversations::InferenceUsage {
+                provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
                 cached_input_tokens: None,

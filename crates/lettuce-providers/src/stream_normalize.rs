@@ -66,6 +66,7 @@ pub(crate) struct StreamNormalizer {
     reasoning_tokens: Option<u64>,
     cache_write_tokens: Option<u64>,
     web_search_requests: Option<u64>,
+    provider_reported_cost: Option<lettuce_conversations::ProviderReportedCost>,
     finish_reason: FinishReason,
     provider_finish_reason: Option<String>,
     warning_codes: Vec<InferenceWarningCode>,
@@ -131,6 +132,7 @@ impl StreamNormalizer {
             reasoning_tokens: None,
             cache_write_tokens: None,
             web_search_requests: None,
+            provider_reported_cost: None,
             output_tokens: None,
             finish_reason: FinishReason::Stop,
             provider_finish_reason: None,
@@ -258,6 +260,7 @@ impl StreamNormalizer {
         }
         let usage = match (self.input_tokens, self.output_tokens) {
             (Some(input_tokens), Some(output_tokens)) => Some(InferenceUsage {
+                provider_reported_cost: self.provider_reported_cost,
                 cache_write_tokens: self.cache_write_tokens,
                 web_search_requests: self.web_search_requests,
                 cached_input_tokens: self.cached_input_tokens,
@@ -390,6 +393,10 @@ impl StreamNormalizer {
             return Err(error);
         }
         if let Some(usage) = value.get("usage") {
+            self.provider_reported_cost = usage
+                .as_object()
+                .and_then(crate::common::openai_reported_cost)
+                .or(self.provider_reported_cost);
             let (cache_write_tokens, web_search_requests) = usage
                 .as_object()
                 .map(crate::common::openai_usage_extras)

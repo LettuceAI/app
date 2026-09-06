@@ -36,6 +36,23 @@ pub use tool::*;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reported_cost_rejects_invalid_values_and_preserves_small_amounts() {
+        use super::ProviderReportedCost;
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.01] {
+            assert!(ProviderReportedCost::new(value).is_none());
+        }
+        for value in [0.0, 0.0000000001, 1.25] {
+            let cost = ProviderReportedCost::new(value).expect("valid cost");
+            let encoded = serde_json::to_string(&cost).expect("encode");
+            let decoded: ProviderReportedCost = serde_json::from_str(&encoded).expect("decode");
+            assert_eq!(decoded, cost);
+        }
+        assert!(serde_json::from_str::<ProviderReportedCost>("-1").is_err());
+        let max = ProviderReportedCost::new(f64::MAX).expect("finite");
+        assert!(max.checked_add(max).is_none());
+    }
+
     use std::{collections::HashSet, sync::Mutex};
 
     use super::*;
@@ -1318,6 +1335,7 @@ mod tests {
             attempt_id: GenerationAttemptId::new(),
             outcome: UsageOutcome::Succeeded,
             usage: UsageCounters::Known(InferenceUsage {
+                provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
                 cached_input_tokens: None,

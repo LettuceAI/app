@@ -1000,6 +1000,7 @@ fn parse_response_with_replay(
         candidates,
         usage: parsed.usage_metadata.and_then(|usage| {
             Some(InferenceUsage {
+                provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
                 cached_input_tokens: usage.cached_content_token_count,
@@ -1859,6 +1860,7 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
                 cached_input_tokens: Some(2),

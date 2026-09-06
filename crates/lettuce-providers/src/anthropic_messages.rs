@@ -1016,6 +1016,7 @@ fn parse_response_with_replay(
         }],
         usage: parsed.usage.and_then(|usage| {
             Some(InferenceUsage {
+                provider_reported_cost: None,
                 cache_write_tokens: usage.cache_creation_input_tokens,
                 web_search_requests: usage.server_tool_use.and_then(|value| {
                     value
@@ -1548,6 +1549,7 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                provider_reported_cost: None,
                 cache_write_tokens: Some(10),
                 web_search_requests: Some(0),
                 cached_input_tokens: Some(8),

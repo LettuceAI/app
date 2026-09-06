@@ -694,6 +694,8 @@ pub struct StagedLorebookPlannerUsage {
     pub cache_write_tokens: Option<u64>,
     #[serde(default)]
     pub web_search_requests: Option<u64>,
+    #[serde(default)]
+    pub provider_reported_cost: Option<lettuce_conversations::ProviderReportedCost>,
     pub input_tokens: u64,
     pub output_tokens: u64,
 }
@@ -705,7 +707,7 @@ fn lorebook_usage_details_round_trip_and_old_checkpoints_remain_readable() {
     let detailed = serde_json::json!({
         "input_tokens": 10, "output_tokens": 4,
         "cached_input_tokens": 0, "reasoning_tokens": 2,
-        "cache_write_tokens": 3, "web_search_requests": 0
+        "cache_write_tokens": 3, "web_search_requests": 0, "provider_reported_cost": 0.0125
     });
     macro_rules! check {
         ($kind:ty) => {
@@ -714,11 +716,16 @@ fn lorebook_usage_details_round_trip_and_old_checkpoints_remain_readable() {
             assert_eq!(previous.reasoning_tokens, None);
             assert_eq!(previous.cache_write_tokens, None);
             assert_eq!(previous.web_search_requests, None);
+            assert_eq!(previous.provider_reported_cost, None);
             let current: $kind = serde_json::from_value(detailed.clone()).expect("usage details");
             assert_eq!(current.cached_input_tokens, Some(0));
             assert_eq!(current.reasoning_tokens, Some(2));
             assert_eq!(current.cache_write_tokens, Some(3));
             assert_eq!(current.web_search_requests, Some(0));
+            assert_eq!(
+                current.provider_reported_cost.map(|value| value.get()),
+                Some(0.0125)
+            );
             assert_eq!(
                 serde_json::to_value(current).expect("serialize usage"),
                 detailed
@@ -812,6 +819,8 @@ pub struct StagedLorebookWriterUsage {
     pub cache_write_tokens: Option<u64>,
     #[serde(default)]
     pub web_search_requests: Option<u64>,
+    #[serde(default)]
+    pub provider_reported_cost: Option<lettuce_conversations::ProviderReportedCost>,
     pub input_tokens: u64,
     pub output_tokens: u64,
 }

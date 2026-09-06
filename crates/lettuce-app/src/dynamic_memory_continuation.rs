@@ -489,6 +489,7 @@ pub fn aggregate_inference_usage(
     let mut reasoning_tokens = Some(0u64);
     let mut cache_write_tokens = Some(0u64);
     let mut web_search_requests = Some(0u64);
+    let mut provider_reported_cost = lettuce_conversations::ProviderReportedCost::new(0.0);
     for outcome in outcomes {
         let Some(usage) = &outcome.usage else {
             return Ok(lettuce_conversations::UsageCounters::Unavailable(
@@ -507,6 +508,9 @@ pub fn aggregate_inference_usage(
         web_search_requests = web_search_requests
             .zip(usage.web_search_requests)
             .and_then(|(a, b)| a.checked_add(b));
+        provider_reported_cost = provider_reported_cost
+            .zip(usage.provider_reported_cost)
+            .and_then(|(a, b)| a.checked_add(b));
         input_tokens = input_tokens
             .checked_add(usage.input_tokens)
             .ok_or(DynamicMemoryContinuationError::UsageOverflow)?;
@@ -516,6 +520,7 @@ pub fn aggregate_inference_usage(
     }
     Ok(lettuce_conversations::UsageCounters::Known(
         lettuce_conversations::InferenceUsage {
+            provider_reported_cost,
             cache_write_tokens,
             web_search_requests,
             cached_input_tokens,
@@ -805,6 +810,7 @@ mod tests {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
                 cached_input_tokens: None,
@@ -895,6 +901,7 @@ mod tests {
         assert_eq!(
             aggregate_inference_usage(&[
                 outcome(Some(InferenceUsage {
+                    provider_reported_cost: lettuce_conversations::ProviderReportedCost::new(0.125),
                     cache_write_tokens: Some(3),
                     web_search_requests: Some(0),
                     cached_input_tokens: Some(2),
@@ -903,6 +910,7 @@ mod tests {
                     output_tokens: 2,
                 })),
                 outcome(Some(InferenceUsage {
+                    provider_reported_cost: lettuce_conversations::ProviderReportedCost::new(0.25),
                     cache_write_tokens: Some(2),
                     web_search_requests: None,
                     cached_input_tokens: Some(0),
@@ -913,6 +921,7 @@ mod tests {
             ])
             .expect("aggregate"),
             lettuce_conversations::UsageCounters::Known(InferenceUsage {
+                provider_reported_cost: lettuce_conversations::ProviderReportedCost::new(0.375),
                 cache_write_tokens: Some(5),
                 web_search_requests: None,
                 cached_input_tokens: Some(2),

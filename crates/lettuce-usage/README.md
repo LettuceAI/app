@@ -5,6 +5,9 @@ Immutable usage events, pricing snapshots, costs, budgets, and summaries.
 ## Boundary
 
 Historical calculations retain their pricing provenance.
+Provider-reported amounts are raw evidence carried by InferenceUsage, separate
+from calculated costs. Known amounts must match the supplied authoritative total
+in a cost basis. This does not fetch prices or generation details automatically.
 
 The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
 

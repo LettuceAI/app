@@ -737,6 +737,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             let (cache_write_tokens, web_search_requests) =
                 crate::common::openai_usage_extras(&usage.details);
             Some(InferenceUsage {
+                provider_reported_cost: crate::common::openai_reported_cost(&usage.details),
                 cache_write_tokens,
                 web_search_requests,
                 cached_input_tokens,
@@ -1393,6 +1394,8 @@ mod tests {
             ),
         ];
         for (mut usage, cached, reasoning) in cases {
+            usage["cost"] = (-1).into();
+            usage["total_cost"] = "0.0125".into();
             usage["server_tool_use"] =
                 serde_json::json!({"web_search_requests": -1, "webSearchRequests": 0});
             if usage.get("prompt_tokens_details").is_none() {
@@ -1426,6 +1429,10 @@ mod tests {
             assert_eq!(buffered.reasoning_tokens, reasoning);
             assert_eq!(buffered.cache_write_tokens, Some(3));
             assert_eq!(buffered.web_search_requests, Some(0));
+            assert_eq!(
+                buffered.provider_reported_cost.map(|value| value.get()),
+                Some(0.0125)
+            );
         }
     }
 
@@ -1455,6 +1462,7 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
                 cached_input_tokens: Some(2),
@@ -1497,6 +1505,7 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
                 cached_input_tokens: None,

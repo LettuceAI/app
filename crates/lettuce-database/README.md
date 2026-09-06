@@ -6,6 +6,8 @@ round trips. Original migrations 9/10/11 store nullable nonnegative counters.
 Raw counters are not clamped; billing applies its existing clamping policy.
 Cache-write and web-search counts follow the same nullable, checked persistence
 path in the original migrations, including summary and inference checkpoints.
+Optional provider-reported cost follows that same path as a checked finite,
+nonnegative REAL, retaining the legacy f64 precision without rounding to cents.
 
 Migration 10 also retains immutable per-event usage-cost bases through
 `UsageCostLedger`: versioned prices, provenance and calculation inputs are

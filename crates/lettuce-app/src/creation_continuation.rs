@@ -655,6 +655,7 @@ fn aggregate_round_usage(
     let mut reasoning_tokens = Some(0u64);
     let mut cache_write_tokens = Some(0u64);
     let mut web_search_requests = Some(0u64);
+    let mut provider_reported_cost = lettuce_conversations::ProviderReportedCost::new(0.0);
     for round in rounds {
         let Some(usage) = &round.usage else {
             return Ok(UsageCounters::Unavailable(
@@ -673,6 +674,9 @@ fn aggregate_round_usage(
         web_search_requests = web_search_requests
             .zip(usage.web_search_requests)
             .and_then(|(a, b)| a.checked_add(b));
+        provider_reported_cost = provider_reported_cost
+            .zip(usage.provider_reported_cost)
+            .and_then(|(a, b)| a.checked_add(b));
         input_tokens = input_tokens
             .checked_add(usage.input_tokens)
             .ok_or(CreationContinuationError::UsageOverflow)?;
@@ -682,6 +686,7 @@ fn aggregate_round_usage(
     }
     Ok(UsageCounters::Known(
         lettuce_conversations::InferenceUsage {
+            provider_reported_cost,
             cache_write_tokens,
             web_search_requests,
             cached_input_tokens,
@@ -892,6 +897,7 @@ mod tests {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
                 cached_input_tokens: None,
@@ -1012,6 +1018,7 @@ mod tests {
         assert_eq!(
             result.usage,
             UsageCounters::Known(InferenceUsage {
+                provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
                 cached_input_tokens: None,
@@ -1221,6 +1228,7 @@ mod tests {
                     parts: Vec::new(),
                     provider_replay: None,
                     usage: Some(InferenceUsage {
+                        provider_reported_cost: None,
                         cache_write_tokens: None,
                         web_search_requests: None,
                         cached_input_tokens: None,

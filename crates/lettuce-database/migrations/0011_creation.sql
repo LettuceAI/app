@@ -253,6 +253,7 @@ CREATE TABLE creation_inference_rounds (
     reasoning_tokens INTEGER CHECK (reasoning_tokens IS NULL OR reasoning_tokens >= 0),
     cache_write_tokens INTEGER CHECK (cache_write_tokens IS NULL OR cache_write_tokens >= 0),
     web_search_requests INTEGER CHECK (web_search_requests IS NULL OR web_search_requests >= 0),
+    provider_reported_cost REAL CHECK (provider_reported_cost IS NULL OR (provider_reported_cost >= 0 AND provider_reported_cost <= 1.7976931348623157e308)),
     workflow_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,

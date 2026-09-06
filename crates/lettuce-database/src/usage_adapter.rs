@@ -217,10 +217,12 @@ fn hydrate(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawUsageEvent> {
         reasoning_tokens: row.get(14)?,
         cache_write_tokens: row.get(15)?,
         web_search_requests: row.get(16)?,
+        provider_reported_cost: row.get(17)?,
     })
 }
 
 struct RawUsageEvent {
+    provider_reported_cost: Option<f64>,
     cache_write_tokens: Option<i64>,
     web_search_requests: Option<i64>,
     cached_input_tokens: Option<i64>,
@@ -244,6 +246,11 @@ impl RawUsageEvent {
     fn decode(self) -> Result<UsageEvent, UsageLedgerError> {
         let usage = match self.counters_kind.as_str() {
             "known" => UsageCounters::Known(InferenceUsage {
+                provider_reported_cost: self
+                    .provider_reported_cost
+                    .map(lettuce_conversations::ProviderReportedCost::try_from)
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?,
                 cache_write_tokens: self
                     .cache_write_tokens
                     .map(u64::try_from)
@@ -332,7 +339,7 @@ impl RawUsageEvent {
 
 const SELECT_EVENT: &str = "SELECT id, turn_id, attempt_id, outcome, counters_kind,
     input_tokens, output_tokens, unavailable_reason, model_profile_id, model_revision,
-    provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests FROM usage_events";
+    provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost FROM usage_events";
 
 impl UsageLedger for Database {
     fn record(&self, record: UsageRecord) -> Result<UsageEvent, UsageLedgerError> {
@@ -376,6 +383,12 @@ impl UsageLedger for Database {
             return Ok(existing);
         }
         let id = UsageEventId::new();
+        let provider_reported_cost = match &record.usage {
+            UsageCounters::Known(usage) => usage
+                .provider_reported_cost
+                .map(lettuce_conversations::ProviderReportedCost::get),
+            UsageCounters::Unavailable(_) => None,
+        };
         let (cached, reasoning, cache_write, web_search) = match &record.usage {
             UsageCounters::Known(usage) => (
                 usage.cached_input_tokens,
@@ -409,8 +422,8 @@ impl UsageLedger for Database {
                 "INSERT INTO usage_events (id, conversation_id, turn_id, attempt_id, outcome,
                     counters_kind, input_tokens, output_tokens, unavailable_reason,
                     model_profile_id, model_revision, provider_account_id,
-                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
                 params![
                     id.to_string(),
                     conversation_id,
@@ -438,6 +451,7 @@ impl UsageLedger for Database {
                     reasoning,
                     cache_write.map(i64::try_from).transpose().map_err(|_| UsageLedgerError::Invalid)?,
                     web_search.map(i64::try_from).transpose().map_err(|_| UsageLedgerError::Invalid)?,
+                    provider_reported_cost,
                 ],
             )
             .map_err(|_| UsageLedgerError::Storage)?;
@@ -594,6 +608,7 @@ mod tests {
                 attempt_id,
                 outcome: UsageOutcome::Succeeded,
                 usage: UsageCounters::Known(InferenceUsage {
+                    provider_reported_cost: None,
                     cache_write_tokens: None,
                     web_search_requests: None,
                     cached_input_tokens: None,
@@ -618,6 +633,7 @@ mod tests {
             usage.reasoning_tokens = Some(12);
             usage.cache_write_tokens = Some(3);
             usage.web_search_requests = Some(0);
+            usage.provider_reported_cost = lettuce_conversations::ProviderReportedCost::new(0.0125);
         }
         let first = UsageLedger::record(&database, record.clone()).expect("record");
         let mut changed = record.clone();
@@ -667,6 +683,23 @@ mod tests {
             usage.web_search_requests = Some(0);
         }
         assert!(basis.calculate(&detailed).is_ok());
+        let mut reported = event.clone();
+        if let UsageCounters::Known(usage) = &mut reported.record.usage {
+            usage.provider_reported_cost = lettuce_conversations::ProviderReportedCost::new(0.25);
+        }
+        assert!(matches!(
+            basis.calculate(&reported),
+            Err(UsageLedgerError::Invalid)
+        ));
+        let mut reported_basis = basis.clone();
+        reported_basis.input.authoritative_total_cost = Some(0.25);
+        assert_eq!(
+            reported_basis
+                .calculate(&reported)
+                .expect("reported cost")
+                .total_cost,
+            0.25
+        );
         let mut mismatched = basis.clone();
         mismatched.input.cache_write_tokens = 1;
         assert!(matches!(
@@ -760,6 +793,7 @@ mod tests {
         let event = UsageLedger::record(&database, record.clone()).expect("record");
         let mut changed = record;
         changed.usage = UsageCounters::Known(InferenceUsage {
+            provider_reported_cost: None,
             cache_write_tokens: None,
             web_search_requests: None,
             cached_input_tokens: None,

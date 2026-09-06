@@ -20,8 +20,10 @@ buffered/SSE responses preserve cache_creation_input_tokens and
 server_tool_use.web_search_requests. Both message_start and message_delta update
 the cumulative native counters; omitted fields keep earlier evidence, while an
 explicit zero replaces it. Gemini/Ollama leave these new counters unknown;
-provider-reported monetary
-cost remains later work.
+OpenAI-compatible responses retain provider-reported monetary cost from the
+legacy cost/total_cost/totalCost fields, accepting numeric values and numeric
+strings. Nonfinite or negative amounts are ignored. Missing cost stays unknown;
+stream frames replace supplied cumulative cost and retain it when omitted.
 OpenAI streaming usage frames update only counters they actually supply; partial
 or null usage frames retain earlier facts. Explicit zero replaces a prior count,
 and cumulative frames are not summed as separate requests.

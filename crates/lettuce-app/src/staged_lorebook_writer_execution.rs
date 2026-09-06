@@ -154,6 +154,7 @@ where
                     reasoning_tokens: usage.reasoning_tokens,
                     cache_write_tokens: usage.cache_write_tokens,
                     web_search_requests: usage.web_search_requests,
+                    provider_reported_cost: usage.provider_reported_cost,
                     output_tokens: usage.output_tokens,
                 }),
             provider_finish_reason: outcome.provider_finish_reason.clone(),

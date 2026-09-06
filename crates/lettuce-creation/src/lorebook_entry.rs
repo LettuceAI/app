@@ -110,6 +110,8 @@ pub struct LorebookEntryAttemptUsage {
     pub cache_write_tokens: Option<u64>,
     #[serde(default)]
     pub web_search_requests: Option<u64>,
+    #[serde(default)]
+    pub provider_reported_cost: Option<lettuce_conversations::ProviderReportedCost>,
     pub input_tokens: u64,
     pub output_tokens: u64,
 }

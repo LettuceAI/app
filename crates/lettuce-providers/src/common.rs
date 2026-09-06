@@ -76,6 +76,16 @@ pub(crate) fn openai_usage_extras(
     )
 }
 
+pub(crate) fn openai_reported_cost(
+    usage: &serde_json::Map<String, serde_json::Value>,
+) -> Option<lettuce_conversations::ProviderReportedCost> {
+    ["cost", "total_cost", "totalCost"].iter().find_map(|key| {
+        let value = usage.get(*key)?;
+        let amount = value.as_f64().or_else(|| value.as_str()?.parse().ok())?;
+        lettuce_conversations::ProviderReportedCost::new(amount)
+    })
+}
+
 pub(crate) const ACCEPT_ONLY: [JsonStaticHeader; 1] = [JsonStaticHeader {
     name: "accept",
     value: "application/json",

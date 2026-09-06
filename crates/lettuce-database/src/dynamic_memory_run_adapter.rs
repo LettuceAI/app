@@ -221,7 +221,7 @@ pub(crate) fn load_summary_checkpoint_in(
         .query_row(
             "SELECT attempt_id,space_id,expected_memory_revision,resulting_memory_revision,
                     summary_text,token_count,request_context_json,input_tokens,output_tokens,
-                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests
+                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost
                FROM dynamic_memory_summary_checkpoints WHERE run_id=?1",
             [run_id.to_string()],
             |row| {
@@ -252,6 +252,7 @@ pub(crate) fn load_summary_checkpoint_in(
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     row.get::<_, Option<i64>>(13)?.map(u64::try_from).transpose().map_err(|_| rusqlite::Error::InvalidQuery)?,
                     row.get::<_, Option<i64>>(14)?.map(u64::try_from).transpose().map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    row.get::<_, Option<f64>>(15)?.map(lettuce_conversations::ProviderReportedCost::try_from).transpose().map_err(|_| rusqlite::Error::InvalidQuery)?,
                 ))
             },
         )
@@ -273,6 +274,7 @@ pub(crate) fn load_summary_checkpoint_in(
         reasoning_tokens,
         cache_write_tokens,
         web_search_requests,
+        provider_reported_cost,
     )) = row
     else {
         return Ok(None);
@@ -285,6 +287,7 @@ pub(crate) fn load_summary_checkpoint_in(
     }
     let usage = match (input_tokens, output_tokens) {
         (Some(input), Some(output)) => Some(InferenceUsage {
+            provider_reported_cost,
             cache_write_tokens,
             web_search_requests,
             cached_input_tokens,
@@ -389,7 +392,7 @@ fn list_rounds_in(
         .prepare(
             "SELECT ordinal,first_call_ordinal,call_count,request_context_json,parts_json,provider_replay_artifact_id,\
                     provider_replay_retention,input_tokens,output_tokens,finish_reason,\
-                    provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests \
+                    provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost \
              FROM dynamic_memory_inference_rounds \
              WHERE run_id=?1 AND attempt_id=?2 ORDER BY ordinal",
         )
@@ -430,6 +433,11 @@ fn list_rounds_in(
                 .map_err(|_| rusqlite::Error::InvalidQuery)?,
                 usage: match (row.get::<_, Option<i64>>(7)?, row.get::<_, Option<i64>>(8)?) {
                     (Some(input), Some(output)) => Some(InferenceUsage {
+                        provider_reported_cost: row
+                            .get::<_, Option<f64>>(16)?
+                            .map(lettuce_conversations::ProviderReportedCost::try_from)
+                            .transpose()
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
                         cache_write_tokens: row
                             .get::<_, Option<i64>>(14)?
                             .map(u64::try_from)
@@ -630,8 +638,8 @@ fn insert_round_in(
             "INSERT INTO dynamic_memory_inference_rounds \
              (run_id,attempt_id,ordinal,first_call_ordinal,call_count,request_context_json,parts_json,\
               provider_replay_artifact_id,provider_replay_retention,input_tokens,output_tokens,\
-              finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+              finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
             params![
                 round.run_id.to_string(),
                 round.attempt_id.to_string(),
@@ -654,6 +662,7 @@ fn insert_round_in(
                 round.usage.as_ref().and_then(|u| u.reasoning_tokens).map(sql_u64).transpose()?,
                 round.usage.as_ref().and_then(|u| u.cache_write_tokens).map(sql_u64).transpose()?,
                 round.usage.as_ref().and_then(|u| u.web_search_requests).map(sql_u64).transpose()?,
+                round.usage.as_ref().and_then(|u| u.provider_reported_cost).map(lettuce_conversations::ProviderReportedCost::get),
             ],
         )
         .map_err(storage)?;
@@ -1464,8 +1473,8 @@ impl DynamicMemoryRunRepository for Database {
                     run_id,attempt_id,space_id,expected_memory_revision,
                     resulting_memory_revision,summary_text,token_count,
                     request_context_json,input_tokens,output_tokens,
-                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests
-                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost
+                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
                 params![
                     run.id.to_string(),
                     attempt.id.to_string(),
@@ -1493,6 +1502,7 @@ impl DynamicMemoryRunRepository for Database {
                         .transpose()?,
                     commit.usage.as_ref().and_then(|u| u.cache_write_tokens).map(sql_u64).transpose()?,
                     commit.usage.as_ref().and_then(|u| u.web_search_requests).map(sql_u64).transpose()?,
+                    commit.usage.as_ref().and_then(|u| u.provider_reported_cost).map(lettuce_conversations::ProviderReportedCost::get),
                 ],
             )
             .map_err(storage)?;
@@ -1915,6 +1925,7 @@ mod tests {
                 budget: Default::default(),
             },
             usage: Some(InferenceUsage {
+                provider_reported_cost: lettuce_conversations::ProviderReportedCost::new(0.0125),
                 cache_write_tokens: Some(3),
                 web_search_requests: Some(0),
                 cached_input_tokens: Some(0),
