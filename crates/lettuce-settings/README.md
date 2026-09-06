@@ -20,12 +20,15 @@ and clamp to 256..32768. These are existing legacy bounds. Missing fields in
 older settings documents deserialize to defaults. Reference existence is
 checked when the consumer resolves the selected model/prompt, not by JSON save.
 
-Global settings also retain the direct dynamic-memory mutation and retrieval
-policy. Defaults copy the legacy runtime fallbacks: 50 entries, a 2,000-token
+Global settings also retain the normalized direct/group dynamic-memory mutation
+and retrieval policy used to populate immutable conversation launch snapshots.
+Defaults copy the legacy runtime fallbacks: 50 entries, a 2,000-token
 hot budget, 0.35 minimum similarity, five smart results, 0.3 cold threshold,
 0.5 delete confidence and per-cycle hard-delete ratio, 0.78 duplicate threshold,
 and two-message context enrichment. Scores use integer basis points so persisted
 policy values remain exact. Older settings documents receive these defaults.
+The legacy group-only policy override remains deferred until it has a normalized
+owner and authored workflow.
 
 The first slice is intentionally small: one opaque serializable `SecretRef`, a
 bounded purpose vocabulary, redacted zeroizing `SecretValue`, metadata/status

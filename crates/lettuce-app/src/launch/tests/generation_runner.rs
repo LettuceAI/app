@@ -1393,6 +1393,22 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
     .expect("save dynamic memory settings");
     let scenario =
         scenario_with_resolvable_profile(backend.database(), true, "prepared-dynamic", true);
+    let live_settings = GlobalSettingsStore::load(backend.database()).expect("live settings");
+    let mut changed_settings = live_settings.settings.clone();
+    changed_settings.dynamic_memory.max_entries = 99;
+    changed_settings.dynamic_memory.hot_memory_token_budget = 999;
+    changed_settings.dynamic_memory.min_similarity_basis_points = 10_000;
+    changed_settings.dynamic_memory.retrieval_limit = 2;
+    changed_settings
+        .dynamic_memory
+        .duplicate_threshold_basis_points = 1_000;
+    GlobalSettingsStore::save(
+        backend.database(),
+        changed_settings,
+        live_settings.default_model_profile_id,
+        live_settings.revision,
+    )
+    .expect("change live dynamic memory settings after launch");
     let space_id = scenario.space_id.expect("dynamic memory space");
     let memory_id = MemoryId::new();
     let stored = MemoryRepository::get(backend.database(), space_id)

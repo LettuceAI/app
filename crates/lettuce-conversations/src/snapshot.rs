@@ -382,6 +382,8 @@ pub struct MemorySettingsSnapshot {
     pub policy_ref: Option<ProtectedSnapshotRef>,
     pub mode: MemoryModeSnapshot,
     pub selected_revision_ids: Vec<MemoryRevisionId>,
+    #[serde(default)]
+    pub dynamic_policy: Option<DynamicMemoryPolicySnapshot>,
 }
 
 impl MemorySettingsSnapshot {
@@ -398,6 +400,52 @@ pub enum MemoryModeSnapshot {
     Disabled,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryRetrievalStrategySnapshot {
+    Smart,
+    Cosine,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DynamicMemoryPolicySnapshot {
+    pub max_entries: u32,
+    pub min_similarity_basis_points: u16,
+    pub retrieval_limit: u16,
+    pub retrieval_strategy: MemoryRetrievalStrategySnapshot,
+    pub hot_memory_token_budget: u32,
+    pub cold_threshold_basis_points: u16,
+    pub delete_confidence_basis_points: u16,
+    pub max_hard_delete_ratio_basis_points: u16,
+    pub duplicate_threshold_basis_points: u16,
+    pub context_enrichment_enabled: bool,
+}
+
+impl DynamicMemoryPolicySnapshot {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        if self.max_entries == 0
+            || self.max_entries > 4_096
+            || self.retrieval_limit == 0
+            || self.retrieval_limit > 256
+            || [
+                self.min_similarity_basis_points,
+                self.cold_threshold_basis_points,
+                self.delete_confidence_basis_points,
+                self.max_hard_delete_ratio_basis_points,
+                self.duplicate_threshold_basis_points,
+            ]
+            .into_iter()
+            .any(|value| value > 10_000)
+        {
+            return Err(ValidationError::InvalidValue {
+                field: "memory.dynamic_policy",
+            });
+        }
+        Ok(())
+    }
+}
+
 impl ValidateSnapshot for MemorySettingsSnapshot {
     fn validate_snapshot(&self, field: &'static str) -> Result<(), ValidationError> {
         if self.mode == MemoryModeSnapshot::Disabled
@@ -405,8 +453,14 @@ impl ValidateSnapshot for MemorySettingsSnapshot {
         {
             return Err(ValidationError::InvalidReference { field });
         }
+        if self.mode != MemoryModeSnapshot::Dynamic && self.dynamic_policy.is_some() {
+            return Err(ValidationError::InvalidReference { field });
+        }
         validate_collection(field, &self.selected_revision_ids, MAX_PARTS)?;
         validate_unique(field, self.selected_revision_ids.iter().copied())?;
+        if let Some(policy) = &self.dynamic_policy {
+            policy.validate()?;
+        }
         if let Some(policy_ref) = &self.policy_ref {
             policy_ref.validate()?;
         }
@@ -777,5 +831,17 @@ mod tests {
         let mut snapshot = model_snapshot();
         snapshot.provider_account_revision = Revision::new(0);
         assert_eq!(snapshot.validate(), Err(ValidationError::ZeroRevision));
+    }
+
+    #[test]
+    fn old_dynamic_memory_snapshot_defaults_to_no_frozen_policy() {
+        let snapshot: MemorySettingsSnapshot = serde_json::from_value(serde_json::json!({
+            "policy_ref": null,
+            "mode": "dynamic",
+            "selected_revision_ids": []
+        }))
+        .expect("old memory snapshot");
+        assert_eq!(snapshot.dynamic_policy, None);
+        snapshot.validate().expect("compatible memory snapshot");
     }
 }

@@ -716,8 +716,14 @@ embedding, promotion, or access-count changes. Its exact root revision is the
 turn attribution for send, continuation, and regeneration. Legacy manual memory
 has no selected-revision concept, and the current snapshot field has no writer
 or content authority, so a nonempty `selected_revision_ids` still fails closed
-instead of inventing a second store. Launch-time policy snapshots and durable
-request-body recovery remain later slices.
+instead of inventing a second store. Direct and group launches now freeze the
+normalized retrieval and mutation policy into this memory snapshot. Prepared
+generation requires and uses those frozen values, so later global setting
+changes cannot alter retrieval, access mutation, or tool-round policy for the
+conversation. Older dynamic snapshots without the optional policy remain
+readable but fail closed if generation tries to use them. The legacy group-only
+policy override remains deferred until it has a normalized owner. Durable
+request-body recovery remains a later slice.
 For unresolved group turns using the frozen heuristic or round-robin policy,
 the prepared runner now derives participation counts and the prior speaker from
 the durable active-branch timeline, stages `SelectingSpeaker`, applies the

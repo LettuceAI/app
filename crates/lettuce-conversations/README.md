@@ -150,6 +150,10 @@ ownership ends at durable call admission and execution lifecycle: memory
 operation semantics and atomic memory-space changes belong to `lettuce-memory`,
 while continuation and recovery orchestration belong to `lettuce-app` and
 durable jobs.
+Dynamic launch memory snapshots optionally retain the exact retrieval and
+mutation policy values used by generation. The optional field keeps older
+snapshot documents readable; new dynamic launches populate it, while manual and
+disabled modes reject it.
 
 One admitted handler round can transition through the repository's typed batch
 CAS. The batch requires one conversation/turn/attempt owner and unique execution

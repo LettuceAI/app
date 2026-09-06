@@ -360,6 +360,7 @@ mod tests {
             policy_ref: None,
             mode: MemoryModeSnapshot::Manual,
             selected_revision_ids: Vec::new(),
+            dynamic_policy: None,
         }
     }
 

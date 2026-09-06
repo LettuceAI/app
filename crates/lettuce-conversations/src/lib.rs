@@ -2535,6 +2535,7 @@ mod tests {
             policy_ref: None,
             mode: MemoryModeSnapshot::Manual,
             selected_revision_ids: Vec::new(),
+            dynamic_policy: None,
         };
         let voice_id = lettuce_types::VoiceProfileId::new();
         let voice = VoiceSettingsSnapshot {

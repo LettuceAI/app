@@ -3726,6 +3726,9 @@ fn memory_is_inherited_from_the_character_policy() {
             assert_eq!(memory.mode, MemoryModeSnapshot::Dynamic);
             assert!(memory.selected_revision_ids.is_empty());
             assert!(memory.policy_ref.is_none());
+            let policy = memory.dynamic_policy.as_ref().expect("dynamic policy");
+            assert_eq!(policy.max_entries, 50);
+            assert_eq!(policy.retrieval_limit, 5);
         }
         other => panic!("expected inherited memory, got {other:?}"),
     }
@@ -10299,6 +10302,17 @@ fn the_participant_policy_document_mirrors_the_character_participants() {
 fn the_group_memory_policy_lands_in_the_frozen_snapshot() {
     let backend = backend();
     let database = backend.database();
+    let stored_settings = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored_settings.settings.clone();
+    settings.dynamic_memory.max_entries = 17;
+    settings.dynamic_memory.retrieval_limit = 3;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored_settings.default_model_profile_id,
+        stored_settings.revision,
+    )
+    .expect("save group dynamic policy");
     let first = seed_named_character(database, "Ada");
     let second = seed_named_character(database, "Bea");
     let group_id = seed_group(
@@ -10313,6 +10327,9 @@ fn the_group_memory_policy_lands_in_the_frozen_snapshot() {
             assert_eq!(memory.mode, MemoryModeSnapshot::Dynamic);
             assert!(memory.selected_revision_ids.is_empty());
             assert!(memory.policy_ref.is_none());
+            let policy = memory.dynamic_policy.as_ref().expect("dynamic policy");
+            assert_eq!(policy.max_entries, 17);
+            assert_eq!(policy.retrieval_limit, 3);
         }
         other => panic!("expected inherited memory, got {other:?}"),
     }

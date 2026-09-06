@@ -10,14 +10,15 @@ use lettuce_companions::{
 use lettuce_conversations::{
     ContextAssembler, ContextAssemblyError, ContextRequest, ConversationKind, ConversationReader,
     ConversationRepository, ConversationRepositoryError, ConversationSnapshotMaterializer,
-    GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationInput, GenerationTarget,
-    GenerationTurnStatus, InferencePort, InferenceRequest, MemoryAttribution, MemoryContribution,
-    MemoryModeSnapshot, MessageRole, OutputPolicy, PromptRuntimeFacts, PromptRuntimeValues,
-    ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage, ResolveGroupSpeaker,
-    ResolvedInferenceProfile, SafetyContext, SelectedSpeakerDecision, SpeakerDecisionMethod,
-    SpeakerDecisionReference, SpeakerFallback, SpeakerInferenceBinding, SpeakerInferenceRepository,
-    SpeakerParticipantState, SpeakerPolicyRequest, ToolChoice, ToolDefinition, ToolPolicy,
-    ToolRequest, select_group_speaker,
+    DynamicMemoryPolicySnapshot, GenerationCheckpointEnvelope, GenerationCheckpointEvent,
+    GenerationInput, GenerationTarget, GenerationTurnStatus, InferencePort, InferenceRequest,
+    MemoryAttribution, MemoryContribution, MemoryModeSnapshot, MemoryRetrievalStrategySnapshot,
+    MessageRole, OutputPolicy, PromptRuntimeFacts, PromptRuntimeValues, ProviderContextPart,
+    ProviderNeutralContext, ProviderNeutralMessage, ResolveGroupSpeaker, ResolvedInferenceProfile,
+    SafetyContext, SelectedSpeakerDecision, SpeakerDecisionMethod, SpeakerDecisionReference,
+    SpeakerFallback, SpeakerInferenceBinding, SpeakerInferenceRepository, SpeakerParticipantState,
+    SpeakerPolicyRequest, ToolChoice, ToolDefinition, ToolPolicy, ToolRequest,
+    select_group_speaker,
 };
 use lettuce_embeddings::{EmbeddingDimensions, EmbeddingRequest, MemoryEmbeddingRepository};
 use lettuce_jobs::{
@@ -32,9 +33,6 @@ use lettuce_memory::{
 use lettuce_models::{
     CapabilityStatus, ChatParameterResolutionInput, ChatProfileResolutionError, ChatRequirements,
     ModelProfileRepository, ModelRepositoryError, ProviderAccountRepository,
-};
-use lettuce_settings::{
-    DynamicMemorySettings, GlobalSettingsStore, GlobalSettingsStoreError, MemoryRetrievalStrategy,
 };
 use lettuce_types::{PageLimit, PageRequest, RequestId, TimestampMillis, UsageEventId};
 use lettuce_usage::JobUsageLedger;
@@ -94,7 +92,6 @@ enum ConversationGenerationInputError {
     MissingModel,
     Profile(ChatProfileResolutionError),
     Context(ContextAssemblyError),
-    Settings(GlobalSettingsStoreError),
     Memory(MemoryRepositoryError),
     Embedding,
     Cancelled,
@@ -144,8 +141,7 @@ where
         + MemoryEmbeddingRepository
         + MemoryRepository
         + MemoryRetrievalRepository
-        + MemorySummaryRepository
-        + GlobalSettingsStore,
+        + MemorySummaryRepository,
     I: InferencePort + ?Sized,
 {
     pub async fn execute<F, C>(
@@ -565,16 +561,11 @@ where
                 .map(|speaker| speaker.participant_id),
         )
         .map_err(|_| ConversationGenerationInputError::InvalidTurn)?;
-        if settings
-            .memory
-            .as_ref()
-            .is_some_and(|memory| !memory.selected_revision_ids.is_empty())
-        {
+        let memory_settings = settings.memory.as_ref();
+        if memory_settings.is_some_and(|memory| !memory.selected_revision_ids.is_empty()) {
             return Err(ConversationGenerationInputError::MemoryInputUnavailable);
         }
-        let memory_mode = settings
-            .memory
-            .as_ref()
+        let memory_mode = memory_settings
             .map(|memory| memory.mode)
             .unwrap_or(MemoryModeSnapshot::Disabled);
         let dynamic_memory = memory_mode == MemoryModeSnapshot::Dynamic;
@@ -611,8 +602,11 @@ where
         retain_source_ancestry(&mut timeline.items, source_message_id)?;
         let (memory_contribution, memory_input) = match memory_mode {
             MemoryModeSnapshot::Dynamic => {
+                let policy = memory_settings
+                    .and_then(|memory| memory.dynamic_policy.as_ref())
+                    .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
                 let prepared = self
-                    .dynamic_memory_input(work, &timeline.items, now)
+                    .dynamic_memory_input(work, &timeline.items, policy, now)
                     .await?;
                 (prepared.0, Some(prepared.1))
             }
@@ -746,6 +740,7 @@ where
         &self,
         work: &ConversationGenerationClaimedWork,
         timeline: &[lettuce_conversations::TimelineItem],
+        settings: &DynamicMemoryPolicySnapshot,
         now: TimestampMillis,
     ) -> Result<
         (
@@ -754,11 +749,7 @@ where
         ),
         ConversationGenerationInputError,
     > {
-        let settings = GlobalSettingsStore::load(self.repository)
-            .map_err(ConversationGenerationInputError::Settings)?
-            .settings
-            .dynamic_memory;
-        let (policy, duplicate_threshold) = dynamic_memory_policy(&settings)?;
+        let (policy, duplicate_threshold) = dynamic_memory_policy(settings)?;
         let memory = MemoryRepository::get_for_conversation(self.repository, work.conversation_id)
             .map_err(ConversationGenerationInputError::Memory)?
             .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
@@ -793,7 +784,7 @@ where
             (selected, receipt.resulting_revision)
         } else {
             let selected = self
-                .retrieve_memories(work, timeline, &memory, &settings)
+                .retrieve_memories(work, timeline, &memory, settings)
                 .await?;
             let revision = if selected.is_empty() {
                 memory.revision
@@ -864,7 +855,7 @@ where
         work: &ConversationGenerationClaimedWork,
         timeline: &[lettuce_conversations::TimelineItem],
         memory: &MemorySpaceSnapshot,
-        settings: &DynamicMemorySettings,
+        settings: &DynamicMemoryPolicySnapshot,
     ) -> Result<Vec<lettuce_memory::MemoryItem>, ConversationGenerationInputError> {
         let active = memory
             .items
@@ -998,12 +989,6 @@ impl ConversationGenerationInputError {
                     code: lettuce_conversations::GenerationFailureCode::ContextUnavailable,
                 }
             }
-            Self::Settings(error) => {
-                tracing::warn!(?error, "dynamic-memory settings preparation failed");
-                ConversationGenerationRunError::PreparationFailed {
-                    code: lettuce_conversations::GenerationFailureCode::ContextUnavailable,
-                }
-            }
             Self::Memory(error) => {
                 tracing::warn!(?error, "dynamic-memory state preparation failed");
                 ConversationGenerationRunError::PreparationFailed {
@@ -1044,7 +1029,7 @@ impl ConversationGenerationInputError {
 }
 
 fn dynamic_memory_policy(
-    settings: &DynamicMemorySettings,
+    settings: &DynamicMemoryPolicySnapshot,
 ) -> Result<(MemoryPolicy, Score), ConversationGenerationInputError> {
     let score = |value| {
         Score::from_basis_points(value)
@@ -1299,7 +1284,7 @@ fn select_memories<'a>(
     active: &HashMap<lettuce_types::MemoryId, &'a lettuce_memory::MemoryItem>,
     limit: usize,
     threshold: f32,
-    strategy: MemoryRetrievalStrategy,
+    strategy: MemoryRetrievalStrategySnapshot,
 ) -> Vec<&'a lettuce_memory::MemoryItem> {
     let mut scored = projections
         .iter()
@@ -1320,7 +1305,7 @@ fn select_memories<'a>(
             .then_with(|| left.id.cmp(&right.id))
     });
     let mut selected = Vec::new();
-    if strategy == MemoryRetrievalStrategy::Smart {
+    if strategy == MemoryRetrievalStrategySnapshot::Smart {
         let mut categories = HashMap::new();
         for (_, item) in &scored {
             let count = categories.entry(item.category).or_insert(0usize);
@@ -1332,7 +1317,7 @@ fn select_memories<'a>(
     } else {
         selected.extend(scored.iter().take(limit).map(|(_, item)| *item));
     }
-    if strategy == MemoryRetrievalStrategy::Smart && selected.len() < limit {
+    if strategy == MemoryRetrievalStrategySnapshot::Smart && selected.len() < limit {
         for (_, item) in &scored {
             if selected.len() == limit {
                 break;
@@ -1364,7 +1349,7 @@ fn select_memories<'a>(
             }
         }
     }
-    if strategy == MemoryRetrievalStrategy::Smart && selected.is_empty() {
+    if strategy == MemoryRetrievalStrategySnapshot::Smart && selected.is_empty() {
         let keywords = keywords(query_text);
         let mut cold = active
             .values()

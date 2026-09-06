@@ -15,19 +15,19 @@ use lettuce_context::{
 use lettuce_conversations::{
     CharacterLaunchSnapshot, ConversationCreator, ConversationKind, ConversationParticipantDraft,
     ConversationReader, ConversationRepositoryError, CreateConversationPlan,
-    CreateConversationResult, DirectConversationDetails, GroupChatModeSnapshot,
-    GroupConversationDetails, GroupLaunchSnapshot, GroupMemberLaunchSnapshot,
-    GroupParticipantPolicyDocument, GroupParticipantPolicySnapshot, IdempotencyKey,
-    InitialMessageDraft, InitialMessageOrigin, InitialTimelineDraft, LorebookLaunchSnapshot,
-    MemorySettingsSnapshot, MessagePart, MessageRole, ModelSelectionSnapshot, OperationToken,
-    ParticipantRole, ParticipantSource, PersonaLaunchSnapshot, PreparedConversationLaunch,
-    PromptLaunchSnapshot, PromptPurposeSnapshot, SceneLaunchSnapshot, SnapshotArtifactDraft,
-    SnapshotSelection, StarterLaunchSnapshot,
+    CreateConversationResult, DirectConversationDetails, DynamicMemoryPolicySnapshot,
+    GroupChatModeSnapshot, GroupConversationDetails, GroupLaunchSnapshot,
+    GroupMemberLaunchSnapshot, GroupParticipantPolicyDocument, GroupParticipantPolicySnapshot,
+    IdempotencyKey, InitialMessageDraft, InitialMessageOrigin, InitialTimelineDraft,
+    LorebookLaunchSnapshot, MemoryRetrievalStrategySnapshot, MemorySettingsSnapshot, MessagePart,
+    MessageRole, ModelSelectionSnapshot, OperationToken, ParticipantRole, ParticipantSource,
+    PersonaLaunchSnapshot, PreparedConversationLaunch, PromptLaunchSnapshot, PromptPurposeSnapshot,
+    SceneLaunchSnapshot, SnapshotArtifactDraft, SnapshotSelection, StarterLaunchSnapshot,
 };
 use lettuce_models::{
     ModelKind, ModelProfile, ModelProfileRepository, ProviderAccount, ProviderAccountRepository,
 };
-use lettuce_settings::GlobalSettingsStore;
+use lettuce_settings::{DynamicMemorySettings, GlobalSettingsStore, MemoryRetrievalStrategy};
 use lettuce_types::{
     GroupId, LorebookId, ModelProfileId, PageRequest, PromptDocumentId, Revision, TimestampMillis,
 };
@@ -47,6 +47,29 @@ use super::request::{
 use crate::BuiltInPromptId;
 
 const MAX_DISPLAY_BYTES: usize = 1024;
+
+fn dynamic_memory_policy_snapshot(
+    mode: lettuce_conversations::MemoryModeSnapshot,
+    settings: &DynamicMemorySettings,
+) -> Option<DynamicMemoryPolicySnapshot> {
+    (mode == lettuce_conversations::MemoryModeSnapshot::Dynamic).then_some({
+        DynamicMemoryPolicySnapshot {
+            max_entries: settings.max_entries,
+            min_similarity_basis_points: settings.min_similarity_basis_points,
+            retrieval_limit: settings.retrieval_limit,
+            retrieval_strategy: match settings.retrieval_strategy {
+                MemoryRetrievalStrategy::Smart => MemoryRetrievalStrategySnapshot::Smart,
+                MemoryRetrievalStrategy::Cosine => MemoryRetrievalStrategySnapshot::Cosine,
+            },
+            hot_memory_token_budget: settings.hot_memory_token_budget,
+            cold_threshold_basis_points: settings.cold_threshold_basis_points,
+            delete_confidence_basis_points: settings.delete_confidence_basis_points,
+            max_hard_delete_ratio_basis_points: settings.max_hard_delete_ratio_basis_points,
+            duplicate_threshold_basis_points: settings.duplicate_threshold_basis_points,
+            context_enrichment_enabled: settings.context_enrichment_enabled,
+        }
+    })
+}
 
 /// Every authored source a conversation launch reads. One bound keeps the
 /// planner usable with any composition root that owns all of them.
@@ -259,7 +282,9 @@ where
         let kept: Vec<LorebookId> = books.iter().map(|book| book.book.id).collect();
         let conversation_lorebooks = conversation_lorebooks.map(|ids| retain(ids, &kept));
         let persona_lorebooks = persona_lorebooks.map(|ids| retain(ids, &kept));
-        let model = self.resolve_model(&defaults)?;
+        let global_settings =
+            GlobalSettingsStore::load(self.sources).map_err(LaunchSourceError::Settings)?;
+        let model = self.resolve_model(&defaults, global_settings.default_model_profile_id)?;
 
         let mut character_drafts = Vec::new();
         let character_draft = documents::draft(
@@ -484,6 +509,10 @@ where
                 policy_ref: None,
                 mode: policy::memory_mode(&defaults),
                 selected_revision_ids: Vec::new(),
+                dynamic_policy: dynamic_memory_policy_snapshot(
+                    policy::memory_mode(&defaults),
+                    &global_settings.settings.dynamic_memory,
+                ),
             }),
             voice: SnapshotSelection::Disabled,
         };
@@ -772,10 +801,9 @@ where
     fn resolve_model(
         &self,
         defaults: &lettuce_characters::CharacterDefaults,
+        default_model_profile_id: Option<ModelProfileId>,
     ) -> Result<Selected<(ModelProfile, ProviderAccount)>, ConversationLaunchError> {
-        let settings =
-            GlobalSettingsStore::load(self.sources).map_err(LaunchSourceError::Settings)?;
-        let choice = policy::model_choice(defaults, settings.default_model_profile_id);
+        let choice = policy::model_choice(defaults, default_model_profile_id);
         let Some(model_profile_id) = choice.value().copied() else {
             return Ok(Selected::Disabled);
         };
@@ -1296,6 +1324,10 @@ where
                     policy_ref: None,
                     mode: memory_mode,
                     selected_revision_ids: Vec::new(),
+                    dynamic_policy: dynamic_memory_policy_snapshot(
+                        memory_mode,
+                        &settings.settings.dynamic_memory,
+                    ),
                 }),
                 disable_character_lorebook: group.group.disable_character_lorebooks,
                 persona: persona_snapshot,
