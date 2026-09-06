@@ -1319,8 +1319,6 @@ pub enum ConversationGenerationDispatchError {
     Usage(#[from] UsageLedgerError),
     #[error("conversation generation claimed work is inconsistent")]
     InvalidWork,
-    #[error("conversation generation is only supported for direct conversations")]
-    GroupUnsupported,
 }
 
 #[derive(Debug)]
@@ -1352,9 +1350,6 @@ impl<
         now: TimestampMillis,
     ) -> Result<ConversationGenerationAdmission, ConversationGenerationDispatchError> {
         let aggregate = ConversationReader::get(self.conversations, conversation_id)?;
-        if aggregate.conversation.kind.is_group() {
-            return Err(ConversationGenerationDispatchError::GroupUnsupported);
-        }
         let turn = self.conversations.get_turn(turn_id)?;
         if turn.conversation_id != conversation_id {
             return Err(ConversationGenerationDispatchError::InvalidWork);

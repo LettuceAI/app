@@ -3,6 +3,7 @@ use lettuce_conversations::ToolExecution;
 use lettuce_conversations::{
     ConversationManager, GenerationAttemptStatus, GenerationFailureCode, InitialInferenceBinding,
     InitialInferenceRepository, InitialInferenceResult, ModelSelectionSnapshot, OperationKind,
+    ResolveGroupSpeaker, SelectedSpeakerDecision, SpeakerDecisionMethod, SpeakerFallback,
     ToolExecutionOwner, UsageCounters, UsageOutcome, UsageUnavailableReason,
 };
 use lettuce_embeddings::{
@@ -264,6 +265,87 @@ fn admit_and_claim(
     assert!(admission.created);
     assert_eq!(admission.attempt.job_id, Some(admission.job.id));
     claim(database, scenario, scenario.attempt_id, now + 1)
+}
+
+fn group_scenario(
+    backend: &AppBackend,
+    prefix: &str,
+) -> (Scenario, Vec<lettuce_types::ConversationParticipantId>) {
+    let database = backend.database();
+    let model_id = seed_model(database, ProviderProtocol::Ollama, "ollama");
+    let mut stored_model = ModelProfileRepository::get(database, model_id)
+        .expect("model")
+        .expect("model exists");
+    let model_revision = stored_model.revision;
+    stored_model.config.chat_parameters.temperature = None;
+    stored_model.config.capabilities.streaming = lettuce_models::CapabilityStatus::Supported;
+    ModelProfileRepository::upsert(database, stored_model, Some(model_revision))
+        .expect("resolvable model profile");
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.model_profile_id = Some(model_id);
+    });
+    let second = seed_named_character_with(database, "Bea", |defaults| {
+        defaults.model_profile_id = Some(model_id);
+    });
+    let mut muted = member(second, 1);
+    muted.muted = true;
+    let group_id = seed_group(database, vec![member(first, 0), muted], None, |group| {
+        group.speaker_selection = lettuce_characters::SpeakerSelection::Director;
+    });
+    let launched = ConversationLaunchPlanner::new(database)
+        .launch_group(&group_request(group_id, &format!("{prefix}-launch")), NOW)
+        .expect("launch group")
+        .value;
+    let conversation = launched.conversation;
+    let speakers = conversation
+        .participants
+        .iter()
+        .filter(|participant| participant.role == ParticipantRole::Character)
+        .map(|participant| participant.id)
+        .collect::<Vec<_>>();
+    let model = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.id == speakers[0])
+        .and_then(|participant| match &participant.model_selection {
+            SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => {
+                Some(model.clone())
+            }
+            SnapshotSelection::Disabled => None,
+        })
+        .expect("group model snapshot");
+    let stored_profile = ModelProfileRepository::get(database, model.source_id)
+        .expect("profile")
+        .expect("profile exists");
+    let account = ProviderAccountRepository::get(database, model.provider_account_id)
+        .expect("account")
+        .expect("account exists");
+    let profile = lettuce_models::resolve_chat_profile(
+        &model.expected_chat_identity(),
+        &stored_profile,
+        &account,
+        &lettuce_models::ChatParameterResolutionInput::default(),
+        &lettuce_models::ChatRequirements::default(),
+    )
+    .expect("resolve group profile");
+    let sent = database
+        .begin_send(
+            &direct_send_command(&conversation, &format!("{prefix}-send"), "Hello cast."),
+            TimestampMillis::new(1_010),
+        )
+        .expect("begin group send")
+        .value;
+    (
+        Scenario {
+            conversation_id: conversation.id,
+            turn_id: sent.turn.id,
+            attempt_id: sent.attempt.id,
+            model,
+            profile,
+            space_id: None,
+        },
+        speakers,
+    )
 }
 
 fn persisted_job(database: &Database, job_id: JobId) -> JobSnapshot {
@@ -649,6 +731,243 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
             .expect("manual memory after replay")
             .expect("manual memory remains after replay"),
         manual_space
+    );
+}
+
+#[tokio::test]
+async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let (scenario, speakers) = group_scenario(&backend, "prepared-group");
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let operation = |name: &str| OperationToken {
+        key: key(name),
+        request_digest: ContentHash::parse("ce".repeat(32)).expect("operation digest"),
+    };
+    let mut turn =
+        ConversationReader::get_turn(backend.database(), scenario.turn_id).expect("group turn");
+    for (sequence, status) in [
+        GenerationTurnStatus::Preparing,
+        GenerationTurnStatus::SelectingSpeaker,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        turn = backend
+            .database()
+            .append_event(
+                turn.id,
+                turn.revision,
+                &operation(&format!("prepared-group-stage-{sequence}")),
+                GenerationCheckpointEnvelope {
+                    turn_id: turn.id,
+                    attempt_id: scenario.attempt_id,
+                    job_id: Some(work.handle.id()),
+                    correlation_id: None,
+                    sequence: u64::try_from(sequence + 1).expect("sequence"),
+                    event: GenerationCheckpointEvent::Stage { status },
+                },
+                TimestampMillis::new(1_017 + i64::try_from(sequence).expect("time")),
+            )
+            .expect("stage group selection")
+            .value;
+    }
+    let mentioned = SelectedSpeakerDecision {
+        participant_id: speakers[1],
+        method: SpeakerDecisionMethod::Explicit,
+        fallback: SpeakerFallback::None,
+        reference: None,
+        rationale_summary: None,
+        decision_model: None,
+        usage_event_id: None,
+    };
+    backend
+        .database()
+        .resolve_group_speaker(
+            &ResolveGroupSpeaker {
+                conversation_id: scenario.conversation_id,
+                turn_id: scenario.turn_id,
+                expected_turn_revision: turn.revision,
+                operation: operation("prepared-group-mentioned-speaker"),
+                selected_speaker: mentioned.clone(),
+            },
+            TimestampMillis::new(1_019),
+        )
+        .expect("resolve mentioned muted speaker");
+    let engine = ScenarioEmbeddingEngine;
+    let inference = scripted(vec![text_outcome(
+        "prepared-group-mentioned-response",
+        "Bea answers.",
+        12,
+        3,
+    )]);
+    let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+    let result = runner
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+            |_| vec![],
+        )
+        .await
+        .expect("run mentioned group speaker");
+    assert_eq!(result.candidate.author_participant_id, speakers[1]);
+    assert_eq!(result.turn.selected_speaker, Some(mentioned));
+    assert!(
+        inference.requests.lock().expect("requests")[0]
+            .context
+            .messages
+            .iter()
+            .any(|message| message.parts.iter().any(|part| {
+                matches!(part, ProviderContextPart::Text { text } if text == "Hello cast.")
+            }))
+    );
+    let replay = runner
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_021),
+            |_| vec![],
+        )
+        .await
+        .expect("replay mentioned group speaker");
+    assert!(replay.replayed);
+    assert_eq!(replay.candidate.id, result.candidate.id);
+    assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+
+    let current = ConversationReader::get(backend.database(), scenario.conversation_id)
+        .expect("conversation after mentioned response")
+        .conversation;
+    let continued = backend
+        .database()
+        .begin_continue(
+            &ContinueConversation {
+                conversation_id: current.id,
+                branch_id: current.active_branch_id,
+                expected_revision: current.revision,
+                forced_speaker: Some(speakers[0]),
+                swap_roles: false,
+                operation: operation("prepared-group-director-continue"),
+            },
+            TimestampMillis::new(1_022),
+        )
+        .expect("begin director continuation")
+        .value;
+    let continued_scenario = Scenario {
+        conversation_id: scenario.conversation_id,
+        turn_id: continued.turn.id,
+        attempt_id: continued.attempt.id,
+        model: scenario.model.clone(),
+        profile: scenario.profile.clone(),
+        space_id: None,
+    };
+    let continued_work = admit_and_claim(backend.database(), &continued_scenario, 1_023);
+    let continued_inference = scripted(vec![text_outcome(
+        "prepared-group-director-response",
+        "Ada continues.",
+        8,
+        3,
+    )]);
+    let continued_result = backend
+        .prepared_conversation_generation_runner(&engine, &continued_inference)
+        .run(
+            &continued_work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_025),
+            |_| vec![],
+        )
+        .await
+        .expect("run director continuation");
+    assert_eq!(
+        continued_result.candidate.author_participant_id,
+        speakers[0]
+    );
+    assert!(continued_result.turn.selected_speaker.is_none());
+
+    let current = ConversationReader::get(backend.database(), scenario.conversation_id)
+        .expect("conversation after director continuation")
+        .conversation;
+    let regenerated = backend
+        .database()
+        .begin_regenerate(
+            &lettuce_conversations::RegenerateCandidate {
+                conversation_id: current.id,
+                branch_id: current.active_branch_id,
+                message_id: continued_result.candidate.message_id,
+                turn_id: continued_result.turn.id,
+                expected_revision: current.revision,
+                expected_turn_revision: continued_result.turn.revision,
+                operation: operation("prepared-group-regenerate"),
+                active_candidate_id: continued_result.candidate.id,
+                guidance: None,
+                model_override: None,
+                forced_speaker: None,
+                swap_roles: false,
+            },
+            TimestampMillis::new(1_026),
+        )
+        .expect("begin retained-author regeneration")
+        .value;
+    let regenerated_scenario = Scenario {
+        conversation_id: scenario.conversation_id,
+        turn_id: regenerated.turn.id,
+        attempt_id: regenerated.attempt.id,
+        model: scenario.model.clone(),
+        profile: scenario.profile.clone(),
+        space_id: None,
+    };
+    let regenerated_work = admit_and_claim(backend.database(), &regenerated_scenario, 1_027);
+    let regenerated_inference = scripted(vec![text_outcome(
+        "prepared-group-regenerate-response",
+        "Ada answers differently.",
+        9,
+        4,
+    )]);
+    let regenerated_result = backend
+        .prepared_conversation_generation_runner(&engine, &regenerated_inference)
+        .run(
+            &regenerated_work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_029),
+            |_| vec![],
+        )
+        .await
+        .expect("run retained-author regeneration");
+    assert_eq!(
+        regenerated_result.candidate.author_participant_id,
+        speakers[0]
+    );
+    assert_eq!(regenerated_result.candidate.ordinal, 1);
+
+    let unresolved_backend =
+        AppBackend::open_in_memory(TimestampMillis::new(1)).expect("unresolved backend");
+    let (unresolved, _) = group_scenario(&unresolved_backend, "unresolved-group");
+    let unresolved_work = admit_and_claim(unresolved_backend.database(), &unresolved, 1_015);
+    let unresolved_inference = scripted(vec![text_outcome(
+        "unresolved-group-response",
+        "Must not dispatch.",
+        1,
+        1,
+    )]);
+    assert!(matches!(
+        unresolved_backend
+            .prepared_conversation_generation_runner(&engine, &unresolved_inference)
+            .run(
+                &unresolved_work,
+                ConversationGenerationRuntimeInput::default(),
+                TimestampMillis::new(1_020),
+                |_| vec![],
+            )
+            .await,
+        Err(ConversationGenerationRunError::PreparationFailed {
+            code: GenerationFailureCode::SpeakerUnavailable,
+        })
+    ));
+    assert!(
+        unresolved_inference
+            .requests
+            .lock()
+            .expect("unresolved requests")
+            .is_empty()
     );
 }
 
@@ -2100,36 +2419,6 @@ async fn identity_and_input_guards_reject_before_any_mutation() {
         ),
         Err(ConversationGenerationDispatchError::InvalidWork)
     ));
-
-    let group_id = two_member_group(&database);
-    let group = ConversationLaunchPlanner::new(&database)
-        .launch_group(&group_request(group_id, "guards-group-launch"), NOW)
-        .expect("launch group")
-        .value
-        .conversation;
-    let sent = database
-        .begin_send(
-            &direct_send_command(&group, "guards-group-send", "Hello all."),
-            TimestampMillis::new(1_030),
-        )
-        .expect("group send")
-        .value;
-    assert!(matches!(
-        dispatcher.admit(
-            group.id,
-            sent.turn.id,
-            sent.attempt.id,
-            TimestampMillis::new(1_031)
-        ),
-        Err(ConversationGenerationDispatchError::GroupUnsupported)
-    ));
-    assert!(
-        ConversationReader::get_turn(&database, sent.turn.id)
-            .expect("group turn")
-            .attempts[0]
-            .job_id
-            .is_none()
-    );
 }
 
 #[tokio::test]

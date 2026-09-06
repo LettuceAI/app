@@ -639,8 +639,8 @@ Response interpretation, tool admission and terminal aggregation stay with their
 existing coordinators.
 
 `ConversationGenerationDispatchCoordinator` and `ConversationGenerationJobRunner`
-compose those pieces into one claimed-job pipeline for a direct conversation
-attempt. Admission creates or reuses the `ConversationGeneration` job keyed by
+compose those pieces into one claimed-job pipeline for a conversation attempt.
+Admission creates or reuses the `ConversationGeneration` job keyed by
 the attempt's job idempotency key and attaches it; claim starts the job and its
 stage; the runner then stages Preparing, prepares the turn from the supplied
 model and attributions, stages Running, dispatches through the initial
@@ -671,14 +671,19 @@ durable checkpoint sequence for its attempt and allocates the next value. A
 pre-existing streaming progress checkpoint and process reopen therefore do not
 collide with runner-owned stages; the database still enforces contiguous
 uniqueness and operation replay. Automatic scheduling, streaming progress
-emission, group speaker selection and frontend commands remain outside this
-runner.
+emission, automatic group speaker selection and frontend commands remain
+outside this runner.
 `PreparedConversationGenerationJobRunner`, exposed by `AppBackend`, now owns the
-reconstructible input boundary for an ordinary direct turn. It loads the durable
-turn and branch ancestry, trims a finalized replay back to the turn's original
-source message, resolves effective settings and the exact snapshotted live
-model/account, assembles provider-neutral context, derives unique media grants
-from that context, and invokes the claimed-job runner. Only
+reconstructible input boundary for an ordinary direct or resolved group turn. It
+loads the durable turn and branch ancestry, trims a finalized replay back to the
+turn's original source message, resolves the selected participant's effective
+settings and exact snapshotted live model/account, assembles provider-neutral
+context, derives unique media grants from that context, and invokes the
+claimed-job runner. Stored explicit decisions, including muted mention targets,
+run directly. A director continuation uses its forced participant, and group
+regeneration retains the original candidate author; neither path fabricates or
+persists an automatic-selection rationale. An unresolved group turn fails with
+`SpeakerUnavailable` before provider dispatch. Only
 the stream sink and prompt runtime values remain caller-supplied; the sink stays
 outside the durable initial-dispatch fingerprint, so replay may use a new sink
 without another provider call. Context or model preparation failures map into

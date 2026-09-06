@@ -7,9 +7,10 @@ use lettuce_companions::{
 use lettuce_conversations::{
     ContextAssembler, ContextAssemblyError, ContextRequest, ConversationKind, ConversationReader,
     ConversationRepository, ConversationRepositoryError, ConversationSnapshotMaterializer,
-    GenerationInput, InferencePort, MemoryAttribution, MemoryContribution, MemoryModeSnapshot,
-    MessageRole, OutputPolicy, PromptRuntimeFacts, PromptRuntimeValues, ProviderContextPart,
-    ResolvedInferenceProfile, SafetyContext, ToolPolicy,
+    GenerationInput, GenerationTarget, InferencePort, MemoryAttribution, MemoryContribution,
+    MemoryModeSnapshot, MessageRole, OutputPolicy, PromptRuntimeFacts, PromptRuntimeValues,
+    ProviderContextPart, ResolvedInferenceProfile, SafetyContext, SelectedSpeakerDecision,
+    SpeakerDecisionMethod, SpeakerDecisionReference, SpeakerFallback, ToolPolicy,
 };
 use lettuce_embeddings::{EmbeddingDimensions, EmbeddingRequest, MemoryEmbeddingRepository};
 use lettuce_memory::{
@@ -53,7 +54,7 @@ enum ConversationGenerationInputError {
     Embedding,
     Cancelled,
     MemoryInputUnavailable,
-    GroupUnsupported,
+    SpeakerUnavailable,
     InvalidTurn,
 }
 
@@ -130,9 +131,6 @@ where
     ) -> Result<ConversationGenerationInput, ConversationGenerationInputError> {
         let aggregate = ConversationReader::get(self.repository, work.conversation_id)
             .map_err(ConversationGenerationInputError::Repository)?;
-        if !matches!(aggregate.conversation.kind, ConversationKind::Direct(_)) {
-            return Err(ConversationGenerationInputError::GroupUnsupported);
-        }
         let turn = ConversationReader::get_turn(self.repository, work.turn_id)
             .map_err(ConversationGenerationInputError::Repository)?;
         if turn.conversation_id != work.conversation_id
@@ -140,9 +138,10 @@ where
         {
             return Err(ConversationGenerationInputError::InvalidTurn);
         }
+        let selected_speaker = self.generation_speaker(&aggregate.conversation, &turn)?;
         let settings = lettuce_conversations::resolve_effective_settings(
             &aggregate.conversation,
-            turn.selected_speaker
+            selected_speaker
                 .as_ref()
                 .map(|speaker| speaker.participant_id),
         )
@@ -223,7 +222,7 @@ where
                 swap_roles: turn.swap_roles,
                 guidance: turn.guidance.clone(),
                 window: Default::default(),
-                selected_speaker: turn.selected_speaker.clone(),
+                selected_speaker,
                 capabilities: profile.capabilities.clone(),
                 safety: SafetyContext::Standard,
                 prompt_runtime,
@@ -268,6 +267,60 @@ where
             stream_sink: runtime.stream_sink,
             memory: memory_input,
         })
+    }
+
+    fn generation_speaker(
+        &self,
+        conversation: &lettuce_conversations::Conversation,
+        turn: &lettuce_conversations::GenerationTurn,
+    ) -> Result<Option<SelectedSpeakerDecision>, ConversationGenerationInputError> {
+        let ConversationKind::Group(details) = &conversation.kind else {
+            return Ok(None);
+        };
+        if let Some(decision) = &turn.selected_speaker {
+            return Ok(Some(decision.clone()));
+        }
+        let (participant_id, method, reference) = if let Some(participant_id) = turn.forced_speaker
+        {
+            let method = match details.group.speaker_selection {
+                lettuce_conversations::GroupSpeakerSelectionSnapshot::Director => {
+                    SpeakerDecisionMethod::Director
+                }
+                lettuce_conversations::GroupSpeakerSelectionSnapshot::DirectorAction => {
+                    SpeakerDecisionMethod::DirectorAction
+                }
+                _ => SpeakerDecisionMethod::Explicit,
+            };
+            (participant_id, method, None)
+        } else if let GenerationTarget::ExistingCandidate {
+            message_id,
+            prior_candidate_id,
+        } = turn.target
+        {
+            let candidate = self
+                .repository
+                .get_candidate(prior_candidate_id)
+                .map_err(ConversationGenerationInputError::Repository)?;
+            if candidate.message_id != message_id {
+                return Err(ConversationGenerationInputError::SpeakerUnavailable);
+            }
+            (
+                candidate.author_participant_id,
+                SpeakerDecisionMethod::Explicit,
+                Some(SpeakerDecisionReference::Message(message_id)),
+            )
+        } else {
+            return Err(ConversationGenerationInputError::SpeakerUnavailable);
+        };
+        Ok(Some(SelectedSpeakerDecision {
+            participant_id,
+            method,
+            fallback: SpeakerFallback::None,
+            reference,
+            rationale_summary: None,
+            decision_model: None,
+            usage_event_id: None,
+        }))
     }
 
     async fn dynamic_memory_input(
@@ -558,7 +611,10 @@ impl ConversationGenerationInputError {
                     code: lettuce_conversations::GenerationFailureCode::MissingModel,
                 }
             }
-            Self::MemoryInputUnavailable | Self::GroupUnsupported | Self::InvalidTurn => {
+            Self::SpeakerUnavailable => ConversationGenerationRunError::PreparationFailed {
+                code: lettuce_conversations::GenerationFailureCode::SpeakerUnavailable,
+            },
+            Self::MemoryInputUnavailable | Self::InvalidTurn => {
                 ConversationGenerationRunError::InvalidInput
             }
         }
