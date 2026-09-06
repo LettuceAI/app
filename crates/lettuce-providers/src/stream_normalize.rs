@@ -372,12 +372,10 @@ impl StreamNormalizer {
         }
         if let Some(usage) = value.get("usage") {
             self.input_tokens = token(usage, &["prompt_tokens", "input_tokens"]);
-            self.cached_input_tokens = usage
-                .get("prompt_tokens_details")
-                .and_then(|v| token(v, &["cached_tokens"]));
-            self.reasoning_tokens = usage
-                .get("completion_tokens_details")
-                .and_then(|v| token(v, &["reasoning_tokens"]));
+            (self.cached_input_tokens, self.reasoning_tokens) = usage
+                .as_object()
+                .map(crate::common::openai_usage_details)
+                .unwrap_or_default();
             self.output_tokens = token(usage, &["completion_tokens", "output_tokens"]);
         }
         let Some(choices) = value.get("choices").and_then(Value::as_array) else {

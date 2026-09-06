@@ -11,6 +11,46 @@ use lettuce_settings::{
 };
 
 pub(crate) const FALLBACK_MAX_OUTPUT_TOKENS: u32 = 4096;
+pub(crate) fn openai_usage_details(
+    usage: &serde_json::Map<String, serde_json::Value>,
+) -> (Option<u64>, Option<u64>) {
+    let first = |value: &serde_json::Map<String, serde_json::Value>, names: &[&str]| {
+        names
+            .iter()
+            .find_map(|name| value.get(*name).and_then(serde_json::Value::as_u64))
+    };
+    let cached = first(
+        usage,
+        &[
+            "cached_content_token_count",
+            "cachedContentTokenCount",
+            "cache_read",
+            "cacheRead",
+        ],
+    )
+    .or_else(|| {
+        usage
+            .get("prompt_tokens_details")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|details| first(details, &["cached_tokens", "cachedTokens"]))
+    });
+    let reasoning = first(
+        usage,
+        &[
+            "reasoning_tokens",
+            "reasoningTokens",
+            "thinking_tokens",
+            "thinkingTokens",
+        ],
+    )
+    .or_else(|| {
+        usage
+            .get("completion_tokens_details")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|details| first(details, &["reasoning_tokens", "reasoningTokens"]))
+    });
+    (cached, reasoning)
+}
 pub(crate) const ACCEPT_ONLY: [JsonStaticHeader; 1] = [JsonStaticHeader {
     name: "accept",
     value: "application/json",

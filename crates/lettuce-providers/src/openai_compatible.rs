@@ -732,17 +732,11 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
     let outcome = InferenceOutcome {
         candidates,
         usage: parsed.usage.and_then(|usage| {
+            let (cached_input_tokens, reasoning_tokens) =
+                crate::common::openai_usage_details(&usage.details);
             Some(InferenceUsage {
-                cached_input_tokens: usage
-                    .prompt_tokens_details
-                    .as_ref()
-                    .and_then(|v| v.get("cached_tokens"))
-                    .and_then(serde_json::Value::as_u64),
-                reasoning_tokens: usage
-                    .completion_tokens_details
-                    .as_ref()
-                    .and_then(|v| v.get("reasoning_tokens"))
-                    .and_then(serde_json::Value::as_u64),
+                cached_input_tokens,
+                reasoning_tokens,
                 input_tokens: usage.input()?,
                 output_tokens: usage.output()?,
             })
@@ -995,8 +989,8 @@ impl MessageContent {
 
 #[derive(Deserialize)]
 struct OpenAiUsage {
-    prompt_tokens_details: Option<serde_json::Value>,
-    completion_tokens_details: Option<serde_json::Value>,
+    #[serde(flatten)]
+    details: serde_json::Map<String, serde_json::Value>,
     prompt_tokens: Option<u64>,
     input_tokens: Option<u64>,
     prompt_eval_count: Option<u64>,
@@ -1365,6 +1359,61 @@ mod tests {
             body: body.as_bytes().to_vec(),
             request_id: None,
             retry_after: None,
+        }
+    }
+
+    #[test]
+    fn legacy_usage_details_match_buffered_and_streamed_responses() {
+        use crate::stream_framing::StreamRecord;
+        use crate::stream_normalize::{StreamNormalizer, StreamProtocol};
+        let cases = [
+            (
+                serde_json::json!({"cacheRead":0,"thinkingTokens":4,"prompt_tokens_details":{"cached_tokens":9},"completion_tokens_details":{"reasoning_tokens":8}}),
+                Some(0),
+                Some(4),
+            ),
+            (
+                serde_json::json!({"prompt_tokens_details":{"cachedTokens":2},"completion_tokens_details":{"reasoningTokens":0}}),
+                Some(2),
+                Some(0),
+            ),
+            (
+                serde_json::json!({"cache_read":-1,"reasoning_tokens":"invalid","prompt_tokens_details":{"cached_tokens":3},"completion_tokens_details":{"reasoning_tokens":1}}),
+                Some(3),
+                Some(1),
+            ),
+            (
+                serde_json::json!({"cacheRead":-1,"thinkingTokens":1.5}),
+                None,
+                None,
+            ),
+        ];
+        for (mut usage, cached, reasoning) in cases {
+            usage["prompt_tokens"] = 10.into();
+            usage["completion_tokens"] = 5.into();
+            let buffered = serde_json::json!({"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":usage});
+            let buffered = parse_response(response(&buffered.to_string()))
+                .expect("buffered response")
+                .usage
+                .expect("usage");
+            let mut stream = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+            let payload = serde_json::json!({"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":usage});
+            stream
+                .consume(&StreamRecord {
+                    event: None,
+                    data: payload.to_string(),
+                })
+                .expect("stream response");
+            stream
+                .consume(&StreamRecord {
+                    event: None,
+                    data: "[DONE]".into(),
+                })
+                .expect("terminal");
+            let (_, streamed) = stream.finish().expect("finished stream");
+            assert_eq!(streamed.usage, Some(buffered.clone()));
+            assert_eq!(buffered.cached_input_tokens, cached);
+            assert_eq!(buffered.reasoning_tokens, reasoning);
         }
     }
 

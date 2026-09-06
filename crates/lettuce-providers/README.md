@@ -3,7 +3,10 @@
 OpenAI-compatible buffered and SSE responses preserve optional
 `prompt_tokens_details.cached_tokens` and
 `completion_tokens_details.reasoning_tokens` in normalized usage. Missing
-details remain None, distinct from a reported zero. Anthropic buffered/SSE
+details remain None, distinct from a reported zero. Both paths also preserve
+legacy top-level cache-read and reasoning/thinking aliases and nested camelCase
+details, with the legacy top-level precedence. Invalid optional counters fall
+through to valid aliases without inventing zero. Anthropic buffered/SSE
 usage also preserves cache_read_input_tokens; it does not infer a reasoning
 count from thinking text. Gemini buffered/streaming usage preserves
 cachedContentTokenCount and thoughtsTokenCount. Native input/output totals
