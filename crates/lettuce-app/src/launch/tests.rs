@@ -1686,9 +1686,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .len(),
         8
     );
-    let jobs = InMemoryJobStore::new();
     assert!(
-        crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
+        crate::CompanionMemoryDispatchCoordinator::new(&database, &database)
             .discover_and_claim(
                 512,
                 1,
@@ -1711,7 +1710,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .prompted_message_count,
         2
     );
-    let work = crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
+    let work = crate::CompanionMemoryDispatchCoordinator::new(&database, &database)
         .retry_direct_with_model_and_claim(
             conversation.id,
             512,
@@ -1736,7 +1735,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         work.admission.batch.window_selection,
         crate::CompanionMemoryWindowSelection::Recent
     );
-    let retry = crate::CompanionPostTurnMemoryAdmissionCoordinator::new(&database, &jobs)
+    let retry = crate::CompanionPostTurnMemoryAdmissionCoordinator::new(&database, &database)
         .retry_direct_with_model_and_admit(conversation.id, 512, 1, model.source_id, true)
         .expect("exact model retry")
         .expect("same admission");
@@ -1756,7 +1755,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let scripted = ScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             InferenceOutcome {
-                provider_response_id: None,
+                provider_response_id: Some("gen-runner-summary-invalid".into()),
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -1780,7 +1779,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 warning_codes: Vec::new(),
             },
             InferenceOutcome {
-                provider_response_id: None,
+                provider_response_id: Some("gen-runner-summary-fallback".into()),
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: vec![MessagePart::Text {
@@ -1804,7 +1803,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 warning_codes: Vec::new(),
             },
             InferenceOutcome {
-                provider_response_id: None,
+                provider_response_id: Some("gen-runner-first".into()),
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: Vec::new(),
@@ -1828,7 +1827,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 warning_codes: Vec::new(),
             },
             InferenceOutcome {
-                provider_response_id: None,
+                provider_response_id: Some("gen-runner-second".into()),
                 candidates: vec![InferenceCandidate {
                     ordinal: 0,
                     parts: Vec::new(),
@@ -1885,6 +1884,16 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     .await
     .expect("checkpoint summary");
     assert!(!summary.replayed);
+    let summary_usage = summary.checkpoint.usage.as_ref().expect("summary totals");
+    assert_eq!((summary_usage.input_tokens, summary_usage.output_tokens), (44, 10));
+    let summary_evidence = lettuce_usage::JobUsageLedger::job_usage(&database, work.handle.id()).expect("summary dispatches");
+    assert_eq!(summary_evidence.len(), 2);
+    for (id, input, output) in [("gen-runner-summary-invalid", 20, 3), ("gen-runner-summary-fallback", 24, 7)] {
+        assert!(summary_evidence.iter().any(|event| matches!(&event.result,
+            Some(lettuce_usage::JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(actual) })
+                if actual == id && usage.input_tokens == input && usage.output_tokens == output)));
+    }
+
     assert!(matches!(
         crate::CompanionMemoryInferenceCoordinator::new(
             &database,
@@ -1957,6 +1966,14 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     );
     assert!(!result.first_round_replayed);
     assert!(result.summary_replayed);
+    let memory_evidence = lettuce_usage::JobUsageLedger::job_usage(&database, work.handle.id()).expect("all memory dispatches");
+    assert_eq!(memory_evidence.len(), 6);
+    assert_eq!(memory_evidence.iter().filter(|event| matches!(event.result, Some(lettuce_usage::JobInferenceUsageResult::InferenceFailed))).count(), 2);
+    for id in ["gen-runner-first", "gen-runner-second"] {
+        assert!(memory_evidence.iter().any(|event| matches!(&event.result,
+            Some(lettuce_usage::JobInferenceUsageResult::Response { usage: None, provider_response_id: Some(actual) }) if actual == id)));
+    }
+
     assert_eq!(
         result.dispatch.attempt.status,
         DynamicMemoryAttemptStatus::Succeeded
@@ -2022,6 +2039,18 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         DynamicMemoryAttemptStatus::Succeeded
     );
     assert_eq!(replayed.effects, result.effects);
+    assert_eq!(lettuce_usage::JobUsageLedger::job_usage(&database, work.handle.id()).expect("replayed memory evidence"), memory_evidence);
+    let memory_request = scripted.requests.lock().expect("requests")[2].clone();
+    for fail_admission in [true, false] {
+        let repository = FailingUsageRepository { database: &database, fail_admission };
+        let inference = FallibleScriptedInference {
+            outcomes: Mutex::new(VecDeque::from([Err(PortError::Unavailable)])),
+            requests: Mutex::new(Vec::new()),
+        };
+        let failed = crate::run_memory_request_with_fallback(&repository, &inference, work.handle.id(), memory_request.clone(), lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml, NOW).await;
+        assert!(matches!(failed, Err(crate::CompanionMemoryInferenceError::Run(lettuce_memory::DynamicMemoryRunRepositoryError::Storage))));
+        assert_eq!(inference.requests.lock().expect("requests").len(), usize::from(!fail_admission));
+    }
     let mut empty_growth = result.clone();
     empty_growth.fresh_memories.clear();
     assert!(
@@ -2429,7 +2458,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             result_ref: OutcomeRef::Character(growth.run.character_id),
         })
     );
-    let settled = crate::CompanionMemoryDispatchCoordinator::new(&database, &jobs)
+    let settled = crate::CompanionMemoryDispatchCoordinator::new(&database, &database)
         .settle_run(
             work,
             Ok(result),
@@ -2646,7 +2675,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         operation: operation("companion-effect-delete-after"),
         summary_message_interval: 1,
     };
-    let deleted = crate::DynamicMemoryDeleteAfterCoordinator::new(&database, &jobs)
+    let deleted = crate::DynamicMemoryDeleteAfterCoordinator::new(&database, &database)
         .delete_after(&delete_command, TimestampMillis::new(NOW.get() + 50))
         .expect("delete after");
     assert_eq!(
@@ -2685,7 +2714,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .text,
         stored_summary.text
     );
-    let replay = crate::DynamicMemoryDeleteAfterCoordinator::new(&database, &jobs)
+    let replay = crate::DynamicMemoryDeleteAfterCoordinator::new(&database, &database)
         .delete_after(&delete_command, TimestampMillis::new(NOW.get() + 99))
         .expect("delete-after replay");
     assert_eq!(
@@ -8441,7 +8470,11 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
         .id;
     let run_id = DynamicMemoryRunId::new();
     let attempt_id = DynamicMemoryAttemptId::new();
-    let job_id = JobId::new();
+    let job_id = lettuce_jobs::JobStore::create_or_get(&database, lettuce_jobs::JobSpec::new(
+        lettuce_jobs::JobKind::ArtifactInstall,
+        lettuce_jobs::JobSubject::new(lettuce_jobs::SubjectKind::ArtifactInstall, "memory-loop-usage").expect("job subject"),
+        OutcomeRef::ArtifactInstallation(lettuce_types::AssetId::new()),
+    ).with_resources(vec![ResourceClass::Network])).expect("durable job").job.id;
     let admitted = database
         .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
             run_id,

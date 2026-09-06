@@ -11,6 +11,7 @@ use lettuce_memory::{
 };
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{RequestId, TimestampMillis};
+use lettuce_usage::JobUsageLedger;
 
 use crate::{
     CompanionMemoryInferenceCoordinator, CompanionMemoryInferenceError,
@@ -63,6 +64,7 @@ impl<
         + MemorySummaryRepository
         + MemoryEmbeddingRepository
         + ProviderReplayArtifactPort
+        + JobUsageLedger
         + CompanionTurnEffectRepository
         + GlobalSettingsStore
         + ?Sized,

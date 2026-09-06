@@ -13,6 +13,7 @@ use lettuce_types::{
     DynamicMemoryAttemptId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId, RequestId,
     TimestampMillis,
 };
+use lettuce_usage::JobUsageLedger;
 
 use crate::{cleanup_outcome_replays, plan_memory_round, run_memory_request_with_fallback};
 
@@ -35,7 +36,7 @@ pub struct CompanionMemoryContinuationCoordinator<'a, R: ?Sized, I: ?Sized> {
 
 impl<
     'a,
-    R: DynamicMemoryRunRepository + ProviderReplayArtifactPort + ?Sized,
+    R: DynamicMemoryRunRepository + ProviderReplayArtifactPort + JobUsageLedger + ?Sized,
     I: InferencePort + ?Sized,
 > CompanionMemoryContinuationCoordinator<'a, R, I>
 {
@@ -120,10 +121,12 @@ impl<
             .validate()
             .map_err(|_| CompanionMemoryContinuationError::InvalidRequest)?;
         let outcome = match run_memory_request_with_fallback(
+            self.repository,
             self.inference,
+            handle.id(),
             request,
             run.structured_fallback_format,
-            |outcome| cleanup_outcome_replays(self.repository, outcome),
+            now,
         )
         .await
         {

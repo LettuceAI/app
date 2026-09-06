@@ -19,6 +19,7 @@ use lettuce_types::{
     DynamicMemoryAttemptId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId, RequestId,
     TimestampMillis,
 };
+use lettuce_usage::JobUsageLedger;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -69,6 +70,7 @@ impl<
         + MemoryRepository
         + MemorySummaryRepository
         + ProviderReplayArtifactPort
+        + JobUsageLedger
         + ?Sized,
     C: ConversationReader + ?Sized,
     I: InferencePort + ?Sized,
@@ -144,7 +146,7 @@ impl<
             now,
         )?;
         let (text, request_context, usage, provider_request_id) =
-            self.infer_summary(request, handle).await?;
+            self.infer_summary(request, handle, now).await?;
         if handle.cancellation_token().is_cancelled() {
             return Err(CompanionMemoryInferenceError::Cancelled);
         }
@@ -175,6 +177,7 @@ impl<
         &self,
         request: InferenceRequest,
         handle: &JobHandle,
+        now: TimestampMillis,
     ) -> Result<
         (
             String,
@@ -184,13 +187,34 @@ impl<
         ),
         CompanionMemoryInferenceError,
     > {
+        use crate::job_inference_usage::{JobInferenceError, run_job_inference};
+
         let primary_context = request.context.clone();
-        let primary = match self.inference.run(request.clone()).await {
+        let primary = match run_job_inference(
+            self.repository,
+            self.inference,
+            handle.id(),
+            request.clone(),
+            now,
+        )
+        .await
+        {
             Ok(outcome) => Some(outcome),
-            Err(PortError::Cancelled) => return Err(CompanionMemoryInferenceError::Cancelled),
-            Err(_) => None,
+            Err(JobInferenceError::Provider(PortError::Cancelled)) => {
+                return Err(CompanionMemoryInferenceError::Cancelled);
+            }
+            Err(JobInferenceError::Evidence) => {
+                return Err(CompanionMemoryInferenceError::Run(
+                    lettuce_memory::DynamicMemoryRunRepositoryError::Storage,
+                ));
+            }
+            Err(JobInferenceError::Provider(_)) => None,
         };
         if let Some(outcome) = &primary {
+            if outcome.finish_reason == FinishReason::Cancelled {
+                cleanup_outcome_replays(self.repository, outcome)?;
+                return Err(CompanionMemoryInferenceError::Cancelled);
+            }
             if let Ok(text) = summary_from_outcome(outcome, true) {
                 cleanup_outcome_replays(self.repository, outcome)?;
                 return Ok((
@@ -222,14 +246,20 @@ impl<
             .validate()
             .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
         let fallback_context = fallback.context.clone();
-        let outcome = self
-            .inference
-            .run(fallback)
-            .await
-            .map_err(|error| match error {
-                PortError::Cancelled => CompanionMemoryInferenceError::Cancelled,
-                error => CompanionMemoryInferenceError::Inference(error),
-            })?;
+        let outcome =
+            run_job_inference(self.repository, self.inference, handle.id(), fallback, now)
+                .await
+                .map_err(|error| match error {
+                    JobInferenceError::Provider(PortError::Cancelled) => {
+                        CompanionMemoryInferenceError::Cancelled
+                    }
+                    JobInferenceError::Provider(error) => {
+                        CompanionMemoryInferenceError::Inference(error)
+                    }
+                    JobInferenceError::Evidence => CompanionMemoryInferenceError::Run(
+                        lettuce_memory::DynamicMemoryRunRepositoryError::Storage,
+                    ),
+                })?;
         let text = match summary_from_outcome(&outcome, false) {
             Ok(text) => text,
             Err(error) => {

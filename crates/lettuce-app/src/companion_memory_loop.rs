@@ -8,6 +8,7 @@ use lettuce_memory::{
 use lettuce_types::{
     DynamicMemoryAttemptId, DynamicMemoryRunId, MemoryId, RequestId, TimestampMillis,
 };
+use lettuce_usage::JobUsageLedger;
 
 use crate::{
     CompanionMemoryContinuationCoordinator, CompanionMemoryContinuationError,
@@ -46,6 +47,7 @@ impl<
         + MemoryRepository
         + MemoryEmbeddingRepository
         + ProviderReplayArtifactPort
+        + JobUsageLedger
         + ?Sized,
     I: InferencePort + ?Sized,
 > CompanionMemoryLoopCoordinator<'_, E, R, I>

@@ -23,6 +23,7 @@ use lettuce_types::{
     DynamicMemoryAttemptId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId, RequestId,
     TimestampMillis, ToolExecutionId,
 };
+use lettuce_usage::JobUsageLedger;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompanionMemoryFirstRoundResult {
@@ -75,7 +76,11 @@ pub struct CompanionMemoryInferenceCoordinator<'a, R: ?Sized, C: ?Sized, I: ?Siz
 
 impl<
     'a,
-    R: DynamicMemoryRunRepository + MemoryRepository + ProviderReplayArtifactPort + ?Sized,
+    R: DynamicMemoryRunRepository
+        + MemoryRepository
+        + ProviderReplayArtifactPort
+        + JobUsageLedger
+        + ?Sized,
     C: ConversationReader + ?Sized,
     I: InferencePort + ?Sized,
 > CompanionMemoryInferenceCoordinator<'a, R, C, I>
@@ -157,10 +162,12 @@ impl<
         )?;
         let request_context = request.context.clone();
         let outcome = match run_memory_request_with_fallback(
+            self.repository,
             self.inference,
+            handle.id(),
             request,
             run.structured_fallback_format,
-            |outcome| cleanup_outcome_replays(self.repository, outcome),
+            now,
         )
         .await
         {
@@ -222,21 +229,37 @@ impl<
     }
 }
 
-pub(crate) async fn run_memory_request_with_fallback<I, C>(
+pub(crate) async fn run_memory_request_with_fallback<R, I>(
+    repository: &R,
     inference: &I,
+    job_id: lettuce_types::JobId,
     request: InferenceRequest,
     format: DynamicMemoryStructuredFallbackFormat,
-    cleanup: C,
+    now: TimestampMillis,
 ) -> Result<InferenceOutcome, CompanionMemoryInferenceError>
 where
     I: InferencePort + ?Sized,
-    C: Fn(&InferenceOutcome) -> Result<(), CompanionMemoryInferenceError>,
+    R: JobUsageLedger + ProviderReplayArtifactPort + ?Sized,
 {
-    let primary = match inference.run(request.clone()).await {
+    use crate::job_inference_usage::{JobInferenceError, run_job_inference};
+
+    let primary = match run_job_inference(repository, inference, job_id, request.clone(), now).await
+    {
+        Ok(outcome) if outcome.finish_reason == FinishReason::Cancelled => {
+            cleanup_outcome_replays(repository, &outcome)?;
+            return Err(CompanionMemoryInferenceError::Cancelled);
+        }
         Ok(outcome) if outcome_has_tool_calls(&outcome) => return Ok(outcome),
         Ok(outcome) => Some(outcome),
-        Err(PortError::Cancelled) => return Err(CompanionMemoryInferenceError::Cancelled),
-        Err(_) => None,
+        Err(JobInferenceError::Provider(PortError::Cancelled)) => {
+            return Err(CompanionMemoryInferenceError::Cancelled);
+        }
+        Err(JobInferenceError::Evidence) => {
+            return Err(CompanionMemoryInferenceError::Run(
+                DynamicMemoryRunRepositoryError::Storage,
+            ));
+        }
+        Err(JobInferenceError::Provider(_)) => None,
     };
     let mut fallback = request;
     fallback.profile.tool_policy = ToolPolicy::Disabled;
@@ -250,33 +273,39 @@ where
     });
     if fallback.validate().is_err() {
         if let Some(primary) = &primary {
-            cleanup(primary)?;
+            cleanup_outcome_replays(repository, primary)?;
         }
         return Err(CompanionMemoryInferenceError::InvalidPrompt);
     }
-    let mut outcome = match inference.run(fallback).await {
+    let mut outcome = match run_job_inference(repository, inference, job_id, fallback, now).await {
         Ok(outcome) => outcome,
         Err(error) => {
             if let Some(primary) = &primary {
-                cleanup(primary)?;
+                cleanup_outcome_replays(repository, primary)?;
             }
-            return Err(if error == PortError::Cancelled {
-                CompanionMemoryInferenceError::Cancelled
-            } else {
-                CompanionMemoryInferenceError::Inference(error)
+            return Err(match error {
+                JobInferenceError::Provider(PortError::Cancelled) => {
+                    CompanionMemoryInferenceError::Cancelled
+                }
+                JobInferenceError::Provider(error) => {
+                    CompanionMemoryInferenceError::Inference(error)
+                }
+                JobInferenceError::Evidence => {
+                    CompanionMemoryInferenceError::Run(DynamicMemoryRunRepositoryError::Storage)
+                }
             });
         }
     };
     let parsed = parse_fallback_outcome(&mut outcome, format);
     if let Err(error) = parsed {
         if let Some(primary) = &primary {
-            cleanup(primary)?;
+            cleanup_outcome_replays(repository, primary)?;
         }
-        cleanup(&outcome)?;
+        cleanup_outcome_replays(repository, &outcome)?;
         return Err(error);
     }
     if let Some(primary) = &primary {
-        cleanup(primary)?;
+        cleanup_outcome_replays(repository, primary)?;
     }
     if let Some(primary_usage) = primary.as_ref().and_then(|outcome| outcome.usage.as_ref()) {
         match &mut outcome.usage {
@@ -924,6 +953,23 @@ mod tests {
         }
     }
 
+    fn usage_fixture() -> (lettuce_database::Database, JobId) {
+        use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, SubjectKind};
+        let database = lettuce_database::Database::open_in_memory().expect("usage database");
+        let job = database
+            .create_or_get(
+                JobSpec::new(
+                    JobKind::ArtifactInstall,
+                    JobSubject::new(SubjectKind::ArtifactInstall, "memory-usage").expect("subject"),
+                    OutcomeRef::ArtifactInstallation(lettuce_types::AssetId::new()),
+                )
+                .with_resources(vec![lettuce_jobs::ResourceClass::Network]),
+            )
+            .expect("job")
+            .job;
+        (database, job.id)
+    }
+
     #[tokio::test]
     async fn tool_less_primary_uses_legacy_xml_fallback_request() {
         let scripted = ScriptedInference {
@@ -955,14 +1001,24 @@ mod tests {
             ])),
             requests: Mutex::new(Vec::new()),
         };
+        let (database, job_id) = usage_fixture();
         let outcome = run_memory_request_with_fallback(
+            &database,
             &scripted,
+            job_id,
             fallback_request(),
             DynamicMemoryStructuredFallbackFormat::Xml,
-            |_| Ok(()),
+            TimestampMillis::new(1),
         )
         .await
         .expect("fallback");
+        let evidence = database.job_usage(job_id).expect("dispatch evidence");
+        assert_eq!(evidence.len(), 2);
+        for (input, output) in [(3, 2), (5, 4)] {
+            assert!(evidence.iter().any(|event| matches!(&event.result,
+                Some(lettuce_usage::JobInferenceUsageResult::Response { usage: Some(usage), .. })
+                    if usage.input_tokens == input && usage.output_tokens == output)));
+        }
         assert_eq!(outcome.candidates[0].tool_calls[0].name, "done");
         assert_eq!(
             outcome.candidates[0].tool_calls[0].arguments,
@@ -1000,11 +1056,14 @@ mod tests {
             ])),
             requests: Mutex::new(Vec::new()),
         };
+        let (database, job_id) = usage_fixture();
         let outcome = run_memory_request_with_fallback(
+            &database,
             &scripted,
+            job_id,
             fallback_request(),
             DynamicMemoryStructuredFallbackFormat::Json,
-            |_| Ok(()),
+            TimestampMillis::new(1),
         )
         .await
         .expect("empty fallback");
@@ -1022,6 +1081,59 @@ mod tests {
             Some([ProviderContextPart::Text { text }])
                 if text == lettuce_memory::MEMORY_OPERATIONS_JSON_FALLBACK_PROMPT
         ));
+    }
+
+    #[tokio::test]
+    async fn cancelled_memory_dispatch_never_starts_fallback() {
+        for response in [false, true] {
+            let (database, job_id) = usage_fixture();
+            let mut cancelled = text_outcome(
+                "partial",
+                Some(InferenceUsage {
+                    input_tokens: 3,
+                    output_tokens: 1,
+                    cached_input_tokens: None,
+                    cache_write_tokens: None,
+                    reasoning_tokens: None,
+                    web_search_requests: None,
+                    provider_reported_cost: None,
+                }),
+            );
+            cancelled.finish_reason = FinishReason::Cancelled;
+            cancelled.provider_response_id = Some("gen-cancelled-memory".into());
+            let expected = if response {
+                lettuce_usage::JobInferenceUsageResult::Response {
+                    usage: cancelled.usage.clone(),
+                    provider_response_id: cancelled.provider_response_id.clone(),
+                }
+            } else {
+                lettuce_usage::JobInferenceUsageResult::Cancelled
+            };
+            let scripted = ScriptedInference {
+                outcomes: Mutex::new(VecDeque::from([if response {
+                    Ok(cancelled)
+                } else {
+                    Err(PortError::Cancelled)
+                }])),
+                requests: Mutex::new(Vec::new()),
+            };
+            assert!(matches!(
+                run_memory_request_with_fallback(
+                    &database,
+                    &scripted,
+                    job_id,
+                    fallback_request(),
+                    DynamicMemoryStructuredFallbackFormat::Xml,
+                    TimestampMillis::new(1)
+                )
+                .await,
+                Err(CompanionMemoryInferenceError::Cancelled)
+            ));
+            assert_eq!(scripted.requests.lock().expect("requests").len(), 1);
+            let evidence = database.job_usage(job_id).expect("cancelled evidence");
+            assert_eq!(evidence.len(), 1);
+            assert_eq!(evidence[0].result, Some(expected));
+        }
     }
 
     fn run_and_attempt(job_id: JobId) -> (DynamicMemoryRun, DynamicMemoryAttempt) {

@@ -565,7 +565,7 @@ concurrent-writer failure evidence and replay without duplicated charges.
 Legacy staged pipeline.rs called the provider without recording usage; recording
 these dispatches corrects that accounting omission. Legacy single-entry primary
 and fallback requests recorded usage before checking response success; their
-new dispatch-ledger integration remains a separate follow-up. No new schema,
+dispatch-ledger integration is described below. No new schema,
 worker, pricing formula or host scheduling was introduced.
 
 Lorebook entry and keyword native/fallback executions also use job dispatch
@@ -583,3 +583,17 @@ their existing public provider-error mapping. Fault-injection scenarios prove
 admission failure sends zero requests, settlement failure sends one, no false
 checkpoint is written, and later retry preserves the pending evidence. Existing
 entry tests also prove provider-error fallback, cancellation and replay.
+
+Background companion memory summary, native tool requests, structured fallbacks
+and continuation now retain each dispatch through the same job ledger. Responses
+are saved before summary/tool validation or checkpoint aggregation; transport
+failures and cancellation remain distinct. Summary/round totals keep their
+existing meaning and are not additional billable dispatches. Evidence failures
+stop fallback; a cancelled primary response also stops fallback. The job store
+and evidence repository must share durable job ownership.
+
+SQLite scenarios cover summary fallback totals versus separate raw responses,
+failed memory primary/fallback calls, continuation and terminal replay, missing
+usage, storage failure without fallback, and cancellation with retained response
+evidence. Legacy memory/flow.rs recorded summary and memory responses before
+validation; this restores that boundary. No schema or scheduler was added.
