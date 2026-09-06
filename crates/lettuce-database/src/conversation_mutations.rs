@@ -2252,6 +2252,29 @@ impl ConversationRepository for Database {
         )
     }
 
+    fn latest_checkpoint_sequence(
+        &self,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+    ) -> Result<Option<u64>, ConversationRepositoryError> {
+        let connection = self
+            .connection()
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let sequence: Option<Option<i64>> = connection
+            .query_row(
+                "SELECT MAX(checkpoint.sequence) FROM generation_attempts AS attempt LEFT JOIN generation_checkpoints AS checkpoint ON checkpoint.conversation_id = attempt.conversation_id AND checkpoint.turn_id = attempt.turn_id AND checkpoint.attempt_id = attempt.id WHERE attempt.turn_id = ?1 AND attempt.id = ?2 GROUP BY attempt.conversation_id, attempt.turn_id, attempt.id",
+                params![turn_id.to_string(), attempt_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(slice::db)?;
+        sequence
+            .ok_or(ConversationRepositoryError::NotFound)?
+            .map(u64::try_from)
+            .transpose()
+            .map_err(|_| ConversationRepositoryError::Storage)
+    }
+
     fn append_event(
         &self,
         turn_id: GenerationTurnId,
@@ -5723,6 +5746,19 @@ mod tests {
             .expect("send");
         let turn_id = send.value.turn.id;
         let attempt_id = send.value.attempt.id;
+        assert_eq!(
+            fixture
+                .database
+                .latest_checkpoint_sequence(turn_id, attempt_id)
+                .expect("empty checkpoint sequence"),
+            None
+        );
+        assert_eq!(
+            fixture
+                .database
+                .latest_checkpoint_sequence(turn_id, GenerationAttemptId::new()),
+            Err(ConversationRepositoryError::NotFound)
+        );
         let envelope =
             |sequence: u64, event: GenerationCheckpointEvent| GenerationCheckpointEnvelope {
                 turn_id,
@@ -5769,6 +5805,13 @@ mod tests {
             .expect("second checkpoint");
         assert_eq!(second.value.status, GenerationTurnStatus::Preparing);
         assert_eq!(second.value.revision, Revision::new(3));
+        assert_eq!(
+            fixture
+                .database
+                .latest_checkpoint_sequence(turn_id, attempt_id)
+                .expect("latest checkpoint sequence"),
+            Some(2)
+        );
 
         assert_eq!(
             fixture.database.append_event(
@@ -5891,6 +5934,55 @@ mod tests {
             ),
             Err(invalid("checkpoint.turn_id"))
         );
+    }
+
+    #[test]
+    fn latest_checkpoint_sequence_survives_reopen() {
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-checkpoint-sequence-{}.db",
+            ConversationId::new()
+        ));
+        let fixture = direct_fixture_on(std::rc::Rc::new(
+            Database::open(&path).expect("file database"),
+        ));
+        let sent = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "sequence-reopen", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send")
+            .value;
+        fixture
+            .database
+            .append_event(
+                sent.turn.id,
+                sent.turn.revision,
+                &token("sequence-progress", "cd"),
+                GenerationCheckpointEnvelope {
+                    turn_id: sent.turn.id,
+                    attempt_id: sent.attempt.id,
+                    job_id: None,
+                    correlation_id: None,
+                    sequence: 1,
+                    event: GenerationCheckpointEvent::Progress { emitted_parts: 4 },
+                },
+                TimestampMillis::new(21),
+            )
+            .expect("progress checkpoint");
+        let turn_id = sent.turn.id;
+        let attempt_id = sent.attempt.id;
+        drop(fixture);
+
+        let reopened = Database::open(&path).expect("reopen database");
+        assert_eq!(
+            reopened
+                .latest_checkpoint_sequence(turn_id, attempt_id)
+                .expect("reopened checkpoint sequence"),
+            Some(1)
+        );
+        drop(reopened);
+        std::fs::remove_file(&path).expect("remove test database");
     }
 
     #[test]

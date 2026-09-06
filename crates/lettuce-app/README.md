@@ -666,10 +666,13 @@ plan. An interrupted parent's active planned tail is atomically cloned and
 settled in its immediate child before continuation. Rejected, mixed, missing-plan
 or otherwise unverified states still fail with `RecoveryUnavailable`. Turn-side
 settlement errors schedule a job retry instead of leaving the claim running.
-Context assembly, profile resolution, automatic scheduling, streaming progress
-checkpoints (the runner assumes it is the only checkpoint writer for its
-attempt), group speaker selection and frontend commands remain outside this
-runner.
+Before each Preparing or Running stage append, the runner reads the latest
+durable checkpoint sequence for its attempt and allocates the next value. A
+pre-existing streaming progress checkpoint and process reopen therefore do not
+collide with runner-owned stages; the database still enforces contiguous
+uniqueness and operation replay. Context assembly, profile resolution, automatic
+scheduling, streaming progress emission, group speaker selection and frontend
+commands remain outside this runner.
 `PrepareGeneration` records the resolved model and prompt/lorebook/memory
 attributions atomically before moving a preparing turn to ContextPrepared.
 The existing speaker-resolution mutation continues to own group speaker choice.

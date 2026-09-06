@@ -1062,6 +1062,11 @@ pub trait ConversationRepository: ConversationCreator {
         command: &RetryGeneration,
         now: TimestampMillis,
     ) -> Result<RetryGenerationResult, ConversationRepositoryError>;
+    fn latest_checkpoint_sequence(
+        &self,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+    ) -> Result<Option<u64>, ConversationRepositoryError>;
     fn append_event(
         &self,
         turn_id: GenerationTurnId,

@@ -116,8 +116,13 @@ immediate transaction, so an ordinal or provider-ID collision cannot leave a
 partially durable handler round. Each later tool round compare-and-appends at
 the expected attempt ordinal. Multi-execution lifecycle transitions use the
 same immediate-transaction rule: all executions share one attempt owner and
-either every expected revision advances or none do. Dynamic-memory settlement
-extends that transaction to the memory-space CAS, so authoritative memory and
+either every expected revision advances or none do.
+The conversation repository can read the latest checkpoint sequence for an
+exact turn/attempt, returning no sequence before the first append and preserving
+that result across reopen. The existing contiguous insert trigger remains the
+authority for sequence uniqueness.
+Dynamic-memory settlement extends that transaction to the memory-space CAS, so
+authoritative memory and
 terminal tool outputs cannot survive independently. Durable history is
 restrict-owned and composite foreign keys
 keep every child scoped to its conversation and turn. Snapshot and provider

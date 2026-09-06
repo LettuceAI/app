@@ -385,6 +385,57 @@ async fn plain_chat_runs_finalizes_settles_and_replays_without_redispatch() {
 }
 
 #[tokio::test]
+async fn preexisting_progress_checkpoint_advances_runner_stage_sequences() {
+    let database = database();
+    let scenario = scenario(&database, false, "progress-sequence");
+    let work = admit_and_claim(&database, &scenario, 1_015);
+    let turn = ConversationReader::get_turn(&database, scenario.turn_id).expect("turn");
+    database
+        .append_event(
+            scenario.turn_id,
+            turn.revision,
+            &OperationToken {
+                key: key("progress-sequence-existing"),
+                request_digest: ContentHash::parse("ba".repeat(32)).expect("digest"),
+            },
+            GenerationCheckpointEnvelope {
+                turn_id: scenario.turn_id,
+                attempt_id: scenario.attempt_id,
+                job_id: Some(work.handle.id()),
+                correlation_id: None,
+                sequence: 1,
+                event: GenerationCheckpointEvent::Progress { emitted_parts: 2 },
+            },
+            TimestampMillis::new(1_017),
+        )
+        .expect("preexisting progress checkpoint");
+    let inference = scripted(vec![text_outcome(
+        "progress-sequence-response",
+        "Continued after progress",
+        9,
+        3,
+    )]);
+    let engine = ScenarioEmbeddingEngine;
+    let result = ConversationGenerationJobRunner::new(&engine, &database, &inference)
+        .run(
+            &work,
+            input(&scenario, false),
+            TimestampMillis::new(1_020),
+            |_| vec![],
+        )
+        .await
+        .expect("run after progress checkpoint");
+
+    assert_eq!(result.turn.status, GenerationTurnStatus::Succeeded);
+    assert_eq!(
+        database
+            .latest_checkpoint_sequence(scenario.turn_id, scenario.attempt_id)
+            .expect("latest sequence"),
+        Some(3)
+    );
+}
+
+#[tokio::test]
 async fn two_round_memory_path_runs_through_the_runner_and_replays_once() {
     let database = database();
     let scenario = scenario(&database, true, "rounds");

@@ -467,7 +467,6 @@ impl<
             turn = self.stage(
                 &turn,
                 work,
-                1,
                 GenerationTurnStatus::Running,
                 &token(ConversationGenerationOperation::StageRunning),
                 now,
@@ -480,7 +479,6 @@ impl<
             turn = self.stage(
                 &turn,
                 work,
-                1,
                 GenerationTurnStatus::Preparing,
                 &token(ConversationGenerationOperation::StagePreparing),
                 now,
@@ -521,7 +519,6 @@ impl<
             turn = self.stage(
                 &turn,
                 work,
-                2,
                 GenerationTurnStatus::Running,
                 &token(ConversationGenerationOperation::StageRunning),
                 now,
@@ -1110,11 +1107,16 @@ impl<
         &self,
         turn: &GenerationTurn,
         work: &ConversationGenerationClaimedWork,
-        sequence: u64,
         status: GenerationTurnStatus,
         operation: &OperationToken,
         now: TimestampMillis,
     ) -> Result<GenerationTurn, ConversationGenerationRunError> {
+        let sequence = self
+            .repository
+            .latest_checkpoint_sequence(turn.id, work.attempt_id)?
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or(ConversationRepositoryError::Storage)?;
         Ok(self
             .repository
             .append_event(
