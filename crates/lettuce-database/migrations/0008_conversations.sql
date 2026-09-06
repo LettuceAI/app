@@ -1252,3 +1252,70 @@ WHEN EXISTS (
       AND existing.operation_record_id = NEW.operation_record_id
 )
 BEGIN SELECT RAISE(ABORT, 'create operation already has an outbox event'); END;
+
+CREATE TABLE generation_initial_dispatches (
+    usage_event_id TEXT NOT NULL UNIQUE,
+    conversation_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    job_id TEXT NOT NULL,
+    request_fingerprint BLOB NOT NULL CHECK (length(request_fingerprint) = 32),
+    admitted_at INTEGER NOT NULL,
+    result_json TEXT CHECK (result_json IS NULL OR (json_valid(result_json) AND json_extract(result_json, '$.format_version') = 1)),
+    settled_at INTEGER,
+    PRIMARY KEY (conversation_id, turn_id, attempt_id),
+    FOREIGN KEY (conversation_id, turn_id, attempt_id) REFERENCES generation_attempts(conversation_id, turn_id, id) ON DELETE RESTRICT,
+    CHECK ((result_json IS NULL) = (settled_at IS NULL)),
+    CHECK (settled_at IS NULL OR settled_at >= admitted_at)
+) STRICT;
+CREATE TRIGGER initial_dispatch_admission
+BEFORE INSERT ON generation_initial_dispatches
+WHEN NEW.result_json IS NOT NULL OR NOT EXISTS (
+    SELECT 1 FROM generation_attempts AS attempt JOIN conversation_turns AS turn
+    ON turn.conversation_id = attempt.conversation_id AND turn.id = attempt.turn_id
+    WHERE attempt.conversation_id = NEW.conversation_id AND attempt.turn_id = NEW.turn_id
+      AND attempt.id = NEW.attempt_id AND attempt.job_id = NEW.job_id
+      AND attempt.status = 'running' AND turn.status = 'running' AND turn.resolved_model_json IS NOT NULL
+)
+BEGIN SELECT RAISE(ABORT, 'initial dispatch requires prepared running attempt'); END;
+CREATE TRIGGER initial_dispatch_immutable
+BEFORE UPDATE ON generation_initial_dispatches
+WHEN OLD.result_json IS NOT NULL OR NEW.result_json IS NULL
+  OR NEW.conversation_id IS NOT OLD.conversation_id OR NEW.turn_id IS NOT OLD.turn_id
+  OR NEW.attempt_id IS NOT OLD.attempt_id OR NEW.job_id IS NOT OLD.job_id
+  OR NEW.request_fingerprint IS NOT OLD.request_fingerprint OR NEW.admitted_at IS NOT OLD.admitted_at
+  OR NEW.usage_event_id IS NOT OLD.usage_event_id
+BEGIN SELECT RAISE(ABORT, 'initial dispatch is immutable except first settlement'); END;
+CREATE TRIGGER initial_dispatch_no_delete
+BEFORE DELETE ON generation_initial_dispatches
+BEGIN SELECT RAISE(ABORT, 'initial dispatch evidence is immutable'); END;
+
+CREATE TABLE generation_initial_replay_refs (
+    conversation_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    artifact_id TEXT NOT NULL,
+    retention TEXT NOT NULL CHECK (retention = 'conversation'),
+    PRIMARY KEY (conversation_id, turn_id, attempt_id, artifact_id),
+    FOREIGN KEY (conversation_id, turn_id, attempt_id) REFERENCES generation_initial_dispatches(conversation_id, turn_id, attempt_id) ON DELETE RESTRICT,
+    FOREIGN KEY (artifact_id, retention) REFERENCES conversation_replay_artifacts(artifact_id, retention) ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX generation_initial_replay_artifact_idx ON generation_initial_replay_refs(artifact_id);
+CREATE TRIGGER initial_replay_pending
+BEFORE INSERT ON generation_initial_replay_refs
+WHEN NOT EXISTS (
+    SELECT 1 FROM generation_initial_dispatches WHERE conversation_id = NEW.conversation_id
+      AND turn_id = NEW.turn_id AND attempt_id = NEW.attempt_id AND result_json IS NULL
+)
+BEGIN SELECT RAISE(ABORT, 'initial replay requires pending dispatch'); END;
+CREATE TRIGGER initial_replay_no_update BEFORE UPDATE ON generation_initial_replay_refs
+BEGIN SELECT RAISE(ABORT, 'initial replay reference is immutable'); END;
+CREATE TRIGGER initial_replay_no_delete BEFORE DELETE ON generation_initial_replay_refs
+BEGIN SELECT RAISE(ABORT, 'initial replay reference is immutable'); END;
+CREATE TRIGGER initial_dispatch_usage_settlement
+BEFORE UPDATE OF result_json ON generation_initial_dispatches
+WHEN NOT EXISTS (
+    SELECT 1 FROM job_inference_usage WHERE id = NEW.usage_event_id AND job_id = NEW.job_id
+      AND result_json IS NOT NULL
+)
+BEGIN SELECT RAISE(ABORT, 'initial settlement requires retained dispatch usage'); END;

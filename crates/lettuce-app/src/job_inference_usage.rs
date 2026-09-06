@@ -29,8 +29,29 @@ pub(crate) async fn run_job_inference<
     request: InferenceRequest,
     now: TimestampMillis,
 ) -> Result<InferenceOutcome, JobInferenceError> {
+    run_job_inference_with_id(
+        repository,
+        inference,
+        job_id,
+        request,
+        now,
+        UsageEventId::new(),
+    )
+    .await
+}
+
+pub(crate) async fn run_job_inference_with_id<
+    R: JobUsageLedger + ProviderReplayArtifactPort + ?Sized,
+    I: InferencePort + ?Sized,
+>(
+    repository: &R,
+    inference: &I,
+    job_id: JobId,
+    request: InferenceRequest,
+    now: TimestampMillis,
+    id: UsageEventId,
+) -> Result<InferenceOutcome, JobInferenceError> {
     let profile = &request.profile.chat_profile;
-    let id = UsageEventId::new();
     repository
         .admit_job_usage(JobInferenceUsage {
             id,

@@ -1479,7 +1479,7 @@ fn memory_revision_ids(turn: &GenerationTurn) -> Vec<lettuce_types::MemoryRevisi
         .collect()
 }
 
-fn load_turn(
+pub(crate) fn load_turn(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     turn_id: GenerationTurnId,
@@ -6053,6 +6053,197 @@ mod tests {
                 TimestampMillis::new(22)
             ),
             Err(invalid("generation_turn.direct_speaker"))
+        );
+    }
+
+    #[test]
+    fn initial_dispatch_sql_guards_keep_admission_and_settlement_immutable() {
+        use lettuce_conversations::{
+            InitialInferenceBinding, InitialInferenceRepository, InitialInferenceResult, PortError,
+        };
+        use lettuce_usage::{JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger};
+        let fixture = direct_fixture();
+        let sent = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "initial-sql-send", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send")
+            .value;
+        let job = lettuce_jobs::JobStore::create_or_get(
+            fixture.database.as_ref(),
+            lettuce_jobs::JobSpec::new(
+                lettuce_jobs::JobKind::MemoryExtraction,
+                lettuce_jobs::JobSubject::new(
+                    lettuce_jobs::SubjectKind::Conversation,
+                    fixture.conversation_id.to_string(),
+                )
+                .expect("subject"),
+                lettuce_jobs::OutcomeRef::GenerationTurn(sent.turn.id),
+            )
+            .with_resources(vec![lettuce_jobs::ResourceClass::Network]),
+        )
+        .expect("job")
+        .job;
+        fixture
+            .database
+            .attach_attempt_job(
+                &AttachAttemptJob {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: sent.turn.id,
+                    attempt_id: sent.attempt.id,
+                    expected_revision: conversation_revision(&fixture),
+                    expected_turn_revision: sent.turn.revision,
+                    operation: token("initial-sql-attach", "cd"),
+                    job_id: job.id,
+                },
+                TimestampMillis::new(21),
+            )
+            .expect("attach");
+        let usage_event_id = UsageEventId::new();
+        let binding = InitialInferenceBinding {
+            conversation_id: fixture.conversation_id,
+            turn_id: sent.turn.id,
+            attempt_id: sent.attempt.id,
+            job_id: job.id,
+            request_fingerprint: [7; 32],
+        };
+        let insert = |job_id: JobId| {
+            fixture.database.connection().expect("connection").execute(
+            "INSERT INTO generation_initial_dispatches (conversation_id, turn_id, attempt_id, job_id, request_fingerprint, admitted_at, usage_event_id) VALUES (?1, ?2, ?3, ?4, ?5, 30, ?6)",
+            params![binding.conversation_id.to_string(), binding.turn_id.to_string(), binding.attempt_id.to_string(), job_id.to_string(), &binding.request_fingerprint[..], usage_event_id.to_string()],
+        )
+        };
+        assert!(insert(job.id).is_err());
+        drive(
+            &fixture,
+            sent.turn.id,
+            sent.attempt.id,
+            &[GenerationTurnStatus::Preparing],
+            "initial-sql-preparing",
+            22,
+        );
+        let model = staged_model(&fixture.database);
+        fixture.database.connection().expect("connection").execute("INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)", params![fixture.conversation_id.to_string(), model.snapshot_ref.artifact_id.to_string()]).expect("attach model");
+        fixture
+            .database
+            .prepare_generation(
+                &PrepareGeneration {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: sent.turn.id,
+                    attempt_id: sent.attempt.id,
+                    job_id: job.id,
+                    expected_revision: conversation_revision(&fixture),
+                    expected_turn_revision: turn_revision(&fixture, sent.turn.id),
+                    operation: token("initial-sql-prepare", "cd"),
+                    model: model.clone(),
+                    attributions: Default::default(),
+                },
+                TimestampMillis::new(24),
+            )
+            .expect("prepare");
+        drive(
+            &fixture,
+            sent.turn.id,
+            sent.attempt.id,
+            &[GenerationTurnStatus::Running],
+            "initial-sql-running",
+            25,
+        );
+        assert!(insert(JobId::new()).is_err());
+        insert(job.id).expect("pending admission");
+        let pending = fixture
+            .database
+            .initial_inference(&binding)
+            .expect("read pending")
+            .expect("record");
+        assert_eq!(pending.usage_event_id, usage_event_id);
+        for sql in [
+            "DELETE FROM generation_initial_dispatches",
+            "UPDATE generation_initial_dispatches SET admitted_at = 31",
+            "UPDATE generation_initial_dispatches SET request_fingerprint = zeroblob(32)",
+            "UPDATE generation_initial_dispatches SET result_json = '{\"format_version\":1,\"value\":{\"Failed\":\"Unavailable\"}}', settled_at = 31",
+        ] {
+            assert!(
+                fixture
+                    .database
+                    .connection()
+                    .expect("connection")
+                    .execute(sql, [])
+                    .is_err()
+            );
+        }
+        let result = InitialInferenceResult::Failed(PortError::Unavailable);
+        assert!(
+            fixture
+                .database
+                .settle_initial_inference(&binding, &result, TimestampMillis::new(31))
+                .is_err()
+        );
+        fixture
+            .database
+            .admit_job_usage(JobInferenceUsage {
+                id: usage_event_id,
+                job_id: job.id,
+                logical_attempt_id: sent.attempt.id,
+                model_profile_id: model.source_id,
+                model_revision: model.source_revision,
+                provider_account_id: model.provider_account_id,
+                provider_account_revision: model.provider_account_revision,
+                admitted_at: TimestampMillis::new(30),
+                result: None,
+            })
+            .expect("raw admission");
+        assert!(
+            fixture
+                .database
+                .settle_initial_inference(&binding, &result, TimestampMillis::new(31))
+                .is_err()
+        );
+        fixture
+            .database
+            .settle_job_usage(usage_event_id, JobInferenceUsageResult::InferenceFailed)
+            .expect("raw failure");
+        let settled = fixture
+            .database
+            .settle_initial_inference(&binding, &result, TimestampMillis::new(31))
+            .expect("checkpoint failure");
+        assert_eq!(
+            fixture
+                .database
+                .settle_initial_inference(&binding, &result, TimestampMillis::new(99))
+                .expect("exact replay"),
+            settled
+        );
+        assert_eq!(
+            fixture.database.settle_initial_inference(
+                &binding,
+                &InitialInferenceResult::Failed(PortError::Empty),
+                TimestampMillis::new(99)
+            ),
+            Err(ConversationRepositoryError::Conflict)
+        );
+        for sql in [
+            "DELETE FROM generation_initial_dispatches",
+            "UPDATE generation_initial_dispatches SET settled_at = 32",
+            "UPDATE generation_initial_dispatches SET result_json = result_json",
+        ] {
+            assert!(
+                fixture
+                    .database
+                    .connection()
+                    .expect("connection")
+                    .execute(sql, [])
+                    .is_err()
+            );
+        }
+        assert_eq!(
+            fixture
+                .database
+                .initial_inference(&binding)
+                .expect("unchanged settled"),
+            Some(settled)
         );
     }
 

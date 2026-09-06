@@ -15,6 +15,7 @@ mod dynamic_memory_rewind_adapter;
 mod dynamic_memory_run_adapter;
 mod group_adapter;
 mod growth_adapter;
+mod initial_inference_adapter;
 mod job_adapter;
 mod lorebook_adapter;
 mod lorebook_entry_run_adapter;
@@ -4006,6 +4007,8 @@ mod tests {
                 "dynamic_memory_summary_checkpoints",
                 "generation_attempts",
                 "generation_checkpoints",
+                "generation_initial_dispatches",
+                "generation_initial_replay_refs",
                 "group_lorebook_bindings",
                 "group_members",
                 "group_presentation_asset_refs",

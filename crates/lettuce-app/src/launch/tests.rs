@@ -1,3 +1,5 @@
+mod initial_inference;
+
 use std::time::Duration;
 
 use lettuce_characters::{
@@ -8179,6 +8181,7 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
     .await
     .expect("dispatch initial inference");
     assert_eq!(initial_outcome, expected_initial_outcome);
+    let initial_request_for_replay = inference_request.clone();
     assert_eq!(initial_inference.requests.lock().expect("requests").len(), 1);
     let initial_requested = lettuce_conversations::ConversationManager::new(&database)
         .request_tool_executions(
@@ -8497,6 +8500,26 @@ async fn dynamic_memory_two_rounds_replay_mutate_and_finalize_once() {
     assert_eq!(first.value.candidate.id, retry.value.candidate.id);
     assert_eq!(first.value.usage_event_id, retry.value.usage_event_id);
     assert_eq!(first.value.usage_event_id, done_usage_event_id);
+    assert_eq!(
+        crate::ConversationInitialInferenceCoordinator::new(&database, &initial_inference)
+            .run(
+                conversation_id,
+                &handle,
+                initial_request_for_replay,
+                TimestampMillis::new(1_100)
+            )
+            .await
+            .expect("initial response replay after finalization"),
+        expected_initial_outcome
+    );
+    assert_eq!(
+        initial_inference
+            .requests
+            .lock()
+            .expect("initial requests")
+            .len(),
+        1
+    );
     assert_eq!(lettuce_usage::JobUsageLedger::job_usage(&database, job_id).expect("terminal replay evidence"), evidence);
     let usage = lettuce_usage::UsageLedger::get(&database, first.value.usage_event_id)
         .expect("read usage")

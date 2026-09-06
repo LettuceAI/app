@@ -623,10 +623,20 @@ response IDs/counters and unchanged terminal aggregate/replay.
 dispatch boundary for a running conversation generation attempt. It reloads the
 durable turn, verifies the turn/attempt/job/request identities and requires the
 request's model and context attributions to match the prepared turn.
-It records the raw response or provider failure through the existing job ledger.
-Cancellation before dispatch produces no evidence; cancellation after a response
-retains evidence and cleans orphan replay artifacts. Response interpretation,
-tool admission and terminal aggregation stay with their existing coordinators.
+Each dispatch is admitted as a durable pending checkpoint before the provider is
+called, using the job usage event that retains the raw response evidence. The
+provider response, an invalid response, a provider failure or a cancellation
+observed after the response settles that checkpoint once; a later call with the
+same request replays the stored outcome or error without another provider
+request, including after the attempt has been finalized or the database was
+reopened. Changed context, profile, tools or media grants conflict with the
+admitted request. A concurrent caller, or a caller that finds a pending record
+whose settlement did not complete, receives a pending error instead of a second
+dispatch; the attempt then follows the existing interruption and recovery path
+and the child attempt dispatches fresh under its own job while the parent record
+and evidence are retained. Cancellation before admission produces no evidence.
+Response interpretation, tool admission and terminal aggregation stay with their
+existing coordinators.
 `PrepareGeneration` records the resolved model and prompt/lorebook/memory
 attributions atomically before moving a preparing turn to ContextPrepared.
 The existing speaker-resolution mutation continues to own group speaker choice.

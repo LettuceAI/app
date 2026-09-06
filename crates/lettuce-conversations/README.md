@@ -1,5 +1,15 @@
 # lettuce-conversations
 
+Initial provider dispatch has a durable checkpoint contract. `InitialInferenceBinding`
+fingerprints the prepared request (turn, attempt, operation, resolved profile,
+context, job, media grants and tools) without the stream sink, so a reattached
+caller replays the same dispatch. `InitialInferenceRepository` admits one pending
+dispatch per attempt, settles it once with either the exact `InferenceOutcome`
+or a typed `PortError`, and returns the stored record for exact replay. Changed
+requests conflict, a pending record is reported as pending rather than
+redispatched, and a settled response keeps its conversation-retained replay
+references coherent. Response interpretation and tool admission remain separate.
+
 Generation preparation uses `PrepareGeneration` through the existing repository
 and manager. It binds the resolved model and context attributions to the turn,
 checks attached attempt/job ownership and revisions, and advances ContextPrepared

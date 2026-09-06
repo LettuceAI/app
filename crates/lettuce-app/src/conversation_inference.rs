@@ -1,6 +1,7 @@
 use lettuce_conversations::{
     ConversationReader, ConversationRepositoryError, GenerationAttemptStatus, GenerationTurnStatus,
-    InferenceOutcome, InferencePort, InferenceRequest, PortError, ProviderReplayArtifactPort,
+    InferenceOutcome, InferencePort, InferenceRequest, InitialInferenceBinding,
+    InitialInferenceRepository, InitialInferenceResult, PortError, ProviderReplayArtifactPort,
     ValidationError,
 };
 use lettuce_jobs::handle::JobHandle;
@@ -17,7 +18,11 @@ pub struct ConversationInitialInferenceCoordinator<'a, R: ?Sized, I: ?Sized> {
 
 impl<
     'a,
-    R: ConversationReader + JobUsageLedger + ProviderReplayArtifactPort + ?Sized,
+    R: ConversationReader
+        + JobUsageLedger
+        + ProviderReplayArtifactPort
+        + InitialInferenceRepository
+        + ?Sized,
     I: InferencePort + ?Sized,
 > ConversationInitialInferenceCoordinator<'a, R, I>
 {
@@ -45,8 +50,6 @@ impl<
             .ok_or(ConversationInitialInferenceError::InvalidOwnership)?;
         if turn.conversation_id != conversation_id
             || turn.operation != request.operation
-            || turn.status != GenerationTurnStatus::Running
-            || attempt.status != GenerationAttemptStatus::Running
             || attempt.job_id != Some(handle.id())
             || request.cancellation != Some(handle.id())
         {
@@ -74,33 +77,84 @@ impl<
         {
             return Err(ConversationInitialInferenceError::InvalidOwnership);
         }
+        let binding = InitialInferenceBinding::from_request(conversation_id, &request)?;
+        if let Some(record) = self.repository.initial_inference(&binding)? {
+            return replay(record.result);
+        }
+        if turn.status != GenerationTurnStatus::Running
+            || attempt.status != GenerationAttemptStatus::Running
+        {
+            return Err(ConversationInitialInferenceError::InvalidOwnership);
+        }
         if handle.cancellation_token().is_cancelled() {
             return Err(ConversationInitialInferenceError::Cancelled);
         }
-        let outcome = crate::job_inference_usage::run_job_inference(
+        let admission = self
+            .repository
+            .admit_initial_inference(conversation_id, &request, now)?;
+        if !admission.created {
+            return replay(admission.record.result);
+        }
+        if handle.cancellation_token().is_cancelled() {
+            return Err(ConversationInitialInferenceError::Cancelled);
+        }
+        let outcome = crate::job_inference_usage::run_job_inference_with_id(
             self.repository,
             self.inference,
             handle.id(),
             request,
             now,
+            admission.record.usage_event_id,
         )
-        .await
-        .map_err(|error| match error {
-            JobInferenceError::Provider(PortError::Cancelled) => {
-                ConversationInitialInferenceError::Cancelled
+        .await;
+        let result = match outcome {
+            Ok(outcome) => {
+                if handle.cancellation_token().is_cancelled() {
+                    cleanup_provider_replays(self.repository, &outcome)?;
+                    InitialInferenceResult::Failed(PortError::Cancelled)
+                } else {
+                    let result = InitialInferenceResult::Response(outcome);
+                    if result.validate().is_err() {
+                        if let InitialInferenceResult::Response(outcome) = &result {
+                            cleanup_provider_replays(self.repository, outcome)?;
+                        }
+                        InitialInferenceResult::Failed(PortError::Rejected)
+                    } else {
+                        result
+                    }
+                }
             }
-            JobInferenceError::Provider(error) => {
-                ConversationInitialInferenceError::Inference(error)
+            Err(JobInferenceError::Provider(error)) => InitialInferenceResult::Failed(error),
+            Err(JobInferenceError::Evidence) => {
+                return Err(ConversationInitialInferenceError::Repository(
+                    ConversationRepositoryError::Storage,
+                ));
             }
-            JobInferenceError::Evidence => {
-                ConversationInitialInferenceError::Repository(ConversationRepositoryError::Storage)
+        };
+        let saved = self
+            .repository
+            .settle_initial_inference(&binding, &result, now);
+        if saved.is_err() {
+            if let InitialInferenceResult::Response(outcome) = &result {
+                cleanup_provider_replays(self.repository, outcome)?;
             }
-        })?;
-        if handle.cancellation_token().is_cancelled() {
-            cleanup_provider_replays(self.repository, &outcome)?;
-            return Err(ConversationInitialInferenceError::Cancelled);
         }
-        Ok(outcome)
+        replay(saved?.result)
+    }
+}
+
+fn replay(
+    result: Option<InitialInferenceResult>,
+) -> Result<InferenceOutcome, ConversationInitialInferenceError> {
+    match result {
+        Some(InitialInferenceResult::Response(outcome)) => Ok(outcome),
+        Some(InitialInferenceResult::Failed(PortError::Cancelled)) => {
+            Err(ConversationInitialInferenceError::Cancelled)
+        }
+        Some(InitialInferenceResult::Failed(error)) => {
+            Err(ConversationInitialInferenceError::Inference(error))
+        }
+        None => Err(ConversationInitialInferenceError::Pending),
     }
 }
 
@@ -127,6 +181,8 @@ fn cleanup_provider_replays<R: ProviderReplayArtifactPort + ?Sized>(
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConversationInitialInferenceError {
+    #[error("initial inference is pending and requires attempt recovery")]
+    Pending,
     #[error("conversation inference ownership is invalid")]
     InvalidOwnership,
     #[error("conversation inference model identity is invalid")]

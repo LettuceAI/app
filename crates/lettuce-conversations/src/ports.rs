@@ -1853,7 +1853,7 @@ pub enum OutputPolicy {
     Structured,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InferenceCandidate {
     pub ordinal: u16,
     pub parts: Vec<MessagePart>,
@@ -1942,7 +1942,7 @@ pub struct InferenceUsage {
     pub output_tokens: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InferenceOutcome {
     pub provider_response_id: Option<String>,
     pub candidates: Vec<InferenceCandidate>,
@@ -1983,7 +1983,7 @@ impl InferenceOutcome {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FinishReason {
     Stop,
     Length,
@@ -1991,7 +1991,7 @@ pub enum FinishReason {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InferenceWarningCode {
     Truncated,
     SafetyTransformed,
@@ -2097,14 +2097,14 @@ pub enum UsageOutcome {
     Interrupted,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProviderFailureKind {
     CredentialRejected,
     RequestRejected,
     Unavailable,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderFailure {
     pub kind: ProviderFailureKind,
     pub status: u16,
@@ -2126,7 +2126,7 @@ impl std::fmt::Debug for ProviderFailure {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
 pub enum PortError {
     #[error("conversation dependency is unavailable")]
     Unavailable,
