@@ -221,6 +221,12 @@ where
         if let Some(replay) = runner.replay_terminal(work)? {
             return Ok(replay);
         }
+        if let Some(input) = self
+            .durable_generation_input(work, runtime.stream_sink)
+            .map_err(ConversationGenerationInputError::into_run_error)?
+        {
+            return runner.run(work, input, now, seeds_for_round).await;
+        }
         self.resolve_automatic_speaker(work, now)
             .await
             .map_err(ConversationGenerationInputError::into_run_error)?;
@@ -229,6 +235,98 @@ where
             .await
             .map_err(ConversationGenerationInputError::into_run_error)?;
         runner.run(work, input, now, seeds_for_round).await
+    }
+
+    fn durable_generation_input(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        stream_sink: Option<RequestId>,
+    ) -> Result<Option<ConversationGenerationInput>, ConversationGenerationInputError> {
+        let turn = ConversationReader::get_turn(self.repository, work.turn_id)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        let attempt = turn
+            .attempts
+            .iter()
+            .find(|attempt| attempt.id == work.attempt_id)
+            .ok_or(ConversationGenerationInputError::InvalidTurn)?;
+        let mut record = self
+            .repository
+            .initial_inference_for_attempt(
+                work.conversation_id,
+                work.turn_id,
+                work.attempt_id,
+                work.handle.id(),
+            )
+            .map_err(ConversationGenerationInputError::Repository)?;
+        if record.is_none()
+            && let Some(parent) = attempt.parent_attempt_id.and_then(|parent_id| {
+                turn.attempts.iter().find(|candidate| {
+                    candidate.id == parent_id
+                        && candidate.status
+                            == lettuce_conversations::GenerationAttemptStatus::Interrupted
+                })
+            })
+            && let Some(parent_job_id) = parent.job_id
+        {
+            record = self
+                .repository
+                .initial_inference_for_attempt(
+                    work.conversation_id,
+                    work.turn_id,
+                    parent.id,
+                    parent_job_id,
+                )
+                .map_err(ConversationGenerationInputError::Repository)?;
+        }
+        let Some(record) = record else {
+            return Ok(None);
+        };
+        let model = turn
+            .resolved_model
+            .clone()
+            .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let mut request = record.request;
+        request.attempt_id = work.attempt_id;
+        request.cancellation = Some(work.handle.id());
+        request.stream_sink = stream_sink;
+        let memory = if request.tools.is_some() {
+            let aggregate = ConversationReader::get(self.repository, work.conversation_id)
+                .map_err(ConversationGenerationInputError::Repository)?;
+            let selected_speaker = self.generation_speaker(&aggregate.conversation, &turn)?;
+            let settings = lettuce_conversations::resolve_effective_settings(
+                &aggregate.conversation,
+                selected_speaker.map(|speaker| speaker.participant_id),
+            )
+            .map_err(|_| ConversationGenerationInputError::InvalidTurn)?;
+            let snapshot = settings
+                .memory
+                .filter(|memory| memory.mode == MemoryModeSnapshot::Dynamic)
+                .and_then(|memory| memory.dynamic_policy)
+                .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
+            let (policy, duplicate_threshold) = dynamic_memory_policy(&snapshot)?;
+            let space_id =
+                MemoryRepository::get_for_conversation(self.repository, work.conversation_id)
+                    .map_err(ConversationGenerationInputError::Memory)?
+                    .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?
+                    .id;
+            Some(ConversationGenerationMemoryInput {
+                space_id,
+                policy,
+                duplicate_threshold,
+            })
+        } else {
+            None
+        };
+        Ok(Some(ConversationGenerationInput {
+            model,
+            attributions: request.context.attributions.clone(),
+            profile: request.profile,
+            context: request.context,
+            tools: request.tools,
+            media_grants: request.media_grants,
+            stream_sink: request.stream_sink,
+            memory,
+        }))
     }
 
     async fn resolve_automatic_speaker(

@@ -1260,6 +1260,7 @@ CREATE TABLE generation_initial_dispatches (
     attempt_id TEXT NOT NULL,
     job_id TEXT NOT NULL,
     request_fingerprint BLOB NOT NULL CHECK (length(request_fingerprint) = 32),
+    request_json TEXT NOT NULL CHECK (json_valid(request_json) AND json_extract(request_json, '$.format_version') = 1),
     admitted_at INTEGER NOT NULL,
     result_json TEXT CHECK (result_json IS NULL OR (json_valid(result_json) AND json_extract(result_json, '$.format_version') = 1)),
     settled_at INTEGER,
@@ -1283,7 +1284,8 @@ BEFORE UPDATE ON generation_initial_dispatches
 WHEN OLD.result_json IS NOT NULL OR NEW.result_json IS NULL
   OR NEW.conversation_id IS NOT OLD.conversation_id OR NEW.turn_id IS NOT OLD.turn_id
   OR NEW.attempt_id IS NOT OLD.attempt_id OR NEW.job_id IS NOT OLD.job_id
-  OR NEW.request_fingerprint IS NOT OLD.request_fingerprint OR NEW.admitted_at IS NOT OLD.admitted_at
+  OR NEW.request_fingerprint IS NOT OLD.request_fingerprint OR NEW.request_json IS NOT OLD.request_json
+  OR NEW.admitted_at IS NOT OLD.admitted_at
   OR NEW.usage_event_id IS NOT OLD.usage_event_id
 BEGIN SELECT RAISE(ABORT, 'initial dispatch is immutable except first settlement'); END;
 CREATE TRIGGER initial_dispatch_no_delete

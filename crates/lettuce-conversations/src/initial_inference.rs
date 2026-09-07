@@ -106,16 +106,17 @@ impl InitialInferenceResult {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InitialInferenceRecord {
     pub binding: InitialInferenceBinding,
+    pub request: InferenceRequest,
     pub usage_event_id: UsageEventId,
     pub admitted_at: TimestampMillis,
     pub result: Option<InitialInferenceResult>,
     pub settled_at: Option<TimestampMillis>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InitialInferenceAdmission {
     pub record: InitialInferenceRecord,
     pub created: bool,
@@ -125,6 +126,14 @@ pub trait InitialInferenceRepository: Send + Sync {
     fn initial_inference(
         &self,
         binding: &InitialInferenceBinding,
+    ) -> Result<Option<InitialInferenceRecord>, ConversationRepositoryError>;
+
+    fn initial_inference_for_attempt(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        job_id: JobId,
     ) -> Result<Option<InitialInferenceRecord>, ConversationRepositoryError>;
 
     fn admit_initial_inference(

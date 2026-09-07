@@ -5,7 +5,9 @@ use lettuce_conversations::{
     InitialInferenceAdmission, InitialInferenceBinding, InitialInferenceRecord,
     InitialInferenceRepository, InitialInferenceResult, ReplayArtifactRef,
 };
-use lettuce_types::{ConversationId, TimestampMillis, UsageEventId};
+use lettuce_types::{
+    ConversationId, GenerationAttemptId, GenerationTurnId, JobId, TimestampMillis, UsageEventId,
+};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{
@@ -109,15 +111,24 @@ fn load(
     binding: &InitialInferenceBinding,
 ) -> Result<Option<InitialInferenceRecord>, ConversationRepositoryError> {
     let row = transaction.query_row(
-        "SELECT job_id, request_fingerprint, admitted_at, result_json, settled_at, usage_event_id FROM generation_initial_dispatches WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3",
+        "SELECT job_id, request_fingerprint, request_json, admitted_at, result_json, settled_at, usage_event_id FROM generation_initial_dispatches WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3",
         params![binding.conversation_id.to_string(), binding.turn_id.to_string(), binding.attempt_id.to_string()],
-        |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?, row.get::<_, i64>(2)?, row.get::<_, Option<String>>(3)?, row.get::<_, Option<i64>>(4)?, row.get::<_, String>(5)?)),
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(3)?, row.get::<_, Option<String>>(4)?, row.get::<_, Option<i64>>(5)?, row.get::<_, String>(6)?)),
     ).optional().map_err(slice::db)?;
-    let Some((job_id, fingerprint, admitted_at, result, settled_at, usage_event_id)) = row else {
+    let Some((job_id, fingerprint, request, admitted_at, result, settled_at, usage_event_id)) = row
+    else {
         return Ok(None);
     };
     if job_id != binding.job_id.to_string() || fingerprint != binding.request_fingerprint {
         return Err(ConversationRepositoryError::Conflict);
+    }
+    let request: InferenceRequest = slice::decode(&request)?;
+    if request.stream_sink.is_some()
+        || InitialInferenceBinding::from_request(binding.conversation_id, &request)
+            .map_err(ConversationRepositoryError::Invalid)?
+            != *binding
+    {
+        return Err(ConversationRepositoryError::Storage);
     }
     let result: Option<InitialInferenceResult> =
         result.as_deref().map(slice::decode).transpose()?;
@@ -153,6 +164,7 @@ fn load(
     }
     let record = InitialInferenceRecord {
         binding: binding.clone(),
+        request,
         usage_event_id: usage_event_id
             .parse()
             .map_err(|_| ConversationRepositoryError::Storage)?,
@@ -180,6 +192,48 @@ impl InitialInferenceRepository for Database {
         Ok(result)
     }
 
+    fn initial_inference_for_attempt(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        job_id: JobId,
+    ) -> Result<Option<InitialInferenceRecord>, ConversationRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let transaction = connection.transaction().map_err(slice::db)?;
+        let request = transaction
+            .query_row(
+                "SELECT request_json FROM generation_initial_dispatches WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3 AND job_id = ?4",
+                params![
+                    conversation_id.to_string(),
+                    turn_id.to_string(),
+                    attempt_id.to_string(),
+                    job_id.to_string()
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(slice::db)?;
+        let Some(request) = request else {
+            transaction.commit().map_err(slice::db)?;
+            return Ok(None);
+        };
+        let request: InferenceRequest = slice::decode(&request)?;
+        let binding = InitialInferenceBinding::from_request(conversation_id, &request)
+            .map_err(ConversationRepositoryError::Invalid)?;
+        if binding.turn_id != turn_id
+            || binding.attempt_id != attempt_id
+            || binding.job_id != job_id
+        {
+            return Err(ConversationRepositoryError::Storage);
+        }
+        let record = load(&transaction, &binding)?;
+        transaction.commit().map_err(slice::db)?;
+        Ok(record)
+    }
+
     fn admit_initial_inference(
         &self,
         conversation_id: ConversationId,
@@ -188,6 +242,8 @@ impl InitialInferenceRepository for Database {
     ) -> Result<InitialInferenceAdmission, ConversationRepositoryError> {
         let binding = InitialInferenceBinding::from_request(conversation_id, request)
             .map_err(ConversationRepositoryError::Invalid)?;
+        let mut stored_request = request.clone();
+        stored_request.stream_sink = None;
         let mut connection = self
             .connection()
             .map_err(|_| ConversationRepositoryError::Storage)?;
@@ -245,13 +301,14 @@ impl InitialInferenceRepository for Database {
         }
         let usage_event_id = UsageEventId::new();
         transaction.execute(
-            "INSERT INTO generation_initial_dispatches (conversation_id, turn_id, attempt_id, job_id, request_fingerprint, admitted_at, usage_event_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![conversation_id.to_string(), request.turn_id.to_string(), request.attempt_id.to_string(), binding.job_id.to_string(), &binding.request_fingerprint[..], now.get(), usage_event_id.to_string()],
+            "INSERT INTO generation_initial_dispatches (conversation_id, turn_id, attempt_id, job_id, request_fingerprint, request_json, admitted_at, usage_event_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![conversation_id.to_string(), request.turn_id.to_string(), request.attempt_id.to_string(), binding.job_id.to_string(), &binding.request_fingerprint[..], slice::encode(&stored_request)?, now.get(), usage_event_id.to_string()],
         ).map_err(slice::db)?;
         transaction.commit().map_err(slice::db)?;
         Ok(InitialInferenceAdmission {
             record: InitialInferenceRecord {
                 binding,
+                request: stored_request,
                 usage_event_id,
                 admitted_at: now,
                 result: None,

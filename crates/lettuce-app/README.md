@@ -683,6 +683,13 @@ dynamic-memory create seeds, and deciding when to invoke the operation; no
 second scheduler or background loop is introduced.
 `PreparedConversationGenerationJobRunner`, exposed by `AppBackend`, now owns the
 reconstructible input boundary for an ordinary direct or resolved group turn. It
+first reads an admitted initial-dispatch request for the current attempt or its
+interrupted parent. That durable request preserves the resolved profile, exact
+provider-neutral context, tools and media grants across restart and live model or
+context drift; recovery rewrites only the current attempt/job cancellation
+identity and installs the caller's runtime stream sink. Dynamic execution is
+reconstructed from the launch-frozen policy, current conversation-owned memory
+space and immutable settled round plans. When no dispatch exists, the runner
 loads the durable turn and branch ancestry, trims a finalized replay back to the
 turn's original source message, resolves the selected participant's effective
 settings and exact snapshotted live model/account, assembles provider-neutral

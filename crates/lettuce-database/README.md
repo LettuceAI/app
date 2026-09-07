@@ -6,7 +6,11 @@ The usage ledger also reads the terminal usage event by turn and attempt
 Initial generation dispatch is checkpointed in the original conversation
 migration: `generation_initial_dispatches` holds one pending row per running
 prepared attempt, bound to its job, request fingerprint and the job usage event
-that will retain the raw dispatch evidence. Admission requires a running turn
+that will retain the raw dispatch evidence. The same immutable row stores the
+versioned provider-neutral request without its runtime stream sink; reads
+recompute its fingerprint, and an exact attempt-owned lookup supports restart
+and interrupted-child recovery without consulting mutable preparation inputs.
+Admission requires a running turn
 and attempt with a resolved model, the attached job, matching prepared model and
 attributions, an existing job and no tool executions yet. Settlement is the only
 permitted update, writes the versioned result once, requires settled job usage
@@ -14,7 +18,7 @@ that agrees with the result, verifies conversation-retained replay artifacts and
 records them in `generation_initial_replay_refs` so orphan cleanup keeps them.
 Reads revalidate stored replay references and usage agreement; exact settlement
 replay returns the stored record, changed results conflict, and SQL update or
-delete of admitted rows is rejected.
+delete of admitted rows, including request replacement, is rejected.
 
 Conversation preparation now writes the existing turn model/prompt/memory fields
 and ordered lorebook attribution rows in the mutation-kernel transaction. Job

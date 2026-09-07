@@ -229,7 +229,8 @@ fn outcome() -> InferenceOutcome {
 async fn initial_checkpoint_reopens_with_exact_response_usage_and_signed_replay() {
     let path = std::env::temp_dir().join(format!("lettuce-initial-{}.db", ConversationId::new()));
     let database = Database::open(&path).expect("database");
-    let (conversation_id, request, handle) = fixture(&database);
+    let (conversation_id, mut request, handle) = fixture(&database);
+    request.stream_sink = Some(RequestId::new());
     let bytes = lettuce_conversations::ProtectedArtifactBytes::new(
         b"[{\"signature\":\"signed\"}]".to_vec(),
     )
@@ -276,6 +277,18 @@ async fn initial_checkpoint_reopens_with_exact_response_usage_and_signed_replay(
         .initial_inference(&binding)
         .expect("record")
         .expect("saved");
+    assert_eq!(record.request.stream_sink, None);
+    assert_eq!(
+        database
+            .initial_inference_for_attempt(
+                conversation_id,
+                request.turn_id,
+                request.attempt_id,
+                handle.id(),
+            )
+            .expect("attempt lookup"),
+        Some(record.clone())
+    );
     assert_eq!(
         database
             .settle_initial_inference(

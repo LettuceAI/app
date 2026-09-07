@@ -1792,7 +1792,8 @@ pub struct ModelResolveRequest {
     pub operation: GenerationOperation,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InferenceRequest {
     pub turn_id: GenerationTurnId,
     pub attempt_id: GenerationAttemptId,

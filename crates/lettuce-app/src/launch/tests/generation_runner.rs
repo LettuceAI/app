@@ -26,6 +26,7 @@ use crate::{
     ConversationGenerationJobRunner, ConversationGenerationMemoryInput,
     ConversationGenerationRunError, ConversationGenerationRuntimeInput,
     ConversationGenerationSettledWork, GenerationUsageEvidence,
+    PreparedConversationGenerationJobRunner,
 };
 
 const LEASE: Duration = Duration::from_secs(60);
@@ -2508,7 +2509,7 @@ async fn pending_dispatch_interrupts_recovers_and_finishes_in_the_child() {
         ConversationId::new()
     ));
     let database = Database::open(&path).expect("database");
-    let scenario = scenario(&database, false, "pending");
+    let scenario = scenario_with_resolvable_profile(&database, false, "pending", true);
     let mut missing_replay = text_outcome("pending-1", "Lost answer", 20, 5);
     missing_replay.candidates[0].provider_replay = Some(lettuce_conversations::ReplayArtifactRef {
         artifact_id: lettuce_types::ReplayArtifactId::new(),
@@ -2525,10 +2526,10 @@ async fn pending_dispatch_interrupts_recovers_and_finishes_in_the_child() {
     let engine = ScenarioEmbeddingEngine;
     let work = admit_and_claim(&database, &scenario, 1_015);
     let parent_job_id = work.handle.id();
-    let error = ConversationGenerationJobRunner::new(&engine, &database, &inference)
+    let error = PreparedConversationGenerationJobRunner::new(&engine, &database, &inference)
         .run(
             &work,
-            input(&scenario, false),
+            ConversationGenerationRuntimeInput::default(),
             TimestampMillis::new(1_020),
             |_| vec![],
         )
@@ -2554,34 +2555,35 @@ async fn pending_dispatch_interrupts_recovers_and_finishes_in_the_child() {
         persisted_job(&database, parent_job_id).state,
         JobState::Queued
     );
-    let mut request = InferenceRequest {
-        turn_id: scenario.turn_id,
-        attempt_id: scenario.attempt_id,
-        operation: lettuce_conversations::GenerationOperation::Send,
-        profile: input(&scenario, false).profile,
-        context: input(&scenario, false).context,
-        cancellation: Some(parent_job_id),
-        stream_sink: None,
-        media_grants: vec![],
-        tools: None,
-    };
-    let binding =
-        InitialInferenceBinding::from_request(scenario.conversation_id, &request).expect("binding");
     let pending = database
-        .initial_inference(&binding)
+        .initial_inference_for_attempt(
+            scenario.conversation_id,
+            scenario.turn_id,
+            scenario.attempt_id,
+            parent_job_id,
+        )
         .expect("pending")
         .expect("record");
+    let binding = pending.binding.clone();
+    let mut request = pending.request.clone();
     assert!(pending.result.is_none());
     drop(database);
 
     let database = Database::open(&path).expect("reopen");
+    let mut changed_model = ModelProfileRepository::get(&database, scenario.model.source_id)
+        .expect("live model")
+        .expect("live model exists");
+    let model_revision = changed_model.revision;
+    changed_model.display_name = "Changed after admission".into();
+    ModelProfileRepository::upsert(&database, changed_model, Some(model_revision))
+        .expect("change live model after admission");
     let dispatcher = ConversationGenerationDispatchCoordinator::new(&database, &database);
     let work = claim(&database, &scenario, scenario.attempt_id, 1_040);
     assert_eq!(work.handle.id(), parent_job_id);
-    let error = ConversationGenerationJobRunner::new(&engine, &database, &inference)
+    let error = PreparedConversationGenerationJobRunner::new(&engine, &database, &inference)
         .run(
             &work,
-            input(&scenario, false),
+            ConversationGenerationRuntimeInput::default(),
             TimestampMillis::new(1_041),
             |_| vec![],
         )
@@ -2664,10 +2666,10 @@ async fn pending_dispatch_interrupts_recovers_and_finishes_in_the_child() {
 
     let child_work = claim(&database, &scenario, child_attempt_id, 1_050);
     assert_eq!(child_work.handle.id(), child_job.id);
-    let result = ConversationGenerationJobRunner::new(&engine, &database, &inference)
+    let result = PreparedConversationGenerationJobRunner::new(&engine, &database, &inference)
         .run(
             &child_work,
-            input(&scenario, false),
+            ConversationGenerationRuntimeInput::default(),
             TimestampMillis::new(1_051),
             |_| vec![],
         )

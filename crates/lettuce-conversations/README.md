@@ -5,8 +5,10 @@ fingerprints the prepared request (turn, attempt, operation, resolved profile,
 context, job, media grants and tools) without the stream sink, so a reattached
 caller replays the same dispatch. `InitialInferenceRepository` admits one pending
 dispatch per attempt, settles it once with either the exact `InferenceOutcome`
-or a typed `PortError`, and returns the stored record for exact replay. Changed
-requests conflict, a pending record is reported as pending rather than
+or a typed `PortError`, and returns the stored provider-neutral request by exact
+binding or attempt ownership for recovery. The stored request omits the runtime
+stream sink, and reads revalidate its fingerprint before use. Changed requests
+conflict, a pending record is reported as pending rather than
 redispatched, and a settled response keeps its conversation-retained replay
 references coherent. Response interpretation and tool admission remain separate.
 
@@ -18,7 +20,8 @@ Existing group speaker resolution remains separate. Explicit director targets an
 original regeneration authors can prepare without another selection step; mention
 decisions need no automatic selection. The database verifies attached model
 artifact provenance. Preparation stores provenance,
-not the full provider request or resolved generation parameters.
+while the initial-dispatch checkpoint stores the resolved provider-neutral
+request needed to replay or recover after mutable model and context state drifts.
 
 InferenceUsage retains optional provider-reported cost with a validated finite,
 nonnegative value type. JSON round trips preserve the existing f64 precision;

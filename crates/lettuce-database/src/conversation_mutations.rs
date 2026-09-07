@@ -6152,7 +6152,9 @@ mod tests {
     #[test]
     fn initial_dispatch_sql_guards_keep_admission_and_settlement_immutable() {
         use lettuce_conversations::{
-            InitialInferenceBinding, InitialInferenceRepository, InitialInferenceResult, PortError,
+            InferenceRequest, InitialInferenceBinding, InitialInferenceRepository,
+            InitialInferenceResult, OutputPolicy, PortError, ResolvedInferenceProfile,
+            SafetyContext, ToolPolicy,
         };
         use lettuce_usage::{JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger};
         let fixture = direct_fixture();
@@ -6194,18 +6196,85 @@ mod tests {
                 TimestampMillis::new(21),
             )
             .expect("attach");
-        let usage_event_id = UsageEventId::new();
-        let binding = InitialInferenceBinding {
-            conversation_id: fixture.conversation_id,
+        let model = staged_model(&fixture.database);
+        let account = lettuce_models::ProviderAccount {
+            id: model.provider_account_id,
+            secret_owner_id: lettuce_settings::SecretOwnerId::new(),
+            provider_kind: "test".into(),
+            protocol: model.provider_protocol,
+            label: "Test".into(),
+            endpoint: Some("https://example.invalid".into()),
+            enabled: true,
+            streaming_enabled: false,
+            allow_invalid_tls: false,
+            api_key_ref: Some(lettuce_settings::SecretRef::new()),
+            secret_headers: Vec::new(),
+            config: lettuce_models::ProviderConfig::Standard,
+            revision: model.provider_account_revision,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        };
+        let profile = lettuce_models::ModelProfile {
+            id: model.source_id,
+            provider_account_id: model.provider_account_id,
+            external_model_id: model.external_model_id.clone(),
+            display_name: model.display_name.clone(),
+            kind: lettuce_models::ModelKind::Chat,
+            config: lettuce_models::ModelProfileConfig {
+                lorebook_generator_parameters: Default::default(),
+                chat_parameters: Default::default(),
+                capabilities: lettuce_models::ModelCapabilities {
+                    input_modalities: lettuce_models::ModalityCapabilities {
+                        text: lettuce_models::CapabilityStatus::Supported,
+                        ..Default::default()
+                    },
+                    output_modalities: lettuce_models::ModalityCapabilities {
+                        text: lettuce_models::CapabilityStatus::Supported,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            },
+            revision: model.source_revision,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        };
+        let request = InferenceRequest {
             turn_id: sent.turn.id,
             attempt_id: sent.attempt.id,
-            job_id: job.id,
-            request_fingerprint: [7; 32],
+            operation: sent.turn.operation,
+            profile: ResolvedInferenceProfile {
+                chat_profile: lettuce_models::resolve_chat_profile(
+                    &model.expected_chat_identity(),
+                    &profile,
+                    &account,
+                    &Default::default(),
+                    &Default::default(),
+                )
+                .expect("resolved profile"),
+                tool_policy: ToolPolicy::Disabled,
+                output_policy: OutputPolicy::Plain,
+                safety_policy: SafetyContext::Standard,
+                correlation_id: None,
+            },
+            context: lettuce_conversations::ProviderNeutralContext {
+                messages: Vec::new(),
+                attributions: Default::default(),
+                budget: Default::default(),
+            },
+            cancellation: Some(job.id),
+            stream_sink: None,
+            media_grants: Vec::new(),
+            tools: None,
         };
+        let usage_event_id = UsageEventId::new();
+        let binding = InitialInferenceBinding::from_request(fixture.conversation_id, &request)
+            .expect("request binding");
+        let request_json = slice::encode(&request).expect("request JSON");
         let insert = |job_id: JobId| {
             fixture.database.connection().expect("connection").execute(
-            "INSERT INTO generation_initial_dispatches (conversation_id, turn_id, attempt_id, job_id, request_fingerprint, admitted_at, usage_event_id) VALUES (?1, ?2, ?3, ?4, ?5, 30, ?6)",
-            params![binding.conversation_id.to_string(), binding.turn_id.to_string(), binding.attempt_id.to_string(), job_id.to_string(), &binding.request_fingerprint[..], usage_event_id.to_string()],
+            "INSERT INTO generation_initial_dispatches (conversation_id, turn_id, attempt_id, job_id, request_fingerprint, request_json, admitted_at, usage_event_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 30, ?7)",
+            params![binding.conversation_id.to_string(), binding.turn_id.to_string(), binding.attempt_id.to_string(), job_id.to_string(), &binding.request_fingerprint[..], &request_json, usage_event_id.to_string()],
         )
         };
         assert!(insert(job.id).is_err());
@@ -6217,7 +6286,6 @@ mod tests {
             "initial-sql-preparing",
             22,
         );
-        let model = staged_model(&fixture.database);
         fixture.database.connection().expect("connection").execute("INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)", params![fixture.conversation_id.to_string(), model.snapshot_ref.artifact_id.to_string()]).expect("attach model");
         fixture
             .database
@@ -6256,6 +6324,7 @@ mod tests {
             "DELETE FROM generation_initial_dispatches",
             "UPDATE generation_initial_dispatches SET admitted_at = 31",
             "UPDATE generation_initial_dispatches SET request_fingerprint = zeroblob(32)",
+            "UPDATE generation_initial_dispatches SET request_json = json_set(request_json, '$.value.stream_sink', 'changed')",
             "UPDATE generation_initial_dispatches SET result_json = '{\"format_version\":1,\"value\":{\"Failed\":\"Unavailable\"}}', settled_at = 31",
         ] {
             assert!(
