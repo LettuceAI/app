@@ -13,6 +13,8 @@ pub struct GlobalSettings {
     pub lorebook_generator: LorebookGeneratorSettings,
     #[serde(default)]
     pub dynamic_memory: DynamicMemorySettings,
+    #[serde(default)]
+    pub group_dynamic_memory: Option<DynamicMemorySettings>,
 }
 
 impl Default for GlobalSettings {
@@ -23,7 +25,17 @@ impl Default for GlobalSettings {
             update_checks_enabled: true,
             lorebook_generator: LorebookGeneratorSettings::default(),
             dynamic_memory: DynamicMemorySettings::default(),
+            group_dynamic_memory: None,
         }
+    }
+}
+
+impl GlobalSettings {
+    #[must_use]
+    pub fn effective_group_dynamic_memory(&self) -> &DynamicMemorySettings {
+        self.group_dynamic_memory
+            .as_ref()
+            .unwrap_or(&self.dynamic_memory)
     }
 }
 
@@ -197,6 +209,11 @@ mod tests {
         assert_eq!(settings.lorebook_generator.target_count(), 12);
         assert_eq!(settings.lorebook_generator.output_tokens(), 4096);
         assert_eq!(settings.dynamic_memory, DynamicMemorySettings::default());
+        assert_eq!(settings.group_dynamic_memory, None);
+        assert_eq!(
+            settings.effective_group_dynamic_memory(),
+            &settings.dynamic_memory
+        );
         let mut generator = settings.lorebook_generator;
         generator.default_target_count = Some(0);
         generator.max_output_tokens = Some(u32::MAX);
@@ -244,5 +261,17 @@ mod tests {
     fn settings_document_rejects_unknown_fields() {
         let value = r#"{"pure_mode":"standard","analytics_enabled":true,"update_checks_enabled":true,"api_key":"no"}"#;
         assert!(serde_json::from_str::<GlobalSettings>(value).is_err());
+    }
+
+    #[test]
+    fn group_dynamic_memory_override_replaces_the_direct_policy() {
+        let mut settings = GlobalSettings::default();
+        settings.dynamic_memory.max_entries = 17;
+        let mut group = settings.dynamic_memory.clone();
+        group.max_entries = 29;
+        group.retrieval_limit = 7;
+        settings.group_dynamic_memory = Some(group.clone());
+
+        assert_eq!(settings.effective_group_dynamic_memory(), &group);
     }
 }

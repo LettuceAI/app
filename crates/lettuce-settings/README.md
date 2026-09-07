@@ -27,8 +27,9 @@ hot budget, 0.35 minimum similarity, five smart results, 0.3 cold threshold,
 0.5 delete confidence and per-cycle hard-delete ratio, 0.78 duplicate threshold,
 and two-message context enrichment. Scores use integer basis points so persisted
 policy values remain exact. Older settings documents receive these defaults.
-The legacy group-only policy override remains deferred until it has a normalized
-owner and authored workflow.
+An optional group-chat policy lives beside the direct policy in global settings,
+matching the legacy settings editor and persistence owner. Group launches use
+that complete override when present and otherwise inherit the direct policy.
 
 The first slice is intentionally small: one opaque serializable `SecretRef`, a
 bounded purpose vocabulary, redacted zeroizing `SecretValue`, metadata/status

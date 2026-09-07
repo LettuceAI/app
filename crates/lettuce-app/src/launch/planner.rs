@@ -1326,7 +1326,7 @@ where
                     selected_revision_ids: Vec::new(),
                     dynamic_policy: dynamic_memory_policy_snapshot(
                         memory_mode,
-                        &settings.settings.dynamic_memory,
+                        settings.settings.effective_group_dynamic_memory(),
                     ),
                 }),
                 disable_character_lorebook: group.group.disable_character_lorebooks,

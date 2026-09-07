@@ -2910,6 +2910,37 @@ mod tests {
     }
 
     #[test]
+    fn group_dynamic_memory_override_round_trips_and_inherits_when_absent() {
+        let database = Database::open_in_memory().expect("database");
+        let initial = GlobalSettingsStore::load(&database).expect("settings");
+        assert_eq!(initial.settings.group_dynamic_memory, None);
+        assert_eq!(
+            initial.settings.effective_group_dynamic_memory(),
+            &initial.settings.dynamic_memory
+        );
+        let mut settings = initial.settings;
+        let mut group_policy = settings.dynamic_memory.clone();
+        group_policy.max_entries = 29;
+        group_policy.retrieval_limit = 7;
+        settings.group_dynamic_memory = Some(group_policy.clone());
+
+        let saved = GlobalSettingsStore::save(
+            &database,
+            settings,
+            initial.default_model_profile_id,
+            initial.revision,
+        )
+        .expect("save group dynamic memory override");
+        let reopened = GlobalSettingsStore::load(&database).expect("reload settings");
+
+        assert_eq!(reopened, saved);
+        assert_eq!(
+            reopened.settings.effective_group_dynamic_memory(),
+            &group_policy
+        );
+    }
+
+    #[test]
     fn missing_account_and_invalid_domain_values_are_distinct() {
         let database = Database::open_in_memory().expect("open database");
         let missing = ProviderAccountId::new();

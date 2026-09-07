@@ -10306,7 +10306,7 @@ fn the_group_memory_policy_lands_in_the_frozen_snapshot() {
     let mut settings = stored_settings.settings.clone();
     settings.dynamic_memory.max_entries = 17;
     settings.dynamic_memory.retrieval_limit = 3;
-    GlobalSettingsStore::save(
+    let inherited_settings = GlobalSettingsStore::save(
         database,
         settings,
         stored_settings.default_model_profile_id,
@@ -10333,6 +10333,66 @@ fn the_group_memory_policy_lands_in_the_frozen_snapshot() {
         }
         other => panic!("expected inherited memory, got {other:?}"),
     }
+
+    let mut settings = inherited_settings.settings;
+    let mut group_policy = settings.dynamic_memory.clone();
+    group_policy.max_entries = 29;
+    group_policy.retrieval_limit = 7;
+    settings.group_dynamic_memory = Some(group_policy);
+    let override_settings = GlobalSettingsStore::save(
+        database,
+        settings,
+        inherited_settings.default_model_profile_id,
+        inherited_settings.revision,
+    )
+    .expect("save group override");
+    let created = ConversationLaunchPlanner::new(database)
+        .launch_group(
+            &group_request(group_id, "group-memory-override"),
+            TimestampMillis::new(NOW.get() + 1),
+        )
+        .expect("launch group with memory override");
+    let ConversationKind::Group(created_details) = &created.value.conversation.kind else {
+        panic!("group launch produced a direct conversation");
+    };
+    let SnapshotSelection::Inherited(created_memory) = &created_details.group.memory else {
+        panic!("expected inherited group memory");
+    };
+    let created_policy = created_memory
+        .dynamic_policy
+        .as_ref()
+        .expect("group dynamic policy");
+    assert_eq!(created_policy.max_entries, 29);
+    assert_eq!(created_policy.retrieval_limit, 7);
+
+    let mut changed_settings = override_settings.settings;
+    let changed_group_policy = changed_settings
+        .group_dynamic_memory
+        .as_mut()
+        .expect("group override");
+    changed_group_policy.max_entries = 41;
+    changed_group_policy.retrieval_limit = 9;
+    GlobalSettingsStore::save(
+        database,
+        changed_settings,
+        override_settings.default_model_profile_id,
+        override_settings.revision,
+    )
+    .expect("change group override after launch");
+    let hydrated = ConversationReader::get(database, created.value.conversation.id)
+        .expect("hydrate launched group");
+    let ConversationKind::Group(hydrated_details) = &hydrated.conversation.kind else {
+        panic!("group conversation hydrated as direct");
+    };
+    let SnapshotSelection::Inherited(hydrated_memory) = &hydrated_details.group.memory else {
+        panic!("expected hydrated group memory");
+    };
+    let hydrated_policy = hydrated_memory
+        .dynamic_policy
+        .as_ref()
+        .expect("hydrated group dynamic policy");
+    assert_eq!(hydrated_policy.max_entries, 29);
+    assert_eq!(hydrated_policy.retrieval_limit, 7);
 }
 
 #[test]
