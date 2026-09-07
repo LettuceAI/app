@@ -8,13 +8,16 @@
 
 use std::fmt;
 
-use lettuce_types::{LorebookEntryId, LorebookId, PersonaId, TimestampMillis};
+use lettuce_types::{ContentHash, LorebookEntryId, LorebookId, PersonaId, TimestampMillis};
 
 pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
 pub const LEGACY_PERSONA_PLAN_LIMIT: u32 = 10_000;
 pub const LEGACY_LOREBOOK_PLAN_LIMIT: u32 = 10_000;
 pub const LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT: u32 = 100_000;
 pub const LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT: u32 = 512;
+pub const LEGACY_MEDIA_REFERENCE_LIMIT: u32 = 20_000;
+pub const LEGACY_MEDIA_OBJECT_BYTES_LIMIT: u64 = 64 * 1024 * 1024;
+pub const LEGACY_MEDIA_TOTAL_BYTES_LIMIT: u64 = 512 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyDatabaseInventory {
@@ -115,6 +118,27 @@ pub struct LegacyLorebookPlan {
     pub lorebooks: Vec<LegacyLorebookCandidate>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LegacyMediaUse {
+    PersonaAvatar { persona_id: PersonaId },
+    PersonaDesignReference { persona_id: PersonaId, ordinal: u32 },
+    LorebookAvatar { lorebook_id: LorebookId },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyMediaCandidate {
+    pub relative_path: String,
+    pub byte_len: u64,
+    pub content_hash: ContentHash,
+    pub uses: Vec<LegacyMediaUse>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyMediaPlan {
+    pub media: Vec<LegacyMediaCandidate>,
+    pub total_bytes: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LegacyDatabasePreflightError {
     Unavailable,
@@ -141,6 +165,28 @@ pub enum LegacyDatabasePreflightError {
     OrphanRecord {
         table: &'static str,
         parent_table: &'static str,
+    },
+    MediaReferenceLimitExceeded {
+        limit: u32,
+    },
+    MissingMedia {
+        locator: String,
+    },
+    UnsafeMediaReference {
+        locator: String,
+    },
+    ConflictingMediaReference {
+        locator: String,
+    },
+    MediaObjectTooLarge {
+        locator: String,
+        limit: u64,
+    },
+    MediaTotalTooLarge {
+        limit: u64,
+    },
+    MediaReadFailed {
+        locator: String,
     },
 }
 
@@ -174,6 +220,34 @@ impl fmt::Display for LegacyDatabasePreflightError {
                 formatter,
                 "legacy {table} record has no matching {parent_table} parent"
             ),
+            Self::MediaReferenceLimitExceeded { limit } => {
+                write!(
+                    formatter,
+                    "legacy media exceeds the {limit}-reference limit"
+                )
+            }
+            Self::MissingMedia { locator } => {
+                write!(formatter, "legacy media is missing: {locator}")
+            }
+            Self::UnsafeMediaReference { locator } => {
+                write!(formatter, "legacy media reference is unsafe: {locator}")
+            }
+            Self::ConflictingMediaReference { locator } => {
+                write!(formatter, "legacy media reference is ambiguous: {locator}")
+            }
+            Self::MediaObjectTooLarge { locator, limit } => write!(
+                formatter,
+                "legacy media exceeds the {limit}-byte object limit: {locator}"
+            ),
+            Self::MediaTotalTooLarge { limit } => {
+                write!(
+                    formatter,
+                    "legacy media exceeds the {limit}-byte total limit"
+                )
+            }
+            Self::MediaReadFailed { locator } => {
+                write!(formatter, "legacy media could not be read: {locator}")
+            }
         }
     }
 }

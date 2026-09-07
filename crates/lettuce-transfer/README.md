@@ -25,3 +25,8 @@ Avatar and design images remain typed unresolved locators until media import.
 The lorebook plan preserves root detection policy and unresolved avatar plus
 every persisted entry field in deterministic order. It bounds roots, total
 entries and entries per book before any destination mutation.
+
+The composed media plan deduplicates persona avatar, persona design-reference
+and lorebook avatar uses by relative legacy file, retaining bounded byte size
+and BLAKE3 evidence for later ingestion. Missing, unsafe, ambiguous and
+oversized sources are typed failures.

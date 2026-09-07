@@ -82,6 +82,16 @@ impl AppBackend {
         lettuce_database::plan_legacy_lorebooks(path)
     }
 
+    pub fn plan_legacy_media(
+        &self,
+        storage_root: impl AsRef<Path>,
+        personas: &lettuce_transfer::LegacyPersonaPlan,
+        lorebooks: &lettuce_transfer::LegacyLorebookPlan,
+    ) -> Result<lettuce_transfer::LegacyMediaPlan, lettuce_transfer::LegacyDatabasePreflightError>
+    {
+        crate::plan_legacy_media(storage_root, personas, lorebooks)
+    }
+
     #[must_use]
     pub fn job_store(&self) -> &dyn JobStore {
         self.database.as_ref()
