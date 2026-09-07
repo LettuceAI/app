@@ -20,6 +20,7 @@ mod job_adapter;
 mod lorebook_adapter;
 mod lorebook_entry_run_adapter;
 mod lorebook_keyword_run_adapter;
+mod legacy_database_preflight;
 mod memory_adapter;
 mod memory_embedding_adapter;
 mod memory_preparation_adapter;
@@ -35,6 +36,8 @@ mod staged_lorebook_writer_adapter;
 mod state_adapter;
 mod tool_adapter;
 mod usage_adapter;
+
+pub use legacy_database_preflight::preflight_legacy_database;
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
 

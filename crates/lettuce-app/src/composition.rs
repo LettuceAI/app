@@ -56,6 +56,16 @@ impl AppBackend {
         self.database.as_ref()
     }
 
+    pub fn preflight_legacy_database(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> Result<
+        lettuce_transfer::LegacyDatabaseInventory,
+        lettuce_transfer::LegacyDatabasePreflightError,
+    > {
+        lettuce_database::preflight_legacy_database(path)
+    }
+
     #[must_use]
     pub fn job_store(&self) -> &dyn JobStore {
         self.database.as_ref()

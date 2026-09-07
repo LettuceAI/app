@@ -81,6 +81,10 @@ Loading verifies the reference rows against excerpt provenance in the run JSON.
 
 Epoch-2 SQLite schema, migrations, maintenance, and repository adapters.
 
+The legacy migration boundary can open an old `app.db` read-only, require the
+actual version-92 schema roots, and return a bounded typed import inventory.
+It performs no source migration or destination writes during preflight.
+
 ## Boundary
 
 The only crate allowed to depend on SQLite libraries.

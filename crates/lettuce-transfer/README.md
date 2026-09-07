@@ -13,4 +13,7 @@ The public surface is intentionally small. Business invariants belong in domain 
 
 ## Status
 
-Foundation scaffolding is active. Implement behavior with tests before exposing new public APIs, and keep compatibility code at explicit application or migration boundaries.
+A read-only legacy SQLite preflight contract now reports the supported schema
+version and bounded counts for importable root records. SQLite inspection stays
+in `lettuce-database`; this crate owns the compatibility result and typed
+failures. Record mapping, media discovery and import writes remain later slices.
