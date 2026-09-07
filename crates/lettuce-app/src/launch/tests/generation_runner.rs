@@ -1,11 +1,11 @@
 use super::*;
 use lettuce_conversations::ToolExecution;
 use lettuce_conversations::{
-    ConversationManager, GenerationAttemptStatus, GenerationFailureCode, InitialInferenceBinding,
-    InitialInferenceRepository, InitialInferenceResult, ModelSelectionSnapshot, OperationKind,
-    ResolveGroupSpeaker, SelectedSpeakerDecision, SpeakerDecisionMethod, SpeakerFallback,
-    SpeakerInferenceBinding, SpeakerInferenceRepository, ToolExecutionOwner, UsageCounters,
-    UsageOutcome, UsageUnavailableReason,
+    BeginGeneration, ConversationManager, GenerationAttemptStatus, GenerationFailureCode,
+    InitialInferenceBinding, InitialInferenceRepository, InitialInferenceResult,
+    ModelSelectionSnapshot, OperationKind, ResolveGroupSpeaker, SelectedSpeakerDecision,
+    SpeakerDecisionMethod, SpeakerFallback, SpeakerInferenceBinding, SpeakerInferenceRepository,
+    ToolExecutionOwner, UsageCounters, UsageOutcome, UsageUnavailableReason,
 };
 use lettuce_embeddings::{
     EmbeddingDimensions, MemoryEmbeddingProjection, MemoryEmbeddingRepository,
@@ -26,8 +26,9 @@ use crate::{
     ConversationGenerationExecutionOutcome, ConversationGenerationExecutionRequest,
     ConversationGenerationInput, ConversationGenerationJobRunner,
     ConversationGenerationMemoryInput, ConversationGenerationRunError,
-    ConversationGenerationRuntimeInput, ConversationGenerationSettledWork, GenerationUsageEvidence,
-    PreparedConversationGenerationJobRunner,
+    ConversationGenerationRuntimeInput, ConversationGenerationSettledWork,
+    ConversationGenerationWorkerOutcome, ConversationGenerationWorkerRequest,
+    GenerationUsageEvidence, PreparedConversationGenerationJobRunner,
 };
 
 const LEASE: Duration = Duration::from_secs(60);
@@ -793,6 +794,73 @@ async fn app_backend_cancels_queued_and_running_generation_jobs_by_id() {
             .status,
         GenerationTurnStatus::Cancelled
     );
+}
+
+#[tokio::test]
+async fn app_backend_worker_executes_one_durable_generation_job() {
+    let path = std::env::temp_dir().join(format!(
+        "lettuce-generation-worker-{}.db",
+        ConversationId::new()
+    ));
+    let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+    let scenario = scenario_with_resolvable_profile(backend.database(), false, "worker", true);
+    let turn =
+        ConversationReader::get_turn(backend.database(), scenario.turn_id).expect("scheduled turn");
+    let generation = BeginGeneration {
+        conversation: ConversationReader::get(backend.database(), scenario.conversation_id)
+            .expect("scheduled conversation")
+            .conversation,
+        attempt: turn.attempts[0].clone(),
+        turn,
+    };
+    let job = backend
+        .conversation_generation_dispatcher()
+        .schedule(&generation, TimestampMillis::new(1_020))
+        .expect("schedule generation")
+        .job;
+    drop(backend);
+
+    let backend = AppBackend::open(&path, TimestampMillis::new(1_021)).expect("reopen backend");
+    let inference = scripted(vec![text_outcome(
+        "worker-response",
+        "Worker reply.",
+        12,
+        3,
+    )]);
+    let engine = ScenarioEmbeddingEngine;
+    let clock = FakeClock::new(TimestampMillis::new(1_022));
+    let request = ConversationGenerationWorkerRequest {
+        worker_id: WorkerId::new(),
+        lease_for: LEASE,
+        resources: ResourceAvailability::all(),
+    };
+    let outcome = backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .execute_next(request.clone(), &clock, |_| vec![])
+        .await
+        .expect("execute scheduled generation");
+    let ConversationGenerationWorkerOutcome::Executed(outcome) = outcome else {
+        panic!("worker executes one job");
+    };
+    assert!(matches!(
+        *outcome,
+        ConversationGenerationExecutionOutcome::Settled(
+            ConversationGenerationSettledWork::Succeeded { ref job, .. }
+        ) if job.state == JobState::Succeeded
+    ));
+    assert_eq!(
+        persisted_job(backend.database(), job.id).state,
+        JobState::Succeeded
+    );
+    assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+    assert!(matches!(
+        backend
+            .prepared_conversation_generation_runner(&engine, &inference)
+            .execute_next(request, &clock, |_| vec![])
+            .await
+            .expect("empty worker pass"),
+        ConversationGenerationWorkerOutcome::Idle
+    ));
 }
 
 #[tokio::test]

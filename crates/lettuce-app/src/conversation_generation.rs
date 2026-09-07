@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use lettuce_conversations::{
-    ArtifactError, AttachAttemptJob, CancelGeneration, ContextAttributions, ConversationManager,
-    ConversationReader, ConversationRepository, ConversationRepositoryError,
+    ArtifactError, AttachAttemptJob, BeginGeneration, CancelGeneration, ContextAttributions,
+    ConversationManager, ConversationReader, ConversationRepository, ConversationRepositoryError,
     ConversationServiceError, GenerationAttempt, GenerationAttemptStatus,
     GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationFailureCode,
     GenerationTarget, GenerationTurn, GenerationTurnStatus, InferenceOutcome, InferencePort,
@@ -1648,6 +1648,19 @@ impl<
             attempt: attached.value,
             created: true,
         })
+    }
+
+    pub fn schedule(
+        &self,
+        generation: &BeginGeneration,
+        now: TimestampMillis,
+    ) -> Result<ConversationGenerationAdmission, ConversationGenerationDispatchError> {
+        self.admit(
+            generation.conversation.id,
+            generation.turn.id,
+            generation.attempt.id,
+            now,
+        )
     }
 
     pub fn claim(

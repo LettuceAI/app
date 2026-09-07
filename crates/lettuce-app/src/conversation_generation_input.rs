@@ -23,7 +23,8 @@ use lettuce_conversations::{
 use lettuce_embeddings::{EmbeddingDimensions, EmbeddingRequest, MemoryEmbeddingRepository};
 use lettuce_inference::{InferenceRuntime, InferenceRuntimeError};
 use lettuce_jobs::{
-    CancellationReason, Clock, ResourceAvailability, WorkerId, handle::CancellationToken,
+    CancellationReason, Clock, JobKind, JobQuery, JobState, ResourceAvailability, WorkerId,
+    events::JobEvent, handle::CancellationToken,
 };
 use lettuce_memory::{
     DynamicMemoryPreparationRepository, DynamicMemoryRoundRepository, MemoryPolicy,
@@ -76,6 +77,29 @@ pub enum ConversationGenerationExecutionOutcome {
     },
     Terminal(crate::ConversationGenerationAdmission),
     NotClaimed(crate::ConversationGenerationAdmission),
+}
+
+#[derive(Debug, Clone)]
+pub struct ConversationGenerationWorkerRequest {
+    pub worker_id: WorkerId,
+    pub lease_for: Duration,
+    pub resources: ResourceAvailability,
+}
+
+#[derive(Debug)]
+pub enum ConversationGenerationWorkerOutcome {
+    Idle,
+    Executed(Box<ConversationGenerationExecutionOutcome>),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConversationGenerationWorkerError {
+    #[error("conversation generation worker storage failed: {0}")]
+    Store(#[from] lettuce_jobs::StoreError),
+    #[error("conversation generation worker found invalid durable work")]
+    InvalidWork,
+    #[error("conversation generation execution failed: {0}")]
+    Execution(#[from] ConversationGenerationExecutionError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -180,6 +204,83 @@ where
         + MemorySummaryRepository,
     I: InferencePort + ?Sized,
 {
+    pub async fn execute_next<F, C>(
+        &self,
+        request: ConversationGenerationWorkerRequest,
+        clock: &C,
+        seeds_for_round: F,
+    ) -> Result<ConversationGenerationWorkerOutcome, ConversationGenerationWorkerError>
+    where
+        F: FnMut(&[lettuce_conversations::ToolExecution]) -> Vec<MemoryCreateSeed>,
+        C: Clock + ?Sized,
+        R: lettuce_jobs::JobStore + lettuce_usage::UsageLedger,
+    {
+        let mut page_request = PageRequest {
+            cursor: None,
+            limit: PageLimit::new(200),
+        };
+        let job = loop {
+            let page = lettuce_jobs::JobStore::list(
+                self.repository,
+                JobQuery {
+                    state: Some(JobState::Queued),
+                    kind: Some(JobKind::ConversationGeneration),
+                    subject: None,
+                    page: page_request.clone(),
+                },
+            )?;
+            if let Some(job) = page.items.into_iter().find(|job| {
+                job.resources
+                    .iter()
+                    .all(|resource| request.resources.allows(*resource))
+            }) {
+                break Some(job);
+            }
+            let Some(cursor) = page.next_cursor else {
+                break None;
+            };
+            page_request.cursor = Some(cursor);
+        };
+        let Some(job) = job else {
+            return Ok(ConversationGenerationWorkerOutcome::Idle);
+        };
+        let events = lettuce_jobs::JobStore::events_since(self.repository, job.id, None, 1)?;
+        let Some(JobEvent::Created {
+            input_ref: lettuce_jobs::OutcomeRef::GenerationTurn(turn_id),
+            ..
+        }) = events.first().map(|event| &event.event)
+        else {
+            return Err(ConversationGenerationWorkerError::InvalidWork);
+        };
+        let turn = ConversationReader::get_turn(self.repository, *turn_id)
+            .map_err(|_| ConversationGenerationWorkerError::InvalidWork)?;
+        let attempt = turn
+            .attempts
+            .iter()
+            .find(|attempt| attempt.job_id == Some(job.id))
+            .ok_or(ConversationGenerationWorkerError::InvalidWork)?;
+        let outcome = self
+            .execute(
+                ConversationGenerationExecutionRequest {
+                    conversation_id: turn.conversation_id,
+                    turn_id: turn.id,
+                    attempt_id: attempt.id,
+                    worker_id: request.worker_id,
+                    lease_for: request.lease_for,
+                    resources: request.resources,
+                    runtime: ConversationGenerationRuntimeInput::default(),
+                    cancellation: CancellationToken::new(),
+                    cancellation_reason: CancellationReason::Shutdown,
+                },
+                clock,
+                seeds_for_round,
+            )
+            .await?;
+        Ok(ConversationGenerationWorkerOutcome::Executed(Box::new(
+            outcome,
+        )))
+    }
+
     pub async fn execute<F, C>(
         &self,
         request: ConversationGenerationExecutionRequest,

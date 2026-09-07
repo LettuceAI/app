@@ -687,6 +687,13 @@ settled. Completion unregisters the live token. Unknown and already-terminal IDs
 return explicit idempotent outcomes. The caller remains responsible for creating the turn, supplying
 dynamic-memory create seeds, and deciding when to invoke the operation; no
 second scheduler or background loop is introduced.
+The dispatcher can schedule the exact `BeginGeneration` returned by send,
+continue, regenerate or retry. A single worker operation lists the oldest
+highest-priority queued conversation-generation job, resolves its immutable
+creation event back to the attached turn and attempt, and executes it through
+the same prepared runner. One invocation handles at most one job and returns
+`Idle` when none is queued, leaving polling cadence and host lifetime outside
+the application workflow.
 `PreparedConversationGenerationJobRunner`, exposed by `AppBackend`, now owns the
 reconstructible input boundary for an ordinary direct or resolved group turn. It
 first reads an admitted initial-dispatch request for the current attempt or its
