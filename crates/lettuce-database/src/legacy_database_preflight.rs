@@ -1,11 +1,14 @@
-use std::{path::Path, str::FromStr};
+use std::{collections::BTreeMap, path::Path, str::FromStr};
 
 use lettuce_transfer::{
-    LEGACY_DATABASE_SCHEMA_VERSION, LEGACY_PERSONA_PLAN_LIMIT, LegacyCrop, LegacyDatabaseInventory,
-    LegacyDatabasePreflightError, LegacyImageRecommendation, LegacyMediaReference,
-    LegacyPersonaCandidate, LegacyPersonaPlan,
+    LEGACY_DATABASE_SCHEMA_VERSION, LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT,
+    LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT, LEGACY_LOREBOOK_PLAN_LIMIT, LEGACY_PERSONA_PLAN_LIMIT,
+    LegacyCrop, LegacyDatabaseInventory, LegacyDatabasePreflightError, LegacyImageRecommendation,
+    LegacyKeywordMatchMode, LegacyLorebookCandidate, LegacyLorebookDetectionPolicy,
+    LegacyLorebookEntryCandidate, LegacyLorebookPlan, LegacyMediaReference, LegacyPersonaCandidate,
+    LegacyPersonaPlan,
 };
-use lettuce_types::{LorebookId, PersonaId, TimestampMillis};
+use lettuce_types::{LorebookEntryId, LorebookId, PersonaId, TimestampMillis};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 const ROOT_TABLES: [(&str, &str); 10] = [
@@ -49,6 +52,19 @@ pub fn plan_legacy_personas(
 ) -> Result<LegacyPersonaPlan, LegacyDatabasePreflightError> {
     let connection = open_validated(path)?;
     plan_legacy_personas_with_limit(&connection, LEGACY_PERSONA_PLAN_LIMIT)
+}
+
+pub fn plan_legacy_lorebooks(
+    path: impl AsRef<Path>,
+) -> Result<LegacyLorebookPlan, LegacyDatabasePreflightError> {
+    let connection = open_validated(path)?;
+    require_table(&connection, "lorebook_entries")?;
+    plan_legacy_lorebooks_with_limits(
+        &connection,
+        LEGACY_LOREBOOK_PLAN_LIMIT,
+        LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT,
+        LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT,
+    )
 }
 
 fn open_validated(path: impl AsRef<Path>) -> Result<Connection, LegacyDatabasePreflightError> {
@@ -176,6 +192,200 @@ fn plan_legacy_personas_with_limit(
         personas,
         default_persona_id,
     })
+}
+
+fn plan_legacy_lorebooks_with_limits(
+    connection: &Connection,
+    lorebook_limit: u32,
+    entry_limit: u32,
+    entries_per_book_limit: u32,
+) -> Result<LegacyLorebookPlan, LegacyDatabasePreflightError> {
+    let entries_per_book_limit_usize = usize::try_from(entries_per_book_limit).map_err(|_| {
+        LegacyDatabasePreflightError::LimitExceeded {
+            table: "lorebook_entries_per_book",
+            limit: entries_per_book_limit,
+        }
+    })?;
+    require_count_limit(connection, "lorebooks", lorebook_limit)?;
+    require_count_limit(connection, "lorebook_entries", entry_limit)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT id,name,avatar_path,keyword_detection_mode,created_at,updated_at FROM lorebooks ORDER BY created_at ASC,id ASC",
+        )
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+            ))
+        })
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let mut lorebooks = Vec::new();
+    let mut indexes = BTreeMap::new();
+    for row in rows {
+        let (id, name, avatar, detection_policy, created_at, updated_at) =
+            row.map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+        let id = LorebookId::from_str(&id).map_err(|_| lorebook_malformed("id"))?;
+        require_lorebook_non_blank(&name, "name")?;
+        let avatar = avatar
+            .map(|locator| {
+                require_lorebook_non_blank(&locator, "avatar_path")?;
+                Ok(LegacyMediaReference { locator })
+            })
+            .transpose()?;
+        let detection_policy = match detection_policy.as_str() {
+            "recent_message_window" => LegacyLorebookDetectionPolicy::RecentMessageWindow,
+            "latest_user_message" => LegacyLorebookDetectionPolicy::LatestUserMessage,
+            _ => return Err(lorebook_malformed("keyword_detection_mode")),
+        };
+        if updated_at < created_at {
+            return Err(lorebook_malformed("timestamps"));
+        }
+        indexes.insert(id, lorebooks.len());
+        lorebooks.push(LegacyLorebookCandidate {
+            id,
+            name,
+            avatar,
+            detection_policy,
+            entries: Vec::new(),
+            created_at: TimestampMillis::new(created_at),
+            updated_at: TimestampMillis::new(updated_at),
+        });
+    }
+
+    let mut statement = connection
+        .prepare(
+            "SELECT id,lorebook_id,title,enabled,always_active,keywords,case_sensitive,keyword_match_mode,content,priority,display_order,created_at,updated_at FROM lorebook_entries ORDER BY lorebook_id ASC,display_order ASC,created_at ASC,id ASC",
+        )
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, i32>(9)?,
+                row.get::<_, i32>(10)?,
+                row.get::<_, i64>(11)?,
+                row.get::<_, i64>(12)?,
+            ))
+        })
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    for row in rows {
+        let (
+            id,
+            lorebook_id,
+            title,
+            enabled,
+            always_active,
+            keywords,
+            case_sensitive,
+            match_mode,
+            content,
+            priority,
+            display_order,
+            created_at,
+            updated_at,
+        ) = row.map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+        let id = LorebookEntryId::from_str(&id).map_err(|_| entry_malformed("id"))?;
+        let lorebook_id =
+            LorebookId::from_str(&lorebook_id).map_err(|_| entry_malformed("lorebook_id"))?;
+        let Some(index) = indexes.get(&lorebook_id).copied() else {
+            return Err(LegacyDatabasePreflightError::OrphanRecord {
+                table: "lorebook_entries",
+                parent_table: "lorebooks",
+            });
+        };
+        if lorebooks[index].entries.len() >= entries_per_book_limit_usize {
+            return Err(LegacyDatabasePreflightError::LimitExceeded {
+                table: "lorebook_entries_per_book",
+                limit: entries_per_book_limit,
+            });
+        }
+        let enabled = legacy_flag(enabled, "enabled")?;
+        let always_active = legacy_flag(always_active, "always_active")?;
+        let case_sensitive = legacy_flag(case_sensitive, "case_sensitive")?;
+        let keywords = serde_json::from_str(&keywords).map_err(|_| entry_malformed("keywords"))?;
+        let match_mode = match match_mode.as_str() {
+            "literal" => LegacyKeywordMatchMode::Literal,
+            "regex" => LegacyKeywordMatchMode::Regex,
+            _ => return Err(entry_malformed("keyword_match_mode")),
+        };
+        if updated_at < created_at {
+            return Err(entry_malformed("timestamps"));
+        }
+        lorebooks[index].entries.push(LegacyLorebookEntryCandidate {
+            id,
+            title,
+            enabled,
+            always_active,
+            keywords,
+            case_sensitive,
+            match_mode,
+            content,
+            priority,
+            display_order,
+            created_at: TimestampMillis::new(created_at),
+            updated_at: TimestampMillis::new(updated_at),
+        });
+    }
+    Ok(LegacyLorebookPlan { lorebooks })
+}
+
+fn require_count_limit(
+    connection: &Connection,
+    table: &'static str,
+    limit: u32,
+) -> Result<(), LegacyDatabasePreflightError> {
+    if count(connection, table, table)? > u64::from(limit) {
+        Err(LegacyDatabasePreflightError::LimitExceeded { table, limit })
+    } else {
+        Ok(())
+    }
+}
+
+fn legacy_flag(value: i64, field: &'static str) -> Result<bool, LegacyDatabasePreflightError> {
+    match value {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(entry_malformed(field)),
+    }
+}
+
+fn require_lorebook_non_blank(
+    value: &str,
+    field: &'static str,
+) -> Result<(), LegacyDatabasePreflightError> {
+    if value.trim().is_empty() {
+        Err(lorebook_malformed(field))
+    } else {
+        Ok(())
+    }
+}
+
+fn lorebook_malformed(field: &'static str) -> LegacyDatabasePreflightError {
+    LegacyDatabasePreflightError::MalformedRecord {
+        table: "lorebooks",
+        field,
+    }
+}
+
+fn entry_malformed(field: &'static str) -> LegacyDatabasePreflightError {
+    LegacyDatabasePreflightError::MalformedRecord {
+        table: "lorebook_entries",
+        field,
+    }
 }
 
 fn legacy_crop(
@@ -323,7 +533,30 @@ mod tests {
                    updated_at INTEGER NOT NULL
                  );
                  CREATE TABLE characters (id TEXT PRIMARY KEY);
-                 CREATE TABLE lorebooks (id TEXT PRIMARY KEY);
+                 CREATE TABLE lorebooks (
+                   id TEXT PRIMARY KEY,
+                   name TEXT NOT NULL,
+                   avatar_path TEXT,
+                   keyword_detection_mode TEXT NOT NULL DEFAULT 'recent_message_window',
+                   created_at INTEGER NOT NULL,
+                   updated_at INTEGER NOT NULL
+                 );
+                 CREATE TABLE lorebook_entries (
+                   id TEXT PRIMARY KEY,
+                   lorebook_id TEXT NOT NULL,
+                   title TEXT NOT NULL DEFAULT '',
+                   enabled INTEGER NOT NULL DEFAULT 1,
+                   always_active INTEGER NOT NULL DEFAULT 0,
+                   keywords TEXT NOT NULL DEFAULT '[]',
+                   case_sensitive INTEGER NOT NULL DEFAULT 0,
+                   keyword_match_mode TEXT NOT NULL DEFAULT 'literal',
+                   content TEXT NOT NULL,
+                   priority INTEGER NOT NULL DEFAULT 0,
+                   display_order INTEGER NOT NULL DEFAULT 0,
+                   created_at INTEGER NOT NULL,
+                   updated_at INTEGER NOT NULL,
+                   FOREIGN KEY(lorebook_id) REFERENCES lorebooks(id) ON DELETE CASCADE
+                 );
                  CREATE TABLE chat_templates (id TEXT PRIMARY KEY);
                  CREATE TABLE sessions (id TEXT PRIMARY KEY);
                  CREATE TABLE group_characters (id TEXT PRIMARY KEY);
@@ -512,6 +745,188 @@ mod tests {
             plan_legacy_personas_with_limit(&connection, 0),
             Err(LegacyDatabasePreflightError::LimitExceeded {
                 table: "personas",
+                limit: 0
+            })
+        );
+        drop(connection);
+        std::fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn lorebook_plan_preserves_roots_entries_and_stable_order() {
+        let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
+        let connection = Connection::open(&path).expect("open legacy database");
+        let first_id =
+            LorebookId::from_str("00000000-0000-0000-0000-000000000011").expect("first id");
+        let second_id =
+            LorebookId::from_str("00000000-0000-0000-0000-000000000012").expect("second id");
+        let first_entry_id = LorebookEntryId::from_str("00000000-0000-0000-0000-000000000021")
+            .expect("first entry id");
+        let second_entry_id = LorebookEntryId::from_str("00000000-0000-0000-0000-000000000022")
+            .expect("second entry id");
+        connection
+            .execute(
+                "INSERT INTO lorebooks (id,name,keyword_detection_mode,created_at,updated_at) VALUES (?1,'Second book','recent_message_window',20,21)",
+                [second_id.to_string()],
+            )
+            .expect("insert second lorebook");
+        connection
+            .execute(
+                "INSERT INTO lorebooks (id,name,avatar_path,keyword_detection_mode,created_at,updated_at) VALUES (?1,'First book','lorebooks/first.png','latest_user_message',10,15)",
+                [first_id.to_string()],
+            )
+            .expect("insert first lorebook");
+        connection
+            .execute(
+                "INSERT INTO lorebook_entries (id,lorebook_id,title,enabled,always_active,keywords,case_sensitive,keyword_match_mode,content,priority,display_order,created_at,updated_at) VALUES (?1,?2,'Later',0,0,'[]',0,'literal','Later content',2,4,12,13)",
+                rusqlite::params![second_entry_id.to_string(), first_id.to_string()],
+            )
+            .expect("insert later entry");
+        connection
+            .execute(
+                "INSERT INTO lorebook_entries (id,lorebook_id,title,enabled,always_active,keywords,case_sensitive,keyword_match_mode,content,priority,display_order,created_at,updated_at) VALUES (?1,?2,'Earlier',1,1,'[\"hero.*\",\"city\"]',1,'regex','Earlier content',9,2,11,14)",
+                rusqlite::params![first_entry_id.to_string(), first_id.to_string()],
+            )
+            .expect("insert earlier entry");
+        drop(connection);
+
+        let plan = plan_legacy_lorebooks(&path).expect("plan lorebooks");
+
+        assert_eq!(plan.lorebooks.len(), 2);
+        let first = &plan.lorebooks[0];
+        assert_eq!(first.id, first_id);
+        assert_eq!(first.name, "First book");
+        assert_eq!(
+            first
+                .avatar
+                .as_ref()
+                .map(|reference| reference.locator.as_str()),
+            Some("lorebooks/first.png")
+        );
+        assert_eq!(
+            first.detection_policy,
+            LegacyLorebookDetectionPolicy::LatestUserMessage
+        );
+        assert_eq!(first.created_at, TimestampMillis::new(10));
+        assert_eq!(first.updated_at, TimestampMillis::new(15));
+        assert_eq!(first.entries.len(), 2);
+        let entry = &first.entries[0];
+        assert_eq!(entry.id, first_entry_id);
+        assert_eq!(entry.title, "Earlier");
+        assert!(entry.enabled);
+        assert!(entry.always_active);
+        assert_eq!(entry.keywords, ["hero.*", "city"]);
+        assert!(entry.case_sensitive);
+        assert_eq!(entry.match_mode, LegacyKeywordMatchMode::Regex);
+        assert_eq!(entry.content, "Earlier content");
+        assert_eq!(entry.priority, 9);
+        assert_eq!(entry.display_order, 2);
+        assert_eq!(entry.created_at, TimestampMillis::new(11));
+        assert_eq!(entry.updated_at, TimestampMillis::new(14));
+        assert_eq!(first.entries[1].id, second_entry_id);
+        assert_eq!(plan.lorebooks[1].id, second_id);
+        std::fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn lorebook_plan_rejects_malformed_enums_and_keywords() {
+        let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute(
+                "INSERT INTO lorebooks (id,name,keyword_detection_mode,created_at,updated_at) VALUES (?1,'Book','unknown',1,1)",
+                [LorebookId::new().to_string()],
+            )
+            .expect("insert malformed lorebook");
+        drop(connection);
+
+        assert_eq!(
+            plan_legacy_lorebooks(&path),
+            Err(LegacyDatabasePreflightError::MalformedRecord {
+                table: "lorebooks",
+                field: "keyword_detection_mode"
+            })
+        );
+        let connection = Connection::open(&path).expect("reopen legacy database");
+        connection
+            .execute(
+                "UPDATE lorebooks SET keyword_detection_mode = 'recent_message_window'",
+                [],
+            )
+            .expect("repair detection policy");
+        let lorebook_id: String = connection
+            .query_row("SELECT id FROM lorebooks", [], |row| row.get(0))
+            .expect("read lorebook id");
+        connection
+            .execute(
+                "INSERT INTO lorebook_entries (id,lorebook_id,keywords,content,created_at,updated_at) VALUES (?1,?2,'not-json','Entry',1,1)",
+                rusqlite::params![LorebookEntryId::new().to_string(), lorebook_id],
+            )
+            .expect("insert malformed entry");
+        drop(connection);
+        assert_eq!(
+            plan_legacy_lorebooks(&path),
+            Err(LegacyDatabasePreflightError::MalformedRecord {
+                table: "lorebook_entries",
+                field: "keywords"
+            })
+        );
+        std::fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn lorebook_plan_rejects_orphan_entries() {
+        let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("allow corrupt legacy fixture");
+        connection
+            .execute(
+                "INSERT INTO lorebook_entries (id,lorebook_id,content,created_at,updated_at) VALUES (?1,?2,'Orphan',1,1)",
+                rusqlite::params![LorebookEntryId::new().to_string(), LorebookId::new().to_string()],
+            )
+            .expect("insert orphan entry");
+        drop(connection);
+
+        assert_eq!(
+            plan_legacy_lorebooks(&path),
+            Err(LegacyDatabasePreflightError::OrphanRecord {
+                table: "lorebook_entries",
+                parent_table: "lorebooks"
+            })
+        );
+        std::fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn lorebook_plan_enforces_root_and_entry_bounds() {
+        let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
+        let connection = Connection::open(&path).expect("open legacy database");
+        let lorebook_id = LorebookId::new();
+        connection
+            .execute(
+                "INSERT INTO lorebooks (id,name,created_at,updated_at) VALUES (?1,'Book',1,1)",
+                [lorebook_id.to_string()],
+            )
+            .expect("insert lorebook");
+        assert_eq!(
+            plan_legacy_lorebooks_with_limits(&connection, 0, 1, 1),
+            Err(LegacyDatabasePreflightError::LimitExceeded {
+                table: "lorebooks",
+                limit: 0
+            })
+        );
+        connection
+            .execute(
+                "INSERT INTO lorebook_entries (id,lorebook_id,content,created_at,updated_at) VALUES (?1,?2,'Entry',1,1)",
+                rusqlite::params![LorebookEntryId::new().to_string(), lorebook_id.to_string()],
+            )
+            .expect("insert entry");
+        assert_eq!(
+            plan_legacy_lorebooks_with_limits(&connection, 1, 0, 1),
+            Err(LegacyDatabasePreflightError::LimitExceeded {
+                table: "lorebook_entries",
                 limit: 0
             })
         );

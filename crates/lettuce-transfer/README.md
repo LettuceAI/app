@@ -21,3 +21,7 @@ failures. Record mapping, media discovery and import writes remain later slices.
 The persona plan preserves legacy identity, authored text, crop, LoRA
 recommendation, lorebook references, timestamps and the single default owner.
 Avatar and design images remain typed unresolved locators until media import.
+
+The lorebook plan preserves root detection policy and unresolved avatar plus
+every persisted entry field in deterministic order. It bounds roots, total
+entries and entries per book before any destination mutation.

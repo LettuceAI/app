@@ -8,10 +8,13 @@
 
 use std::fmt;
 
-use lettuce_types::{LorebookId, PersonaId, TimestampMillis};
+use lettuce_types::{LorebookEntryId, LorebookId, PersonaId, TimestampMillis};
 
 pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
 pub const LEGACY_PERSONA_PLAN_LIMIT: u32 = 10_000;
+pub const LEGACY_LOREBOOK_PLAN_LIMIT: u32 = 10_000;
+pub const LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT: u32 = 100_000;
+pub const LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT: u32 = 512;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyDatabaseInventory {
@@ -68,6 +71,50 @@ pub struct LegacyPersonaPlan {
     pub default_persona_id: Option<PersonaId>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyLorebookDetectionPolicy {
+    RecentMessageWindow,
+    LatestUserMessage,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyKeywordMatchMode {
+    Literal,
+    Regex,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyLorebookEntryCandidate {
+    pub id: LorebookEntryId,
+    pub title: String,
+    pub enabled: bool,
+    pub always_active: bool,
+    pub keywords: Vec<String>,
+    pub case_sensitive: bool,
+    pub match_mode: LegacyKeywordMatchMode,
+    pub content: String,
+    pub priority: i32,
+    pub display_order: i32,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyLorebookCandidate {
+    pub id: LorebookId,
+    pub name: String,
+    pub avatar: Option<LegacyMediaReference>,
+    pub detection_policy: LegacyLorebookDetectionPolicy,
+    pub entries: Vec<LegacyLorebookEntryCandidate>,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyLorebookPlan {
+    pub lorebooks: Vec<LegacyLorebookCandidate>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LegacyDatabasePreflightError {
     Unavailable,
@@ -90,6 +137,10 @@ pub enum LegacyDatabasePreflightError {
     MalformedRecord {
         table: &'static str,
         field: &'static str,
+    },
+    OrphanRecord {
+        table: &'static str,
+        parent_table: &'static str,
     },
 }
 
@@ -116,6 +167,13 @@ impl fmt::Display for LegacyDatabasePreflightError {
             Self::MalformedRecord { table, field } => {
                 write!(formatter, "legacy record is malformed: {table}.{field}")
             }
+            Self::OrphanRecord {
+                table,
+                parent_table,
+            } => write!(
+                formatter,
+                "legacy {table} record has no matching {parent_table} parent"
+            ),
         }
     }
 }

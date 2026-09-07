@@ -89,6 +89,11 @@ Persona planning reads the complete version-92 persona shape in stable creation
 order, enforces the 10,000-record transfer bound, and fails on malformed JSON,
 IDs, crop, LoRA, default or timestamp data rather than dropping fields.
 
+Lorebook planning reads roots and their entries together, validates exact
+legacy enum and boolean encodings, and rejects malformed keywords, timestamps
+and orphan entries. External world-info fields already discarded by the legacy
+importer are not fabricated as version-92 database fields.
+
 ## Boundary
 
 The only crate allowed to depend on SQLite libraries.

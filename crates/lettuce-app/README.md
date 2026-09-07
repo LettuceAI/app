@@ -12,6 +12,8 @@ inventory boundary before any import is attempted. Compatibility types live in
 `lettuce-transfer`, while all source SQL remains in `lettuce-database`.
 `AppBackend::plan_legacy_personas` exposes the bounded persona candidates and
 their explicit default owner while leaving all source media unresolved.
+`AppBackend::plan_legacy_lorebooks` exposes the bounded root and ordered-entry
+plan needed to resolve later persona and character bindings.
 
 ## Boundary
 
