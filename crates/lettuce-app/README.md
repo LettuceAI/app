@@ -10,6 +10,8 @@ optional local OpenAI-compatible host API.
 `AppBackend::preflight_legacy_database` exposes the read-only legacy SQLite
 inventory boundary before any import is attempted. Compatibility types live in
 `lettuce-transfer`, while all source SQL remains in `lettuce-database`.
+`AppBackend::plan_legacy_personas` exposes the bounded persona candidates and
+their explicit default owner while leaving all source media unresolved.
 
 ## Boundary
 

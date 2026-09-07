@@ -66,6 +66,14 @@ impl AppBackend {
         lettuce_database::preflight_legacy_database(path)
     }
 
+    pub fn plan_legacy_personas(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> Result<lettuce_transfer::LegacyPersonaPlan, lettuce_transfer::LegacyDatabasePreflightError>
+    {
+        lettuce_database::plan_legacy_personas(path)
+    }
+
     #[must_use]
     pub fn job_store(&self) -> &dyn JobStore {
         self.database.as_ref()

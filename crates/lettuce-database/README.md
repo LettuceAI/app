@@ -85,6 +85,10 @@ The legacy migration boundary can open an old `app.db` read-only, require the
 actual version-92 schema roots, and return a bounded typed import inventory.
 It performs no source migration or destination writes during preflight.
 
+Persona planning reads the complete version-92 persona shape in stable creation
+order, enforces the 10,000-record transfer bound, and fails on malformed JSON,
+IDs, crop, LoRA, default or timestamp data rather than dropping fields.
+
 ## Boundary
 
 The only crate allowed to depend on SQLite libraries.

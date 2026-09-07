@@ -8,7 +8,10 @@
 
 use std::fmt;
 
+use lettuce_types::{LorebookId, PersonaId, TimestampMillis};
+
 pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
+pub const LEGACY_PERSONA_PLAN_LIMIT: u32 = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyDatabaseInventory {
@@ -26,13 +29,68 @@ pub struct LegacyDatabaseInventory {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyMediaReference {
+    pub locator: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LegacyCrop {
+    pub x: f64,
+    pub y: f64,
+    pub scale: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyImageRecommendation {
+    pub model_name: String,
+    pub strength: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyPersonaCandidate {
+    pub id: PersonaId,
+    pub title: String,
+    pub description: String,
+    pub nickname: Option<String>,
+    pub avatar: Option<LegacyMediaReference>,
+    pub avatar_crop: Option<LegacyCrop>,
+    pub design_description: Option<String>,
+    pub design_references: Vec<LegacyMediaReference>,
+    pub image_recommendation: Option<LegacyImageRecommendation>,
+    pub active_lorebook_ids: Vec<LorebookId>,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyPersonaPlan {
+    pub personas: Vec<LegacyPersonaCandidate>,
+    pub default_persona_id: Option<PersonaId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LegacyDatabasePreflightError {
     Unavailable,
-    MissingTable { table: &'static str },
+    MissingTable {
+        table: &'static str,
+    },
     MissingSettings,
     InvalidSchema,
-    UnsupportedVersion { found: i64, supported: u32 },
-    CountOutOfRange { table: &'static str },
+    UnsupportedVersion {
+        found: i64,
+        supported: u32,
+    },
+    CountOutOfRange {
+        table: &'static str,
+    },
+    LimitExceeded {
+        table: &'static str,
+        limit: u32,
+    },
+    MalformedRecord {
+        table: &'static str,
+        field: &'static str,
+    },
 }
 
 impl fmt::Display for LegacyDatabasePreflightError {
@@ -48,6 +106,15 @@ impl fmt::Display for LegacyDatabasePreflightError {
             ),
             Self::CountOutOfRange { table } => {
                 write!(formatter, "legacy record count is out of range: {table}")
+            }
+            Self::LimitExceeded { table, limit } => {
+                write!(
+                    formatter,
+                    "legacy table exceeds the {limit}-record limit: {table}"
+                )
+            }
+            Self::MalformedRecord { table, field } => {
+                write!(formatter, "legacy record is malformed: {table}.{field}")
             }
         }
     }

@@ -17,3 +17,7 @@ A read-only legacy SQLite preflight contract now reports the supported schema
 version and bounded counts for importable root records. SQLite inspection stays
 in `lettuce-database`; this crate owns the compatibility result and typed
 failures. Record mapping, media discovery and import writes remain later slices.
+
+The persona plan preserves legacy identity, authored text, crop, LoRA
+recommendation, lorebook references, timestamps and the single default owner.
+Avatar and design images remain typed unresolved locators until media import.
