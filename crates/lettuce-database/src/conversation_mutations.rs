@@ -1728,8 +1728,19 @@ fn advance_turn(
     now: TimestampMillis,
 ) -> Result<(), ConversationRepositoryError> {
     let changed = match status {
-        Some(status) => transaction
-            .execute(
+        Some(status) => {
+            let current: Option<String> = transaction
+                .query_row(
+                    "SELECT status FROM conversation_turns WHERE conversation_id = ?1 AND id = ?2",
+                    params![conversation_id.to_string(), turn_id.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(slice::db)?;
+            let current = current.ok_or(ConversationRepositoryError::NotFound)?;
+            require_transition(conversation_query::generation_status(&current)?, status)?;
+            transaction
+                .execute(
                 "UPDATE conversation_turns SET status = ?3, revision = revision + 1, updated_at = ?4 WHERE conversation_id = ?1 AND id = ?2",
                 params![
                     conversation_id.to_string(),
@@ -1738,7 +1749,8 @@ fn advance_turn(
                     now.get(),
                 ],
             )
-            .map_err(kernel::map_constraint)?,
+                .map_err(kernel::map_constraint)?
+        }
         None => transaction
             .execute(
                 "UPDATE conversation_turns SET revision = revision + 1, updated_at = ?3 WHERE conversation_id = ?1 AND id = ?2",
@@ -5338,6 +5350,48 @@ mod tests {
                 .expect("revision")
                 .parts,
             command.message.parts
+        );
+    }
+
+    #[test]
+    fn advance_turn_rejects_illegal_transition_without_sql_trigger() {
+        let fixture = direct_fixture();
+        let started = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "illegal-transition", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let turn_id = started.value.turn.id;
+        let before_revision = turn_revision(&fixture, turn_id);
+        let mut connection = fixture.database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        transaction
+            .execute_batch("DROP TRIGGER conversation_turn_status_transition")
+            .expect("drop transition trigger");
+
+        let error = advance_turn(
+            &transaction,
+            fixture.conversation_id,
+            turn_id,
+            Some(GenerationTurnStatus::Running),
+            TimestampMillis::new(21),
+        )
+        .expect_err("created cannot advance directly to running");
+
+        assert_eq!(error, ConversationRepositoryError::Conflict);
+        let (status, revision): (String, i64) = transaction
+            .query_row(
+                "SELECT status, revision FROM conversation_turns WHERE conversation_id = ?1 AND id = ?2",
+                params![fixture.conversation_id.to_string(), turn_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("turn state");
+        assert_eq!(status, "created");
+        assert_eq!(
+            revision,
+            i64::try_from(before_revision.get()).expect("revision")
         );
     }
 

@@ -148,7 +148,10 @@ persist a typed target, retry source, provider request overrides, and
 forced-speaker identity directly; there is no legacy runtime-contract column
 or follow-up migration. Runtime triggers enforce target/input coherence,
 retry terminal-source ownership, group speaker ownership, settings
-provenance/value pairing, and branch/message topology.
+provenance/value pairing, and branch/message topology. The conversation
+adapter checks every generation-turn status change against the domain transition
+table before issuing SQL, while the matching migration trigger remains a
+storage-level invariant.
 Global ID indexes support recovery lookups without weakening conversation-local
 composite ownership. Outbox consumer leases, usage ledgers, and memory join
 tables are intentionally outside this migration.
