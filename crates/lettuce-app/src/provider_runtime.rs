@@ -38,11 +38,24 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
         secret_store: Arc<S>,
         tls_policy: &TlsPolicy,
     ) -> Result<Self, ProviderRuntimeInitializationError> {
+        Self::with_inference_runtime(
+            database,
+            secret_store,
+            tls_policy,
+            Arc::new(InferenceRuntime::default()),
+        )
+    }
+
+    pub(crate) fn with_inference_runtime(
+        database: Arc<Database>,
+        secret_store: Arc<S>,
+        tls_policy: &TlsPolicy,
+        inference_runtime: Arc<InferenceRuntime>,
+    ) -> Result<Self, ProviderRuntimeInitializationError> {
         let network = Arc::new(
             JsonClient::with_tls(tls_policy)
                 .map_err(ProviderRuntimeInitializationError::Network)?,
         );
-        let inference_runtime = Arc::new(InferenceRuntime::default());
         let runtime_port: Arc<dyn InferenceRuntimePort> = inference_runtime.clone();
         Ok(Self {
             database: database.clone(),

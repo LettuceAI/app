@@ -21,6 +21,7 @@ use lettuce_conversations::{
     select_group_speaker,
 };
 use lettuce_embeddings::{EmbeddingDimensions, EmbeddingRequest, MemoryEmbeddingRepository};
+use lettuce_inference::{InferenceRuntime, InferenceRuntimeError};
 use lettuce_jobs::{
     CancellationReason, Clock, ResourceAvailability, WorkerId, handle::CancellationToken,
 };
@@ -83,6 +84,31 @@ pub enum ConversationGenerationExecutionError {
     Dispatch(#[from] ConversationGenerationDispatchError),
     #[error("conversation generation replay failed: {0}")]
     Replay(#[from] ConversationGenerationRunError),
+    #[error("conversation generation inference runtime failed: {0}")]
+    Runtime(#[from] InferenceRuntimeError),
+}
+
+#[derive(Debug)]
+struct ConversationGenerationCancellationRegistration<'a> {
+    runtime: &'a InferenceRuntime,
+    job_id: lettuce_types::JobId,
+}
+
+impl<'a> ConversationGenerationCancellationRegistration<'a> {
+    fn register(
+        runtime: &'a InferenceRuntime,
+        job_id: lettuce_types::JobId,
+        token: CancellationToken,
+    ) -> Result<Self, InferenceRuntimeError> {
+        runtime.register_cancellation(job_id, token)?;
+        Ok(Self { runtime, job_id })
+    }
+}
+
+impl Drop for ConversationGenerationCancellationRegistration<'_> {
+    fn drop(&mut self) {
+        let _ = self.runtime.unregister_cancellation(self.job_id);
+    }
 }
 
 #[derive(Debug)]
@@ -106,6 +132,7 @@ pub struct PreparedConversationGenerationJobRunner<'a, E: ?Sized, R: ?Sized, I: 
     embedding: &'a E,
     repository: &'a R,
     inference: &'a I,
+    inference_runtime: Option<&'a InferenceRuntime>,
 }
 
 impl<'a, E: ?Sized, R: ?Sized, I: ?Sized> PreparedConversationGenerationJobRunner<'a, E, R, I> {
@@ -114,7 +141,16 @@ impl<'a, E: ?Sized, R: ?Sized, I: ?Sized> PreparedConversationGenerationJobRunne
             embedding,
             repository,
             inference,
+            inference_runtime: None,
         }
+    }
+
+    pub(crate) const fn with_inference_runtime(
+        mut self,
+        inference_runtime: &'a InferenceRuntime,
+    ) -> Self {
+        self.inference_runtime = Some(inference_runtime);
+        self
     }
 }
 
@@ -157,7 +193,7 @@ where
     {
         let dispatcher =
             ConversationGenerationDispatchCoordinator::new(self.repository, self.repository);
-        let admission = dispatcher.admit(
+        let mut admission = dispatcher.admit(
             request.conversation_id,
             request.turn_id,
             request.attempt_id,
@@ -183,6 +219,41 @@ where
         if admission.job.state.is_terminal() {
             return Ok(ConversationGenerationExecutionOutcome::Terminal(admission));
         }
+        let _registration = self
+            .inference_runtime
+            .map(|runtime| {
+                ConversationGenerationCancellationRegistration::register(
+                    runtime,
+                    admission.job.id,
+                    request.cancellation.clone(),
+                )
+            })
+            .transpose()?;
+        if _registration.is_some() {
+            admission.job = lettuce_jobs::JobStore::get(self.repository, admission.job.id)
+                .map_err(ConversationGenerationDispatchError::Jobs)?
+                .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+            if admission.job.state == lettuce_jobs::JobState::Succeeded {
+                let result = ConversationGenerationJobRunner::new(
+                    self.embedding,
+                    self.repository,
+                    self.inference,
+                )
+                .replay_succeeded_attempt(
+                    request.conversation_id,
+                    request.turn_id,
+                    request.attempt_id,
+                    admission.job.id,
+                )?;
+                return Ok(ConversationGenerationExecutionOutcome::Replayed {
+                    result: Box::new(result),
+                    job: admission.job,
+                });
+            }
+            if admission.job.state.is_terminal() {
+                return Ok(ConversationGenerationExecutionOutcome::Terminal(admission));
+            }
+        }
         let Some(work) = dispatcher.claim_with_cancellation(
             request.turn_id,
             request.attempt_id,
@@ -195,6 +266,12 @@ where
             &request.resources,
         )?
         else {
+            admission.job = lettuce_jobs::JobStore::get(self.repository, admission.job.id)
+                .map_err(ConversationGenerationDispatchError::Jobs)?
+                .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+            if admission.job.state.is_terminal() {
+                return Ok(ConversationGenerationExecutionOutcome::Terminal(admission));
+            }
             return Ok(ConversationGenerationExecutionOutcome::NotClaimed(
                 admission,
             ));

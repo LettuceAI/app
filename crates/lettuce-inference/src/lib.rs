@@ -90,6 +90,20 @@ impl InferenceRuntime {
             .remove(&job_id);
         Ok(())
     }
+
+    pub fn request_cancel(&self, job_id: JobId) -> Result<bool, InferenceRuntimeError> {
+        let token = self
+            .cancellations
+            .lock()
+            .map_err(|_| InferenceRuntimeError::Unavailable)?
+            .get(&job_id)
+            .cloned();
+        let Some(token) = token else {
+            return Ok(false);
+        };
+        token.cancel();
+        Ok(true)
+    }
 }
 
 #[async_trait]
@@ -238,11 +252,12 @@ mod tests {
             .register_cancellation(handle.id(), handle.cancellation_token())
             .expect("register cancellation");
         assert!(!runtime.is_cancelled(handle.id()));
-        handle.request_cancel();
+        assert!(runtime.request_cancel(handle.id()).expect("request cancel"));
         assert!(runtime.is_cancelled(handle.id()));
         runtime
             .unregister_cancellation(handle.id())
             .expect("unregister cancellation");
         assert!(!runtime.is_cancelled(handle.id()));
+        assert!(!runtime.request_cancel(handle.id()).expect("unknown cancel"));
     }
 }

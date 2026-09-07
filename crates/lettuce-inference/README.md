@@ -17,6 +17,9 @@ The runtime foundation provides a bounded in-process stream registry and
 notification-driven cooperative cancellation. Stream delivery validates the conversation
 operation/turn/attempt identity and monotonic sequence before applying channel
 backpressure; no detached fan-out task or durable payload store is involved.
+The runtime can signal an exact registered job token by durable job ID and
+reports whether a live execution was present; registration and removal remain
+owned by the application execution lifetime.
 Provider adapters race cancellation against connection setup, socket reads,
 buffered responses, and backpressured delivery. Job and conversation domains
 remain authoritative for persisted lifecycle state. Provider normalization and

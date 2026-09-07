@@ -15,11 +15,13 @@ use lettuce_conversations::{
     attempt_job_idempotency_key, context_with_settled_tool_round,
 };
 use lettuce_embeddings::MemoryEmbeddingRepository;
+use lettuce_inference::{InferenceRuntime, InferenceRuntimeError};
 use lettuce_jobs::{
     CancellationPolicy, CancellationReason, ChildLink, Claim, FiniteFraction, IdempotencyKey,
     JobError, JobErrorCode, JobKind, JobMutation, JobOutcome, JobPriority, JobSnapshot, JobSpec,
     JobState, JobStore, JobSubject, OutcomeRef, ProgressSnapshot, RecoveryPolicy,
     ResourceAvailability, ResourceClass, StageSnapshot, StoreError, SubjectKind, WorkerId,
+    events::JobEvent,
     handle::{CancellationToken, JobHandle},
 };
 use lettuce_memory::{
@@ -145,6 +147,198 @@ pub struct ConversationGenerationClaimedWork {
 pub struct ConversationGenerationClaimContext {
     pub worker_id: WorkerId,
     pub cancellation: CancellationToken,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConversationGenerationCancellationOutcome {
+    Requested {
+        job: JobSnapshot,
+        live_execution_signalled: bool,
+    },
+    QueuedCancelled(JobSnapshot),
+    AlreadyTerminal(JobSnapshot),
+    NotFound,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConversationGenerationCancellationError {
+    #[error("job storage failed: {0}")]
+    Store(#[from] StoreError),
+    #[error("conversation storage failed: {0}")]
+    Conversation(#[from] ConversationRepositoryError),
+    #[error("usage storage failed: {0}")]
+    Usage(#[from] UsageLedgerError),
+    #[error("inference runtime failed: {0}")]
+    Runtime(#[from] InferenceRuntimeError),
+    #[error("job is not a conversation generation")]
+    WrongJobKind,
+    #[error("job does not own a valid conversation generation attempt")]
+    InvalidWork,
+}
+
+impl<C: ConversationRepository + UsageLedger + ?Sized, J: JobStore + ?Sized>
+    ConversationGenerationCancellationCoordinator<'_, C, J>
+{
+    pub fn cancel(
+        &self,
+        job_id: JobId,
+        reason: CancellationReason,
+        at: TimestampMillis,
+    ) -> Result<ConversationGenerationCancellationOutcome, ConversationGenerationCancellationError>
+    {
+        let Some(job) = self.jobs.get(job_id)? else {
+            return Ok(ConversationGenerationCancellationOutcome::NotFound);
+        };
+        if job.kind != JobKind::ConversationGeneration {
+            return Err(ConversationGenerationCancellationError::WrongJobKind);
+        }
+        let events = self.jobs.events_since(job_id, None, 1)?;
+        let Some(JobEvent::Created {
+            input_ref: OutcomeRef::GenerationTurn(turn_id),
+            ..
+        }) = events.first().map(|event| &event.event)
+        else {
+            return Err(ConversationGenerationCancellationError::InvalidWork);
+        };
+        let turn = ConversationReader::get_turn(self.conversations, *turn_id)?;
+        let attempt = turn
+            .attempts
+            .iter()
+            .find(|attempt| attempt.job_id == Some(job_id))
+            .cloned()
+            .ok_or(ConversationGenerationCancellationError::InvalidWork)?;
+        if job.state.is_terminal() {
+            return Ok(ConversationGenerationCancellationOutcome::AlreadyTerminal(
+                job,
+            ));
+        }
+        let at = at.max(job.updated_at);
+        let requested = match self
+            .jobs
+            .append_and_transition(JobMutation::RequestCancellation {
+                id: job_id,
+                reason,
+                at,
+            }) {
+            Ok(requested) => requested,
+            Err(StoreError::AlreadyTerminal) => {
+                let job = self
+                    .jobs
+                    .get(job_id)?
+                    .ok_or(ConversationGenerationCancellationError::InvalidWork)?;
+                return Ok(ConversationGenerationCancellationOutcome::AlreadyTerminal(
+                    job,
+                ));
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let live_execution_signalled = self.runtime.request_cancel(job_id)?;
+        if requested.claim.is_some() {
+            return Ok(ConversationGenerationCancellationOutcome::Requested {
+                job: requested,
+                live_execution_signalled,
+            });
+        }
+        self.settle_unclaimed_turn(&turn, &attempt, &requested, at)?;
+        let job = self
+            .jobs
+            .append_and_transition(JobMutation::FinishQueuedCancellation {
+                id: job_id,
+                at: at.max(requested.updated_at),
+            })?;
+        Ok(ConversationGenerationCancellationOutcome::QueuedCancelled(
+            job,
+        ))
+    }
+
+    fn settle_unclaimed_turn(
+        &self,
+        turn: &GenerationTurn,
+        attempt: &GenerationAttempt,
+        job: &JobSnapshot,
+        at: TimestampMillis,
+    ) -> Result<(), ConversationGenerationCancellationError> {
+        if is_terminal_attempt(attempt.status) {
+            return Ok(());
+        }
+        let usage_event_id =
+            match UsageLedger::get_for_attempt(self.conversations, turn.id, attempt.id)? {
+                Some(event) => event.id,
+                None => {
+                    let provenance = turn.resolved_model.as_ref();
+                    UsageLedger::record(
+                        self.conversations,
+                        UsageRecord {
+                            turn_id: turn.id,
+                            attempt_id: attempt.id,
+                            outcome: UsageOutcome::Cancelled,
+                            usage: UsageCounters::Unavailable(
+                                UsageUnavailableReason::CancelledBeforeResponse,
+                            ),
+                            model_profile_id: provenance.map(|model| model.source_id),
+                            model_revision: provenance.map(|model| model.source_revision),
+                            provider_account_id: provenance.map(|model| model.provider_account_id),
+                            provider_account_revision: provenance
+                                .map(|model| model.provider_account_revision),
+                            recorded_at: job.created_at,
+                        },
+                    )?
+                    .id
+                }
+            };
+        let aggregate = ConversationReader::get(self.conversations, turn.conversation_id)?;
+        let token = |operation| {
+            operation_token(turn.conversation_id, turn.id, attempt.id, job.id, operation)
+        };
+        let (conversation_revision, turn_revision) =
+            if turn.status == GenerationTurnStatus::CancellationRequested {
+                (aggregate.conversation.revision, turn.revision)
+            } else {
+                let requested = self.conversations.request_cancellation(
+                    &CancelGeneration {
+                        conversation_id: turn.conversation_id,
+                        turn_id: turn.id,
+                        attempt_id: attempt.id,
+                        expected_revision: aggregate.conversation.revision,
+                        expected_turn_revision: turn.revision,
+                        operation: token(ConversationGenerationOperation::RequestCancellation),
+                    },
+                    at,
+                )?;
+                let aggregate = ConversationReader::get(self.conversations, turn.conversation_id)?;
+                (aggregate.conversation.revision, requested.value.revision)
+            };
+        self.conversations.settle_cancellation(
+            &SettleCancellation {
+                conversation_id: turn.conversation_id,
+                turn_id: turn.id,
+                attempt_id: attempt.id,
+                expected_revision: conversation_revision,
+                expected_turn_revision: turn_revision,
+                operation: token(ConversationGenerationOperation::SettleCancellation),
+                usage_event_id,
+            },
+            at,
+        )?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct ConversationGenerationCancellationCoordinator<'a, C: ?Sized, J: ?Sized> {
+    conversations: &'a C,
+    jobs: &'a J,
+    runtime: &'a InferenceRuntime,
+}
+
+impl<'a, C: ?Sized, J: ?Sized> ConversationGenerationCancellationCoordinator<'a, C, J> {
+    pub const fn new(conversations: &'a C, jobs: &'a J, runtime: &'a InferenceRuntime) -> Self {
+        Self {
+            conversations,
+            jobs,
+            runtime,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1516,10 +1710,30 @@ impl<
             return Err(ConversationGenerationDispatchError::InvalidWork);
         }
         let handle = JobHandle::with_cancellation(job_id, context.cancellation);
-        self.jobs.append_and_transition(JobMutation::Start {
+        if let Err(error) = self.jobs.append_and_transition(JobMutation::Start {
             claim: claim.claim.clone(),
             at,
-        })?;
+        }) {
+            let job = self
+                .jobs
+                .get(job_id)?
+                .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+            if error == StoreError::IllegalTransition
+                && handle.cancellation_token().is_cancelled()
+                && job.state == JobState::CancellationRequested
+                && job.claim.as_ref() == Some(&claim.claim)
+            {
+                return Ok(Some(ConversationGenerationClaimedWork {
+                    conversation_id: turn.conversation_id,
+                    turn_id,
+                    attempt_id,
+                    claim,
+                    handle,
+                    job,
+                }));
+            }
+            return Err(error.into());
+        }
         let job = self.jobs.append_and_transition(JobMutation::StageChanged {
             claim: claim.claim.clone(),
             stage: StageSnapshot::new(STAGE_LABEL, false).expect("constant job stage is valid"),
@@ -1546,7 +1760,10 @@ impl<
         if work.handle.id() != job_id
             || work.job.id != job_id
             || work.job.kind != JobKind::ConversationGeneration
-            || work.job.state != JobState::Running
+            || !matches!(
+                work.job.state,
+                JobState::Running | JobState::CancellationRequested
+            )
             || work.claim.input_ref != OutcomeRef::GenerationTurn(work.turn_id)
         {
             return Err(ConversationGenerationDispatchError::InvalidWork);

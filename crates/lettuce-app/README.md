@@ -678,7 +678,13 @@ resource availability and a shared cancellation token, runs the prepared
 pipeline, and settles through the same dispatcher. A succeeded job returns its
 durable candidate and usage as an exact replay without another claim or provider
 call; other terminal jobs and temporarily unclaimable jobs are distinct typed
-outcomes. The caller remains responsible for creating the turn, supplying
+outcomes. `AppBackend` also owns the inference runtime shared by these executions
+and its provider runtime. Cancelling by durable job ID first records the job
+cancellation and then signals the exact registered token. An unclaimed queued job records the
+turn's cancelled-before-response usage, settles the turn and job immediately;
+claimed work remains with the runner until its response evidence and cleanup are
+settled. Completion unregisters the live token. Unknown and already-terminal IDs
+return explicit idempotent outcomes. The caller remains responsible for creating the turn, supplying
 dynamic-memory create seeds, and deciding when to invoke the operation; no
 second scheduler or background loop is introduced.
 `PreparedConversationGenerationJobRunner`, exposed by `AppBackend`, now owns the

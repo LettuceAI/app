@@ -1,6 +1,7 @@
 use std::{path::Path, sync::Arc};
 
 use lettuce_database::{Database, DatabaseError};
+use lettuce_inference::InferenceRuntime;
 use lettuce_jobs::JobStore;
 
 use crate::{
@@ -15,6 +16,7 @@ use crate::{
 pub struct AppBackend {
     database: Arc<Database>,
     built_in_prompt_ids: BuiltInPromptIds,
+    inference_runtime: Arc<InferenceRuntime>,
 }
 
 impl AppBackend {
@@ -45,6 +47,7 @@ impl AppBackend {
         Ok(Self {
             database: Arc::new(database),
             built_in_prompt_ids,
+            inference_runtime: Arc::new(InferenceRuntime::default()),
         })
     }
 
@@ -90,6 +93,17 @@ impl AppBackend {
         )
     }
 
+    #[must_use]
+    pub fn conversation_generation_cancellation(
+        &self,
+    ) -> crate::ConversationGenerationCancellationCoordinator<'_, Database, Database> {
+        crate::ConversationGenerationCancellationCoordinator::new(
+            self.database.as_ref(),
+            self.database.as_ref(),
+            self.inference_runtime.as_ref(),
+        )
+    }
+
     pub fn prepared_conversation_generation_runner<'a, E: ?Sized, I: ?Sized>(
         &'a self,
         embedding: &'a E,
@@ -100,6 +114,7 @@ impl AppBackend {
             self.database.as_ref(),
             inference,
         )
+        .with_inference_runtime(self.inference_runtime.as_ref())
     }
 
     #[must_use]
@@ -293,7 +308,12 @@ impl AppBackend {
         secret_store: Arc<S>,
         tls_policy: &lettuce_network::TlsPolicy,
     ) -> Result<crate::ProviderRuntime<S>, crate::ProviderRuntimeInitializationError> {
-        crate::ProviderRuntime::new(Arc::clone(&self.database), secret_store, tls_policy)
+        crate::ProviderRuntime::with_inference_runtime(
+            Arc::clone(&self.database),
+            secret_store,
+            tls_policy,
+            Arc::clone(&self.inference_runtime),
+        )
     }
 }
 

@@ -10,22 +10,23 @@ use lettuce_conversations::{
 use lettuce_embeddings::{
     EmbeddingDimensions, MemoryEmbeddingProjection, MemoryEmbeddingRepository,
 };
+use lettuce_inference::InferenceRuntimePort;
 use lettuce_jobs::{
-    CancellationReason, FakeClock, JobErrorCode, JobSnapshot, JobState, JobStore,
+    CancellationReason, Clock, FakeClock, JobErrorCode, JobSnapshot, JobState, JobStore,
     ResourceAvailability, WorkerId, events::JobEvent, handle::CancellationToken,
 };
 use lettuce_memory::{MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalRepository};
-use lettuce_types::{ConversationId, GenerationAttemptId, GenerationTurnId};
+use lettuce_types::{ConversationId, GenerationAttemptId, GenerationTurnId, JobId};
 use lettuce_usage::{JobInferenceUsageResult, JobUsageLedger, UsageEvent, UsageLedger};
 
 use crate::conversation_generation::{ConversationGenerationOperation, operation_token};
 use crate::{
-    ConversationGenerationClaimedWork, ConversationGenerationDispatchCoordinator,
-    ConversationGenerationDispatchError, ConversationGenerationExecutionOutcome,
-    ConversationGenerationExecutionRequest, ConversationGenerationInput,
-    ConversationGenerationJobRunner, ConversationGenerationMemoryInput,
-    ConversationGenerationRunError, ConversationGenerationRuntimeInput,
-    ConversationGenerationSettledWork, GenerationUsageEvidence,
+    ConversationGenerationCancellationOutcome, ConversationGenerationClaimedWork,
+    ConversationGenerationDispatchCoordinator, ConversationGenerationDispatchError,
+    ConversationGenerationExecutionOutcome, ConversationGenerationExecutionRequest,
+    ConversationGenerationInput, ConversationGenerationJobRunner,
+    ConversationGenerationMemoryInput, ConversationGenerationRunError,
+    ConversationGenerationRuntimeInput, ConversationGenerationSettledWork, GenerationUsageEvidence,
     PreparedConversationGenerationJobRunner,
 };
 
@@ -657,6 +658,140 @@ async fn app_backend_executes_and_settles_one_durable_generation_operation() {
             .lock()
             .expect("requests")
             .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn app_backend_cancels_queued_and_running_generation_jobs_by_id() {
+    let path = std::env::temp_dir().join(format!(
+        "lettuce-generation-cancel-{}.db",
+        ConversationId::new()
+    ));
+    let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+    let engine = ScenarioEmbeddingEngine;
+    let clock = FakeClock::new(TimestampMillis::new(1_020));
+
+    let queued = scenario_with_resolvable_profile(backend.database(), false, "queued-cancel", true);
+    let queued_job = backend
+        .conversation_generation_dispatcher()
+        .admit(
+            queued.conversation_id,
+            queued.turn_id,
+            queued.attempt_id,
+            clock.now(),
+        )
+        .expect("admit queued generation")
+        .job;
+    drop(backend);
+    let backend = AppBackend::open(&path, TimestampMillis::new(1_021)).expect("reopen backend");
+    let cancelled = backend
+        .conversation_generation_cancellation()
+        .cancel(
+            queued_job.id,
+            CancellationReason::User,
+            TimestampMillis::new(1_021),
+        )
+        .expect("cancel queued generation");
+    assert!(matches!(
+        cancelled,
+        ConversationGenerationCancellationOutcome::QueuedCancelled(ref job)
+            if job.state == JobState::Cancelled
+    ));
+    let queued_turn = ConversationReader::get_turn(backend.database(), queued.turn_id)
+        .expect("cancelled queued turn");
+    assert_eq!(queued_turn.status, GenerationTurnStatus::Cancelled);
+    assert_eq!(
+        queued_turn.attempts[0].status,
+        GenerationAttemptStatus::Cancelled
+    );
+    assert!(matches!(
+        attempt_usage(backend.database(), queued.turn_id, 0)
+            .record
+            .usage,
+        UsageCounters::Unavailable(UsageUnavailableReason::CancelledBeforeResponse)
+    ));
+    assert!(matches!(
+        backend
+            .conversation_generation_cancellation()
+            .cancel(
+                queued_job.id,
+                CancellationReason::User,
+                TimestampMillis::new(1_022),
+            )
+            .expect("repeat queued cancellation"),
+        ConversationGenerationCancellationOutcome::AlreadyTerminal(ref job)
+            if job.state == JobState::Cancelled
+    ));
+    assert_eq!(
+        backend
+            .conversation_generation_cancellation()
+            .cancel(
+                JobId::new(),
+                CancellationReason::User,
+                TimestampMillis::new(1_022),
+            )
+            .expect("unknown cancellation"),
+        ConversationGenerationCancellationOutcome::NotFound
+    );
+
+    let running =
+        scenario_with_resolvable_profile(backend.database(), false, "running-cancel", true);
+    let provider_runtime = backend
+        .provider_runtime(
+            std::sync::Arc::new(lettuce_settings::InMemorySecretStore::new()),
+            &lettuce_network::TlsPolicy::default(),
+        )
+        .expect("shared provider runtime");
+    let inference_runtime = provider_runtime.inference_runtime();
+    let running_job = backend
+        .conversation_generation_dispatcher()
+        .admit(
+            running.conversation_id,
+            running.turn_id,
+            running.attempt_id,
+            TimestampMillis::new(1_030),
+        )
+        .expect("admit running generation")
+        .job;
+    let inference = BlockingInference::new(text_outcome("late", "Late reply", 9, 4));
+    let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+    let run = runner.execute(
+        execution_request(&running, CancellationToken::new()),
+        &clock,
+        |_| vec![],
+    );
+    let cancel = async {
+        inference.entered.notified().await;
+        clock.set(TimestampMillis::new(1_040));
+        let outcome = backend
+            .conversation_generation_cancellation()
+            .cancel(running_job.id, CancellationReason::User, clock.now())
+            .expect("cancel running generation");
+        assert!(inference_runtime.is_cancelled(running_job.id));
+        inference.release.notify_one();
+        outcome
+    };
+    let (settled, requested) = tokio::join!(run, cancel);
+    assert!(matches!(
+        requested,
+        ConversationGenerationCancellationOutcome::Requested {
+            ref job,
+            live_execution_signalled: true,
+        } if job.state == JobState::CancellationRequested
+    ));
+    assert!(matches!(
+        settled.expect("settle running cancellation"),
+        ConversationGenerationExecutionOutcome::Settled(
+            ConversationGenerationSettledWork::Cancelled { ref job, .. }
+        ) if job.state == JobState::Cancelled
+    ));
+    assert_eq!(inference.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(!inference_runtime.is_cancelled(running_job.id));
+    assert_eq!(
+        ConversationReader::get_turn(backend.database(), running.turn_id)
+            .expect("cancelled running turn")
+            .status,
+        GenerationTurnStatus::Cancelled
     );
 }
 
