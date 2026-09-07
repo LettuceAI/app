@@ -30,3 +30,7 @@ The composed media plan deduplicates persona avatar, persona design-reference
 and lorebook avatar uses by relative legacy file, retaining bounded byte size
 and BLAKE3 evidence for later ingestion. Missing, unsafe, ambiguous and
 oversized sources are typed failures.
+
+Persona-and-lorebook imports now have a durable admission contract. One run binds the supported source schema, an inventory fingerprint, the complete persona/lorebook/media plan fingerprint, and stable destination IDs for every persona, lorebook, entry, and logical media asset. Exact retries replay those assignments; changed source IDs or plan content conflict. Execution and domain writes remain a later slice.
+
+The legacy database and storage tree are read-only migration sources. A completed import must retain them until migration verification succeeds and the user explicitly approves deletion; cleanup is never part of admission or automatic import execution.

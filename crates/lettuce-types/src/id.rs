@@ -77,6 +77,7 @@ define_id!(GenerationTurnId);
 define_id!(GenerationAttemptId);
 define_id!(GroupId);
 define_id!(JobId);
+define_id!(LegacyImportRunId);
 define_id!(LorebookId);
 define_id!(LorebookEntryId);
 define_id!(MediaBlobId);

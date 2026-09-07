@@ -464,3 +464,5 @@ agreement and native billing counts while raw dispatch responses remain
 immutable. Existing get/record methods persist and replay the enriched basis;
 no schema change is needed. App file-backed tests cover differing raw/native
 counts and cost amounts surviving reopen without a second lookup.
+
+Migration 1 also stores sealed legacy import admissions and their stable destination ID assignments. Admission is one immediate transaction: the source schema, inventory and plan fingerprints are immutable, assignments can only be inserted while the run is being admitted, and a rollback leaves neither the run nor a partial mapping. Exact replay survives reopen; a changed binding or source set conflicts. These rows do not create personas, lorebooks, entries, assets, or blobs.

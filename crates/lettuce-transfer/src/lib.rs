@@ -8,7 +8,10 @@
 
 use std::fmt;
 
-use lettuce_types::{ContentHash, LorebookEntryId, LorebookId, PersonaId, TimestampMillis};
+use lettuce_types::{
+    AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, PersonaId,
+    TimestampMillis,
+};
 
 pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
 pub const LEGACY_PERSONA_PLAN_LIMIT: u32 = 10_000;
@@ -253,3 +256,87 @@ impl fmt::Display for LegacyDatabasePreflightError {
 }
 
 impl std::error::Error for LegacyDatabasePreflightError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyImportRunStatus {
+    Admitted,
+    Importing,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyImportSources {
+    pub persona_ids: Vec<PersonaId>,
+    pub lorebook_ids: Vec<LorebookId>,
+    pub lorebook_entry_ids: Vec<LorebookEntryId>,
+    pub media_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyImportAdmissionRequest {
+    pub run_id: LegacyImportRunId,
+    pub source_schema_version: u32,
+    pub inventory_fingerprint: ContentHash,
+    pub plan_fingerprint: ContentHash,
+    pub sources: LegacyImportSources,
+    pub admitted_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LegacyImportAssignment {
+    Persona {
+        legacy_id: PersonaId,
+        destination_id: PersonaId,
+    },
+    Lorebook {
+        legacy_id: LorebookId,
+        destination_id: LorebookId,
+    },
+    LorebookEntry {
+        legacy_id: LorebookEntryId,
+        destination_id: LorebookEntryId,
+    },
+    Media {
+        relative_path: String,
+        destination_id: AssetId,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyImportAdmission {
+    pub run_id: LegacyImportRunId,
+    pub source_schema_version: u32,
+    pub inventory_fingerprint: ContentHash,
+    pub plan_fingerprint: ContentHash,
+    pub status: LegacyImportRunStatus,
+    pub assignments: Vec<LegacyImportAssignment>,
+    pub admitted_at: TimestampMillis,
+    pub replayed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyImportRepositoryError {
+    InvalidInput,
+    Conflict,
+    Storage,
+}
+
+impl fmt::Display for LegacyImportRepositoryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidInput => formatter.write_str("legacy import admission is invalid"),
+            Self::Conflict => formatter.write_str("legacy import admission conflicts"),
+            Self::Storage => formatter.write_str("legacy import storage is unavailable"),
+        }
+    }
+}
+
+impl std::error::Error for LegacyImportRepositoryError {}
+
+pub trait LegacyImportRepository: Send + Sync {
+    fn admit(
+        &self,
+        request: LegacyImportAdmissionRequest,
+    ) -> Result<LegacyImportAdmission, LegacyImportRepositoryError>;
+}

@@ -93,6 +93,11 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn legacy_import_admission(&self) -> crate::LegacyImportAdmissionCoordinator<'_, Database> {
+        crate::LegacyImportAdmissionCoordinator::new(self.database.as_ref())
+    }
+
+    #[must_use]
     pub fn job_store(&self) -> &dyn JobStore {
         self.database.as_ref()
     }

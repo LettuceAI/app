@@ -86,3 +86,64 @@ CREATE TABLE media_blobs (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 ) STRICT;
+
+CREATE TABLE legacy_import_runs (
+    id TEXT PRIMARY KEY,
+    source_schema_version INTEGER NOT NULL CHECK (source_schema_version > 0),
+    inventory_fingerprint TEXT NOT NULL CHECK (length(inventory_fingerprint) = 64),
+    plan_fingerprint TEXT NOT NULL CHECK (length(plan_fingerprint) = 64),
+    status TEXT NOT NULL CHECK (status IN ('admitting','admitted','importing','completed','failed')),
+    admitted_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE legacy_import_assignments (
+    run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('persona','lorebook','lorebook_entry','media')),
+    source_key TEXT NOT NULL CHECK (length(trim(source_key)) > 0),
+    destination_id TEXT NOT NULL,
+    PRIMARY KEY (run_id, source_kind, source_key),
+    UNIQUE (run_id, destination_id)
+) STRICT;
+
+CREATE TRIGGER legacy_import_runs_binding_immutable
+BEFORE UPDATE OF id, source_schema_version, inventory_fingerprint, plan_fingerprint, admitted_at ON legacy_import_runs
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import binding is immutable');
+END;
+
+CREATE TRIGGER legacy_import_runs_delete_forbidden
+BEFORE DELETE ON legacy_import_runs
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import evidence is immutable');
+END;
+
+CREATE TRIGGER legacy_import_runs_status_guard
+BEFORE UPDATE OF status ON legacy_import_runs
+WHEN NOT (
+    (OLD.status = 'admitting' AND NEW.status = 'admitted') OR
+    (OLD.status = 'admitted' AND NEW.status IN ('importing','failed')) OR
+    (OLD.status = 'importing' AND NEW.status IN ('completed','failed'))
+)
+BEGIN
+    SELECT RAISE(ABORT, 'invalid legacy import status transition');
+END;
+
+CREATE TRIGGER legacy_import_assignments_insert_guard
+BEFORE INSERT ON legacy_import_assignments
+WHEN (SELECT status FROM legacy_import_runs WHERE id = NEW.run_id) <> 'admitting'
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import assignments are sealed');
+END;
+
+CREATE TRIGGER legacy_import_assignments_update_forbidden
+BEFORE UPDATE ON legacy_import_assignments
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import assignment is immutable');
+END;
+
+CREATE TRIGGER legacy_import_assignments_delete_forbidden
+BEFORE DELETE ON legacy_import_assignments
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import assignment is immutable');
+END;

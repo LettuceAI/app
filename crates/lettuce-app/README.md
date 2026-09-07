@@ -798,3 +798,5 @@ send/regenerate/retry orchestration and durable request-body replay remain later
 Generation finalization derives a regenerated candidate's persisted ordinal
 from the prior candidate instead of trusting the provider-local response index;
 this preserves dense alternatives while new-assistant turns still begin at zero.
+
+The legacy import admission coordinator fingerprints the complete preflight inventory and persona/lorebook/media plans, derives the closed source ID set, and admits it through the transfer-owned repository port. It allocates no IDs itself and performs no filesystem ingest or domain creation; SQLite returns the sealed mappings so retries and reopen use the same destination identities.

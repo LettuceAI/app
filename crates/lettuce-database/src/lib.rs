@@ -17,6 +17,7 @@ mod group_adapter;
 mod growth_adapter;
 mod initial_inference_adapter;
 mod job_adapter;
+mod legacy_import_adapter;
 mod lorebook_adapter;
 mod lorebook_entry_run_adapter;
 mod lorebook_keyword_run_adapter;
@@ -4118,6 +4119,8 @@ mod tests {
                 "job_inference_usage",
                 "job_usage_costs",
                 "jobs",
+                "legacy_import_assignments",
+                "legacy_import_runs",
                 "lorebook_entries",
                 "lorebooks",
                 "media_assets",
