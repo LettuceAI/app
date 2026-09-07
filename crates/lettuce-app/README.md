@@ -800,3 +800,5 @@ from the prior candidate instead of trusting the provider-local response index;
 this preserves dense alternatives while new-assistant turns still begin at zero.
 
 The legacy import admission coordinator fingerprints the complete preflight inventory and persona/lorebook/media plans, derives the closed source ID set, and admits it through the transfer-owned repository port. It allocates no IDs itself and performs no filesystem ingest or domain creation; SQLite returns the sealed mappings so retries and reopen use the same destination identities.
+
+The legacy media import coordinator reopens only confined regular files under the read-only source root, rejects symlinks and path drift, and rechecks byte length plus BLAKE3 before ingest. It catalogs each file under the admission's assigned asset ID, records durable completion after the ready blob exists, and resumes partial progress by replaying completed objects. Shared bytes deduplicate to one blob while their logical asset identities remain distinct. It never removes or rewrites the legacy source.

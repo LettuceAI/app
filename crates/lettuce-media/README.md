@@ -49,3 +49,5 @@ Missing, quarantined, or corrupt bytes are physical blob/location state, not
 logical asset state. Keeping that distinction is required because several
 assets can share one blob and one synced asset can have different availability
 on different devices.
+
+Local ingest can now accept a caller-owned `AssetId` for durable import workflows. It still validates and content-addresses the bytes before cataloging; an exact retry returns the existing ready asset and blob, while changed content or metadata conflicts without creating a second logical asset. Ordinary uploads continue to allocate a fresh logical identity.

@@ -97,6 +97,17 @@ impl AppBackend {
         crate::LegacyImportAdmissionCoordinator::new(self.database.as_ref())
     }
 
+    pub fn legacy_media_importer<'a, BR, AR>(
+        &'a self,
+        media_store: &'a lettuce_media::LocalMediaBlobStore<BR, AR>,
+    ) -> crate::LegacyMediaImportCoordinator<'a, Database, BR, AR>
+    where
+        BR: lettuce_media::MediaBlobRepository,
+        AR: lettuce_media::MediaAssetRepository,
+    {
+        crate::LegacyMediaImportCoordinator::new(self.database.as_ref(), media_store)
+    }
+
     #[must_use]
     pub fn job_store(&self) -> &dyn JobStore {
         self.database.as_ref()

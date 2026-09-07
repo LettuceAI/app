@@ -45,10 +45,14 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
                     .iter()
                     .flat_map(|lorebook| lorebook.entries.iter().map(|entry| entry.id))
                     .collect(),
-                media_paths: media
+                media: media
                     .media
                     .iter()
-                    .map(|candidate| candidate.relative_path.clone())
+                    .map(|candidate| lettuce_transfer::LegacyImportMediaSource {
+                        relative_path: candidate.relative_path.clone(),
+                        byte_len: candidate.byte_len,
+                        content_hash: candidate.content_hash.clone(),
+                    })
                     .collect(),
             },
             admitted_at,

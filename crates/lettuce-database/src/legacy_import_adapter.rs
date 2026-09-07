@@ -2,7 +2,8 @@ use std::str::FromStr;
 
 use lettuce_transfer::{
     LEGACY_DATABASE_SCHEMA_VERSION, LegacyImportAdmission, LegacyImportAdmissionRequest,
-    LegacyImportAssignment, LegacyImportRepository, LegacyImportRepositoryError,
+    LegacyImportAssignment, LegacyImportMediaCompletion, LegacyImportMediaCompletionRequest,
+    LegacyImportMediaSource, LegacyImportRepository, LegacyImportRepositoryError,
     LegacyImportRunStatus, LegacyImportSources,
 };
 use lettuce_types::{
@@ -71,21 +72,91 @@ impl LegacyImportRepository for Database {
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
         Ok(admission)
     }
+
+    fn complete_media(
+        &self,
+        request: LegacyImportMediaCompletionRequest,
+    ) -> Result<LegacyImportMediaCompletion, LegacyImportRepositoryError> {
+        if !valid_media_path(&request.relative_path) {
+            return Err(LegacyImportRepositoryError::InvalidInput);
+        }
+        let byte_len = i64::try_from(request.byte_len)
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        if let Some(mut existing) =
+            load_media_completion(&transaction, request.run_id, &request.relative_path)?
+        {
+            if existing.destination_asset_id != request.destination_asset_id
+                || existing.blob_id != request.blob_id
+                || existing.byte_len != request.byte_len
+                || existing.content_hash != request.content_hash
+            {
+                return Err(LegacyImportRepositoryError::Conflict);
+            }
+            existing.replayed = true;
+            transaction
+                .commit()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            return Ok(existing);
+        }
+        transaction
+            .execute(
+                "INSERT INTO legacy_import_media_completions (run_id,relative_path,destination_asset_id,blob_id,byte_len,content_hash,completed_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![
+                    request.run_id.to_string(),
+                    request.relative_path,
+                    request.destination_asset_id.to_string(),
+                    request.blob_id.to_string(),
+                    byte_len,
+                    request.content_hash.as_str(),
+                    request.completed_at.get(),
+                ],
+            )
+            .map_err(map_completion_insert_error)?;
+        transaction
+            .execute(
+                "UPDATE legacy_import_runs SET status='importing',updated_at=?2 WHERE id=?1 AND status='admitted'",
+                params![request.run_id.to_string(), request.completed_at.get()],
+            )
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let completion =
+            load_media_completion(&transaction, request.run_id, &request.relative_path)?
+                .ok_or(LegacyImportRepositoryError::Storage)?;
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(completion)
+    }
+}
+
+fn map_completion_insert_error(error: rusqlite::Error) -> LegacyImportRepositoryError {
+    match &error {
+        rusqlite::Error::SqliteFailure(_, Some(message))
+            if message.contains("legacy import media completion is invalid") =>
+        {
+            LegacyImportRepositoryError::Conflict
+        }
+        _ => LegacyImportRepositoryError::Storage,
+    }
 }
 
 fn normalize_sources(sources: &mut LegacyImportSources) -> Result<(), LegacyImportRepositoryError> {
     sources.persona_ids.sort_unstable();
     sources.lorebook_ids.sort_unstable();
     sources.lorebook_entry_ids.sort_unstable();
-    sources.media_paths.sort();
+    sources.media.sort();
     if has_duplicates(&sources.persona_ids)
         || has_duplicates(&sources.lorebook_ids)
         || has_duplicates(&sources.lorebook_entry_ids)
-        || has_duplicates(&sources.media_paths)
-        || sources
-            .media_paths
-            .iter()
-            .any(|path| !valid_media_path(path))
+        || has_duplicates(&sources.media)
+        || sources.media.iter().any(|source| {
+            !valid_media_path(&source.relative_path) || i64::try_from(source.byte_len).is_err()
+        })
     {
         return Err(LegacyImportRepositoryError::InvalidInput);
     }
@@ -138,13 +209,14 @@ fn insert_assignments(
             LorebookEntryId::new().to_string(),
         )?;
     }
-    for source_path in &sources.media_paths {
-        insert_assignment(
+    for source in &sources.media {
+        insert_media_assignment(
             transaction,
             run_id,
-            "media",
-            source_path,
+            &source.relative_path,
             AssetId::new().to_string(),
+            source.byte_len,
+            &source.content_hash,
         )?;
     }
     Ok(())
@@ -159,8 +231,31 @@ fn insert_assignment(
 ) -> Result<(), LegacyImportRepositoryError> {
     transaction
         .execute(
-            "INSERT INTO legacy_import_assignments (run_id,source_kind,source_key,destination_id) VALUES (?1,?2,?3,?4)",
+            "INSERT INTO legacy_import_assignments (run_id,source_kind,source_key,destination_id,expected_byte_len,expected_content_hash) VALUES (?1,?2,?3,?4,NULL,NULL)",
             params![run_id.to_string(), source_kind, source_key, destination_id],
+        )
+        .map_err(|_| LegacyImportRepositoryError::Storage)?;
+    Ok(())
+}
+
+fn insert_media_assignment(
+    transaction: &Transaction<'_>,
+    run_id: LegacyImportRunId,
+    source_key: &str,
+    destination_id: String,
+    byte_len: u64,
+    content_hash: &ContentHash,
+) -> Result<(), LegacyImportRepositoryError> {
+    transaction
+        .execute(
+            "INSERT INTO legacy_import_assignments (run_id,source_kind,source_key,destination_id,expected_byte_len,expected_content_hash) VALUES (?1,'media',?2,?3,?4,?5)",
+            params![
+                run_id.to_string(),
+                source_key,
+                destination_id,
+                i64::try_from(byte_len).map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                content_hash.as_str(),
+            ],
         )
         .map_err(|_| LegacyImportRepositoryError::Storage)?;
     Ok(())
@@ -213,13 +308,46 @@ fn parse_status(value: &str) -> Result<LegacyImportRunStatus, LegacyImportReposi
     }
 }
 
+fn load_media_completion(
+    transaction: &Transaction<'_>,
+    run_id: LegacyImportRunId,
+    relative_path: &str,
+) -> Result<Option<LegacyImportMediaCompletion>, LegacyImportRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT destination_asset_id,blob_id,byte_len,content_hash,completed_at FROM legacy_import_media_completions WHERE run_id=?1 AND relative_path=?2",
+            params![run_id.to_string(), relative_path],
+            |row| {
+                let byte_len = u64::try_from(row.get::<_, i64>(2)?)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                Ok(LegacyImportMediaCompletion {
+                    run_id,
+                    relative_path: relative_path.to_owned(),
+                    destination_asset_id: parse_database_id(row.get(0)?)?,
+                    blob_id: parse_database_id(row.get(1)?)?,
+                    byte_len,
+                    content_hash: ContentHash::parse(row.get::<_, String>(3)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    completed_at: TimestampMillis::new(row.get(4)?),
+                    replayed: false,
+                })
+            },
+        )
+        .optional()
+        .map_err(|_| LegacyImportRepositoryError::Storage)
+}
+
+fn parse_database_id<T: FromStr>(value: String) -> Result<T, rusqlite::Error> {
+    value.parse().map_err(|_| rusqlite::Error::InvalidQuery)
+}
+
 fn load_assignments(
     transaction: &Transaction<'_>,
     run_id: LegacyImportRunId,
 ) -> Result<Vec<LegacyImportAssignment>, LegacyImportRepositoryError> {
     let mut statement = transaction
         .prepare(
-            "SELECT source_kind,source_key,destination_id FROM legacy_import_assignments WHERE run_id=?1 ORDER BY CASE source_kind WHEN 'persona' THEN 1 WHEN 'lorebook' THEN 2 WHEN 'lorebook_entry' THEN 3 ELSE 4 END,source_key",
+            "SELECT source_kind,source_key,destination_id,expected_byte_len,expected_content_hash FROM legacy_import_assignments WHERE run_id=?1 ORDER BY CASE source_kind WHEN 'persona' THEN 1 WHEN 'lorebook' THEN 2 WHEN 'lorebook_entry' THEN 3 ELSE 4 END,source_key",
         )
         .map_err(|_| LegacyImportRepositoryError::Storage)?;
     statement
@@ -227,8 +355,16 @@ fn load_assignments(
             let source_kind: String = row.get(0)?;
             let source_key: String = row.get(1)?;
             let destination_id: String = row.get(2)?;
-            parse_assignment(&source_kind, source_key, destination_id)
-                .map_err(|_| rusqlite::Error::InvalidQuery)
+            let expected_byte_len: Option<i64> = row.get(3)?;
+            let expected_content_hash: Option<String> = row.get(4)?;
+            parse_assignment(
+                &source_kind,
+                source_key,
+                destination_id,
+                expected_byte_len,
+                expected_content_hash,
+            )
+            .map_err(|_| rusqlite::Error::InvalidQuery)
         })
         .map_err(|_| LegacyImportRepositoryError::Storage)?
         .collect::<Result<Vec<_>, _>>()
@@ -239,6 +375,8 @@ fn parse_assignment(
     source_kind: &str,
     source_key: String,
     destination_id: String,
+    expected_byte_len: Option<i64>,
+    expected_content_hash: Option<String>,
 ) -> Result<LegacyImportAssignment, LegacyImportRepositoryError> {
     match source_kind {
         "persona" => Ok(LegacyImportAssignment::Persona {
@@ -263,6 +401,12 @@ fn parse_assignment(
             relative_path: source_key,
             destination_id: AssetId::from_str(&destination_id)
                 .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            byte_len: u64::try_from(expected_byte_len.ok_or(LegacyImportRepositoryError::Storage)?)
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            content_hash: ContentHash::parse(
+                expected_content_hash.ok_or(LegacyImportRepositoryError::Storage)?,
+            )
+            .map_err(|_| LegacyImportRepositoryError::Storage)?,
         }),
         _ => Err(LegacyImportRepositoryError::Storage),
     }
@@ -273,7 +417,7 @@ fn assignment_sources(assignments: &[LegacyImportAssignment]) -> LegacyImportSou
         persona_ids: Vec::new(),
         lorebook_ids: Vec::new(),
         lorebook_entry_ids: Vec::new(),
-        media_paths: Vec::new(),
+        media: Vec::new(),
     };
     for assignment in assignments {
         match assignment {
@@ -286,8 +430,17 @@ fn assignment_sources(assignments: &[LegacyImportAssignment]) -> LegacyImportSou
             LegacyImportAssignment::LorebookEntry { legacy_id, .. } => {
                 sources.lorebook_entry_ids.push(*legacy_id);
             }
-            LegacyImportAssignment::Media { relative_path, .. } => {
-                sources.media_paths.push(relative_path.clone());
+            LegacyImportAssignment::Media {
+                relative_path,
+                byte_len,
+                content_hash,
+                ..
+            } => {
+                sources.media.push(LegacyImportMediaSource {
+                    relative_path: relative_path.clone(),
+                    byte_len: *byte_len,
+                    content_hash: content_hash.clone(),
+                });
             }
         }
     }
@@ -325,7 +478,11 @@ mod tests {
                 persona_ids: vec![PersonaId::new()],
                 lorebook_ids: vec![LorebookId::new()],
                 lorebook_entry_ids: vec![LorebookEntryId::new()],
-                media_paths: vec!["images/avatar.png".to_owned()],
+                media: vec![lettuce_transfer::LegacyImportMediaSource {
+                    relative_path: "images/avatar.png".to_owned(),
+                    byte_len: 42,
+                    content_hash: ContentHash::parse("12".repeat(32)).expect("media hash"),
+                }],
             },
             admitted_at: TimestampMillis::new(100),
         }

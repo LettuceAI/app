@@ -1,0 +1,544 @@
+use std::{
+    collections::BTreeMap,
+    fs::File,
+    io::Read,
+    path::{Component, Path},
+};
+
+use lettuce_media::{
+    AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, LocalMediaBlobStore,
+    MAX_MEDIA_BLOB_BYTES, MediaAssetRepository, MediaBlobRepository, MediaStoreError,
+    RetentionClass,
+};
+use lettuce_transfer::{
+    LegacyImportAdmission, LegacyImportAssignment, LegacyImportMediaCompletion,
+    LegacyImportMediaCompletionRequest, LegacyImportRepository, LegacyImportRepositoryError,
+    LegacyImportRunStatus, LegacyMediaCandidate, LegacyMediaPlan, LegacyMediaUse,
+};
+use lettuce_types::{AssetId, ContentHash, TimestampMillis};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum LegacyMediaImportError {
+    #[error("legacy media admission does not match the plan")]
+    InvalidAdmission,
+    #[error("legacy media source is unavailable")]
+    SourceUnavailable,
+    #[error("legacy media source path is unsafe")]
+    UnsafeSource,
+    #[error("legacy media source changed after planning")]
+    SourceChanged,
+    #[error("legacy media source could not be read")]
+    SourceRead,
+    #[error("legacy media ingest failed: {0}")]
+    Media(MediaStoreError),
+    #[error("legacy media completion failed: {0}")]
+    Repository(LegacyImportRepositoryError),
+}
+
+#[derive(Debug)]
+pub struct LegacyMediaImportCoordinator<'a, R: ?Sized, BR, AR> {
+    repository: &'a R,
+    media_store: &'a LocalMediaBlobStore<BR, AR>,
+}
+
+impl<'a, R, BR, AR> LegacyMediaImportCoordinator<'a, R, BR, AR>
+where
+    R: LegacyImportRepository + ?Sized,
+    BR: MediaBlobRepository,
+    AR: MediaAssetRepository,
+{
+    #[must_use]
+    pub const fn new(repository: &'a R, media_store: &'a LocalMediaBlobStore<BR, AR>) -> Self {
+        Self {
+            repository,
+            media_store,
+        }
+    }
+
+    pub fn execute(
+        &self,
+        storage_root: impl AsRef<Path>,
+        admission: &LegacyImportAdmission,
+        plan: &LegacyMediaPlan,
+        completed_at: TimestampMillis,
+    ) -> Result<Vec<LegacyImportMediaCompletion>, LegacyMediaImportError> {
+        if !matches!(
+            admission.status,
+            LegacyImportRunStatus::Admitted | LegacyImportRunStatus::Importing
+        ) {
+            return Err(LegacyMediaImportError::InvalidAdmission);
+        }
+        let assignments = media_assignments(admission, plan)?;
+        let storage_root = std::fs::canonicalize(storage_root)
+            .map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
+        if !storage_root.is_dir() {
+            return Err(LegacyMediaImportError::SourceUnavailable);
+        }
+        let mut completions = Vec::with_capacity(plan.media.len());
+        for candidate in &plan.media {
+            let destination_asset_id = assignments
+                .get(candidate.relative_path.as_str())
+                .copied()
+                .ok_or(LegacyMediaImportError::InvalidAdmission)?;
+            let bytes = read_verified_source(&storage_root, candidate)?;
+            let ingested = self
+                .media_store
+                .ingest_with_id(
+                    destination_asset_id,
+                    bytes.as_slice(),
+                    IngestRequest::new(
+                        asset_kind(candidate),
+                        AssetOrigin::Legacy,
+                        RetentionClass::Persistent,
+                        AssetProvenanceV1 {
+                            source_label: Some("Legacy import".to_owned()),
+                            imported_format: Some("lettuceai-v92".to_owned()),
+                            ..AssetProvenanceV1::default()
+                        },
+                    ),
+                )
+                .map_err(LegacyMediaImportError::Media)?;
+            if ingested.asset.id != destination_asset_id
+                || ingested.blob.content_hash != candidate.content_hash
+                || ingested.blob.byte_size != candidate.byte_len
+            {
+                return Err(LegacyMediaImportError::SourceChanged);
+            }
+            completions.push(
+                self.repository
+                    .complete_media(LegacyImportMediaCompletionRequest {
+                        run_id: admission.run_id,
+                        relative_path: candidate.relative_path.clone(),
+                        destination_asset_id,
+                        blob_id: ingested.blob.id,
+                        byte_len: candidate.byte_len,
+                        content_hash: candidate.content_hash.clone(),
+                        completed_at,
+                    })
+                    .map_err(LegacyMediaImportError::Repository)?,
+            );
+        }
+        Ok(completions)
+    }
+}
+
+fn media_assignments(
+    admission: &LegacyImportAdmission,
+    plan: &LegacyMediaPlan,
+) -> Result<BTreeMap<String, AssetId>, LegacyMediaImportError> {
+    let mut expected = BTreeMap::new();
+    for candidate in &plan.media {
+        if expected
+            .insert(
+                candidate.relative_path.as_str(),
+                (candidate.byte_len, &candidate.content_hash),
+            )
+            .is_some()
+        {
+            return Err(LegacyMediaImportError::InvalidAdmission);
+        }
+    }
+    let mut assignments = BTreeMap::new();
+    for assignment in &admission.assignments {
+        if let LegacyImportAssignment::Media {
+            relative_path,
+            destination_id,
+            byte_len,
+            content_hash,
+        } = assignment
+        {
+            let (expected_len, expected_hash) = expected
+                .get(relative_path.as_str())
+                .ok_or(LegacyMediaImportError::InvalidAdmission)?;
+            if *expected_len != *byte_len || **expected_hash != *content_hash {
+                return Err(LegacyMediaImportError::InvalidAdmission);
+            }
+            if assignments
+                .insert(relative_path.clone(), *destination_id)
+                .is_some()
+            {
+                return Err(LegacyMediaImportError::InvalidAdmission);
+            }
+        }
+    }
+    if assignments.len() != plan.media.len() {
+        return Err(LegacyMediaImportError::InvalidAdmission);
+    }
+    Ok(assignments)
+}
+
+fn read_verified_source(
+    storage_root: &Path,
+    candidate: &LegacyMediaCandidate,
+) -> Result<Vec<u8>, LegacyMediaImportError> {
+    if candidate.byte_len > MAX_MEDIA_BLOB_BYTES {
+        return Err(LegacyMediaImportError::SourceChanged);
+    }
+    let relative = Path::new(&candidate.relative_path);
+    if relative.is_absolute()
+        || !relative
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+    {
+        return Err(LegacyMediaImportError::UnsafeSource);
+    }
+    let mut source = storage_root.to_path_buf();
+    for component in relative.components() {
+        let Component::Normal(component) = component else {
+            return Err(LegacyMediaImportError::UnsafeSource);
+        };
+        source.push(component);
+        let metadata = std::fs::symlink_metadata(&source)
+            .map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
+        if metadata.file_type().is_symlink() {
+            return Err(LegacyMediaImportError::UnsafeSource);
+        }
+    }
+    let canonical =
+        std::fs::canonicalize(&source).map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
+    if !canonical.starts_with(storage_root) || !canonical.is_file() {
+        return Err(LegacyMediaImportError::UnsafeSource);
+    }
+    let mut file = File::open(&canonical).map_err(|_| LegacyMediaImportError::SourceRead)?;
+    let metadata = file
+        .metadata()
+        .map_err(|_| LegacyMediaImportError::SourceRead)?;
+    if metadata.len() != candidate.byte_len {
+        return Err(LegacyMediaImportError::SourceChanged);
+    }
+    let capacity =
+        usize::try_from(candidate.byte_len).map_err(|_| LegacyMediaImportError::SourceChanged)?;
+    let mut bytes = Vec::with_capacity(capacity);
+    file.by_ref()
+        .take(candidate.byte_len.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|_| LegacyMediaImportError::SourceRead)?;
+    if bytes.len() as u64 != candidate.byte_len {
+        return Err(LegacyMediaImportError::SourceChanged);
+    }
+    let content_hash = ContentHash::parse(blake3::hash(&bytes).to_hex().to_string())
+        .expect("BLAKE3 always produces a valid content hash");
+    if content_hash != candidate.content_hash {
+        return Err(LegacyMediaImportError::SourceChanged);
+    }
+    Ok(bytes)
+}
+
+fn asset_kind(candidate: &LegacyMediaCandidate) -> AssetKind {
+    let all_persona_avatars = candidate
+        .uses
+        .iter()
+        .all(|media_use| matches!(media_use, LegacyMediaUse::PersonaAvatar { .. }));
+    let all_design_references = candidate
+        .uses
+        .iter()
+        .all(|media_use| matches!(media_use, LegacyMediaUse::PersonaDesignReference { .. }));
+    let all_lorebook_avatars = candidate
+        .uses
+        .iter()
+        .all(|media_use| matches!(media_use, LegacyMediaUse::LorebookAvatar { .. }));
+    if !candidate.uses.is_empty() && all_persona_avatars {
+        AssetKind::AvatarOriginal
+    } else if !candidate.uses.is_empty() && all_design_references {
+        AssetKind::Illustration
+    } else if !candidate.uses.is_empty() && all_lorebook_avatars {
+        AssetKind::LorebookIcon
+    } else {
+        AssetKind::OtherImage
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use lettuce_database::Database;
+    use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
+    use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
+    use lettuce_transfer::{
+        LegacyDatabaseInventory, LegacyImportRunStatus, LegacyLorebookPlan, LegacyMediaCandidate,
+        LegacyMediaPlan, LegacyMediaUse, LegacyPersonaCandidate, LegacyPersonaPlan,
+    };
+    use lettuce_types::{ContentHash, LegacyImportRunId, PersonaId, TimestampMillis};
+
+    use crate::{AppBackend, LegacyMediaImportError};
+
+    fn png_fixture(marker: u8) -> Vec<u8> {
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        bytes.extend_from_slice(&13_u32.to_be_bytes());
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&2_u32.to_be_bytes());
+        bytes.extend_from_slice(&3_u32.to_be_bytes());
+        bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+        bytes.extend_from_slice(b"legacy-image");
+        bytes.push(marker);
+        bytes
+    }
+
+    fn content_hash(bytes: &[u8]) -> ContentHash {
+        ContentHash::parse(blake3::hash(bytes).to_hex().to_string()).expect("content hash")
+    }
+
+    fn import_plans(
+        persona_id: PersonaId,
+        bytes: &[u8],
+    ) -> (
+        LegacyDatabaseInventory,
+        LegacyPersonaPlan,
+        LegacyLorebookPlan,
+        LegacyMediaPlan,
+    ) {
+        let inventory = LegacyDatabaseInventory {
+            schema_version: 92,
+            provider_accounts: 0,
+            models: 0,
+            prompts: 0,
+            personas: 1,
+            characters: 0,
+            lorebooks: 0,
+            chat_templates: 0,
+            direct_conversations: 0,
+            group_profiles: 0,
+            group_conversations: 0,
+        };
+        let personas = LegacyPersonaPlan {
+            personas: vec![LegacyPersonaCandidate {
+                id: persona_id,
+                title: "Owner".to_owned(),
+                description: "Imported owner profile".to_owned(),
+                nickname: None,
+                avatar: None,
+                avatar_crop: None,
+                design_description: None,
+                design_references: Vec::new(),
+                image_recommendation: None,
+                active_lorebook_ids: Vec::new(),
+                created_at: TimestampMillis::new(1),
+                updated_at: TimestampMillis::new(2),
+            }],
+            default_persona_id: Some(persona_id),
+        };
+        let hash = content_hash(bytes);
+        let media = LegacyMediaPlan {
+            media: vec![
+                LegacyMediaCandidate {
+                    relative_path: "images/avatar.png".to_owned(),
+                    byte_len: bytes.len() as u64,
+                    content_hash: hash.clone(),
+                    uses: vec![LegacyMediaUse::PersonaAvatar { persona_id }],
+                },
+                LegacyMediaCandidate {
+                    relative_path: "images/reference.png".to_owned(),
+                    byte_len: bytes.len() as u64,
+                    content_hash: hash,
+                    uses: vec![LegacyMediaUse::PersonaDesignReference {
+                        persona_id,
+                        ordinal: 0,
+                    }],
+                },
+            ],
+            total_bytes: (bytes.len() as u64) * 2,
+        };
+        (
+            inventory,
+            personas,
+            LegacyLorebookPlan {
+                lorebooks: Vec::new(),
+            },
+            media,
+        )
+    }
+
+    fn media_store(
+        database_path: &std::path::Path,
+        destination_root: &std::path::Path,
+    ) -> LocalMediaBlobStore<Database, Database> {
+        let snapshot = DirectorySnapshot::new(destination_root).expect("directory snapshot");
+        let authority = FilesystemAuthority::new(&snapshot).expect("filesystem authority");
+        LocalMediaBlobStore::new(
+            authority.managed_files(),
+            authority
+                .read_capability(ManagedRoot::MediaBlobs)
+                .expect("read capability"),
+            authority
+                .write_capability(ManagedRoot::MediaBlobs)
+                .expect("write capability"),
+            Database::open(database_path).expect("blob database"),
+            Database::open(database_path).expect("asset database"),
+        )
+    }
+
+    #[test]
+    fn media_import_deduplicates_blobs_and_replays_after_reopen() {
+        let root = std::env::temp_dir().join(format!(
+            "lettuce-legacy-media-import-{}",
+            LegacyImportRunId::new()
+        ));
+        let legacy_root = root.join("legacy");
+        let images = legacy_root.join("images");
+        fs::create_dir_all(&images).expect("create legacy images");
+        let bytes = png_fixture(1);
+        fs::write(images.join("avatar.png"), &bytes).expect("write avatar");
+        fs::write(images.join("reference.png"), &bytes).expect("write reference");
+        let database_path = root.join("app.sqlite3");
+        let destination_root = root.join("destination");
+        let run_id = LegacyImportRunId::new();
+        let (inventory, personas, lorebooks, media) = import_plans(PersonaId::new(), &bytes);
+
+        let backend =
+            AppBackend::open(&database_path, TimestampMillis::new(10)).expect("open application");
+        let admission = backend
+            .legacy_import_admission()
+            .admit(
+                run_id,
+                &inventory,
+                &personas,
+                &lorebooks,
+                &media,
+                TimestampMillis::new(20),
+            )
+            .expect("admit import");
+        let store = media_store(&database_path, &destination_root);
+        let first = backend
+            .legacy_media_importer(&store)
+            .execute(&legacy_root, &admission, &media, TimestampMillis::new(30))
+            .expect("import media");
+        assert_eq!(first.len(), 2);
+        assert_ne!(first[0].destination_asset_id, first[1].destination_asset_id);
+        assert_eq!(first[0].blob_id, first[1].blob_id);
+        assert!(first.iter().all(|completion| !completion.replayed));
+        let replay = backend
+            .legacy_media_importer(&store)
+            .execute(&legacy_root, &admission, &media, TimestampMillis::new(40))
+            .expect("replay media");
+        assert!(replay.iter().all(|completion| completion.replayed));
+        assert_eq!(
+            replay
+                .iter()
+                .map(|completion| completion.destination_asset_id)
+                .collect::<Vec<_>>(),
+            first
+                .iter()
+                .map(|completion| completion.destination_asset_id)
+                .collect::<Vec<_>>()
+        );
+        drop(store);
+        drop(backend);
+
+        let reopened =
+            AppBackend::open(&database_path, TimestampMillis::new(50)).expect("reopen application");
+        let reopened_admission = reopened
+            .legacy_import_admission()
+            .admit(
+                run_id,
+                &inventory,
+                &personas,
+                &lorebooks,
+                &media,
+                TimestampMillis::new(60),
+            )
+            .expect("replay admission");
+        assert_eq!(reopened_admission.status, LegacyImportRunStatus::Importing);
+        let reopened_store = media_store(&database_path, &destination_root);
+        let reopened_replay = reopened
+            .legacy_media_importer(&reopened_store)
+            .execute(
+                &legacy_root,
+                &reopened_admission,
+                &media,
+                TimestampMillis::new(70),
+            )
+            .expect("replay after reopen");
+        assert!(reopened_replay.iter().all(|completion| completion.replayed));
+        let first_asset =
+            MediaAssetRepository::get(reopened.database(), reopened_replay[0].destination_asset_id)
+                .expect("read first asset")
+                .expect("first asset");
+        let second_asset =
+            MediaAssetRepository::get(reopened.database(), reopened_replay[1].destination_asset_id)
+                .expect("read second asset")
+                .expect("second asset");
+        assert_eq!(first_asset.blob_id, second_asset.blob_id);
+        assert_eq!(
+            MediaBlobRepository::find_by_hash(reopened.database(), &content_hash(&bytes))
+                .expect("read blob")
+                .expect("shared blob")
+                .id,
+            first_asset.blob_id
+        );
+        assert_eq!(
+            fs::read(images.join("avatar.png")).expect("read source"),
+            bytes
+        );
+        drop(reopened_store);
+        drop(reopened);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn partial_media_import_replays_progress_and_rejects_source_drift() {
+        let root = std::env::temp_dir().join(format!(
+            "lettuce-legacy-media-partial-{}",
+            LegacyImportRunId::new()
+        ));
+        let legacy_root = root.join("legacy");
+        let images = legacy_root.join("images");
+        fs::create_dir_all(&images).expect("create legacy images");
+        let bytes = png_fixture(2);
+        fs::write(images.join("avatar.png"), &bytes).expect("write avatar");
+        fs::write(images.join("reference.png"), &bytes).expect("write reference");
+        let database_path = root.join("app.sqlite3");
+        let destination_root = root.join("destination");
+        let run_id = LegacyImportRunId::new();
+        let (inventory, personas, lorebooks, media) = import_plans(PersonaId::new(), &bytes);
+        let backend =
+            AppBackend::open(&database_path, TimestampMillis::new(10)).expect("open application");
+        let admission = backend
+            .legacy_import_admission()
+            .admit(
+                run_id,
+                &inventory,
+                &personas,
+                &lorebooks,
+                &media,
+                TimestampMillis::new(20),
+            )
+            .expect("admit import");
+        let store = media_store(&database_path, &destination_root);
+        fs::remove_file(images.join("reference.png")).expect("remove second source");
+        assert_eq!(
+            backend.legacy_media_importer(&store).execute(
+                &legacy_root,
+                &admission,
+                &media,
+                TimestampMillis::new(30),
+            ),
+            Err(LegacyMediaImportError::SourceUnavailable)
+        );
+        fs::write(images.join("reference.png"), &bytes).expect("restore second source");
+        let resumed = backend
+            .legacy_media_importer(&store)
+            .execute(&legacy_root, &admission, &media, TimestampMillis::new(40))
+            .expect("resume import");
+        assert!(resumed[0].replayed);
+        assert!(!resumed[1].replayed);
+
+        let mut changed = bytes.clone();
+        let last = changed.last_mut().expect("fixture byte");
+        *last ^= 1;
+        fs::write(images.join("avatar.png"), &changed).expect("change source");
+        assert_eq!(
+            backend.legacy_media_importer(&store).execute(
+                &legacy_root,
+                &admission,
+                &media,
+                TimestampMillis::new(50),
+            ),
+            Err(LegacyMediaImportError::SourceChanged)
+        );
+        assert!(images.join("avatar.png").exists());
+        drop(store);
+        drop(backend);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+}

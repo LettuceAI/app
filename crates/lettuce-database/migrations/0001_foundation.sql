@@ -102,8 +102,14 @@ CREATE TABLE legacy_import_assignments (
     source_kind TEXT NOT NULL CHECK (source_kind IN ('persona','lorebook','lorebook_entry','media')),
     source_key TEXT NOT NULL CHECK (length(trim(source_key)) > 0),
     destination_id TEXT NOT NULL,
+    expected_byte_len INTEGER,
+    expected_content_hash TEXT,
     PRIMARY KEY (run_id, source_kind, source_key),
-    UNIQUE (run_id, destination_id)
+    UNIQUE (run_id, destination_id),
+    CHECK (
+        (source_kind = 'media' AND expected_byte_len >= 0 AND length(expected_content_hash) = 64) OR
+        (source_kind <> 'media' AND expected_byte_len IS NULL AND expected_content_hash IS NULL)
+    )
 ) STRICT;
 
 CREATE TRIGGER legacy_import_runs_binding_immutable

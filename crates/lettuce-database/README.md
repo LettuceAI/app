@@ -466,3 +466,5 @@ no schema change is needed. App file-backed tests cover differing raw/native
 counts and cost amounts surviving reopen without a second lookup.
 
 Migration 1 also stores sealed legacy import admissions and their stable destination ID assignments. Admission is one immediate transaction: the source schema, inventory and plan fingerprints are immutable, assignments can only be inserted while the run is being admitted, and a rollback leaves neither the run nor a partial mapping. Exact replay survives reopen; a changed binding or source set conflicts. These rows do not create personas, lorebooks, entries, assets, or blobs.
+
+Migration 2 stores immutable per-object legacy media completion receipts. Each receipt must match the sealed path, size, hash and destination asset, and SQLite verifies that the asset points to the recorded ready content-addressed blob. The first receipt advances the run from admitted to importing in the same transaction. A failed later object leaves earlier receipts replayable without marking the run complete.

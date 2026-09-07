@@ -180,6 +180,15 @@ where
         input: R,
         request: IngestRequest,
     ) -> Result<IngestedMedia, MediaStoreError> {
+        self.ingest_with_id(AssetId::new(), input, request)
+    }
+
+    pub fn ingest_with_id<R: Read>(
+        &self,
+        asset_id: AssetId,
+        input: R,
+        request: IngestRequest,
+    ) -> Result<IngestedMedia, MediaStoreError> {
         request
             .provenance
             .validate()
@@ -204,6 +213,42 @@ where
         let content_hash = content_hash(hash);
         let object_key = object_key(&content_hash)?;
         let expected_size = bytes.len() as u64;
+        if let Some(existing_asset) = self
+            .assets
+            .get(asset_id)
+            .map_err(|_| MediaStoreError::CatalogFailure)?
+        {
+            let existing_blob = self
+                .blobs
+                .get(existing_asset.blob_id)
+                .map_err(|_| MediaStoreError::CatalogFailure)?
+                .ok_or(MediaStoreError::CatalogFailure)?;
+            if existing_asset.kind != request.asset_kind
+                || existing_asset.origin != request.origin
+                || existing_asset.retention != request.retention
+                || existing_asset.provenance != request.provenance
+                || existing_asset.revision != Revision::INITIAL
+                || existing_blob.content_hash != content_hash
+                || existing_blob.kind != sniffed.kind
+                || existing_blob.mime_type != sniffed.mime_type
+                || existing_blob.byte_size != expected_size
+                || existing_blob.width != sniffed.width
+                || existing_blob.height != sniffed.height
+                || existing_blob.state != BlobState::Ready
+            {
+                return Err(MediaStoreError::CatalogFailure);
+            }
+            self.commit_object(
+                &object_key,
+                expected_size,
+                &existing_blob.content_hash,
+                &bytes,
+            )?;
+            return Ok(IngestedMedia {
+                asset: existing_asset,
+                blob: existing_blob,
+            });
+        }
         let blob_id = MediaBlobId::new();
         let staged_blob = MediaBlob {
             id: blob_id,
@@ -255,7 +300,7 @@ where
         };
 
         let asset = MediaAsset::new(
-            AssetId::new(),
+            asset_id,
             blob.id,
             request.asset_kind,
             request.origin,
@@ -266,10 +311,28 @@ where
             now,
         )
         .map_err(|_| MediaStoreError::CatalogFailure)?;
-        let asset = self
-            .assets
-            .create(asset)
-            .map_err(|_| MediaStoreError::CatalogFailure)?;
+        let asset = match self.assets.create(asset.clone()) {
+            Ok(asset) => asset,
+            Err(MediaAssetRepositoryError::AlreadyExists) => {
+                let existing = self
+                    .assets
+                    .get(asset_id)
+                    .map_err(|_| MediaStoreError::CatalogFailure)?
+                    .ok_or(MediaStoreError::CatalogFailure)?;
+                if existing.id != asset.id
+                    || existing.blob_id != asset.blob_id
+                    || existing.kind != asset.kind
+                    || existing.origin != asset.origin
+                    || existing.retention != asset.retention
+                    || existing.provenance != asset.provenance
+                    || existing.revision != Revision::INITIAL
+                {
+                    return Err(MediaStoreError::CatalogFailure);
+                }
+                existing
+            }
+            Err(_) => return Err(MediaStoreError::CatalogFailure),
+        };
         Ok(IngestedMedia { asset, blob })
     }
 
@@ -1056,6 +1119,52 @@ mod tests {
                     .is_err()
             );
         }
+        drop(store);
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn preassigned_asset_id_replays_only_matching_content_and_metadata() {
+        let root = std::env::temp_dir().join(format!("lettuce-media-{}", AssetId::new()));
+        let snapshot = DirectorySnapshot::new(&root).expect("snapshot");
+        let authority = FilesystemAuthority::new(&snapshot).expect("authority");
+        let store = LocalMediaBlobStore::new(
+            authority.managed_files(),
+            authority
+                .read_capability(ManagedRoot::MediaBlobs)
+                .expect("read capability"),
+            authority
+                .write_capability(ManagedRoot::MediaBlobs)
+                .expect("write capability"),
+            BlobMemory::default(),
+            AssetMemory::default(),
+        );
+        let asset_id = AssetId::new();
+        let input = png_fixture();
+        let request = IngestRequest::new(
+            AssetKind::OtherImage,
+            AssetOrigin::Legacy,
+            RetentionClass::Persistent,
+            AssetProvenanceV1 {
+                source_label: Some("Legacy import".to_owned()),
+                imported_format: Some("lettuceai-v92".to_owned()),
+                ..AssetProvenanceV1::default()
+            },
+        );
+        let first = store
+            .ingest_with_id(asset_id, input.as_slice(), request.clone())
+            .expect("first ingest");
+        let replay = store
+            .ingest_with_id(asset_id, input.as_slice(), request.clone())
+            .expect("replay ingest");
+        assert_eq!(replay, first);
+
+        let mut changed = input;
+        changed.push(1);
+        assert_eq!(
+            store.ingest_with_id(asset_id, changed.as_slice(), request),
+            Err(MediaStoreError::CatalogFailure)
+        );
         drop(store);
         fs::remove_dir_all(root).expect("cleanup");
     }

@@ -270,7 +270,14 @@ pub struct LegacyImportSources {
     pub persona_ids: Vec<PersonaId>,
     pub lorebook_ids: Vec<LorebookId>,
     pub lorebook_entry_ids: Vec<LorebookEntryId>,
-    pub media_paths: Vec<String>,
+    pub media: Vec<LegacyImportMediaSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LegacyImportMediaSource {
+    pub relative_path: String,
+    pub byte_len: u64,
+    pub content_hash: ContentHash,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -300,6 +307,8 @@ pub enum LegacyImportAssignment {
     Media {
         relative_path: String,
         destination_id: AssetId,
+        byte_len: u64,
+        content_hash: ContentHash,
     },
 }
 
@@ -312,6 +321,29 @@ pub struct LegacyImportAdmission {
     pub status: LegacyImportRunStatus,
     pub assignments: Vec<LegacyImportAssignment>,
     pub admitted_at: TimestampMillis,
+    pub replayed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyImportMediaCompletionRequest {
+    pub run_id: LegacyImportRunId,
+    pub relative_path: String,
+    pub destination_asset_id: AssetId,
+    pub blob_id: lettuce_types::MediaBlobId,
+    pub byte_len: u64,
+    pub content_hash: ContentHash,
+    pub completed_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyImportMediaCompletion {
+    pub run_id: LegacyImportRunId,
+    pub relative_path: String,
+    pub destination_asset_id: AssetId,
+    pub blob_id: lettuce_types::MediaBlobId,
+    pub byte_len: u64,
+    pub content_hash: ContentHash,
+    pub completed_at: TimestampMillis,
     pub replayed: bool,
 }
 
@@ -339,4 +371,9 @@ pub trait LegacyImportRepository: Send + Sync {
         &self,
         request: LegacyImportAdmissionRequest,
     ) -> Result<LegacyImportAdmission, LegacyImportRepositoryError>;
+
+    fn complete_media(
+        &self,
+        request: LegacyImportMediaCompletionRequest,
+    ) -> Result<LegacyImportMediaCompletion, LegacyImportRepositoryError>;
 }

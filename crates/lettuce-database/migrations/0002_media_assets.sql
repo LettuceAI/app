@@ -53,3 +53,54 @@ WHEN COALESCE(
 BEGIN
     SELECT RAISE(ABORT, 'media asset requires a ready blob');
 END;
+
+CREATE TABLE legacy_import_media_completions (
+    run_id TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    destination_asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE RESTRICT,
+    blob_id TEXT NOT NULL REFERENCES media_blobs(id) ON DELETE RESTRICT,
+    byte_len INTEGER NOT NULL CHECK (byte_len >= 0),
+    content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
+    completed_at INTEGER NOT NULL,
+    PRIMARY KEY (run_id, relative_path),
+    UNIQUE (run_id, destination_asset_id),
+    FOREIGN KEY (run_id, destination_asset_id)
+        REFERENCES legacy_import_assignments(run_id, destination_id)
+        ON DELETE RESTRICT
+) STRICT;
+
+CREATE TRIGGER legacy_import_media_completion_guard
+BEFORE INSERT ON legacy_import_media_completions
+WHEN NOT EXISTS (
+    SELECT 1
+    FROM legacy_import_assignments AS assignment
+    JOIN legacy_import_runs AS run ON run.id = assignment.run_id
+    JOIN media_assets AS asset ON asset.id = NEW.destination_asset_id
+    JOIN media_blobs AS blob ON blob.id = NEW.blob_id
+    WHERE assignment.run_id = NEW.run_id
+      AND assignment.source_kind = 'media'
+      AND assignment.source_key = NEW.relative_path
+      AND assignment.destination_id = NEW.destination_asset_id
+      AND assignment.expected_byte_len = NEW.byte_len
+      AND assignment.expected_content_hash = NEW.content_hash
+      AND run.status IN ('admitted','importing')
+      AND asset.blob_id = NEW.blob_id
+      AND blob.content_hash = NEW.content_hash
+      AND blob.byte_size = NEW.byte_len
+      AND blob.state = 'ready'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import media completion is invalid');
+END;
+
+CREATE TRIGGER legacy_import_media_completions_update_forbidden
+BEFORE UPDATE ON legacy_import_media_completions
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import media completion is immutable');
+END;
+
+CREATE TRIGGER legacy_import_media_completions_delete_forbidden
+BEFORE DELETE ON legacy_import_media_completions
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import media completion is immutable');
+END;
