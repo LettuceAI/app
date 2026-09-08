@@ -97,6 +97,11 @@ impl AppBackend {
         crate::LegacyImportAdmissionCoordinator::new(self.database.as_ref())
     }
 
+    #[must_use]
+    pub fn legacy_import_executor(&self) -> crate::LegacyImportExecutionCoordinator<'_, Database> {
+        crate::LegacyImportExecutionCoordinator::new(self.database.as_ref())
+    }
+
     pub fn legacy_media_importer<'a, BR, AR>(
         &'a self,
         media_store: &'a lettuce_media::LocalMediaBlobStore<BR, AR>,

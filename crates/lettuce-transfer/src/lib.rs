@@ -347,6 +347,26 @@ pub struct LegacyImportMediaCompletion {
     pub replayed: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyImportExecutionRequest {
+    pub run_id: LegacyImportRunId,
+    pub plan_fingerprint: ContentHash,
+    pub personas: LegacyPersonaPlan,
+    pub lorebooks: LegacyLorebookPlan,
+    pub media: LegacyMediaPlan,
+    pub completed_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyImportReceipt {
+    pub run_id: LegacyImportRunId,
+    pub persona_count: u64,
+    pub lorebook_count: u64,
+    pub lorebook_entry_count: u64,
+    pub completed_at: TimestampMillis,
+    pub replayed: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LegacyImportRepositoryError {
     InvalidInput,
@@ -376,4 +396,9 @@ pub trait LegacyImportRepository: Send + Sync {
         &self,
         request: LegacyImportMediaCompletionRequest,
     ) -> Result<LegacyImportMediaCompletion, LegacyImportRepositoryError>;
+
+    fn materialize(
+        &self,
+        request: LegacyImportExecutionRequest,
+    ) -> Result<LegacyImportReceipt, LegacyImportRepositoryError>;
 }

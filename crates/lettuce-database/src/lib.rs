@@ -4121,6 +4121,7 @@ mod tests {
                 "jobs",
                 "legacy_import_assignments",
                 "legacy_import_media_completions",
+                "legacy_import_results",
                 "legacy_import_runs",
                 "lorebook_entries",
                 "lorebooks",

@@ -1,13 +1,22 @@
-use std::str::FromStr;
+use std::{collections::BTreeMap, str::FromStr};
 
+use lettuce_characters::{
+    Crop, ImageRecommendation, LifecycleStatus, Persona, PersonaMedia, PersonaMediaLink,
+    PersonaMediaSlot,
+};
+use lettuce_context::{
+    DetectionPolicy, KeywordMatchMode, LifecycleStatus as LorebookLifecycleStatus, Lorebook,
+    LorebookBehaviorVersion, LorebookBinding, LorebookDetails, LorebookEntry,
+};
 use lettuce_transfer::{
     LEGACY_DATABASE_SCHEMA_VERSION, LegacyImportAdmission, LegacyImportAdmissionRequest,
-    LegacyImportAssignment, LegacyImportMediaCompletion, LegacyImportMediaCompletionRequest,
-    LegacyImportMediaSource, LegacyImportRepository, LegacyImportRepositoryError,
-    LegacyImportRunStatus, LegacyImportSources,
+    LegacyImportAssignment, LegacyImportExecutionRequest, LegacyImportMediaCompletion,
+    LegacyImportMediaCompletionRequest, LegacyImportMediaSource, LegacyImportReceipt,
+    LegacyImportRepository, LegacyImportRepositoryError, LegacyImportRunStatus,
+    LegacyImportSources, LegacyKeywordMatchMode, LegacyLorebookDetectionPolicy, LegacyMediaUse,
 };
 use lettuce_types::{
-    AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, PersonaId,
+    AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, PersonaId, Revision,
     TimestampMillis,
 };
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
@@ -132,6 +141,241 @@ impl LegacyImportRepository for Database {
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
         Ok(completion)
     }
+
+    fn materialize(
+        &self,
+        request: LegacyImportExecutionRequest,
+    ) -> Result<LegacyImportReceipt, LegacyImportRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let admission = load_admission(&transaction, request.run_id)?
+            .ok_or(LegacyImportRepositoryError::Conflict)?;
+        let mut sources = execution_sources(&request);
+        normalize_sources(&mut sources)?;
+        if admission.plan_fingerprint != request.plan_fingerprint
+            || assignment_sources(&admission.assignments) != sources
+        {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        if let Some(mut receipt) = load_receipt(&transaction, request.run_id)? {
+            if admission.status != LegacyImportRunStatus::Completed {
+                return Err(LegacyImportRepositoryError::Storage);
+            }
+            receipt.replayed = true;
+            transaction
+                .commit()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            return Ok(receipt);
+        }
+        if !matches!(
+            admission.status,
+            LegacyImportRunStatus::Admitted | LegacyImportRunStatus::Importing
+        ) {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        let assignments = AssignmentMaps::from_admission(&admission)?;
+        let media_by_use = completed_media_by_use(&transaction, &request, &assignments)?;
+        transaction
+            .execute(
+                "UPDATE legacy_import_runs SET status='importing',updated_at=?2 WHERE id=?1 AND status='admitted'",
+                params![request.run_id.to_string(), request.completed_at.get()],
+            )
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+
+        for candidate in &request.lorebooks.lorebooks {
+            let destination_id = *assignments
+                .lorebooks
+                .get(&candidate.id)
+                .ok_or(LegacyImportRepositoryError::Conflict)?;
+            let icon_asset_id = candidate
+                .avatar
+                .as_ref()
+                .map(|_| LegacyMediaUse::LorebookAvatar {
+                    lorebook_id: candidate.id,
+                })
+                .map(|media_use| {
+                    media_by_use
+                        .get(&media_use)
+                        .copied()
+                        .ok_or(LegacyImportRepositoryError::Conflict)
+                })
+                .transpose()?;
+            let entries = candidate
+                .entries
+                .iter()
+                .enumerate()
+                .map(|(ordinal, entry)| {
+                    Ok(LorebookEntry {
+                        id: *assignments
+                            .entries
+                            .get(&entry.id)
+                            .ok_or(LegacyImportRepositoryError::Conflict)?,
+                        lorebook_id: destination_id,
+                        title: entry.title.clone(),
+                        enabled: entry.enabled,
+                        always_active: entry.always_active,
+                        keywords: entry.keywords.clone(),
+                        case_sensitive: entry.case_sensitive,
+                        match_mode: match entry.match_mode {
+                            LegacyKeywordMatchMode::Literal => KeywordMatchMode::Literal,
+                            LegacyKeywordMatchMode::Regex => KeywordMatchMode::Regex,
+                        },
+                        content: entry.content.clone(),
+                        priority: entry.priority,
+                        ordinal: u32::try_from(ordinal)
+                            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                        revision: Revision::INITIAL,
+                        created_at: entry.created_at,
+                        updated_at: entry.updated_at,
+                    })
+                })
+                .collect::<Result<Vec<_>, LegacyImportRepositoryError>>()?;
+            let details = LorebookDetails {
+                book: Lorebook {
+                    id: destination_id,
+                    status: LorebookLifecycleStatus::Active,
+                    name: candidate.name.clone(),
+                    detection_policy: match candidate.detection_policy {
+                        LegacyLorebookDetectionPolicy::RecentMessageWindow => {
+                            DetectionPolicy::RecentMessageWindow
+                        }
+                        LegacyLorebookDetectionPolicy::LatestUserMessage => {
+                            DetectionPolicy::LatestUserMessage
+                        }
+                    },
+                    icon_asset_id,
+                    behavior_version: LorebookBehaviorVersion::LegacyV1,
+                    revision: Revision::INITIAL,
+                    created_at: candidate.created_at,
+                    updated_at: candidate.updated_at,
+                },
+                entries,
+            };
+            crate::lorebook_adapter::insert_lorebook_details(&transaction, &details)
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        }
+
+        for candidate in &request.personas.personas {
+            let destination_id = *assignments
+                .personas
+                .get(&candidate.id)
+                .ok_or(LegacyImportRepositoryError::Conflict)?;
+            let mut links = Vec::new();
+            if candidate.avatar.is_some() {
+                links.push(PersonaMediaLink {
+                    asset_id: *media_by_use
+                        .get(&LegacyMediaUse::PersonaAvatar {
+                            persona_id: candidate.id,
+                        })
+                        .ok_or(LegacyImportRepositoryError::Conflict)?,
+                    slot: PersonaMediaSlot::Avatar,
+                    ordinal: 0,
+                });
+            }
+            for (ordinal, _) in candidate.design_references.iter().enumerate() {
+                let ordinal = u32::try_from(ordinal)
+                    .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+                links.push(PersonaMediaLink {
+                    asset_id: *media_by_use
+                        .get(&LegacyMediaUse::PersonaDesignReference {
+                            persona_id: candidate.id,
+                            ordinal,
+                        })
+                        .ok_or(LegacyImportRepositoryError::Conflict)?,
+                    slot: PersonaMediaSlot::DesignReference,
+                    ordinal,
+                });
+            }
+            let persona = Persona {
+                id: destination_id,
+                status: LifecycleStatus::Active,
+                title: candidate.title.clone(),
+                description: candidate.description.clone(),
+                nickname: candidate.nickname.clone(),
+                design_description: candidate.design_description.clone(),
+                avatar_crop: candidate
+                    .avatar_crop
+                    .map(|crop| Crop::new(crop.x as f32, crop.y as f32, crop.scale as f32))
+                    .transpose()
+                    .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                image_recommendation: candidate.image_recommendation.as_ref().map(|value| {
+                    ImageRecommendation {
+                        artifact_id: None,
+                        unresolved_legacy_name: Some(value.model_name.clone()),
+                        strength: value.strength as f32,
+                    }
+                }),
+                media: PersonaMedia { links },
+                revision: Revision::INITIAL,
+                created_at: candidate.created_at,
+                updated_at: candidate.updated_at,
+            };
+            crate::persona_adapter::insert_persona(&transaction, persona)
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+            insert_persona_bindings(
+                &transaction,
+                destination_id,
+                candidate,
+                &assignments.lorebooks,
+            )?;
+        }
+
+        if let Some(legacy_default_id) = request.personas.default_persona_id {
+            let destination_id = assignments
+                .personas
+                .get(&legacy_default_id)
+                .ok_or(LegacyImportRepositoryError::Conflict)?;
+            let changed = transaction
+                .execute(
+                    "UPDATE persona_defaults SET default_persona_id=?1,revision=2,updated_at=?2 WHERE id=1 AND revision=1 AND default_persona_id IS NULL",
+                    params![destination_id.to_string(), request.completed_at.get()],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            if changed != 1 {
+                return Err(LegacyImportRepositoryError::Conflict);
+            }
+        }
+
+        let persona_count = i64::try_from(request.personas.personas.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        let lorebook_count = i64::try_from(request.lorebooks.lorebooks.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        let lorebook_entry_count = request
+            .lorebooks
+            .lorebooks
+            .iter()
+            .try_fold(0_i64, |total, book| {
+                i64::try_from(book.entries.len())
+                    .ok()
+                    .and_then(|count| total.checked_add(count))
+            })
+            .ok_or(LegacyImportRepositoryError::InvalidInput)?;
+        transaction
+            .execute(
+                "INSERT INTO legacy_import_results (run_id,plan_fingerprint,persona_count,lorebook_count,lorebook_entry_count,completed_at) VALUES (?1,?2,?3,?4,?5,?6)",
+                params![request.run_id.to_string(), request.plan_fingerprint.as_str(), persona_count, lorebook_count, lorebook_entry_count, request.completed_at.get()],
+            )
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let changed = transaction
+            .execute(
+                "UPDATE legacy_import_runs SET status='completed',updated_at=?2 WHERE id=?1 AND status='importing'",
+                params![request.run_id.to_string(), request.completed_at.get()],
+            )
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        if changed != 1 {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        let receipt = load_receipt(&transaction, request.run_id)?
+            .ok_or(LegacyImportRepositoryError::Storage)?;
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(receipt)
+    }
 }
 
 fn map_completion_insert_error(error: rusqlite::Error) -> LegacyImportRepositoryError {
@@ -143,6 +387,221 @@ fn map_completion_insert_error(error: rusqlite::Error) -> LegacyImportRepository
         }
         _ => LegacyImportRepositoryError::Storage,
     }
+}
+
+struct AssignmentMaps {
+    personas: BTreeMap<PersonaId, PersonaId>,
+    lorebooks: BTreeMap<LorebookId, LorebookId>,
+    entries: BTreeMap<LorebookEntryId, LorebookEntryId>,
+    media: BTreeMap<String, (AssetId, u64, ContentHash)>,
+}
+
+impl AssignmentMaps {
+    fn from_admission(
+        admission: &LegacyImportAdmission,
+    ) -> Result<Self, LegacyImportRepositoryError> {
+        let mut maps = Self {
+            personas: BTreeMap::new(),
+            lorebooks: BTreeMap::new(),
+            entries: BTreeMap::new(),
+            media: BTreeMap::new(),
+        };
+        for assignment in &admission.assignments {
+            let duplicate = match assignment {
+                LegacyImportAssignment::Persona {
+                    legacy_id,
+                    destination_id,
+                } => maps.personas.insert(*legacy_id, *destination_id).is_some(),
+                LegacyImportAssignment::Lorebook {
+                    legacy_id,
+                    destination_id,
+                } => maps.lorebooks.insert(*legacy_id, *destination_id).is_some(),
+                LegacyImportAssignment::LorebookEntry {
+                    legacy_id,
+                    destination_id,
+                } => maps.entries.insert(*legacy_id, *destination_id).is_some(),
+                LegacyImportAssignment::Media {
+                    relative_path,
+                    destination_id,
+                    byte_len,
+                    content_hash,
+                } => maps
+                    .media
+                    .insert(
+                        relative_path.clone(),
+                        (*destination_id, *byte_len, content_hash.clone()),
+                    )
+                    .is_some(),
+            };
+            if duplicate {
+                return Err(LegacyImportRepositoryError::Storage);
+            }
+        }
+        Ok(maps)
+    }
+}
+
+fn execution_sources(request: &LegacyImportExecutionRequest) -> LegacyImportSources {
+    LegacyImportSources {
+        persona_ids: request
+            .personas
+            .personas
+            .iter()
+            .map(|persona| persona.id)
+            .collect(),
+        lorebook_ids: request
+            .lorebooks
+            .lorebooks
+            .iter()
+            .map(|book| book.id)
+            .collect(),
+        lorebook_entry_ids: request
+            .lorebooks
+            .lorebooks
+            .iter()
+            .flat_map(|book| book.entries.iter().map(|entry| entry.id))
+            .collect(),
+        media: request
+            .media
+            .media
+            .iter()
+            .map(|candidate| LegacyImportMediaSource {
+                relative_path: candidate.relative_path.clone(),
+                byte_len: candidate.byte_len,
+                content_hash: candidate.content_hash.clone(),
+            })
+            .collect(),
+    }
+}
+
+fn completed_media_by_use(
+    transaction: &Transaction<'_>,
+    request: &LegacyImportExecutionRequest,
+    assignments: &AssignmentMaps,
+) -> Result<BTreeMap<LegacyMediaUse, AssetId>, LegacyImportRepositoryError> {
+    if assignments.media.len() != request.media.media.len() {
+        return Err(LegacyImportRepositoryError::Conflict);
+    }
+    let mut by_use = BTreeMap::new();
+    for candidate in &request.media.media {
+        let (destination_id, byte_len, content_hash) = assignments
+            .media
+            .get(&candidate.relative_path)
+            .ok_or(LegacyImportRepositoryError::Conflict)?;
+        if *byte_len != candidate.byte_len || *content_hash != candidate.content_hash {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        let completion =
+            load_media_completion(transaction, request.run_id, &candidate.relative_path)?
+                .ok_or(LegacyImportRepositoryError::Conflict)?;
+        if completion.destination_asset_id != *destination_id
+            || completion.byte_len != candidate.byte_len
+            || completion.content_hash != candidate.content_hash
+        {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        for media_use in &candidate.uses {
+            if by_use.insert(media_use.clone(), *destination_id).is_some() {
+                return Err(LegacyImportRepositoryError::Conflict);
+            }
+        }
+    }
+    if by_use.keys().cloned().collect::<Vec<_>>() != expected_media_uses(request)? {
+        return Err(LegacyImportRepositoryError::Conflict);
+    }
+    Ok(by_use)
+}
+
+fn expected_media_uses(
+    request: &LegacyImportExecutionRequest,
+) -> Result<Vec<LegacyMediaUse>, LegacyImportRepositoryError> {
+    let mut uses = Vec::new();
+    for persona in &request.personas.personas {
+        if persona.avatar.is_some() {
+            uses.push(LegacyMediaUse::PersonaAvatar {
+                persona_id: persona.id,
+            });
+        }
+        for ordinal in 0..persona.design_references.len() {
+            uses.push(LegacyMediaUse::PersonaDesignReference {
+                persona_id: persona.id,
+                ordinal: u32::try_from(ordinal)
+                    .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+            });
+        }
+    }
+    for lorebook in &request.lorebooks.lorebooks {
+        if lorebook.avatar.is_some() {
+            uses.push(LegacyMediaUse::LorebookAvatar {
+                lorebook_id: lorebook.id,
+            });
+        }
+    }
+    uses.sort();
+    Ok(uses)
+}
+
+fn insert_persona_bindings(
+    transaction: &Transaction<'_>,
+    destination_persona_id: PersonaId,
+    candidate: &lettuce_transfer::LegacyPersonaCandidate,
+    lorebook_assignments: &BTreeMap<LorebookId, LorebookId>,
+) -> Result<(), LegacyImportRepositoryError> {
+    let bindings = candidate
+        .active_lorebook_ids
+        .iter()
+        .enumerate()
+        .map(|(ordinal, legacy_lorebook_id)| {
+            Ok(LorebookBinding {
+                lorebook_id: *lorebook_assignments
+                    .get(legacy_lorebook_id)
+                    .ok_or(LegacyImportRepositoryError::Conflict)?,
+                enabled: true,
+                ordinal: u32::try_from(ordinal)
+                    .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                revision: Revision::INITIAL,
+                created_at: candidate.created_at,
+                updated_at: candidate.updated_at,
+            })
+        })
+        .collect::<Result<Vec<_>, LegacyImportRepositoryError>>()?;
+    lettuce_context::validate_bindings(&bindings)
+        .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+    for binding in bindings {
+        transaction
+            .execute(
+                "INSERT INTO persona_lorebook_bindings (persona_id,lorebook_id,enabled,ordinal,revision,created_at,updated_at) VALUES (?1,?2,1,?3,1,?4,?5)",
+                params![destination_persona_id.to_string(), binding.lorebook_id.to_string(), i64::from(binding.ordinal), binding.created_at.get(), binding.updated_at.get()],
+            )
+            .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+    }
+    Ok(())
+}
+
+fn load_receipt(
+    transaction: &Transaction<'_>,
+    run_id: LegacyImportRunId,
+) -> Result<Option<LegacyImportReceipt>, LegacyImportRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT persona_count,lorebook_count,lorebook_entry_count,completed_at FROM legacy_import_results WHERE run_id=?1",
+            [run_id.to_string()],
+            |row| {
+                Ok(LegacyImportReceipt {
+                    run_id,
+                    persona_count: u64::try_from(row.get::<_, i64>(0)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    lorebook_count: u64::try_from(row.get::<_, i64>(1)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    lorebook_entry_count: u64::try_from(row.get::<_, i64>(2)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    completed_at: TimestampMillis::new(row.get(3)?),
+                    replayed: false,
+                })
+            },
+        )
+        .optional()
+        .map_err(|_| LegacyImportRepositoryError::Storage)
 }
 
 fn normalize_sources(sources: &mut LegacyImportSources) -> Result<(), LegacyImportRepositoryError> {

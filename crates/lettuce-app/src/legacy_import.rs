@@ -1,15 +1,49 @@
 use lettuce_transfer::{
     LEGACY_DATABASE_SCHEMA_VERSION, LegacyCrop, LegacyDatabaseInventory, LegacyImageRecommendation,
-    LegacyImportAdmission, LegacyImportAdmissionRequest, LegacyImportRepository,
-    LegacyImportRepositoryError, LegacyImportSources, LegacyKeywordMatchMode,
-    LegacyLorebookDetectionPolicy, LegacyLorebookPlan, LegacyMediaPlan, LegacyMediaUse,
-    LegacyPersonaPlan,
+    LegacyImportAdmission, LegacyImportAdmissionRequest, LegacyImportExecutionRequest,
+    LegacyImportReceipt, LegacyImportRepository, LegacyImportRepositoryError, LegacyImportSources,
+    LegacyKeywordMatchMode, LegacyLorebookDetectionPolicy, LegacyLorebookPlan, LegacyMediaPlan,
+    LegacyMediaUse, LegacyPersonaPlan,
 };
 use lettuce_types::{ContentHash, LegacyImportRunId, TimestampMillis};
 
 #[derive(Debug)]
 pub struct LegacyImportAdmissionCoordinator<'a, R: ?Sized> {
     repository: &'a R,
+}
+
+#[derive(Debug)]
+pub struct LegacyImportExecutionCoordinator<'a, R: ?Sized> {
+    repository: &'a R,
+}
+
+impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportExecutionCoordinator<'a, R> {
+    #[must_use]
+    pub const fn new(repository: &'a R) -> Self {
+        Self { repository }
+    }
+
+    pub fn execute(
+        &self,
+        admission: &LegacyImportAdmission,
+        personas: &LegacyPersonaPlan,
+        lorebooks: &LegacyLorebookPlan,
+        media: &LegacyMediaPlan,
+        completed_at: TimestampMillis,
+    ) -> Result<LegacyImportReceipt, LegacyImportRepositoryError> {
+        let fingerprint = plan_fingerprint(personas, lorebooks, media);
+        if fingerprint != admission.plan_fingerprint {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        self.repository.materialize(LegacyImportExecutionRequest {
+            run_id: admission.run_id,
+            plan_fingerprint: fingerprint,
+            personas: personas.clone(),
+            lorebooks: lorebooks.clone(),
+            media: media.clone(),
+            completed_at,
+        })
+    }
 }
 
 impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a, R> {
@@ -273,11 +307,14 @@ fn write_recommendation(hash: &mut Fingerprint, recommendation: &LegacyImageReco
 mod tests {
     use std::fs;
 
+    use lettuce_characters::{Persona, PersonaRepository};
+    use lettuce_context::LorebookRepository;
     use lettuce_transfer::{
-        LegacyDatabaseInventory, LegacyImportRepositoryError, LegacyLorebookPlan, LegacyMediaPlan,
-        LegacyPersonaCandidate, LegacyPersonaPlan,
+        LegacyDatabaseInventory, LegacyImportAssignment, LegacyImportRepositoryError,
+        LegacyImportRunStatus, LegacyLorebookCandidate, LegacyLorebookDetectionPolicy,
+        LegacyLorebookPlan, LegacyMediaPlan, LegacyPersonaCandidate, LegacyPersonaPlan,
     };
-    use lettuce_types::{LegacyImportRunId, PersonaId, TimestampMillis};
+    use lettuce_types::{LegacyImportRunId, LorebookId, PersonaId, TimestampMillis};
 
     use crate::AppBackend;
 
@@ -373,6 +410,161 @@ mod tests {
             ),
             Err(LegacyImportRepositoryError::Conflict)
         );
+        drop(backend);
+        fs::remove_file(path).expect("remove database");
+    }
+
+    #[test]
+    fn empty_media_graph_completes_and_collision_rolls_back_all_new_rows() {
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-app-legacy-graph-rollback-{}.sqlite3",
+            LegacyImportRunId::new()
+        ));
+        let backend = AppBackend::open(&path, TimestampMillis::new(10)).expect("open backend");
+        let empty_media = LegacyMediaPlan {
+            media: Vec::new(),
+            total_bytes: 0,
+        };
+        let empty_personas = personas();
+        let empty_books = LegacyLorebookPlan {
+            lorebooks: Vec::new(),
+        };
+        let empty_run = LegacyImportRunId::new();
+        let empty_admission = backend
+            .legacy_import_admission()
+            .admit(
+                empty_run,
+                &inventory(),
+                &empty_personas,
+                &empty_books,
+                &empty_media,
+                TimestampMillis::new(20),
+            )
+            .expect("admit empty media import");
+        let empty_receipt = backend
+            .legacy_import_executor()
+            .execute(
+                &empty_admission,
+                &empty_personas,
+                &empty_books,
+                &empty_media,
+                TimestampMillis::new(30),
+            )
+            .expect("complete empty media import");
+        assert_eq!(
+            (empty_receipt.persona_count, empty_receipt.lorebook_count),
+            (1, 0)
+        );
+
+        let source_persona_id = PersonaId::new();
+        let source_book_id = LorebookId::new();
+        let collision_personas = LegacyPersonaPlan {
+            personas: vec![LegacyPersonaCandidate {
+                id: source_persona_id,
+                title: "Collision Source".to_owned(),
+                description: "This graph must roll back.".to_owned(),
+                nickname: None,
+                avatar: None,
+                avatar_crop: None,
+                design_description: None,
+                design_references: Vec::new(),
+                image_recommendation: None,
+                active_lorebook_ids: vec![source_book_id],
+                created_at: TimestampMillis::new(40),
+                updated_at: TimestampMillis::new(41),
+            }],
+            default_persona_id: Some(source_persona_id),
+        };
+        let collision_books = LegacyLorebookPlan {
+            lorebooks: vec![LegacyLorebookCandidate {
+                id: source_book_id,
+                name: "Rollback Book".to_owned(),
+                avatar: None,
+                detection_policy: LegacyLorebookDetectionPolicy::RecentMessageWindow,
+                entries: Vec::new(),
+                created_at: TimestampMillis::new(40),
+                updated_at: TimestampMillis::new(41),
+            }],
+        };
+        let collision_inventory = LegacyDatabaseInventory {
+            lorebooks: 1,
+            ..inventory()
+        };
+        let collision_run = LegacyImportRunId::new();
+        let collision_admission = backend
+            .legacy_import_admission()
+            .admit(
+                collision_run,
+                &collision_inventory,
+                &collision_personas,
+                &collision_books,
+                &empty_media,
+                TimestampMillis::new(50),
+            )
+            .expect("admit collision graph");
+        let destination_persona_id = collision_admission
+            .assignments
+            .iter()
+            .find_map(|assignment| match assignment {
+                LegacyImportAssignment::Persona {
+                    legacy_id,
+                    destination_id,
+                } if *legacy_id == source_persona_id => Some(*destination_id),
+                _ => None,
+            })
+            .expect("persona assignment");
+        let destination_book_id = collision_admission
+            .assignments
+            .iter()
+            .find_map(|assignment| match assignment {
+                LegacyImportAssignment::Lorebook {
+                    legacy_id,
+                    destination_id,
+                } if *legacy_id == source_book_id => Some(*destination_id),
+                _ => None,
+            })
+            .expect("lorebook assignment");
+        PersonaRepository::create(
+            backend.database(),
+            Persona::new(
+                destination_persona_id,
+                "Existing Persona".to_owned(),
+                "Preexisting collision row".to_owned(),
+                TimestampMillis::new(45),
+            )
+            .expect("valid collision persona"),
+        )
+        .expect("create collision");
+        assert_eq!(
+            backend.legacy_import_executor().execute(
+                &collision_admission,
+                &collision_personas,
+                &collision_books,
+                &empty_media,
+                TimestampMillis::new(60),
+            ),
+            Err(LegacyImportRepositoryError::Conflict)
+        );
+        assert!(
+            LorebookRepository::get(backend.database(), destination_book_id)
+                .expect("read rolled back lorebook")
+                .is_none()
+        );
+        let replayed_admission = backend
+            .legacy_import_admission()
+            .admit(
+                collision_run,
+                &collision_inventory,
+                &collision_personas,
+                &collision_books,
+                &empty_media,
+                TimestampMillis::new(70),
+            )
+            .expect("read rolled back admission");
+        assert_eq!(replayed_admission.status, LegacyImportRunStatus::Admitted);
+        let default = PersonaRepository::get_default_snapshot(backend.database())
+            .expect("read unchanged default");
+        assert_eq!(default.state.persona_id, None);
         drop(backend);
         fs::remove_file(path).expect("remove database");
     }

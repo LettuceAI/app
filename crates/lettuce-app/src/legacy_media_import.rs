@@ -252,14 +252,24 @@ fn asset_kind(candidate: &LegacyMediaCandidate) -> AssetKind {
 mod tests {
     use std::fs;
 
+    use lettuce_characters::{PersonaMediaSlot, PersonaRepository};
+    use lettuce_context::{
+        DetectionPolicy, KeywordMatchMode, LorebookBehaviorVersion, LorebookRepository,
+        PersonaLorebookBindingRepository,
+    };
     use lettuce_database::Database;
     use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
     use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
     use lettuce_transfer::{
-        LegacyDatabaseInventory, LegacyImportRunStatus, LegacyLorebookPlan, LegacyMediaCandidate,
-        LegacyMediaPlan, LegacyMediaUse, LegacyPersonaCandidate, LegacyPersonaPlan,
+        LegacyCrop, LegacyDatabaseInventory, LegacyImageRecommendation, LegacyImportAssignment,
+        LegacyImportRunStatus, LegacyKeywordMatchMode, LegacyLorebookCandidate,
+        LegacyLorebookDetectionPolicy, LegacyLorebookEntryCandidate, LegacyLorebookPlan,
+        LegacyMediaCandidate, LegacyMediaPlan, LegacyMediaReference, LegacyMediaUse,
+        LegacyPersonaCandidate, LegacyPersonaPlan,
     };
-    use lettuce_types::{ContentHash, LegacyImportRunId, PersonaId, TimestampMillis};
+    use lettuce_types::{
+        ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, PersonaId, TimestampMillis,
+    };
 
     use crate::{AppBackend, LegacyMediaImportError};
 
@@ -539,6 +549,399 @@ mod tests {
         assert!(images.join("avatar.png").exists());
         drop(store);
         drop(backend);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn graph_import_preserves_fields_order_and_shared_media_then_replays_after_reopen() {
+        let root = std::env::temp_dir().join(format!(
+            "lettuce-legacy-graph-import-{}",
+            LegacyImportRunId::new()
+        ));
+        let legacy_root = root.join("legacy");
+        let images = legacy_root.join("images");
+        fs::create_dir_all(&images).expect("create legacy images");
+        let bytes = png_fixture(3);
+        fs::write(images.join("shared.png"), &bytes).expect("write shared image");
+        fs::write(images.join("reference.png"), &bytes).expect("write reference image");
+        let database_path = root.join("app.sqlite3");
+        let destination_root = root.join("destination");
+        let run_id = LegacyImportRunId::new();
+        let persona_id = PersonaId::new();
+        let first_book_id = LorebookId::new();
+        let second_book_id = LorebookId::new();
+        let first_entry_id = LorebookEntryId::new();
+        let second_entry_id = LorebookEntryId::new();
+        let shared = LegacyMediaReference {
+            locator: "shared.png".to_owned(),
+        };
+        let reference = LegacyMediaReference {
+            locator: "reference.png".to_owned(),
+        };
+        let personas = LegacyPersonaPlan {
+            personas: vec![LegacyPersonaCandidate {
+                id: persona_id,
+                title: "Imported Owner".to_owned(),
+                description: "Every persona field survives import.".to_owned(),
+                nickname: Some("Owner Nickname".to_owned()),
+                avatar: Some(shared.clone()),
+                avatar_crop: Some(LegacyCrop {
+                    x: 0.25,
+                    y: 0.5,
+                    scale: 1.75,
+                }),
+                design_description: Some("Warm studio portrait".to_owned()),
+                design_references: vec![reference.clone()],
+                image_recommendation: Some(LegacyImageRecommendation {
+                    model_name: "Legacy Portrait Model".to_owned(),
+                    strength: 0.65,
+                }),
+                active_lorebook_ids: vec![second_book_id, first_book_id],
+                created_at: TimestampMillis::new(11),
+                updated_at: TimestampMillis::new(19),
+            }],
+            default_persona_id: Some(persona_id),
+        };
+        let lorebooks = LegacyLorebookPlan {
+            lorebooks: vec![
+                LegacyLorebookCandidate {
+                    id: first_book_id,
+                    name: "Recent Context".to_owned(),
+                    avatar: Some(shared),
+                    detection_policy: LegacyLorebookDetectionPolicy::RecentMessageWindow,
+                    entries: vec![LegacyLorebookEntryCandidate {
+                        id: first_entry_id,
+                        title: "Regex Entry".to_owned(),
+                        enabled: true,
+                        always_active: false,
+                        keywords: vec!["city.*".to_owned(), "harbor".to_owned()],
+                        case_sensitive: true,
+                        match_mode: LegacyKeywordMatchMode::Regex,
+                        content: "The harbor closes at dusk.".to_owned(),
+                        priority: 9,
+                        display_order: 4,
+                        created_at: TimestampMillis::new(12),
+                        updated_at: TimestampMillis::new(18),
+                    }],
+                    created_at: TimestampMillis::new(10),
+                    updated_at: TimestampMillis::new(20),
+                },
+                LegacyLorebookCandidate {
+                    id: second_book_id,
+                    name: "Latest User Context".to_owned(),
+                    avatar: None,
+                    detection_policy: LegacyLorebookDetectionPolicy::LatestUserMessage,
+                    entries: vec![LegacyLorebookEntryCandidate {
+                        id: second_entry_id,
+                        title: "Always Entry".to_owned(),
+                        enabled: false,
+                        always_active: true,
+                        keywords: Vec::new(),
+                        case_sensitive: false,
+                        match_mode: LegacyKeywordMatchMode::Literal,
+                        content: "A persistent setting detail.".to_owned(),
+                        priority: -3,
+                        display_order: 7,
+                        created_at: TimestampMillis::new(13),
+                        updated_at: TimestampMillis::new(17),
+                    }],
+                    created_at: TimestampMillis::new(9),
+                    updated_at: TimestampMillis::new(21),
+                },
+            ],
+        };
+        let media = LegacyMediaPlan {
+            media: vec![
+                LegacyMediaCandidate {
+                    relative_path: "images/shared.png".to_owned(),
+                    byte_len: bytes.len() as u64,
+                    content_hash: content_hash(&bytes),
+                    uses: vec![
+                        LegacyMediaUse::PersonaAvatar { persona_id },
+                        LegacyMediaUse::LorebookAvatar {
+                            lorebook_id: first_book_id,
+                        },
+                    ],
+                },
+                LegacyMediaCandidate {
+                    relative_path: "images/reference.png".to_owned(),
+                    byte_len: bytes.len() as u64,
+                    content_hash: content_hash(&bytes),
+                    uses: vec![LegacyMediaUse::PersonaDesignReference {
+                        persona_id,
+                        ordinal: 0,
+                    }],
+                },
+            ],
+            total_bytes: (bytes.len() * 2) as u64,
+        };
+        let inventory = LegacyDatabaseInventory {
+            schema_version: 92,
+            provider_accounts: 0,
+            models: 0,
+            prompts: 0,
+            personas: 1,
+            characters: 0,
+            lorebooks: 2,
+            chat_templates: 0,
+            direct_conversations: 0,
+            group_profiles: 0,
+            group_conversations: 0,
+        };
+        let backend =
+            AppBackend::open(&database_path, TimestampMillis::new(1)).expect("open backend");
+        let admission = backend
+            .legacy_import_admission()
+            .admit(
+                run_id,
+                &inventory,
+                &personas,
+                &lorebooks,
+                &media,
+                TimestampMillis::new(30),
+            )
+            .expect("admit graph");
+        let destination_persona_id = admission
+            .assignments
+            .iter()
+            .find_map(|assignment| match assignment {
+                LegacyImportAssignment::Persona {
+                    legacy_id,
+                    destination_id,
+                } if *legacy_id == persona_id => Some(*destination_id),
+                _ => None,
+            })
+            .expect("persona assignment");
+        let destination_books = admission
+            .assignments
+            .iter()
+            .filter_map(|assignment| match assignment {
+                LegacyImportAssignment::Lorebook {
+                    legacy_id,
+                    destination_id,
+                } => Some((*legacy_id, *destination_id)),
+                _ => None,
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let destination_entries = admission
+            .assignments
+            .iter()
+            .filter_map(|assignment| match assignment {
+                LegacyImportAssignment::LorebookEntry {
+                    legacy_id,
+                    destination_id,
+                } => Some((*legacy_id, *destination_id)),
+                _ => None,
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(
+            backend.legacy_import_executor().execute(
+                &admission,
+                &personas,
+                &lorebooks,
+                &media,
+                TimestampMillis::new(35),
+            ),
+            Err(lettuce_transfer::LegacyImportRepositoryError::Conflict)
+        );
+        assert!(
+            PersonaRepository::get(backend.database(), destination_persona_id)
+                .expect("read absent persona")
+                .is_none()
+        );
+        assert!(
+            LorebookRepository::get(backend.database(), destination_books[&first_book_id])
+                .expect("read absent lorebook")
+                .is_none()
+        );
+        let mut changed_personas = personas.clone();
+        changed_personas.personas[0].description = "Changed after admission".to_owned();
+        assert_eq!(
+            backend.legacy_import_executor().execute(
+                &admission,
+                &changed_personas,
+                &lorebooks,
+                &media,
+                TimestampMillis::new(36),
+            ),
+            Err(lettuce_transfer::LegacyImportRepositoryError::Conflict)
+        );
+        let store = media_store(&database_path, &destination_root);
+        backend
+            .legacy_media_importer(&store)
+            .execute(&legacy_root, &admission, &media, TimestampMillis::new(40))
+            .expect("import graph media");
+        let receipt = backend
+            .legacy_import_executor()
+            .execute(
+                &admission,
+                &personas,
+                &lorebooks,
+                &media,
+                TimestampMillis::new(50),
+            )
+            .expect("materialize graph");
+        assert_eq!(
+            (
+                receipt.persona_count,
+                receipt.lorebook_count,
+                receipt.lorebook_entry_count
+            ),
+            (1, 2, 2)
+        );
+        assert!(!receipt.replayed);
+        let persona = PersonaRepository::get(backend.database(), destination_persona_id)
+            .expect("read persona")
+            .expect("persona");
+        assert_eq!(persona.title, "Imported Owner");
+        assert_eq!(persona.nickname.as_deref(), Some("Owner Nickname"));
+        assert_eq!(persona.description, "Every persona field survives import.");
+        assert_eq!(
+            persona.design_description.as_deref(),
+            Some("Warm studio portrait")
+        );
+        let crop = persona.avatar_crop.expect("crop");
+        assert_eq!((crop.x, crop.y, crop.scale), (0.25, 0.5, 1.75));
+        let recommendation = persona.image_recommendation.expect("recommendation");
+        assert_eq!(
+            recommendation.unresolved_legacy_name.as_deref(),
+            Some("Legacy Portrait Model")
+        );
+        assert_eq!(recommendation.strength, 0.65);
+        assert_eq!(persona.media.links.len(), 2);
+        assert_eq!(persona.media.links[0].slot, PersonaMediaSlot::Avatar);
+        assert_eq!(persona.media.links[0].ordinal, 0);
+        assert_eq!(
+            persona.media.links[1].slot,
+            PersonaMediaSlot::DesignReference
+        );
+        assert_eq!(persona.media.links[1].ordinal, 0);
+        assert_eq!(
+            (persona.created_at, persona.updated_at),
+            (TimestampMillis::new(11), TimestampMillis::new(19))
+        );
+        let first_book =
+            LorebookRepository::get(backend.database(), destination_books[&first_book_id])
+                .expect("read first lorebook")
+                .expect("first lorebook");
+        assert_eq!(first_book.book.name, "Recent Context");
+        assert_eq!(
+            first_book.book.detection_policy,
+            DetectionPolicy::RecentMessageWindow
+        );
+        assert_eq!(
+            first_book.book.behavior_version,
+            LorebookBehaviorVersion::LegacyV1
+        );
+        assert_eq!(
+            (first_book.book.created_at, first_book.book.updated_at),
+            (TimestampMillis::new(10), TimestampMillis::new(20))
+        );
+        let first_entry = &first_book.entries[0];
+        assert_eq!(first_entry.id, destination_entries[&first_entry_id]);
+        assert_eq!(first_entry.title, "Regex Entry");
+        assert!(first_entry.enabled);
+        assert!(!first_entry.always_active);
+        assert_eq!(first_entry.keywords, vec!["city.*", "harbor"]);
+        assert!(first_entry.case_sensitive);
+        assert_eq!(first_entry.match_mode, KeywordMatchMode::Regex);
+        assert_eq!(first_entry.content, "The harbor closes at dusk.");
+        assert_eq!(first_entry.priority, 9);
+        assert_eq!(first_entry.ordinal, 0);
+        assert_eq!(
+            (first_entry.created_at, first_entry.updated_at),
+            (TimestampMillis::new(12), TimestampMillis::new(18))
+        );
+        assert_eq!(
+            first_book.book.icon_asset_id,
+            Some(persona.media.links[0].asset_id)
+        );
+        let second_book =
+            LorebookRepository::get(backend.database(), destination_books[&second_book_id])
+                .expect("read second lorebook")
+                .expect("second lorebook");
+        assert_eq!(second_book.book.name, "Latest User Context");
+        assert_eq!(
+            second_book.book.detection_policy,
+            DetectionPolicy::LatestUserMessage
+        );
+        assert_eq!(second_book.book.icon_asset_id, None);
+        let second_entry = &second_book.entries[0];
+        assert_eq!(second_entry.id, destination_entries[&second_entry_id]);
+        assert_eq!(second_entry.title, "Always Entry");
+        assert!(!second_entry.enabled);
+        assert!(second_entry.always_active);
+        assert!(second_entry.keywords.is_empty());
+        assert!(!second_entry.case_sensitive);
+        assert_eq!(second_entry.match_mode, KeywordMatchMode::Literal);
+        assert_eq!(second_entry.content, "A persistent setting detail.");
+        assert_eq!(second_entry.priority, -3);
+        assert_eq!(second_entry.ordinal, 0);
+        assert_eq!(
+            (second_entry.created_at, second_entry.updated_at),
+            (TimestampMillis::new(13), TimestampMillis::new(17))
+        );
+        let bindings = PersonaLorebookBindingRepository::list_persona_bindings(
+            backend.database(),
+            destination_persona_id,
+        )
+        .expect("read bindings");
+        assert_eq!(
+            bindings
+                .iter()
+                .map(|binding| binding.lorebook_id)
+                .collect::<Vec<_>>(),
+            vec![
+                destination_books[&second_book_id],
+                destination_books[&first_book_id]
+            ]
+        );
+        assert!(bindings.iter().all(|binding| binding.enabled));
+        assert_eq!(
+            bindings
+                .iter()
+                .map(|binding| binding.ordinal)
+                .collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        let default =
+            PersonaRepository::get_default_snapshot(backend.database()).expect("read default");
+        assert_eq!(default.state.persona_id, Some(destination_persona_id));
+        assert_eq!(default.state.revision.get(), 2);
+        assert_eq!(
+            fs::read(images.join("shared.png")).expect("read retained source"),
+            bytes
+        );
+        drop(store);
+        drop(backend);
+
+        let reopened =
+            AppBackend::open(&database_path, TimestampMillis::new(60)).expect("reopen backend");
+        let reopened_admission = reopened
+            .legacy_import_admission()
+            .admit(
+                run_id,
+                &inventory,
+                &personas,
+                &lorebooks,
+                &media,
+                TimestampMillis::new(70),
+            )
+            .expect("replay completed admission");
+        assert_eq!(reopened_admission.status, LegacyImportRunStatus::Completed);
+        let replay = reopened
+            .legacy_import_executor()
+            .execute(
+                &reopened_admission,
+                &personas,
+                &lorebooks,
+                &media,
+                TimestampMillis::new(80),
+            )
+            .expect("replay completed graph");
+        assert!(replay.replayed);
+        assert_eq!(replay.completed_at, TimestampMillis::new(50));
+        drop(reopened);
         fs::remove_dir_all(root).expect("remove test root");
     }
 }

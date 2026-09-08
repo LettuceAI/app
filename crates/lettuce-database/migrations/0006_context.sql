@@ -120,6 +120,39 @@ CREATE TABLE persona_lorebook_bindings (
 ) STRICT;
 CREATE INDEX persona_lorebook_bindings_book_idx
     ON persona_lorebook_bindings(lorebook_id, persona_id);
+
+CREATE TABLE legacy_import_results (
+    run_id TEXT PRIMARY KEY REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
+    plan_fingerprint TEXT NOT NULL CHECK (length(plan_fingerprint) = 64),
+    persona_count INTEGER NOT NULL CHECK (persona_count >= 0),
+    lorebook_count INTEGER NOT NULL CHECK (lorebook_count >= 0),
+    lorebook_entry_count INTEGER NOT NULL CHECK (lorebook_entry_count >= 0),
+    completed_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TRIGGER legacy_import_results_insert_guard
+BEFORE INSERT ON legacy_import_results
+WHEN NOT EXISTS (
+    SELECT 1 FROM legacy_import_runs
+    WHERE id = NEW.run_id
+      AND plan_fingerprint = NEW.plan_fingerprint
+      AND status = 'importing'
+)
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import result is invalid');
+END;
+
+CREATE TRIGGER legacy_import_results_update_forbidden
+BEFORE UPDATE ON legacy_import_results
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import result is immutable');
+END;
+
+CREATE TRIGGER legacy_import_results_delete_forbidden
+BEFORE DELETE ON legacy_import_results
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import result is immutable');
+END;
 CREATE TABLE group_lorebook_bindings (
     group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
     lorebook_id TEXT NOT NULL REFERENCES lorebooks(id) ON DELETE RESTRICT,
