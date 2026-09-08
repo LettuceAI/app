@@ -7,6 +7,13 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod global;
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows"
+))]
+mod native_secrets;
 mod secrets;
 
 pub use global::{
@@ -20,3 +27,11 @@ pub use secrets::{
     SecretOwnerId, SecretPurpose, SecretRecord, SecretRef, SecretState, SecretStatus, SecretStore,
     SecretStoreError, SecretValue, SecretValueError,
 };
+
+#[cfg(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows"
+))]
+pub use native_secrets::NativeSecretStore;

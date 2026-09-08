@@ -65,6 +65,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
 unicode-normalization = "0.1"
 zeroize = "1"
+keyring = { version = "=3.6.3", default-features = false }
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "backup"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots"] }
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dynamic", "half", "ndarray"] }

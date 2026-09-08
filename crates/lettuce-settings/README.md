@@ -51,11 +51,21 @@ Deletion is cleanup-idempotent: an absent reference returns `Missing` even
 with an observed generation, while live entries validate purpose and reject a
 stale observed generation.
 
-This slice does not implement encryption, Android Keystore, desktop keyrings,
-native secret entry, IPC, the broad legacy settings vocabulary, or portable
-backup/sync vaults. Those belong to their feature/application and transfer/sync
-work once real contracts exist; no placeholder vault or ciphertext API is
-exposed here.
+`NativeSecretStore` is the production credential adapter for Linux Secret
+Service, macOS/iOS Keychain and Windows Credential Manager. Each opaque
+reference names one native credential containing a bounded versioned envelope
+with its exact purpose, monotonic generation and value. Mutations are serialized
+inside the shared store instance, rotation uses generation CAS, and corrupt,
+ambiguous, inaccessible or wrong-purpose entries fail closed. Temporary encoded
+and decoded values are zeroized, errors and debug output remain redacted, and no
+plaintext fallback exists. Tests run against an injected deterministic backend
+and never access the developer's credential store.
+
+Android Keystore integration, native secret entry IPC, the broad legacy settings
+vocabulary and portable backup/sync vaults remain later slices. Android builds do
+not expose `NativeSecretStore` until their native application context and
+Keystore-backed adapter are wired; they never fall back to the keyring crate's
+test store.
 
 The database foundation adds a small closed `GlobalSettings` document and a
 synchronous persistence port. It currently holds global safety/telemetry/update
