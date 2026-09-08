@@ -848,6 +848,14 @@ against its content and redacted provenance evidence, remaps voice links and
 delegates one atomic batch to the speech repository. Missing or changed audio
 and malformed later records leave earlier records uncommitted.
 
+Legacy version-2 ASR JSON import validates every source identity, normalized
+value, timestamp and optional link before opening audio. Relative voice paths
+are confined to the selected document directory; absolute paths preserve the
+old file-picker workflow, while symlinks and non-files are rejected. Each
+distinct file is ingested once as managed library audio, then the complete
+converted version-3 graph uses the same atomic learning import. Source JSON and
+audio are never modified or removed.
+
 The speech-transcription coordinator admits an idempotent interactive
 `SpeechTranscribe` job, binds it to one immutable audio/model request, claims it
 through the generic worker lifecycle, and coordinates managed audio decoding,

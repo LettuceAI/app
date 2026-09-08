@@ -75,6 +75,8 @@ place of native paths and retaining content and redacted provenance evidence.
 Import rejects unknown versions, oversized or malformed documents, incomplete
 link graphs and changed managed audio, allocates fresh learning IDs, remaps
 voice links and commits all rows only when every managed audio asset is valid.
+The application compatibility adapter converts retained version-2 exports into
+this boundary after safely ingesting their referenced audio files.
 
 Installed-model downloads, microphone IPC and file-format expansion remain
 later ASR slices. TTS has not started.

@@ -24,6 +24,107 @@ pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
 pub const ASR_LEARNING_DOCUMENT_VERSION: u32 = 3;
 pub const ASR_LEARNING_RECORD_LIMIT: usize = 40_000;
 pub const ASR_LEARNING_TABLE_LIMIT: usize = 10_000;
+pub const LEGACY_ASR_LEARNING_DOCUMENT_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LegacyAsrLearningDocument {
+    pub version: u32,
+    #[serde(default)]
+    pub vocabulary: Vec<LegacyAsrVocabularyRecord>,
+    #[serde(default)]
+    pub corrections: Vec<LegacyAsrCorrectionRecord>,
+    #[serde(default)]
+    pub voice_examples: Vec<LegacyAsrVoiceExampleRecord>,
+    #[serde(default)]
+    pub ignored_suggestions: Vec<LegacyAsrIgnoredSuggestionRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LegacyAsrVocabularyRecord {
+    pub id: Option<i64>,
+    pub term: String,
+    pub normalized_term: Option<String>,
+    pub language: Option<String>,
+    pub category: Option<String>,
+    pub scope: Option<String>,
+    pub priority: Option<i64>,
+    pub use_count: Option<i64>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LegacyAsrCorrectionRecord {
+    pub id: Option<i64>,
+    pub wrong: String,
+    pub normalized_wrong: Option<String>,
+    pub correct: String,
+    pub normalized_correct: Option<String>,
+    pub language: Option<String>,
+    pub scope: Option<String>,
+    pub confidence: Option<f64>,
+    pub use_count: Option<i64>,
+    pub accepted_count: Option<i64>,
+    pub rejected_count: Option<i64>,
+    pub seen_count: Option<i64>,
+    pub last_seen_at: Option<String>,
+    pub user_approved: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LegacyAsrVoiceExampleRecord {
+    pub id: Option<i64>,
+    pub audio_path: String,
+    pub expected_text: String,
+    pub normalized_expected_text: Option<String>,
+    pub whisper_output: Option<String>,
+    pub normalized_whisper_output: Option<String>,
+    pub language: Option<String>,
+    pub scope: Option<String>,
+    pub term_id: Option<i64>,
+    pub correction_id: Option<i64>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LegacyAsrIgnoredSuggestionRecord {
+    pub id: Option<i64>,
+    pub wrong: String,
+    pub normalized_wrong: Option<String>,
+    pub correct: String,
+    pub normalized_correct: Option<String>,
+    pub language: Option<String>,
+    pub scope: Option<String>,
+    pub ignored_count: Option<i64>,
+    pub last_ignored_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+impl LegacyAsrLearningDocument {
+    #[must_use]
+    pub fn within_bounds(&self) -> bool {
+        self.version == LEGACY_ASR_LEARNING_DOCUMENT_VERSION
+            && self.vocabulary.len() <= ASR_LEARNING_TABLE_LIMIT
+            && self.corrections.len() <= ASR_LEARNING_TABLE_LIMIT
+            && self.ignored_suggestions.len() <= ASR_LEARNING_TABLE_LIMIT
+            && self.voice_examples.len() <= ASR_LEARNING_TABLE_LIMIT
+            && self
+                .vocabulary
+                .len()
+                .checked_add(self.corrections.len())
+                .and_then(|count| count.checked_add(self.ignored_suggestions.len()))
+                .and_then(|count| count.checked_add(self.voice_examples.len()))
+                .is_some_and(|count| count <= ASR_LEARNING_RECORD_LIMIT)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

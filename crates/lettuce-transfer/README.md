@@ -13,6 +13,10 @@ It preserves metrics and relationships without exporting native audio paths;
 version 3 carries each audio asset's logical kind, origin, redacted provenance,
 content hash, byte size, MIME type and duration. The application validates and
 remaps the complete graph before atomic import.
+
+The legacy version-2 ASR JSON schema remains a separate camelCase compatibility
+document. Its nullable IDs, counters, timestamps and native audio locators are
+parsed without making that external format part of the speech domain.
 External schemas never become internal domain schemas, and restore never
 destructively replaces live state before complete verification.
 
