@@ -27,6 +27,8 @@ pub const LEGACY_MEDIA_TOTAL_BYTES_LIMIT: u64 = 512 * 1024 * 1024;
 pub const LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT: u32 = 256;
 pub const LEGACY_MODEL_PROFILE_PLAN_LIMIT: u32 = 10_000;
 pub const LEGACY_PROMPT_PLAN_LIMIT: u32 = 10_000;
+pub const LEGACY_ASR_TABLE_PLAN_LIMIT: u32 = 10_000;
+pub const LEGACY_ASR_RECORD_PLAN_LIMIT: u32 = 40_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyDatabaseInventory {
@@ -121,6 +123,78 @@ pub struct LegacyPromptPlan {
     pub prompts: Vec<LegacyPromptCandidate>,
     pub default_prompt_source_id: Option<String>,
     pub deprecated_system_prompt: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyAsrVocabularyCandidate {
+    pub source_id: i64,
+    pub term: String,
+    pub normalized_term: String,
+    pub language: Option<String>,
+    pub category: Option<String>,
+    pub scope: String,
+    pub priority: i64,
+    pub use_count: u64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyAsrCorrectionCandidate {
+    pub source_id: i64,
+    pub wrong: String,
+    pub normalized_wrong: String,
+    pub correct: String,
+    pub normalized_correct: String,
+    pub language: Option<String>,
+    pub scope: String,
+    pub confidence: f64,
+    pub use_count: u64,
+    pub accepted_count: u64,
+    pub rejected_count: u64,
+    pub seen_count: u64,
+    pub last_seen_at: Option<String>,
+    pub user_approved: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyAsrIgnoredSuggestionCandidate {
+    pub source_id: i64,
+    pub wrong: String,
+    pub normalized_wrong: String,
+    pub correct: String,
+    pub normalized_correct: String,
+    pub language: Option<String>,
+    pub scope: String,
+    pub ignored_count: u64,
+    pub last_ignored_at: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyAsrVoiceExampleCandidate {
+    pub source_id: i64,
+    pub audio: LegacyMediaReference,
+    pub expected_text: String,
+    pub normalized_expected_text: String,
+    pub whisper_output: Option<String>,
+    pub normalized_whisper_output: Option<String>,
+    pub language: Option<String>,
+    pub scope: String,
+    pub vocabulary_source_id: Option<i64>,
+    pub correction_source_id: Option<i64>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyAsrPlan {
+    pub vocabulary: Vec<LegacyAsrVocabularyCandidate>,
+    pub corrections: Vec<LegacyAsrCorrectionCandidate>,
+    pub ignored_suggestions: Vec<LegacyAsrIgnoredSuggestionCandidate>,
+    pub voice_examples: Vec<LegacyAsrVoiceExampleCandidate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

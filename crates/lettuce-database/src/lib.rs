@@ -42,8 +42,9 @@ mod usage_adapter;
 mod whisper_model_adapter;
 
 pub use legacy_database_preflight::{
-    LegacyDatabaseProviderSecretSource, plan_legacy_lorebooks, plan_legacy_personas,
-    plan_legacy_prompts, plan_legacy_provider_models, preflight_legacy_database,
+    LegacyDatabaseProviderSecretSource, plan_legacy_asr, plan_legacy_lorebooks,
+    plan_legacy_personas, plan_legacy_prompts, plan_legacy_provider_models,
+    preflight_legacy_database,
 };
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};

@@ -26,6 +26,13 @@ The lorebook plan preserves root detection policy and unresolved avatar plus
 every persisted entry field in deterministic order. It bounds roots, total
 entries and entries per book before any destination mutation.
 
+The ASR learning plan preserves vocabulary, correction, ignored-suggestion and
+voice-example rows in stable legacy ID order. Authored and normalized text,
+counters, confidence, timestamps, language, scope and optional learning links
+remain exact. Voice audio paths remain unresolved media evidence. Separate
+per-table and aggregate bounds apply before any plan is returned, and malformed
+or orphaned rows reject the whole read-only plan.
+
 Provider/model planning preserves stable legacy account and profile identities,
 protocol, endpoint and custom wire configuration, effective streaming/TLS state,
 model routing, modalities, supported generation parameters, prompt references and

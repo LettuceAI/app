@@ -94,6 +94,13 @@ legacy enum and boolean encodings, and rejects malformed keywords, timestamps
 and orphan entries. External world-info fields already discarded by the legacy
 importer are not fabricated as version-92 database fields.
 
+ASR learning planning reads all four final version-92 learning tables through
+the same read-only connection. It retains every authored value, normalized
+value, metric, timestamp and voice-audio locator in stable source-ID order,
+validates optional term and correction links within the complete plan, and
+enforces per-table plus aggregate limits before returning any output. Planning
+does not ingest audio or mutate either database.
+
 Provider/model planning reads the final version-92 settings, credential and model
 tables through a read-only connection. It applies the legacy credential resolution
 order, validates defaults and parent bindings, maps custom protocol configuration

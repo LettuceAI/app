@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, path::Path, str::FromStr};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+    str::FromStr,
+};
 
 use lettuce_context::{
     PromptEntryCondition, PromptEntryDraft, PromptEntryPayload, PromptEntryPosition,
@@ -14,16 +18,19 @@ use lettuce_models::{
 };
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef, SecretValue};
 use lettuce_transfer::{
-    LEGACY_DATABASE_SCHEMA_VERSION, LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT,
-    LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT, LEGACY_LOREBOOK_PLAN_LIMIT, LEGACY_MODEL_PROFILE_PLAN_LIMIT,
-    LEGACY_PERSONA_PLAN_LIMIT, LEGACY_PROMPT_PLAN_LIMIT, LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT,
-    LegacyCrop, LegacyDatabaseInventory, LegacyDatabasePreflightError, LegacyImageRecommendation,
-    LegacyImportProviderSecretSource, LegacyKeywordMatchMode, LegacyLorebookCandidate,
-    LegacyLorebookDetectionPolicy, LegacyLorebookEntryCandidate, LegacyLorebookPlan,
-    LegacyMediaReference, LegacyModelProfileCandidate, LegacyPendingProviderSecret,
-    LegacyPersonaCandidate, LegacyPersonaPlan, LegacyPromptCandidate, LegacyPromptEntryCandidate,
-    LegacyPromptPlan, LegacyProviderAccountCandidate, LegacyProviderAccountOrigin,
-    LegacyProviderModelPlan, LegacyProviderSecretSource, LegacyProviderSecretSourceError,
+    LEGACY_ASR_RECORD_PLAN_LIMIT, LEGACY_ASR_TABLE_PLAN_LIMIT, LEGACY_DATABASE_SCHEMA_VERSION,
+    LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT, LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT,
+    LEGACY_LOREBOOK_PLAN_LIMIT, LEGACY_MODEL_PROFILE_PLAN_LIMIT, LEGACY_PERSONA_PLAN_LIMIT,
+    LEGACY_PROMPT_PLAN_LIMIT, LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT, LegacyAsrCorrectionCandidate,
+    LegacyAsrIgnoredSuggestionCandidate, LegacyAsrPlan, LegacyAsrVocabularyCandidate,
+    LegacyAsrVoiceExampleCandidate, LegacyCrop, LegacyDatabaseInventory,
+    LegacyDatabasePreflightError, LegacyImageRecommendation, LegacyImportProviderSecretSource,
+    LegacyKeywordMatchMode, LegacyLorebookCandidate, LegacyLorebookDetectionPolicy,
+    LegacyLorebookEntryCandidate, LegacyLorebookPlan, LegacyMediaReference,
+    LegacyModelProfileCandidate, LegacyPendingProviderSecret, LegacyPersonaCandidate,
+    LegacyPersonaPlan, LegacyPromptCandidate, LegacyPromptEntryCandidate, LegacyPromptPlan,
+    LegacyProviderAccountCandidate, LegacyProviderAccountOrigin, LegacyProviderModelPlan,
+    LegacyProviderSecretSource, LegacyProviderSecretSourceError,
 };
 use lettuce_types::{
     LorebookEntryId, LorebookId, ModelProfileId, PersonaId, ProviderAccountId, Revision,
@@ -105,6 +112,435 @@ pub fn plan_legacy_prompts(
 ) -> Result<LegacyPromptPlan, LegacyDatabasePreflightError> {
     let connection = open_validated(path)?;
     plan_legacy_prompts_with_limit(&connection, LEGACY_PROMPT_PLAN_LIMIT)
+}
+
+pub fn plan_legacy_asr(
+    path: impl AsRef<Path>,
+) -> Result<LegacyAsrPlan, LegacyDatabasePreflightError> {
+    let connection = open_validated(path)?;
+    plan_legacy_asr_with_limits(
+        &connection,
+        LEGACY_ASR_TABLE_PLAN_LIMIT,
+        LEGACY_ASR_RECORD_PLAN_LIMIT,
+    )
+}
+
+fn plan_legacy_asr_with_limits(
+    connection: &Connection,
+    table_limit: u32,
+    aggregate_limit: u32,
+) -> Result<LegacyAsrPlan, LegacyDatabasePreflightError> {
+    const TABLES: [&str; 4] = [
+        "asr_vocabulary_terms",
+        "asr_corrections",
+        "asr_ignored_suggestions",
+        "asr_voice_examples",
+    ];
+    let mut total = 0_u64;
+    for table in TABLES {
+        require_table(connection, table)?;
+        require_count_limit(connection, table, table_limit)?;
+        total = total
+            .checked_add(count(connection, table, table)?)
+            .ok_or(LegacyDatabasePreflightError::CountOutOfRange { table })?;
+    }
+    if total > u64::from(aggregate_limit) {
+        return Err(LegacyDatabasePreflightError::LimitExceeded {
+            table: "asr_learning_records",
+            limit: aggregate_limit,
+        });
+    }
+
+    let vocabulary = read_asr_vocabulary(connection)?;
+    let corrections = read_asr_corrections(connection)?;
+    let ignored_suggestions = read_asr_ignored_suggestions(connection)?;
+    let voice_examples = read_asr_voice_examples(connection)?;
+    let term_ids = vocabulary
+        .iter()
+        .map(|item| item.source_id)
+        .collect::<BTreeSet<_>>();
+    let correction_ids = corrections
+        .iter()
+        .map(|item| item.source_id)
+        .collect::<BTreeSet<_>>();
+    for example in &voice_examples {
+        if example
+            .vocabulary_source_id
+            .is_some_and(|id| !term_ids.contains(&id))
+        {
+            return Err(LegacyDatabasePreflightError::OrphanRecord {
+                table: "asr_voice_examples",
+                parent_table: "asr_vocabulary_terms",
+            });
+        }
+        if example
+            .correction_source_id
+            .is_some_and(|id| !correction_ids.contains(&id))
+        {
+            return Err(LegacyDatabasePreflightError::OrphanRecord {
+                table: "asr_voice_examples",
+                parent_table: "asr_corrections",
+            });
+        }
+    }
+    Ok(LegacyAsrPlan {
+        vocabulary,
+        corrections,
+        ignored_suggestions,
+        voice_examples,
+    })
+}
+
+fn read_asr_vocabulary(
+    connection: &Connection,
+) -> Result<Vec<LegacyAsrVocabularyCandidate>, LegacyDatabasePreflightError> {
+    let table = "asr_vocabulary_terms";
+    let mut statement = connection
+        .prepare("SELECT id,term,normalized_term,language,category,scope,priority,use_count,created_at,updated_at FROM asr_vocabulary_terms ORDER BY id")
+        .map_err(|_| asr_malformed(table, "schema"))?;
+    let mut rows = statement
+        .query([])
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let mut candidates = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?
+    {
+        let candidate = LegacyAsrVocabularyCandidate {
+            source_id: row.get(0).map_err(|_| asr_malformed(table, "id"))?,
+            term: row.get(1).map_err(|_| asr_malformed(table, "term"))?,
+            normalized_term: row
+                .get(2)
+                .map_err(|_| asr_malformed(table, "normalized_term"))?,
+            language: row.get(3).map_err(|_| asr_malformed(table, "language"))?,
+            category: row.get(4).map_err(|_| asr_malformed(table, "category"))?,
+            scope: row.get(5).map_err(|_| asr_malformed(table, "scope"))?,
+            priority: row.get(6).map_err(|_| asr_malformed(table, "priority"))?,
+            use_count: asr_count(row, 7, table, "use_count")?,
+            created_at: row.get(8).map_err(|_| asr_malformed(table, "created_at"))?,
+            updated_at: row.get(9).map_err(|_| asr_malformed(table, "updated_at"))?,
+        };
+        validate_asr_common(
+            candidate.source_id,
+            &candidate.term,
+            &candidate.normalized_term,
+            candidate.language.as_deref(),
+            &candidate.scope,
+            (&candidate.created_at, Some(&candidate.updated_at)),
+            table,
+        )?;
+        if candidate
+            .category
+            .as_ref()
+            .is_some_and(|value| value.chars().count() > 512 || value.contains('\0'))
+        {
+            return Err(asr_malformed(table, "category"));
+        }
+        candidates.push(candidate);
+    }
+    Ok(candidates)
+}
+
+fn read_asr_corrections(
+    connection: &Connection,
+) -> Result<Vec<LegacyAsrCorrectionCandidate>, LegacyDatabasePreflightError> {
+    let table = "asr_corrections";
+    let mut statement = connection
+        .prepare("SELECT id,wrong,normalized_wrong,correct,normalized_correct,language,scope,confidence,use_count,accepted_count,rejected_count,seen_count,last_seen_at,user_approved,created_at,updated_at FROM asr_corrections ORDER BY id")
+        .map_err(|_| asr_malformed(table, "schema"))?;
+    let mut rows = statement
+        .query([])
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let mut candidates = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?
+    {
+        let candidate = LegacyAsrCorrectionCandidate {
+            source_id: row.get(0).map_err(|_| asr_malformed(table, "id"))?,
+            wrong: row.get(1).map_err(|_| asr_malformed(table, "wrong"))?,
+            normalized_wrong: row
+                .get(2)
+                .map_err(|_| asr_malformed(table, "normalized_wrong"))?,
+            correct: row.get(3).map_err(|_| asr_malformed(table, "correct"))?,
+            normalized_correct: row
+                .get(4)
+                .map_err(|_| asr_malformed(table, "normalized_correct"))?,
+            language: row.get(5).map_err(|_| asr_malformed(table, "language"))?,
+            scope: row.get(6).map_err(|_| asr_malformed(table, "scope"))?,
+            confidence: row.get(7).map_err(|_| asr_malformed(table, "confidence"))?,
+            use_count: asr_count(row, 8, table, "use_count")?,
+            accepted_count: asr_count(row, 9, table, "accepted_count")?,
+            rejected_count: asr_count(row, 10, table, "rejected_count")?,
+            seen_count: asr_count(row, 11, table, "seen_count")?,
+            last_seen_at: row
+                .get(12)
+                .map_err(|_| asr_malformed(table, "last_seen_at"))?,
+            user_approved: asr_flag(
+                row.get(13)
+                    .map_err(|_| asr_malformed(table, "user_approved"))?,
+                table,
+                "user_approved",
+            )?,
+            created_at: row
+                .get(14)
+                .map_err(|_| asr_malformed(table, "created_at"))?,
+            updated_at: row
+                .get(15)
+                .map_err(|_| asr_malformed(table, "updated_at"))?,
+        };
+        validate_asr_common(
+            candidate.source_id,
+            &candidate.wrong,
+            &candidate.normalized_wrong,
+            candidate.language.as_deref(),
+            &candidate.scope,
+            (&candidate.created_at, Some(&candidate.updated_at)),
+            table,
+        )?;
+        validate_asr_pair(&candidate.correct, &candidate.normalized_correct, table)?;
+        if !candidate.confidence.is_finite()
+            || !(0.0..=1.0).contains(&candidate.confidence)
+            || candidate.use_count == 0
+            || candidate
+                .last_seen_at
+                .as_ref()
+                .is_some_and(|value| !valid_asr_timestamp(value) || value > &candidate.updated_at)
+        {
+            return Err(asr_malformed(table, "metrics"));
+        }
+        candidates.push(candidate);
+    }
+    Ok(candidates)
+}
+
+fn read_asr_ignored_suggestions(
+    connection: &Connection,
+) -> Result<Vec<LegacyAsrIgnoredSuggestionCandidate>, LegacyDatabasePreflightError> {
+    let table = "asr_ignored_suggestions";
+    let mut statement = connection
+        .prepare("SELECT id,wrong,normalized_wrong,correct,normalized_correct,language,scope,ignored_count,last_ignored_at,created_at,updated_at FROM asr_ignored_suggestions ORDER BY id")
+        .map_err(|_| asr_malformed(table, "schema"))?;
+    let mut rows = statement
+        .query([])
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let mut candidates = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?
+    {
+        let candidate = LegacyAsrIgnoredSuggestionCandidate {
+            source_id: row.get(0).map_err(|_| asr_malformed(table, "id"))?,
+            wrong: row.get(1).map_err(|_| asr_malformed(table, "wrong"))?,
+            normalized_wrong: row
+                .get(2)
+                .map_err(|_| asr_malformed(table, "normalized_wrong"))?,
+            correct: row.get(3).map_err(|_| asr_malformed(table, "correct"))?,
+            normalized_correct: row
+                .get(4)
+                .map_err(|_| asr_malformed(table, "normalized_correct"))?,
+            language: row.get(5).map_err(|_| asr_malformed(table, "language"))?,
+            scope: row.get(6).map_err(|_| asr_malformed(table, "scope"))?,
+            ignored_count: asr_count(row, 7, table, "ignored_count")?,
+            last_ignored_at: row
+                .get(8)
+                .map_err(|_| asr_malformed(table, "last_ignored_at"))?,
+            created_at: row.get(9).map_err(|_| asr_malformed(table, "created_at"))?,
+            updated_at: row
+                .get(10)
+                .map_err(|_| asr_malformed(table, "updated_at"))?,
+        };
+        validate_asr_common(
+            candidate.source_id,
+            &candidate.wrong,
+            &candidate.normalized_wrong,
+            candidate.language.as_deref(),
+            &candidate.scope,
+            (&candidate.created_at, Some(&candidate.updated_at)),
+            table,
+        )?;
+        validate_asr_pair(&candidate.correct, &candidate.normalized_correct, table)?;
+        if candidate.normalized_wrong == candidate.normalized_correct
+            || candidate.ignored_count == 0
+            || !valid_asr_timestamp(&candidate.last_ignored_at)
+            || candidate.last_ignored_at > candidate.updated_at
+        {
+            return Err(asr_malformed(table, "ignored_count"));
+        }
+        candidates.push(candidate);
+    }
+    Ok(candidates)
+}
+
+fn read_asr_voice_examples(
+    connection: &Connection,
+) -> Result<Vec<LegacyAsrVoiceExampleCandidate>, LegacyDatabasePreflightError> {
+    let table = "asr_voice_examples";
+    let mut statement = connection
+        .prepare("SELECT id,audio_path,expected_text,normalized_expected_text,whisper_output,normalized_whisper_output,language,scope,term_id,correction_id,created_at FROM asr_voice_examples ORDER BY id")
+        .map_err(|_| asr_malformed(table, "schema"))?;
+    let mut rows = statement
+        .query([])
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let mut candidates = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?
+    {
+        let candidate = LegacyAsrVoiceExampleCandidate {
+            source_id: row.get(0).map_err(|_| asr_malformed(table, "id"))?,
+            audio: LegacyMediaReference {
+                locator: row.get(1).map_err(|_| asr_malformed(table, "audio_path"))?,
+            },
+            expected_text: row
+                .get(2)
+                .map_err(|_| asr_malformed(table, "expected_text"))?,
+            normalized_expected_text: row
+                .get(3)
+                .map_err(|_| asr_malformed(table, "normalized_expected_text"))?,
+            whisper_output: row
+                .get(4)
+                .map_err(|_| asr_malformed(table, "whisper_output"))?,
+            normalized_whisper_output: row
+                .get(5)
+                .map_err(|_| asr_malformed(table, "normalized_whisper_output"))?,
+            language: row.get(6).map_err(|_| asr_malformed(table, "language"))?,
+            scope: row.get(7).map_err(|_| asr_malformed(table, "scope"))?,
+            vocabulary_source_id: row.get(8).map_err(|_| asr_malformed(table, "term_id"))?,
+            correction_source_id: row
+                .get(9)
+                .map_err(|_| asr_malformed(table, "correction_id"))?,
+            created_at: row
+                .get(10)
+                .map_err(|_| asr_malformed(table, "created_at"))?,
+        };
+        validate_asr_common(
+            candidate.source_id,
+            &candidate.expected_text,
+            &candidate.normalized_expected_text,
+            candidate.language.as_deref(),
+            &candidate.scope,
+            (&candidate.created_at, None),
+            table,
+        )?;
+        if candidate.audio.locator.trim().is_empty()
+            || candidate.audio.locator.contains('\0')
+            || !valid_optional_asr_pair(
+                candidate.whisper_output.as_deref(),
+                candidate.normalized_whisper_output.as_deref(),
+            )
+        {
+            return Err(asr_malformed(table, "audio_path"));
+        }
+        candidates.push(candidate);
+    }
+    Ok(candidates)
+}
+
+fn validate_asr_common(
+    source_id: i64,
+    authored: &str,
+    normalized: &str,
+    language: Option<&str>,
+    scope: &str,
+    timestamps: (&str, Option<&str>),
+    table: &'static str,
+) -> Result<(), LegacyDatabasePreflightError> {
+    let (created_at, updated_at) = timestamps;
+    validate_asr_pair(authored, normalized, table)?;
+    if source_id <= 0
+        || language.is_some_and(|value| {
+            value.is_empty()
+                || value.trim() != value
+                || value.to_ascii_lowercase() != value
+                || value.chars().count() > 32
+                || value.chars().any(char::is_control)
+        })
+        || scope.is_empty()
+        || scope.trim() != scope
+        || scope.to_ascii_lowercase() != scope
+        || scope.chars().count() > 64
+        || scope.chars().any(char::is_control)
+        || !valid_asr_timestamp(created_at)
+        || updated_at.is_some_and(|value| !valid_asr_timestamp(value) || created_at > value)
+    {
+        return Err(asr_malformed(table, "metadata"));
+    }
+    Ok(())
+}
+
+fn validate_asr_pair(
+    authored: &str,
+    normalized: &str,
+    table: &'static str,
+) -> Result<(), LegacyDatabasePreflightError> {
+    if authored.is_empty()
+        || authored.chars().count() > 4_096
+        || authored.contains('\0')
+        || normalized.is_empty()
+        || normalized != normalize_asr(authored)
+    {
+        Err(asr_malformed(table, "normalized_text"))
+    } else {
+        Ok(())
+    }
+}
+
+fn valid_optional_asr_pair(authored: Option<&str>, normalized: Option<&str>) -> bool {
+    match authored {
+        None => normalized.is_none(),
+        Some(authored) => {
+            let expected = normalize_asr(authored);
+            !authored.contains('\0')
+                && authored.chars().count() <= 4_096
+                && normalized == (!expected.is_empty()).then_some(expected.as_str())
+        }
+    }
+}
+
+fn valid_asr_timestamp(value: &str) -> bool {
+    !value.trim().is_empty() && value.trim() == value && !value.contains('\0')
+}
+
+fn asr_count(
+    row: &rusqlite::Row<'_>,
+    index: usize,
+    table: &'static str,
+    field: &'static str,
+) -> Result<u64, LegacyDatabasePreflightError> {
+    let value: i64 = row.get(index).map_err(|_| asr_malformed(table, field))?;
+    u64::try_from(value).map_err(|_| asr_malformed(table, field))
+}
+
+fn asr_flag(
+    value: i64,
+    table: &'static str,
+    field: &'static str,
+) -> Result<bool, LegacyDatabasePreflightError> {
+    match value {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(asr_malformed(table, field)),
+    }
+}
+
+fn asr_malformed(table: &'static str, field: &'static str) -> LegacyDatabasePreflightError {
+    LegacyDatabasePreflightError::MalformedRecord { table, field }
+}
+
+fn normalize_asr(value: &str) -> String {
+    let mut normalized = String::with_capacity(value.len());
+    let mut last_was_space = true;
+    for character in value.chars() {
+        if character.is_alphanumeric() {
+            normalized.extend(character.to_lowercase());
+            last_was_space = false;
+        } else if !last_was_space {
+            normalized.push(' ');
+            last_was_space = true;
+        }
+    }
+    normalized.trim().to_owned()
 }
 
 #[derive(Deserialize)]
@@ -2785,5 +3221,209 @@ mod tests {
         );
         drop(connection);
         std::fs::remove_file(path).expect("remove legacy database");
+    }
+
+    fn add_asr_schema(connection: &Connection) {
+        connection
+            .execute_batch(
+                "CREATE TABLE asr_vocabulary_terms (
+                   id INTEGER PRIMARY KEY, term TEXT NOT NULL, normalized_term TEXT NOT NULL,
+                   language TEXT, category TEXT, scope TEXT NOT NULL, priority INTEGER NOT NULL,
+                   use_count INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                 );
+                 CREATE TABLE asr_corrections (
+                   id INTEGER PRIMARY KEY, wrong TEXT NOT NULL, normalized_wrong TEXT NOT NULL,
+                   correct TEXT NOT NULL, normalized_correct TEXT NOT NULL, language TEXT,
+                   scope TEXT NOT NULL, confidence REAL NOT NULL, use_count INTEGER NOT NULL,
+                   accepted_count INTEGER NOT NULL, rejected_count INTEGER NOT NULL,
+                   seen_count INTEGER NOT NULL, last_seen_at TEXT, user_approved INTEGER NOT NULL,
+                   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                 );
+                 CREATE TABLE asr_ignored_suggestions (
+                   id INTEGER PRIMARY KEY, wrong TEXT NOT NULL, normalized_wrong TEXT NOT NULL,
+                   correct TEXT NOT NULL, normalized_correct TEXT NOT NULL, language TEXT,
+                   scope TEXT NOT NULL, ignored_count INTEGER NOT NULL,
+                   last_ignored_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                 );
+                 CREATE TABLE asr_voice_examples (
+                   id INTEGER PRIMARY KEY, audio_path TEXT NOT NULL, expected_text TEXT NOT NULL,
+                   normalized_expected_text TEXT NOT NULL, whisper_output TEXT,
+                   normalized_whisper_output TEXT, language TEXT, scope TEXT NOT NULL,
+                   term_id INTEGER, correction_id INTEGER, created_at TEXT NOT NULL
+                 );",
+            )
+            .expect("create ASR schema");
+    }
+
+    fn insert_asr_records(connection: &Connection) {
+        connection
+            .execute_batch(
+                "INSERT INTO asr_vocabulary_terms VALUES
+                   (8,'Lettuce AI','lettuce ai','en','product','global',75,4,'2026-01-01 00:00:00','2026-01-02 00:00:00'),
+                   (3,'Megalith','megalith',NULL,NULL,'workspace',90,7,'2025-12-01 00:00:00','2025-12-03 00:00:00');
+                 INSERT INTO asr_corrections VALUES
+                   (11,'let us ai','let us ai','Lettuce AI','lettuce ai','en','global',0.93,5,3,1,4,'2026-01-03 00:00:00',1,'2026-01-01 00:00:00','2026-01-04 00:00:00');
+                 INSERT INTO asr_ignored_suggestions VALUES
+                   (6,'mega lit','mega lit','Megalith','megalith',NULL,'workspace',2,'2026-01-05 00:00:00','2026-01-02 00:00:00','2026-01-06 00:00:00');
+                 INSERT INTO asr_voice_examples VALUES
+                   (14,'asr/examples/lettuce.wav','Lettuce AI','lettuce ai','Let us AI','let us ai','en','global',8,11,'2026-01-07 00:00:00');",
+            )
+            .expect("insert ASR records");
+    }
+
+    #[test]
+    fn asr_plan_preserves_records_links_order_and_source_bytes() {
+        let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
+        let connection = Connection::open(&path).expect("open legacy database");
+        add_asr_schema(&connection);
+        insert_asr_records(&connection);
+        drop(connection);
+        let before = fs::read(&path).expect("read source before planning");
+
+        let plan = plan_legacy_asr(&path).expect("plan ASR learning records");
+
+        assert_eq!(
+            plan.vocabulary,
+            vec![
+                LegacyAsrVocabularyCandidate {
+                    source_id: 3,
+                    term: "Megalith".to_owned(),
+                    normalized_term: "megalith".to_owned(),
+                    language: None,
+                    category: None,
+                    scope: "workspace".to_owned(),
+                    priority: 90,
+                    use_count: 7,
+                    created_at: "2025-12-01 00:00:00".to_owned(),
+                    updated_at: "2025-12-03 00:00:00".to_owned(),
+                },
+                LegacyAsrVocabularyCandidate {
+                    source_id: 8,
+                    term: "Lettuce AI".to_owned(),
+                    normalized_term: "lettuce ai".to_owned(),
+                    language: Some("en".to_owned()),
+                    category: Some("product".to_owned()),
+                    scope: "global".to_owned(),
+                    priority: 75,
+                    use_count: 4,
+                    created_at: "2026-01-01 00:00:00".to_owned(),
+                    updated_at: "2026-01-02 00:00:00".to_owned(),
+                },
+            ]
+        );
+        assert_eq!(
+            plan.corrections,
+            vec![LegacyAsrCorrectionCandidate {
+                source_id: 11,
+                wrong: "let us ai".to_owned(),
+                normalized_wrong: "let us ai".to_owned(),
+                correct: "Lettuce AI".to_owned(),
+                normalized_correct: "lettuce ai".to_owned(),
+                language: Some("en".to_owned()),
+                scope: "global".to_owned(),
+                confidence: 0.93,
+                use_count: 5,
+                accepted_count: 3,
+                rejected_count: 1,
+                seen_count: 4,
+                last_seen_at: Some("2026-01-03 00:00:00".to_owned()),
+                user_approved: true,
+                created_at: "2026-01-01 00:00:00".to_owned(),
+                updated_at: "2026-01-04 00:00:00".to_owned(),
+            }]
+        );
+        assert_eq!(
+            plan.ignored_suggestions,
+            vec![LegacyAsrIgnoredSuggestionCandidate {
+                source_id: 6,
+                wrong: "mega lit".to_owned(),
+                normalized_wrong: "mega lit".to_owned(),
+                correct: "Megalith".to_owned(),
+                normalized_correct: "megalith".to_owned(),
+                language: None,
+                scope: "workspace".to_owned(),
+                ignored_count: 2,
+                last_ignored_at: "2026-01-05 00:00:00".to_owned(),
+                created_at: "2026-01-02 00:00:00".to_owned(),
+                updated_at: "2026-01-06 00:00:00".to_owned(),
+            }]
+        );
+        assert_eq!(
+            plan.voice_examples,
+            vec![LegacyAsrVoiceExampleCandidate {
+                source_id: 14,
+                audio: LegacyMediaReference {
+                    locator: "asr/examples/lettuce.wav".to_owned(),
+                },
+                expected_text: "Lettuce AI".to_owned(),
+                normalized_expected_text: "lettuce ai".to_owned(),
+                whisper_output: Some("Let us AI".to_owned()),
+                normalized_whisper_output: Some("let us ai".to_owned()),
+                language: Some("en".to_owned()),
+                scope: "global".to_owned(),
+                vocabulary_source_id: Some(8),
+                correction_source_id: Some(11),
+                created_at: "2026-01-07 00:00:00".to_owned(),
+            }]
+        );
+        assert_eq!(fs::read(&path).expect("read source after planning"), before);
+        fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn asr_plan_rejects_malformed_and_orphaned_records() {
+        let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
+        let connection = Connection::open(&path).expect("open legacy database");
+        add_asr_schema(&connection);
+        insert_asr_records(&connection);
+        connection
+            .execute("UPDATE asr_corrections SET user_approved=2 WHERE id=11", [])
+            .expect("corrupt flag");
+        assert_eq!(
+            plan_legacy_asr_with_limits(&connection, 10, 10),
+            Err(LegacyDatabasePreflightError::MalformedRecord {
+                table: "asr_corrections",
+                field: "user_approved",
+            })
+        );
+        connection
+            .execute("UPDATE asr_corrections SET user_approved=1 WHERE id=11", [])
+            .expect("restore flag");
+        connection
+            .execute("UPDATE asr_voice_examples SET term_id=99 WHERE id=14", [])
+            .expect("orphan voice example");
+        assert_eq!(
+            plan_legacy_asr_with_limits(&connection, 10, 10),
+            Err(LegacyDatabasePreflightError::OrphanRecord {
+                table: "asr_voice_examples",
+                parent_table: "asr_vocabulary_terms",
+            })
+        );
+        drop(connection);
+        fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn asr_plan_enforces_per_table_and_aggregate_bounds() {
+        let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
+        let connection = Connection::open(&path).expect("open legacy database");
+        add_asr_schema(&connection);
+        insert_asr_records(&connection);
+        assert_eq!(
+            plan_legacy_asr_with_limits(&connection, 1, 10),
+            Err(LegacyDatabasePreflightError::LimitExceeded {
+                table: "asr_vocabulary_terms",
+                limit: 1,
+            })
+        );
+        assert_eq!(
+            plan_legacy_asr_with_limits(&connection, 2, 4),
+            Err(LegacyDatabasePreflightError::LimitExceeded {
+                table: "asr_learning_records",
+                limit: 4,
+            })
+        );
+        drop(connection);
+        fs::remove_file(path).expect("remove legacy database");
     }
 }
