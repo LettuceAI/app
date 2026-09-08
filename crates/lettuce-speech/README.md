@@ -18,7 +18,26 @@ corrections.
 This preserves the legacy chat and group-chat flow while removing caller-owned
 native paths and unchecked PCM byte payloads. English-only model/language
 mismatches, malformed WAV frames, oversized audio and invalid runtime results
-now fail before settlement. Runtime execution remains behind `AsrRuntime`;
-the embedded whisper.cpp adapter, installed-model discovery/downloads, the ASR
-learning repository, microphone IPC and file-format expansion remain later ASR
-slices. TTS has not started.
+fail before settlement.
+
+`WhisperCppRuntime` implements `AsrRuntime` with the pinned whisper-rs binding
+and accepts a model only after the installed manifest is reverified and matches
+the durable descriptor. Its process cache is keyed by artifact hash, effective
+CPU/GPU choice, flash-attention choice and GPU device. CUDA, ROCm, Vulkan and
+Metal remain explicit build features. It preserves the legacy greedy sampling,
+thread, translation, context, timestamp, split, length, token, offset,
+duration, temperature, language-detection, prompt and segment conversion
+inputs. An `auto` language request triggers detection, including for
+English-only models. Nonfinite temperatures and invalid device/thread values
+now fail before reaching native code instead of relying on lossy casts.
+
+The job cancellation token is read by whisper.cpp's abort callback during
+inference, and a post-call check maps native abort failures back to the durable
+cancelled outcome. The adapter routes whisper.cpp and GGML logs through
+`tracing`, supports verified preload and explicit cache clearing, and never
+exposes the verified native path outside the runtime boundary. A deterministic
+native-loader test uses a verified invalid model fixture to exercise the real
+FFI without downloading model data.
+
+Installed-model downloads, the ASR learning repository, microphone IPC and
+file-format expansion remain later ASR slices. TTS has not started.

@@ -3,6 +3,7 @@ use std::{path::Path, sync::Arc};
 use lettuce_database::{Database, DatabaseError};
 use lettuce_inference::InferenceRuntime;
 use lettuce_jobs::JobStore;
+use lettuce_speech::WhisperCppRuntime;
 
 use crate::{
     BuiltInPromptIds, BuiltInPromptService, BuiltInPromptServiceError, ConversationLaunchError,
@@ -17,6 +18,7 @@ pub struct AppBackend {
     database: Arc<Database>,
     built_in_prompt_ids: BuiltInPromptIds,
     inference_runtime: Arc<InferenceRuntime>,
+    whisper_runtime: Arc<WhisperCppRuntime<Database>>,
 }
 
 impl AppBackend {
@@ -44,8 +46,10 @@ impl AppBackend {
             .map_err(AppInitializationError::BuiltInPrompts)?
             .bootstrap(now)
             .map_err(AppInitializationError::BuiltInPrompts)?;
+        let database = Arc::new(database);
         Ok(Self {
-            database: Arc::new(database),
+            whisper_runtime: Arc::new(WhisperCppRuntime::new(database.clone())),
+            database,
             built_in_prompt_ids,
             inference_runtime: Arc::new(InferenceRuntime::default()),
         })
@@ -179,6 +183,11 @@ impl AppBackend {
     #[must_use]
     pub fn whisper_models(&self) -> crate::WhisperModelCoordinator<'_, Database> {
         crate::WhisperModelCoordinator::new(self.database.as_ref())
+    }
+
+    #[must_use]
+    pub fn whisper_runtime(&self) -> &WhisperCppRuntime<Database> {
+        self.whisper_runtime.as_ref()
     }
 
     #[must_use]

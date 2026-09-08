@@ -11,7 +11,7 @@ const MAX_LANGUAGE_SCALARS: usize = 32;
 const MAX_SCOPE_SCALARS: usize = 64;
 const MAX_PROMPT_SCALARS: usize = 2_048;
 const MAX_RESULT_TEXT_SCALARS: usize = 1_000_000;
-const MAX_SEGMENTS: usize = 100_000;
+pub(crate) const MAX_SEGMENTS: usize = 100_000;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -67,15 +67,30 @@ pub struct AsrModelDescriptor {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct TranscriptionOptions {
     pub language: Option<String>,
     pub scopes: Vec<String>,
     pub initial_prompt: Option<String>,
     pub translate: bool,
     pub detect_language: bool,
+    pub no_context: bool,
+    pub single_segment: bool,
+    pub token_timestamps: bool,
+    pub split_on_word: bool,
+    pub max_len: Option<i32>,
+    pub max_tokens: Option<i32>,
+    pub offset_ms: Option<i32>,
+    pub duration_ms: Option<i32>,
+    pub threads: Option<usize>,
+    pub best_of: Option<i32>,
+    pub temperature: Option<f32>,
+    pub temperature_inc: Option<f32>,
     pub use_gpu: bool,
+    pub force_cpu: bool,
     pub keep_model_loaded: bool,
+    pub flash_attention: bool,
+    pub gpu_device: i32,
 }
 
 impl Default for TranscriptionOptions {
@@ -86,8 +101,23 @@ impl Default for TranscriptionOptions {
             initial_prompt: None,
             translate: false,
             detect_language: false,
+            no_context: false,
+            single_segment: false,
+            token_timestamps: false,
+            split_on_word: false,
+            max_len: None,
+            max_tokens: None,
+            offset_ms: None,
+            duration_ms: None,
+            threads: None,
+            best_of: None,
+            temperature: None,
+            temperature_inc: None,
             use_gpu: true,
+            force_cpu: false,
             keep_model_loaded: true,
+            flash_attention: false,
+            gpu_device: 0,
         }
     }
 }
@@ -103,10 +133,11 @@ impl TranscriptionOptions {
             validate_text(scope, MAX_SCOPE_SCALARS)?;
         }
         if self
-            .language
-            .as_deref()
-            .is_some_and(|language| language.eq_ignore_ascii_case("auto"))
-            && !self.detect_language
+            .threads
+            .is_some_and(|threads| threads > i32::MAX as usize)
+            || self.gpu_device < 0
+            || self.temperature.is_some_and(|value| !value.is_finite())
+            || self.temperature_inc.is_some_and(|value| !value.is_finite())
         {
             return Err(AsrValidationError::InvalidOptions);
         }
@@ -129,7 +160,9 @@ impl TranscriptionRequest {
         self.options.validate()?;
         if self.model.english_only
             && self.options.language.as_deref().is_some_and(|language| {
-                !language.eq_ignore_ascii_case("en") && !language.eq_ignore_ascii_case("english")
+                !language.eq_ignore_ascii_case("en")
+                    && !language.eq_ignore_ascii_case("english")
+                    && !language.eq_ignore_ascii_case("auto")
             })
         {
             return Err(AsrValidationError::UnsupportedLanguage);
@@ -650,5 +683,21 @@ mod tests {
         wav[36..40].copy_from_slice(b"data");
         wav[40..44].copy_from_slice(&1_u32.to_le_bytes());
         assert_eq!(decode_wav(&wav), Err(AsrAudioError::InvalidAudio));
+    }
+
+    #[test]
+    fn restores_runtime_defaults_from_older_request_documents() {
+        let options: TranscriptionOptions = serde_json::from_str(
+            r#"{"language":"en","scopes":["conversation"],"initial_prompt":null,"translate":false,"detect_language":false,"use_gpu":true,"keep_model_loaded":true}"#,
+        )
+        .expect("older options");
+        assert_eq!(
+            options,
+            TranscriptionOptions {
+                language: Some("en".into()),
+                scopes: vec!["conversation".into()],
+                ..TranscriptionOptions::default()
+            }
+        );
     }
 }

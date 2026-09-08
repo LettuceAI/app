@@ -63,6 +63,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+whisper-rs = { git = "https://codeberg.org/MegalithOfficial/whisper-rs.git", rev = "73ead25190ef5761f561e451b0926a9fef774cd2", features = ["tracing_backend"] }
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
 unicode-normalization = "0.1"
 zeroize = "1"

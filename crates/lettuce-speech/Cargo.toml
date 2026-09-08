@@ -13,9 +13,22 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+cuda = ["whisper-rs/cuda"]
+rocm = ["whisper-rs/hipblas"]
+vulkan = ["whisper-rs/vulkan"]
+metal = ["whisper-rs/metal"]
+
 [dependencies]
 lettuce-jobs.workspace = true
 lettuce-media.workspace = true
+lettuce-model-hub.workspace = true
 lettuce-types.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
+whisper-rs.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

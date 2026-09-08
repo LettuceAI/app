@@ -836,14 +836,16 @@ prompt construction, runtime execution, correction application and durable
 settlement. Successful results replay after reopen without another runtime
 call. Cooperative cancellation reaches the runtime token and settles through
 job cleanup; unavailable audio, learning storage, models or runtimes schedule a
-retry, while malformed inputs fail terminally. The AppBackend exposes this
-coordinator without owning a speech runtime. Host scheduling and microphone IPC
-remain later integration work.
+retry, while malformed inputs fail terminally. `AppBackend` owns one
+process-lifetime `WhisperCppRuntime` backed by the installed-model repository so
+verified contexts can be reused across coordinator calls. Host scheduling and
+microphone IPC remain later integration work.
 
 The Whisper-model coordinator scans the retained legacy model directory through
 the bounded model-hub inspection contract, records each verified manifest, and
 replays exact admissions after reopen without changing source bytes. Resolution
 preserves the legacy first-filename default or accepts an explicit installed
 model ID, then revalidates size and BLAKE3 before producing the speech request
-descriptor and runtime-only artifact handle. Model downloads and the actual
-whisper.cpp adapter remain subsequent ASR slices.
+descriptor and runtime-only artifact handle. The runtime independently repeats
+that verification before loading native code. Model downloads remain a later
+ASR slice.
