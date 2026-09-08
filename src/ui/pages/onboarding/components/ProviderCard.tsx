@@ -114,6 +114,7 @@ function getProviderDescription(providerId: string, t: TFunction): string {
       return t("onboarding.provider.descriptions.anthropic");
     case "nanogpt":
     case "featherless":
+    case "modelrunner":
     case "openrouter":
       return t("onboarding.provider.descriptions.aggregator");
     case "openai-compatible":
@@ -155,6 +156,7 @@ function getProviderDescriptionShort(providerId: string, t: TFunction): string {
       return t("onboarding.provider.descriptionsShort.anthropic");
     case "nanogpt":
     case "featherless":
+    case "modelrunner":
     case "openrouter":
       return t("onboarding.provider.descriptionsShort.aggregator");
     case "openai-compatible":
