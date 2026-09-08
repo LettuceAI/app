@@ -1562,6 +1562,22 @@ export const enMessages = {
       fullSessionJson: "Full Session JSON",
       storedMessageJson: "Stored Message JSON",
       fullTraceEvents: "Full Trace Events",
+      tokenBreakdown: "Prompt Token Breakdown",
+      tokenBreakdownEstimate: "Estimate — tiktoken o200k (approximate; the model's own tokenizer will differ)",
+      tokenBreakdownTotal: "Total prompt",
+      tokenBreakdownContext: "Context window",
+      tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
+      tokenBreakdownComputing: "Counting tokens…",
+      tokenBreakdownNote:
+        "Reconstructed from the current session state and may differ slightly from the exact bytes sent to the provider. System buckets share the same content when the prompt is condensed into a single message.",
+      tokenBreakdownCat: {
+        systemPersona: "System & Persona",
+        memory: "Memories",
+        lorebook: "Lorebook / World Info",
+        authorNote: "Author's Note",
+        companion: "Companion State",
+        history: "Chat History",
+      },
     },
     companionMemoryPage: {
       backLabel: "Back",
