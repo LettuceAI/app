@@ -439,6 +439,12 @@ reference store's idempotency, lease, cancellation, retry, progress, pagination,
 recovery, and retention behavior across process restart and concurrent database
 handles without creating a second scheduler state machine.
 
+Migration 14 stores admitted ASR transcription requests and their single
+immutable successful result. Each row is bound to a `speech_transcribe` job, a
+speech-request identity, and a ready audio asset; request/model/audio bindings
+cannot change after admission. A result can settle once and remains available
+after process reopen so job recovery can finish without transcribing twice.
+
 Staged lorebook final apply reuses the existing lorebook aggregate insert/replace
 functions inside the project transaction. The committed project stores its
 request and result receipt in the versioned run; exact retries return the same

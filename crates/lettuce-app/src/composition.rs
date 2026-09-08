@@ -170,6 +170,13 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn speech_transcriptions(
+        &self,
+    ) -> crate::SpeechTranscriptionCoordinator<'_, Database, Database> {
+        crate::SpeechTranscriptionCoordinator::new(self.database.as_ref(), self.database.as_ref())
+    }
+
+    #[must_use]
     pub fn startup_job_recovery(&self) -> crate::StartupJobRecoveryCoordinator<'_, Database> {
         crate::StartupJobRecoveryCoordinator::new(self.database.as_ref())
     }

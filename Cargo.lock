@@ -1178,6 +1178,7 @@ dependencies = [
  "lettuce-memory",
  "lettuce-models",
  "lettuce-settings",
+ "lettuce-speech",
  "lettuce-transfer",
  "lettuce-types",
  "lettuce-usage",
@@ -1364,7 +1365,11 @@ dependencies = [
 name = "lettuce-speech"
 version = "0.1.0"
 dependencies = [
+ "lettuce-jobs",
+ "lettuce-media",
  "lettuce-types",
+ "serde",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

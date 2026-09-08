@@ -828,3 +828,14 @@ only after both graph and provider/model receipts exist.
 The legacy media import coordinator reopens only confined regular files under the read-only source root, rejects symlinks and path drift, and rechecks byte length plus BLAKE3 before ingest. It catalogs each file under the admission's assigned asset ID, records durable completion after the ready blob exists, and resumes partial progress by replaying completed objects. Shared bytes deduplicate to one blob while their logical asset identities remain distinct. It never removes or rewrites the legacy source.
 
 The legacy graph execution coordinator recomputes the sealed plan fingerprint and asks the transfer repository to materialize it. SQLite creates lorebooks and their assigned entries, personas and assigned media links, ordered active-lorebook bindings, and the legacy default owner in one transaction only after all media receipts verify. Legacy entry display order becomes the contiguous stored order already established by preflight sorting. Exact retry returns the original completion receipt, including after reopen; any mismatch leaves no partial graph. Source cleanup is intentionally absent pending full migration verification and explicit user-approved deletion.
+
+The speech-transcription coordinator admits an idempotent interactive
+`SpeechTranscribe` job, binds it to one immutable audio/model request, claims it
+through the generic worker lifecycle, and coordinates managed audio decoding,
+prompt construction, runtime execution, correction application and durable
+settlement. Successful results replay after reopen without another runtime
+call. Cooperative cancellation reaches the runtime token and settles through
+job cleanup; unavailable audio, learning storage, models or runtimes schedule a
+retry, while malformed inputs fail terminally. The AppBackend exposes this
+coordinator without owning a speech runtime. Host scheduling and microphone IPC
+remain later integration work.

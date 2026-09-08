@@ -27,6 +27,7 @@ lettuce-media.workspace = true
 lettuce-memory.workspace = true
 lettuce-models.workspace = true
 lettuce-settings.workspace = true
+lettuce-speech.workspace = true
 lettuce-transfer.workspace = true
 lettuce-types.workspace = true
 lettuce-usage.workspace = true
