@@ -29,8 +29,9 @@ which may be an external file selected by the user. The application adapter
 validates and hashes bounded regular files without copying them or exposing
 ambient filesystem access to domain crates. Admission seals each original voice
 locator, safe logical key, content hash and stable destination assignment. The
-current media executor rejects voice-audio candidates until their dedicated
-managed-audio ingestion slice is implemented.
+media executor revalidates and hashes each sealed source immediately before
+ingestion, stores voice examples as persistent `OtherAudio` assets, supports
+mixed image/audio plans, and replays the immutable completion after reopen.
 
 ## Boundary
 

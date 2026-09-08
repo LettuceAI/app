@@ -56,8 +56,9 @@ destination IDs to every vocabulary, correction, ignored-suggestion and voice
 example row. Voice audio joins the same bounded, content-hashed media plan with
 its original locator retained as evidence and a safe logical import key. Exact
 retries preserve all assignments; any ASR content, link, locator or media change
-conflicts before destination writes. Audio ingestion and ASR materialization
-remain separate later steps.
+conflicts before destination writes. Voice audio is now ingested through the
+same immutable media completion protocol with an audio asset kind; ASR row
+materialization remains a separate later step.
 
 Provider secret transfer uses a narrow source port that yields temporary
 zeroizing values only for the sealed API-key and header assignments. Durable

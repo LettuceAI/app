@@ -68,14 +68,6 @@ where
         ) {
             return Err(LegacyMediaImportError::InvalidAdmission);
         }
-        if plan.media.iter().any(|candidate| {
-            candidate
-                .uses
-                .iter()
-                .any(|media_use| matches!(media_use, LegacyMediaUse::AsrVoiceExample { .. }))
-        }) {
-            return Err(LegacyMediaImportError::InvalidAdmission);
-        }
         let assignments = media_assignments(admission, plan)?;
         let storage_root = std::fs::canonicalize(storage_root)
             .map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
@@ -182,29 +174,8 @@ fn read_verified_source(
     if candidate.byte_len > MAX_MEDIA_BLOB_BYTES {
         return Err(LegacyMediaImportError::SourceChanged);
     }
-    let relative = Path::new(&candidate.relative_path);
-    if relative.is_absolute()
-        || !relative
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
-    {
-        return Err(LegacyMediaImportError::UnsafeSource);
-    }
-    let mut source = storage_root.to_path_buf();
-    for component in relative.components() {
-        let Component::Normal(component) = component else {
-            return Err(LegacyMediaImportError::UnsafeSource);
-        };
-        source.push(component);
-        let metadata = std::fs::symlink_metadata(&source)
-            .map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
-        if metadata.file_type().is_symlink() {
-            return Err(LegacyMediaImportError::UnsafeSource);
-        }
-    }
-    let canonical =
-        std::fs::canonicalize(&source).map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
-    if !canonical.starts_with(storage_root) || !canonical.is_file() {
+    let canonical = source_path(storage_root, candidate)?;
+    if !canonical.is_file() {
         return Err(LegacyMediaImportError::UnsafeSource);
     }
     let mut file = File::open(&canonical).map_err(|_| LegacyMediaImportError::SourceRead)?;
@@ -232,6 +203,71 @@ fn read_verified_source(
     Ok(bytes)
 }
 
+fn source_path(
+    storage_root: &Path,
+    candidate: &LegacyMediaCandidate,
+) -> Result<std::path::PathBuf, LegacyMediaImportError> {
+    let has_voice_audio = candidate
+        .uses
+        .iter()
+        .any(|media_use| matches!(media_use, LegacyMediaUse::AsrVoiceExample { .. }));
+    if has_voice_audio {
+        if candidate
+            .uses
+            .iter()
+            .any(|media_use| !matches!(media_use, LegacyMediaUse::AsrVoiceExample { .. }))
+        {
+            return Err(LegacyMediaImportError::InvalidAdmission);
+        }
+        let locator = Path::new(&candidate.source_locator);
+        let source = if locator.is_absolute() {
+            locator.to_path_buf()
+        } else {
+            storage_root.join(locator)
+        };
+        let metadata = std::fs::symlink_metadata(&source)
+            .map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(LegacyMediaImportError::UnsafeSource);
+        }
+        let canonical = std::fs::canonicalize(&source)
+            .map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
+        if !locator.is_absolute() && !canonical.starts_with(storage_root) {
+            return Err(LegacyMediaImportError::UnsafeSource);
+        }
+        return Ok(canonical);
+    }
+    if candidate.source_locator != candidate.relative_path {
+        return Err(LegacyMediaImportError::InvalidAdmission);
+    }
+    let relative = Path::new(&candidate.relative_path);
+    if relative.is_absolute()
+        || !relative
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+    {
+        return Err(LegacyMediaImportError::UnsafeSource);
+    }
+    let mut source = storage_root.to_path_buf();
+    for component in relative.components() {
+        let Component::Normal(component) = component else {
+            return Err(LegacyMediaImportError::UnsafeSource);
+        };
+        source.push(component);
+        let metadata = std::fs::symlink_metadata(&source)
+            .map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
+        if metadata.file_type().is_symlink() {
+            return Err(LegacyMediaImportError::UnsafeSource);
+        }
+    }
+    let canonical =
+        std::fs::canonicalize(&source).map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
+    if !canonical.starts_with(storage_root) || !canonical.is_file() {
+        return Err(LegacyMediaImportError::UnsafeSource);
+    }
+    Ok(canonical)
+}
+
 fn asset_kind(candidate: &LegacyMediaCandidate) -> AssetKind {
     let all_persona_avatars = candidate
         .uses
@@ -245,7 +281,13 @@ fn asset_kind(candidate: &LegacyMediaCandidate) -> AssetKind {
         .uses
         .iter()
         .all(|media_use| matches!(media_use, LegacyMediaUse::LorebookAvatar { .. }));
-    if !candidate.uses.is_empty() && all_persona_avatars {
+    let all_voice_examples = candidate
+        .uses
+        .iter()
+        .all(|media_use| matches!(media_use, LegacyMediaUse::AsrVoiceExample { .. }));
+    if !candidate.uses.is_empty() && all_voice_examples {
+        AssetKind::OtherAudio
+    } else if !candidate.uses.is_empty() && all_persona_avatars {
         AssetKind::AvatarOriginal
     } else if !candidate.uses.is_empty() && all_design_references {
         AssetKind::Illustration
@@ -271,16 +313,18 @@ mod tests {
     use lettuce_settings::InMemorySecretStore;
     use lettuce_transfer::{
         LegacyAsrPlan, LegacyCrop, LegacyDatabaseInventory, LegacyImageRecommendation,
-        LegacyImportAssignment, LegacyImportPlan, LegacyImportRunStatus, LegacyKeywordMatchMode,
-        LegacyLorebookCandidate, LegacyLorebookDetectionPolicy, LegacyLorebookEntryCandidate,
-        LegacyLorebookPlan, LegacyMediaCandidate, LegacyMediaPlan, LegacyMediaReference,
-        LegacyMediaUse, LegacyPersonaCandidate, LegacyPersonaPlan, LegacyProviderModelPlan,
+        LegacyImportAdmissionRequest, LegacyImportAssignment, LegacyImportMediaSource,
+        LegacyImportPlan, LegacyImportRepository, LegacyImportRunStatus, LegacyImportSources,
+        LegacyKeywordMatchMode, LegacyLorebookCandidate, LegacyLorebookDetectionPolicy,
+        LegacyLorebookEntryCandidate, LegacyLorebookPlan, LegacyMediaCandidate, LegacyMediaPlan,
+        LegacyMediaReference, LegacyMediaUse, LegacyPersonaCandidate, LegacyPersonaPlan,
+        LegacyProviderModelPlan,
     };
     use lettuce_types::{
         ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, PersonaId, TimestampMillis,
     };
 
-    use crate::{AppBackend, LegacyMediaImportError};
+    use crate::{AppBackend, LegacyMediaImportCoordinator, LegacyMediaImportError};
 
     fn png_fixture(marker: u8) -> Vec<u8> {
         let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
@@ -296,6 +340,28 @@ mod tests {
 
     fn content_hash(bytes: &[u8]) -> ContentHash {
         ContentHash::parse(blake3::hash(bytes).to_hex().to_string()).expect("content hash")
+    }
+
+    fn wav_fixture() -> Vec<u8> {
+        let samples = [0_i16, 1, -1, 0];
+        let data_size = u32::try_from(samples.len() * 2).expect("WAV data size");
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_size).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16_u32.to_le_bytes());
+        wav.extend_from_slice(&1_u16.to_le_bytes());
+        wav.extend_from_slice(&1_u16.to_le_bytes());
+        wav.extend_from_slice(&16_000_u32.to_le_bytes());
+        wav.extend_from_slice(&32_000_u32.to_le_bytes());
+        wav.extend_from_slice(&2_u16.to_le_bytes());
+        wav.extend_from_slice(&16_u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_size.to_le_bytes());
+        for sample in samples {
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+        wav
     }
 
     fn asr() -> LegacyAsrPlan {
@@ -531,6 +597,122 @@ mod tests {
         drop(reopened_store);
         drop(reopened);
         fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn mixed_image_and_external_voice_audio_ingest_and_replay() {
+        let root = std::env::temp_dir().join(format!(
+            "lettuce-legacy-mixed-media-import-{}",
+            LegacyImportRunId::new()
+        ));
+        let legacy_root = root.join("legacy");
+        let destination_root = root.join("destination");
+        let database_path = root.join("app.sqlite3");
+        std::fs::create_dir_all(legacy_root.join("images")).expect("create legacy images");
+        std::fs::create_dir_all(&destination_root).expect("create destination");
+        let image = png_fixture(4);
+        std::fs::write(legacy_root.join("images/avatar.png"), &image).expect("write image");
+        let audio_path = root.join("selected-voice.wav");
+        let audio = wav_fixture();
+        std::fs::write(&audio_path, &audio).expect("write voice audio");
+        let persona_id = PersonaId::new();
+        let media = LegacyMediaPlan {
+            media: vec![
+                LegacyMediaCandidate {
+                    relative_path: "images/avatar.png".to_owned(),
+                    source_locator: "images/avatar.png".to_owned(),
+                    byte_len: image.len() as u64,
+                    content_hash: content_hash(&image),
+                    uses: vec![LegacyMediaUse::PersonaAvatar { persona_id }],
+                },
+                LegacyMediaCandidate {
+                    relative_path: "asr/voice-examples/9.wav".to_owned(),
+                    source_locator: audio_path.to_string_lossy().to_string(),
+                    byte_len: audio.len() as u64,
+                    content_hash: content_hash(&audio),
+                    uses: vec![LegacyMediaUse::AsrVoiceExample { source_id: 9 }],
+                },
+            ],
+            total_bytes: (image.len() + audio.len()) as u64,
+        };
+        let database = Database::open(&database_path).expect("open database");
+        let run_id = LegacyImportRunId::new();
+        let admission = database
+            .admit(LegacyImportAdmissionRequest {
+                run_id,
+                source_schema_version: lettuce_transfer::LEGACY_DATABASE_SCHEMA_VERSION,
+                inventory_fingerprint: ContentHash::parse("ab".repeat(32)).expect("inventory hash"),
+                plan_fingerprint: ContentHash::parse("cd".repeat(32)).expect("plan hash"),
+                sources: LegacyImportSources {
+                    provider_account_ids: Vec::new(),
+                    model_profile_ids: Vec::new(),
+                    prompt_ids: Vec::new(),
+                    provider_secrets: Vec::new(),
+                    persona_ids: vec![persona_id],
+                    lorebook_ids: Vec::new(),
+                    lorebook_entry_ids: Vec::new(),
+                    asr_vocabulary_ids: Vec::new(),
+                    asr_correction_ids: Vec::new(),
+                    asr_ignored_suggestion_ids: Vec::new(),
+                    asr_voice_example_ids: vec![9],
+                    media: media
+                        .media
+                        .iter()
+                        .map(|candidate| LegacyImportMediaSource {
+                            relative_path: candidate.relative_path.clone(),
+                            byte_len: candidate.byte_len,
+                            content_hash: candidate.content_hash.clone(),
+                        })
+                        .collect(),
+                },
+                admitted_at: TimestampMillis::new(1),
+            })
+            .expect("admit mixed media");
+        let audio_asset_id = admission
+            .assignments
+            .iter()
+            .find_map(|assignment| match assignment {
+                LegacyImportAssignment::Media {
+                    relative_path,
+                    destination_id,
+                    ..
+                } if relative_path == "asr/voice-examples/9.wav" => Some(destination_id),
+                _ => None,
+            })
+            .expect("audio asset assignment");
+        let store = media_store(&database_path, &destination_root);
+        let coordinator = LegacyMediaImportCoordinator::new(&database, &store);
+        let first = coordinator
+            .execute(&legacy_root, &admission, &media, TimestampMillis::new(2))
+            .expect("ingest mixed media");
+        assert_eq!(first.len(), 2);
+        assert_eq!(
+            MediaAssetRepository::get(&database, *audio_asset_id)
+                .expect("read audio asset")
+                .expect("audio asset")
+                .kind,
+            lettuce_media::AssetKind::OtherAudio
+        );
+        drop(store);
+        drop(database);
+        let reopened = Database::open(&database_path).expect("reopen database");
+        let reopened_store = media_store(&database_path, &destination_root);
+        let reopened_coordinator = LegacyMediaImportCoordinator::new(&reopened, &reopened_store);
+        let replay = reopened_coordinator
+            .execute(&legacy_root, &admission, &media, TimestampMillis::new(3))
+            .expect("replay mixed media");
+        assert!(replay.iter().all(|completion| completion.replayed));
+        let mut changed_audio = audio;
+        changed_audio.push(0);
+        std::fs::write(&audio_path, changed_audio).expect("change voice audio");
+        assert_eq!(
+            reopened_coordinator
+                .execute(&legacy_root, &admission, &media, TimestampMillis::new(4),),
+            Err(LegacyMediaImportError::SourceChanged)
+        );
+        drop(reopened_store);
+        drop(reopened);
+        std::fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[test]
