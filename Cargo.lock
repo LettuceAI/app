@@ -1431,6 +1431,7 @@ dependencies = [
  "lettuce-media",
  "lettuce-model-hub",
  "lettuce-types",
+ "regex",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

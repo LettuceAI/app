@@ -520,3 +520,10 @@ media, graph and secret evidence. The run reaches completed only when both graph
 and provider/model/prompt receipts exist. Model-level prompt references, deprecated
 system prompts and unsupported field names remain sealed in the plan fingerprint
 and retained source rather than becoming unused live columns.
+
+Migration 16 stores ASR vocabulary and correction rules behind the
+speech-owned repository port. Authored text and categories remain separate from
+normalized lookup columns, and no save path truncates them. Queries reproduce
+the legacy scope/language filters and runtime order. A file-backed scenario
+proves prompt construction, correction order, CRUD and reopen behavior. Voice
+examples, ignored suggestions and legacy ASR row transfer are not stored yet.

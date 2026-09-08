@@ -838,8 +838,10 @@ call. Cooperative cancellation reaches the runtime token and settles through
 job cleanup; unavailable audio, learning storage, models or runtimes schedule a
 retry, while malformed inputs fail terminally. `AppBackend` owns one
 process-lifetime `WhisperCppRuntime` backed by the installed-model repository so
-verified contexts can be reused across coordinator calls. Host scheduling and
-microphone IPC remain later integration work.
+verified contexts can be reused across coordinator calls. It also exposes the
+SQLite-backed ASR learning library and a composed run method that supplies both
+the real learning and Whisper adapters to a claimed transcription. Host
+scheduling and microphone IPC remain later integration work.
 
 The Whisper-model coordinator scans the retained legacy model directory through
 the bounded model-hub inspection contract, records each verified manifest, and

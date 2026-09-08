@@ -191,6 +191,28 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn asr_learning(&self) -> lettuce_speech::AsrLearningLibrary<'_, Database> {
+        lettuce_speech::AsrLearningLibrary::new(self.database.as_ref())
+    }
+
+    pub fn run_speech_transcription<A: lettuce_speech::AsrAudioSource + ?Sized>(
+        &self,
+        work: crate::SpeechTranscriptionClaimedWork,
+        audio: &A,
+        cancellation_reason: lettuce_jobs::CancellationReason,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<crate::SpeechTranscriptionRunResult, crate::SpeechTranscriptionError> {
+        self.speech_transcriptions().run(
+            work,
+            audio,
+            &self.asr_learning(),
+            self.whisper_runtime(),
+            cancellation_reason,
+            now,
+        )
+    }
+
+    #[must_use]
     pub fn startup_job_recovery(&self) -> crate::StartupJobRecoveryCoordinator<'_, Database> {
         crate::StartupJobRecoveryCoordinator::new(self.database.as_ref())
     }

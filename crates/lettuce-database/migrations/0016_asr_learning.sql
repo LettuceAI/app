@@ -1,0 +1,97 @@
+CREATE TABLE asr_vocabulary_terms (
+    id TEXT PRIMARY KEY CHECK (length(id) = 36),
+    term TEXT NOT NULL CHECK (length(term) BETWEEN 1 AND 4096 AND instr(term, char(0)) = 0),
+    normalized_term TEXT NOT NULL CHECK (
+        length(normalized_term) BETWEEN 1 AND 4096
+        AND trim(normalized_term) = normalized_term
+    ),
+    language TEXT CHECK (
+        language IS NULL
+        OR (length(language) BETWEEN 1 AND 32 AND trim(language) = language AND lower(language) = language)
+    ),
+    category TEXT CHECK (
+        category IS NULL
+        OR (length(category) BETWEEN 0 AND 512 AND instr(category, char(0)) = 0)
+    ),
+    scope TEXT NOT NULL CHECK (
+        length(scope) BETWEEN 1 AND 64
+        AND trim(scope) = scope
+        AND lower(scope) = scope
+    ),
+    priority INTEGER NOT NULL,
+    use_count INTEGER NOT NULL CHECK (use_count >= 0),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL CHECK (updated_at >= created_at)
+) STRICT;
+
+CREATE INDEX asr_vocabulary_scope_language_order
+ON asr_vocabulary_terms(
+    scope,
+    language,
+    priority DESC,
+    use_count DESC,
+    updated_at DESC,
+    created_at DESC,
+    id DESC
+);
+
+CREATE INDEX asr_vocabulary_normalized
+ON asr_vocabulary_terms(normalized_term);
+
+CREATE TABLE asr_corrections (
+    id TEXT PRIMARY KEY CHECK (length(id) = 36),
+    wrong TEXT NOT NULL CHECK (length(wrong) BETWEEN 1 AND 4096 AND instr(wrong, char(0)) = 0),
+    normalized_wrong TEXT NOT NULL CHECK (
+        length(normalized_wrong) BETWEEN 1 AND 4096
+        AND trim(normalized_wrong) = normalized_wrong
+    ),
+    correct TEXT NOT NULL CHECK (length(correct) BETWEEN 1 AND 4096 AND instr(correct, char(0)) = 0),
+    normalized_correct TEXT NOT NULL CHECK (
+        length(normalized_correct) BETWEEN 1 AND 4096
+        AND trim(normalized_correct) = normalized_correct
+    ),
+    language TEXT CHECK (
+        language IS NULL
+        OR (length(language) BETWEEN 1 AND 32 AND trim(language) = language AND lower(language) = language)
+    ),
+    scope TEXT NOT NULL CHECK (
+        length(scope) BETWEEN 1 AND 64
+        AND trim(scope) = scope
+        AND lower(scope) = scope
+    ),
+    confidence REAL NOT NULL CHECK (confidence BETWEEN 0.0 AND 1.0),
+    use_count INTEGER NOT NULL CHECK (use_count >= 1),
+    accepted_count INTEGER NOT NULL CHECK (accepted_count >= 0),
+    rejected_count INTEGER NOT NULL CHECK (rejected_count >= 0),
+    seen_count INTEGER NOT NULL CHECK (seen_count >= 0),
+    last_seen_at INTEGER,
+    user_approved INTEGER NOT NULL CHECK (user_approved IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL CHECK (
+        updated_at >= created_at
+        AND (last_seen_at IS NULL OR last_seen_at <= updated_at)
+    )
+) STRICT;
+
+CREATE INDEX asr_corrections_scope_language_display
+ON asr_corrections(
+    scope,
+    language,
+    user_approved DESC,
+    accepted_count DESC,
+    confidence DESC,
+    use_count DESC,
+    updated_at DESC,
+    id DESC
+);
+
+CREATE INDEX asr_corrections_processing
+ON asr_corrections(
+    scope,
+    language,
+    length(normalized_wrong) DESC,
+    confidence DESC,
+    use_count DESC,
+    created_at DESC,
+    id DESC
+);

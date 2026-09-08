@@ -39,5 +39,21 @@ exposes the verified native path outside the runtime boundary. A deterministic
 native-loader test uses a verified invalid model fixture to exercise the real
 FFI without downloading model data.
 
-Installed-model downloads, the ASR learning repository, microphone IPC and
-file-format expansion remain later ASR slices. TTS has not started.
+The ASR learning library owns typed vocabulary and correction records plus its
+repository port. Vocabulary queries preserve legacy language-neutral matching,
+scope filtering, priority/use/update ordering, normalized deduplication, the
+24-term limit and the 240-byte prompt budget. Corrections preserve the legacy
+longest-phrase, confidence, use-count and ID order, case-insensitive word
+boundaries, whitespace-flexible phrases and one application record per match.
+Replacement text is now treated literally, correcting the legacy regex
+replacement bug that interpreted dollar signs as capture expansion.
+
+`AsrLearningLibrary` supplies the concrete `AsrPromptLibrary` used by the
+durable coordinator and also exposes validated vocabulary/correction CRUD.
+Authored values are stored without trimming or truncation; normalized lookup
+values remain separate. Voice examples, edit-derived suggestion scoring,
+ignored suggestions, acceptance/rejection counters, scope promotion and legacy
+row transfer remain the next learning slice.
+
+Installed-model downloads, microphone IPC and file-format expansion remain
+later ASR slices. TTS has not started.

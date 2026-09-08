@@ -32,6 +32,7 @@ mod scheduled_note_adapter;
 mod soul_adapter;
 mod soul_writer_adapter;
 mod speech_adapter;
+mod speech_learning_adapter;
 mod speaker_inference_adapter;
 mod staged_lorebook_adapter;
 mod staged_lorebook_writer_adapter;
@@ -141,6 +142,11 @@ const MIGRATION_15: Migration = Migration {
     sql: include_str!("../migrations/0015_whisper_models.sql"),
 };
 
+const MIGRATION_16: Migration = Migration {
+    id: 16,
+    sql: include_str!("../migrations/0016_asr_learning.sql"),
+};
+
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
 const MODEL_PROFILE_CONFIG_FORMAT_VERSION: u32 = 1;
 
@@ -243,6 +249,7 @@ impl Database {
                 MIGRATION_13,
                 MIGRATION_14,
                 MIGRATION_15,
+                MIGRATION_16,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -272,6 +279,7 @@ impl Database {
                 MIGRATION_13,
                 MIGRATION_14,
                 MIGRATION_15,
+                MIGRATION_16,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -1851,7 +1859,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 15);
+        assert_eq!(count, 16);
 
         let changed = Migration {
             id: 1,
@@ -1922,7 +1930,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            15
+            16
         );
         let conversation_tables: i64 = connection
             .query_row(
@@ -2145,7 +2153,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            15
+            16
         );
         for column in [
             "target_kind",
@@ -3651,7 +3659,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            15
+            16
         );
         drop(connection);
         drop(database);
@@ -3701,7 +3709,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            15
+            16
         );
         drop(connection);
         drop(database);
@@ -3733,7 +3741,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(migration_count, 15);
+        assert_eq!(migration_count, 16);
         for table in [
             "groups",
             "group_members",
@@ -3782,7 +3790,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 15);
+        assert_eq!(count, 16);
         for table in [
             "prompt_documents",
             "prompt_entries",
@@ -3810,7 +3818,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            15
+            16
         );
         drop(connection);
         drop(reopened);
@@ -3846,7 +3854,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            15
+            16
         );
         let column: i64 = connection
             .query_row(
@@ -3873,7 +3881,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            15
+            16
         );
         drop(connection);
         drop(reopened);
@@ -3922,7 +3930,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            15
+            16
         );
         drop(connection);
         drop(database);
@@ -4055,6 +4063,8 @@ mod tests {
             tables,
             vec![
                 "app_settings",
+                "asr_corrections",
+                "asr_vocabulary_terms",
                 "candidate_media_refs",
                 "character_lorebook_bindings",
                 "character_media",

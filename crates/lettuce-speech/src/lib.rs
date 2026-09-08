@@ -6,7 +6,9 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod asr;
+mod learning;
 mod whisper_runtime;
 
 pub use asr::*;
+pub use learning::*;
 pub use whisper_runtime::*;
