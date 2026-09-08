@@ -1176,6 +1176,7 @@ dependencies = [
  "lettuce-jobs",
  "lettuce-media",
  "lettuce-memory",
+ "lettuce-model-hub",
  "lettuce-models",
  "lettuce-settings",
  "lettuce-speech",

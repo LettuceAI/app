@@ -445,6 +445,12 @@ speech-request identity, and a ready audio asset; request/model/audio bindings
 cannot change after admission. A result can settle once and remains available
 after process reopen so job recovery can finish without transcribing twice.
 
+Migration 15 stores immutable installed-Whisper manifests separately from user
+media. Scalar model/path/size/hash projections must match the versioned
+manifest, and repeated admission is exact. Updates and deletion are disabled in
+this slice so retained legacy model evidence cannot be silently replaced or
+removed before verified migration and an explicit removal workflow.
+
 Staged lorebook final apply reuses the existing lorebook aggregate insert/replace
 functions inside the project transaction. The committed project stores its
 request and result receipt in the versioned run; exact retries return the same

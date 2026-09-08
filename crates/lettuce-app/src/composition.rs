@@ -177,6 +177,11 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn whisper_models(&self) -> crate::WhisperModelCoordinator<'_, Database> {
+        crate::WhisperModelCoordinator::new(self.database.as_ref())
+    }
+
+    #[must_use]
     pub fn startup_job_recovery(&self) -> crate::StartupJobRecoveryCoordinator<'_, Database> {
         crate::StartupJobRecoveryCoordinator::new(self.database.as_ref())
     }

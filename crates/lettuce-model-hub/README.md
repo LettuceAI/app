@@ -25,3 +25,14 @@ The companion-emotion installed contract separately verifies the exact model,
 tokenizer, and config triplet used by the GoEmotions auxiliary classifier. It
 also requires an immutable source revision before exposing paths to the runtime;
 model loading and config interpretation remain owned by `lettuce-embeddings`.
+
+Installed Whisper models now have a separate immutable manifest with model ID,
+source revision, byte size, BLAKE3 digest, language/quantization facts and
+admission time. Retained legacy discovery is bounded to the old two-level
+`models/whisper/<variant>/ggml-<variant>.bin` layout, rejects symbolic links and
+hashes regular files without moving or deleting them. The durable catalog keeps
+legacy filename sorting, so an omitted selection resolves to the same first
+installed model used by chat and group chat. Every runtime resolution rechecks
+the file size and digest before exposing its internal verified path. Remote
+catalog fetching, pinned downloads, managed installation and removal remain the
+next model-hub work; the old unpinned Hugging Face `main` URL is not copied.
