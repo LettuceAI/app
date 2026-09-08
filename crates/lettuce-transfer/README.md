@@ -57,8 +57,9 @@ example row. Voice audio joins the same bounded, content-hashed media plan with
 its original locator retained as evidence and a safe logical import key. Exact
 retries preserve all assignments; any ASR content, link, locator or media change
 conflicts before destination writes. Voice audio is now ingested through the
-same immutable media completion protocol with an audio asset kind; ASR row
-materialization remains a separate later step.
+same immutable media completion protocol with an audio asset kind. ASR
+materialization resolves every assigned row and optional link, requires those
+audio completions, and returns one immutable aggregate receipt.
 
 Provider secret transfer uses a narrow source port that yields temporary
 zeroizing values only for the sealed API-key and header assignments. Durable

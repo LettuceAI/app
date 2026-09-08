@@ -105,7 +105,11 @@ Legacy import admission persists immutable assignments for all four ASR row
 kinds alongside media assignments. Source integer IDs map to typed destination
 UUIDs, replay returns the original mapping after reopen, and the foundation
 schema accepts these assignment kinds only while the run is admitting. This
-does not write live ASR rows or mark their audio complete.
+does not write live ASR rows or mark their audio complete. A later immediate
+transaction resolves those assignments into all four live ASR tables only after
+each voice asset has an immutable media completion. The ASR result receipt is
+immutable and exact retries replay it after reopen; invalid timestamps, missing
+audio, dangling links or destination collisions roll back every ASR row.
 
 Provider/model planning reads the final version-92 settings, credential and model
 tables through a read-only connection. It applies the legacy credential resolution
@@ -543,7 +547,7 @@ same migration stores ignored edit suggestions with a null-safe unique identity,
 counts repeated ignores, and removes matching ignored rows atomically when a
 correction is saved. Chat and group edit scenarios verify suppression, repeated
 acceptance, scope promotion and two reopen cycles. Legacy ASR row transfer is
-not stored yet.
+materialized through the same validated records and preserves every counter.
 
 Migration 16 also stores ASR voice examples through a composite foreign key to
 an audio-kind media asset. Vocabulary and correction links use `SET NULL`, while
@@ -551,4 +555,5 @@ the audio asset remains retained by `RESTRICT`. The adapter validates normalized
 text on every read, orders by creation time and ID, and rejects missing or
 non-audio assets. File-backed coverage proves create, update, edit-derived
 suggestion, link clearing, deletion and two reopen cycles. Legacy ASR row
-transfer remains separate so native paths are never copied into live records.
+transfer resolves assigned managed audio assets, so native paths are never
+copied into live records.

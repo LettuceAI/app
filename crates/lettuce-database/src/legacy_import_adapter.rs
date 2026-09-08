@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, str::FromStr};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    str::FromStr,
+};
 
 use lettuce_characters::{
     Crop, ImageRecommendation, LifecycleStatus, Persona, PersonaMedia, PersonaMediaLink,
@@ -12,13 +15,15 @@ use lettuce_context::{
 };
 use lettuce_models::{ModelProfile, ProviderAccount, SecretHeader};
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
+use lettuce_speech::{AsrCorrectionRule, AsrIgnoredSuggestion, AsrVocabularyTerm, AsrVoiceExample};
 use lettuce_transfer::{
-    LEGACY_DATABASE_SCHEMA_VERSION, LegacyImportAdmission, LegacyImportAdmissionRequest,
-    LegacyImportAssignment, LegacyImportExecutionRequest, LegacyImportMediaCompletion,
-    LegacyImportMediaCompletionRequest, LegacyImportMediaSource, LegacyImportProviderSecretSource,
-    LegacyImportReceipt, LegacyImportRepository, LegacyImportRepositoryError,
-    LegacyImportRunStatus, LegacyImportSecretCompletion, LegacyImportSecretCompletionRequest,
-    LegacyImportSources, LegacyKeywordMatchMode, LegacyLorebookDetectionPolicy, LegacyMediaUse,
+    LEGACY_DATABASE_SCHEMA_VERSION, LegacyAsrMaterializationRequest, LegacyAsrReceipt,
+    LegacyImportAdmission, LegacyImportAdmissionRequest, LegacyImportAssignment,
+    LegacyImportExecutionRequest, LegacyImportMediaCompletion, LegacyImportMediaCompletionRequest,
+    LegacyImportMediaSource, LegacyImportProviderSecretSource, LegacyImportReceipt,
+    LegacyImportRepository, LegacyImportRepositoryError, LegacyImportRunStatus,
+    LegacyImportSecretCompletion, LegacyImportSecretCompletionRequest, LegacyImportSources,
+    LegacyKeywordMatchMode, LegacyLorebookDetectionPolicy, LegacyMediaUse,
     LegacyPendingProviderSecret, LegacyProviderModelMaterializationRequest,
     LegacyProviderModelReceipt,
 };
@@ -224,13 +229,11 @@ impl LegacyImportRepository for Database {
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
         let admission = load_admission(&transaction, request.run_id)?
             .ok_or(LegacyImportRepositoryError::Conflict)?;
-        let mut sources = execution_sources(&request);
-        normalize_sources(&mut sources)?;
-        if admission.plan_fingerprint != request.plan_fingerprint
-            || assignment_sources(&admission.assignments) != sources
-        {
+        if admission.plan_fingerprint != request.plan_fingerprint {
             return Err(LegacyImportRepositoryError::Conflict);
         }
+        let assignments = AssignmentMaps::from_admission(&admission)?;
+        validate_graph_sources(&request, &assignments)?;
         if let Some(mut receipt) = load_receipt(&transaction, request.run_id)? {
             let expected_status =
                 if load_provider_model_receipt(&transaction, request.run_id)?.is_some() {
@@ -253,7 +256,6 @@ impl LegacyImportRepository for Database {
         ) {
             return Err(LegacyImportRepositoryError::Conflict);
         }
-        let assignments = AssignmentMaps::from_admission(&admission)?;
         let media_by_use = completed_media_by_use(&transaction, &request, &assignments)?;
         transaction
             .execute(
@@ -437,6 +439,203 @@ impl LegacyImportRepository for Database {
             )
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
         let receipt = load_receipt(&transaction, request.run_id)?
+            .ok_or(LegacyImportRepositoryError::Storage)?;
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(receipt)
+    }
+
+    fn materialize_asr(
+        &self,
+        request: LegacyAsrMaterializationRequest,
+    ) -> Result<LegacyAsrReceipt, LegacyImportRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let admission = load_admission(&transaction, request.run_id)?
+            .ok_or(LegacyImportRepositoryError::Conflict)?;
+        if admission.plan_fingerprint != request.plan_fingerprint {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        let assignments = AssignmentMaps::from_admission(&admission)?;
+        validate_asr_sources(&request, &assignments)?;
+        if let Some(mut receipt) = load_asr_receipt(&transaction, request.run_id)? {
+            receipt.replayed = true;
+            transaction
+                .commit()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            return Ok(receipt);
+        }
+        if !matches!(
+            admission.status,
+            LegacyImportRunStatus::Admitted
+                | LegacyImportRunStatus::Importing
+                | LegacyImportRunStatus::Completed
+        ) {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        let audio_assets = completed_asr_audio(&transaction, &request, &assignments)?;
+
+        for candidate in &request.asr.vocabulary {
+            let term = AsrVocabularyTerm {
+                id: *assignments
+                    .asr_vocabulary
+                    .get(&candidate.source_id)
+                    .ok_or(LegacyImportRepositoryError::Conflict)?,
+                term: candidate.term.clone(),
+                normalized_term: candidate.normalized_term.clone(),
+                language: candidate.language.clone(),
+                category: candidate.category.clone(),
+                scope: candidate.scope.clone(),
+                priority: candidate.priority,
+                use_count: candidate.use_count,
+                created_at: legacy_timestamp(&transaction, &candidate.created_at)?,
+                updated_at: legacy_timestamp(&transaction, &candidate.updated_at)?,
+            };
+            term.validate()
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            transaction
+                .execute(
+                    "INSERT INTO asr_vocabulary_terms (id,term,normalized_term,language,category,scope,priority,use_count,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                    params![term.id.to_string(), term.term, term.normalized_term, term.language, term.category, term.scope, term.priority, to_i64(term.use_count)?, term.created_at.get(), term.updated_at.get()],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        }
+
+        for candidate in &request.asr.corrections {
+            let correction = AsrCorrectionRule {
+                id: *assignments
+                    .asr_corrections
+                    .get(&candidate.source_id)
+                    .ok_or(LegacyImportRepositoryError::Conflict)?,
+                wrong: candidate.wrong.clone(),
+                normalized_wrong: candidate.normalized_wrong.clone(),
+                correct: candidate.correct.clone(),
+                normalized_correct: candidate.normalized_correct.clone(),
+                language: candidate.language.clone(),
+                scope: candidate.scope.clone(),
+                confidence: candidate.confidence,
+                use_count: candidate.use_count,
+                accepted_count: candidate.accepted_count,
+                rejected_count: candidate.rejected_count,
+                seen_count: candidate.seen_count,
+                last_seen_at: candidate
+                    .last_seen_at
+                    .as_deref()
+                    .map(|value| legacy_timestamp(&transaction, value))
+                    .transpose()?,
+                user_approved: candidate.user_approved,
+                created_at: legacy_timestamp(&transaction, &candidate.created_at)?,
+                updated_at: legacy_timestamp(&transaction, &candidate.updated_at)?,
+            };
+            correction
+                .validate()
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            transaction
+                .execute(
+                    "INSERT INTO asr_corrections (id,wrong,normalized_wrong,correct,normalized_correct,language,scope,confidence,use_count,accepted_count,rejected_count,seen_count,last_seen_at,user_approved,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+                    params![correction.id.to_string(), correction.wrong, correction.normalized_wrong, correction.correct, correction.normalized_correct, correction.language, correction.scope, correction.confidence, to_i64(correction.use_count)?, to_i64(correction.accepted_count)?, to_i64(correction.rejected_count)?, to_i64(correction.seen_count)?, correction.last_seen_at.map(TimestampMillis::get), correction.user_approved, correction.created_at.get(), correction.updated_at.get()],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        }
+
+        for candidate in &request.asr.ignored_suggestions {
+            let ignored = AsrIgnoredSuggestion {
+                id: *assignments
+                    .asr_ignored
+                    .get(&candidate.source_id)
+                    .ok_or(LegacyImportRepositoryError::Conflict)?,
+                wrong: candidate.wrong.clone(),
+                normalized_wrong: candidate.normalized_wrong.clone(),
+                correct: candidate.correct.clone(),
+                normalized_correct: candidate.normalized_correct.clone(),
+                language: candidate.language.clone(),
+                scope: candidate.scope.clone(),
+                ignored_count: candidate.ignored_count,
+                last_ignored_at: legacy_timestamp(&transaction, &candidate.last_ignored_at)?,
+                created_at: legacy_timestamp(&transaction, &candidate.created_at)?,
+                updated_at: legacy_timestamp(&transaction, &candidate.updated_at)?,
+            };
+            ignored
+                .validate()
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            transaction
+                .execute(
+                    "INSERT INTO asr_ignored_suggestions (id,wrong,normalized_wrong,correct,normalized_correct,language,scope,ignored_count,last_ignored_at,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                    params![ignored.id.to_string(), ignored.wrong, ignored.normalized_wrong, ignored.correct, ignored.normalized_correct, ignored.language, ignored.scope, to_i64(ignored.ignored_count)?, ignored.last_ignored_at.get(), ignored.created_at.get(), ignored.updated_at.get()],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        }
+
+        for candidate in &request.asr.voice_examples {
+            let created_at = legacy_timestamp(&transaction, &candidate.created_at)?;
+            let example = AsrVoiceExample {
+                id: *assignments
+                    .asr_voice_examples
+                    .get(&candidate.source_id)
+                    .ok_or(LegacyImportRepositoryError::Conflict)?,
+                audio_asset_id: *audio_assets
+                    .get(&candidate.source_id)
+                    .ok_or(LegacyImportRepositoryError::Conflict)?,
+                expected_text: candidate.expected_text.clone(),
+                normalized_expected_text: candidate.normalized_expected_text.clone(),
+                whisper_output: candidate.whisper_output.clone(),
+                normalized_whisper_output: candidate.normalized_whisper_output.clone(),
+                language: candidate.language.clone(),
+                scope: candidate.scope.clone(),
+                vocabulary_term_id: candidate
+                    .vocabulary_source_id
+                    .map(|id| {
+                        assignments
+                            .asr_vocabulary
+                            .get(&id)
+                            .copied()
+                            .ok_or(LegacyImportRepositoryError::Conflict)
+                    })
+                    .transpose()?,
+                correction_id: candidate
+                    .correction_source_id
+                    .map(|id| {
+                        assignments
+                            .asr_corrections
+                            .get(&id)
+                            .copied()
+                            .ok_or(LegacyImportRepositoryError::Conflict)
+                    })
+                    .transpose()?,
+                created_at,
+                updated_at: created_at,
+            };
+            example
+                .validate()
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            transaction
+                .execute(
+                    "INSERT INTO asr_voice_examples (id,audio_asset_id,expected_text,normalized_expected_text,whisper_output,normalized_whisper_output,language,scope,vocabulary_term_id,correction_id,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                    params![example.id.to_string(), example.audio_asset_id.to_string(), example.expected_text, example.normalized_expected_text, example.whisper_output, example.normalized_whisper_output, example.language, example.scope, example.vocabulary_term_id.map(|id| id.to_string()), example.correction_id.map(|id| id.to_string()), example.created_at.get(), example.updated_at.get()],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        }
+
+        let vocabulary_count = i64::try_from(request.asr.vocabulary.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        let correction_count = i64::try_from(request.asr.corrections.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        let ignored_count = i64::try_from(request.asr.ignored_suggestions.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        let voice_count = i64::try_from(request.asr.voice_examples.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        transaction
+            .execute(
+                "INSERT INTO legacy_import_asr_results (run_id,plan_fingerprint,vocabulary_count,correction_count,ignored_suggestion_count,voice_example_count,completed_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![request.run_id.to_string(), request.plan_fingerprint.as_str(), vocabulary_count, correction_count, ignored_count, voice_count, request.completed_at.get()],
+            )
+            .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        let receipt = load_asr_receipt(&transaction, request.run_id)?
             .ok_or(LegacyImportRepositoryError::Storage)?;
         transaction
             .commit()
@@ -862,72 +1061,71 @@ impl AssignmentMaps {
     }
 }
 
-fn execution_sources(request: &LegacyImportExecutionRequest) -> LegacyImportSources {
-    LegacyImportSources {
-        provider_account_ids: request
-            .provider_models
-            .provider_accounts
-            .iter()
-            .map(|provider| provider.id)
-            .collect(),
-        model_profile_ids: request
-            .provider_models
-            .model_profiles
-            .iter()
-            .map(|model| model.id)
-            .collect(),
-        prompt_ids: request
-            .prompts
-            .prompts
-            .iter()
-            .map(|prompt| prompt.source_id.clone())
-            .collect(),
-        provider_secrets: request
-            .provider_models
-            .provider_accounts
-            .iter()
-            .flat_map(|provider| {
-                provider.pending_secrets.iter().cloned().map(|secret| {
-                    LegacyImportProviderSecretSource {
-                        provider_account_id: provider.id,
-                        secret,
-                    }
-                })
-            })
-            .collect(),
-        persona_ids: request
+fn validate_graph_sources(
+    request: &LegacyImportExecutionRequest,
+    assignments: &AssignmentMaps,
+) -> Result<(), LegacyImportRepositoryError> {
+    let providers = request
+        .provider_models
+        .provider_accounts
+        .iter()
+        .map(|candidate| candidate.id)
+        .collect::<BTreeSet<_>>();
+    let models = request
+        .provider_models
+        .model_profiles
+        .iter()
+        .map(|candidate| candidate.id)
+        .collect::<BTreeSet<_>>();
+    let prompts = request
+        .prompts
+        .prompts
+        .iter()
+        .map(|candidate| candidate.source_id.clone())
+        .collect::<BTreeSet<_>>();
+    let personas = request
+        .personas
+        .personas
+        .iter()
+        .map(|candidate| candidate.id)
+        .collect::<BTreeSet<_>>();
+    let lorebooks = request
+        .lorebooks
+        .lorebooks
+        .iter()
+        .map(|candidate| candidate.id)
+        .collect::<BTreeSet<_>>();
+    let entries = request
+        .lorebooks
+        .lorebooks
+        .iter()
+        .flat_map(|candidate| candidate.entries.iter().map(|entry| entry.id))
+        .collect::<BTreeSet<_>>();
+    if assignments
+        .providers
+        .keys()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        != providers
+        || assignments.models.keys().copied().collect::<BTreeSet<_>>() != models
+        || assignments.prompts.keys().cloned().collect::<BTreeSet<_>>() != prompts
+        || assignments
             .personas
-            .personas
-            .iter()
-            .map(|persona| persona.id)
-            .collect(),
-        lorebook_ids: request
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            != personas
+        || assignments
             .lorebooks
-            .lorebooks
-            .iter()
-            .map(|book| book.id)
-            .collect(),
-        lorebook_entry_ids: request
-            .lorebooks
-            .lorebooks
-            .iter()
-            .flat_map(|book| book.entries.iter().map(|entry| entry.id))
-            .collect(),
-        asr_vocabulary_ids: Vec::new(),
-        asr_correction_ids: Vec::new(),
-        asr_ignored_suggestion_ids: Vec::new(),
-        asr_voice_example_ids: Vec::new(),
-        media: request
-            .media
-            .media
-            .iter()
-            .map(|candidate| LegacyImportMediaSource {
-                relative_path: candidate.relative_path.clone(),
-                byte_len: candidate.byte_len,
-                content_hash: candidate.content_hash.clone(),
-            })
-            .collect(),
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            != lorebooks
+        || assignments.entries.keys().copied().collect::<BTreeSet<_>>() != entries
+    {
+        return Err(LegacyImportRepositoryError::Conflict);
     }
+    Ok(())
 }
 
 fn completed_media_by_use(
@@ -940,6 +1138,20 @@ fn completed_media_by_use(
     }
     let mut by_use = BTreeMap::new();
     for candidate in &request.media.media {
+        if candidate
+            .uses
+            .iter()
+            .all(|media_use| matches!(media_use, LegacyMediaUse::AsrVoiceExample { .. }))
+        {
+            continue;
+        }
+        if candidate
+            .uses
+            .iter()
+            .any(|media_use| matches!(media_use, LegacyMediaUse::AsrVoiceExample { .. }))
+        {
+            return Err(LegacyImportRepositoryError::InvalidInput);
+        }
         let (destination_id, byte_len, content_hash) = assignments
             .media
             .get(&candidate.relative_path)
@@ -1084,6 +1296,176 @@ fn load_provider_model_receipt(
         )
         .optional()
         .map_err(|_| LegacyImportRepositoryError::Storage)
+}
+
+fn load_asr_receipt(
+    transaction: &Transaction<'_>,
+    run_id: LegacyImportRunId,
+) -> Result<Option<LegacyAsrReceipt>, LegacyImportRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT vocabulary_count,correction_count,ignored_suggestion_count,voice_example_count,completed_at FROM legacy_import_asr_results WHERE run_id=?1",
+            [run_id.to_string()],
+            |row| {
+                Ok(LegacyAsrReceipt {
+                    run_id,
+                    vocabulary_count: u64::try_from(row.get::<_, i64>(0)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    correction_count: u64::try_from(row.get::<_, i64>(1)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    ignored_suggestion_count: u64::try_from(row.get::<_, i64>(2)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    voice_example_count: u64::try_from(row.get::<_, i64>(3)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    completed_at: TimestampMillis::new(row.get(4)?),
+                    replayed: false,
+                })
+            },
+        )
+        .optional()
+        .map_err(|_| LegacyImportRepositoryError::Storage)
+}
+
+fn legacy_timestamp(
+    transaction: &Transaction<'_>,
+    value: &str,
+) -> Result<TimestampMillis, LegacyImportRepositoryError> {
+    let seconds = transaction
+        .query_row("SELECT unixepoch(?1)", [value], |row| {
+            row.get::<_, Option<i64>>(0)
+        })
+        .map_err(|_| LegacyImportRepositoryError::Storage)?
+        .ok_or(LegacyImportRepositoryError::InvalidInput)?;
+    seconds
+        .checked_mul(1_000)
+        .map(TimestampMillis::new)
+        .ok_or(LegacyImportRepositoryError::InvalidInput)
+}
+
+fn to_i64(value: u64) -> Result<i64, LegacyImportRepositoryError> {
+    i64::try_from(value).map_err(|_| LegacyImportRepositoryError::InvalidInput)
+}
+
+fn validate_asr_sources(
+    request: &LegacyAsrMaterializationRequest,
+    assignments: &AssignmentMaps,
+) -> Result<(), LegacyImportRepositoryError> {
+    let vocabulary = request
+        .asr
+        .vocabulary
+        .iter()
+        .map(|candidate| candidate.source_id)
+        .collect::<Vec<_>>();
+    let corrections = request
+        .asr
+        .corrections
+        .iter()
+        .map(|candidate| candidate.source_id)
+        .collect::<Vec<_>>();
+    let ignored = request
+        .asr
+        .ignored_suggestions
+        .iter()
+        .map(|candidate| candidate.source_id)
+        .collect::<Vec<_>>();
+    let voice_examples = request
+        .asr
+        .voice_examples
+        .iter()
+        .map(|candidate| candidate.source_id)
+        .collect::<Vec<_>>();
+    let media = request
+        .media
+        .media
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.relative_path.clone(),
+                (candidate.byte_len, candidate.content_hash.clone()),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    if assignments
+        .asr_vocabulary
+        .keys()
+        .copied()
+        .collect::<Vec<_>>()
+        != vocabulary
+        || assignments
+            .asr_corrections
+            .keys()
+            .copied()
+            .collect::<Vec<_>>()
+            != corrections
+        || assignments.asr_ignored.keys().copied().collect::<Vec<_>>() != ignored
+        || assignments
+            .asr_voice_examples
+            .keys()
+            .copied()
+            .collect::<Vec<_>>()
+            != voice_examples
+        || assignments.media.len() != media.len()
+        || assignments
+            .media
+            .iter()
+            .any(|(path, (_, byte_len, hash))| media.get(path) != Some(&(*byte_len, hash.clone())))
+    {
+        return Err(LegacyImportRepositoryError::Conflict);
+    }
+    Ok(())
+}
+
+fn completed_asr_audio(
+    transaction: &Transaction<'_>,
+    request: &LegacyAsrMaterializationRequest,
+    assignments: &AssignmentMaps,
+) -> Result<BTreeMap<i64, AssetId>, LegacyImportRepositoryError> {
+    let mut assets = BTreeMap::new();
+    for candidate in &request.media.media {
+        let voice_ids = candidate
+            .uses
+            .iter()
+            .filter_map(|media_use| match media_use {
+                LegacyMediaUse::AsrVoiceExample { source_id } => Some(*source_id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if voice_ids.is_empty() {
+            continue;
+        }
+        if voice_ids.len() != candidate.uses.len() {
+            return Err(LegacyImportRepositoryError::InvalidInput);
+        }
+        let (destination_id, byte_len, content_hash) = assignments
+            .media
+            .get(&candidate.relative_path)
+            .ok_or(LegacyImportRepositoryError::Conflict)?;
+        let completion =
+            load_media_completion(transaction, request.run_id, &candidate.relative_path)?
+                .ok_or(LegacyImportRepositoryError::Conflict)?;
+        if completion.destination_asset_id != *destination_id
+            || completion.byte_len != *byte_len
+            || completion.content_hash != *content_hash
+        {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        for source_id in voice_ids {
+            if assets.insert(source_id, *destination_id).is_some() {
+                return Err(LegacyImportRepositoryError::Conflict);
+            }
+        }
+    }
+    if assets.keys().copied().collect::<Vec<_>>()
+        != request
+            .asr
+            .voice_examples
+            .iter()
+            .map(|candidate| candidate.source_id)
+            .collect::<Vec<_>>()
+    {
+        return Err(LegacyImportRepositoryError::Conflict);
+    }
+    Ok(assets)
 }
 
 fn validate_provider_model_sources(

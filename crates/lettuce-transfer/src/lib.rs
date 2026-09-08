@@ -627,6 +627,26 @@ pub struct LegacyImportReceipt {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct LegacyAsrMaterializationRequest {
+    pub run_id: LegacyImportRunId,
+    pub plan_fingerprint: ContentHash,
+    pub asr: LegacyAsrPlan,
+    pub media: LegacyMediaPlan,
+    pub completed_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyAsrReceipt {
+    pub run_id: LegacyImportRunId,
+    pub vocabulary_count: u64,
+    pub correction_count: u64,
+    pub ignored_suggestion_count: u64,
+    pub voice_example_count: u64,
+    pub completed_at: TimestampMillis,
+    pub replayed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct LegacyProviderModelMaterializationRequest {
     pub run_id: LegacyImportRunId,
     pub plan_fingerprint: ContentHash,
@@ -690,6 +710,11 @@ pub trait LegacyImportRepository: Send + Sync {
         &self,
         request: LegacyImportExecutionRequest,
     ) -> Result<LegacyImportReceipt, LegacyImportRepositoryError>;
+
+    fn materialize_asr(
+        &self,
+        request: LegacyAsrMaterializationRequest,
+    ) -> Result<LegacyAsrReceipt, LegacyImportRepositoryError>;
 
     fn materialize_provider_models(
         &self,

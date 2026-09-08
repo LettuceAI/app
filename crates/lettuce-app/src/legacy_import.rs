@@ -1,8 +1,9 @@
 use lettuce_transfer::{
-    LEGACY_DATABASE_SCHEMA_VERSION, LegacyAsrPlan, LegacyCrop, LegacyDatabaseInventory,
-    LegacyImageRecommendation, LegacyImportAdmission, LegacyImportAdmissionRequest,
-    LegacyImportExecutionRequest, LegacyImportPlan, LegacyImportProviderSecretSource,
-    LegacyImportReceipt, LegacyImportRepository, LegacyImportRepositoryError, LegacyImportSources,
+    LEGACY_DATABASE_SCHEMA_VERSION, LegacyAsrMaterializationRequest, LegacyAsrPlan,
+    LegacyAsrReceipt, LegacyCrop, LegacyDatabaseInventory, LegacyImageRecommendation,
+    LegacyImportAdmission, LegacyImportAdmissionRequest, LegacyImportExecutionRequest,
+    LegacyImportPlan, LegacyImportProviderSecretSource, LegacyImportReceipt,
+    LegacyImportRepository, LegacyImportRepositoryError, LegacyImportSources,
     LegacyKeywordMatchMode, LegacyLorebookDetectionPolicy, LegacyLorebookPlan, LegacyMediaPlan,
     LegacyMediaUse, LegacyPendingProviderSecret, LegacyPersonaPlan, LegacyPromptPlan,
     LegacyProviderAccountOrigin, LegacyProviderModelPlan,
@@ -17,6 +18,45 @@ pub struct LegacyImportAdmissionCoordinator<'a, R: ?Sized> {
 #[derive(Debug)]
 pub struct LegacyImportExecutionCoordinator<'a, R: ?Sized> {
     repository: &'a R,
+}
+
+#[derive(Debug)]
+pub struct LegacyAsrImportCoordinator<'a, R: ?Sized> {
+    repository: &'a R,
+}
+
+impl<'a, R: LegacyImportRepository + ?Sized> LegacyAsrImportCoordinator<'a, R> {
+    #[must_use]
+    pub const fn new(repository: &'a R) -> Self {
+        Self { repository }
+    }
+
+    pub fn execute(
+        &self,
+        admission: &LegacyImportAdmission,
+        plan: &LegacyImportPlan,
+        completed_at: TimestampMillis,
+    ) -> Result<LegacyAsrReceipt, LegacyImportRepositoryError> {
+        let fingerprint = plan_fingerprint(
+            &plan.provider_models,
+            &plan.prompts,
+            &plan.personas,
+            &plan.lorebooks,
+            &plan.asr,
+            &plan.media,
+        );
+        if fingerprint != admission.plan_fingerprint {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        self.repository
+            .materialize_asr(LegacyAsrMaterializationRequest {
+                run_id: admission.run_id,
+                plan_fingerprint: fingerprint,
+                asr: plan.asr.clone(),
+                media: plan.media.clone(),
+                completed_at,
+            })
+    }
 }
 
 impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportExecutionCoordinator<'a, R> {
@@ -1706,6 +1746,11 @@ mod tests {
             LegacyImportAssignment::Media { relative_path, .. }
                 if relative_path == "asr/voice-examples/9.wav"
         )));
+        let graph_receipt = backend
+            .legacy_import_executor()
+            .execute(&admission, &plan, TimestampMillis::new(3))
+            .expect("materialize graph before voice audio");
+        assert_eq!(graph_receipt.persona_count, 1);
         let replay = backend
             .legacy_import_admission()
             .admit(run_id, &inventory(), &plan, TimestampMillis::new(3))

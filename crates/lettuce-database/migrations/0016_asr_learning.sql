@@ -183,3 +183,54 @@ CREATE TABLE asr_voice_examples (
 
 CREATE INDEX asr_voice_examples_scope_language_order
 ON asr_voice_examples(scope, language, created_at DESC, id DESC);
+
+CREATE TABLE legacy_import_asr_results (
+    run_id TEXT PRIMARY KEY REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
+    plan_fingerprint TEXT NOT NULL CHECK (length(plan_fingerprint) = 64),
+    vocabulary_count INTEGER NOT NULL CHECK (vocabulary_count >= 0),
+    correction_count INTEGER NOT NULL CHECK (correction_count >= 0),
+    ignored_suggestion_count INTEGER NOT NULL CHECK (ignored_suggestion_count >= 0),
+    voice_example_count INTEGER NOT NULL CHECK (voice_example_count >= 0),
+    completed_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TRIGGER legacy_import_asr_results_insert_guard
+BEFORE INSERT ON legacy_import_asr_results
+WHEN NOT EXISTS (
+    SELECT 1
+    FROM legacy_import_runs AS run
+    WHERE run.id = NEW.run_id
+      AND run.plan_fingerprint = NEW.plan_fingerprint
+      AND run.status IN ('admitted', 'importing', 'completed')
+      AND NEW.vocabulary_count = (
+          SELECT count(*) FROM legacy_import_assignments
+          WHERE run_id = NEW.run_id AND source_kind = 'asr_vocabulary'
+      )
+      AND NEW.correction_count = (
+          SELECT count(*) FROM legacy_import_assignments
+          WHERE run_id = NEW.run_id AND source_kind = 'asr_correction'
+      )
+      AND NEW.ignored_suggestion_count = (
+          SELECT count(*) FROM legacy_import_assignments
+          WHERE run_id = NEW.run_id AND source_kind = 'asr_ignored_suggestion'
+      )
+      AND NEW.voice_example_count = (
+          SELECT count(*) FROM legacy_import_assignments
+          WHERE run_id = NEW.run_id AND source_kind = 'asr_voice_example'
+      )
+)
+BEGIN
+    SELECT RAISE(ABORT, 'legacy ASR import result is invalid');
+END;
+
+CREATE TRIGGER legacy_import_asr_results_update_forbidden
+BEFORE UPDATE ON legacy_import_asr_results
+BEGIN
+    SELECT RAISE(ABORT, 'legacy ASR import results are immutable');
+END;
+
+CREATE TRIGGER legacy_import_asr_results_delete_forbidden
+BEFORE DELETE ON legacy_import_asr_results
+BEGIN
+    SELECT RAISE(ABORT, 'legacy ASR import results cannot be deleted');
+END;

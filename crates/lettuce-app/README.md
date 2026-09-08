@@ -834,6 +834,13 @@ The legacy media import coordinator reopens only confined regular files under th
 
 The legacy graph execution coordinator recomputes the sealed plan fingerprint and asks the transfer repository to materialize it. SQLite creates lorebooks and their assigned entries, personas and assigned media links, ordered active-lorebook bindings, and the legacy default owner in one transaction only after all media receipts verify. Legacy entry display order becomes the contiguous stored order already established by preflight sorting. Exact retry returns the original completion receipt, including after reopen; any mismatch leaves no partial graph. Source cleanup is intentionally absent pending full migration verification and explicit user-approved deletion.
 
+The legacy ASR import coordinator independently materializes every admitted
+vocabulary, correction, ignored suggestion and voice example in one transaction.
+It preserves validated learning metrics and timestamps, resolves optional links
+through assigned typed IDs, and binds examples only to completed managed audio.
+Its immutable receipt replays after reopen without overwriting live learning
+data; graph import can proceed before voice audio is available.
+
 The speech-transcription coordinator admits an idempotent interactive
 `SpeechTranscribe` job, binds it to one immutable audio/model request, claims it
 through the generic worker lifecycle, and coordinates managed audio decoding,

@@ -125,6 +125,11 @@ impl AppBackend {
         crate::LegacyImportExecutionCoordinator::new(self.database.as_ref())
     }
 
+    #[must_use]
+    pub fn legacy_asr_importer(&self) -> crate::LegacyAsrImportCoordinator<'_, Database> {
+        crate::LegacyAsrImportCoordinator::new(self.database.as_ref())
+    }
+
     pub fn legacy_provider_secret_importer<'a, S, V>(
         &'a self,
         source: &'a S,

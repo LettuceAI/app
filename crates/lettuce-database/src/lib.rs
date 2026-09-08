@@ -4154,6 +4154,7 @@ mod tests {
                 "job_inference_usage",
                 "job_usage_costs",
                 "jobs",
+                "legacy_import_asr_results",
                 "legacy_import_assignments",
                 "legacy_import_media_completions",
                 "legacy_import_provider_model_results",

@@ -311,14 +311,17 @@ mod tests {
     use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
     use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
     use lettuce_settings::InMemorySecretStore;
+    use lettuce_speech::AsrLearningRepository;
     use lettuce_transfer::{
-        LegacyAsrPlan, LegacyCrop, LegacyDatabaseInventory, LegacyImageRecommendation,
-        LegacyImportAdmissionRequest, LegacyImportAssignment, LegacyImportMediaSource,
-        LegacyImportPlan, LegacyImportRepository, LegacyImportRunStatus, LegacyImportSources,
-        LegacyKeywordMatchMode, LegacyLorebookCandidate, LegacyLorebookDetectionPolicy,
-        LegacyLorebookEntryCandidate, LegacyLorebookPlan, LegacyMediaCandidate, LegacyMediaPlan,
-        LegacyMediaReference, LegacyMediaUse, LegacyPersonaCandidate, LegacyPersonaPlan,
-        LegacyProviderModelPlan,
+        LegacyAsrCorrectionCandidate, LegacyAsrIgnoredSuggestionCandidate,
+        LegacyAsrMaterializationRequest, LegacyAsrPlan, LegacyAsrVocabularyCandidate,
+        LegacyAsrVoiceExampleCandidate, LegacyCrop, LegacyDatabaseInventory,
+        LegacyImageRecommendation, LegacyImportAdmissionRequest, LegacyImportAssignment,
+        LegacyImportMediaSource, LegacyImportPlan, LegacyImportRepository, LegacyImportRunStatus,
+        LegacyImportSources, LegacyKeywordMatchMode, LegacyLorebookCandidate,
+        LegacyLorebookDetectionPolicy, LegacyLorebookEntryCandidate, LegacyLorebookPlan,
+        LegacyMediaCandidate, LegacyMediaPlan, LegacyMediaReference, LegacyMediaUse,
+        LegacyPersonaCandidate, LegacyPersonaPlan, LegacyProviderModelPlan,
     };
     use lettuce_types::{
         ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, PersonaId, TimestampMillis,
@@ -651,9 +654,9 @@ mod tests {
                     persona_ids: vec![persona_id],
                     lorebook_ids: Vec::new(),
                     lorebook_entry_ids: Vec::new(),
-                    asr_vocabulary_ids: Vec::new(),
-                    asr_correction_ids: Vec::new(),
-                    asr_ignored_suggestion_ids: Vec::new(),
+                    asr_vocabulary_ids: vec![3],
+                    asr_correction_ids: vec![5],
+                    asr_ignored_suggestion_ids: vec![7],
                     asr_voice_example_ids: vec![9],
                     media: media
                         .media
@@ -693,6 +696,107 @@ mod tests {
                 .kind,
             lettuce_media::AssetKind::OtherAudio
         );
+        let asr = LegacyAsrPlan {
+            vocabulary: vec![LegacyAsrVocabularyCandidate {
+                source_id: 3,
+                term: "Lettuce AI".to_owned(),
+                normalized_term: "lettuce ai".to_owned(),
+                language: Some("en".to_owned()),
+                category: Some("product".to_owned()),
+                scope: "global".to_owned(),
+                priority: 80,
+                use_count: 4,
+                created_at: "2026-01-01 00:00:00".to_owned(),
+                updated_at: "2026-01-02 00:00:00".to_owned(),
+            }],
+            corrections: vec![LegacyAsrCorrectionCandidate {
+                source_id: 5,
+                wrong: "lettuce a eye".to_owned(),
+                normalized_wrong: "lettuce a eye".to_owned(),
+                correct: "Lettuce AI".to_owned(),
+                normalized_correct: "lettuce ai".to_owned(),
+                language: Some("en".to_owned()),
+                scope: "global".to_owned(),
+                confidence: 0.91,
+                use_count: 8,
+                accepted_count: 3,
+                rejected_count: 1,
+                seen_count: 5,
+                last_seen_at: Some("2026-01-03 00:00:00".to_owned()),
+                user_approved: true,
+                created_at: "2026-01-01 00:00:00".to_owned(),
+                updated_at: "2026-01-04 00:00:00".to_owned(),
+            }],
+            ignored_suggestions: vec![LegacyAsrIgnoredSuggestionCandidate {
+                source_id: 7,
+                wrong: "green salad".to_owned(),
+                normalized_wrong: "green salad".to_owned(),
+                correct: "green solid".to_owned(),
+                normalized_correct: "green solid".to_owned(),
+                language: Some("en".to_owned()),
+                scope: "workspace".to_owned(),
+                ignored_count: 2,
+                last_ignored_at: "2026-01-03 00:00:00".to_owned(),
+                created_at: "2026-01-01 00:00:00".to_owned(),
+                updated_at: "2026-01-04 00:00:00".to_owned(),
+            }],
+            voice_examples: vec![LegacyAsrVoiceExampleCandidate {
+                source_id: 9,
+                audio: LegacyMediaReference {
+                    locator: audio_path.to_string_lossy().to_string(),
+                },
+                expected_text: "Lettuce AI".to_owned(),
+                normalized_expected_text: "lettuce ai".to_owned(),
+                whisper_output: Some("lettuce a eye".to_owned()),
+                normalized_whisper_output: Some("lettuce a eye".to_owned()),
+                language: Some("en".to_owned()),
+                scope: "global".to_owned(),
+                vocabulary_source_id: Some(3),
+                correction_source_id: Some(5),
+                created_at: "2026-01-04 00:00:00".to_owned(),
+            }],
+        };
+        let fingerprint = ContentHash::parse("cd".repeat(32)).expect("plan hash");
+        let receipt = database
+            .materialize_asr(LegacyAsrMaterializationRequest {
+                run_id,
+                plan_fingerprint: fingerprint.clone(),
+                asr: asr.clone(),
+                media: media.clone(),
+                completed_at: TimestampMillis::new(3),
+            })
+            .expect("materialize ASR learning");
+        assert_eq!(
+            (
+                receipt.vocabulary_count,
+                receipt.correction_count,
+                receipt.ignored_suggestion_count,
+                receipt.voice_example_count,
+            ),
+            (1, 1, 1, 1)
+        );
+        let vocabulary = database
+            .list_vocabulary(Some("en"), &["global".to_owned()])
+            .expect("read imported vocabulary");
+        assert_eq!((vocabulary[0].priority, vocabulary[0].use_count), (80, 4));
+        let corrections = database
+            .list_corrections(Some("en"), &["global".to_owned()])
+            .expect("read imported corrections");
+        assert_eq!(
+            (
+                corrections[0].confidence,
+                corrections[0].accepted_count,
+                corrections[0].rejected_count,
+                corrections[0].seen_count,
+            ),
+            (0.91, 3, 1, 5)
+        );
+        let examples = database
+            .list_voice_examples(Some("en"), &["global".to_owned()])
+            .expect("read imported voice examples");
+        assert_eq!(examples[0].audio_asset_id, *audio_asset_id);
+        assert_eq!(examples[0].vocabulary_term_id, Some(vocabulary[0].id));
+        assert_eq!(examples[0].correction_id, Some(corrections[0].id));
         drop(store);
         drop(database);
         let reopened = Database::open(&database_path).expect("reopen database");
@@ -702,6 +806,16 @@ mod tests {
             .execute(&legacy_root, &admission, &media, TimestampMillis::new(3))
             .expect("replay mixed media");
         assert!(replay.iter().all(|completion| completion.replayed));
+        let asr_replay = reopened
+            .materialize_asr(LegacyAsrMaterializationRequest {
+                run_id,
+                plan_fingerprint: fingerprint,
+                asr,
+                media: media.clone(),
+                completed_at: TimestampMillis::new(4),
+            })
+            .expect("replay ASR learning");
+        assert!(asr_replay.replayed);
         let mut changed_audio = audio;
         changed_audio.push(0);
         std::fs::write(&audio_path, changed_audio).expect("change voice audio");
