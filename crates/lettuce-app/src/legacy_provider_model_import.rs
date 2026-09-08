@@ -47,6 +47,7 @@ where
             &plan.prompts,
             &plan.personas,
             &plan.lorebooks,
+            &plan.asr,
             &plan.media,
         );
         if fingerprint != admission.plan_fingerprint {

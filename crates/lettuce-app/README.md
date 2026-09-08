@@ -23,10 +23,14 @@ app-wide prompt selection. Import admission seals those source identities, and
 the provider/model completion transaction creates validated imported documents,
 preserves entry order and legacy execution flags, maps the valid app default,
 and replays after reopen without duplicate prompts.
-`AppBackend::plan_legacy_media` resolves only those planned persona and
-lorebook references below an explicitly supplied legacy storage root. The
-application adapter validates paths and hashes bounded files without copying
-them or exposing ambient filesystem access to domain crates.
+`AppBackend::plan_legacy_media` resolves planned persona and lorebook references
+below an explicitly supplied legacy storage root plus legacy ASR voice audio,
+which may be an external file selected by the user. The application adapter
+validates and hashes bounded regular files without copying them or exposing
+ambient filesystem access to domain crates. Admission seals each original voice
+locator, safe logical key, content hash and stable destination assignment. The
+current media executor rejects voice-audio candidates until their dedicated
+managed-audio ingestion slice is implemented.
 
 ## Boundary
 

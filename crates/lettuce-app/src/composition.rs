@@ -109,9 +109,10 @@ impl AppBackend {
         storage_root: impl AsRef<Path>,
         personas: &lettuce_transfer::LegacyPersonaPlan,
         lorebooks: &lettuce_transfer::LegacyLorebookPlan,
+        asr: &lettuce_transfer::LegacyAsrPlan,
     ) -> Result<lettuce_transfer::LegacyMediaPlan, lettuce_transfer::LegacyDatabasePreflightError>
     {
-        crate::plan_legacy_media(storage_root, personas, lorebooks)
+        crate::plan_legacy_media(storage_root, personas, lorebooks, asr)
     }
 
     #[must_use]

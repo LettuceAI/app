@@ -68,6 +68,14 @@ where
         ) {
             return Err(LegacyMediaImportError::InvalidAdmission);
         }
+        if plan.media.iter().any(|candidate| {
+            candidate
+                .uses
+                .iter()
+                .any(|media_use| matches!(media_use, LegacyMediaUse::AsrVoiceExample { .. }))
+        }) {
+            return Err(LegacyMediaImportError::InvalidAdmission);
+        }
         let assignments = media_assignments(admission, plan)?;
         let storage_root = std::fs::canonicalize(storage_root)
             .map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
@@ -262,11 +270,11 @@ mod tests {
     use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
     use lettuce_settings::InMemorySecretStore;
     use lettuce_transfer::{
-        LegacyCrop, LegacyDatabaseInventory, LegacyImageRecommendation, LegacyImportAssignment,
-        LegacyImportPlan, LegacyImportRunStatus, LegacyKeywordMatchMode, LegacyLorebookCandidate,
-        LegacyLorebookDetectionPolicy, LegacyLorebookEntryCandidate, LegacyLorebookPlan,
-        LegacyMediaCandidate, LegacyMediaPlan, LegacyMediaReference, LegacyMediaUse,
-        LegacyPersonaCandidate, LegacyPersonaPlan, LegacyProviderModelPlan,
+        LegacyAsrPlan, LegacyCrop, LegacyDatabaseInventory, LegacyImageRecommendation,
+        LegacyImportAssignment, LegacyImportPlan, LegacyImportRunStatus, LegacyKeywordMatchMode,
+        LegacyLorebookCandidate, LegacyLorebookDetectionPolicy, LegacyLorebookEntryCandidate,
+        LegacyLorebookPlan, LegacyMediaCandidate, LegacyMediaPlan, LegacyMediaReference,
+        LegacyMediaUse, LegacyPersonaCandidate, LegacyPersonaPlan, LegacyProviderModelPlan,
     };
     use lettuce_types::{
         ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, PersonaId, TimestampMillis,
@@ -288,6 +296,15 @@ mod tests {
 
     fn content_hash(bytes: &[u8]) -> ContentHash {
         ContentHash::parse(blake3::hash(bytes).to_hex().to_string()).expect("content hash")
+    }
+
+    fn asr() -> LegacyAsrPlan {
+        LegacyAsrPlan {
+            vocabulary: Vec::new(),
+            corrections: Vec::new(),
+            ignored_suggestions: Vec::new(),
+            voice_examples: Vec::new(),
+        }
     }
 
     fn provider_models() -> LegacyProviderModelPlan {
@@ -317,6 +334,7 @@ mod tests {
             prompts: prompts(),
             personas: personas.clone(),
             lorebooks: lorebooks.clone(),
+            asr: asr(),
             media: media.clone(),
         }
     }
@@ -365,12 +383,14 @@ mod tests {
             media: vec![
                 LegacyMediaCandidate {
                     relative_path: "images/avatar.png".to_owned(),
+                    source_locator: "images/avatar.png".to_owned(),
                     byte_len: bytes.len() as u64,
                     content_hash: hash.clone(),
                     uses: vec![LegacyMediaUse::PersonaAvatar { persona_id }],
                 },
                 LegacyMediaCandidate {
                     relative_path: "images/reference.png".to_owned(),
+                    source_locator: "images/reference.png".to_owned(),
                     byte_len: bytes.len() as u64,
                     content_hash: hash,
                     uses: vec![LegacyMediaUse::PersonaDesignReference {
@@ -680,6 +700,7 @@ mod tests {
             media: vec![
                 LegacyMediaCandidate {
                     relative_path: "images/shared.png".to_owned(),
+                    source_locator: "images/shared.png".to_owned(),
                     byte_len: bytes.len() as u64,
                     content_hash: content_hash(&bytes),
                     uses: vec![
@@ -691,6 +712,7 @@ mod tests {
                 },
                 LegacyMediaCandidate {
                     relative_path: "images/reference.png".to_owned(),
+                    source_locator: "images/reference.png".to_owned(),
                     byte_len: bytes.len() as u64,
                     content_hash: content_hash(&bytes),
                     uses: vec![LegacyMediaUse::PersonaDesignReference {

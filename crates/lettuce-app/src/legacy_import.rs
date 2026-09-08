@@ -1,8 +1,8 @@
 use lettuce_transfer::{
-    LEGACY_DATABASE_SCHEMA_VERSION, LegacyCrop, LegacyDatabaseInventory, LegacyImageRecommendation,
-    LegacyImportAdmission, LegacyImportAdmissionRequest, LegacyImportExecutionRequest,
-    LegacyImportPlan, LegacyImportProviderSecretSource, LegacyImportReceipt,
-    LegacyImportRepository, LegacyImportRepositoryError, LegacyImportSources,
+    LEGACY_DATABASE_SCHEMA_VERSION, LegacyAsrPlan, LegacyCrop, LegacyDatabaseInventory,
+    LegacyImageRecommendation, LegacyImportAdmission, LegacyImportAdmissionRequest,
+    LegacyImportExecutionRequest, LegacyImportPlan, LegacyImportProviderSecretSource,
+    LegacyImportReceipt, LegacyImportRepository, LegacyImportRepositoryError, LegacyImportSources,
     LegacyKeywordMatchMode, LegacyLorebookDetectionPolicy, LegacyLorebookPlan, LegacyMediaPlan,
     LegacyMediaUse, LegacyPendingProviderSecret, LegacyPersonaPlan, LegacyPromptPlan,
     LegacyProviderAccountOrigin, LegacyProviderModelPlan,
@@ -36,6 +36,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportExecutionCoordinator<'a
             &plan.prompts,
             &plan.personas,
             &plan.lorebooks,
+            &plan.asr,
             &plan.media,
         );
         if fingerprint != admission.plan_fingerprint {
@@ -72,6 +73,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
             prompts,
             personas,
             lorebooks,
+            asr,
             media,
         } = plan;
         validate_plan(
@@ -80,6 +82,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
             prompts,
             personas,
             lorebooks,
+            asr,
             media,
         )?;
         self.repository.admit(LegacyImportAdmissionRequest {
@@ -91,6 +94,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
                 prompts,
                 personas,
                 lorebooks,
+                asr,
                 media,
             ),
             sources: LegacyImportSources {
@@ -132,6 +136,26 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
                     .iter()
                     .flat_map(|lorebook| lorebook.entries.iter().map(|entry| entry.id))
                     .collect(),
+                asr_vocabulary_ids: asr
+                    .vocabulary
+                    .iter()
+                    .map(|candidate| candidate.source_id)
+                    .collect(),
+                asr_correction_ids: asr
+                    .corrections
+                    .iter()
+                    .map(|candidate| candidate.source_id)
+                    .collect(),
+                asr_ignored_suggestion_ids: asr
+                    .ignored_suggestions
+                    .iter()
+                    .map(|candidate| candidate.source_id)
+                    .collect(),
+                asr_voice_example_ids: asr
+                    .voice_examples
+                    .iter()
+                    .map(|candidate| candidate.source_id)
+                    .collect(),
                 media: media
                     .media
                     .iter()
@@ -153,6 +177,7 @@ fn validate_plan(
     prompts: &LegacyPromptPlan,
     personas: &LegacyPersonaPlan,
     lorebooks: &LegacyLorebookPlan,
+    asr: &LegacyAsrPlan,
     media: &LegacyMediaPlan,
 ) -> Result<(), LegacyImportRepositoryError> {
     let persona_count = u64::try_from(personas.personas.len())
@@ -181,6 +206,8 @@ fn validate_plan(
         || inventory.prompts != prompt_count
         || !valid_provider_model_plan(provider_models)
         || !valid_prompt_plan(prompts)
+        || !valid_asr_plan(asr)
+        || !valid_asr_media_plan(asr, media)
         || total_bytes != Some(media.total_bytes)
     {
         return Err(LegacyImportRepositoryError::InvalidInput);
@@ -210,6 +237,66 @@ fn valid_prompt_plan(plan: &LegacyPromptPlan) -> bool {
                     .len()
                     == prompt.entries.len()
         })
+}
+
+fn valid_asr_plan(plan: &LegacyAsrPlan) -> bool {
+    let vocabulary_ids = plan
+        .vocabulary
+        .iter()
+        .map(|candidate| candidate.source_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let correction_ids = plan
+        .corrections
+        .iter()
+        .map(|candidate| candidate.source_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let ignored_ids = plan
+        .ignored_suggestions
+        .iter()
+        .map(|candidate| candidate.source_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let voice_ids = plan
+        .voice_examples
+        .iter()
+        .map(|candidate| candidate.source_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    vocabulary_ids.len() == plan.vocabulary.len()
+        && correction_ids.len() == plan.corrections.len()
+        && ignored_ids.len() == plan.ignored_suggestions.len()
+        && voice_ids.len() == plan.voice_examples.len()
+        && vocabulary_ids.iter().all(|id| *id > 0)
+        && correction_ids.iter().all(|id| *id > 0)
+        && ignored_ids.iter().all(|id| *id > 0)
+        && voice_ids.iter().all(|id| *id > 0)
+        && plan.voice_examples.iter().all(|candidate| {
+            candidate
+                .vocabulary_source_id
+                .is_none_or(|id| vocabulary_ids.contains(&id))
+                && candidate
+                    .correction_source_id
+                    .is_none_or(|id| correction_ids.contains(&id))
+        })
+}
+
+fn valid_asr_media_plan(asr: &LegacyAsrPlan, media: &LegacyMediaPlan) -> bool {
+    let examples = asr
+        .voice_examples
+        .iter()
+        .map(|candidate| (candidate.source_id, candidate.audio.locator.as_str()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut found = std::collections::BTreeSet::new();
+    for candidate in &media.media {
+        for media_use in &candidate.uses {
+            if let LegacyMediaUse::AsrVoiceExample { source_id } = media_use {
+                if examples.get(source_id).copied() != Some(candidate.source_locator.as_str())
+                    || !found.insert(*source_id)
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    found.len() == examples.len()
 }
 
 fn valid_provider_model_plan(plan: &LegacyProviderModelPlan) -> bool {
@@ -325,9 +412,10 @@ pub(crate) fn plan_fingerprint(
     prompts: &LegacyPromptPlan,
     personas: &LegacyPersonaPlan,
     lorebooks: &LegacyLorebookPlan,
+    asr: &LegacyAsrPlan,
     media: &LegacyMediaPlan,
 ) -> ContentHash {
-    let mut hash = Fingerprint::new("lettuce-legacy-import-plan-v3");
+    let mut hash = Fingerprint::new("lettuce-legacy-import-plan-v4");
     hash.u64(provider_models.provider_accounts.len() as u64);
     for provider in &provider_models.provider_accounts {
         hash.text(&provider.id.to_string());
@@ -477,9 +565,11 @@ pub(crate) fn plan_fingerprint(
         hash.i64(lorebook.created_at.get());
         hash.i64(lorebook.updated_at.get());
     }
+    write_asr_plan(&mut hash, asr);
     hash.u64(media.media.len() as u64);
     for candidate in &media.media {
         hash.text(&candidate.relative_path);
+        hash.text(&candidate.source_locator);
         hash.u64(candidate.byte_len);
         hash.text(candidate.content_hash.as_str());
         hash.u64(candidate.uses.len() as u64);
@@ -501,11 +591,89 @@ pub(crate) fn plan_fingerprint(
                     hash.u32(3);
                     hash.text(&lorebook_id.to_string());
                 }
+                LegacyMediaUse::AsrVoiceExample { source_id } => {
+                    hash.u32(4);
+                    hash.i64(*source_id);
+                }
             }
         }
     }
     hash.u64(media.total_bytes);
     hash.finish()
+}
+
+fn write_asr_plan(hash: &mut Fingerprint, plan: &LegacyAsrPlan) {
+    hash.u64(plan.vocabulary.len() as u64);
+    for candidate in &plan.vocabulary {
+        hash.i64(candidate.source_id);
+        hash.text(&candidate.term);
+        hash.text(&candidate.normalized_term);
+        hash.option(candidate.language.as_ref(), |hash, value| hash.text(value));
+        hash.option(candidate.category.as_ref(), |hash, value| hash.text(value));
+        hash.text(&candidate.scope);
+        hash.i64(candidate.priority);
+        hash.u64(candidate.use_count);
+        hash.text(&candidate.created_at);
+        hash.text(&candidate.updated_at);
+    }
+    hash.u64(plan.corrections.len() as u64);
+    for candidate in &plan.corrections {
+        hash.i64(candidate.source_id);
+        hash.text(&candidate.wrong);
+        hash.text(&candidate.normalized_wrong);
+        hash.text(&candidate.correct);
+        hash.text(&candidate.normalized_correct);
+        hash.option(candidate.language.as_ref(), |hash, value| hash.text(value));
+        hash.text(&candidate.scope);
+        hash.f64(candidate.confidence);
+        hash.u64(candidate.use_count);
+        hash.u64(candidate.accepted_count);
+        hash.u64(candidate.rejected_count);
+        hash.u64(candidate.seen_count);
+        hash.option(candidate.last_seen_at.as_ref(), |hash, value| {
+            hash.text(value)
+        });
+        hash.bool(candidate.user_approved);
+        hash.text(&candidate.created_at);
+        hash.text(&candidate.updated_at);
+    }
+    hash.u64(plan.ignored_suggestions.len() as u64);
+    for candidate in &plan.ignored_suggestions {
+        hash.i64(candidate.source_id);
+        hash.text(&candidate.wrong);
+        hash.text(&candidate.normalized_wrong);
+        hash.text(&candidate.correct);
+        hash.text(&candidate.normalized_correct);
+        hash.option(candidate.language.as_ref(), |hash, value| hash.text(value));
+        hash.text(&candidate.scope);
+        hash.u64(candidate.ignored_count);
+        hash.text(&candidate.last_ignored_at);
+        hash.text(&candidate.created_at);
+        hash.text(&candidate.updated_at);
+    }
+    hash.u64(plan.voice_examples.len() as u64);
+    for candidate in &plan.voice_examples {
+        hash.i64(candidate.source_id);
+        hash.text(&candidate.audio.locator);
+        hash.text(&candidate.expected_text);
+        hash.text(&candidate.normalized_expected_text);
+        hash.option(candidate.whisper_output.as_ref(), |hash, value| {
+            hash.text(value)
+        });
+        hash.option(
+            candidate.normalized_whisper_output.as_ref(),
+            |hash, value| hash.text(value),
+        );
+        hash.option(candidate.language.as_ref(), |hash, value| hash.text(value));
+        hash.text(&candidate.scope);
+        hash.option(candidate.vocabulary_source_id.as_ref(), |hash, value| {
+            hash.i64(*value)
+        });
+        hash.option(candidate.correction_source_id.as_ref(), |hash, value| {
+            hash.i64(*value)
+        });
+        hash.text(&candidate.created_at);
+    }
 }
 
 fn write_crop(hash: &mut Fingerprint, crop: &LegacyCrop) {
@@ -537,16 +705,18 @@ mod tests {
         SecretRecord, SecretStore, SecretValue,
     };
     use lettuce_transfer::{
-        LegacyDatabaseInventory, LegacyImportAssignment, LegacyImportPlan, LegacyImportRepository,
+        LegacyAsrPlan, LegacyAsrVoiceExampleCandidate, LegacyDatabaseInventory,
+        LegacyImportAssignment, LegacyImportPlan, LegacyImportRepository,
         LegacyImportRepositoryError, LegacyImportRunStatus, LegacyImportSecretCompletionRequest,
         LegacyLorebookCandidate, LegacyLorebookDetectionPolicy, LegacyLorebookPlan,
-        LegacyMediaPlan, LegacyPendingProviderSecret, LegacyPersonaCandidate, LegacyPersonaPlan,
+        LegacyMediaCandidate, LegacyMediaPlan, LegacyMediaReference, LegacyMediaUse,
+        LegacyPendingProviderSecret, LegacyPersonaCandidate, LegacyPersonaPlan,
         LegacyPromptCandidate, LegacyPromptEntryCandidate, LegacyPromptPlan,
         LegacyProviderAccountCandidate, LegacyProviderAccountOrigin, LegacyProviderModelPlan,
     };
     use lettuce_types::{
-        LegacyImportRunId, LorebookId, ModelProfileId, PersonaId, ProviderAccountId, Revision,
-        TimestampMillis,
+        ContentHash, LegacyImportRunId, LorebookId, ModelProfileId, PersonaId, ProviderAccountId,
+        Revision, TimestampMillis,
     };
 
     use crate::AppBackend;
@@ -604,6 +774,15 @@ mod tests {
         }
     }
 
+    fn asr() -> LegacyAsrPlan {
+        LegacyAsrPlan {
+            vocabulary: Vec::new(),
+            corrections: Vec::new(),
+            ignored_suggestions: Vec::new(),
+            voice_examples: Vec::new(),
+        }
+    }
+
     fn import_plan(
         provider_models: &LegacyProviderModelPlan,
         personas: &LegacyPersonaPlan,
@@ -615,6 +794,7 @@ mod tests {
             prompts: prompts(),
             personas: personas.clone(),
             lorebooks: lorebooks.clone(),
+            asr: asr(),
             media: media.clone(),
         }
     }
@@ -1026,6 +1206,7 @@ mod tests {
             prompts: prompt_plan.clone(),
             personas: personas.clone(),
             lorebooks: lorebooks.clone(),
+            asr: asr(),
             media: media.clone(),
         };
         let inventory = LegacyDatabaseInventory {
@@ -1445,6 +1626,99 @@ mod tests {
                 &inventory,
                 &import_plan(&provider_models(), &changed, &lorebooks, &media),
                 TimestampMillis::new(40),
+            ),
+            Err(LegacyImportRepositoryError::Conflict)
+        );
+        drop(backend);
+        fs::remove_file(path).expect("remove database");
+    }
+
+    #[test]
+    fn asr_admission_seals_row_content_links_and_voice_media() {
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-app-legacy-asr-admission-{}.sqlite3",
+            LegacyImportRunId::new()
+        ));
+        let run_id = LegacyImportRunId::new();
+        let mut plan = import_plan(
+            &provider_models(),
+            &personas(),
+            &LegacyLorebookPlan {
+                lorebooks: Vec::new(),
+            },
+            &LegacyMediaPlan {
+                media: Vec::new(),
+                total_bytes: 0,
+            },
+        );
+        plan.asr
+            .voice_examples
+            .push(LegacyAsrVoiceExampleCandidate {
+                source_id: 9,
+                audio: LegacyMediaReference {
+                    locator: "/retained/voice.wav".to_owned(),
+                },
+                expected_text: "Lettuce AI".to_owned(),
+                normalized_expected_text: "lettuce ai".to_owned(),
+                whisper_output: None,
+                normalized_whisper_output: None,
+                language: Some("en".to_owned()),
+                scope: "global".to_owned(),
+                vocabulary_source_id: None,
+                correction_source_id: None,
+                created_at: "2026-01-01 00:00:00".to_owned(),
+            });
+        plan.media = LegacyMediaPlan {
+            media: vec![LegacyMediaCandidate {
+                relative_path: "asr/voice-examples/9.wav".to_owned(),
+                source_locator: "/retained/voice.wav".to_owned(),
+                byte_len: 42,
+                content_hash: ContentHash::parse("12".repeat(32)).expect("media hash"),
+                uses: vec![LegacyMediaUse::AsrVoiceExample { source_id: 9 }],
+            }],
+            total_bytes: 42,
+        };
+        let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("open backend");
+        let mut missing_media = plan.clone();
+        missing_media.media = LegacyMediaPlan {
+            media: Vec::new(),
+            total_bytes: 0,
+        };
+        assert_eq!(
+            backend.legacy_import_admission().admit(
+                LegacyImportRunId::new(),
+                &inventory(),
+                &missing_media,
+                TimestampMillis::new(2),
+            ),
+            Err(LegacyImportRepositoryError::InvalidInput)
+        );
+        let admission = backend
+            .legacy_import_admission()
+            .admit(run_id, &inventory(), &plan, TimestampMillis::new(2))
+            .expect("admit ASR plan");
+        assert!(admission.assignments.iter().any(|assignment| matches!(
+            assignment,
+            LegacyImportAssignment::AsrVoiceExample { legacy_id: 9, .. }
+        )));
+        assert!(admission.assignments.iter().any(|assignment| matches!(
+            assignment,
+            LegacyImportAssignment::Media { relative_path, .. }
+                if relative_path == "asr/voice-examples/9.wav"
+        )));
+        let replay = backend
+            .legacy_import_admission()
+            .admit(run_id, &inventory(), &plan, TimestampMillis::new(3))
+            .expect("replay ASR plan");
+        assert!(replay.replayed);
+        assert_eq!(replay.assignments, admission.assignments);
+        plan.asr.voice_examples[0].scope = "workspace".to_owned();
+        assert_eq!(
+            backend.legacy_import_admission().admit(
+                run_id,
+                &inventory(),
+                &plan,
+                TimestampMillis::new(4),
             ),
             Err(LegacyImportRepositoryError::Conflict)
         );

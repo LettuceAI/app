@@ -7,14 +7,15 @@ use std::{
 
 use lettuce_transfer::{
     LEGACY_MEDIA_OBJECT_BYTES_LIMIT, LEGACY_MEDIA_REFERENCE_LIMIT, LEGACY_MEDIA_TOTAL_BYTES_LIMIT,
-    LegacyDatabasePreflightError, LegacyLorebookPlan, LegacyMediaCandidate, LegacyMediaPlan,
-    LegacyMediaUse, LegacyPersonaPlan,
+    LegacyAsrPlan, LegacyDatabasePreflightError, LegacyLorebookPlan, LegacyMediaCandidate,
+    LegacyMediaPlan, LegacyMediaUse, LegacyPersonaPlan,
 };
 use lettuce_types::ContentHash;
 
 struct PendingMedia {
     path: PathBuf,
-    locator: String,
+    source_locator: String,
+    error_locator: String,
     uses: Vec<LegacyMediaUse>,
 }
 
@@ -22,13 +23,14 @@ pub fn plan_legacy_media(
     storage_root: impl AsRef<Path>,
     personas: &LegacyPersonaPlan,
     lorebooks: &LegacyLorebookPlan,
+    asr: &LegacyAsrPlan,
 ) -> Result<LegacyMediaPlan, LegacyDatabasePreflightError> {
     let storage_root = std::fs::canonicalize(storage_root)
         .map_err(|_| LegacyDatabasePreflightError::Unavailable)?;
     if !storage_root.is_dir() {
         return Err(LegacyDatabasePreflightError::Unavailable);
     }
-    require_reference_count(personas, lorebooks)?;
+    require_reference_count(personas, lorebooks, asr)?;
     let mut pending = BTreeMap::new();
     for persona in &personas.personas {
         if let Some(avatar) = &persona.avatar {
@@ -79,22 +81,30 @@ pub fn plan_legacy_media(
             )?;
         }
     }
+    for example in &asr.voice_examples {
+        add_audio_pending(
+            &storage_root,
+            example.source_id,
+            &example.audio.locator,
+            &mut pending,
+        )?;
+    }
 
     let mut total_bytes = 0_u64;
     for pending in pending.values() {
         let metadata = std::fs::symlink_metadata(&pending.path).map_err(|_| {
             LegacyDatabasePreflightError::MissingMedia {
-                locator: pending.locator.clone(),
+                locator: pending.error_locator.clone(),
             }
         })?;
         if metadata.file_type().is_symlink() || !metadata.is_file() {
             return Err(LegacyDatabasePreflightError::UnsafeMediaReference {
-                locator: pending.locator.clone(),
+                locator: pending.error_locator.clone(),
             });
         }
         if metadata.len() > LEGACY_MEDIA_OBJECT_BYTES_LIMIT {
             return Err(LegacyDatabasePreflightError::MediaObjectTooLarge {
-                locator: pending.locator.clone(),
+                locator: pending.error_locator.clone(),
                 limit: LEGACY_MEDIA_OBJECT_BYTES_LIMIT,
             });
         }
@@ -113,12 +123,13 @@ pub fn plan_legacy_media(
     for (relative_path, pending) in pending {
         let metadata = std::fs::symlink_metadata(&pending.path).map_err(|_| {
             LegacyDatabasePreflightError::MissingMedia {
-                locator: pending.locator.clone(),
+                locator: pending.error_locator.clone(),
             }
         })?;
-        let content_hash = hash_file(&pending.path, metadata.len(), &pending.locator)?;
+        let content_hash = hash_file(&pending.path, metadata.len(), &pending.error_locator)?;
         media.push(LegacyMediaCandidate {
             relative_path,
+            source_locator: pending.source_locator,
             byte_len: metadata.len(),
             content_hash,
             uses: pending.uses,
@@ -130,6 +141,7 @@ pub fn plan_legacy_media(
 fn require_reference_count(
     personas: &LegacyPersonaPlan,
     lorebooks: &LegacyLorebookPlan,
+    asr: &LegacyAsrPlan,
 ) -> Result<(), LegacyDatabasePreflightError> {
     let count = personas
         .personas
@@ -147,6 +159,7 @@ fn require_reference_count(
                     count.checked_add(u64::from(lorebook.avatar.is_some()))
                 })
         })
+        .and_then(|count| count.checked_add(asr.voice_examples.len() as u64))
         .ok_or(LegacyDatabasePreflightError::MediaReferenceLimitExceeded {
             limit: LEGACY_MEDIA_REFERENCE_LIMIT,
         })?;
@@ -242,10 +255,66 @@ fn add_pending(
         .entry(relative_path)
         .or_insert_with(|| PendingMedia {
             path,
-            locator,
+            source_locator: relative.to_string_lossy().replace('\\', "/"),
+            error_locator: locator,
             uses: Vec::new(),
         });
     item.uses.push(usage);
+    Ok(())
+}
+
+fn add_audio_pending(
+    storage_root: &Path,
+    source_id: i64,
+    locator: &str,
+    pending: &mut BTreeMap<String, PendingMedia>,
+) -> Result<(), LegacyDatabasePreflightError> {
+    let source = Path::new(locator);
+    let path = if source.is_absolute() {
+        std::fs::canonicalize(source)
+    } else {
+        let path = std::fs::canonicalize(storage_root.join(source));
+        if path
+            .as_ref()
+            .is_ok_and(|path| !path.starts_with(storage_root))
+        {
+            return Err(LegacyDatabasePreflightError::UnsafeMediaReference {
+                locator: locator.to_owned(),
+            });
+        }
+        path
+    }
+    .map_err(|_| LegacyDatabasePreflightError::MissingMedia {
+        locator: locator.to_owned(),
+    })?;
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+        .filter(|value| matches!(value.as_str(), "wav" | "mp3" | "flac" | "m4a" | "ogg"))
+        .ok_or_else(|| LegacyDatabasePreflightError::UnsafeMediaReference {
+            locator: locator.to_owned(),
+        })?;
+    let media_use = LegacyMediaUse::AsrVoiceExample { source_id };
+    if let Some(existing) = pending.values_mut().find(|item| item.path == path) {
+        existing.uses.push(media_use);
+        return Ok(());
+    }
+    let relative_path = format!("asr/voice-examples/{source_id}.{extension}");
+    if pending.contains_key(&relative_path) {
+        return Err(LegacyDatabasePreflightError::ConflictingMediaReference {
+            locator: locator.to_owned(),
+        });
+    }
+    pending.insert(
+        relative_path,
+        PendingMedia {
+            path,
+            source_locator: locator.to_owned(),
+            error_locator: locator.to_owned(),
+            uses: vec![media_use],
+        },
+    );
     Ok(())
 }
 
@@ -298,8 +367,8 @@ fn hash_file(
 mod tests {
     use super::*;
     use lettuce_transfer::{
-        LegacyLorebookCandidate, LegacyLorebookDetectionPolicy, LegacyMediaReference,
-        LegacyPersonaCandidate,
+        LegacyAsrVoiceExampleCandidate, LegacyLorebookCandidate, LegacyLorebookDetectionPolicy,
+        LegacyMediaReference, LegacyPersonaCandidate,
     };
     use lettuce_types::{LorebookId, MediaBlobId, PersonaId, TimestampMillis};
 
@@ -308,6 +377,15 @@ mod tests {
             std::env::temp_dir().join(format!("lettuce-legacy-media-{}", MediaBlobId::new()));
         std::fs::create_dir_all(root.join("images")).expect("create images directory");
         root
+    }
+
+    fn empty_asr() -> LegacyAsrPlan {
+        LegacyAsrPlan {
+            vocabulary: Vec::new(),
+            corrections: Vec::new(),
+            ignored_suggestions: Vec::new(),
+            voice_examples: Vec::new(),
+        }
     }
 
     fn persona(
@@ -370,7 +448,8 @@ mod tests {
             lorebooks: vec![lorebook(lorebook_id, Some("shared"))],
         };
 
-        let plan = plan_legacy_media(&root, &personas, &lorebooks).expect("plan media");
+        let plan =
+            plan_legacy_media(&root, &personas, &lorebooks, &empty_asr()).expect("plan media");
 
         assert_eq!(plan.media.len(), 2);
         assert_eq!(plan.total_bytes, 12);
@@ -398,6 +477,71 @@ mod tests {
     }
 
     #[test]
+    fn media_plan_retains_and_deduplicates_external_voice_audio() {
+        let root = root();
+        let audio_path =
+            std::env::temp_dir().join(format!("lettuce-legacy-voice-{}.wav", MediaBlobId::new()));
+        std::fs::write(&audio_path, b"voice-audio").expect("write voice audio");
+        let locator = audio_path.to_string_lossy().to_string();
+        let voice = |source_id| LegacyAsrVoiceExampleCandidate {
+            source_id,
+            audio: LegacyMediaReference {
+                locator: locator.clone(),
+            },
+            expected_text: "Lettuce AI".to_owned(),
+            normalized_expected_text: "lettuce ai".to_owned(),
+            whisper_output: None,
+            normalized_whisper_output: None,
+            language: Some("en".to_owned()),
+            scope: "global".to_owned(),
+            vocabulary_source_id: None,
+            correction_source_id: None,
+            created_at: "2026-01-01 00:00:00".to_owned(),
+        };
+        let asr = LegacyAsrPlan {
+            vocabulary: Vec::new(),
+            corrections: Vec::new(),
+            ignored_suggestions: Vec::new(),
+            voice_examples: vec![voice(3), voice(8)],
+        };
+
+        let plan = plan_legacy_media(
+            &root,
+            &LegacyPersonaPlan {
+                personas: Vec::new(),
+                default_persona_id: None,
+            },
+            &LegacyLorebookPlan {
+                lorebooks: Vec::new(),
+            },
+            &asr,
+        )
+        .expect("plan voice audio");
+
+        assert_eq!(plan.media.len(), 1);
+        assert_eq!(plan.media[0].relative_path, "asr/voice-examples/3.wav");
+        assert_eq!(plan.media[0].source_locator, locator);
+        assert_eq!(plan.media[0].byte_len, 11);
+        assert_eq!(
+            plan.media[0].uses,
+            vec![
+                LegacyMediaUse::AsrVoiceExample { source_id: 3 },
+                LegacyMediaUse::AsrVoiceExample { source_id: 8 },
+            ]
+        );
+        assert_eq!(
+            plan.media[0].content_hash.as_str(),
+            blake3::hash(b"voice-audio").to_hex().as_str()
+        );
+        assert_eq!(
+            std::fs::read(&audio_path).expect("reread voice audio"),
+            b"voice-audio"
+        );
+        std::fs::remove_file(audio_path).expect("remove voice fixture");
+        std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
     fn media_plan_rejects_missing_unsafe_and_ambiguous_locators() {
         let root = root();
         let persona_id = PersonaId::new();
@@ -412,7 +556,12 @@ mod tests {
             default_persona_id: None,
         };
         assert_eq!(
-            plan_legacy_media(&root, &missing, &LegacyLorebookPlan { lorebooks: vec![] }),
+            plan_legacy_media(
+                &root,
+                &missing,
+                &LegacyLorebookPlan { lorebooks: vec![] },
+                &empty_asr(),
+            ),
             Err(LegacyDatabasePreflightError::MissingMedia {
                 locator: "missing".into()
             })
@@ -425,7 +574,8 @@ mod tests {
             plan_legacy_media(
                 &root,
                 &unsafe_plan,
-                &LegacyLorebookPlan { lorebooks: vec![] }
+                &LegacyLorebookPlan { lorebooks: vec![] },
+                &empty_asr(),
             ),
             Err(LegacyDatabasePreflightError::UnsafeMediaReference {
                 locator: "../avatar.webp".into()
@@ -444,7 +594,12 @@ mod tests {
             default_persona_id: None,
         };
         assert_eq!(
-            plan_legacy_media(&root, &ambiguous, &LegacyLorebookPlan { lorebooks: vec![] }),
+            plan_legacy_media(
+                &root,
+                &ambiguous,
+                &LegacyLorebookPlan { lorebooks: vec![] },
+                &empty_asr(),
+            ),
             Err(LegacyDatabasePreflightError::ConflictingMediaReference {
                 locator: "conflict".into()
             })
@@ -466,7 +621,12 @@ mod tests {
             default_persona_id: None,
         };
         assert_eq!(
-            plan_legacy_media(&root, &too_many, &LegacyLorebookPlan { lorebooks: vec![] }),
+            plan_legacy_media(
+                &root,
+                &too_many,
+                &LegacyLorebookPlan { lorebooks: vec![] },
+                &empty_asr(),
+            ),
             Err(LegacyDatabasePreflightError::MediaReferenceLimitExceeded {
                 limit: LEGACY_MEDIA_REFERENCE_LIMIT
             })
@@ -486,7 +646,12 @@ mod tests {
             default_persona_id: None,
         };
         assert_eq!(
-            plan_legacy_media(&root, &too_large, &LegacyLorebookPlan { lorebooks: vec![] }),
+            plan_legacy_media(
+                &root,
+                &too_large,
+                &LegacyLorebookPlan { lorebooks: vec![] },
+                &empty_asr(),
+            ),
             Err(LegacyDatabasePreflightError::MediaObjectTooLarge {
                 locator: "large".into(),
                 limit: LEGACY_MEDIA_OBJECT_BYTES_LIMIT

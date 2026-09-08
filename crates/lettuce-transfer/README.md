@@ -51,6 +51,14 @@ opaque `SecretRef`. These assignments contain names and identities only; secret
 values remain in the retained legacy database until the later secret-transfer
 step verifies and writes them through `SecretStore`.
 
+Admission also seals the complete ASR learning plan and assigns stable typed
+destination IDs to every vocabulary, correction, ignored-suggestion and voice
+example row. Voice audio joins the same bounded, content-hashed media plan with
+its original locator retained as evidence and a safe logical import key. Exact
+retries preserve all assignments; any ASR content, link, locator or media change
+conflicts before destination writes. Audio ingestion and ASR materialization
+remain separate later steps.
+
 Provider secret transfer uses a narrow source port that yields temporary
 zeroizing values only for the sealed API-key and header assignments. Durable
 completion receipts contain the destination reference, secure-store generation

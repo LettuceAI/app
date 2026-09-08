@@ -12,8 +12,9 @@ use lettuce_context::{PromptEntryDraft, PromptPurpose};
 use lettuce_models::{ModelKind, ModelProfileConfig, ProviderConfig, ProviderProtocol};
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef, SecretValue};
 use lettuce_types::{
-    AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId,
-    PersonaId, PromptDocumentId, ProviderAccountId, TimestampMillis,
+    AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, AsrVoiceExampleId, AssetId,
+    ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId, PersonaId,
+    PromptDocumentId, ProviderAccountId, TimestampMillis,
 };
 
 pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
@@ -286,11 +287,13 @@ pub enum LegacyMediaUse {
     PersonaAvatar { persona_id: PersonaId },
     PersonaDesignReference { persona_id: PersonaId, ordinal: u32 },
     LorebookAvatar { lorebook_id: LorebookId },
+    AsrVoiceExample { source_id: i64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyMediaCandidate {
     pub relative_path: String,
+    pub source_locator: String,
     pub byte_len: u64,
     pub content_hash: ContentHash,
     pub uses: Vec<LegacyMediaUse>,
@@ -434,6 +437,10 @@ pub struct LegacyImportSources {
     pub persona_ids: Vec<PersonaId>,
     pub lorebook_ids: Vec<LorebookId>,
     pub lorebook_entry_ids: Vec<LorebookEntryId>,
+    pub asr_vocabulary_ids: Vec<i64>,
+    pub asr_correction_ids: Vec<i64>,
+    pub asr_ignored_suggestion_ids: Vec<i64>,
+    pub asr_voice_example_ids: Vec<i64>,
     pub media: Vec<LegacyImportMediaSource>,
 }
 
@@ -466,6 +473,7 @@ pub struct LegacyImportPlan {
     pub prompts: LegacyPromptPlan,
     pub personas: LegacyPersonaPlan,
     pub lorebooks: LegacyLorebookPlan,
+    pub asr: LegacyAsrPlan,
     pub media: LegacyMediaPlan,
 }
 
@@ -499,6 +507,22 @@ pub enum LegacyImportAssignment {
     LorebookEntry {
         legacy_id: LorebookEntryId,
         destination_id: LorebookEntryId,
+    },
+    AsrVocabulary {
+        legacy_id: i64,
+        destination_id: AsrVocabularyTermId,
+    },
+    AsrCorrection {
+        legacy_id: i64,
+        destination_id: AsrCorrectionId,
+    },
+    AsrIgnoredSuggestion {
+        legacy_id: i64,
+        destination_id: AsrIgnoredSuggestionId,
+    },
+    AsrVoiceExample {
+        legacy_id: i64,
+        destination_id: AsrVoiceExampleId,
     },
     Media {
         relative_path: String,

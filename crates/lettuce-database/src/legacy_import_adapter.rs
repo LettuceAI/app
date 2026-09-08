@@ -23,8 +23,9 @@ use lettuce_transfer::{
     LegacyProviderModelReceipt,
 };
 use lettuce_types::{
-    AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId,
-    PersonaId, PromptDocumentId, PromptEntryId, ProviderAccountId, Revision, TimestampMillis,
+    AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, AsrVoiceExampleId, AssetId,
+    ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId, PersonaId,
+    PromptDocumentId, PromptEntryId, ProviderAccountId, Revision, TimestampMillis,
 };
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
@@ -747,6 +748,10 @@ struct AssignmentMaps {
     personas: BTreeMap<PersonaId, PersonaId>,
     lorebooks: BTreeMap<LorebookId, LorebookId>,
     entries: BTreeMap<LorebookEntryId, LorebookEntryId>,
+    asr_vocabulary: BTreeMap<i64, AsrVocabularyTermId>,
+    asr_corrections: BTreeMap<i64, AsrCorrectionId>,
+    asr_ignored: BTreeMap<i64, AsrIgnoredSuggestionId>,
+    asr_voice_examples: BTreeMap<i64, AsrVoiceExampleId>,
     media: BTreeMap<String, (AssetId, u64, ContentHash)>,
 }
 
@@ -762,6 +767,10 @@ impl AssignmentMaps {
             personas: BTreeMap::new(),
             lorebooks: BTreeMap::new(),
             entries: BTreeMap::new(),
+            asr_vocabulary: BTreeMap::new(),
+            asr_corrections: BTreeMap::new(),
+            asr_ignored: BTreeMap::new(),
+            asr_voice_examples: BTreeMap::new(),
             media: BTreeMap::new(),
         };
         for assignment in &admission.assignments {
@@ -804,6 +813,34 @@ impl AssignmentMaps {
                     legacy_id,
                     destination_id,
                 } => maps.entries.insert(*legacy_id, *destination_id).is_some(),
+                LegacyImportAssignment::AsrVocabulary {
+                    legacy_id,
+                    destination_id,
+                } => maps
+                    .asr_vocabulary
+                    .insert(*legacy_id, *destination_id)
+                    .is_some(),
+                LegacyImportAssignment::AsrCorrection {
+                    legacy_id,
+                    destination_id,
+                } => maps
+                    .asr_corrections
+                    .insert(*legacy_id, *destination_id)
+                    .is_some(),
+                LegacyImportAssignment::AsrIgnoredSuggestion {
+                    legacy_id,
+                    destination_id,
+                } => maps
+                    .asr_ignored
+                    .insert(*legacy_id, *destination_id)
+                    .is_some(),
+                LegacyImportAssignment::AsrVoiceExample {
+                    legacy_id,
+                    destination_id,
+                } => maps
+                    .asr_voice_examples
+                    .insert(*legacy_id, *destination_id)
+                    .is_some(),
                 LegacyImportAssignment::Media {
                     relative_path,
                     destination_id,
@@ -876,6 +913,10 @@ fn execution_sources(request: &LegacyImportExecutionRequest) -> LegacyImportSour
             .iter()
             .flat_map(|book| book.entries.iter().map(|entry| entry.id))
             .collect(),
+        asr_vocabulary_ids: Vec::new(),
+        asr_correction_ids: Vec::new(),
+        asr_ignored_suggestion_ids: Vec::new(),
+        asr_voice_example_ids: Vec::new(),
         media: request
             .media
             .media
@@ -1129,6 +1170,10 @@ fn normalize_sources(sources: &mut LegacyImportSources) -> Result<(), LegacyImpo
     sources.persona_ids.sort_unstable();
     sources.lorebook_ids.sort_unstable();
     sources.lorebook_entry_ids.sort_unstable();
+    sources.asr_vocabulary_ids.sort_unstable();
+    sources.asr_correction_ids.sort_unstable();
+    sources.asr_ignored_suggestion_ids.sort_unstable();
+    sources.asr_voice_example_ids.sort_unstable();
     sources.media.sort();
     if has_duplicates(&sources.provider_account_ids)
         || has_duplicates(&sources.model_profile_ids)
@@ -1136,6 +1181,14 @@ fn normalize_sources(sources: &mut LegacyImportSources) -> Result<(), LegacyImpo
         || has_duplicates(&sources.provider_secrets)
         || has_duplicates(&sources.lorebook_ids)
         || has_duplicates(&sources.lorebook_entry_ids)
+        || has_duplicates(&sources.asr_vocabulary_ids)
+        || has_duplicates(&sources.asr_correction_ids)
+        || has_duplicates(&sources.asr_ignored_suggestion_ids)
+        || has_duplicates(&sources.asr_voice_example_ids)
+        || sources.asr_vocabulary_ids.iter().any(|id| *id <= 0)
+        || sources.asr_correction_ids.iter().any(|id| *id <= 0)
+        || sources.asr_ignored_suggestion_ids.iter().any(|id| *id <= 0)
+        || sources.asr_voice_example_ids.iter().any(|id| *id <= 0)
         || has_duplicates(&sources.media)
         || sources.media.iter().any(|source| {
             !valid_media_path(&source.relative_path) || i64::try_from(source.byte_len).is_err()
@@ -1251,6 +1304,50 @@ fn insert_assignments(
             &source_id.to_string(),
             "",
             LorebookEntryId::new().to_string(),
+            None,
+        )?;
+    }
+    for source_id in &sources.asr_vocabulary_ids {
+        insert_assignment(
+            transaction,
+            run_id,
+            "asr_vocabulary",
+            &source_id.to_string(),
+            "",
+            AsrVocabularyTermId::new().to_string(),
+            None,
+        )?;
+    }
+    for source_id in &sources.asr_correction_ids {
+        insert_assignment(
+            transaction,
+            run_id,
+            "asr_correction",
+            &source_id.to_string(),
+            "",
+            AsrCorrectionId::new().to_string(),
+            None,
+        )?;
+    }
+    for source_id in &sources.asr_ignored_suggestion_ids {
+        insert_assignment(
+            transaction,
+            run_id,
+            "asr_ignored_suggestion",
+            &source_id.to_string(),
+            "",
+            AsrIgnoredSuggestionId::new().to_string(),
+            None,
+        )?;
+    }
+    for source_id in &sources.asr_voice_example_ids {
+        insert_assignment(
+            transaction,
+            run_id,
+            "asr_voice_example",
+            &source_id.to_string(),
+            "",
+            AsrVoiceExampleId::new().to_string(),
             None,
         )?;
     }
@@ -1394,7 +1491,7 @@ fn load_assignments(
 ) -> Result<Vec<LegacyImportAssignment>, LegacyImportRepositoryError> {
     let mut statement = transaction
         .prepare(
-            "SELECT source_kind,source_key,source_detail,destination_id,auxiliary_id,expected_byte_len,expected_content_hash FROM legacy_import_assignments WHERE run_id=?1 ORDER BY CASE source_kind WHEN 'provider_account' THEN 1 WHEN 'model_profile' THEN 2 WHEN 'provider_api_key' THEN 3 WHEN 'provider_secret_header' THEN 4 WHEN 'prompt' THEN 5 WHEN 'persona' THEN 6 WHEN 'lorebook' THEN 7 WHEN 'lorebook_entry' THEN 8 ELSE 9 END,source_key,source_detail",
+            "SELECT source_kind,source_key,source_detail,destination_id,auxiliary_id,expected_byte_len,expected_content_hash FROM legacy_import_assignments WHERE run_id=?1 ORDER BY CASE source_kind WHEN 'provider_account' THEN 1 WHEN 'model_profile' THEN 2 WHEN 'provider_api_key' THEN 3 WHEN 'provider_secret_header' THEN 4 WHEN 'prompt' THEN 5 WHEN 'persona' THEN 6 WHEN 'lorebook' THEN 7 WHEN 'lorebook_entry' THEN 8 WHEN 'asr_vocabulary' THEN 9 WHEN 'asr_correction' THEN 10 WHEN 'asr_ignored_suggestion' THEN 11 WHEN 'asr_voice_example' THEN 12 ELSE 13 END,source_key,source_detail",
         )
         .map_err(|_| LegacyImportRepositoryError::Storage)?;
     statement
@@ -1500,6 +1597,34 @@ fn parse_assignment(
             destination_id: LorebookEntryId::from_str(&destination_id)
                 .map_err(|_| LegacyImportRepositoryError::Storage)?,
         }),
+        "asr_vocabulary" => Ok(LegacyImportAssignment::AsrVocabulary {
+            legacy_id: source_key
+                .parse()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            destination_id: AsrVocabularyTermId::from_str(&destination_id)
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+        }),
+        "asr_correction" => Ok(LegacyImportAssignment::AsrCorrection {
+            legacy_id: source_key
+                .parse()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            destination_id: AsrCorrectionId::from_str(&destination_id)
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+        }),
+        "asr_ignored_suggestion" => Ok(LegacyImportAssignment::AsrIgnoredSuggestion {
+            legacy_id: source_key
+                .parse()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            destination_id: AsrIgnoredSuggestionId::from_str(&destination_id)
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+        }),
+        "asr_voice_example" => Ok(LegacyImportAssignment::AsrVoiceExample {
+            legacy_id: source_key
+                .parse()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            destination_id: AsrVoiceExampleId::from_str(&destination_id)
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+        }),
         "media" => Ok(LegacyImportAssignment::Media {
             relative_path: source_key,
             destination_id: AssetId::from_str(&destination_id)
@@ -1524,6 +1649,10 @@ fn assignment_sources(assignments: &[LegacyImportAssignment]) -> LegacyImportSou
         persona_ids: Vec::new(),
         lorebook_ids: Vec::new(),
         lorebook_entry_ids: Vec::new(),
+        asr_vocabulary_ids: Vec::new(),
+        asr_correction_ids: Vec::new(),
+        asr_ignored_suggestion_ids: Vec::new(),
+        asr_voice_example_ids: Vec::new(),
         media: Vec::new(),
     };
     for assignment in assignments {
@@ -1548,6 +1677,18 @@ fn assignment_sources(assignments: &[LegacyImportAssignment]) -> LegacyImportSou
             }
             LegacyImportAssignment::LorebookEntry { legacy_id, .. } => {
                 sources.lorebook_entry_ids.push(*legacy_id);
+            }
+            LegacyImportAssignment::AsrVocabulary { legacy_id, .. } => {
+                sources.asr_vocabulary_ids.push(*legacy_id);
+            }
+            LegacyImportAssignment::AsrCorrection { legacy_id, .. } => {
+                sources.asr_correction_ids.push(*legacy_id);
+            }
+            LegacyImportAssignment::AsrIgnoredSuggestion { legacy_id, .. } => {
+                sources.asr_ignored_suggestion_ids.push(*legacy_id);
+            }
+            LegacyImportAssignment::AsrVoiceExample { legacy_id, .. } => {
+                sources.asr_voice_example_ids.push(*legacy_id);
             }
             LegacyImportAssignment::Media {
                 relative_path,
@@ -1622,6 +1763,10 @@ mod tests {
                 persona_ids: vec![PersonaId::new()],
                 lorebook_ids: vec![LorebookId::new()],
                 lorebook_entry_ids: vec![LorebookEntryId::new()],
+                asr_vocabulary_ids: vec![3],
+                asr_correction_ids: vec![4],
+                asr_ignored_suggestion_ids: vec![5],
+                asr_voice_example_ids: vec![6],
                 media: vec![lettuce_transfer::LegacyImportMediaSource {
                     relative_path: "images/avatar.png".to_owned(),
                     byte_len: 42,
@@ -1643,7 +1788,23 @@ mod tests {
             .expect("admit import");
         assert_eq!(first.status, LegacyImportRunStatus::Admitted);
         assert!(!first.replayed);
-        assert_eq!(first.assignments.len(), 9);
+        assert_eq!(first.assignments.len(), 13);
+        assert!(first.assignments.iter().any(|assignment| matches!(
+            assignment,
+            LegacyImportAssignment::AsrVocabulary { legacy_id: 3, .. }
+        )));
+        assert!(first.assignments.iter().any(|assignment| matches!(
+            assignment,
+            LegacyImportAssignment::AsrCorrection { legacy_id: 4, .. }
+        )));
+        assert!(first.assignments.iter().any(|assignment| matches!(
+            assignment,
+            LegacyImportAssignment::AsrIgnoredSuggestion { legacy_id: 5, .. }
+        )));
+        assert!(first.assignments.iter().any(|assignment| matches!(
+            assignment,
+            LegacyImportAssignment::AsrVoiceExample { legacy_id: 6, .. }
+        )));
         let provider_assignments = first
             .assignments
             .iter()

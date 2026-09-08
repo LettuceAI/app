@@ -101,6 +101,12 @@ validates optional term and correction links within the complete plan, and
 enforces per-table plus aggregate limits before returning any output. Planning
 does not ingest audio or mutate either database.
 
+Legacy import admission persists immutable assignments for all four ASR row
+kinds alongside media assignments. Source integer IDs map to typed destination
+UUIDs, replay returns the original mapping after reopen, and the foundation
+schema accepts these assignment kinds only while the run is admitting. This
+does not write live ASR rows or mark their audio complete.
+
 Provider/model planning reads the final version-92 settings, credential and model
 tables through a read-only connection. It applies the legacy credential resolution
 order, validates defaults and parent bindings, maps custom protocol configuration
