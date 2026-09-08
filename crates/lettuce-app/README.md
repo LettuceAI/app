@@ -18,6 +18,11 @@ plan needed to resolve later persona and character bindings.
 and model-profile plan. Credentials remain pending secret-store inputs represented
 only by API-key presence and header names; no secret value or destination row is
 written during planning.
+`AppBackend::plan_legacy_prompts` reads the bounded legacy prompt library and
+app-wide prompt selection. Import admission seals those source identities, and
+the provider/model completion transaction creates validated imported documents,
+preserves entry order and legacy execution flags, maps the valid app default,
+and replays after reopen without duplicate prompts.
 `AppBackend::plan_legacy_media` resolves only those planned persona and
 lorebook references below an explicitly supplied legacy storage root. The
 application adapter validates paths and hashes bounded files without copying
@@ -803,7 +808,7 @@ Generation finalization derives a regenerated candidate's persisted ordinal
 from the prior candidate instead of trusting the provider-local response index;
 this preserves dense alternatives while new-assistant turns still begin at zero.
 
-The legacy import admission coordinator fingerprints the complete preflight inventory and provider/model/persona/lorebook/media plans, derives the closed source ID set, and admits it through the transfer-owned repository port. It allocates no IDs itself and performs no filesystem ingest, secret read, secret-store write, or domain creation; SQLite returns sealed account, profile, secret-reference, graph, and media mappings so retries and reopen use the same destination identities. The deterministic legacy llama.cpp account participates in the same assignment path. The legacy database and storage tree remain untouched and retained.
+The legacy import admission coordinator fingerprints the complete preflight inventory and provider/model/prompt/persona/lorebook/media plans, derives the closed source ID set, and admits it through the transfer-owned repository port. It allocates no IDs itself and performs no filesystem ingest, secret read, secret-store write, or domain creation; SQLite returns sealed account, profile, prompt, secret-reference, graph, and media mappings so retries and reopen use the same destination identities. The deterministic legacy llama.cpp account participates in the same assignment path. The legacy database and storage tree remain untouched and retained.
 
 The provider-secret import coordinator requires the live read-only source set to
 match every sealed secret assignment. It binds each value to the assigned

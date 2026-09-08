@@ -1,5 +1,9 @@
 use std::{collections::BTreeMap, path::Path, str::FromStr};
 
+use lettuce_context::{
+    PromptEntryCondition, PromptEntryDraft, PromptEntryPayload, PromptEntryPosition,
+    PromptEntryRole, PromptPurpose,
+};
 use lettuce_models::{
     CapabilityEvidence, CapabilityEvidenceSource, CapabilityStatus, ChatParameterProfile,
     CustomAuth, CustomModelList, CustomProviderConfig, CustomRoles, CustomToolChoiceMode, JsonPath,
@@ -12,20 +16,21 @@ use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef, SecretValue};
 use lettuce_transfer::{
     LEGACY_DATABASE_SCHEMA_VERSION, LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT,
     LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT, LEGACY_LOREBOOK_PLAN_LIMIT, LEGACY_MODEL_PROFILE_PLAN_LIMIT,
-    LEGACY_PERSONA_PLAN_LIMIT, LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT, LegacyCrop,
-    LegacyDatabaseInventory, LegacyDatabasePreflightError, LegacyImageRecommendation,
+    LEGACY_PERSONA_PLAN_LIMIT, LEGACY_PROMPT_PLAN_LIMIT, LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT,
+    LegacyCrop, LegacyDatabaseInventory, LegacyDatabasePreflightError, LegacyImageRecommendation,
     LegacyImportProviderSecretSource, LegacyKeywordMatchMode, LegacyLorebookCandidate,
     LegacyLorebookDetectionPolicy, LegacyLorebookEntryCandidate, LegacyLorebookPlan,
     LegacyMediaReference, LegacyModelProfileCandidate, LegacyPendingProviderSecret,
-    LegacyPersonaCandidate, LegacyPersonaPlan, LegacyProviderAccountCandidate,
-    LegacyProviderAccountOrigin, LegacyProviderModelPlan, LegacyProviderSecretSource,
-    LegacyProviderSecretSourceError,
+    LegacyPersonaCandidate, LegacyPersonaPlan, LegacyPromptCandidate, LegacyPromptEntryCandidate,
+    LegacyPromptPlan, LegacyProviderAccountCandidate, LegacyProviderAccountOrigin,
+    LegacyProviderModelPlan, LegacyProviderSecretSource, LegacyProviderSecretSourceError,
 };
 use lettuce_types::{
     LorebookEntryId, LorebookId, ModelProfileId, PersonaId, ProviderAccountId, Revision,
     TimestampMillis,
 };
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use serde::Deserialize;
 use serde_json::{Map, Value};
 
 const ROOT_TABLES: [(&str, &str); 10] = [
@@ -93,6 +98,171 @@ pub fn plan_legacy_provider_models(
         LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT,
         LEGACY_MODEL_PROFILE_PLAN_LIMIT,
     )
+}
+
+pub fn plan_legacy_prompts(
+    path: impl AsRef<Path>,
+) -> Result<LegacyPromptPlan, LegacyDatabasePreflightError> {
+    let connection = open_validated(path)?;
+    plan_legacy_prompts_with_limit(&connection, LEGACY_PROMPT_PLAN_LIMIT)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyPromptEntryRow {
+    id: String,
+    name: String,
+    role: PromptEntryRole,
+    content: String,
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default)]
+    injection_position: PromptEntryPosition,
+    #[serde(default)]
+    injection_depth: u32,
+    #[serde(default)]
+    conditional_min_messages: Option<u32>,
+    #[serde(default)]
+    interval_turns: Option<u32>,
+    #[serde(default)]
+    system_prompt: bool,
+    #[serde(default)]
+    conditions: Option<PromptEntryCondition>,
+    #[serde(default)]
+    prompt_entry_payload: Option<PromptEntryPayload>,
+}
+
+fn plan_legacy_prompts_with_limit(
+    connection: &Connection,
+    limit: u32,
+) -> Result<LegacyPromptPlan, LegacyDatabasePreflightError> {
+    require_count_limit(connection, "prompt_templates", limit)?;
+    let (default_prompt_source_id, deprecated_system_prompt) = connection
+        .query_row(
+            "SELECT prompt_template_id,system_prompt FROM settings WHERE id=1",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            },
+        )
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let mut statement = connection
+        .prepare("SELECT id,name,prompt_type,content,entries,condense_prompt_entries,created_at,updated_at FROM prompt_templates ORDER BY id")
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, i64>(7)?,
+            ))
+        })
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let mut prompts = Vec::new();
+    for row in rows {
+        let (source_id, name, prompt_type, content, entries_json, condense, created_at, updated_at) =
+            row.map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+        if source_id.trim().is_empty() || name.trim().is_empty() || updated_at < created_at {
+            return Err(prompt_malformed("identity"));
+        }
+        let mut purpose: PromptPurpose = serde_json::from_value(Value::String(prompt_type))
+            .map_err(|_| prompt_malformed("prompt_type"))?;
+        if purpose == PromptPurpose::Undefined {
+            purpose = PromptPurpose::DirectChat;
+        }
+        let rows: Vec<LegacyPromptEntryRow> =
+            serde_json::from_str(&entries_json).map_err(|_| prompt_malformed("entries"))?;
+        let mut entries = rows
+            .into_iter()
+            .map(|entry| {
+                let candidate = LegacyPromptEntryCandidate {
+                    source_id: entry.id,
+                    draft: PromptEntryDraft {
+                        built_in_entry_key: None,
+                        name: entry.name,
+                        role: entry.role,
+                        content: entry.content,
+                        enabled: entry.enabled,
+                        injection_position: entry.injection_position,
+                        depth: entry.injection_depth,
+                        conditional_min_messages: entry.conditional_min_messages,
+                        interval_turns: entry.interval_turns,
+                        system_prompt: entry.system_prompt,
+                        conditions: entry.conditions,
+                        payload: entry.prompt_entry_payload,
+                    },
+                };
+                candidate
+                    .draft
+                    .validate()
+                    .map_err(|_| prompt_malformed("entries"))?;
+                if candidate.source_id.trim().is_empty() {
+                    return Err(prompt_malformed("entries"));
+                }
+                Ok(candidate)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if entries.is_empty() && !content.trim().is_empty() {
+            entries.push(LegacyPromptEntryCandidate {
+                source_id: "entry_system".to_owned(),
+                draft: PromptEntryDraft {
+                    built_in_entry_key: None,
+                    name: "System Prompt".to_owned(),
+                    role: PromptEntryRole::System,
+                    content,
+                    enabled: true,
+                    injection_position: PromptEntryPosition::Relative,
+                    depth: 0,
+                    conditional_min_messages: None,
+                    interval_turns: None,
+                    system_prompt: true,
+                    conditions: None,
+                    payload: None,
+                },
+            });
+        }
+        if entries
+            .iter()
+            .map(|entry| entry.source_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != entries.len()
+        {
+            return Err(prompt_malformed("entries"));
+        }
+        prompts.push(LegacyPromptCandidate {
+            source_id,
+            name,
+            purpose,
+            entries,
+            condense: match condense {
+                0 => false,
+                1 => true,
+                _ => return Err(prompt_malformed("condense_prompt_entries")),
+            },
+            created_at: TimestampMillis::new(created_at),
+            updated_at: TimestampMillis::new(updated_at),
+        });
+    }
+    if prompts
+        .windows(2)
+        .any(|pair| pair[0].source_id == pair[1].source_id)
+    {
+        return Err(prompt_malformed("id"));
+    }
+    Ok(LegacyPromptPlan {
+        prompts,
+        default_prompt_source_id: normalized_optional(default_prompt_source_id),
+        deprecated_system_prompt: normalized_optional(deprecated_system_prompt),
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -936,6 +1106,13 @@ fn model_malformed(field: &'static str) -> LegacyDatabasePreflightError {
     }
 }
 
+fn prompt_malformed(field: &'static str) -> LegacyDatabasePreflightError {
+    LegacyDatabasePreflightError::MalformedRecord {
+        table: "prompt_templates",
+        field,
+    }
+}
+
 fn require_provider_non_blank(
     value: &str,
     field: &'static str,
@@ -1506,7 +1683,10 @@ fn legacy_chat_parameters(
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
+    use lettuce_context::{PromptEntryPosition, PromptEntryRole, PromptPurpose};
     use lettuce_types::MediaBlobId;
 
     fn legacy_database(version: i64) -> std::path::PathBuf {
@@ -1637,6 +1817,86 @@ mod tests {
             .expect("create provider model schema");
         drop(connection);
         path
+    }
+
+    #[test]
+    fn prompt_plan_preserves_structured_entries_and_converts_legacy_content() {
+        let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute_batch(
+                r#"DROP TABLE prompt_templates;
+                 ALTER TABLE settings ADD COLUMN prompt_template_id TEXT;
+                 ALTER TABLE settings ADD COLUMN system_prompt TEXT;
+                 CREATE TABLE prompt_templates (
+                   id TEXT PRIMARY KEY,
+                   name TEXT NOT NULL,
+                   prompt_type TEXT NOT NULL,
+                   content TEXT NOT NULL,
+                   entries TEXT NOT NULL,
+                   condense_prompt_entries INTEGER NOT NULL,
+                   created_at INTEGER NOT NULL,
+                   updated_at INTEGER NOT NULL
+                 );
+                 UPDATE settings SET prompt_template_id='custom-general',system_prompt='deprecated text' WHERE id=1;
+                 INSERT INTO prompt_templates VALUES (
+                   'custom-general','General','undefined','Legacy general text','[]',0,10,20
+                 );
+                 INSERT INTO prompt_templates VALUES (
+                   'custom-memory','Memory','dynamicMemoryManager','compatibility copy',
+                   '[{"id":"second","name":"Second","role":"assistant","content":"B","enabled":true,"injectionPosition":"inChat","injectionDepth":2},{"id":"first","name":"First","role":"system","content":"A","systemPrompt":true}]',
+                   1,30,40
+                 );"#,
+            )
+            .expect("create prompt fixtures");
+        drop(connection);
+        let source_before = fs::read(&path).expect("read source before planning");
+
+        let plan = plan_legacy_prompts(&path).expect("plan prompts");
+        assert_eq!(plan.prompts.len(), 2);
+        assert_eq!(
+            plan.default_prompt_source_id.as_deref(),
+            Some("custom-general")
+        );
+        assert_eq!(
+            plan.deprecated_system_prompt.as_deref(),
+            Some("deprecated text")
+        );
+        let general = &plan.prompts[0];
+        assert_eq!(general.purpose, PromptPurpose::DirectChat);
+        assert_eq!(general.entries.len(), 1);
+        assert_eq!(general.entries[0].source_id, "entry_system");
+        assert_eq!(general.entries[0].draft.content, "Legacy general text");
+        assert!(general.entries[0].draft.enabled);
+        assert!(general.entries[0].draft.system_prompt);
+        let memory = &plan.prompts[1];
+        assert_eq!(memory.purpose, PromptPurpose::DynamicMemoryManager);
+        assert!(memory.condense);
+        assert_eq!(memory.entries[0].source_id, "second");
+        assert_eq!(memory.entries[0].draft.role, PromptEntryRole::Assistant);
+        assert_eq!(
+            memory.entries[0].draft.injection_position,
+            PromptEntryPosition::InChat
+        );
+        assert_eq!(memory.entries[0].draft.depth, 2);
+        assert_eq!(memory.entries[1].source_id, "first");
+        assert_eq!(
+            plan_legacy_prompts_with_limit(
+                &Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+                    .expect("open source for limit"),
+                1,
+            ),
+            Err(LegacyDatabasePreflightError::LimitExceeded {
+                table: "prompt_templates",
+                limit: 1,
+            })
+        );
+        assert_eq!(
+            fs::read(&path).expect("read source after planning"),
+            source_before
+        );
+
+        fs::remove_file(path).expect("remove database");
     }
 
     #[test]

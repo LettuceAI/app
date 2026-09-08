@@ -4,8 +4,8 @@ use lettuce_transfer::{
     LegacyImportPlan, LegacyImportProviderSecretSource, LegacyImportReceipt,
     LegacyImportRepository, LegacyImportRepositoryError, LegacyImportSources,
     LegacyKeywordMatchMode, LegacyLorebookDetectionPolicy, LegacyLorebookPlan, LegacyMediaPlan,
-    LegacyMediaUse, LegacyPendingProviderSecret, LegacyPersonaPlan, LegacyProviderAccountOrigin,
-    LegacyProviderModelPlan,
+    LegacyMediaUse, LegacyPendingProviderSecret, LegacyPersonaPlan, LegacyPromptPlan,
+    LegacyProviderAccountOrigin, LegacyProviderModelPlan,
 };
 use lettuce_types::{ContentHash, LegacyImportRunId, TimestampMillis};
 
@@ -28,23 +28,27 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportExecutionCoordinator<'a
     pub fn execute(
         &self,
         admission: &LegacyImportAdmission,
-        provider_models: &LegacyProviderModelPlan,
-        personas: &LegacyPersonaPlan,
-        lorebooks: &LegacyLorebookPlan,
-        media: &LegacyMediaPlan,
+        plan: &LegacyImportPlan,
         completed_at: TimestampMillis,
     ) -> Result<LegacyImportReceipt, LegacyImportRepositoryError> {
-        let fingerprint = plan_fingerprint(provider_models, personas, lorebooks, media);
+        let fingerprint = plan_fingerprint(
+            &plan.provider_models,
+            &plan.prompts,
+            &plan.personas,
+            &plan.lorebooks,
+            &plan.media,
+        );
         if fingerprint != admission.plan_fingerprint {
             return Err(LegacyImportRepositoryError::Conflict);
         }
         self.repository.materialize(LegacyImportExecutionRequest {
             run_id: admission.run_id,
             plan_fingerprint: fingerprint,
-            provider_models: provider_models.clone(),
-            personas: personas.clone(),
-            lorebooks: lorebooks.clone(),
-            media: media.clone(),
+            provider_models: plan.provider_models.clone(),
+            prompts: plan.prompts.clone(),
+            personas: plan.personas.clone(),
+            lorebooks: plan.lorebooks.clone(),
+            media: plan.media.clone(),
             completed_at,
         })
     }
@@ -65,16 +69,30 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
     ) -> Result<LegacyImportAdmission, LegacyImportRepositoryError> {
         let LegacyImportPlan {
             provider_models,
+            prompts,
             personas,
             lorebooks,
             media,
         } = plan;
-        validate_plan(inventory, provider_models, personas, lorebooks, media)?;
+        validate_plan(
+            inventory,
+            provider_models,
+            prompts,
+            personas,
+            lorebooks,
+            media,
+        )?;
         self.repository.admit(LegacyImportAdmissionRequest {
             run_id,
             source_schema_version: inventory.schema_version,
             inventory_fingerprint: inventory_fingerprint(inventory),
-            plan_fingerprint: plan_fingerprint(provider_models, personas, lorebooks, media),
+            plan_fingerprint: plan_fingerprint(
+                provider_models,
+                prompts,
+                personas,
+                lorebooks,
+                media,
+            ),
             sources: LegacyImportSources {
                 provider_account_ids: provider_models
                     .provider_accounts
@@ -85,6 +103,11 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
                     .model_profiles
                     .iter()
                     .map(|model| model.id)
+                    .collect(),
+                prompt_ids: prompts
+                    .prompts
+                    .iter()
+                    .map(|prompt| prompt.source_id.clone())
                     .collect(),
                 provider_secrets: provider_models
                     .provider_accounts
@@ -127,6 +150,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
 fn validate_plan(
     inventory: &LegacyDatabaseInventory,
     provider_models: &LegacyProviderModelPlan,
+    prompts: &LegacyPromptPlan,
     personas: &LegacyPersonaPlan,
     lorebooks: &LegacyLorebookPlan,
     media: &LegacyMediaPlan,
@@ -144,6 +168,8 @@ fn validate_plan(
         u64::try_from(provider_count).map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
     let model_count = u64::try_from(provider_models.model_profiles.len())
         .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+    let prompt_count = u64::try_from(prompts.prompts.len())
+        .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
     let total_bytes = media.media.iter().try_fold(0_u64, |total, candidate| {
         total.checked_add(candidate.byte_len)
     });
@@ -152,12 +178,38 @@ fn validate_plan(
         || inventory.lorebooks != lorebook_count
         || inventory.provider_accounts != provider_count
         || inventory.models != model_count
+        || inventory.prompts != prompt_count
         || !valid_provider_model_plan(provider_models)
+        || !valid_prompt_plan(prompts)
         || total_bytes != Some(media.total_bytes)
     {
         return Err(LegacyImportRepositoryError::InvalidInput);
     }
     Ok(())
+}
+
+fn valid_prompt_plan(plan: &LegacyPromptPlan) -> bool {
+    let prompt_ids = plan
+        .prompts
+        .iter()
+        .map(|prompt| prompt.source_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    prompt_ids.len() == plan.prompts.len()
+        && plan.prompts.iter().all(|prompt| {
+            !prompt.source_id.trim().is_empty()
+                && prompt.purpose != lettuce_context::PromptPurpose::Undefined
+                && prompt.created_at <= prompt.updated_at
+                && prompt.entries.iter().all(|entry| {
+                    !entry.source_id.trim().is_empty() && entry.draft.validate().is_ok()
+                })
+                && prompt
+                    .entries
+                    .iter()
+                    .map(|entry| entry.source_id.as_str())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    == prompt.entries.len()
+        })
 }
 
 fn valid_provider_model_plan(plan: &LegacyProviderModelPlan) -> bool {
@@ -270,11 +322,12 @@ fn inventory_fingerprint(inventory: &LegacyDatabaseInventory) -> ContentHash {
 
 pub(crate) fn plan_fingerprint(
     provider_models: &LegacyProviderModelPlan,
+    prompts: &LegacyPromptPlan,
     personas: &LegacyPersonaPlan,
     lorebooks: &LegacyLorebookPlan,
     media: &LegacyMediaPlan,
 ) -> ContentHash {
-    let mut hash = Fingerprint::new("lettuce-legacy-import-plan-v2");
+    let mut hash = Fingerprint::new("lettuce-legacy-import-plan-v3");
     hash.u64(provider_models.provider_accounts.len() as u64);
     for provider in &provider_models.provider_accounts {
         hash.text(&provider.id.to_string());
@@ -341,6 +394,26 @@ pub(crate) fn plan_fingerprint(
         provider_models.default_model_profile_id.as_ref(),
         |hash, value| hash.text(&value.to_string()),
     );
+    hash.u64(prompts.prompts.len() as u64);
+    for prompt in &prompts.prompts {
+        hash.text(&prompt.source_id);
+        hash.text(&prompt.name);
+        hash.bytes(&serde_json::to_vec(&prompt.purpose).expect("prompt purpose serializes"));
+        hash.u64(prompt.entries.len() as u64);
+        for entry in &prompt.entries {
+            hash.text(&entry.source_id);
+            hash.bytes(&serde_json::to_vec(&entry.draft).expect("prompt entry serializes"));
+        }
+        hash.bool(prompt.condense);
+        hash.i64(prompt.created_at.get());
+        hash.i64(prompt.updated_at.get());
+    }
+    hash.option(prompts.default_prompt_source_id.as_ref(), |hash, value| {
+        hash.text(value)
+    });
+    hash.option(prompts.deprecated_system_prompt.as_ref(), |hash, value| {
+        hash.text(value)
+    });
     hash.u64(personas.personas.len() as u64);
     for persona in &personas.personas {
         hash.text(&persona.id.to_string());
@@ -451,7 +524,10 @@ mod tests {
     use std::{fs, str::FromStr};
 
     use lettuce_characters::{Persona, PersonaRepository};
-    use lettuce_context::LorebookRepository;
+    use lettuce_context::{
+        LorebookRepository, PromptBehaviorVersion, PromptEntryDraft, PromptEntryPosition,
+        PromptEntryRole, PromptLookupResult, PromptPurpose, PromptRepository,
+    };
     use lettuce_models::{
         ModelProfile, ModelProfileConfig, ModelProfileRepository, ProviderAccount,
         ProviderAccountRepository, ProviderConfig, ProviderProtocol,
@@ -465,6 +541,7 @@ mod tests {
         LegacyImportRepositoryError, LegacyImportRunStatus, LegacyImportSecretCompletionRequest,
         LegacyLorebookCandidate, LegacyLorebookDetectionPolicy, LegacyLorebookPlan,
         LegacyMediaPlan, LegacyPendingProviderSecret, LegacyPersonaCandidate, LegacyPersonaPlan,
+        LegacyPromptCandidate, LegacyPromptEntryCandidate, LegacyPromptPlan,
         LegacyProviderAccountCandidate, LegacyProviderAccountOrigin, LegacyProviderModelPlan,
     };
     use lettuce_types::{
@@ -519,6 +596,14 @@ mod tests {
         }
     }
 
+    fn prompts() -> LegacyPromptPlan {
+        LegacyPromptPlan {
+            prompts: Vec::new(),
+            default_prompt_source_id: None,
+            deprecated_system_prompt: None,
+        }
+    }
+
     fn import_plan(
         provider_models: &LegacyProviderModelPlan,
         personas: &LegacyPersonaPlan,
@@ -527,6 +612,7 @@ mod tests {
     ) -> LegacyImportPlan {
         LegacyImportPlan {
             provider_models: provider_models.clone(),
+            prompts: prompts(),
             personas: personas.clone(),
             lorebooks: lorebooks.clone(),
             media: media.clone(),
@@ -640,14 +726,10 @@ mod tests {
             media: Vec::new(),
             total_bytes: 0,
         };
+        let plan = import_plan(&providers, &personas, &lorebooks, &media);
         let admission = backend
             .legacy_import_admission()
-            .admit(
-                run_id,
-                &inventory,
-                &import_plan(&providers, &personas, &lorebooks, &media),
-                TimestampMillis::new(20),
-            )
+            .admit(run_id, &inventory, &plan, TimestampMillis::new(20))
             .expect("admit provider metadata");
         assert_eq!(
             admission
@@ -673,14 +755,7 @@ mod tests {
         );
         backend
             .legacy_import_executor()
-            .execute(
-                &admission,
-                &providers,
-                &personas,
-                &lorebooks,
-                &media,
-                TimestampMillis::new(30),
-            )
+            .execute(&admission, &plan, TimestampMillis::new(30))
             .expect("materialize graph only");
         let replay = backend
             .legacy_import_admission()
@@ -753,14 +828,7 @@ mod tests {
             .expect("admit import");
         backend
             .legacy_import_executor()
-            .execute(
-                &admission,
-                &provider_models,
-                &personas,
-                &lorebooks,
-                &media,
-                TimestampMillis::new(30),
-            )
+            .execute(&admission, &plan, TimestampMillis::new(30))
             .expect("materialize graph");
 
         let owners = admission
@@ -909,6 +977,126 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn prompts_materialize_with_app_default_and_replay_after_reopen() {
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-app-legacy-prompt-materialization-{}.sqlite3",
+            LegacyImportRunId::new()
+        ));
+        let source_id = "legacy-direct-prompt".to_owned();
+        let prompt_plan = LegacyPromptPlan {
+            prompts: vec![LegacyPromptCandidate {
+                source_id: source_id.clone(),
+                name: "Imported Direct Prompt".to_owned(),
+                purpose: PromptPurpose::DirectChat,
+                entries: vec![LegacyPromptEntryCandidate {
+                    source_id: "system-entry".to_owned(),
+                    draft: PromptEntryDraft {
+                        built_in_entry_key: None,
+                        name: "System".to_owned(),
+                        role: PromptEntryRole::System,
+                        content: "Preserve this prompt".to_owned(),
+                        enabled: false,
+                        injection_position: PromptEntryPosition::Relative,
+                        depth: 0,
+                        conditional_min_messages: None,
+                        interval_turns: None,
+                        system_prompt: true,
+                        conditions: None,
+                        payload: None,
+                    },
+                }],
+                condense: true,
+                created_at: TimestampMillis::new(11),
+                updated_at: TimestampMillis::new(12),
+            }],
+            default_prompt_source_id: Some(source_id.clone()),
+            deprecated_system_prompt: Some("retained only in evidence".to_owned()),
+        };
+        let provider_models = provider_models();
+        let personas = personas();
+        let lorebooks = LegacyLorebookPlan {
+            lorebooks: Vec::new(),
+        };
+        let media = LegacyMediaPlan {
+            media: Vec::new(),
+            total_bytes: 0,
+        };
+        let plan = LegacyImportPlan {
+            provider_models: provider_models.clone(),
+            prompts: prompt_plan.clone(),
+            personas: personas.clone(),
+            lorebooks: lorebooks.clone(),
+            media: media.clone(),
+        };
+        let inventory = LegacyDatabaseInventory {
+            prompts: 1,
+            ..inventory()
+        };
+        let run_id = LegacyImportRunId::new();
+        let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("open backend");
+        let admission = backend
+            .legacy_import_admission()
+            .admit(run_id, &inventory, &plan, TimestampMillis::new(20))
+            .expect("admit import");
+        let destination_id = admission
+            .assignments
+            .iter()
+            .find_map(|assignment| match assignment {
+                LegacyImportAssignment::Prompt {
+                    legacy_id,
+                    destination_id,
+                } if legacy_id == &source_id => Some(*destination_id),
+                _ => None,
+            })
+            .expect("prompt assignment");
+        backend
+            .legacy_import_executor()
+            .execute(&admission, &plan, TimestampMillis::new(30))
+            .expect("materialize graph");
+        let receipt = backend
+            .legacy_provider_model_importer(&InMemorySecretStore::new())
+            .execute(&admission, &plan, TimestampMillis::new(40))
+            .await
+            .expect("materialize prompts");
+        assert_eq!(receipt.prompt_count, 1);
+        let document = match PromptRepository::lookup_exact(
+            backend.database(),
+            destination_id,
+            PromptPurpose::DirectChat,
+        )
+        .expect("read prompt")
+        {
+            PromptLookupResult::Available { document } => document,
+            other => panic!("unexpected prompt lookup: {other:?}"),
+        };
+        assert_eq!(document.behavior_version, PromptBehaviorVersion::LegacyV1);
+        assert_eq!(document.entries[0].content, "Preserve this prompt");
+        assert!(!document.entries[0].enabled);
+        assert!(document.entries[0].system_prompt);
+        assert_eq!(
+            GlobalSettingsStore::load(backend.database())
+                .expect("load settings")
+                .default_prompt_document_id,
+            Some(destination_id)
+        );
+        drop(backend);
+
+        let reopened = AppBackend::open(&path, TimestampMillis::new(50)).expect("reopen backend");
+        let replayed_admission = reopened
+            .legacy_import_admission()
+            .admit(run_id, &inventory, &plan, TimestampMillis::new(60))
+            .expect("replay admission");
+        let replay = reopened
+            .legacy_provider_model_importer(&InMemorySecretStore::new())
+            .execute(&replayed_admission, &plan, TimestampMillis::new(70))
+            .await
+            .expect("replay prompts");
+        assert!(replay.replayed);
+        assert_eq!(replay.prompt_count, 1);
+        fs::remove_file(path).expect("remove database");
+    }
+
+    #[tokio::test]
     async fn provider_materialization_without_secret_receipts_writes_nothing() {
         let path = std::env::temp_dir().join(format!(
             "lettuce-app-legacy-provider-missing-secrets-{}.sqlite3",
@@ -940,14 +1128,7 @@ mod tests {
             .expect("admit import");
         backend
             .legacy_import_executor()
-            .execute(
-                &admission,
-                &provider_models,
-                &personas,
-                &lorebooks,
-                &media,
-                TimestampMillis::new(30),
-            )
+            .execute(&admission, &plan, TimestampMillis::new(30))
             .expect("materialize graph");
         let empty_store = InMemorySecretStore::new();
         assert_eq!(
@@ -1018,14 +1199,7 @@ mod tests {
             .expect("admit import");
         backend
             .legacy_import_executor()
-            .execute(
-                &admission,
-                &provider_models,
-                &personas,
-                &lorebooks,
-                &media,
-                TimestampMillis::new(30),
-            )
+            .execute(&admission, &plan, TimestampMillis::new(30))
             .expect("materialize graph");
         let assignments = admission
             .assignments
@@ -1186,14 +1360,7 @@ mod tests {
             .expect("admit import");
         backend
             .legacy_import_executor()
-            .execute(
-                &admission,
-                &provider_models,
-                &personas,
-                &lorebooks,
-                &media,
-                TimestampMillis::new(30),
-            )
+            .execute(&admission, &plan, TimestampMillis::new(30))
             .expect("materialize graph");
         let store = InMemorySecretStore::new();
         assert_eq!(
@@ -1301,30 +1468,24 @@ mod tests {
             lorebooks: Vec::new(),
         };
         let empty_run = LegacyImportRunId::new();
+        let empty_plan = import_plan(
+            &provider_models(),
+            &empty_personas,
+            &empty_books,
+            &empty_media,
+        );
         let empty_admission = backend
             .legacy_import_admission()
             .admit(
                 empty_run,
                 &inventory(),
-                &import_plan(
-                    &provider_models(),
-                    &empty_personas,
-                    &empty_books,
-                    &empty_media,
-                ),
+                &empty_plan,
                 TimestampMillis::new(20),
             )
             .expect("admit empty media import");
         let empty_receipt = backend
             .legacy_import_executor()
-            .execute(
-                &empty_admission,
-                &provider_models(),
-                &empty_personas,
-                &empty_books,
-                &empty_media,
-                TimestampMillis::new(30),
-            )
+            .execute(&empty_admission, &empty_plan, TimestampMillis::new(30))
             .expect("complete empty media import");
         assert_eq!(
             (empty_receipt.persona_count, empty_receipt.lorebook_count),
@@ -1366,17 +1527,18 @@ mod tests {
             ..inventory()
         };
         let collision_run = LegacyImportRunId::new();
+        let collision_plan = import_plan(
+            &provider_models(),
+            &collision_personas,
+            &collision_books,
+            &empty_media,
+        );
         let collision_admission = backend
             .legacy_import_admission()
             .admit(
                 collision_run,
                 &collision_inventory,
-                &import_plan(
-                    &provider_models(),
-                    &collision_personas,
-                    &collision_books,
-                    &empty_media,
-                ),
+                &collision_plan,
                 TimestampMillis::new(50),
             )
             .expect("admit collision graph");
@@ -1416,10 +1578,7 @@ mod tests {
         assert_eq!(
             backend.legacy_import_executor().execute(
                 &collision_admission,
-                &provider_models(),
-                &collision_personas,
-                &collision_books,
-                &empty_media,
+                &collision_plan,
                 TimestampMillis::new(60),
             ),
             Err(LegacyImportRepositoryError::Conflict)

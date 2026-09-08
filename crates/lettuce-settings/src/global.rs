@@ -155,6 +155,7 @@ pub enum PureMode {
 pub struct StoredGlobalSettings {
     pub settings: GlobalSettings,
     pub default_model_profile_id: Option<ModelProfileId>,
+    pub default_prompt_document_id: Option<PromptDocumentId>,
     pub dynamic_memory_model_profile_id: Option<ModelProfileId>,
     pub group_speaker_model_profile_id: Option<ModelProfileId>,
     pub revision: Revision,

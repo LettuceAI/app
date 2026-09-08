@@ -92,6 +92,14 @@ impl AppBackend {
         lettuce_database::plan_legacy_provider_models(path)
     }
 
+    pub fn plan_legacy_prompts(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> Result<lettuce_transfer::LegacyPromptPlan, lettuce_transfer::LegacyDatabasePreflightError>
+    {
+        lettuce_database::plan_legacy_prompts(path)
+    }
+
     pub fn plan_legacy_media(
         &self,
         storage_root: impl AsRef<Path>,

@@ -44,6 +44,7 @@ where
     ) -> Result<LegacyProviderModelReceipt, LegacyProviderModelImportError> {
         let fingerprint = super::legacy_import::plan_fingerprint(
             &plan.provider_models,
+            &plan.prompts,
             &plan.personas,
             &plan.lorebooks,
             &plan.media,
@@ -103,6 +104,7 @@ where
                 run_id: admission.run_id,
                 plan_fingerprint: fingerprint,
                 provider_models: plan.provider_models.clone(),
+                prompts: plan.prompts.clone(),
                 completed_at,
             })
             .map_err(LegacyProviderModelImportError::Repository)

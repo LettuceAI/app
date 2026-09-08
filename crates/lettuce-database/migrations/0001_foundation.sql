@@ -99,7 +99,7 @@ CREATE TABLE legacy_import_runs (
 
 CREATE TABLE legacy_import_assignments (
     run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
-    source_kind TEXT NOT NULL CHECK (source_kind IN ('provider_account','model_profile','provider_api_key','provider_secret_header','persona','lorebook','lorebook_entry','media')),
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('provider_account','model_profile','provider_api_key','provider_secret_header','prompt','persona','lorebook','lorebook_entry','media')),
     source_key TEXT NOT NULL CHECK (length(trim(source_key)) > 0),
     source_detail TEXT NOT NULL DEFAULT '',
     destination_id TEXT NOT NULL,

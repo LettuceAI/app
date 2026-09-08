@@ -1378,6 +1378,7 @@ dependencies = [
 name = "lettuce-transfer"
 version = "0.1.0"
 dependencies = [
+ "lettuce-context",
  "lettuce-models",
  "lettuce-settings",
  "lettuce-types",

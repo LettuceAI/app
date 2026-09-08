@@ -299,6 +299,14 @@ mod tests {
         }
     }
 
+    fn prompts() -> lettuce_transfer::LegacyPromptPlan {
+        lettuce_transfer::LegacyPromptPlan {
+            prompts: Vec::new(),
+            default_prompt_source_id: None,
+            deprecated_system_prompt: None,
+        }
+    }
+
     fn import_plan(
         personas: &LegacyPersonaPlan,
         lorebooks: &LegacyLorebookPlan,
@@ -306,6 +314,7 @@ mod tests {
     ) -> LegacyImportPlan {
         LegacyImportPlan {
             provider_models: provider_models(),
+            prompts: prompts(),
             personas: personas.clone(),
             lorebooks: lorebooks.clone(),
             media: media.clone(),
@@ -707,14 +716,10 @@ mod tests {
         };
         let backend =
             AppBackend::open(&database_path, TimestampMillis::new(1)).expect("open backend");
+        let plan = import_plan(&personas, &lorebooks, &media);
         let admission = backend
             .legacy_import_admission()
-            .admit(
-                run_id,
-                &inventory,
-                &import_plan(&personas, &lorebooks, &media),
-                TimestampMillis::new(30),
-            )
+            .admit(run_id, &inventory, &plan, TimestampMillis::new(30))
             .expect("admit graph");
         let destination_persona_id = admission
             .assignments
@@ -750,14 +755,9 @@ mod tests {
             })
             .collect::<std::collections::BTreeMap<_, _>>();
         assert_eq!(
-            backend.legacy_import_executor().execute(
-                &admission,
-                &provider_models(),
-                &personas,
-                &lorebooks,
-                &media,
-                TimestampMillis::new(35),
-            ),
+            backend
+                .legacy_import_executor()
+                .execute(&admission, &plan, TimestampMillis::new(35),),
             Err(lettuce_transfer::LegacyImportRepositoryError::Conflict)
         );
         assert!(
@@ -772,13 +772,11 @@ mod tests {
         );
         let mut changed_personas = personas.clone();
         changed_personas.personas[0].description = "Changed after admission".to_owned();
+        let changed_plan = import_plan(&changed_personas, &lorebooks, &media);
         assert_eq!(
             backend.legacy_import_executor().execute(
                 &admission,
-                &provider_models(),
-                &changed_personas,
-                &lorebooks,
-                &media,
+                &changed_plan,
                 TimestampMillis::new(36),
             ),
             Err(lettuce_transfer::LegacyImportRepositoryError::Conflict)
@@ -790,14 +788,7 @@ mod tests {
             .expect("import graph media");
         let receipt = backend
             .legacy_import_executor()
-            .execute(
-                &admission,
-                &provider_models(),
-                &personas,
-                &lorebooks,
-                &media,
-                TimestampMillis::new(50),
-            )
+            .execute(&admission, &plan, TimestampMillis::new(50))
             .expect("materialize graph");
         assert_eq!(
             (
@@ -933,11 +924,7 @@ mod tests {
         let secret_store = InMemorySecretStore::new();
         backend
             .legacy_provider_model_importer(&secret_store)
-            .execute(
-                &admission,
-                &import_plan(&personas, &lorebooks, &media),
-                TimestampMillis::new(55),
-            )
+            .execute(&admission, &plan, TimestampMillis::new(55))
             .await
             .expect("complete empty provider graph");
         drop(store);
@@ -947,24 +934,12 @@ mod tests {
             AppBackend::open(&database_path, TimestampMillis::new(60)).expect("reopen backend");
         let reopened_admission = reopened
             .legacy_import_admission()
-            .admit(
-                run_id,
-                &inventory,
-                &import_plan(&personas, &lorebooks, &media),
-                TimestampMillis::new(70),
-            )
+            .admit(run_id, &inventory, &plan, TimestampMillis::new(70))
             .expect("replay completed admission");
         assert_eq!(reopened_admission.status, LegacyImportRunStatus::Completed);
         let replay = reopened
             .legacy_import_executor()
-            .execute(
-                &reopened_admission,
-                &provider_models(),
-                &personas,
-                &lorebooks,
-                &media,
-                TimestampMillis::new(80),
-            )
+            .execute(&reopened_admission, &plan, TimestampMillis::new(80))
             .expect("replay completed graph");
         assert!(replay.replayed);
         assert_eq!(replay.completed_at, TimestampMillis::new(50));

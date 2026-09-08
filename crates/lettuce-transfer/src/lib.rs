@@ -8,11 +8,12 @@
 
 use std::fmt;
 
+use lettuce_context::{PromptEntryDraft, PromptPurpose};
 use lettuce_models::{ModelKind, ModelProfileConfig, ProviderConfig, ProviderProtocol};
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef, SecretValue};
 use lettuce_types::{
     AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId,
-    PersonaId, ProviderAccountId, TimestampMillis,
+    PersonaId, PromptDocumentId, ProviderAccountId, TimestampMillis,
 };
 
 pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
@@ -25,6 +26,7 @@ pub const LEGACY_MEDIA_OBJECT_BYTES_LIMIT: u64 = 64 * 1024 * 1024;
 pub const LEGACY_MEDIA_TOTAL_BYTES_LIMIT: u64 = 512 * 1024 * 1024;
 pub const LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT: u32 = 256;
 pub const LEGACY_MODEL_PROFILE_PLAN_LIMIT: u32 = 10_000;
+pub const LEGACY_PROMPT_PLAN_LIMIT: u32 = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyDatabaseInventory {
@@ -95,6 +97,30 @@ pub struct LegacyProviderModelPlan {
     pub model_profiles: Vec<LegacyModelProfileCandidate>,
     pub default_provider_account_id: Option<ProviderAccountId>,
     pub default_model_profile_id: Option<ModelProfileId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyPromptEntryCandidate {
+    pub source_id: String,
+    pub draft: PromptEntryDraft,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyPromptCandidate {
+    pub source_id: String,
+    pub name: String,
+    pub purpose: PromptPurpose,
+    pub entries: Vec<LegacyPromptEntryCandidate>,
+    pub condense: bool,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyPromptPlan {
+    pub prompts: Vec<LegacyPromptCandidate>,
+    pub default_prompt_source_id: Option<String>,
+    pub deprecated_system_prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -329,6 +355,7 @@ pub enum LegacyImportRunStatus {
 pub struct LegacyImportSources {
     pub provider_account_ids: Vec<ProviderAccountId>,
     pub model_profile_ids: Vec<ModelProfileId>,
+    pub prompt_ids: Vec<String>,
     pub provider_secrets: Vec<LegacyImportProviderSecretSource>,
     pub persona_ids: Vec<PersonaId>,
     pub lorebook_ids: Vec<LorebookId>,
@@ -362,6 +389,7 @@ pub struct LegacyImportAdmissionRequest {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LegacyImportPlan {
     pub provider_models: LegacyProviderModelPlan,
+    pub prompts: LegacyPromptPlan,
     pub personas: LegacyPersonaPlan,
     pub lorebooks: LegacyLorebookPlan,
     pub media: LegacyMediaPlan,
@@ -377,6 +405,10 @@ pub enum LegacyImportAssignment {
     ModelProfile {
         legacy_id: ModelProfileId,
         destination_id: ModelProfileId,
+    },
+    Prompt {
+        legacy_id: String,
+        destination_id: PromptDocumentId,
     },
     ProviderSecret {
         source: LegacyImportProviderSecretSource,
@@ -479,6 +511,7 @@ pub struct LegacyImportExecutionRequest {
     pub run_id: LegacyImportRunId,
     pub plan_fingerprint: ContentHash,
     pub provider_models: LegacyProviderModelPlan,
+    pub prompts: LegacyPromptPlan,
     pub personas: LegacyPersonaPlan,
     pub lorebooks: LegacyLorebookPlan,
     pub media: LegacyMediaPlan,
@@ -500,6 +533,7 @@ pub struct LegacyProviderModelMaterializationRequest {
     pub run_id: LegacyImportRunId,
     pub plan_fingerprint: ContentHash,
     pub provider_models: LegacyProviderModelPlan,
+    pub prompts: LegacyPromptPlan,
     pub completed_at: TimestampMillis,
 }
 
@@ -508,6 +542,7 @@ pub struct LegacyProviderModelReceipt {
     pub run_id: LegacyImportRunId,
     pub provider_account_count: u64,
     pub model_profile_count: u64,
+    pub prompt_count: u64,
     pub completed_at: TimestampMillis,
     pub replayed: bool,
 }

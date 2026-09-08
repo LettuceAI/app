@@ -568,6 +568,16 @@ fn reconcile_entries(
     (entries, touched, changed)
 }
 
+pub(crate) fn insert_imported_document(
+    tx: &Transaction<'_>,
+    document: &PromptDocument,
+) -> Result<(), PromptRepositoryError> {
+    document
+        .validate()
+        .map_err(|error| PromptRepositoryError::Failure(error.to_string()))?;
+    insert_root(tx, document)
+}
+
 fn insert_root(
     tx: &Transaction<'_>,
     document: &PromptDocument,

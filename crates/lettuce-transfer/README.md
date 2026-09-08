@@ -51,12 +51,16 @@ and completion time, never plaintext or a reusable value digest. Source-set
 changes conflict before writes, and retries verify an already-present value so a
 crash between the secure-store write and SQLite receipt does not rotate it.
 
-Provider/model materialization has a separate receipt from graph materialization.
+Provider/model/prompt materialization has a separate receipt from graph materialization.
 It consumes the sealed provider/model plan only after every assigned secret has a
 matching completion, maps all source account/profile/default identities to their
-assigned destinations, and replays without duplicate rows. Prompt-template and
-deprecated system-prompt fields have no current model-profile destination; they
-remain fingerprinted, explicit retained-source inputs for the later prompt slice.
+assigned destinations, and replays without duplicate rows. The prompt plan
+preserves ordered structured entries, condensation, purpose and timestamps;
+content-only templates become the single system entry the legacy runtime created.
+The app-wide prompt selection maps to its assigned imported document. Undefined
+legacy templates are corrected to direct-chat documents because undefined is not
+an operational purpose. Model prompt references and deprecated system-prompt text
+remain fingerprinted evidence and do not create parallel live model fields.
 
 The composed media plan deduplicates persona avatar, persona design-reference
 and lorebook avatar uses by relative legacy file, retaining bounded byte size

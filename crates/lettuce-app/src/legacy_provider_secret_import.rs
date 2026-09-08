@@ -254,6 +254,7 @@ mod tests {
                 sources: LegacyImportSources {
                     provider_account_ids: vec![provider_id],
                     model_profile_ids: Vec::new(),
+                    prompt_ids: Vec::new(),
                     provider_secrets: vec![header_source.clone(), api_source.clone()],
                     persona_ids: Vec::new(),
                     lorebook_ids: Vec::new(),
@@ -329,6 +330,7 @@ mod tests {
                 sources: LegacyImportSources {
                     provider_account_ids: vec![provider_id],
                     model_profile_ids: Vec::new(),
+                    prompt_ids: Vec::new(),
                     provider_secrets: vec![api_source.clone(), header_source.clone()],
                     persona_ids: Vec::new(),
                     lorebook_ids: Vec::new(),

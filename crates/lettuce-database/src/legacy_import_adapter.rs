@@ -5,8 +5,10 @@ use lettuce_characters::{
     PersonaMediaSlot,
 };
 use lettuce_context::{
-    DetectionPolicy, KeywordMatchMode, LifecycleStatus as LorebookLifecycleStatus, Lorebook,
-    LorebookBehaviorVersion, LorebookBinding, LorebookDetails, LorebookEntry,
+    DetectionPolicy, KeywordMatchMode, LifecycleStatus as LorebookLifecycleStatus,
+    LifecycleStatus as PromptLifecycleStatus, Lorebook, LorebookBehaviorVersion, LorebookBinding,
+    LorebookDetails, LorebookEntry, PromptBehaviorVersion, PromptDocument, PromptEntry,
+    PromptProvenance,
 };
 use lettuce_models::{ModelProfile, ProviderAccount, SecretHeader};
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
@@ -22,7 +24,7 @@ use lettuce_transfer::{
 };
 use lettuce_types::{
     AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId,
-    PersonaId, ProviderAccountId, Revision, TimestampMillis,
+    PersonaId, PromptDocumentId, PromptEntryId, ProviderAccountId, Revision, TimestampMillis,
 };
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
@@ -579,6 +581,54 @@ impl LegacyImportRepository for Database {
                 .map_err(|_| LegacyImportRepositoryError::Conflict)?;
         }
 
+        for candidate in &request.prompts.prompts {
+            let destination_id = *assignments
+                .prompts
+                .get(&candidate.source_id)
+                .ok_or(LegacyImportRepositoryError::Conflict)?;
+            let entries = candidate
+                .entries
+                .iter()
+                .enumerate()
+                .map(|(ordinal, entry)| {
+                    let identity = format!("{}:{ordinal}", entry.source_id);
+                    PromptEntry {
+                        id: PromptEntryId::from_uuid(uuid::Uuid::new_v5(
+                            &destination_id.as_uuid(),
+                            identity.as_bytes(),
+                        )),
+                        built_in_entry_key: None,
+                        name: entry.draft.name.clone(),
+                        role: entry.draft.role,
+                        content: entry.draft.content.clone(),
+                        enabled: entry.draft.enabled,
+                        injection_position: entry.draft.injection_position,
+                        depth: entry.draft.depth,
+                        conditional_min_messages: entry.draft.conditional_min_messages,
+                        interval_turns: entry.draft.interval_turns,
+                        system_prompt: entry.draft.system_prompt,
+                        conditions: entry.draft.conditions.clone(),
+                        payload: entry.draft.payload.clone(),
+                    }
+                })
+                .collect();
+            let document = PromptDocument {
+                id: destination_id,
+                status: PromptLifecycleStatus::Active,
+                name: candidate.name.clone(),
+                purpose: candidate.purpose,
+                entries,
+                condense: candidate.condense,
+                behavior_version: PromptBehaviorVersion::LegacyV1,
+                provenance: PromptProvenance::Imported,
+                revision: Revision::INITIAL,
+                created_at: candidate.created_at,
+                updated_at: candidate.updated_at,
+            };
+            crate::prompt_adapter::insert_imported_document(&transaction, &document)
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        }
+
         if let Some(legacy_default_id) = request.provider_models.default_model_profile_id {
             let destination_id = assignments
                 .models
@@ -595,14 +645,33 @@ impl LegacyImportRepository for Database {
             }
         }
 
+        if let Some(destination_id) = request
+            .prompts
+            .default_prompt_source_id
+            .as_ref()
+            .and_then(|source_id| assignments.prompts.get(source_id))
+        {
+            let changed = transaction
+                .execute(
+                    "UPDATE app_settings SET default_prompt_document_id=?1,revision=revision+1,updated_at=?2 WHERE id=1 AND default_prompt_document_id IS NULL",
+                    params![destination_id.to_string(), request.completed_at.get()],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            if changed != 1 {
+                return Err(LegacyImportRepositoryError::Conflict);
+            }
+        }
+
         let provider_account_count = i64::try_from(request.provider_models.provider_accounts.len())
             .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
         let model_profile_count = i64::try_from(request.provider_models.model_profiles.len())
             .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        let prompt_count = i64::try_from(request.prompts.prompts.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
         transaction
             .execute(
-                "INSERT INTO legacy_import_provider_model_results (run_id,plan_fingerprint,provider_account_count,model_profile_count,completed_at) VALUES (?1,?2,?3,?4,?5)",
-                params![request.run_id.to_string(), request.plan_fingerprint.as_str(), provider_account_count, model_profile_count, request.completed_at.get()],
+                "INSERT INTO legacy_import_provider_model_results (run_id,plan_fingerprint,provider_account_count,model_profile_count,prompt_count,completed_at) VALUES (?1,?2,?3,?4,?5,?6)",
+                params![request.run_id.to_string(), request.plan_fingerprint.as_str(), provider_account_count, model_profile_count, prompt_count, request.completed_at.get()],
             )
             .map_err(|_| LegacyImportRepositoryError::Conflict)?;
         let changed = transaction
@@ -673,6 +742,7 @@ fn map_completion_insert_error(error: rusqlite::Error) -> LegacyImportRepository
 struct AssignmentMaps {
     providers: BTreeMap<ProviderAccountId, (ProviderAccountId, SecretOwnerId)>,
     models: BTreeMap<ModelProfileId, ModelProfileId>,
+    prompts: BTreeMap<String, PromptDocumentId>,
     secrets: BTreeMap<LegacyImportProviderSecretSource, SecretRef>,
     personas: BTreeMap<PersonaId, PersonaId>,
     lorebooks: BTreeMap<LorebookId, LorebookId>,
@@ -687,6 +757,7 @@ impl AssignmentMaps {
         let mut maps = Self {
             providers: BTreeMap::new(),
             models: BTreeMap::new(),
+            prompts: BTreeMap::new(),
             secrets: BTreeMap::new(),
             personas: BTreeMap::new(),
             lorebooks: BTreeMap::new(),
@@ -707,6 +778,13 @@ impl AssignmentMaps {
                     legacy_id,
                     destination_id,
                 } => maps.models.insert(*legacy_id, *destination_id).is_some(),
+                LegacyImportAssignment::Prompt {
+                    legacy_id,
+                    destination_id,
+                } => maps
+                    .prompts
+                    .insert(legacy_id.clone(), *destination_id)
+                    .is_some(),
                 LegacyImportAssignment::ProviderSecret {
                     source,
                     destination_ref,
@@ -760,6 +838,12 @@ fn execution_sources(request: &LegacyImportExecutionRequest) -> LegacyImportSour
             .model_profiles
             .iter()
             .map(|model| model.id)
+            .collect(),
+        prompt_ids: request
+            .prompts
+            .prompts
+            .iter()
+            .map(|prompt| prompt.source_id.clone())
             .collect(),
         provider_secrets: request
             .provider_models
@@ -941,7 +1025,7 @@ fn load_provider_model_receipt(
 ) -> Result<Option<LegacyProviderModelReceipt>, LegacyImportRepositoryError> {
     transaction
         .query_row(
-            "SELECT provider_account_count,model_profile_count,completed_at FROM legacy_import_provider_model_results WHERE run_id=?1",
+            "SELECT provider_account_count,model_profile_count,prompt_count,completed_at FROM legacy_import_provider_model_results WHERE run_id=?1",
             [run_id.to_string()],
             |row| {
                 Ok(LegacyProviderModelReceipt {
@@ -950,7 +1034,9 @@ fn load_provider_model_receipt(
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     model_profile_count: u64::try_from(row.get::<_, i64>(1)?)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    completed_at: TimestampMillis::new(row.get(2)?),
+                    prompt_count: u64::try_from(row.get::<_, i64>(2)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    completed_at: TimestampMillis::new(row.get(3)?),
                     replayed: false,
                 })
             },
@@ -988,23 +1074,34 @@ fn validate_provider_model_sources(
             })
         })
         .collect::<Vec<_>>();
+    let prompt_ids = request
+        .prompts
+        .prompts
+        .iter()
+        .map(|prompt| prompt.source_id.clone())
+        .collect::<Vec<_>>();
     let mut expected_provider_ids = assignments.providers.keys().copied().collect::<Vec<_>>();
     let mut expected_model_ids = assignments.models.keys().copied().collect::<Vec<_>>();
     let expected_secret_sources = assignments.secrets.keys().cloned().collect::<Vec<_>>();
+    let expected_prompt_ids = assignments.prompts.keys().cloned().collect::<Vec<_>>();
     let mut provider_ids = provider_ids;
     let mut model_ids = model_ids;
     let mut secret_sources = secret_sources;
+    let mut prompt_ids = prompt_ids;
     provider_ids.sort_unstable();
     model_ids.sort_unstable();
     secret_sources.sort();
+    prompt_ids.sort();
     expected_provider_ids.sort_unstable();
     expected_model_ids.sort_unstable();
     if provider_ids != expected_provider_ids
         || model_ids != expected_model_ids
         || secret_sources != expected_secret_sources
+        || prompt_ids != expected_prompt_ids
         || has_duplicates(&provider_ids)
         || has_duplicates(&model_ids)
         || has_duplicates(&secret_sources)
+        || has_duplicates(&prompt_ids)
         || request.provider_models.model_profiles.iter().any(|model| {
             !assignments
                 .providers
@@ -1027,6 +1124,7 @@ fn validate_provider_model_sources(
 fn normalize_sources(sources: &mut LegacyImportSources) -> Result<(), LegacyImportRepositoryError> {
     sources.provider_account_ids.sort_unstable();
     sources.model_profile_ids.sort_unstable();
+    sources.prompt_ids.sort();
     sources.provider_secrets.sort();
     sources.persona_ids.sort_unstable();
     sources.lorebook_ids.sort_unstable();
@@ -1034,6 +1132,7 @@ fn normalize_sources(sources: &mut LegacyImportSources) -> Result<(), LegacyImpo
     sources.media.sort();
     if has_duplicates(&sources.provider_account_ids)
         || has_duplicates(&sources.model_profile_ids)
+        || has_duplicates(&sources.prompt_ids)
         || has_duplicates(&sources.provider_secrets)
         || has_duplicates(&sources.lorebook_ids)
         || has_duplicates(&sources.lorebook_entry_ids)
@@ -1091,6 +1190,17 @@ fn insert_assignments(
             &source_id.to_string(),
             "",
             ModelProfileId::new().to_string(),
+            None,
+        )?;
+    }
+    for source_id in &sources.prompt_ids {
+        insert_assignment(
+            transaction,
+            run_id,
+            "prompt",
+            source_id,
+            "",
+            PromptDocumentId::new().to_string(),
             None,
         )?;
     }
@@ -1284,7 +1394,7 @@ fn load_assignments(
 ) -> Result<Vec<LegacyImportAssignment>, LegacyImportRepositoryError> {
     let mut statement = transaction
         .prepare(
-            "SELECT source_kind,source_key,source_detail,destination_id,auxiliary_id,expected_byte_len,expected_content_hash FROM legacy_import_assignments WHERE run_id=?1 ORDER BY CASE source_kind WHEN 'provider_account' THEN 1 WHEN 'model_profile' THEN 2 WHEN 'provider_api_key' THEN 3 WHEN 'provider_secret_header' THEN 4 WHEN 'persona' THEN 5 WHEN 'lorebook' THEN 6 WHEN 'lorebook_entry' THEN 7 ELSE 8 END,source_key,source_detail",
+            "SELECT source_kind,source_key,source_detail,destination_id,auxiliary_id,expected_byte_len,expected_content_hash FROM legacy_import_assignments WHERE run_id=?1 ORDER BY CASE source_kind WHEN 'provider_account' THEN 1 WHEN 'model_profile' THEN 2 WHEN 'provider_api_key' THEN 3 WHEN 'provider_secret_header' THEN 4 WHEN 'prompt' THEN 5 WHEN 'persona' THEN 6 WHEN 'lorebook' THEN 7 WHEN 'lorebook_entry' THEN 8 ELSE 9 END,source_key,source_detail",
         )
         .map_err(|_| LegacyImportRepositoryError::Storage)?;
     statement
@@ -1340,6 +1450,11 @@ fn parse_assignment(
             legacy_id: ModelProfileId::from_str(&source_key)
                 .map_err(|_| LegacyImportRepositoryError::Storage)?,
             destination_id: ModelProfileId::from_str(&destination_id)
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+        }),
+        "prompt" => Ok(LegacyImportAssignment::Prompt {
+            legacy_id: source_key,
+            destination_id: PromptDocumentId::from_str(&destination_id)
                 .map_err(|_| LegacyImportRepositoryError::Storage)?,
         }),
         "provider_api_key" => Ok(LegacyImportAssignment::ProviderSecret {
@@ -1404,6 +1519,7 @@ fn assignment_sources(assignments: &[LegacyImportAssignment]) -> LegacyImportSou
     let mut sources = LegacyImportSources {
         provider_account_ids: Vec::new(),
         model_profile_ids: Vec::new(),
+        prompt_ids: Vec::new(),
         provider_secrets: Vec::new(),
         persona_ids: Vec::new(),
         lorebook_ids: Vec::new(),
@@ -1417,6 +1533,9 @@ fn assignment_sources(assignments: &[LegacyImportAssignment]) -> LegacyImportSou
             }
             LegacyImportAssignment::ModelProfile { legacy_id, .. } => {
                 sources.model_profile_ids.push(*legacy_id);
+            }
+            LegacyImportAssignment::Prompt { legacy_id, .. } => {
+                sources.prompt_ids.push(legacy_id.clone());
             }
             LegacyImportAssignment::ProviderSecret { source, .. } => {
                 sources.provider_secrets.push(source.clone());
@@ -1481,6 +1600,7 @@ mod tests {
             sources: LegacyImportSources {
                 provider_account_ids: vec![provider_account_id],
                 model_profile_ids: vec![ModelProfileId::new()],
+                prompt_ids: Vec::new(),
                 provider_secrets: vec![
                     LegacyImportProviderSecretSource {
                         provider_account_id,

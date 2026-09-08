@@ -78,6 +78,8 @@ preferences only; frontend appearance is deliberately excluded.
 The application default and dynamic-memory model selections are separate typed
 IDs with foreign keys and optimistic revision checks, not arbitrary setting
 keys. The dedicated group speaker-selection model is a third normalized route.
+The normalized app-wide direct prompt selection is a typed prompt-document ID;
+legacy transfer sets it only when the selected source template was admitted.
 Dynamic-memory and group-speaker selection have narrow CAS setters so a
 successful retry can update only that feature route without rewriting unrelated
 preferences.

@@ -56,6 +56,8 @@ CREATE TABLE prompt_entries (
 ) STRICT;
 CREATE INDEX prompt_entries_prompt_idx ON prompt_entries(prompt_id, ordinal, id);
 
+ALTER TABLE app_settings ADD COLUMN default_prompt_document_id TEXT REFERENCES prompt_documents(id) ON DELETE RESTRICT;
+
 CREATE TABLE lorebooks (
     id TEXT PRIMARY KEY,
     status TEXT NOT NULL CHECK (status IN ('active', 'archived')),
@@ -159,6 +161,7 @@ CREATE TABLE legacy_import_provider_model_results (
     plan_fingerprint TEXT NOT NULL CHECK (length(plan_fingerprint) = 64),
     provider_account_count INTEGER NOT NULL CHECK (provider_account_count >= 0),
     model_profile_count INTEGER NOT NULL CHECK (model_profile_count >= 0),
+    prompt_count INTEGER NOT NULL CHECK (prompt_count >= 0),
     completed_at INTEGER NOT NULL
 ) STRICT;
 
@@ -178,6 +181,10 @@ WHEN NOT EXISTS (
       AND NEW.model_profile_count = (
           SELECT count(*) FROM legacy_import_assignments
           WHERE run_id = NEW.run_id AND source_kind = 'model_profile'
+      )
+      AND NEW.prompt_count = (
+          SELECT count(*) FROM legacy_import_assignments
+          WHERE run_id = NEW.run_id AND source_kind = 'prompt'
       )
       AND NOT EXISTS (
           SELECT 1 FROM legacy_import_assignments AS assignment

@@ -40,7 +40,7 @@ mod usage_adapter;
 
 pub use legacy_database_preflight::{
     LegacyDatabaseProviderSecretSource, plan_legacy_lorebooks, plan_legacy_personas,
-    plan_legacy_provider_models, preflight_legacy_database,
+    plan_legacy_prompts, plan_legacy_provider_models, preflight_legacy_database,
 };
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
@@ -369,20 +369,24 @@ impl GlobalSettingsStore for Database {
         self.connection()
             .map_err(|_| GlobalSettingsStoreError::Storage)?
             .query_row(
-                "SELECT default_model_profile_id, dynamic_memory_model_profile_id, group_speaker_model_profile_id, format_version, payload_json, revision, created_at, updated_at \
+                "SELECT default_model_profile_id, dynamic_memory_model_profile_id, group_speaker_model_profile_id, default_prompt_document_id, format_version, payload_json, revision, created_at, updated_at \
                  FROM app_settings WHERE id = 1",
                 [],
                 |row| {
-                    let format_version: u32 = row.get(3)?;
+                    let format_version: u32 = row.get(4)?;
                     if format_version != GLOBAL_SETTINGS_FORMAT_VERSION {
                         return Err(rusqlite::Error::InvalidQuery);
                     }
-                    let payload: String = row.get(4)?;
+                    let payload: String = row.get(5)?;
                     Ok(StoredGlobalSettings {
                         settings: serde_json::from_str(&payload)
                             .map_err(|_| rusqlite::Error::InvalidQuery)?,
                         default_model_profile_id: row
                             .get::<_, Option<String>>(0)?
+                            .map(parse_id)
+                            .transpose()?,
+                        default_prompt_document_id: row
+                            .get::<_, Option<String>>(3)?
                             .map(parse_id)
                             .transpose()?,
                         dynamic_memory_model_profile_id: row
@@ -393,9 +397,9 @@ impl GlobalSettingsStore for Database {
                             .get::<_, Option<String>>(2)?
                             .map(parse_id)
                             .transpose()?,
-                        revision: to_revision(row.get(5)?)?,
-                        created_at: TimestampMillis::new(row.get(6)?),
-                        updated_at: TimestampMillis::new(row.get(7)?),
+                        revision: to_revision(row.get(6)?)?,
+                        created_at: TimestampMillis::new(row.get(7)?),
+                        updated_at: TimestampMillis::new(row.get(8)?),
                     })
                 },
             )
