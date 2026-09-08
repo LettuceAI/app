@@ -8,6 +8,7 @@
 
 mod global;
 #[cfg(any(
+    target_os = "android",
     target_os = "linux",
     target_os = "macos",
     target_os = "ios",
@@ -29,6 +30,7 @@ pub use secrets::{
 };
 
 #[cfg(any(
+    target_os = "android",
     target_os = "linux",
     target_os = "macos",
     target_os = "ios",

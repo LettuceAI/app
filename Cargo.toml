@@ -23,6 +23,7 @@ unwrap_used = "warn"
 
 [workspace.dependencies]
 async-trait = "0.1"
+android-native-keyring-store = "=0.5.0"
 blake3 = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 cap-primitives = "3.4"
@@ -66,6 +67,7 @@ uuid = { version = "1", features = ["serde", "v4", "v5"] }
 unicode-normalization = "0.1"
 zeroize = "1"
 keyring = { version = "=3.6.3", default-features = false }
+keyring-core = "=0.7.4"
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "backup"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots"] }
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dynamic", "half", "ndarray"] }

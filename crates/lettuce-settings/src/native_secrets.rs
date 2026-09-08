@@ -14,7 +14,7 @@ use crate::{
 
 const SERVICE_NAME: &str = "com.lettuceai.app.secrets.v1";
 const ENVELOPE_VERSION: u32 = 1;
-const MAX_ENVELOPE_BYTES: usize = 20 * 1024;
+const MAX_ENVELOPE_BYTES: usize = 128 * 1024;
 
 #[derive(Clone)]
 pub struct NativeSecretStore {
@@ -30,6 +30,7 @@ impl fmt::Debug for NativeSecretStore {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 impl Default for NativeSecretStore {
     fn default() -> Self {
         Self::new()
@@ -37,12 +38,26 @@ impl Default for NativeSecretStore {
 }
 
 impl NativeSecretStore {
+    #[cfg(not(target_os = "android"))]
     #[must_use]
     pub fn new() -> Self {
         Self {
             backend: Arc::new(KeyringBackend),
             mutation_lock: Arc::new(Mutex::new(())),
         }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    pub fn try_new() -> Result<Self, SecretStoreError> {
+        Ok(Self::new())
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn try_new() -> Result<Self, SecretStoreError> {
+        Ok(Self {
+            backend: Arc::new(AndroidKeyringBackend::try_new().map_err(backend_error)?),
+            mutation_lock: Arc::new(Mutex::new(())),
+        })
     }
 
     #[cfg(test)]
@@ -260,8 +275,10 @@ trait CredentialBackend: Send + Sync {
     fn delete(&self, key: &str) -> Result<(), CredentialBackendError>;
 }
 
+#[cfg(not(target_os = "android"))]
 struct KeyringBackend;
 
+#[cfg(not(target_os = "android"))]
 impl CredentialBackend for KeyringBackend {
     fn load(&self, key: &str) -> Result<Option<Zeroizing<Vec<u8>>>, CredentialBackendError> {
         let entry = keyring::Entry::new(SERVICE_NAME, key).map_err(keyring_error)?;
@@ -288,6 +305,7 @@ impl CredentialBackend for KeyringBackend {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 fn keyring_error(error: keyring::Error) -> CredentialBackendError {
     match error {
         keyring::Error::NoStorageAccess(_) => CredentialBackendError::AccessDenied,
@@ -297,6 +315,71 @@ fn keyring_error(error: keyring::Error) -> CredentialBackendError {
         | keyring::Error::TooLong(_, _)
         | keyring::Error::Invalid(_, _)
         | keyring::Error::Ambiguous(_)
+        | _ => CredentialBackendError::Corrupt,
+    }
+}
+
+#[cfg(target_os = "android")]
+struct AndroidKeyringBackend {
+    store: Arc<android_native_keyring_store::Store>,
+}
+
+#[cfg(target_os = "android")]
+impl AndroidKeyringBackend {
+    fn try_new() -> Result<Self, CredentialBackendError> {
+        android_native_keyring_store::Store::new()
+            .map(|store| Self { store })
+            .map_err(android_keyring_error)
+    }
+
+    fn entry(&self, key: &str) -> Result<keyring_core::Entry, CredentialBackendError> {
+        use keyring_core::api::CredentialStoreApi;
+
+        self.store
+            .build(SERVICE_NAME, key, None)
+            .map_err(android_keyring_error)
+    }
+}
+
+#[cfg(target_os = "android")]
+impl CredentialBackend for AndroidKeyringBackend {
+    fn load(&self, key: &str) -> Result<Option<Zeroizing<Vec<u8>>>, CredentialBackendError> {
+        match self.entry(key)?.get_secret() {
+            Ok(value) => Ok(Some(Zeroizing::new(value))),
+            Err(keyring_core::Error::NoEntry) => Ok(None),
+            Err(error) => Err(android_keyring_error(error)),
+        }
+    }
+
+    fn store(&self, key: &str, value: &[u8]) -> Result<(), CredentialBackendError> {
+        self.entry(key)?
+            .set_secret(value)
+            .map_err(android_keyring_error)
+    }
+
+    fn delete(&self, key: &str) -> Result<(), CredentialBackendError> {
+        match self.entry(key)?.delete_credential() {
+            Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
+            Err(error) => Err(android_keyring_error(error)),
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn android_keyring_error(error: keyring_core::Error) -> CredentialBackendError {
+    match error {
+        keyring_core::Error::NoStorageAccess(_) => CredentialBackendError::AccessDenied,
+        keyring_core::Error::PlatformFailure(_) | keyring_core::Error::NoDefaultStore => {
+            CredentialBackendError::Unavailable
+        }
+        keyring_core::Error::NoEntry
+        | keyring_core::Error::BadEncoding(_)
+        | keyring_core::Error::BadDataFormat(_, _)
+        | keyring_core::Error::BadStoreFormat(_)
+        | keyring_core::Error::TooLong(_, _)
+        | keyring_core::Error::Invalid(_, _)
+        | keyring_core::Error::Ambiguous(_)
+        | keyring_core::Error::NotSupportedByStore(_)
         | _ => CredentialBackendError::Corrupt,
     }
 }
@@ -505,6 +588,32 @@ mod tests {
             Err(SecretStoreError::Unavailable(
                 SecretAvailability::BackendUnavailable
             ))
+        );
+    }
+
+    #[tokio::test]
+    async fn native_store_accepts_maximum_escaped_secret_value() {
+        let backend = Arc::new(TestBackend::default());
+        let store = NativeSecretStore::with_backend(backend);
+        let reference = SecretRef::new();
+        let purpose = purpose(SecretOwnerId::new());
+        let canary = "\0".repeat(16 * 1024);
+
+        store
+            .put(
+                SecretRecord::new(reference, purpose.clone()),
+                SecretValue::new(canary.clone()).expect("maximum secret is valid"),
+                None,
+            )
+            .await
+            .expect("store escaped maximum secret");
+
+        assert!(
+            store
+                .load(&reference, &purpose)
+                .await
+                .expect("load escaped maximum secret")
+                .with(|value| value == canary)
         );
     }
 }

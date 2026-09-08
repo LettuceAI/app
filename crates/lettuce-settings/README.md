@@ -52,20 +52,25 @@ with an observed generation, while live entries validate purpose and reject a
 stale observed generation.
 
 `NativeSecretStore` is the production credential adapter for Linux Secret
-Service, macOS/iOS Keychain and Windows Credential Manager. Each opaque
-reference names one native credential containing a bounded versioned envelope
-with its exact purpose, monotonic generation and value. Mutations are serialized
-inside the shared store instance, rotation uses generation CAS, and corrupt,
-ambiguous, inaccessible or wrong-purpose entries fail closed. Temporary encoded
-and decoded values are zeroized, errors and debug output remain redacted, and no
-plaintext fallback exists. Tests run against an injected deterministic backend
-and never access the developer's credential store.
+Service, macOS/iOS Keychain, Windows Credential Manager and Android's Keystore-
+backed encrypted SharedPreferences store. Each opaque reference names one native
+credential containing a bounded versioned envelope with its exact purpose,
+monotonic generation and value. Mutations are serialized inside the shared store
+instance, rotation uses generation CAS, and corrupt, ambiguous, inaccessible or
+wrong-purpose entries fail closed. Temporary encoded and decoded values are
+zeroized, errors and debug output remain redacted, and no plaintext fallback
+exists. Tests run against an injected deterministic backend and never access the
+developer's credential store. The envelope bound accounts for worst-case JSON
+escaping of every valid 16 KiB `SecretValue`.
 
-Android Keystore integration, native secret entry IPC, the broad legacy settings
-vocabulary and portable backup/sync vaults remain later slices. Android builds do
-not expose `NativeSecretStore` until their native application context and
-Keystore-backed adapter are wired; they never fall back to the keyring crate's
-test store.
+Android uses `android-native-keyring-store` 0.5 because it supports the workspace
+Rust 1.85 baseline; newer releases require Rust 1.88. The production composition
+root must call `NativeSecretStore::try_new` only after Tauri Mobile initializes
+`ndk-context`. Initialization failure and all Keystore operations remain typed
+store failures, and Android never installs or falls back to a mock keyring.
+
+Native secret entry IPC, the broad legacy settings vocabulary and portable
+backup/sync vaults remain later slices.
 
 The database foundation adds a small closed `GlobalSettings` document and a
 synchronous persistence port. It currently holds global safety/telemetry/update
