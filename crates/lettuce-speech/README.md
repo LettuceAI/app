@@ -51,9 +51,15 @@ replacement bug that interpreted dollar signs as capture expansion.
 `AsrLearningLibrary` supplies the concrete `AsrPromptLibrary` used by the
 durable coordinator and also exposes validated vocabulary/correction CRUD.
 Authored values are stored without trimming or truncation; normalized lookup
-values remain separate. Voice examples, edit-derived suggestion scoring,
-ignored suggestions, acceptance/rejection counters, scope promotion and legacy
-row transfer remain the next learning slice.
+values remain separate. Chat and group-chat edits now use the same learning
+boundary to derive bounded correction pairs through the legacy tokenization and
+LCS grouping rules. Five-word and low-value filters, vocabulary and phonetic
+signals, the confidence formula, pair deduplication and ignored-pair suppression
+remain unchanged. Accepting a pair retains its counters and promotes
+conversation scope to project after two acceptances and global after four;
+ignoring a pair increments durable scope-specific memory, with global ignores
+also suppressing narrower scopes. Voice examples and legacy row transfer remain
+later learning slices.
 
 Installed-model downloads, microphone IPC and file-format expansion remain
 later ASR slices. TTS has not started.

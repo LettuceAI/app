@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use lettuce_types::{AsrCorrectionId, AsrVocabularyTermId, TimestampMillis};
+use lettuce_types::{
+    AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, TimestampMillis,
+};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +16,7 @@ const MAX_CORRECTION_SCALARS: usize = 4_096;
 const MAX_CATEGORY_SCALARS: usize = 512;
 const MAX_LANGUAGE_SCALARS: usize = 32;
 const MAX_SCOPE_SCALARS: usize = 64;
+const MAX_REPLACEMENT_WORDS: usize = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -148,6 +151,76 @@ impl AsrCorrectionRule {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsrLearnedSuggestion {
+    pub wrong: String,
+    pub normalized_wrong: String,
+    pub correct: String,
+    pub normalized_correct: String,
+    pub language: Option<String>,
+    pub scope: String,
+    pub confidence: f64,
+    pub accepted_count: u64,
+    pub rejected_count: u64,
+    pub seen_count: u64,
+}
+
+impl AsrLearnedSuggestion {
+    pub fn validate(&self) -> Result<(), AsrLearningError> {
+        validate_authored_text(&self.wrong, MAX_CORRECTION_SCALARS)?;
+        validate_authored_text(&self.correct, MAX_CORRECTION_SCALARS)?;
+        if self.normalized_wrong != normalize_lookup_text(&self.wrong)
+            || self.normalized_correct != normalize_lookup_text(&self.correct)
+            || self.normalized_wrong == self.normalized_correct
+            || self.language != normalize_language(self.language.as_deref())
+            || self.scope != normalize_scope(Some(&self.scope))
+            || !self.confidence.is_finite()
+            || !(0.0..=1.0).contains(&self.confidence)
+        {
+            return Err(AsrLearningError::InvalidData);
+        }
+        validate_optional_bounded(&self.language, MAX_LANGUAGE_SCALARS)?;
+        validate_bounded_text(&self.scope, MAX_SCOPE_SCALARS)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsrIgnoredSuggestion {
+    pub id: AsrIgnoredSuggestionId,
+    pub wrong: String,
+    pub normalized_wrong: String,
+    pub correct: String,
+    pub normalized_correct: String,
+    pub language: Option<String>,
+    pub scope: String,
+    pub ignored_count: u64,
+    pub last_ignored_at: TimestampMillis,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
+impl AsrIgnoredSuggestion {
+    pub fn validate(&self) -> Result<(), AsrLearningError> {
+        validate_authored_text(&self.wrong, MAX_CORRECTION_SCALARS)?;
+        validate_authored_text(&self.correct, MAX_CORRECTION_SCALARS)?;
+        if self.normalized_wrong != normalize_lookup_text(&self.wrong)
+            || self.normalized_correct != normalize_lookup_text(&self.correct)
+            || self.normalized_wrong == self.normalized_correct
+            || self.language != normalize_language(self.language.as_deref())
+            || self.scope != normalize_scope(Some(&self.scope))
+            || self.ignored_count == 0
+            || self.created_at > self.updated_at
+            || self.last_ignored_at > self.updated_at
+        {
+            return Err(AsrLearningError::InvalidData);
+        }
+        validate_optional_bounded(&self.language, MAX_LANGUAGE_SCALARS)?;
+        validate_bounded_text(&self.scope, MAX_SCOPE_SCALARS)
+    }
+}
+
 pub trait AsrLearningRepository: Send + Sync {
     fn list_vocabulary(
         &self,
@@ -169,6 +242,35 @@ pub trait AsrLearningRepository: Send + Sync {
         correction: AsrCorrectionRule,
     ) -> Result<AsrCorrectionRule, AsrLearningRepositoryError>;
     fn delete_correction(&self, id: AsrCorrectionId) -> Result<(), AsrLearningRepositoryError>;
+    fn find_correction_pair(
+        &self,
+        normalized_wrong: &str,
+        normalized_correct: &str,
+        language: Option<&str>,
+    ) -> Result<Option<AsrCorrectionRule>, AsrLearningRepositoryError>;
+    fn correction_pair_exists(
+        &self,
+        normalized_wrong: &str,
+        normalized_correct: &str,
+    ) -> Result<bool, AsrLearningRepositoryError>;
+    fn vocabulary_term_exists(
+        &self,
+        normalized_term: &str,
+        language: Option<&str>,
+        scope: &str,
+    ) -> Result<bool, AsrLearningRepositoryError>;
+    fn find_ignored_suggestion(
+        &self,
+        normalized_wrong: &str,
+        normalized_correct: &str,
+        language: Option<&str>,
+        scope: &str,
+        include_global: bool,
+    ) -> Result<Option<AsrIgnoredSuggestion>, AsrLearningRepositoryError>;
+    fn save_ignored_suggestion(
+        &self,
+        suggestion: AsrIgnoredSuggestion,
+    ) -> Result<AsrIgnoredSuggestion, AsrLearningRepositoryError>;
 }
 
 #[derive(Debug)]
@@ -230,6 +332,207 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
 
     pub fn delete_correction(&self, id: AsrCorrectionId) -> Result<(), AsrLearningError> {
         self.repository.delete_correction(id).map_err(Into::into)
+    }
+
+    pub fn suggest_corrections_from_edit(
+        &self,
+        before: &str,
+        after: &str,
+        language: Option<&str>,
+        scope: Option<&str>,
+    ) -> Result<Vec<AsrLearnedSuggestion>, AsrLearningError> {
+        let language = normalize_language(language);
+        let scope = normalize_scope(scope);
+        validate_optional_bounded(&language, MAX_LANGUAGE_SCALARS)?;
+        validate_bounded_text(&scope, MAX_SCOPE_SCALARS)?;
+        let before_raw = tokenize_words(before);
+        let after_raw = tokenize_words(after);
+        let before_tokens = before_raw
+            .iter()
+            .map(|token| normalize_lookup_text(token))
+            .collect::<Vec<_>>();
+        let after_tokens = after_raw
+            .iter()
+            .map(|token| normalize_lookup_text(token))
+            .collect::<Vec<_>>();
+        let mut last_before = 0;
+        let mut last_after = 0;
+        let mut suggestions = Vec::new();
+        let mut seen = HashSet::new();
+        for (before_match, after_match) in lcs_matches(&before_tokens, &after_tokens)
+            .into_iter()
+            .chain(std::iter::once((before_tokens.len(), after_tokens.len())))
+        {
+            if before_match > last_before || after_match > last_after {
+                let before_slice = &before_raw[last_before..before_match];
+                let after_slice = &after_raw[last_after..after_match];
+                if !before_slice.is_empty()
+                    && !after_slice.is_empty()
+                    && before_slice.len() <= MAX_REPLACEMENT_WORDS
+                    && after_slice.len() <= MAX_REPLACEMENT_WORDS
+                    && !is_low_value_replacement(before_slice, after_slice)
+                {
+                    let wrong = before_slice.join(" ");
+                    let correct = after_slice.join(" ");
+                    let normalized_wrong = normalize_lookup_text(&wrong);
+                    let normalized_correct = normalize_lookup_text(&correct);
+                    let pair = (normalized_wrong.clone(), normalized_correct.clone());
+                    let correction_exists = self
+                        .repository
+                        .correction_pair_exists(&normalized_wrong, &normalized_correct)?;
+                    let ignored = self.repository.find_ignored_suggestion(
+                        &normalized_wrong,
+                        &normalized_correct,
+                        language.as_deref(),
+                        &scope,
+                        true,
+                    )?;
+                    if !normalized_wrong.is_empty()
+                        && !normalized_correct.is_empty()
+                        && normalized_wrong != normalized_correct
+                        && !correction_exists
+                        && ignored.is_none()
+                        && seen.insert(pair)
+                    {
+                        let memory = self.repository.find_correction_pair(
+                            &normalized_wrong,
+                            &normalized_correct,
+                            language.as_deref(),
+                        )?;
+                        let accepted_count = memory.as_ref().map_or(0, |item| item.accepted_count);
+                        let rejected_count = memory.as_ref().map_or(0, |item| item.rejected_count);
+                        let seen_count = memory.as_ref().map_or(0, |item| item.seen_count);
+                        let vocabulary_signal = self.repository.vocabulary_term_exists(
+                            &normalized_correct,
+                            language.as_deref(),
+                            &scope,
+                        )?;
+                        let confidence = score_suggestion(
+                            &wrong,
+                            &correct,
+                            SuggestionScoreEvidence {
+                                before_words: before_slice.len(),
+                                after_words: after_slice.len(),
+                                vocabulary_signal,
+                                accepted_count,
+                                rejected_count,
+                                seen_count,
+                            },
+                        );
+                        suggestions.push(AsrLearnedSuggestion {
+                            wrong,
+                            normalized_wrong,
+                            correct,
+                            normalized_correct,
+                            language: language.clone(),
+                            scope: scope.clone(),
+                            confidence,
+                            accepted_count,
+                            rejected_count,
+                            seen_count,
+                        });
+                    }
+                }
+            }
+            last_before = before_match.saturating_add(1);
+            last_after = after_match.saturating_add(1);
+        }
+        suggestions.sort_by(|left, right| right.confidence.total_cmp(&left.confidence));
+        Ok(suggestions)
+    }
+
+    pub fn accept_suggestion(
+        &self,
+        suggestion: AsrLearnedSuggestion,
+        now: TimestampMillis,
+    ) -> Result<AsrCorrectionRule, AsrLearningError> {
+        suggestion.validate()?;
+        let existing = self.repository.find_correction_pair(
+            &suggestion.normalized_wrong,
+            &suggestion.normalized_correct,
+            suggestion.language.as_deref(),
+        )?;
+        let correction = if let Some(existing) = existing {
+            AsrCorrectionRule {
+                id: existing.id,
+                wrong: suggestion.wrong,
+                normalized_wrong: suggestion.normalized_wrong,
+                correct: suggestion.correct,
+                normalized_correct: suggestion.normalized_correct,
+                language: suggestion.language,
+                scope: preferred_scope(
+                    Some(&existing.scope),
+                    &suggestion.scope,
+                    existing.accepted_count + 1,
+                ),
+                confidence: suggestion.confidence,
+                use_count: existing.use_count.max(1),
+                accepted_count: existing.accepted_count + 1,
+                rejected_count: existing.rejected_count,
+                seen_count: existing.seen_count + 1,
+                last_seen_at: Some(now),
+                user_approved: true,
+                created_at: existing.created_at,
+                updated_at: now,
+            }
+        } else {
+            AsrCorrectionRule {
+                id: AsrCorrectionId::new(),
+                wrong: suggestion.wrong,
+                normalized_wrong: suggestion.normalized_wrong,
+                correct: suggestion.correct,
+                normalized_correct: suggestion.normalized_correct,
+                language: suggestion.language,
+                scope: preferred_scope(None, &suggestion.scope, 1),
+                confidence: suggestion.confidence,
+                use_count: 1,
+                accepted_count: 1,
+                rejected_count: 0,
+                seen_count: 1,
+                last_seen_at: Some(now),
+                user_approved: true,
+                created_at: now,
+                updated_at: now,
+            }
+        };
+        correction.validate()?;
+        self.repository
+            .save_correction(correction)
+            .map_err(Into::into)
+    }
+
+    pub fn ignore_suggestion(
+        &self,
+        suggestion: AsrLearnedSuggestion,
+        now: TimestampMillis,
+    ) -> Result<AsrIgnoredSuggestion, AsrLearningError> {
+        suggestion.validate()?;
+        let existing = self.repository.find_ignored_suggestion(
+            &suggestion.normalized_wrong,
+            &suggestion.normalized_correct,
+            suggestion.language.as_deref(),
+            &suggestion.scope,
+            false,
+        )?;
+        let ignored = AsrIgnoredSuggestion {
+            id: existing
+                .as_ref()
+                .map_or_else(AsrIgnoredSuggestionId::new, |item| item.id),
+            wrong: suggestion.wrong,
+            normalized_wrong: suggestion.normalized_wrong,
+            correct: suggestion.correct,
+            normalized_correct: suggestion.normalized_correct,
+            language: suggestion.language,
+            scope: suggestion.scope,
+            ignored_count: existing.as_ref().map_or(1, |item| item.ignored_count + 1),
+            last_ignored_at: now,
+            created_at: existing.as_ref().map_or(now, |item| item.created_at),
+            updated_at: now,
+        };
+        ignored.validate()?;
+        self.repository
+            .save_ignored_suggestion(ignored)
+            .map_err(Into::into)
     }
 }
 
@@ -325,6 +628,161 @@ fn apply_corrections(
         }));
     }
     Ok((corrected, applied))
+}
+
+fn compact_lookup_text(value: &str) -> String {
+    normalize_lookup_text(value).replace(' ', "")
+}
+
+fn phonetic_key(value: &str) -> String {
+    let mut key = String::new();
+    let mut last = '\0';
+    for character in compact_lookup_text(value).chars() {
+        let mapped = match character {
+            'a' | 'e' | 'i' | 'o' | 'u' | 'y' => continue,
+            'b' | 'p' => 'p',
+            'c' | 'k' | 'q' => 'k',
+            'd' | 't' => 't',
+            'f' | 'v' => 'f',
+            'g' | 'j' => 'j',
+            's' | 'x' | 'z' => 's',
+            other => other,
+        };
+        if mapped != last {
+            key.push(mapped);
+            last = mapped;
+        }
+    }
+    key
+}
+
+fn scope_rank(scope: &str) -> u8 {
+    match scope {
+        "conversation" => 0,
+        "character" => 1,
+        "project" => 2,
+        "global" => 3,
+        _ => 0,
+    }
+}
+
+fn promoted_scope(scope: &str, accepted_count: u64) -> String {
+    let scope = normalize_scope(Some(scope));
+    match scope.as_str() {
+        "conversation" if accepted_count >= 4 => "global".to_owned(),
+        "conversation" if accepted_count >= 2 => "project".to_owned(),
+        "character" | "project" if accepted_count >= 4 => "global".to_owned(),
+        _ => scope,
+    }
+}
+
+fn preferred_scope(existing: Option<&str>, requested: &str, accepted_count: u64) -> String {
+    let requested = promoted_scope(requested, accepted_count);
+    match existing.map(|scope| normalize_scope(Some(scope))) {
+        Some(existing) if scope_rank(&existing) >= scope_rank(&requested) => {
+            promoted_scope(&existing, accepted_count)
+        }
+        _ => requested,
+    }
+}
+
+fn tokenize_words(value: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    for character in value.chars() {
+        if character.is_alphanumeric() || character == '\'' {
+            current.push(character);
+        } else if !current.is_empty() {
+            words.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words
+}
+
+fn is_low_value_replacement(before: &[String], after: &[String]) -> bool {
+    const STOPWORDS: &[&str] = &[
+        "a", "an", "and", "are", "be", "but", "can", "did", "do", "for", "from", "go", "have",
+        "he", "her", "him", "i", "in", "is", "it", "its", "me", "my", "not", "of", "on", "or",
+        "our", "she", "that", "the", "their", "them", "there", "they", "this", "to", "us", "was",
+        "we", "were", "with", "you", "your",
+    ];
+    let all_common = |tokens: &[String]| {
+        tokens
+            .iter()
+            .all(|token| STOPWORDS.contains(&normalize_lookup_text(token).as_str()))
+    };
+    let very_short = before.len() == 1
+        && after.len() == 1
+        && compact_lookup_text(&before[0]).len() <= 3
+        && compact_lookup_text(&after[0]).len() <= 3;
+    (all_common(before) && all_common(after)) || very_short
+}
+
+fn lcs_matches(before: &[String], after: &[String]) -> Vec<(usize, usize)> {
+    let mut lengths = vec![vec![0; after.len() + 1]; before.len() + 1];
+    for before_index in (0..before.len()).rev() {
+        for after_index in (0..after.len()).rev() {
+            lengths[before_index][after_index] = if before[before_index] == after[after_index] {
+                lengths[before_index + 1][after_index + 1] + 1
+            } else {
+                lengths[before_index + 1][after_index].max(lengths[before_index][after_index + 1])
+            };
+        }
+    }
+    let mut before_index = 0;
+    let mut after_index = 0;
+    let mut matches = Vec::new();
+    while before_index < before.len() && after_index < after.len() {
+        if before[before_index] == after[after_index] {
+            matches.push((before_index, after_index));
+            before_index += 1;
+            after_index += 1;
+        } else if lengths[before_index + 1][after_index] >= lengths[before_index][after_index + 1] {
+            before_index += 1;
+        } else {
+            after_index += 1;
+        }
+    }
+    matches
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SuggestionScoreEvidence {
+    before_words: usize,
+    after_words: usize,
+    vocabulary_signal: bool,
+    accepted_count: u64,
+    rejected_count: u64,
+    seen_count: u64,
+}
+
+fn score_suggestion(wrong: &str, correct: &str, evidence: SuggestionScoreEvidence) -> f64 {
+    let mut score = 0.55_f64;
+    if evidence.before_words > 1 || evidence.after_words > 1 {
+        score += 0.08;
+    }
+    if evidence.vocabulary_signal {
+        score += 0.14;
+    }
+    if compact_lookup_text(wrong) == compact_lookup_text(correct) {
+        score += 0.08;
+    }
+    if phonetic_key(wrong) == phonetic_key(correct) {
+        score += 0.08;
+    }
+    if evidence.seen_count >= 2 {
+        score += 0.05;
+    }
+    if evidence.accepted_count > 0 {
+        score += 0.10;
+    }
+    if evidence.rejected_count > 0 {
+        score -= 0.22_f64.min(evidence.rejected_count as f64 * 0.12);
+    }
+    score.clamp(0.35, 0.98)
 }
 
 fn normalize_whitespace(value: &str) -> String {
@@ -527,5 +985,60 @@ mod tests {
         let (text, _) = apply_corrections("It costs five dollars.", &[correction])
             .expect("literal replacement");
         assert_eq!(text, "It costs $5.");
+    }
+
+    #[test]
+    fn edit_helpers_preserve_tokenization_lcs_and_filter_rules() {
+        assert_eq!(
+            tokenize_words("Don't split; names_around punctuation."),
+            ["Don't", "split", "names", "around", "punctuation"]
+        );
+        assert_eq!(
+            lcs_matches(
+                &["keep".to_owned(), "old".to_owned(), "tail".to_owned()],
+                &["keep".to_owned(), "new".to_owned(), "tail".to_owned()]
+            ),
+            [(0, 0), (2, 2)]
+        );
+        assert!(is_low_value_replacement(
+            &["it".to_owned()],
+            &["is".to_owned()]
+        ));
+        assert!(!is_low_value_replacement(
+            &["lettus".to_owned()],
+            &["lettuce".to_owned()]
+        ));
+    }
+
+    #[test]
+    fn suggestion_score_preserves_counter_signals_and_floor() {
+        let remembered = score_suggestion(
+            "alpha beta",
+            "gamma delta",
+            SuggestionScoreEvidence {
+                before_words: 2,
+                after_words: 2,
+                vocabulary_signal: false,
+                accepted_count: 1,
+                rejected_count: 2,
+                seen_count: 2,
+            },
+        );
+        assert!((remembered - 0.56).abs() < f64::EPSILON);
+        assert_eq!(
+            score_suggestion(
+                "orange",
+                "purple",
+                SuggestionScoreEvidence {
+                    before_words: 1,
+                    after_words: 1,
+                    vocabulary_signal: false,
+                    accepted_count: 0,
+                    rejected_count: 100,
+                    seen_count: 0,
+                }
+            ),
+            0.35
+        );
     }
 }

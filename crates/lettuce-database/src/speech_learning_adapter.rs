@@ -1,9 +1,12 @@
 use std::str::FromStr;
 
 use lettuce_speech::{
-    AsrCorrectionRule, AsrLearningRepository, AsrLearningRepositoryError, AsrVocabularyTerm,
+    AsrCorrectionRule, AsrIgnoredSuggestion, AsrLearningRepository, AsrLearningRepositoryError,
+    AsrVocabularyTerm,
 };
-use lettuce_types::{AsrCorrectionId, AsrVocabularyTermId, TimestampMillis};
+use lettuce_types::{
+    AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, TimestampMillis,
+};
 use rusqlite::{ToSql, Transaction, TransactionBehavior, params};
 
 use crate::Database;
@@ -237,6 +240,34 @@ fn to_i64(value: u64) -> Result<i64, AsrLearningRepositoryError> {
     i64::try_from(value).map_err(corrupt)
 }
 
+fn map_ignored_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AsrIgnoredSuggestion> {
+    Ok(AsrIgnoredSuggestion {
+        id: AsrIgnoredSuggestionId::from_str(&row.get::<_, String>(0)?).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                0,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
+        wrong: row.get(1)?,
+        normalized_wrong: row.get(2)?,
+        correct: row.get(3)?,
+        normalized_correct: row.get(4)?,
+        language: row.get(5)?,
+        scope: row.get(6)?,
+        ignored_count: u64::try_from(row.get::<_, i64>(7)?).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                7,
+                rusqlite::types::Type::Integer,
+                Box::new(error),
+            )
+        })?,
+        last_ignored_at: TimestampMillis::new(row.get(8)?),
+        created_at: TimestampMillis::new(row.get(9)?),
+        updated_at: TimestampMillis::new(row.get(10)?),
+    })
+}
+
 impl AsrLearningRepository for Database {
     fn list_vocabulary(
         &self,
@@ -391,6 +422,19 @@ impl AsrLearningRepository for Database {
             .into_iter()
             .next()
             .ok_or(AsrLearningRepositoryError::Storage)?;
+        transaction
+            .execute(
+                "DELETE FROM asr_ignored_suggestions
+                  WHERE normalized_wrong = ?1
+                    AND normalized_correct = ?2
+                    AND ((language IS NULL AND ?3 IS NULL) OR language = ?3)",
+                params![
+                    stored.normalized_wrong,
+                    stored.normalized_correct,
+                    stored.language,
+                ],
+            )
+            .map_err(storage)?;
         transaction.commit().map_err(storage)?;
         Ok(stored)
     }
@@ -404,6 +448,177 @@ impl AsrLearningRepository for Database {
             )
             .map_err(storage)?;
         Ok(())
+    }
+
+    fn find_correction_pair(
+        &self,
+        normalized_wrong: &str,
+        normalized_correct: &str,
+        language: Option<&str>,
+    ) -> Result<Option<AsrCorrectionRule>, AsrLearningRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
+        let id = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT id FROM asr_corrections
+                      WHERE normalized_wrong = ?1
+                        AND normalized_correct = ?2
+                        AND ((language IS NULL AND ?3 IS NULL) OR language = ?3)
+                      ORDER BY user_approved DESC, accepted_count DESC, confidence DESC,
+                               use_count DESC, id DESC
+                      LIMIT 1",
+                )
+                .map_err(storage)?;
+            let mut rows = statement
+                .query(params![normalized_wrong, normalized_correct, language])
+                .map_err(storage)?;
+            rows.next()
+                .map_err(storage)?
+                .map(|row| row.get::<_, String>(0).map_err(corrupt))
+                .transpose()?
+        };
+        let correction = id
+            .map(|id| AsrCorrectionId::from_str(&id).map_err(corrupt))
+            .transpose()?
+            .map(|id| load_corrections(&transaction, Some(id), None, &[]))
+            .transpose()?
+            .and_then(|items| items.into_iter().next());
+        transaction.commit().map_err(storage)?;
+        Ok(correction)
+    }
+
+    fn correction_pair_exists(
+        &self,
+        normalized_wrong: &str,
+        normalized_correct: &str,
+    ) -> Result<bool, AsrLearningRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        connection
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM asr_corrections
+                     WHERE normalized_wrong = ?1 AND normalized_correct = ?2
+                 )",
+                params![normalized_wrong, normalized_correct],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(storage)
+    }
+
+    fn vocabulary_term_exists(
+        &self,
+        normalized_term: &str,
+        language: Option<&str>,
+        scope: &str,
+    ) -> Result<bool, AsrLearningRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        connection
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM asr_vocabulary_terms
+                     WHERE normalized_term = ?1
+                       AND ((language IS NULL AND ?2 IS NULL) OR language = ?2 OR language IS NULL)
+                       AND (scope = ?3 OR scope = 'global')
+                 )",
+                params![normalized_term, language, scope],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(storage)
+    }
+
+    fn find_ignored_suggestion(
+        &self,
+        normalized_wrong: &str,
+        normalized_correct: &str,
+        language: Option<&str>,
+        scope: &str,
+        include_global: bool,
+    ) -> Result<Option<AsrIgnoredSuggestion>, AsrLearningRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        let scope_filter = if include_global {
+            "(scope = ?4 OR scope = 'global')"
+        } else {
+            "scope = ?4"
+        };
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT id, wrong, normalized_wrong, correct, normalized_correct, language,
+                        scope, ignored_count, last_ignored_at, created_at, updated_at
+                   FROM asr_ignored_suggestions
+                  WHERE normalized_wrong = ?1
+                    AND normalized_correct = ?2
+                    AND ((language IS NULL AND ?3 IS NULL) OR language = ?3)
+                    AND {scope_filter}
+                  ORDER BY ignored_count DESC, id DESC
+                  LIMIT 1"
+            ))
+            .map_err(storage)?;
+        let mut rows = statement
+            .query(params![
+                normalized_wrong,
+                normalized_correct,
+                language,
+                scope
+            ])
+            .map_err(storage)?;
+        let ignored = rows
+            .next()
+            .map_err(storage)?
+            .map(map_ignored_row)
+            .transpose()
+            .map_err(corrupt)?;
+        if let Some(value) = &ignored {
+            value.validate().map_err(corrupt)?;
+        }
+        Ok(ignored)
+    }
+
+    fn save_ignored_suggestion(
+        &self,
+        suggestion: AsrIgnoredSuggestion,
+    ) -> Result<AsrIgnoredSuggestion, AsrLearningRepositoryError> {
+        suggestion.validate().map_err(corrupt)?;
+        let ignored_count = to_i64(suggestion.ignored_count)?;
+        let connection = self.connection().map_err(storage)?;
+        let changed = connection
+            .execute(
+                "INSERT INTO asr_ignored_suggestions (
+                    id, wrong, normalized_wrong, correct, normalized_correct, language, scope,
+                    ignored_count, last_ignored_at, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                 ON CONFLICT(id) DO UPDATE SET
+                    wrong = excluded.wrong,
+                    normalized_wrong = excluded.normalized_wrong,
+                    correct = excluded.correct,
+                    normalized_correct = excluded.normalized_correct,
+                    language = excluded.language,
+                    scope = excluded.scope,
+                    ignored_count = excluded.ignored_count,
+                    last_ignored_at = excluded.last_ignored_at,
+                    updated_at = excluded.updated_at
+                 WHERE asr_ignored_suggestions.created_at = excluded.created_at",
+                params![
+                    suggestion.id.to_string(),
+                    suggestion.wrong,
+                    suggestion.normalized_wrong,
+                    suggestion.correct,
+                    suggestion.normalized_correct,
+                    suggestion.language,
+                    suggestion.scope,
+                    ignored_count,
+                    suggestion.last_ignored_at.get(),
+                    suggestion.created_at.get(),
+                    suggestion.updated_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        if changed != 1 {
+            return Err(AsrLearningRepositoryError::Conflict);
+        }
+        Ok(suggestion)
     }
 }
 
@@ -507,6 +722,142 @@ mod tests {
                 .is_empty()
         );
         drop(database);
+        std::fs::remove_file(path).expect("cleanup");
+    }
+
+    #[test]
+    fn chat_and_group_edit_learning_survives_reopen() {
+        let path =
+            std::env::temp_dir().join(format!("asr-edit-learning-{}.sqlite3", OperationId::new()));
+        let conversation_scope = Some("conversation");
+        let chat_suggestion;
+        let group_suggestion;
+        {
+            let database = Database::open(&path).expect("database");
+            let library = AsrLearningLibrary::new(&database);
+            library
+                .save_vocabulary(
+                    AsrVocabularyTerm::new(
+                        "LettuceAI",
+                        None,
+                        None,
+                        Some("global"),
+                        100,
+                        TimestampMillis::new(10),
+                    )
+                    .expect("vocabulary"),
+                )
+                .expect("save vocabulary");
+            let suggestions = library
+                .suggest_corrections_from_edit(
+                    "Open lettuce ai now",
+                    "Open LettuceAI now",
+                    Some("EN"),
+                    conversation_scope,
+                )
+                .expect("chat suggestions");
+            assert_eq!(suggestions.len(), 1);
+            chat_suggestion = suggestions[0].clone();
+            assert_eq!(chat_suggestion.wrong, "lettuce ai");
+            assert_eq!(chat_suggestion.correct, "LettuceAI");
+            assert!((chat_suggestion.confidence - 0.93).abs() < f64::EPSILON);
+            let ignored = library
+                .ignore_suggestion(chat_suggestion.clone(), TimestampMillis::new(20))
+                .expect("ignore chat suggestion");
+            assert_eq!(ignored.ignored_count, 1);
+            assert!(
+                library
+                    .suggest_corrections_from_edit(
+                        "Keep one two three four five six unchanged",
+                        "Keep alpha beta gamma delta epsilon zeta unchanged",
+                        None,
+                        conversation_scope,
+                    )
+                    .expect("bounded suggestions")
+                    .is_empty()
+            );
+            assert!(
+                library
+                    .suggest_corrections_from_edit(
+                        "Keep it unchanged",
+                        "Keep is unchanged",
+                        None,
+                        conversation_scope,
+                    )
+                    .expect("low value suggestions")
+                    .is_empty()
+            );
+            assert_eq!(
+                library
+                    .suggest_corrections_from_edit(
+                        "Keep alpha word then alpha word",
+                        "Keep bravo word then bravo word",
+                        None,
+                        conversation_scope,
+                    )
+                    .expect("deduplicated suggestions")
+                    .len(),
+                1
+            );
+
+            group_suggestion = library
+                .suggest_corrections_from_edit(
+                    "Invite meg a lith today",
+                    "Invite Megalith today",
+                    None,
+                    conversation_scope,
+                )
+                .expect("group suggestions")
+                .into_iter()
+                .next()
+                .expect("group suggestion");
+            let first = library
+                .accept_suggestion(group_suggestion.clone(), TimestampMillis::new(21))
+                .expect("first group acceptance");
+            assert_eq!(first.accepted_count, 1);
+            assert_eq!(first.scope, "conversation");
+        }
+        {
+            let database = Database::open(&path).expect("first reopen");
+            let library = AsrLearningLibrary::new(&database);
+            assert!(
+                library
+                    .suggest_corrections_from_edit(
+                        "Open lettuce ai now",
+                        "Open LettuceAI now",
+                        Some("en"),
+                        conversation_scope,
+                    )
+                    .expect("suppressed chat suggestion")
+                    .is_empty()
+            );
+            let ignored = library
+                .ignore_suggestion(chat_suggestion.clone(), TimestampMillis::new(30))
+                .expect("repeat ignore");
+            assert_eq!(ignored.ignored_count, 2);
+            let second = library
+                .accept_suggestion(group_suggestion.clone(), TimestampMillis::new(31))
+                .expect("second group acceptance");
+            assert_eq!(second.accepted_count, 2);
+            assert_eq!(second.seen_count, 2);
+            assert_eq!(second.scope, "project");
+        }
+        {
+            let database = Database::open(&path).expect("second reopen");
+            let library = AsrLearningLibrary::new(&database);
+            let third = library
+                .accept_suggestion(group_suggestion.clone(), TimestampMillis::new(40))
+                .expect("third group acceptance");
+            assert_eq!(third.accepted_count, 3);
+            assert_eq!(third.scope, "project");
+            let fourth = library
+                .accept_suggestion(group_suggestion, TimestampMillis::new(41))
+                .expect("fourth group acceptance");
+            assert_eq!(fourth.accepted_count, 4);
+            assert_eq!(fourth.seen_count, 4);
+            assert_eq!(fourth.scope, "global");
+            assert_eq!(fourth.rejected_count, 0);
+        }
         std::fs::remove_file(path).expect("cleanup");
     }
 }

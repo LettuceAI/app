@@ -525,5 +525,9 @@ Migration 16 stores ASR vocabulary and correction rules behind the
 speech-owned repository port. Authored text and categories remain separate from
 normalized lookup columns, and no save path truncates them. Queries reproduce
 the legacy scope/language filters and runtime order. A file-backed scenario
-proves prompt construction, correction order, CRUD and reopen behavior. Voice
-examples, ignored suggestions and legacy ASR row transfer are not stored yet.
+proves prompt construction, correction order, CRUD and reopen behavior. The
+same migration stores ignored edit suggestions with a null-safe unique identity,
+counts repeated ignores, and removes matching ignored rows atomically when a
+correction is saved. Chat and group edit scenarios verify suppression, repeated
+acceptance, scope promotion and two reopen cycles. Voice examples and legacy ASR
+row transfer are not stored yet.

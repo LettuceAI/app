@@ -95,3 +95,51 @@ ON asr_corrections(
     created_at DESC,
     id DESC
 );
+
+CREATE TABLE asr_ignored_suggestions (
+    id TEXT PRIMARY KEY CHECK (length(id) = 36),
+    wrong TEXT NOT NULL CHECK (length(wrong) BETWEEN 1 AND 4096 AND instr(wrong, char(0)) = 0),
+    normalized_wrong TEXT NOT NULL CHECK (
+        length(normalized_wrong) BETWEEN 1 AND 4096
+        AND trim(normalized_wrong) = normalized_wrong
+    ),
+    correct TEXT NOT NULL CHECK (length(correct) BETWEEN 1 AND 4096 AND instr(correct, char(0)) = 0),
+    normalized_correct TEXT NOT NULL CHECK (
+        length(normalized_correct) BETWEEN 1 AND 4096
+        AND trim(normalized_correct) = normalized_correct
+    ),
+    language TEXT CHECK (
+        language IS NULL
+        OR (length(language) BETWEEN 1 AND 32 AND trim(language) = language AND lower(language) = language)
+    ),
+    scope TEXT NOT NULL CHECK (
+        length(scope) BETWEEN 1 AND 64
+        AND trim(scope) = scope
+        AND lower(scope) = scope
+    ),
+    ignored_count INTEGER NOT NULL CHECK (ignored_count >= 1),
+    last_ignored_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL CHECK (
+        updated_at >= created_at
+        AND last_ignored_at <= updated_at
+    )
+) STRICT;
+
+CREATE UNIQUE INDEX asr_ignored_suggestions_identity
+ON asr_ignored_suggestions(
+    normalized_wrong,
+    normalized_correct,
+    coalesce(language, ''),
+    scope
+);
+
+CREATE INDEX asr_ignored_suggestions_lookup
+ON asr_ignored_suggestions(
+    normalized_wrong,
+    normalized_correct,
+    language,
+    scope,
+    ignored_count DESC,
+    id DESC
+);

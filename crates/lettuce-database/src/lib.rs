@@ -4064,6 +4064,7 @@ mod tests {
             vec![
                 "app_settings",
                 "asr_corrections",
+                "asr_ignored_suggestions",
                 "asr_vocabulary_terms",
                 "candidate_media_refs",
                 "character_lorebook_bindings",
