@@ -8,9 +8,11 @@
 
 use std::fmt;
 
+use lettuce_models::{ModelKind, ModelProfileConfig, ProviderConfig, ProviderProtocol};
+use lettuce_settings::{HeaderName, SecretOwnerId};
 use lettuce_types::{
-    AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, PersonaId,
-    TimestampMillis,
+    AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId,
+    PersonaId, ProviderAccountId, TimestampMillis,
 };
 
 pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
@@ -21,6 +23,8 @@ pub const LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT: u32 = 512;
 pub const LEGACY_MEDIA_REFERENCE_LIMIT: u32 = 20_000;
 pub const LEGACY_MEDIA_OBJECT_BYTES_LIMIT: u64 = 64 * 1024 * 1024;
 pub const LEGACY_MEDIA_TOTAL_BYTES_LIMIT: u64 = 512 * 1024 * 1024;
+pub const LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT: u32 = 256;
+pub const LEGACY_MODEL_PROFILE_PLAN_LIMIT: u32 = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyDatabaseInventory {
@@ -35,6 +39,55 @@ pub struct LegacyDatabaseInventory {
     pub direct_conversations: u64,
     pub group_profiles: u64,
     pub group_conversations: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LegacyPendingProviderSecret {
+    ApiKey,
+    Header { name: HeaderName },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyProviderAccountCandidate {
+    pub id: ProviderAccountId,
+    pub secret_owner_id: SecretOwnerId,
+    pub provider_kind: String,
+    pub protocol: ProviderProtocol,
+    pub label: String,
+    pub endpoint: Option<String>,
+    pub enabled: bool,
+    pub streaming_enabled: bool,
+    pub allow_invalid_tls: bool,
+    pub default_model: Option<String>,
+    pub config: ProviderConfig,
+    pub pending_secrets: Vec<LegacyPendingProviderSecret>,
+    pub deferred_config_fields: Vec<String>,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyModelProfileCandidate {
+    pub id: ModelProfileId,
+    pub provider_account_id: ProviderAccountId,
+    pub source_provider_kind: String,
+    pub source_provider_label: String,
+    pub external_model_id: String,
+    pub display_name: String,
+    pub kind: ModelKind,
+    pub config: ModelProfileConfig,
+    pub prompt_template_id: Option<String>,
+    pub deprecated_system_prompt: Option<String>,
+    pub deferred_advanced_fields: Vec<String>,
+    pub created_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyProviderModelPlan {
+    pub provider_accounts: Vec<LegacyProviderAccountCandidate>,
+    pub model_profiles: Vec<LegacyModelProfileCandidate>,
+    pub default_provider_account_id: Option<ProviderAccountId>,
+    pub default_model_profile_id: Option<ModelProfileId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

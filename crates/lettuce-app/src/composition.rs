@@ -82,6 +82,16 @@ impl AppBackend {
         lettuce_database::plan_legacy_lorebooks(path)
     }
 
+    pub fn plan_legacy_provider_models(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> Result<
+        lettuce_transfer::LegacyProviderModelPlan,
+        lettuce_transfer::LegacyDatabasePreflightError,
+    > {
+        lettuce_database::plan_legacy_provider_models(path)
+    }
+
     pub fn plan_legacy_media(
         &self,
         storage_root: impl AsRef<Path>,

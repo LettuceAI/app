@@ -26,6 +26,16 @@ The lorebook plan preserves root detection policy and unresolved avatar plus
 every persisted entry field in deterministic order. It bounds roots, total
 entries and entries per book before any destination mutation.
 
+Provider/model planning preserves stable legacy account and profile identities,
+protocol, endpoint and custom wire configuration, effective streaming/TLS state,
+model routing, modalities, supported generation parameters, prompt references and
+both legacy defaults in deterministic bounded lists. API keys and header values
+never enter the plan: it contains only pending secret kinds and header names for a
+later secret-store transfer. Unsupported provider/model configuration field names
+remain explicit deferred inputs whose values stay in the retained source database.
+The legacy built-in llama.cpp credential becomes one deterministic synthetic
+account only when a llama.cpp model needs it; it carries no secret or endpoint.
+
 The composed media plan deduplicates persona avatar, persona design-reference
 and lorebook avatar uses by relative legacy file, retaining bounded byte size
 and BLAKE3 evidence for later ingestion. Missing, unsafe, ambiguous and

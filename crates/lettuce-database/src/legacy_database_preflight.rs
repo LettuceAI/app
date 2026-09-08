@@ -1,15 +1,30 @@
 use std::{collections::BTreeMap, path::Path, str::FromStr};
 
+use lettuce_models::{
+    CapabilityEvidence, CapabilityEvidenceSource, CapabilityStatus, ChatParameterProfile,
+    CustomAuth, CustomModelList, CustomProviderConfig, CustomRoles, CustomToolChoiceMode, JsonPath,
+    ModalityCapabilities, ModelCapabilities, ModelKind, ModelProfileConfig, OllamaOptions,
+    OpenRouterOptions, ParameterSupport, PromptCacheRetention, PromptCaching, ProviderAccount,
+    ProviderConfig, ProviderProtocol, QueryParameterName, ReasoningEffort, ReasoningMode,
+    SecretHeader, WireRole, validate_provider_connection,
+};
+use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
 use lettuce_transfer::{
     LEGACY_DATABASE_SCHEMA_VERSION, LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT,
-    LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT, LEGACY_LOREBOOK_PLAN_LIMIT, LEGACY_PERSONA_PLAN_LIMIT,
-    LegacyCrop, LegacyDatabaseInventory, LegacyDatabasePreflightError, LegacyImageRecommendation,
+    LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT, LEGACY_LOREBOOK_PLAN_LIMIT, LEGACY_MODEL_PROFILE_PLAN_LIMIT,
+    LEGACY_PERSONA_PLAN_LIMIT, LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT, LegacyCrop,
+    LegacyDatabaseInventory, LegacyDatabasePreflightError, LegacyImageRecommendation,
     LegacyKeywordMatchMode, LegacyLorebookCandidate, LegacyLorebookDetectionPolicy,
-    LegacyLorebookEntryCandidate, LegacyLorebookPlan, LegacyMediaReference, LegacyPersonaCandidate,
-    LegacyPersonaPlan,
+    LegacyLorebookEntryCandidate, LegacyLorebookPlan, LegacyMediaReference,
+    LegacyModelProfileCandidate, LegacyPendingProviderSecret, LegacyPersonaCandidate,
+    LegacyPersonaPlan, LegacyProviderAccountCandidate, LegacyProviderModelPlan,
 };
-use lettuce_types::{LorebookEntryId, LorebookId, PersonaId, TimestampMillis};
+use lettuce_types::{
+    LorebookEntryId, LorebookId, ModelProfileId, PersonaId, ProviderAccountId, Revision,
+    TimestampMillis,
+};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use serde_json::{Map, Value};
 
 const ROOT_TABLES: [(&str, &str); 10] = [
     ("provider_credentials", "provider_accounts"),
@@ -65,6 +80,340 @@ pub fn plan_legacy_lorebooks(
         LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT,
         LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT,
     )
+}
+
+pub fn plan_legacy_provider_models(
+    path: impl AsRef<Path>,
+) -> Result<LegacyProviderModelPlan, LegacyDatabasePreflightError> {
+    let connection = open_validated(path)?;
+    plan_legacy_provider_models_with_limits(
+        &connection,
+        LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT,
+        LEGACY_MODEL_PROFILE_PLAN_LIMIT,
+    )
+}
+
+fn plan_legacy_provider_models_with_limits(
+    connection: &Connection,
+    provider_limit: u32,
+    model_limit: u32,
+) -> Result<LegacyProviderModelPlan, LegacyDatabasePreflightError> {
+    require_count_limit(connection, "provider_credentials", provider_limit)?;
+    require_count_limit(connection, "models", model_limit)?;
+    let (default_provider_id, default_model_id, created_at, updated_at) = connection
+        .query_row(
+            "SELECT default_provider_credential_id,default_model_id,created_at,updated_at FROM settings WHERE id = 1",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            },
+        )
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    if updated_at < created_at {
+        return Err(provider_malformed("timestamps"));
+    }
+    let default_provider_account_id = default_provider_id
+        .as_deref()
+        .map(ProviderAccountId::from_str)
+        .transpose()
+        .map_err(|_| provider_malformed("default_provider_credential_id"))?;
+    let default_model_profile_id = default_model_id
+        .as_deref()
+        .map(ModelProfileId::from_str)
+        .transpose()
+        .map_err(|_| model_malformed("default_model_id"))?;
+
+    let mut statement = connection
+        .prepare(
+            "SELECT id,provider_id,label,CASE WHEN api_key IS NOT NULL AND trim(api_key) <> '' THEN 1 ELSE 0 END,base_url,default_model,config FROM provider_credentials ORDER BY provider_id COLLATE NOCASE ASC,label COLLATE NOCASE ASC,id ASC",
+        )
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+            ))
+        })
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let mut provider_accounts = Vec::new();
+    for row in rows {
+        let (
+            source_id,
+            provider_kind,
+            label,
+            api_key_present,
+            endpoint,
+            default_model,
+            config_json,
+        ) = row.map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+        let id = ProviderAccountId::from_str(&source_id).map_err(|_| provider_malformed("id"))?;
+        require_provider_non_blank(&provider_kind, "provider_id")?;
+        require_provider_non_blank(&label, "label")?;
+        let protocol = legacy_provider_protocol(&provider_kind)
+            .ok_or_else(|| provider_malformed("provider_id"))?;
+        let endpoint = normalized_optional(endpoint);
+        let default_model = normalized_optional(default_model);
+        let config_value = parse_optional_object(config_json, "config", provider_malformed)?;
+        let streaming_enabled = optional_bool(&config_value, "streamingEnabled", true)?;
+        let allow_invalid_tls = optional_bool(&config_value, "allowInvalidTls", false)?;
+        let (config, mapped_config_fields) = legacy_provider_config(&provider_kind, &config_value)?;
+        let mut pending_secrets = Vec::new();
+        if api_key_present == 1 {
+            pending_secrets.push(LegacyPendingProviderSecret::ApiKey);
+        } else if api_key_present != 0 {
+            return Err(provider_malformed("api_key"));
+        }
+        pending_secrets.extend(read_pending_headers(connection, &source_id)?);
+        let deferred_config_fields = deferred_fields(&config_value, &mapped_config_fields);
+        let secret_headers = pending_secrets
+            .iter()
+            .filter_map(|secret| match secret {
+                LegacyPendingProviderSecret::Header { name } => Some(SecretHeader {
+                    name: name.clone(),
+                    secret_ref: SecretRef::new(),
+                }),
+                LegacyPendingProviderSecret::ApiKey => None,
+            })
+            .collect();
+        validate_provider_connection(&ProviderAccount {
+            id,
+            secret_owner_id: SecretOwnerId::from_uuid(id.as_uuid()),
+            provider_kind: provider_kind.clone(),
+            protocol,
+            label: label.clone(),
+            endpoint: endpoint.clone(),
+            enabled: true,
+            streaming_enabled,
+            allow_invalid_tls,
+            api_key_ref: Some(SecretRef::from_uuid(id.as_uuid())),
+            secret_headers,
+            config: config.clone(),
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(created_at),
+            updated_at: TimestampMillis::new(updated_at),
+        })
+        .map_err(|_| provider_malformed("connection"))?;
+        provider_accounts.push(LegacyProviderAccountCandidate {
+            id,
+            secret_owner_id: SecretOwnerId::from_uuid(id.as_uuid()),
+            provider_kind,
+            protocol,
+            label,
+            endpoint,
+            enabled: true,
+            streaming_enabled,
+            allow_invalid_tls,
+            default_model,
+            config,
+            pending_secrets,
+            deferred_config_fields,
+            created_at: TimestampMillis::new(created_at),
+            updated_at: TimestampMillis::new(updated_at),
+        });
+    }
+    let has_llama_models: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM models WHERE lower(provider_id)='llamacpp')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    if has_llama_models {
+        let id = legacy_builtin_llama_account_id();
+        if provider_accounts.iter().any(|provider| provider.id == id) {
+            return Err(provider_malformed("id"));
+        }
+        provider_accounts.push(LegacyProviderAccountCandidate {
+            id,
+            secret_owner_id: SecretOwnerId::from_uuid(id.as_uuid()),
+            provider_kind: "llamacpp".to_owned(),
+            protocol: ProviderProtocol::LlamaCpp,
+            label: "llama.cpp (Local)".to_owned(),
+            endpoint: None,
+            enabled: true,
+            streaming_enabled: true,
+            allow_invalid_tls: false,
+            default_model: None,
+            config: ProviderConfig::Standard,
+            pending_secrets: Vec::new(),
+            deferred_config_fields: Vec::new(),
+            created_at: TimestampMillis::new(created_at),
+            updated_at: TimestampMillis::new(updated_at),
+        });
+        provider_accounts.sort_by(|left, right| {
+            left.provider_kind
+                .to_ascii_lowercase()
+                .cmp(&right.provider_kind.to_ascii_lowercase())
+                .then_with(|| {
+                    left.label
+                        .to_ascii_lowercase()
+                        .cmp(&right.label.to_ascii_lowercase())
+                })
+                .then_with(|| left.id.cmp(&right.id))
+        });
+    }
+    if default_provider_account_id
+        .is_some_and(|id| !provider_accounts.iter().any(|provider| provider.id == id))
+    {
+        return Err(LegacyDatabasePreflightError::OrphanRecord {
+            table: "settings.default_provider_credential_id",
+            parent_table: "provider_credentials",
+        });
+    }
+
+    let mut statement = connection
+        .prepare(
+            "SELECT id,name,provider_id,provider_credential_id,provider_label,display_name,created_at,model_type,input_scopes,output_scopes,advanced_model_settings,prompt_template_id,system_prompt FROM models ORDER BY created_at ASC,id ASC",
+        )
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, Option<String>>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, Option<String>>(10)?,
+                row.get::<_, Option<String>>(11)?,
+                row.get::<_, Option<String>>(12)?,
+            ))
+        })
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let mut model_profiles = Vec::new();
+    for row in rows {
+        let (
+            id,
+            external_model_id,
+            provider_kind,
+            explicit_provider_id,
+            provider_label,
+            display_name,
+            created_at,
+            model_type,
+            input_scopes,
+            output_scopes,
+            advanced_json,
+            prompt_template_id,
+            deprecated_system_prompt,
+        ) = row.map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+        let id = ModelProfileId::from_str(&id).map_err(|_| model_malformed("id"))?;
+        require_model_non_blank(&external_model_id, "name")?;
+        require_model_non_blank(&provider_kind, "provider_id")?;
+        require_model_non_blank(&provider_label, "provider_label")?;
+        require_model_non_blank(&display_name, "display_name")?;
+        legacy_provider_protocol(&provider_kind).ok_or_else(|| model_malformed("provider_id"))?;
+        let explicit_provider_id = explicit_provider_id
+            .as_deref()
+            .map(ProviderAccountId::from_str)
+            .transpose()
+            .map_err(|_| model_malformed("provider_credential_id"))?;
+        let provider_account_id = resolve_legacy_provider_account(
+            &provider_accounts,
+            &provider_kind,
+            explicit_provider_id,
+            &provider_label,
+            &external_model_id,
+            default_provider_account_id,
+        )?;
+        let input_modalities = parse_modalities(input_scopes, "input_scopes")?;
+        let output_modalities = parse_modalities(output_scopes, "output_scopes")?;
+        let advanced =
+            parse_optional_object(advanced_json, "advanced_model_settings", model_malformed)?;
+        let (chat_parameters, mapped_advanced_fields) =
+            legacy_chat_parameters(&provider_kind, &advanced)?;
+        let account = provider_accounts
+            .iter()
+            .find(|account| account.id == provider_account_id)
+            .ok_or(LegacyDatabasePreflightError::OrphanRecord {
+                table: "models",
+                parent_table: "provider_credentials",
+            })?;
+        let capabilities = ModelCapabilities {
+            format_version: lettuce_models::MODEL_CAPABILITIES_FORMAT_VERSION,
+            evidence: CapabilityEvidence {
+                source: CapabilityEvidenceSource::UserOverride,
+                source_version: 1,
+                observed_at: TimestampMillis::new(created_at),
+            },
+            input_modalities,
+            output_modalities,
+            streaming: if account.streaming_enabled {
+                CapabilityStatus::Supported
+            } else {
+                CapabilityStatus::Unsupported
+            },
+            tools: CapabilityStatus::Unknown,
+            structured_output: CapabilityStatus::Unknown,
+            reasoning: CapabilityStatus::Unknown,
+            prompt_cache: CapabilityStatus::Unknown,
+            context_length: None,
+            max_visible_output_tokens: None,
+            max_total_completion_tokens: None,
+            parameter_support: ParameterSupport::default(),
+        };
+        let config = ModelProfileConfig {
+            chat_parameters,
+            lorebook_generator_parameters: Default::default(),
+            capabilities,
+        };
+        config
+            .chat_parameters
+            .validate()
+            .map_err(|_| model_malformed("advanced_model_settings"))?;
+        config
+            .capabilities
+            .validate()
+            .map_err(|_| model_malformed("capabilities"))?;
+        let kind = match model_type.as_str() {
+            "chat" | "multimodel" => ModelKind::Chat,
+            "imagegeneration" => ModelKind::Image,
+            _ => return Err(model_malformed("model_type")),
+        };
+        model_profiles.push(LegacyModelProfileCandidate {
+            id,
+            provider_account_id,
+            source_provider_kind: provider_kind,
+            source_provider_label: provider_label,
+            external_model_id,
+            display_name,
+            kind,
+            config,
+            prompt_template_id: normalized_optional(prompt_template_id),
+            deprecated_system_prompt: normalized_optional(deprecated_system_prompt),
+            deferred_advanced_fields: deferred_fields(&advanced, &mapped_advanced_fields),
+            created_at: TimestampMillis::new(created_at),
+        });
+    }
+    if default_model_profile_id.is_some_and(|id| !model_profiles.iter().any(|model| model.id == id))
+    {
+        return Err(LegacyDatabasePreflightError::OrphanRecord {
+            table: "settings.default_model_id",
+            parent_table: "models",
+        });
+    }
+    Ok(LegacyProviderModelPlan {
+        provider_accounts,
+        model_profiles,
+        default_provider_account_id,
+        default_model_profile_id,
+    })
 }
 
 fn open_validated(path: impl AsRef<Path>) -> Result<Connection, LegacyDatabasePreflightError> {
@@ -500,6 +849,588 @@ fn checked_count(value: i64, table: &'static str) -> Result<u64, LegacyDatabaseP
     u64::try_from(value).map_err(|_| LegacyDatabasePreflightError::CountOutOfRange { table })
 }
 
+fn provider_malformed(field: &'static str) -> LegacyDatabasePreflightError {
+    LegacyDatabasePreflightError::MalformedRecord {
+        table: "provider_credentials",
+        field,
+    }
+}
+
+fn model_malformed(field: &'static str) -> LegacyDatabasePreflightError {
+    LegacyDatabasePreflightError::MalformedRecord {
+        table: "models",
+        field,
+    }
+}
+
+fn require_provider_non_blank(
+    value: &str,
+    field: &'static str,
+) -> Result<(), LegacyDatabasePreflightError> {
+    if value.trim().is_empty() {
+        Err(provider_malformed(field))
+    } else {
+        Ok(())
+    }
+}
+
+fn require_model_non_blank(
+    value: &str,
+    field: &'static str,
+) -> Result<(), LegacyDatabasePreflightError> {
+    if value.trim().is_empty() {
+        Err(model_malformed(field))
+    } else {
+        Ok(())
+    }
+}
+
+fn normalized_optional(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+fn parse_optional_object(
+    value: Option<String>,
+    field: &'static str,
+    malformed: fn(&'static str) -> LegacyDatabasePreflightError,
+) -> Result<Map<String, Value>, LegacyDatabasePreflightError> {
+    match value {
+        None => Ok(Map::new()),
+        Some(value) => serde_json::from_str::<Value>(&value)
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .ok_or_else(|| malformed(field)),
+    }
+}
+
+fn optional_bool(
+    object: &Map<String, Value>,
+    key: &'static str,
+    default: bool,
+) -> Result<bool, LegacyDatabasePreflightError> {
+    object
+        .get(key)
+        .map(|value| value.as_bool().ok_or_else(|| provider_malformed("config")))
+        .transpose()
+        .map(|value| value.unwrap_or(default))
+}
+
+fn legacy_provider_protocol(provider_kind: &str) -> Option<ProviderProtocol> {
+    let protocol = match provider_kind.to_ascii_lowercase().as_str() {
+        "anthropic" | "custom-anthropic" => ProviderProtocol::Anthropic,
+        "gemini" | "google" | "google-gemini" | "gemini-agent-platform-express" => {
+            ProviderProtocol::Gemini
+        }
+        "ollama" => ProviderProtocol::Ollama,
+        "llamacpp" => ProviderProtocol::LlamaCpp,
+        "stability" | "automatic1111" | "comfyui" | "diffusers" | "sdcpp" => {
+            ProviderProtocol::StableDiffusion
+        }
+        "chutes" | "openai" | "cerebras" | "openrouter" | "literouter" | "pollinations"
+        | "mistral" | "deepseek" | "nanogpt" | "xai" | "zai" | "moonshot" | "featherless"
+        | "qwen" | "nvidia" | "anannas" | "groq" | "lmstudio" | "intenserp" | "custom" => {
+            ProviderProtocol::OpenAiCompatible
+        }
+        _ => return None,
+    };
+    Some(protocol)
+}
+
+fn legacy_provider_config(
+    provider_kind: &str,
+    object: &Map<String, Value>,
+) -> Result<(ProviderConfig, Vec<&'static str>), LegacyDatabasePreflightError> {
+    let mut mapped = vec!["streamingEnabled", "allowInvalidTls"];
+    if !provider_kind.eq_ignore_ascii_case("custom")
+        && !provider_kind.eq_ignore_ascii_case("custom-anthropic")
+    {
+        return Ok((ProviderConfig::Standard, mapped));
+    }
+    mapped.extend([
+        "chatEndpoint",
+        "modelsEndpoint",
+        "fetchModelsEnabled",
+        "modelsListPath",
+        "modelsIdPath",
+        "modelsDisplayNamePath",
+        "modelsDescriptionPath",
+        "modelsContextLengthPath",
+        "systemRole",
+        "userRole",
+        "assistantRole",
+        "supportsStream",
+        "mergeSameRoleMessages",
+        "sendChatTemplateKwargs",
+        "toolChoiceMode",
+        "authMode",
+        "authHeaderName",
+        "authQueryParamName",
+    ]);
+    let string = |key: &'static str| -> Result<Option<String>, LegacyDatabasePreflightError> {
+        object
+            .get(key)
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| provider_malformed("config"))
+            })
+            .transpose()
+    };
+    let role = |key: &'static str| -> Result<Option<WireRole>, LegacyDatabasePreflightError> {
+        string(key)?
+            .filter(|value| !value.is_empty())
+            .map(WireRole::new)
+            .transpose()
+            .map_err(|_| provider_malformed("config"))
+    };
+    let chat_path = string("chatEndpoint")?
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| {
+            if provider_kind.eq_ignore_ascii_case("custom-anthropic") {
+                "/v1/messages".to_owned()
+            } else {
+                "/chat/completions".to_owned()
+            }
+        });
+    let fetch_models = optional_bool(object, "fetchModelsEnabled", false)?;
+    let models_path = if fetch_models {
+        Some(
+            string("modelsEndpoint")?
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| provider_malformed("config"))?,
+        )
+    } else {
+        None
+    };
+    let path = |key: &'static str, default: &'static str| {
+        let value = string(key)?
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| default.to_owned());
+        JsonPath::new(value).map_err(|_| provider_malformed("config"))
+    };
+    let optional_path = |key: &'static str, default: Option<&'static str>| {
+        let value = string(key)?.or_else(|| default.map(str::to_owned));
+        value
+            .filter(|value| !value.is_empty())
+            .map(JsonPath::new)
+            .transpose()
+            .map_err(|_| provider_malformed("config"))
+    };
+    let auth = match string("authMode")?
+        .unwrap_or_else(|| "header".to_owned())
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "bearer" => CustomAuth::Bearer,
+        "header" => CustomAuth::Header {
+            name: HeaderName::new(
+                string("authHeaderName")?.unwrap_or_else(|| "x-api-key".to_owned()),
+            )
+            .map_err(|_| provider_malformed("config"))?,
+        },
+        "query" => CustomAuth::Query {
+            name: QueryParameterName::new(
+                string("authQueryParamName")?.unwrap_or_else(|| "api_key".to_owned()),
+            )
+            .map_err(|_| provider_malformed("config"))?,
+        },
+        "none" => CustomAuth::None,
+        _ => return Err(provider_malformed("config")),
+    };
+    let tool_choice_mode = match string("toolChoiceMode")?
+        .unwrap_or_else(|| "auto".to_owned())
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "auto" => CustomToolChoiceMode::Auto,
+        "required" => CustomToolChoiceMode::Required,
+        "none" => CustomToolChoiceMode::None,
+        "omit" => CustomToolChoiceMode::Omit,
+        "passthrough" => CustomToolChoiceMode::Passthrough,
+        _ => return Err(provider_malformed("config")),
+    };
+    Ok((
+        ProviderConfig::Custom(CustomProviderConfig {
+            chat_path,
+            models_path,
+            model_list: CustomModelList {
+                list_path: path("modelsListPath", "data")?,
+                id_path: path("modelsIdPath", "id")?,
+                display_name_path: optional_path("modelsDisplayNamePath", Some("name"))?,
+                description_path: optional_path("modelsDescriptionPath", Some("description"))?,
+                context_length_path: optional_path("modelsContextLengthPath", None)?,
+            },
+            streaming: optional_bool(object, "supportsStream", true)?,
+            auth,
+            roles: CustomRoles {
+                system: role("systemRole")?,
+                user: role("userRole")?,
+                assistant: role("assistantRole")?,
+            },
+            merge_same_role_messages: optional_bool(object, "mergeSameRoleMessages", true)?,
+            send_chat_template_kwargs: optional_bool(object, "sendChatTemplateKwargs", false)?,
+            tool_choice_mode,
+        }),
+        mapped,
+    ))
+}
+
+fn read_pending_headers(
+    connection: &Connection,
+    provider_id: &str,
+) -> Result<Vec<LegacyPendingProviderSecret>, LegacyDatabasePreflightError> {
+    let (is_null, is_valid, json_kind): (i64, Option<i64>, Option<String>) = connection
+        .query_row(
+            "SELECT headers IS NULL,json_valid(headers),CASE WHEN json_valid(headers) THEN json_type(headers) END FROM provider_credentials WHERE id=?1",
+            [provider_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    if is_null == 1 {
+        return Ok(Vec::new());
+    }
+    if is_null != 0 || is_valid != Some(1) || json_kind.as_deref() != Some("object") {
+        return Err(provider_malformed("headers"));
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT key,type,length(value) FROM json_each((SELECT headers FROM provider_credentials WHERE id=?1)) ORDER BY lower(key) ASC,key ASC",
+        )
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let rows = statement
+        .query_map([provider_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .map_err(|_| provider_malformed("headers"))?;
+    let mut names = Vec::new();
+    for row in rows {
+        let (name, value_type, value_len) = row.map_err(|_| provider_malformed("headers"))?;
+        if value_type != "text" || value_len == 0 {
+            return Err(provider_malformed("headers"));
+        }
+        let name = HeaderName::new(name).map_err(|_| provider_malformed("headers"))?;
+        if names
+            .iter()
+            .any(|existing: &HeaderName| existing.as_str().eq_ignore_ascii_case(name.as_str()))
+        {
+            return Err(provider_malformed("headers"));
+        }
+        names.push(name);
+    }
+    if names.len() > 16 {
+        return Err(provider_malformed("headers"));
+    }
+    Ok(names
+        .into_iter()
+        .map(|name| LegacyPendingProviderSecret::Header { name })
+        .collect())
+}
+
+fn deferred_fields(object: &Map<String, Value>, mapped: &[&str]) -> Vec<String> {
+    let mut fields = object
+        .keys()
+        .filter(|key| !mapped.contains(&key.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    fields.sort();
+    fields
+}
+
+fn resolve_legacy_provider_account(
+    providers: &[LegacyProviderAccountCandidate],
+    provider_kind: &str,
+    explicit_id: Option<ProviderAccountId>,
+    provider_label: &str,
+    model_name: &str,
+    default_id: Option<ProviderAccountId>,
+) -> Result<ProviderAccountId, LegacyDatabasePreflightError> {
+    if provider_kind.eq_ignore_ascii_case("llamacpp") {
+        return Ok(legacy_builtin_llama_account_id());
+    }
+    if let Some(provider) = explicit_id.and_then(|id| {
+        providers
+            .iter()
+            .find(|provider| provider.id == id && provider.provider_kind == provider_kind)
+    }) {
+        return Ok(provider.id);
+    }
+    let candidates = providers
+        .iter()
+        .filter(|provider| provider.provider_kind == provider_kind)
+        .collect::<Vec<_>>();
+    if let Some(provider) = default_id.and_then(|id| {
+        candidates
+            .iter()
+            .copied()
+            .find(|provider| provider.id == id)
+    }) {
+        return Ok(provider.id);
+    }
+    if let [provider] = candidates.as_slice() {
+        return Ok(provider.id);
+    }
+    if let Some(provider) = candidates
+        .iter()
+        .copied()
+        .find(|provider| provider.label == provider_label)
+    {
+        return Ok(provider.id);
+    }
+    if let Some(provider) = candidates
+        .iter()
+        .copied()
+        .find(|provider| provider.default_model.as_deref() == Some(model_name))
+    {
+        return Ok(provider.id);
+    }
+    Err(LegacyDatabasePreflightError::OrphanRecord {
+        table: "models",
+        parent_table: "provider_credentials",
+    })
+}
+
+fn legacy_builtin_llama_account_id() -> ProviderAccountId {
+    ProviderAccountId::from_str("6c657474-7563-652d-6c6c-616d61637070")
+        .expect("static legacy llama account id")
+}
+
+fn parse_modalities(
+    value: Option<String>,
+    field: &'static str,
+) -> Result<ModalityCapabilities, LegacyDatabasePreflightError> {
+    let values = match value {
+        None => vec![Value::String("text".to_owned())],
+        Some(value) => {
+            serde_json::from_str::<Vec<Value>>(&value).map_err(|_| model_malformed(field))?
+        }
+    };
+    let mut modalities = ModalityCapabilities {
+        text: CapabilityStatus::Unsupported,
+        image: CapabilityStatus::Unsupported,
+        audio: CapabilityStatus::Unsupported,
+    };
+    for value in values {
+        match value.as_str() {
+            Some("text") => modalities.text = CapabilityStatus::Supported,
+            Some("image") => modalities.image = CapabilityStatus::Supported,
+            Some("audio") => modalities.audio = CapabilityStatus::Supported,
+            _ => return Err(model_malformed(field)),
+        }
+    }
+    if matches!(
+        (modalities.text, modalities.image, modalities.audio),
+        (
+            CapabilityStatus::Unsupported,
+            CapabilityStatus::Unsupported,
+            CapabilityStatus::Unsupported
+        )
+    ) {
+        modalities.text = CapabilityStatus::Supported;
+    }
+    Ok(modalities)
+}
+
+fn legacy_chat_parameters(
+    provider_kind: &str,
+    object: &Map<String, Value>,
+) -> Result<(ChatParameterProfile, Vec<&'static str>), LegacyDatabasePreflightError> {
+    let mapped = vec![
+        "temperature",
+        "topP",
+        "topK",
+        "maxOutputTokens",
+        "contextLength",
+        "frequencyPenalty",
+        "presencePenalty",
+        "ollamaNumCtx",
+        "ollamaNumPredict",
+        "ollamaNumKeep",
+        "ollamaNumBatch",
+        "ollamaNumGpu",
+        "ollamaNumThread",
+        "ollamaTfsZ",
+        "ollamaTypicalP",
+        "ollamaMinP",
+        "ollamaMirostat",
+        "ollamaMirostatTau",
+        "ollamaMirostatEta",
+        "ollamaRepeatPenalty",
+        "ollamaSeed",
+        "ollamaStop",
+        "reasoningEnabled",
+        "reasoningEffort",
+        "reasoningBudgetTokens",
+        "promptCachingEnabled",
+        "promptCachingTtl",
+        "openRouterProvider",
+    ];
+    let f64_value = |key: &'static str| -> Result<Option<f64>, LegacyDatabasePreflightError> {
+        object
+            .get(key)
+            .filter(|value| !value.is_null())
+            .map(|value| {
+                value
+                    .as_f64()
+                    .ok_or_else(|| model_malformed("advanced_model_settings"))
+            })
+            .transpose()
+    };
+    let u32_value = |key: &'static str| -> Result<Option<u32>, LegacyDatabasePreflightError> {
+        object
+            .get(key)
+            .filter(|value| !value.is_null())
+            .map(|value| {
+                value
+                    .as_u64()
+                    .and_then(|value| u32::try_from(value).ok())
+                    .ok_or_else(|| model_malformed("advanced_model_settings"))
+            })
+            .transpose()
+    };
+    let bool_value = |key: &'static str| -> Result<Option<bool>, LegacyDatabasePreflightError> {
+        object
+            .get(key)
+            .filter(|value| !value.is_null())
+            .map(|value| {
+                value
+                    .as_bool()
+                    .ok_or_else(|| model_malformed("advanced_model_settings"))
+            })
+            .transpose()
+    };
+    let string_value = |key: &'static str| -> Result<Option<String>, LegacyDatabasePreflightError> {
+        object
+            .get(key)
+            .filter(|value| !value.is_null())
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| model_malformed("advanced_model_settings"))
+            })
+            .transpose()
+    };
+    let positive_or_none = |value: Option<u32>| value.filter(|value| *value != 0);
+    let reasoning_mode = bool_value("reasoningEnabled")?.map(|enabled| {
+        if enabled {
+            ReasoningMode::Enabled
+        } else {
+            ReasoningMode::Disabled
+        }
+    });
+    let reasoning_effort = if reasoning_mode == Some(ReasoningMode::Disabled) {
+        None
+    } else {
+        string_value("reasoningEffort")?
+            .map(|value| match value.as_str() {
+                "low" => Ok(ReasoningEffort::Low),
+                "medium" => Ok(ReasoningEffort::Medium),
+                "high" => Ok(ReasoningEffort::High),
+                _ => Err(model_malformed("advanced_model_settings")),
+            })
+            .transpose()?
+    };
+    let reasoning_budget_tokens = if reasoning_mode == Some(ReasoningMode::Disabled) {
+        None
+    } else {
+        u32_value("reasoningBudgetTokens")?
+    };
+    let prompt_caching = match bool_value("promptCachingEnabled")? {
+        None => None,
+        Some(false) => Some(PromptCaching::Disabled),
+        Some(true) => {
+            let default = if provider_kind == "openai" {
+                "in_memory"
+            } else {
+                "5min"
+            };
+            let retention = match string_value("promptCachingTtl")?
+                .unwrap_or_else(|| default.to_owned())
+                .as_str()
+            {
+                "in_memory" => PromptCacheRetention::InMemory,
+                "5min" => PromptCacheRetention::FiveMinutes,
+                "1h" => PromptCacheRetention::OneHour,
+                "24h" => PromptCacheRetention::TwentyFourHours,
+                _ => return Err(model_malformed("advanced_model_settings")),
+            };
+            Some(PromptCaching::Enabled { retention })
+        }
+    };
+    let stop = object
+        .get("ollamaStop")
+        .filter(|value| !value.is_null())
+        .map(|value| {
+            value
+                .as_array()
+                .ok_or_else(|| model_malformed("advanced_model_settings"))?
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| model_malformed("advanced_model_settings"))
+                })
+                .collect()
+        })
+        .transpose()?;
+    let pinned_provider = object
+        .get("openRouterProvider")
+        .filter(|value| !value.is_null())
+        .map(|value| {
+            value
+                .as_object()
+                .and_then(|value| value.get("id"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or_else(|| model_malformed("advanced_model_settings"))
+        })
+        .transpose()?;
+    Ok((
+        ChatParameterProfile {
+            temperature: f64_value("temperature")?,
+            top_p: f64_value("topP")?,
+            top_k: u32_value("topK")?,
+            max_output_tokens: u32_value("maxOutputTokens")?
+                .or(u32_value("ollamaNumPredict")?)
+                .and_then(|value| (value != 0).then_some(value)),
+            context_length: positive_or_none(
+                u32_value("contextLength")?.or(u32_value("ollamaNumCtx")?),
+            ),
+            frequency_penalty: f64_value("frequencyPenalty")?,
+            presence_penalty: f64_value("presencePenalty")?,
+            repetition_penalty: f64_value("ollamaRepeatPenalty")?,
+            reasoning_mode,
+            reasoning_effort,
+            reasoning_budget_tokens,
+            prompt_caching,
+            ollama: OllamaOptions {
+                num_keep: u32_value("ollamaNumKeep")?,
+                num_batch: u32_value("ollamaNumBatch")?,
+                num_gpu: u32_value("ollamaNumGpu")?,
+                num_thread: u32_value("ollamaNumThread")?,
+                tfs_z: f64_value("ollamaTfsZ")?,
+                typical_p: f64_value("ollamaTypicalP")?,
+                min_p: f64_value("ollamaMinP")?,
+                mirostat: u32_value("ollamaMirostat")?,
+                mirostat_tau: f64_value("ollamaMirostatTau")?,
+                mirostat_eta: f64_value("ollamaMirostatEta")?,
+                seed: u32_value("ollamaSeed")?,
+                stop,
+            },
+            openrouter: OpenRouterOptions { pinned_provider },
+        },
+        mapped,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -587,6 +1518,54 @@ mod tests {
         path
     }
 
+    fn provider_model_database() -> std::path::PathBuf {
+        let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute_batch(
+                "DROP TABLE provider_credentials;
+                 DROP TABLE models;
+                 DROP TABLE settings;
+                 CREATE TABLE settings (
+                   id INTEGER PRIMARY KEY CHECK(id=1),
+                   default_provider_credential_id TEXT,
+                   default_model_id TEXT,
+                   migration_version INTEGER NOT NULL,
+                   created_at INTEGER NOT NULL,
+                   updated_at INTEGER NOT NULL
+                 );
+                 CREATE TABLE provider_credentials (
+                   id TEXT PRIMARY KEY,
+                   provider_id TEXT NOT NULL,
+                   label TEXT NOT NULL,
+                   api_key_ref TEXT,
+                   api_key TEXT,
+                   base_url TEXT,
+                   default_model TEXT,
+                   headers TEXT,
+                   config TEXT
+                 );
+                 CREATE TABLE models (
+                   id TEXT PRIMARY KEY,
+                   name TEXT NOT NULL,
+                   provider_id TEXT NOT NULL,
+                   provider_credential_id TEXT,
+                   provider_label TEXT NOT NULL,
+                   display_name TEXT NOT NULL,
+                   created_at INTEGER NOT NULL,
+                   model_type TEXT NOT NULL DEFAULT 'chat',
+                   input_scopes TEXT,
+                   output_scopes TEXT,
+                   advanced_model_settings TEXT,
+                   prompt_template_id TEXT,
+                   system_prompt TEXT
+                 );",
+            )
+            .expect("create provider model schema");
+        drop(connection);
+        path
+    }
+
     #[test]
     fn valid_legacy_database_reports_bounded_root_inventory() {
         let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
@@ -634,6 +1613,505 @@ mod tests {
                 table: "characters"
             })
         );
+    }
+
+    #[test]
+    fn provider_model_plan_preserves_mapped_fields_defaults_and_source_bytes() {
+        let path = provider_model_database();
+        let custom_id =
+            ProviderAccountId::from_str("00000000-0000-0000-0000-000000000010").expect("custom id");
+        let router_id =
+            ProviderAccountId::from_str("00000000-0000-0000-0000-000000000011").expect("router id");
+        let custom_model_id = ModelProfileId::from_str("00000000-0000-0000-0000-000000000020")
+            .expect("custom model id");
+        let router_model_id = ModelProfileId::from_str("00000000-0000-0000-0000-000000000021")
+            .expect("router model id");
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute(
+                "INSERT INTO settings VALUES (1,?1,?2,92,100,120)",
+                rusqlite::params![router_id.to_string(), router_model_id.to_string()],
+            )
+            .expect("insert settings");
+        connection
+            .execute(
+                "INSERT INTO provider_credentials (id,provider_id,label,api_key_ref,api_key,base_url,default_model,headers,config) VALUES (?1,'openrouter','Router','obsolete-ref','router-secret','https://router.example/api/','router-model',?2,?3)",
+                rusqlite::params![
+                    router_id.to_string(),
+                    r#"{"X-Zeta":"zeta-secret","X-Alpha":"alpha-secret"}"#,
+                    r#"{"streamingEnabled":false,"allowInvalidTls":true,"sproutEnabled":true}"#
+                ],
+            )
+            .expect("insert router");
+        connection
+            .execute(
+                "INSERT INTO provider_credentials (id,provider_id,label,api_key,base_url,headers,config) VALUES (?1,'custom','Custom',NULL,'https://custom.example',NULL,?2)",
+                rusqlite::params![
+                    custom_id.to_string(),
+                    r#"{"chatEndpoint":"/v2/chat","fetchModelsEnabled":true,"modelsEndpoint":"/v2/models","modelsListPath":"payload.items","modelsIdPath":"key","modelsDisplayNamePath":"title","modelsDescriptionPath":"summary","modelsContextLengthPath":"limits.context","systemRole":"instruction","userRole":"human","assistantRole":"bot","supportsStream":false,"mergeSameRoleMessages":false,"sendChatTemplateKwargs":true,"toolChoiceMode":"required","authMode":"query","authQueryParamName":"token"}"#
+                ],
+            )
+            .expect("insert custom");
+        connection
+            .execute(
+                "INSERT INTO models (id,name,provider_id,provider_credential_id,provider_label,display_name,created_at,model_type,input_scopes,output_scopes,advanced_model_settings,prompt_template_id,system_prompt) VALUES (?1,'router-model','openrouter',?2,'Router','Router Model',20,'chat','[\"text\",\"image\"]','[\"text\"]',?3,'prompt-one','Legacy system')",
+                rusqlite::params![
+                    router_model_id.to_string(),
+                    router_id.to_string(),
+                    r#"{"temperature":0.7,"topP":0.8,"topK":40,"maxOutputTokens":2048,"contextLength":0,"frequencyPenalty":0.2,"presencePenalty":-0.1,"reasoningEnabled":true,"reasoningEffort":"high","reasoningBudgetTokens":4096,"promptCachingEnabled":true,"promptCachingTtl":"1h","openRouterProvider":{"id":"route-a","name":"Route A"},"llamaGpuLayers":18}"#
+                ],
+            )
+            .expect("insert router model");
+        connection
+            .execute(
+                "INSERT INTO models (id,name,provider_id,provider_credential_id,provider_label,display_name,created_at,model_type,input_scopes,output_scopes,advanced_model_settings) VALUES (?1,'custom-model','custom',?2,'Custom','Custom Model',10,'chat',NULL,NULL,?3)",
+                rusqlite::params![
+                    custom_model_id.to_string(),
+                    custom_id.to_string(),
+                    r#"{"ollamaNumPredict":512,"ollamaNumCtx":8192,"ollamaNumKeep":8,"ollamaNumBatch":64,"ollamaNumGpu":2,"ollamaNumThread":6,"ollamaTfsZ":0.9,"ollamaTypicalP":0.8,"ollamaMinP":0.1,"ollamaMirostat":2,"ollamaMirostatTau":5.0,"ollamaMirostatEta":0.2,"ollamaRepeatPenalty":1.1,"ollamaSeed":9,"ollamaStop":["END"]}"#
+                ],
+            )
+            .expect("insert custom model");
+        drop(connection);
+        let before = std::fs::read(&path).expect("read source before planning");
+
+        let plan = plan_legacy_provider_models(&path).expect("plan provider models");
+
+        assert_eq!(
+            std::fs::read(&path).expect("read source after planning"),
+            before
+        );
+        assert_eq!(plan.default_provider_account_id, Some(router_id));
+        assert_eq!(plan.default_model_profile_id, Some(router_model_id));
+        assert_eq!(
+            plan.provider_accounts
+                .iter()
+                .map(|provider| provider.id)
+                .collect::<Vec<_>>(),
+            vec![custom_id, router_id]
+        );
+        let custom = &plan.provider_accounts[0];
+        assert_eq!(custom.secret_owner_id.as_uuid(), custom_id.as_uuid());
+        assert_eq!(custom.protocol, ProviderProtocol::OpenAiCompatible);
+        assert_eq!(custom.endpoint.as_deref(), Some("https://custom.example"));
+        assert!(custom.enabled);
+        assert!(custom.streaming_enabled);
+        assert!(!custom.allow_invalid_tls);
+        assert_eq!(custom.created_at, TimestampMillis::new(100));
+        assert_eq!(custom.updated_at, TimestampMillis::new(120));
+        assert!(custom.pending_secrets.is_empty());
+        let ProviderConfig::Custom(config) = &custom.config else {
+            panic!("custom provider config");
+        };
+        assert_eq!(config.chat_path, "/v2/chat");
+        assert_eq!(config.models_path.as_deref(), Some("/v2/models"));
+        assert_eq!(config.model_list.list_path.as_str(), "payload.items");
+        assert_eq!(config.model_list.id_path.as_str(), "key");
+        assert_eq!(
+            config
+                .model_list
+                .display_name_path
+                .as_ref()
+                .map(JsonPath::as_str),
+            Some("title")
+        );
+        assert_eq!(
+            config
+                .model_list
+                .description_path
+                .as_ref()
+                .map(JsonPath::as_str),
+            Some("summary")
+        );
+        assert_eq!(
+            config
+                .model_list
+                .context_length_path
+                .as_ref()
+                .map(JsonPath::as_str),
+            Some("limits.context")
+        );
+        assert_eq!(
+            config.roles.system.as_ref().map(WireRole::as_str),
+            Some("instruction")
+        );
+        assert_eq!(
+            config.roles.user.as_ref().map(WireRole::as_str),
+            Some("human")
+        );
+        assert_eq!(
+            config.roles.assistant.as_ref().map(WireRole::as_str),
+            Some("bot")
+        );
+        assert!(!config.streaming);
+        assert!(!config.merge_same_role_messages);
+        assert!(config.send_chat_template_kwargs);
+        assert_eq!(config.tool_choice_mode, CustomToolChoiceMode::Required);
+        assert!(matches!(
+            &config.auth,
+            CustomAuth::Query { name } if name.as_str() == "token"
+        ));
+        let router = &plan.provider_accounts[1];
+        assert_eq!(router.protocol, ProviderProtocol::OpenAiCompatible);
+        assert_eq!(
+            router.endpoint.as_deref(),
+            Some("https://router.example/api/")
+        );
+        assert!(!router.streaming_enabled);
+        assert!(router.allow_invalid_tls);
+        assert_eq!(router.default_model.as_deref(), Some("router-model"));
+        assert_eq!(router.deferred_config_fields, vec!["sproutEnabled"]);
+        assert_eq!(
+            router.pending_secrets,
+            vec![
+                LegacyPendingProviderSecret::ApiKey,
+                LegacyPendingProviderSecret::Header {
+                    name: HeaderName::new("X-Alpha").expect("header")
+                },
+                LegacyPendingProviderSecret::Header {
+                    name: HeaderName::new("X-Zeta").expect("header")
+                }
+            ]
+        );
+        let debug = format!("{plan:?}");
+        assert!(!debug.contains("router-secret"));
+        assert!(!debug.contains("alpha-secret"));
+
+        assert_eq!(
+            plan.model_profiles
+                .iter()
+                .map(|model| model.id)
+                .collect::<Vec<_>>(),
+            vec![custom_model_id, router_model_id]
+        );
+        let custom_model = &plan.model_profiles[0];
+        assert_eq!(custom_model.provider_account_id, custom_id);
+        assert_eq!(
+            custom_model.config.chat_parameters.max_output_tokens,
+            Some(512)
+        );
+        assert_eq!(
+            custom_model.config.chat_parameters.context_length,
+            Some(8192)
+        );
+        assert_eq!(
+            custom_model.config.chat_parameters.repetition_penalty,
+            Some(1.1)
+        );
+        assert_eq!(custom_model.config.chat_parameters.ollama.num_keep, Some(8));
+        assert_eq!(
+            custom_model.config.chat_parameters.ollama.num_batch,
+            Some(64)
+        );
+        assert_eq!(custom_model.config.chat_parameters.ollama.num_gpu, Some(2));
+        assert_eq!(
+            custom_model.config.chat_parameters.ollama.num_thread,
+            Some(6)
+        );
+        assert_eq!(custom_model.config.chat_parameters.ollama.tfs_z, Some(0.9));
+        assert_eq!(
+            custom_model.config.chat_parameters.ollama.typical_p,
+            Some(0.8)
+        );
+        assert_eq!(custom_model.config.chat_parameters.ollama.min_p, Some(0.1));
+        assert_eq!(custom_model.config.chat_parameters.ollama.mirostat, Some(2));
+        assert_eq!(
+            custom_model.config.chat_parameters.ollama.mirostat_tau,
+            Some(5.0)
+        );
+        assert_eq!(
+            custom_model.config.chat_parameters.ollama.mirostat_eta,
+            Some(0.2)
+        );
+        assert_eq!(custom_model.config.chat_parameters.ollama.seed, Some(9));
+        assert_eq!(
+            custom_model.config.chat_parameters.ollama.stop,
+            Some(vec!["END".into()])
+        );
+        assert_eq!(
+            custom_model.config.capabilities.input_modalities.text,
+            CapabilityStatus::Supported
+        );
+        assert_eq!(
+            custom_model.config.capabilities.input_modalities.image,
+            CapabilityStatus::Unsupported
+        );
+        let router_model = &plan.model_profiles[1];
+        assert_eq!(router_model.provider_account_id, router_id);
+        assert_eq!(router_model.source_provider_kind, "openrouter");
+        assert_eq!(router_model.source_provider_label, "Router");
+        assert_eq!(router_model.external_model_id, "router-model");
+        assert_eq!(router_model.display_name, "Router Model");
+        assert_eq!(router_model.kind, ModelKind::Chat);
+        assert_eq!(router_model.created_at, TimestampMillis::new(20));
+        assert_eq!(router_model.config.chat_parameters.temperature, Some(0.7));
+        assert_eq!(router_model.config.chat_parameters.top_p, Some(0.8));
+        assert_eq!(router_model.config.chat_parameters.top_k, Some(40));
+        assert_eq!(
+            router_model.config.chat_parameters.max_output_tokens,
+            Some(2048)
+        );
+        assert_eq!(router_model.config.chat_parameters.context_length, None);
+        assert_eq!(
+            router_model.config.chat_parameters.frequency_penalty,
+            Some(0.2)
+        );
+        assert_eq!(
+            router_model.config.chat_parameters.presence_penalty,
+            Some(-0.1)
+        );
+        assert_eq!(
+            router_model.config.chat_parameters.reasoning_mode,
+            Some(ReasoningMode::Enabled)
+        );
+        assert_eq!(
+            router_model.config.chat_parameters.reasoning_effort,
+            Some(ReasoningEffort::High)
+        );
+        assert_eq!(
+            router_model.config.chat_parameters.reasoning_budget_tokens,
+            Some(4096)
+        );
+        assert_eq!(
+            router_model.config.chat_parameters.prompt_caching,
+            Some(PromptCaching::Enabled {
+                retention: PromptCacheRetention::OneHour
+            })
+        );
+        assert_eq!(
+            router_model
+                .config
+                .chat_parameters
+                .openrouter
+                .pinned_provider
+                .as_deref(),
+            Some("route-a")
+        );
+        assert_eq!(
+            router_model.prompt_template_id.as_deref(),
+            Some("prompt-one")
+        );
+        assert_eq!(
+            router_model.deprecated_system_prompt.as_deref(),
+            Some("Legacy system")
+        );
+        assert_eq!(
+            router_model.deferred_advanced_fields,
+            vec!["llamaGpuLayers"]
+        );
+        assert_eq!(
+            router_model.config.capabilities.input_modalities.image,
+            CapabilityStatus::Supported
+        );
+        assert_eq!(
+            router_model.config.capabilities.output_modalities.text,
+            CapabilityStatus::Supported
+        );
+        assert_eq!(
+            router_model.config.capabilities.output_modalities.image,
+            CapabilityStatus::Unsupported
+        );
+        assert_eq!(
+            router_model.config.capabilities.streaming,
+            CapabilityStatus::Unsupported
+        );
+        std::fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn provider_model_plan_rejects_malformed_orphans_and_bounds() {
+        let path = provider_model_database();
+        let provider_id = ProviderAccountId::new();
+        let model_id = ModelProfileId::new();
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute("INSERT INTO settings VALUES (1,NULL,NULL,92,10,10)", [])
+            .expect("insert settings");
+        connection
+            .execute(
+                "INSERT INTO provider_credentials (id,provider_id,label,headers) VALUES (?1,'openai','Primary','not-json')",
+                [provider_id.to_string()],
+            )
+            .expect("insert malformed provider");
+        assert_eq!(
+            plan_legacy_provider_models(&path),
+            Err(provider_malformed("headers"))
+        );
+        connection
+            .execute(
+                "UPDATE provider_credentials SET headers=NULL WHERE id=?1",
+                [provider_id.to_string()],
+            )
+            .expect("fix provider");
+        connection
+            .execute(
+                "INSERT INTO models (id,name,provider_id,provider_credential_id,provider_label,display_name,created_at) VALUES (?1,'model-a','anthropic',NULL,'Missing','Model A',20)",
+                [model_id.to_string()],
+            )
+            .expect("insert orphan model");
+        assert_eq!(
+            plan_legacy_provider_models(&path),
+            Err(LegacyDatabasePreflightError::OrphanRecord {
+                table: "models",
+                parent_table: "provider_credentials"
+            })
+        );
+        connection
+            .execute("DELETE FROM models", [])
+            .expect("delete orphan model");
+        assert_eq!(
+            plan_legacy_provider_models_with_limits(&connection, 0, 1),
+            Err(LegacyDatabasePreflightError::LimitExceeded {
+                table: "provider_credentials",
+                limit: 0
+            })
+        );
+        connection
+            .execute(
+                "INSERT INTO models (id,name,provider_id,provider_credential_id,provider_label,display_name,created_at) VALUES (?1,'model-a','openai',?2,'Primary','Model A',20)",
+                rusqlite::params![model_id.to_string(), provider_id.to_string()],
+            )
+            .expect("insert model");
+        assert_eq!(
+            plan_legacy_provider_models_with_limits(&connection, 1, 0),
+            Err(LegacyDatabasePreflightError::LimitExceeded {
+                table: "models",
+                limit: 0
+            })
+        );
+        connection
+            .execute(
+                "UPDATE settings SET default_model_id=?1",
+                [ModelProfileId::new().to_string()],
+            )
+            .expect("set orphan default");
+        assert_eq!(
+            plan_legacy_provider_models(&path),
+            Err(LegacyDatabasePreflightError::OrphanRecord {
+                table: "settings.default_model_id",
+                parent_table: "models"
+            })
+        );
+        drop(connection);
+        std::fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn provider_model_plan_maps_each_legacy_protocol_family() {
+        let path = provider_model_database();
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute("INSERT INTO settings VALUES (1,NULL,NULL,92,10,10)", [])
+            .expect("insert settings");
+        for (ordinal, provider_kind) in ["anthropic", "gemini", "ollama", "sdcpp", "openai"]
+            .into_iter()
+            .enumerate()
+        {
+            connection
+                .execute(
+                    "INSERT INTO provider_credentials (id,provider_id,label) VALUES (?1,?2,?3)",
+                    rusqlite::params![
+                        ProviderAccountId::new().to_string(),
+                        provider_kind,
+                        format!("Provider {ordinal}")
+                    ],
+                )
+                .expect("insert provider");
+        }
+        let llama_model_id = ModelProfileId::new();
+        connection
+            .execute(
+                "INSERT INTO models (id,name,provider_id,provider_label,display_name,created_at) VALUES (?1,'local.gguf','llamacpp','llama.cpp (Local)','Local Model',20)",
+                [llama_model_id.to_string()],
+            )
+            .expect("insert llama model");
+        drop(connection);
+
+        let plan = plan_legacy_provider_models(&path).expect("plan provider protocols");
+        let protocol = |kind: &str| {
+            plan.provider_accounts
+                .iter()
+                .find(|provider| provider.provider_kind == kind)
+                .map(|provider| provider.protocol)
+        };
+        assert_eq!(protocol("anthropic"), Some(ProviderProtocol::Anthropic));
+        assert_eq!(protocol("gemini"), Some(ProviderProtocol::Gemini));
+        assert_eq!(protocol("ollama"), Some(ProviderProtocol::Ollama));
+        assert_eq!(protocol("llamacpp"), Some(ProviderProtocol::LlamaCpp));
+        assert_eq!(
+            plan.model_profiles
+                .iter()
+                .find(|model| model.id == llama_model_id)
+                .map(|model| model.provider_account_id),
+            Some(legacy_builtin_llama_account_id())
+        );
+        assert_eq!(protocol("sdcpp"), Some(ProviderProtocol::StableDiffusion));
+        assert_eq!(protocol("openai"), Some(ProviderProtocol::OpenAiCompatible));
+        std::fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn provider_model_plan_preserves_legacy_credential_resolution_order() {
+        let path = provider_model_database();
+        let default_id = ProviderAccountId::new();
+        let other_openai_id = ProviderAccountId::new();
+        let sole_id = ProviderAccountId::new();
+        let label_first_id = ProviderAccountId::new();
+        let label_match_id = ProviderAccountId::new();
+        let model_default_id = ProviderAccountId::new();
+        let other_router_id = ProviderAccountId::new();
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute(
+                "INSERT INTO settings VALUES (1,?1,NULL,92,10,10)",
+                [default_id.to_string()],
+            )
+            .expect("insert settings");
+        for (id, kind, label, default_model) in [
+            (default_id, "openai", "Default", None),
+            (other_openai_id, "openai", "Other", None),
+            (sole_id, "anthropic", "Only", None),
+            (label_first_id, "custom", "First", None),
+            (label_match_id, "custom", "Match", None),
+            (model_default_id, "openrouter", "Route One", Some("target")),
+            (other_router_id, "openrouter", "Route Two", None),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO provider_credentials (id,provider_id,label,base_url,default_model,config) VALUES (?1,?2,?3,CASE WHEN ?2='custom' THEN 'https://custom.example' END,?4,CASE WHEN ?2='custom' THEN '{\"authMode\":\"none\"}' END)",
+                    rusqlite::params![id.to_string(), kind, label, default_model],
+                )
+                .expect("insert provider");
+        }
+        let cases = [
+            ("openai", "Other", "openai-model", default_id),
+            ("anthropic", "Ignored", "anthropic-model", sole_id),
+            ("custom", "Match", "custom-model", label_match_id),
+            ("openrouter", "Missing", "target", model_default_id),
+        ];
+        for (ordinal, (kind, label, name, _)) in cases.iter().enumerate() {
+            connection
+                .execute(
+                    "INSERT INTO models (id,name,provider_id,provider_label,display_name,created_at) VALUES (?1,?2,?3,?4,?5,?6)",
+                    rusqlite::params![
+                        ModelProfileId::new().to_string(),
+                        name,
+                        kind,
+                        label,
+                        format!("Model {ordinal}"),
+                        20 + i64::try_from(ordinal).expect("ordinal")
+                    ],
+                )
+                .expect("insert model");
+        }
+        drop(connection);
+
+        let plan = plan_legacy_provider_models(&path).expect("plan credential resolution");
+        assert_eq!(plan.model_profiles.len(), cases.len());
+        for (model, (_, _, _, expected_provider)) in plan.model_profiles.iter().zip(cases) {
+            assert_eq!(model.provider_account_id, expected_provider);
+        }
+        std::fs::remove_file(path).expect("remove legacy database");
     }
 
     #[test]

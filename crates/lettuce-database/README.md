@@ -94,6 +94,23 @@ legacy enum and boolean encodings, and rejects malformed keywords, timestamps
 and orphan entries. External world-info fields already discarded by the legacy
 importer are not fabricated as version-92 database fields.
 
+Provider/model planning reads the final version-92 settings, credential and model
+tables through a read-only connection. It applies the legacy credential resolution
+order, validates defaults and parent bindings, maps custom protocol configuration
+and model scopes/settings into typed candidates, and enforces separate account and
+profile bounds. SQL exposes only API-key presence plus header names, types and
+lengths, so secret values do not cross the source-reader boundary. Unmapped field names
+identify later embedded-runtime, image and feature-policy work without copying their
+values out of the source. File-backed tests compare the database bytes before and
+after planning and cover mapped fields, defaults, stable order, malformed rows,
+orphans and both limits.
+
+The version-92 plaintext `api_key` column is authoritative because migration 7
+backfilled it from the former secrets table. The obsolete `api_key_ref` is not
+treated as secret evidence or copied. Legacy llama.cpp models keep their runtime
+behavior through a deterministic secret-free built-in account instead of becoming
+orphans.
+
 ## Boundary
 
 The only crate allowed to depend on SQLite libraries.

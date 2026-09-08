@@ -14,6 +14,10 @@ inventory boundary before any import is attempted. Compatibility types live in
 their explicit default owner while leaving all source media unresolved.
 `AppBackend::plan_legacy_lorebooks` exposes the bounded root and ordered-entry
 plan needed to resolve later persona and character bindings.
+`AppBackend::plan_legacy_provider_models` exposes the read-only provider-account
+and model-profile plan. Credentials remain pending secret-store inputs represented
+only by API-key presence and header names; no secret value or destination row is
+written during planning.
 `AppBackend::plan_legacy_media` resolves only those planned persona and
 lorebook references below an explicitly supplied legacy storage root. The
 application adapter validates paths and hashes bounded files without copying

@@ -39,7 +39,8 @@ mod tool_adapter;
 mod usage_adapter;
 
 pub use legacy_database_preflight::{
-    plan_legacy_lorebooks, plan_legacy_personas, preflight_legacy_database,
+    plan_legacy_lorebooks, plan_legacy_personas, plan_legacy_provider_models,
+    preflight_legacy_database,
 };
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
