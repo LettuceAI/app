@@ -73,6 +73,7 @@
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": "-",
+      "entitlements": "entitlements.plist",
       "dmg": {
         "windowSize": {
           "width": 660,
