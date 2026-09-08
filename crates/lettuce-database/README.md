@@ -529,5 +529,13 @@ proves prompt construction, correction order, CRUD and reopen behavior. The
 same migration stores ignored edit suggestions with a null-safe unique identity,
 counts repeated ignores, and removes matching ignored rows atomically when a
 correction is saved. Chat and group edit scenarios verify suppression, repeated
-acceptance, scope promotion and two reopen cycles. Voice examples and legacy ASR
-row transfer are not stored yet.
+acceptance, scope promotion and two reopen cycles. Legacy ASR row transfer is
+not stored yet.
+
+Migration 16 also stores ASR voice examples through a composite foreign key to
+an audio-kind media asset. Vocabulary and correction links use `SET NULL`, while
+the audio asset remains retained by `RESTRICT`. The adapter validates normalized
+text on every read, orders by creation time and ID, and rejects missing or
+non-audio assets. File-backed coverage proves create, update, edit-derived
+suggestion, link clearing, deletion and two reopen cycles. Legacy ASR row
+transfer remains separate so native paths are never copied into live records.

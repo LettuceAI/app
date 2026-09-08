@@ -8,8 +8,8 @@ No internal LettuceAI dependencies and no I/O.
 
 The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
 
-ASR vocabulary, correction and ignored-suggestion records use distinct
-UUID-backed IDs so learning data never exposes SQLite row identities.
+ASR vocabulary, correction, ignored-suggestion and voice-example records use
+distinct UUID-backed IDs so learning data never exposes SQLite row identities.
 
 ## Status
 

@@ -143,3 +143,43 @@ ON asr_ignored_suggestions(
     ignored_count DESC,
     id DESC
 );
+
+CREATE TABLE asr_voice_examples (
+    id TEXT PRIMARY KEY CHECK (length(id) = 36),
+    audio_asset_id TEXT NOT NULL,
+    audio_blob_kind TEXT NOT NULL DEFAULT 'audio' CHECK (audio_blob_kind = 'audio'),
+    expected_text TEXT NOT NULL CHECK (
+        length(expected_text) BETWEEN 1 AND 4096 AND instr(expected_text, char(0)) = 0
+    ),
+    normalized_expected_text TEXT NOT NULL CHECK (
+        length(normalized_expected_text) BETWEEN 1 AND 4096
+        AND trim(normalized_expected_text) = normalized_expected_text
+    ),
+    whisper_output TEXT CHECK (
+        whisper_output IS NULL
+        OR (length(whisper_output) <= 4096 AND instr(whisper_output, char(0)) = 0)
+    ),
+    normalized_whisper_output TEXT CHECK (
+        normalized_whisper_output IS NULL
+        OR (
+            length(normalized_whisper_output) BETWEEN 1 AND 4096
+            AND trim(normalized_whisper_output) = normalized_whisper_output
+        )
+    ),
+    language TEXT CHECK (
+        language IS NULL
+        OR (length(language) BETWEEN 1 AND 32 AND trim(language) = language AND lower(language) = language)
+    ),
+    scope TEXT NOT NULL CHECK (
+        length(scope) BETWEEN 1 AND 64 AND trim(scope) = scope AND lower(scope) = scope
+    ),
+    vocabulary_term_id TEXT REFERENCES asr_vocabulary_terms(id) ON DELETE SET NULL,
+    correction_id TEXT REFERENCES asr_corrections(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+    FOREIGN KEY (audio_asset_id, audio_blob_kind)
+        REFERENCES media_assets(id, blob_kind) ON DELETE RESTRICT
+) STRICT;
+
+CREATE INDEX asr_voice_examples_scope_language_order
+ON asr_voice_examples(scope, language, created_at DESC, id DESC);

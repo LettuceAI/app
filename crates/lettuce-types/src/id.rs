@@ -66,6 +66,7 @@ define_id!(AssetId);
 define_id!(AsrCorrectionId);
 define_id!(AsrIgnoredSuggestionId);
 define_id!(AsrVocabularyTermId);
+define_id!(AsrVoiceExampleId);
 define_id!(CharacterId);
 define_id!(ConversationId);
 define_id!(ConversationBranchId);

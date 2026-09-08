@@ -58,8 +58,16 @@ signals, the confidence formula, pair deduplication and ignored-pair suppression
 remain unchanged. Accepting a pair retains its counters and promotes
 conversation scope to project after two acceptances and global after four;
 ignoring a pair increments durable scope-specific memory, with global ignores
-also suppressing narrower scopes. Voice examples and legacy row transfer remain
-later learning slices.
+also suppressing narrower scopes. Legacy row transfer remains a later learning
+slice.
+
+Voice examples now retain a managed audio asset identity, authored and
+normalized expected/Whisper text, optional language and scope, and optional
+vocabulary/correction links. They list newest-first through the learning port,
+support update and deletion, and reuse the edit-learning algorithm to return at
+most one suggested correction. Raw filesystem paths are no longer part of the
+record. Legacy voice-example rows will be mapped to verified imported media in
+the later ASR transfer slice.
 
 Installed-model downloads, microphone IPC and file-format expansion remain
 later ASR slices. TTS has not started.

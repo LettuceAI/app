@@ -4066,6 +4066,7 @@ mod tests {
                 "asr_corrections",
                 "asr_ignored_suggestions",
                 "asr_vocabulary_terms",
+                "asr_voice_examples",
                 "candidate_media_refs",
                 "character_lorebook_bindings",
                 "character_media",

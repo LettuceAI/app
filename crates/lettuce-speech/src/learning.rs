@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use lettuce_types::{
-    AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, TimestampMillis,
+    AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, AsrVoiceExampleId, AssetId,
+    TimestampMillis,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -221,6 +222,75 @@ impl AsrIgnoredSuggestion {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsrVoiceExample {
+    pub id: AsrVoiceExampleId,
+    pub audio_asset_id: AssetId,
+    pub expected_text: String,
+    pub normalized_expected_text: String,
+    pub whisper_output: Option<String>,
+    pub normalized_whisper_output: Option<String>,
+    pub language: Option<String>,
+    pub scope: String,
+    pub vocabulary_term_id: Option<AsrVocabularyTermId>,
+    pub correction_id: Option<AsrCorrectionId>,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
+impl AsrVoiceExample {
+    pub fn new(
+        audio_asset_id: AssetId,
+        expected_text: impl Into<String>,
+        whisper_output: Option<String>,
+        language: Option<&str>,
+        scope: Option<&str>,
+        now: TimestampMillis,
+    ) -> Result<Self, AsrLearningError> {
+        let expected_text = expected_text.into();
+        let value = Self {
+            id: AsrVoiceExampleId::new(),
+            audio_asset_id,
+            normalized_expected_text: normalize_lookup_text(&expected_text),
+            expected_text,
+            normalized_whisper_output: whisper_output
+                .as_deref()
+                .map(normalize_lookup_text)
+                .filter(|value| !value.is_empty()),
+            whisper_output,
+            language: normalize_language(language),
+            scope: normalize_scope(scope),
+            vocabulary_term_id: None,
+            correction_id: None,
+            created_at: now,
+            updated_at: now,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    pub fn validate(&self) -> Result<(), AsrLearningError> {
+        validate_authored_text(&self.expected_text, MAX_CORRECTION_SCALARS)?;
+        validate_optional_payload(&self.whisper_output, MAX_CORRECTION_SCALARS)?;
+        let expected_whisper = self
+            .whisper_output
+            .as_deref()
+            .map(normalize_lookup_text)
+            .filter(|value| !value.is_empty());
+        if self.normalized_expected_text != normalize_lookup_text(&self.expected_text)
+            || self.normalized_whisper_output != expected_whisper
+            || self.language != normalize_language(self.language.as_deref())
+            || self.scope != normalize_scope(Some(&self.scope))
+            || self.created_at > self.updated_at
+        {
+            return Err(AsrLearningError::InvalidData);
+        }
+        validate_optional_bounded(&self.language, MAX_LANGUAGE_SCALARS)?;
+        validate_bounded_text(&self.scope, MAX_SCOPE_SCALARS)
+    }
+}
+
 pub trait AsrLearningRepository: Send + Sync {
     fn list_vocabulary(
         &self,
@@ -271,6 +341,17 @@ pub trait AsrLearningRepository: Send + Sync {
         &self,
         suggestion: AsrIgnoredSuggestion,
     ) -> Result<AsrIgnoredSuggestion, AsrLearningRepositoryError>;
+    fn list_voice_examples(
+        &self,
+        language: Option<&str>,
+        scopes: &[String],
+    ) -> Result<Vec<AsrVoiceExample>, AsrLearningRepositoryError>;
+    fn save_voice_example(
+        &self,
+        example: AsrVoiceExample,
+    ) -> Result<AsrVoiceExample, AsrLearningRepositoryError>;
+    fn delete_voice_example(&self, id: AsrVoiceExampleId)
+    -> Result<(), AsrLearningRepositoryError>;
 }
 
 #[derive(Debug)]
@@ -533,6 +614,50 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
         self.repository
             .save_ignored_suggestion(ignored)
             .map_err(Into::into)
+    }
+
+    pub fn list_voice_examples(
+        &self,
+        language: Option<&str>,
+        scopes: &[String],
+    ) -> Result<Vec<AsrVoiceExample>, AsrLearningError> {
+        let (language, scopes) = normalize_query(language, scopes)?;
+        self.repository
+            .list_voice_examples(language.as_deref(), &scopes)
+            .map_err(Into::into)
+    }
+
+    pub fn save_voice_example(
+        &self,
+        example: AsrVoiceExample,
+    ) -> Result<AsrVoiceExample, AsrLearningError> {
+        example.validate()?;
+        self.repository
+            .save_voice_example(example)
+            .map_err(Into::into)
+    }
+
+    pub fn delete_voice_example(&self, id: AsrVoiceExampleId) -> Result<(), AsrLearningError> {
+        self.repository.delete_voice_example(id).map_err(Into::into)
+    }
+
+    pub fn suggest_voice_example_correction(
+        &self,
+        example: &AsrVoiceExample,
+    ) -> Result<Option<AsrLearnedSuggestion>, AsrLearningError> {
+        example.validate()?;
+        let Some(whisper_output) = example.whisper_output.as_deref() else {
+            return Ok(None);
+        };
+        Ok(self
+            .suggest_corrections_from_edit(
+                whisper_output,
+                &example.expected_text,
+                example.language.as_deref(),
+                Some(&example.scope),
+            )?
+            .into_iter()
+            .next())
     }
 }
 

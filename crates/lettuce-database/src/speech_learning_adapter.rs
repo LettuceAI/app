@@ -2,10 +2,11 @@ use std::str::FromStr;
 
 use lettuce_speech::{
     AsrCorrectionRule, AsrIgnoredSuggestion, AsrLearningRepository, AsrLearningRepositoryError,
-    AsrVocabularyTerm,
+    AsrVocabularyTerm, AsrVoiceExample,
 };
 use lettuce_types::{
-    AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, TimestampMillis,
+    AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, AsrVoiceExampleId,
+    TimestampMillis,
 };
 use rusqlite::{ToSql, Transaction, TransactionBehavior, params};
 
@@ -266,6 +267,39 @@ fn map_ignored_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AsrIgnoredSugges
         created_at: TimestampMillis::new(row.get(9)?),
         updated_at: TimestampMillis::new(row.get(10)?),
     })
+}
+
+fn map_voice_example_row(
+    row: &rusqlite::Row<'_>,
+) -> Result<AsrVoiceExample, AsrLearningRepositoryError> {
+    let example = AsrVoiceExample {
+        id: AsrVoiceExampleId::from_str(&row.get::<_, String>(0).map_err(corrupt)?)
+            .map_err(corrupt)?,
+        audio_asset_id: lettuce_types::AssetId::from_str(
+            &row.get::<_, String>(1).map_err(corrupt)?,
+        )
+        .map_err(corrupt)?,
+        expected_text: row.get(2).map_err(corrupt)?,
+        normalized_expected_text: row.get(3).map_err(corrupt)?,
+        whisper_output: row.get(4).map_err(corrupt)?,
+        normalized_whisper_output: row.get(5).map_err(corrupt)?,
+        language: row.get(6).map_err(corrupt)?,
+        scope: row.get(7).map_err(corrupt)?,
+        vocabulary_term_id: row
+            .get::<_, Option<String>>(8)
+            .map_err(corrupt)?
+            .map(|id| AsrVocabularyTermId::from_str(&id).map_err(corrupt))
+            .transpose()?,
+        correction_id: row
+            .get::<_, Option<String>>(9)
+            .map_err(corrupt)?
+            .map(|id| AsrCorrectionId::from_str(&id).map_err(corrupt))
+            .transpose()?,
+        created_at: TimestampMillis::new(row.get(10).map_err(corrupt)?),
+        updated_at: TimestampMillis::new(row.get(11).map_err(corrupt)?),
+    };
+    example.validate().map_err(corrupt)?;
+    Ok(example)
 }
 
 impl AsrLearningRepository for Database {
@@ -620,14 +654,152 @@ impl AsrLearningRepository for Database {
         }
         Ok(suggestion)
     }
+
+    fn list_voice_examples(
+        &self,
+        language: Option<&str>,
+        scopes: &[String],
+    ) -> Result<Vec<AsrVoiceExample>, AsrLearningRepositoryError> {
+        let clause = query_clause(scopes)?;
+        let connection = self.connection().map_err(storage)?;
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT id, audio_asset_id, expected_text, normalized_expected_text,
+                        whisper_output, normalized_whisper_output, language, scope,
+                        vocabulary_term_id, correction_id, created_at, updated_at
+                   FROM asr_voice_examples
+                  WHERE scope IN ({clause})
+                    AND (? IS NULL OR language IS NULL OR language = ?)
+                  ORDER BY created_at DESC, id DESC"
+            ))
+            .map_err(storage)?;
+        let language = language.map(str::to_owned);
+        let values = query_values(scopes, &language);
+        let mut rows = statement
+            .query(rusqlite::params_from_iter(values))
+            .map_err(storage)?;
+        let mut examples = Vec::new();
+        while let Some(row) = rows.next().map_err(storage)? {
+            examples.push(map_voice_example_row(row)?);
+        }
+        Ok(examples)
+    }
+
+    fn save_voice_example(
+        &self,
+        example: AsrVoiceExample,
+    ) -> Result<AsrVoiceExample, AsrLearningRepositoryError> {
+        example.validate().map_err(corrupt)?;
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let changed = transaction
+            .execute(
+                "INSERT INTO asr_voice_examples (
+                    id, audio_asset_id, expected_text, normalized_expected_text, whisper_output,
+                    normalized_whisper_output, language, scope, vocabulary_term_id, correction_id,
+                    created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                 ON CONFLICT(id) DO UPDATE SET
+                    audio_asset_id = excluded.audio_asset_id,
+                    expected_text = excluded.expected_text,
+                    normalized_expected_text = excluded.normalized_expected_text,
+                    whisper_output = excluded.whisper_output,
+                    normalized_whisper_output = excluded.normalized_whisper_output,
+                    language = excluded.language,
+                    scope = excluded.scope,
+                    vocabulary_term_id = excluded.vocabulary_term_id,
+                    correction_id = excluded.correction_id,
+                    updated_at = excluded.updated_at
+                 WHERE asr_voice_examples.created_at = excluded.created_at",
+                params![
+                    example.id.to_string(),
+                    example.audio_asset_id.to_string(),
+                    example.expected_text,
+                    example.normalized_expected_text,
+                    example.whisper_output,
+                    example.normalized_whisper_output,
+                    example.language,
+                    example.scope,
+                    example.vocabulary_term_id.map(|id| id.to_string()),
+                    example.correction_id.map(|id| id.to_string()),
+                    example.created_at.get(),
+                    example.updated_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        if changed != 1 {
+            return Err(AsrLearningRepositoryError::Conflict);
+        }
+        transaction.commit().map_err(storage)?;
+        Ok(example)
+    }
+
+    fn delete_voice_example(
+        &self,
+        id: AsrVoiceExampleId,
+    ) -> Result<(), AsrLearningRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        connection
+            .execute(
+                "DELETE FROM asr_voice_examples WHERE id = ?1",
+                [id.to_string()],
+            )
+            .map_err(storage)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use lettuce_media::{
+        AssetKind, AssetOrigin, AssetProvenanceV1, BlobState, MediaAsset, MediaAssetRepository,
+        MediaBlob, MediaBlobRepository, MediaKind, RetentionClass,
+    };
     use lettuce_speech::{AsrLearningLibrary, AsrPromptLibrary};
-    use lettuce_types::OperationId;
+    use lettuce_types::{ContentHash, MediaBlobId, OperationId, Revision};
 
     use super::*;
+
+    fn audio_asset(database: &Database) -> lettuce_types::AssetId {
+        let blob = MediaBlob {
+            id: MediaBlobId::new(),
+            content_hash: ContentHash::parse("ab".repeat(32)).expect("hash"),
+            kind: MediaKind::Audio,
+            mime_type: "audio/wav".to_owned(),
+            byte_size: 1,
+            width: None,
+            height: None,
+            duration_ms: Some(1),
+            validation_version: 1,
+            state: BlobState::Staged,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        };
+        let blob = MediaBlobRepository::register(database, blob).expect("blob");
+        let blob = MediaBlobRepository::finalize_staged_to_ready(
+            database,
+            blob.id,
+            TimestampMillis::new(2),
+        )
+        .expect("ready blob");
+        let asset = MediaAsset::new(
+            lettuce_types::AssetId::new(),
+            blob.id,
+            AssetKind::OtherAudio,
+            AssetOrigin::Upload,
+            RetentionClass::Library,
+            AssetProvenanceV1::default(),
+            Revision::INITIAL,
+            TimestampMillis::new(2),
+            TimestampMillis::new(2),
+        )
+        .expect("audio asset");
+        MediaAssetRepository::create(database, asset)
+            .expect("create audio asset")
+            .id
+    }
 
     #[test]
     fn library_reopens_with_legacy_prompt_filtering_and_correction_order() {
@@ -858,6 +1030,124 @@ mod tests {
             assert_eq!(fourth.scope, "global");
             assert_eq!(fourth.rejected_count, 0);
         }
+        std::fs::remove_file(path).expect("cleanup");
+    }
+
+    #[test]
+    fn voice_examples_keep_managed_audio_links_and_learning_across_reopen() {
+        let path =
+            std::env::temp_dir().join(format!("asr-voice-example-{}.sqlite3", OperationId::new()));
+        let example_id;
+        let newest_id;
+        let vocabulary_id;
+        {
+            let database = Database::open(&path).expect("database");
+            let library = AsrLearningLibrary::new(&database);
+            let audio_asset_id = audio_asset(&database);
+            let vocabulary = AsrVocabularyTerm::new(
+                "LettuceAI",
+                None,
+                None,
+                Some("global"),
+                100,
+                TimestampMillis::new(10),
+            )
+            .expect("vocabulary");
+            vocabulary_id = vocabulary.id;
+            library
+                .save_vocabulary(vocabulary)
+                .expect("save vocabulary");
+            let mut example = AsrVoiceExample::new(
+                audio_asset_id,
+                "LettuceAI",
+                Some("lettuce ai".to_owned()),
+                Some("EN"),
+                Some("conversation"),
+                TimestampMillis::new(11),
+            )
+            .expect("voice example");
+            example.vocabulary_term_id = Some(vocabulary_id);
+            example_id = example.id;
+            example = library
+                .save_voice_example(example)
+                .expect("create voice example");
+            let suggestion = library
+                .suggest_voice_example_correction(&example)
+                .expect("suggest correction")
+                .expect("one correction");
+            assert_eq!(suggestion.wrong, "lettuce ai");
+            assert_eq!(suggestion.correct, "LettuceAI");
+            assert!((suggestion.confidence - 0.93).abs() < f64::EPSILON);
+            let correction = library
+                .accept_suggestion(suggestion, TimestampMillis::new(12))
+                .expect("accept correction");
+            example.correction_id = Some(correction.id);
+            example.updated_at = TimestampMillis::new(13);
+            assert_eq!(library.save_voice_example(example.clone()), Ok(example));
+            let newest = AsrVoiceExample::new(
+                audio_asset_id,
+                "Newest example",
+                None,
+                None,
+                Some("conversation"),
+                TimestampMillis::new(15),
+            )
+            .expect("newest voice example");
+            newest_id = newest.id;
+            library
+                .save_voice_example(newest)
+                .expect("save newest example");
+
+            let missing_audio = AsrVoiceExample::new(
+                lettuce_types::AssetId::new(),
+                "Expected",
+                None,
+                None,
+                None,
+                TimestampMillis::new(14),
+            )
+            .expect("missing audio example");
+            assert!(library.save_voice_example(missing_audio).is_err());
+        }
+        {
+            let database = Database::open(&path).expect("reopen");
+            let library = AsrLearningLibrary::new(&database);
+            let examples = library
+                .list_voice_examples(Some("en"), &["conversation".to_owned()])
+                .expect("list examples");
+            assert_eq!(examples.len(), 2);
+            assert_eq!(examples[0].id, newest_id);
+            assert_eq!(examples[1].id, example_id);
+            assert_eq!(examples[1].vocabulary_term_id, Some(vocabulary_id));
+            assert!(examples[1].correction_id.is_some());
+            assert!(
+                library
+                    .suggest_voice_example_correction(&examples[1])
+                    .expect("existing correction suppression")
+                    .is_none()
+            );
+            library
+                .delete_vocabulary(vocabulary_id)
+                .expect("delete linked vocabulary");
+            let examples = library
+                .list_voice_examples(None, &["conversation".to_owned()])
+                .expect("list after link deletion");
+            assert_eq!(examples[1].vocabulary_term_id, None);
+            library
+                .delete_voice_example(example_id)
+                .expect("delete voice example");
+            library
+                .delete_voice_example(newest_id)
+                .expect("delete newest example");
+        }
+        let database = Database::open(&path).expect("second reopen");
+        assert!(
+            AsrLearningLibrary::new(&database)
+                .list_voice_examples(None, &["conversation".to_owned()])
+                .expect("empty examples")
+                .is_empty()
+        );
+        drop(database);
         std::fs::remove_file(path).expect("cleanup");
     }
 }
