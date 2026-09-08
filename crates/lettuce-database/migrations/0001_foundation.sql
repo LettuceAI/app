@@ -99,13 +99,24 @@ CREATE TABLE legacy_import_runs (
 
 CREATE TABLE legacy_import_assignments (
     run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
-    source_kind TEXT NOT NULL CHECK (source_kind IN ('persona','lorebook','lorebook_entry','media')),
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('provider_account','model_profile','provider_api_key','provider_secret_header','persona','lorebook','lorebook_entry','media')),
     source_key TEXT NOT NULL CHECK (length(trim(source_key)) > 0),
+    source_detail TEXT NOT NULL DEFAULT '',
     destination_id TEXT NOT NULL,
+    auxiliary_id TEXT,
     expected_byte_len INTEGER,
     expected_content_hash TEXT,
-    PRIMARY KEY (run_id, source_kind, source_key),
+    PRIMARY KEY (run_id, source_kind, source_key, source_detail),
     UNIQUE (run_id, destination_id),
+    UNIQUE (run_id, auxiliary_id),
+    CHECK (
+        (source_kind = 'provider_account' AND auxiliary_id IS NOT NULL) OR
+        (source_kind <> 'provider_account' AND auxiliary_id IS NULL)
+    ),
+    CHECK (
+        (source_kind = 'provider_secret_header' AND length(trim(source_detail)) > 0) OR
+        (source_kind <> 'provider_secret_header' AND source_detail = '')
+    ),
     CHECK (
         (source_kind = 'media' AND expected_byte_len >= 0 AND length(expected_content_hash) = 64) OR
         (source_kind <> 'media' AND expected_byte_len IS NULL AND expected_content_hash IS NULL)

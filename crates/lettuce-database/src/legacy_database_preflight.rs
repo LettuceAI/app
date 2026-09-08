@@ -17,7 +17,8 @@ use lettuce_transfer::{
     LegacyKeywordMatchMode, LegacyLorebookCandidate, LegacyLorebookDetectionPolicy,
     LegacyLorebookEntryCandidate, LegacyLorebookPlan, LegacyMediaReference,
     LegacyModelProfileCandidate, LegacyPendingProviderSecret, LegacyPersonaCandidate,
-    LegacyPersonaPlan, LegacyProviderAccountCandidate, LegacyProviderModelPlan,
+    LegacyPersonaPlan, LegacyProviderAccountCandidate, LegacyProviderAccountOrigin,
+    LegacyProviderModelPlan,
 };
 use lettuce_types::{
     LorebookEntryId, LorebookId, ModelProfileId, PersonaId, ProviderAccountId, Revision,
@@ -206,6 +207,7 @@ fn plan_legacy_provider_models_with_limits(
         .map_err(|_| provider_malformed("connection"))?;
         provider_accounts.push(LegacyProviderAccountCandidate {
             id,
+            origin: LegacyProviderAccountOrigin::Stored,
             secret_owner_id: SecretOwnerId::from_uuid(id.as_uuid()),
             provider_kind,
             protocol,
@@ -236,6 +238,7 @@ fn plan_legacy_provider_models_with_limits(
         }
         provider_accounts.push(LegacyProviderAccountCandidate {
             id,
+            origin: LegacyProviderAccountOrigin::BuiltInLlamaCpp,
             secret_owner_id: SecretOwnerId::from_uuid(id.as_uuid()),
             provider_kind: "llamacpp".to_owned(),
             protocol: ProviderProtocol::LlamaCpp,

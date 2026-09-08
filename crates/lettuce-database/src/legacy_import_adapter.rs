@@ -8,16 +8,18 @@ use lettuce_context::{
     DetectionPolicy, KeywordMatchMode, LifecycleStatus as LorebookLifecycleStatus, Lorebook,
     LorebookBehaviorVersion, LorebookBinding, LorebookDetails, LorebookEntry,
 };
+use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
 use lettuce_transfer::{
     LEGACY_DATABASE_SCHEMA_VERSION, LegacyImportAdmission, LegacyImportAdmissionRequest,
     LegacyImportAssignment, LegacyImportExecutionRequest, LegacyImportMediaCompletion,
-    LegacyImportMediaCompletionRequest, LegacyImportMediaSource, LegacyImportReceipt,
-    LegacyImportRepository, LegacyImportRepositoryError, LegacyImportRunStatus,
-    LegacyImportSources, LegacyKeywordMatchMode, LegacyLorebookDetectionPolicy, LegacyMediaUse,
+    LegacyImportMediaCompletionRequest, LegacyImportMediaSource, LegacyImportProviderSecretSource,
+    LegacyImportReceipt, LegacyImportRepository, LegacyImportRepositoryError,
+    LegacyImportRunStatus, LegacyImportSources, LegacyKeywordMatchMode,
+    LegacyLorebookDetectionPolicy, LegacyMediaUse, LegacyPendingProviderSecret,
 };
 use lettuce_types::{
-    AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, PersonaId, Revision,
-    TimestampMillis,
+    AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId,
+    PersonaId, ProviderAccountId, Revision, TimestampMillis,
 };
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
@@ -162,7 +164,7 @@ impl LegacyImportRepository for Database {
             return Err(LegacyImportRepositoryError::Conflict);
         }
         if let Some(mut receipt) = load_receipt(&transaction, request.run_id)? {
-            if admission.status != LegacyImportRunStatus::Completed {
+            if admission.status != expected_graph_receipt_status(&sources) {
                 return Err(LegacyImportRepositoryError::Storage);
             }
             receipt.replayed = true;
@@ -360,14 +362,16 @@ impl LegacyImportRepository for Database {
                 params![request.run_id.to_string(), request.plan_fingerprint.as_str(), persona_count, lorebook_count, lorebook_entry_count, request.completed_at.get()],
             )
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
-        let changed = transaction
-            .execute(
-                "UPDATE legacy_import_runs SET status='completed',updated_at=?2 WHERE id=?1 AND status='importing'",
-                params![request.run_id.to_string(), request.completed_at.get()],
-            )
-            .map_err(|_| LegacyImportRepositoryError::Storage)?;
-        if changed != 1 {
-            return Err(LegacyImportRepositoryError::Conflict);
+        if sources.provider_account_ids.is_empty() && sources.model_profile_ids.is_empty() {
+            let changed = transaction
+                .execute(
+                    "UPDATE legacy_import_runs SET status='completed',updated_at=?2 WHERE id=?1 AND status='importing'",
+                    params![request.run_id.to_string(), request.completed_at.get()],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            if changed != 1 {
+                return Err(LegacyImportRepositoryError::Conflict);
+            }
         }
         let receipt = load_receipt(&transaction, request.run_id)?
             .ok_or(LegacyImportRepositoryError::Storage)?;
@@ -375,6 +379,14 @@ impl LegacyImportRepository for Database {
             .commit()
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
         Ok(receipt)
+    }
+}
+
+fn expected_graph_receipt_status(sources: &LegacyImportSources) -> LegacyImportRunStatus {
+    if sources.provider_account_ids.is_empty() && sources.model_profile_ids.is_empty() {
+        LegacyImportRunStatus::Completed
+    } else {
+        LegacyImportRunStatus::Importing
     }
 }
 
@@ -408,6 +420,9 @@ impl AssignmentMaps {
         };
         for assignment in &admission.assignments {
             let duplicate = match assignment {
+                LegacyImportAssignment::ProviderAccount { .. }
+                | LegacyImportAssignment::ModelProfile { .. }
+                | LegacyImportAssignment::ProviderSecret { .. } => false,
                 LegacyImportAssignment::Persona {
                     legacy_id,
                     destination_id,
@@ -443,6 +458,31 @@ impl AssignmentMaps {
 
 fn execution_sources(request: &LegacyImportExecutionRequest) -> LegacyImportSources {
     LegacyImportSources {
+        provider_account_ids: request
+            .provider_models
+            .provider_accounts
+            .iter()
+            .map(|provider| provider.id)
+            .collect(),
+        model_profile_ids: request
+            .provider_models
+            .model_profiles
+            .iter()
+            .map(|model| model.id)
+            .collect(),
+        provider_secrets: request
+            .provider_models
+            .provider_accounts
+            .iter()
+            .flat_map(|provider| {
+                provider.pending_secrets.iter().cloned().map(|secret| {
+                    LegacyImportProviderSecretSource {
+                        provider_account_id: provider.id,
+                        secret,
+                    }
+                })
+            })
+            .collect(),
         persona_ids: request
             .personas
             .personas
@@ -605,16 +645,27 @@ fn load_receipt(
 }
 
 fn normalize_sources(sources: &mut LegacyImportSources) -> Result<(), LegacyImportRepositoryError> {
+    sources.provider_account_ids.sort_unstable();
+    sources.model_profile_ids.sort_unstable();
+    sources.provider_secrets.sort();
     sources.persona_ids.sort_unstable();
     sources.lorebook_ids.sort_unstable();
     sources.lorebook_entry_ids.sort_unstable();
     sources.media.sort();
-    if has_duplicates(&sources.persona_ids)
+    if has_duplicates(&sources.provider_account_ids)
+        || has_duplicates(&sources.model_profile_ids)
+        || has_duplicates(&sources.provider_secrets)
         || has_duplicates(&sources.lorebook_ids)
         || has_duplicates(&sources.lorebook_entry_ids)
         || has_duplicates(&sources.media)
         || sources.media.iter().any(|source| {
             !valid_media_path(&source.relative_path) || i64::try_from(source.byte_len).is_err()
+        })
+        || sources.provider_secrets.iter().any(|source| {
+            sources
+                .provider_account_ids
+                .binary_search(&source.provider_account_id)
+                .is_err()
         })
     {
         return Err(LegacyImportRepositoryError::InvalidInput);
@@ -641,13 +692,54 @@ fn insert_assignments(
     run_id: LegacyImportRunId,
     sources: &LegacyImportSources,
 ) -> Result<(), LegacyImportRepositoryError> {
+    for source_id in &sources.provider_account_ids {
+        insert_assignment(
+            transaction,
+            run_id,
+            "provider_account",
+            &source_id.to_string(),
+            "",
+            ProviderAccountId::new().to_string(),
+            Some(SecretOwnerId::new().as_uuid().to_string()),
+        )?;
+    }
+    for source_id in &sources.model_profile_ids {
+        insert_assignment(
+            transaction,
+            run_id,
+            "model_profile",
+            &source_id.to_string(),
+            "",
+            ModelProfileId::new().to_string(),
+            None,
+        )?;
+    }
+    for source in &sources.provider_secrets {
+        let (source_kind, source_detail) = match &source.secret {
+            LegacyPendingProviderSecret::ApiKey => ("provider_api_key", ""),
+            LegacyPendingProviderSecret::Header { name } => {
+                ("provider_secret_header", name.as_str())
+            }
+        };
+        insert_assignment(
+            transaction,
+            run_id,
+            source_kind,
+            &source.provider_account_id.to_string(),
+            source_detail,
+            SecretRef::new().to_string(),
+            None,
+        )?;
+    }
     for source_id in &sources.persona_ids {
         insert_assignment(
             transaction,
             run_id,
             "persona",
             &source_id.to_string(),
+            "",
             PersonaId::new().to_string(),
+            None,
         )?;
     }
     for source_id in &sources.lorebook_ids {
@@ -656,7 +748,9 @@ fn insert_assignments(
             run_id,
             "lorebook",
             &source_id.to_string(),
+            "",
             LorebookId::new().to_string(),
+            None,
         )?;
     }
     for source_id in &sources.lorebook_entry_ids {
@@ -665,7 +759,9 @@ fn insert_assignments(
             run_id,
             "lorebook_entry",
             &source_id.to_string(),
+            "",
             LorebookEntryId::new().to_string(),
+            None,
         )?;
     }
     for source in &sources.media {
@@ -686,12 +782,14 @@ fn insert_assignment(
     run_id: LegacyImportRunId,
     source_kind: &str,
     source_key: &str,
+    source_detail: &str,
     destination_id: String,
+    auxiliary_id: Option<String>,
 ) -> Result<(), LegacyImportRepositoryError> {
     transaction
         .execute(
-            "INSERT INTO legacy_import_assignments (run_id,source_kind,source_key,destination_id,expected_byte_len,expected_content_hash) VALUES (?1,?2,?3,?4,NULL,NULL)",
-            params![run_id.to_string(), source_kind, source_key, destination_id],
+            "INSERT INTO legacy_import_assignments (run_id,source_kind,source_key,source_detail,destination_id,auxiliary_id,expected_byte_len,expected_content_hash) VALUES (?1,?2,?3,?4,?5,?6,NULL,NULL)",
+            params![run_id.to_string(), source_kind, source_key, source_detail, destination_id, auxiliary_id],
         )
         .map_err(|_| LegacyImportRepositoryError::Storage)?;
     Ok(())
@@ -707,7 +805,7 @@ fn insert_media_assignment(
 ) -> Result<(), LegacyImportRepositoryError> {
     transaction
         .execute(
-            "INSERT INTO legacy_import_assignments (run_id,source_kind,source_key,destination_id,expected_byte_len,expected_content_hash) VALUES (?1,'media',?2,?3,?4,?5)",
+            "INSERT INTO legacy_import_assignments (run_id,source_kind,source_key,source_detail,destination_id,auxiliary_id,expected_byte_len,expected_content_hash) VALUES (?1,'media',?2,'',?3,NULL,?4,?5)",
             params![
                 run_id.to_string(),
                 source_key,
@@ -806,20 +904,24 @@ fn load_assignments(
 ) -> Result<Vec<LegacyImportAssignment>, LegacyImportRepositoryError> {
     let mut statement = transaction
         .prepare(
-            "SELECT source_kind,source_key,destination_id,expected_byte_len,expected_content_hash FROM legacy_import_assignments WHERE run_id=?1 ORDER BY CASE source_kind WHEN 'persona' THEN 1 WHEN 'lorebook' THEN 2 WHEN 'lorebook_entry' THEN 3 ELSE 4 END,source_key",
+            "SELECT source_kind,source_key,source_detail,destination_id,auxiliary_id,expected_byte_len,expected_content_hash FROM legacy_import_assignments WHERE run_id=?1 ORDER BY CASE source_kind WHEN 'provider_account' THEN 1 WHEN 'model_profile' THEN 2 WHEN 'provider_api_key' THEN 3 WHEN 'provider_secret_header' THEN 4 WHEN 'persona' THEN 5 WHEN 'lorebook' THEN 6 WHEN 'lorebook_entry' THEN 7 ELSE 8 END,source_key,source_detail",
         )
         .map_err(|_| LegacyImportRepositoryError::Storage)?;
     statement
         .query_map([run_id.to_string()], |row| {
             let source_kind: String = row.get(0)?;
             let source_key: String = row.get(1)?;
-            let destination_id: String = row.get(2)?;
-            let expected_byte_len: Option<i64> = row.get(3)?;
-            let expected_content_hash: Option<String> = row.get(4)?;
+            let source_detail: String = row.get(2)?;
+            let destination_id: String = row.get(3)?;
+            let auxiliary_id: Option<String> = row.get(4)?;
+            let expected_byte_len: Option<i64> = row.get(5)?;
+            let expected_content_hash: Option<String> = row.get(6)?;
             parse_assignment(
                 &source_kind,
                 source_key,
+                source_detail,
                 destination_id,
+                auxiliary_id,
                 expected_byte_len,
                 expected_content_hash,
             )
@@ -833,11 +935,58 @@ fn load_assignments(
 fn parse_assignment(
     source_kind: &str,
     source_key: String,
+    source_detail: String,
     destination_id: String,
+    auxiliary_id: Option<String>,
     expected_byte_len: Option<i64>,
     expected_content_hash: Option<String>,
 ) -> Result<LegacyImportAssignment, LegacyImportRepositoryError> {
     match source_kind {
+        "provider_account" => Ok(LegacyImportAssignment::ProviderAccount {
+            legacy_id: ProviderAccountId::from_str(&source_key)
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            destination_id: ProviderAccountId::from_str(&destination_id)
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            secret_owner_id: SecretOwnerId::from_uuid(
+                uuid::Uuid::parse_str(
+                    auxiliary_id
+                        .as_deref()
+                        .ok_or(LegacyImportRepositoryError::Storage)?,
+                )
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            ),
+        }),
+        "model_profile" => Ok(LegacyImportAssignment::ModelProfile {
+            legacy_id: ModelProfileId::from_str(&source_key)
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            destination_id: ModelProfileId::from_str(&destination_id)
+                .map_err(|_| LegacyImportRepositoryError::Storage)?,
+        }),
+        "provider_api_key" => Ok(LegacyImportAssignment::ProviderSecret {
+            source: LegacyImportProviderSecretSource {
+                provider_account_id: ProviderAccountId::from_str(&source_key)
+                    .map_err(|_| LegacyImportRepositoryError::Storage)?,
+                secret: LegacyPendingProviderSecret::ApiKey,
+            },
+            destination_ref: SecretRef::from_uuid(
+                uuid::Uuid::parse_str(&destination_id)
+                    .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            ),
+        }),
+        "provider_secret_header" => Ok(LegacyImportAssignment::ProviderSecret {
+            source: LegacyImportProviderSecretSource {
+                provider_account_id: ProviderAccountId::from_str(&source_key)
+                    .map_err(|_| LegacyImportRepositoryError::Storage)?,
+                secret: LegacyPendingProviderSecret::Header {
+                    name: HeaderName::new(source_detail)
+                        .map_err(|_| LegacyImportRepositoryError::Storage)?,
+                },
+            },
+            destination_ref: SecretRef::from_uuid(
+                uuid::Uuid::parse_str(&destination_id)
+                    .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            ),
+        }),
         "persona" => Ok(LegacyImportAssignment::Persona {
             legacy_id: PersonaId::from_str(&source_key)
                 .map_err(|_| LegacyImportRepositoryError::Storage)?,
@@ -873,6 +1022,9 @@ fn parse_assignment(
 
 fn assignment_sources(assignments: &[LegacyImportAssignment]) -> LegacyImportSources {
     let mut sources = LegacyImportSources {
+        provider_account_ids: Vec::new(),
+        model_profile_ids: Vec::new(),
+        provider_secrets: Vec::new(),
         persona_ids: Vec::new(),
         lorebook_ids: Vec::new(),
         lorebook_entry_ids: Vec::new(),
@@ -880,6 +1032,15 @@ fn assignment_sources(assignments: &[LegacyImportAssignment]) -> LegacyImportSou
     };
     for assignment in assignments {
         match assignment {
+            LegacyImportAssignment::ProviderAccount { legacy_id, .. } => {
+                sources.provider_account_ids.push(*legacy_id);
+            }
+            LegacyImportAssignment::ModelProfile { legacy_id, .. } => {
+                sources.model_profile_ids.push(*legacy_id);
+            }
+            LegacyImportAssignment::ProviderSecret { source, .. } => {
+                sources.provider_secrets.push(source.clone());
+            }
             LegacyImportAssignment::Persona { legacy_id, .. } => {
                 sources.persona_ids.push(*legacy_id);
             }
@@ -910,12 +1071,15 @@ fn assignment_sources(assignments: &[LegacyImportAssignment]) -> LegacyImportSou
 mod tests {
     use std::fs;
 
+    use lettuce_settings::HeaderName;
     use lettuce_transfer::{
-        LEGACY_DATABASE_SCHEMA_VERSION, LegacyImportAdmissionRequest, LegacyImportRepository,
-        LegacyImportRepositoryError, LegacyImportRunStatus, LegacyImportSources,
+        LEGACY_DATABASE_SCHEMA_VERSION, LegacyImportAdmissionRequest, LegacyImportAssignment,
+        LegacyImportProviderSecretSource, LegacyImportRepository, LegacyImportRepositoryError,
+        LegacyImportRunStatus, LegacyImportSources, LegacyPendingProviderSecret,
     };
     use lettuce_types::{
-        ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, PersonaId, TimestampMillis,
+        ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId, PersonaId,
+        ProviderAccountId, TimestampMillis,
     };
 
     use crate::Database;
@@ -928,12 +1092,33 @@ mod tests {
     }
 
     fn request(run_id: LegacyImportRunId) -> LegacyImportAdmissionRequest {
+        let provider_account_id = ProviderAccountId::new();
         LegacyImportAdmissionRequest {
             run_id,
             source_schema_version: LEGACY_DATABASE_SCHEMA_VERSION,
             inventory_fingerprint: ContentHash::parse("ab".repeat(32)).expect("inventory hash"),
             plan_fingerprint: ContentHash::parse("cd".repeat(32)).expect("plan hash"),
             sources: LegacyImportSources {
+                provider_account_ids: vec![provider_account_id],
+                model_profile_ids: vec![ModelProfileId::new()],
+                provider_secrets: vec![
+                    LegacyImportProviderSecretSource {
+                        provider_account_id,
+                        secret: LegacyPendingProviderSecret::Header {
+                            name: HeaderName::new("x-alpha-key").expect("header name"),
+                        },
+                    },
+                    LegacyImportProviderSecretSource {
+                        provider_account_id,
+                        secret: LegacyPendingProviderSecret::ApiKey,
+                    },
+                    LegacyImportProviderSecretSource {
+                        provider_account_id,
+                        secret: LegacyPendingProviderSecret::Header {
+                            name: HeaderName::new("x-zeta-key").expect("header name"),
+                        },
+                    },
+                ],
                 persona_ids: vec![PersonaId::new()],
                 lorebook_ids: vec![LorebookId::new()],
                 lorebook_entry_ids: vec![LorebookEntryId::new()],
@@ -958,7 +1143,34 @@ mod tests {
             .expect("admit import");
         assert_eq!(first.status, LegacyImportRunStatus::Admitted);
         assert!(!first.replayed);
-        assert_eq!(first.assignments.len(), 4);
+        assert_eq!(first.assignments.len(), 9);
+        let provider_assignments = first
+            .assignments
+            .iter()
+            .filter(|assignment| {
+                matches!(
+                    assignment,
+                    LegacyImportAssignment::ProviderAccount { .. }
+                        | LegacyImportAssignment::ModelProfile { .. }
+                        | LegacyImportAssignment::ProviderSecret { .. }
+                )
+            })
+            .count();
+        assert_eq!(provider_assignments, 5);
+        let secret_order = first
+            .assignments
+            .iter()
+            .filter_map(|assignment| match assignment {
+                LegacyImportAssignment::ProviderSecret { source, .. } => {
+                    Some(match &source.secret {
+                        LegacyPendingProviderSecret::ApiKey => "api_key",
+                        LegacyPendingProviderSecret::Header { name } => name.as_str(),
+                    })
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(secret_order, vec!["api_key", "x-alpha-key", "x-zeta-key"]);
         let replay = first_database
             .admit(original.clone())
             .expect("replay import");
@@ -1012,6 +1224,14 @@ mod tests {
             )
             .expect("domain row count");
         assert_eq!(domain_rows, 0);
+        let secret_columns: u32 = connection
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('legacy_import_assignments') WHERE lower(name) LIKE '%value%' OR lower(name) LIKE '%bytes%'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("secret-bearing columns");
+        assert_eq!(secret_columns, 0);
         drop(connection);
         drop(reopened);
         fs::remove_file(path).expect("remove database");
@@ -1049,6 +1269,62 @@ mod tests {
             )
             .expect("assignment count");
         assert_eq!((run_count, assignment_count), (0, 0));
+        drop(connection);
+        drop(database);
+        fs::remove_file(path).expect("remove database");
+    }
+
+    #[test]
+    fn assignment_identity_collisions_are_rejected() {
+        let path = database_path("identity-collision");
+        let run_id = LegacyImportRunId::new();
+        let database = Database::open(&path).expect("open database");
+        let connection = database.connection().expect("database lock");
+        connection
+            .execute(
+                "INSERT INTO legacy_import_runs (id,source_schema_version,inventory_fingerprint,plan_fingerprint,status,admitted_at,updated_at) VALUES (?1,92,?2,?3,'admitting',1,1)",
+                rusqlite::params![run_id.to_string(), "ab".repeat(32), "cd".repeat(32)],
+            )
+            .expect("insert admitting run");
+        let destination_id = ProviderAccountId::new().to_string();
+        let secret_owner_id = uuid::Uuid::new_v4().to_string();
+        connection
+            .execute(
+                "INSERT INTO legacy_import_assignments (run_id,source_kind,source_key,source_detail,destination_id,auxiliary_id) VALUES (?1,'provider_account',?2,'',?3,?4)",
+                rusqlite::params![
+                    run_id.to_string(),
+                    ProviderAccountId::new().to_string(),
+                    destination_id,
+                    secret_owner_id,
+                ],
+            )
+            .expect("insert first assignment");
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO legacy_import_assignments (run_id,source_kind,source_key,source_detail,destination_id,auxiliary_id) VALUES (?1,'provider_account',?2,'',?3,?4)",
+                    rusqlite::params![
+                        run_id.to_string(),
+                        ProviderAccountId::new().to_string(),
+                        destination_id,
+                        uuid::Uuid::new_v4().to_string(),
+                    ],
+                )
+                .is_err()
+        );
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO legacy_import_assignments (run_id,source_kind,source_key,source_detail,destination_id,auxiliary_id) VALUES (?1,'provider_account',?2,'',?3,?4)",
+                    rusqlite::params![
+                        run_id.to_string(),
+                        ProviderAccountId::new().to_string(),
+                        ProviderAccountId::new().to_string(),
+                        secret_owner_id,
+                    ],
+                )
+                .is_err()
+        );
         drop(connection);
         drop(database);
         fs::remove_file(path).expect("remove database");

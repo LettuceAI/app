@@ -262,10 +262,10 @@ mod tests {
     use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
     use lettuce_transfer::{
         LegacyCrop, LegacyDatabaseInventory, LegacyImageRecommendation, LegacyImportAssignment,
-        LegacyImportRunStatus, LegacyKeywordMatchMode, LegacyLorebookCandidate,
+        LegacyImportPlan, LegacyImportRunStatus, LegacyKeywordMatchMode, LegacyLorebookCandidate,
         LegacyLorebookDetectionPolicy, LegacyLorebookEntryCandidate, LegacyLorebookPlan,
         LegacyMediaCandidate, LegacyMediaPlan, LegacyMediaReference, LegacyMediaUse,
-        LegacyPersonaCandidate, LegacyPersonaPlan,
+        LegacyPersonaCandidate, LegacyPersonaPlan, LegacyProviderModelPlan,
     };
     use lettuce_types::{
         ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, PersonaId, TimestampMillis,
@@ -287,6 +287,28 @@ mod tests {
 
     fn content_hash(bytes: &[u8]) -> ContentHash {
         ContentHash::parse(blake3::hash(bytes).to_hex().to_string()).expect("content hash")
+    }
+
+    fn provider_models() -> LegacyProviderModelPlan {
+        LegacyProviderModelPlan {
+            provider_accounts: Vec::new(),
+            model_profiles: Vec::new(),
+            default_provider_account_id: None,
+            default_model_profile_id: None,
+        }
+    }
+
+    fn import_plan(
+        personas: &LegacyPersonaPlan,
+        lorebooks: &LegacyLorebookPlan,
+        media: &LegacyMediaPlan,
+    ) -> LegacyImportPlan {
+        LegacyImportPlan {
+            provider_models: provider_models(),
+            personas: personas.clone(),
+            lorebooks: lorebooks.clone(),
+            media: media.clone(),
+        }
     }
 
     fn import_plans(
@@ -402,9 +424,7 @@ mod tests {
             .admit(
                 run_id,
                 &inventory,
-                &personas,
-                &lorebooks,
-                &media,
+                &import_plan(&personas, &lorebooks, &media),
                 TimestampMillis::new(20),
             )
             .expect("admit import");
@@ -442,9 +462,7 @@ mod tests {
             .admit(
                 run_id,
                 &inventory,
-                &personas,
-                &lorebooks,
-                &media,
+                &import_plan(&personas, &lorebooks, &media),
                 TimestampMillis::new(60),
             )
             .expect("replay admission");
@@ -508,9 +526,7 @@ mod tests {
             .admit(
                 run_id,
                 &inventory,
-                &personas,
-                &lorebooks,
-                &media,
+                &import_plan(&personas, &lorebooks, &media),
                 TimestampMillis::new(20),
             )
             .expect("admit import");
@@ -695,9 +711,7 @@ mod tests {
             .admit(
                 run_id,
                 &inventory,
-                &personas,
-                &lorebooks,
-                &media,
+                &import_plan(&personas, &lorebooks, &media),
                 TimestampMillis::new(30),
             )
             .expect("admit graph");
@@ -737,6 +751,7 @@ mod tests {
         assert_eq!(
             backend.legacy_import_executor().execute(
                 &admission,
+                &provider_models(),
                 &personas,
                 &lorebooks,
                 &media,
@@ -759,6 +774,7 @@ mod tests {
         assert_eq!(
             backend.legacy_import_executor().execute(
                 &admission,
+                &provider_models(),
                 &changed_personas,
                 &lorebooks,
                 &media,
@@ -775,6 +791,7 @@ mod tests {
             .legacy_import_executor()
             .execute(
                 &admission,
+                &provider_models(),
                 &personas,
                 &lorebooks,
                 &media,
@@ -922,9 +939,7 @@ mod tests {
             .admit(
                 run_id,
                 &inventory,
-                &personas,
-                &lorebooks,
-                &media,
+                &import_plan(&personas, &lorebooks, &media),
                 TimestampMillis::new(70),
             )
             .expect("replay completed admission");
@@ -933,6 +948,7 @@ mod tests {
             .legacy_import_executor()
             .execute(
                 &reopened_admission,
+                &provider_models(),
                 &personas,
                 &lorebooks,
                 &media,

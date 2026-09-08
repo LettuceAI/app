@@ -36,6 +36,14 @@ remain explicit deferred inputs whose values stay in the retained source databas
 The legacy built-in llama.cpp credential becomes one deterministic synthetic
 account only when a llama.cpp model needs it; it carries no secret or endpoint.
 
+Legacy import admission now seals provider-account and model-profile source IDs
+alongside the existing graph and media plan. Each account receives a stable
+destination account ID and secret-owner ID, each model receives a stable
+destination profile ID, and every pending API key or named header receives an
+opaque `SecretRef`. These assignments contain names and identities only; secret
+values remain in the retained legacy database until the later secret-transfer
+step verifies and writes them through `SecretStore`.
+
 The composed media plan deduplicates persona avatar, persona design-reference
 and lorebook avatar uses by relative legacy file, retaining bounded byte size
 and BLAKE3 evidence for later ingestion. Missing, unsafe, ambiguous and

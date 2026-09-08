@@ -9,7 +9,7 @@
 use std::fmt;
 
 use lettuce_models::{ModelKind, ModelProfileConfig, ProviderConfig, ProviderProtocol};
-use lettuce_settings::{HeaderName, SecretOwnerId};
+use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
 use lettuce_types::{
     AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId,
     PersonaId, ProviderAccountId, TimestampMillis,
@@ -41,7 +41,13 @@ pub struct LegacyDatabaseInventory {
     pub group_conversations: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyProviderAccountOrigin {
+    Stored,
+    BuiltInLlamaCpp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LegacyPendingProviderSecret {
     ApiKey,
     Header { name: HeaderName },
@@ -50,6 +56,7 @@ pub enum LegacyPendingProviderSecret {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyProviderAccountCandidate {
     pub id: ProviderAccountId,
+    pub origin: LegacyProviderAccountOrigin,
     pub secret_owner_id: SecretOwnerId,
     pub provider_kind: String,
     pub protocol: ProviderProtocol,
@@ -320,10 +327,19 @@ pub enum LegacyImportRunStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyImportSources {
+    pub provider_account_ids: Vec<ProviderAccountId>,
+    pub model_profile_ids: Vec<ModelProfileId>,
+    pub provider_secrets: Vec<LegacyImportProviderSecretSource>,
     pub persona_ids: Vec<PersonaId>,
     pub lorebook_ids: Vec<LorebookId>,
     pub lorebook_entry_ids: Vec<LorebookEntryId>,
     pub media: Vec<LegacyImportMediaSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LegacyImportProviderSecretSource {
+    pub provider_account_id: ProviderAccountId,
+    pub secret: LegacyPendingProviderSecret,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -343,8 +359,29 @@ pub struct LegacyImportAdmissionRequest {
     pub admitted_at: TimestampMillis,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyImportPlan {
+    pub provider_models: LegacyProviderModelPlan,
+    pub personas: LegacyPersonaPlan,
+    pub lorebooks: LegacyLorebookPlan,
+    pub media: LegacyMediaPlan,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LegacyImportAssignment {
+    ProviderAccount {
+        legacy_id: ProviderAccountId,
+        destination_id: ProviderAccountId,
+        secret_owner_id: SecretOwnerId,
+    },
+    ModelProfile {
+        legacy_id: ModelProfileId,
+        destination_id: ModelProfileId,
+    },
+    ProviderSecret {
+        source: LegacyImportProviderSecretSource,
+        destination_ref: SecretRef,
+    },
     Persona {
         legacy_id: PersonaId,
         destination_id: PersonaId,
@@ -404,6 +441,7 @@ pub struct LegacyImportMediaCompletion {
 pub struct LegacyImportExecutionRequest {
     pub run_id: LegacyImportRunId,
     pub plan_fingerprint: ContentHash,
+    pub provider_models: LegacyProviderModelPlan,
     pub personas: LegacyPersonaPlan,
     pub lorebooks: LegacyLorebookPlan,
     pub media: LegacyMediaPlan,
