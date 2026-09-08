@@ -813,6 +813,13 @@ verify purpose, generation and exact secure-store value. An already-correct valu
 without a receipt is treated as a recoverable write-before-receipt crash; a
 changed, missing or foreign value stops without overwrite or deletion.
 
+The provider/model import coordinator verifies every assigned secure-store
+reference, purpose and generation against its immutable completion receipt before
+asking SQLite to materialize metadata. It recomputes the complete sealed plan
+fingerprint, exposes no secret values to the transaction, and returns the same
+provider/model receipt on replay after reopen. Overall import completion follows
+only after both graph and provider/model receipts exist.
+
 The legacy media import coordinator reopens only confined regular files under the read-only source root, rejects symlinks and path drift, and rechecks byte length plus BLAKE3 before ingest. It catalogs each file under the admission's assigned asset ID, records durable completion after the ready blob exists, and resumes partial progress by replaying completed objects. Shared bytes deduplicate to one blob while their logical asset identities remain distinct. It never removes or rewrites the legacy source.
 
 The legacy graph execution coordinator recomputes the sealed plan fingerprint and asks the transfer repository to materialize it. SQLite creates lorebooks and their assigned entries, personas and assigned media links, ordered active-lorebook bindings, and the legacy default owner in one transaction only after all media receipts verify. Legacy entry display order becomes the contiguous stored order already established by preflight sorting. Exact retry returns the original completion receipt, including after reopen; any mismatch leaves no partial graph. Source cleanup is intentionally absent pending full migration verification and explicit user-approved deletion.

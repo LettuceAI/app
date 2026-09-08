@@ -4122,6 +4122,7 @@ mod tests {
                 "jobs",
                 "legacy_import_assignments",
                 "legacy_import_media_completions",
+                "legacy_import_provider_model_results",
                 "legacy_import_results",
                 "legacy_import_runs",
                 "legacy_import_secret_completions",

@@ -8,6 +8,7 @@ use lettuce_context::{
     DetectionPolicy, KeywordMatchMode, LifecycleStatus as LorebookLifecycleStatus, Lorebook,
     LorebookBehaviorVersion, LorebookBinding, LorebookDetails, LorebookEntry,
 };
+use lettuce_models::{ModelProfile, ProviderAccount, SecretHeader};
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
 use lettuce_transfer::{
     LEGACY_DATABASE_SCHEMA_VERSION, LegacyImportAdmission, LegacyImportAdmissionRequest,
@@ -16,7 +17,8 @@ use lettuce_transfer::{
     LegacyImportReceipt, LegacyImportRepository, LegacyImportRepositoryError,
     LegacyImportRunStatus, LegacyImportSecretCompletion, LegacyImportSecretCompletionRequest,
     LegacyImportSources, LegacyKeywordMatchMode, LegacyLorebookDetectionPolicy, LegacyMediaUse,
-    LegacyPendingProviderSecret,
+    LegacyPendingProviderSecret, LegacyProviderModelMaterializationRequest,
+    LegacyProviderModelReceipt,
 };
 use lettuce_types::{
     AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId,
@@ -227,7 +229,13 @@ impl LegacyImportRepository for Database {
             return Err(LegacyImportRepositoryError::Conflict);
         }
         if let Some(mut receipt) = load_receipt(&transaction, request.run_id)? {
-            if admission.status != expected_graph_receipt_status(&sources) {
+            let expected_status =
+                if load_provider_model_receipt(&transaction, request.run_id)?.is_some() {
+                    LegacyImportRunStatus::Completed
+                } else {
+                    LegacyImportRunStatus::Importing
+                };
+            if admission.status != expected_status {
                 return Err(LegacyImportRepositoryError::Storage);
             }
             receipt.replayed = true;
@@ -425,18 +433,188 @@ impl LegacyImportRepository for Database {
                 params![request.run_id.to_string(), request.plan_fingerprint.as_str(), persona_count, lorebook_count, lorebook_entry_count, request.completed_at.get()],
             )
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
-        if sources.provider_account_ids.is_empty() && sources.model_profile_ids.is_empty() {
+        let receipt = load_receipt(&transaction, request.run_id)?
+            .ok_or(LegacyImportRepositoryError::Storage)?;
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(receipt)
+    }
+
+    fn materialize_provider_models(
+        &self,
+        request: LegacyProviderModelMaterializationRequest,
+    ) -> Result<LegacyProviderModelReceipt, LegacyImportRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let admission = load_admission(&transaction, request.run_id)?
+            .ok_or(LegacyImportRepositoryError::Conflict)?;
+        if admission.plan_fingerprint != request.plan_fingerprint {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        let assignments = AssignmentMaps::from_admission(&admission)?;
+        validate_provider_model_sources(&request, &assignments)?;
+        if load_receipt(&transaction, request.run_id)?.is_none() {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        if let Some(mut receipt) = load_provider_model_receipt(&transaction, request.run_id)? {
+            if admission.status != LegacyImportRunStatus::Completed {
+                return Err(LegacyImportRepositoryError::Storage);
+            }
+            receipt.replayed = true;
+            transaction
+                .commit()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            return Ok(receipt);
+        }
+        if admission.status != LegacyImportRunStatus::Importing {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+
+        for candidate in &request.provider_models.provider_accounts {
+            let (destination_id, secret_owner_id) = assignments
+                .providers
+                .get(&candidate.id)
+                .copied()
+                .ok_or(LegacyImportRepositoryError::Conflict)?;
+            let mut api_key_ref = None;
+            let mut secret_headers = Vec::new();
+            for secret in &candidate.pending_secrets {
+                let source = LegacyImportProviderSecretSource {
+                    provider_account_id: candidate.id,
+                    secret: secret.clone(),
+                };
+                let destination_ref = *assignments
+                    .secrets
+                    .get(&source)
+                    .ok_or(LegacyImportRepositoryError::Conflict)?;
+                let completion = load_secret_completion(&transaction, request.run_id, &source)?
+                    .ok_or(LegacyImportRepositoryError::Conflict)?;
+                if completion.destination_ref != destination_ref || completion.generation == 0 {
+                    return Err(LegacyImportRepositoryError::Conflict);
+                }
+                match secret {
+                    LegacyPendingProviderSecret::ApiKey => {
+                        if api_key_ref.replace(destination_ref).is_some() {
+                            return Err(LegacyImportRepositoryError::InvalidInput);
+                        }
+                    }
+                    LegacyPendingProviderSecret::Header { name } => {
+                        secret_headers.push(SecretHeader {
+                            name: name.clone(),
+                            secret_ref: destination_ref,
+                        });
+                    }
+                }
+            }
+            let account = ProviderAccount {
+                id: destination_id,
+                secret_owner_id,
+                provider_kind: candidate.provider_kind.clone(),
+                protocol: candidate.protocol,
+                label: candidate.label.clone(),
+                endpoint: candidate.endpoint.clone(),
+                enabled: candidate.enabled,
+                streaming_enabled: candidate.streaming_enabled,
+                allow_invalid_tls: candidate.allow_invalid_tls,
+                api_key_ref,
+                secret_headers,
+                config: candidate.config.clone(),
+                revision: Revision::INITIAL,
+                created_at: candidate.created_at,
+                updated_at: candidate.updated_at,
+            };
+            crate::validate_account(&account)
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            let headers = serde_json::to_string(&account.secret_headers)
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            let config =
+                crate::encode_versioned(&account.config, crate::PROVIDER_CONFIG_FORMAT_VERSION)
+                    .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            transaction
+                .execute(
+                    "INSERT INTO provider_accounts (id,provider_kind,protocol,label,endpoint,enabled,streaming_enabled,allow_invalid_tls,api_key_secret_ref,secret_owner_id,secret_headers_json,config_json,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,1,?13,?14)",
+                    params![account.id.to_string(), account.provider_kind, crate::provider_protocol_name(account.protocol), account.label, account.endpoint, account.enabled, account.streaming_enabled, account.allow_invalid_tls, account.api_key_ref.map(|value| value.to_string()), account.secret_owner_id.as_uuid().to_string(), headers, config, account.created_at.get(), account.updated_at.get()],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        }
+
+        for candidate in &request.provider_models.model_profiles {
+            let destination_id = *assignments
+                .models
+                .get(&candidate.id)
+                .ok_or(LegacyImportRepositoryError::Conflict)?;
+            let provider_account_id = assignments
+                .providers
+                .get(&candidate.provider_account_id)
+                .map(|(destination_id, _)| *destination_id)
+                .ok_or(LegacyImportRepositoryError::Conflict)?;
+            let profile = ModelProfile {
+                id: destination_id,
+                provider_account_id,
+                external_model_id: candidate.external_model_id.clone(),
+                display_name: candidate.display_name.clone(),
+                kind: candidate.kind,
+                config: candidate.config.clone(),
+                revision: Revision::INITIAL,
+                created_at: candidate.created_at,
+                updated_at: candidate.created_at,
+            };
+            crate::validate_profile(&profile)
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            let config = crate::encode_versioned(
+                &profile.config,
+                crate::MODEL_PROFILE_CONFIG_FORMAT_VERSION,
+            )
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            transaction
+                .execute(
+                    "INSERT INTO model_profiles (id,provider_account_id,external_model_id,display_name,kind,config_json,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,1,?7,?8)",
+                    params![profile.id.to_string(), profile.provider_account_id.to_string(), profile.external_model_id, profile.display_name, crate::model_kind_name(profile.kind), config, profile.created_at.get(), profile.updated_at.get()],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        }
+
+        if let Some(legacy_default_id) = request.provider_models.default_model_profile_id {
+            let destination_id = assignments
+                .models
+                .get(&legacy_default_id)
+                .ok_or(LegacyImportRepositoryError::Conflict)?;
             let changed = transaction
                 .execute(
-                    "UPDATE legacy_import_runs SET status='completed',updated_at=?2 WHERE id=?1 AND status='importing'",
-                    params![request.run_id.to_string(), request.completed_at.get()],
+                    "UPDATE app_settings SET default_model_profile_id=?1,revision=2,updated_at=?2 WHERE id=1 AND revision=1 AND default_model_profile_id IS NULL",
+                    params![destination_id.to_string(), request.completed_at.get()],
                 )
                 .map_err(|_| LegacyImportRepositoryError::Storage)?;
             if changed != 1 {
                 return Err(LegacyImportRepositoryError::Conflict);
             }
         }
-        let receipt = load_receipt(&transaction, request.run_id)?
+
+        let provider_account_count = i64::try_from(request.provider_models.provider_accounts.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        let model_profile_count = i64::try_from(request.provider_models.model_profiles.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        transaction
+            .execute(
+                "INSERT INTO legacy_import_provider_model_results (run_id,plan_fingerprint,provider_account_count,model_profile_count,completed_at) VALUES (?1,?2,?3,?4,?5)",
+                params![request.run_id.to_string(), request.plan_fingerprint.as_str(), provider_account_count, model_profile_count, request.completed_at.get()],
+            )
+            .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        let changed = transaction
+            .execute(
+                "UPDATE legacy_import_runs SET status='completed',updated_at=?2 WHERE id=?1 AND status='importing'",
+                params![request.run_id.to_string(), request.completed_at.get()],
+            )
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        if changed != 1 {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        let receipt = load_provider_model_receipt(&transaction, request.run_id)?
             .ok_or(LegacyImportRepositoryError::Storage)?;
         transaction
             .commit()
@@ -481,14 +659,6 @@ fn load_secret_completion(
         .map_err(|_| LegacyImportRepositoryError::Storage)
 }
 
-fn expected_graph_receipt_status(sources: &LegacyImportSources) -> LegacyImportRunStatus {
-    if sources.provider_account_ids.is_empty() && sources.model_profile_ids.is_empty() {
-        LegacyImportRunStatus::Completed
-    } else {
-        LegacyImportRunStatus::Importing
-    }
-}
-
 fn map_completion_insert_error(error: rusqlite::Error) -> LegacyImportRepositoryError {
     match &error {
         rusqlite::Error::SqliteFailure(_, Some(message))
@@ -501,6 +671,9 @@ fn map_completion_insert_error(error: rusqlite::Error) -> LegacyImportRepository
 }
 
 struct AssignmentMaps {
+    providers: BTreeMap<ProviderAccountId, (ProviderAccountId, SecretOwnerId)>,
+    models: BTreeMap<ModelProfileId, ModelProfileId>,
+    secrets: BTreeMap<LegacyImportProviderSecretSource, SecretRef>,
     personas: BTreeMap<PersonaId, PersonaId>,
     lorebooks: BTreeMap<LorebookId, LorebookId>,
     entries: BTreeMap<LorebookEntryId, LorebookEntryId>,
@@ -512,6 +685,9 @@ impl AssignmentMaps {
         admission: &LegacyImportAdmission,
     ) -> Result<Self, LegacyImportRepositoryError> {
         let mut maps = Self {
+            providers: BTreeMap::new(),
+            models: BTreeMap::new(),
+            secrets: BTreeMap::new(),
             personas: BTreeMap::new(),
             lorebooks: BTreeMap::new(),
             entries: BTreeMap::new(),
@@ -519,9 +695,25 @@ impl AssignmentMaps {
         };
         for assignment in &admission.assignments {
             let duplicate = match assignment {
-                LegacyImportAssignment::ProviderAccount { .. }
-                | LegacyImportAssignment::ModelProfile { .. }
-                | LegacyImportAssignment::ProviderSecret { .. } => false,
+                LegacyImportAssignment::ProviderAccount {
+                    legacy_id,
+                    destination_id,
+                    secret_owner_id,
+                } => maps
+                    .providers
+                    .insert(*legacy_id, (*destination_id, *secret_owner_id))
+                    .is_some(),
+                LegacyImportAssignment::ModelProfile {
+                    legacy_id,
+                    destination_id,
+                } => maps.models.insert(*legacy_id, *destination_id).is_some(),
+                LegacyImportAssignment::ProviderSecret {
+                    source,
+                    destination_ref,
+                } => maps
+                    .secrets
+                    .insert(source.clone(), *destination_ref)
+                    .is_some(),
                 LegacyImportAssignment::Persona {
                     legacy_id,
                     destination_id,
@@ -741,6 +933,95 @@ fn load_receipt(
         )
         .optional()
         .map_err(|_| LegacyImportRepositoryError::Storage)
+}
+
+fn load_provider_model_receipt(
+    transaction: &Transaction<'_>,
+    run_id: LegacyImportRunId,
+) -> Result<Option<LegacyProviderModelReceipt>, LegacyImportRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT provider_account_count,model_profile_count,completed_at FROM legacy_import_provider_model_results WHERE run_id=?1",
+            [run_id.to_string()],
+            |row| {
+                Ok(LegacyProviderModelReceipt {
+                    run_id,
+                    provider_account_count: u64::try_from(row.get::<_, i64>(0)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    model_profile_count: u64::try_from(row.get::<_, i64>(1)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    completed_at: TimestampMillis::new(row.get(2)?),
+                    replayed: false,
+                })
+            },
+        )
+        .optional()
+        .map_err(|_| LegacyImportRepositoryError::Storage)
+}
+
+fn validate_provider_model_sources(
+    request: &LegacyProviderModelMaterializationRequest,
+    assignments: &AssignmentMaps,
+) -> Result<(), LegacyImportRepositoryError> {
+    let provider_ids = request
+        .provider_models
+        .provider_accounts
+        .iter()
+        .map(|provider| provider.id)
+        .collect::<Vec<_>>();
+    let model_ids = request
+        .provider_models
+        .model_profiles
+        .iter()
+        .map(|model| model.id)
+        .collect::<Vec<_>>();
+    let secret_sources = request
+        .provider_models
+        .provider_accounts
+        .iter()
+        .flat_map(|provider| {
+            provider.pending_secrets.iter().cloned().map(|secret| {
+                LegacyImportProviderSecretSource {
+                    provider_account_id: provider.id,
+                    secret,
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut expected_provider_ids = assignments.providers.keys().copied().collect::<Vec<_>>();
+    let mut expected_model_ids = assignments.models.keys().copied().collect::<Vec<_>>();
+    let expected_secret_sources = assignments.secrets.keys().cloned().collect::<Vec<_>>();
+    let mut provider_ids = provider_ids;
+    let mut model_ids = model_ids;
+    let mut secret_sources = secret_sources;
+    provider_ids.sort_unstable();
+    model_ids.sort_unstable();
+    secret_sources.sort();
+    expected_provider_ids.sort_unstable();
+    expected_model_ids.sort_unstable();
+    if provider_ids != expected_provider_ids
+        || model_ids != expected_model_ids
+        || secret_sources != expected_secret_sources
+        || has_duplicates(&provider_ids)
+        || has_duplicates(&model_ids)
+        || has_duplicates(&secret_sources)
+        || request.provider_models.model_profiles.iter().any(|model| {
+            !assignments
+                .providers
+                .contains_key(&model.provider_account_id)
+        })
+        || request
+            .provider_models
+            .default_provider_account_id
+            .is_some_and(|id| !assignments.providers.contains_key(&id))
+        || request
+            .provider_models
+            .default_model_profile_id
+            .is_some_and(|id| !assignments.models.contains_key(&id))
+    {
+        return Err(LegacyImportRepositoryError::Conflict);
+    }
+    Ok(())
 }
 
 fn normalize_sources(sources: &mut LegacyImportSources) -> Result<(), LegacyImportRepositoryError> {

@@ -153,6 +153,60 @@ BEFORE DELETE ON legacy_import_results
 BEGIN
     SELECT RAISE(ABORT, 'legacy import result is immutable');
 END;
+
+CREATE TABLE legacy_import_provider_model_results (
+    run_id TEXT PRIMARY KEY REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
+    plan_fingerprint TEXT NOT NULL CHECK (length(plan_fingerprint) = 64),
+    provider_account_count INTEGER NOT NULL CHECK (provider_account_count >= 0),
+    model_profile_count INTEGER NOT NULL CHECK (model_profile_count >= 0),
+    completed_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TRIGGER legacy_import_provider_model_results_insert_guard
+BEFORE INSERT ON legacy_import_provider_model_results
+WHEN NOT EXISTS (
+    SELECT 1 FROM legacy_import_runs AS run
+    JOIN legacy_import_results AS graph ON graph.run_id = run.id
+    WHERE run.id = NEW.run_id
+      AND run.plan_fingerprint = NEW.plan_fingerprint
+      AND graph.plan_fingerprint = NEW.plan_fingerprint
+      AND run.status = 'importing'
+      AND NEW.provider_account_count = (
+          SELECT count(*) FROM legacy_import_assignments
+          WHERE run_id = NEW.run_id AND source_kind = 'provider_account'
+      )
+      AND NEW.model_profile_count = (
+          SELECT count(*) FROM legacy_import_assignments
+          WHERE run_id = NEW.run_id AND source_kind = 'model_profile'
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM legacy_import_assignments AS assignment
+          LEFT JOIN legacy_import_secret_completions AS completion
+            ON completion.run_id = assignment.run_id
+           AND completion.source_kind = assignment.source_kind
+           AND completion.source_key = assignment.source_key
+           AND completion.source_detail = assignment.source_detail
+           AND completion.destination_ref = assignment.destination_id
+          WHERE assignment.run_id = NEW.run_id
+            AND assignment.source_kind IN ('provider_api_key','provider_secret_header')
+            AND completion.run_id IS NULL
+      )
+)
+BEGIN
+    SELECT RAISE(ABORT, 'legacy provider model result is invalid');
+END;
+
+CREATE TRIGGER legacy_import_provider_model_results_update_forbidden
+BEFORE UPDATE ON legacy_import_provider_model_results
+BEGIN
+    SELECT RAISE(ABORT, 'legacy provider model result is immutable');
+END;
+
+CREATE TRIGGER legacy_import_provider_model_results_delete_forbidden
+BEFORE DELETE ON legacy_import_provider_model_results
+BEGIN
+    SELECT RAISE(ABORT, 'legacy provider model result is immutable');
+END;
 CREATE TABLE group_lorebook_bindings (
     group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
     lorebook_id TEXT NOT NULL REFERENCES lorebooks(id) ON DELETE RESTRICT,

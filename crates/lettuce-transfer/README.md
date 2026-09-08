@@ -51,6 +51,13 @@ and completion time, never plaintext or a reusable value digest. Source-set
 changes conflict before writes, and retries verify an already-present value so a
 crash between the secure-store write and SQLite receipt does not rotate it.
 
+Provider/model materialization has a separate receipt from graph materialization.
+It consumes the sealed provider/model plan only after every assigned secret has a
+matching completion, maps all source account/profile/default identities to their
+assigned destinations, and replays without duplicate rows. Prompt-template and
+deprecated system-prompt fields have no current model-profile destination; they
+remain fingerprinted, explicit retained-source inputs for the later prompt slice.
+
 The composed media plan deduplicates persona avatar, persona design-reference
 and lorebook avatar uses by relative legacy file, retaining bounded byte size
 and BLAKE3 evidence for later ingestion. Missing, unsafe, ambiguous and

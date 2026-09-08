@@ -260,6 +260,7 @@ mod tests {
     use lettuce_database::Database;
     use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
     use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
+    use lettuce_settings::InMemorySecretStore;
     use lettuce_transfer::{
         LegacyCrop, LegacyDatabaseInventory, LegacyImageRecommendation, LegacyImportAssignment,
         LegacyImportPlan, LegacyImportRunStatus, LegacyKeywordMatchMode, LegacyLorebookCandidate,
@@ -568,8 +569,8 @@ mod tests {
         fs::remove_dir_all(root).expect("remove test root");
     }
 
-    #[test]
-    fn graph_import_preserves_fields_order_and_shared_media_then_replays_after_reopen() {
+    #[tokio::test]
+    async fn graph_import_preserves_fields_order_and_shared_media_then_replays_after_reopen() {
         let root = std::env::temp_dir().join(format!(
             "lettuce-legacy-graph-import-{}",
             LegacyImportRunId::new()
@@ -929,6 +930,16 @@ mod tests {
             fs::read(images.join("shared.png")).expect("read retained source"),
             bytes
         );
+        let secret_store = InMemorySecretStore::new();
+        backend
+            .legacy_provider_model_importer(&secret_store)
+            .execute(
+                &admission,
+                &import_plan(&personas, &lorebooks, &media),
+                TimestampMillis::new(55),
+            )
+            .await
+            .expect("complete empty provider graph");
         drop(store);
         drop(backend);
 

@@ -495,6 +495,23 @@ pub struct LegacyImportReceipt {
     pub replayed: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyProviderModelMaterializationRequest {
+    pub run_id: LegacyImportRunId,
+    pub plan_fingerprint: ContentHash,
+    pub provider_models: LegacyProviderModelPlan,
+    pub completed_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyProviderModelReceipt {
+    pub run_id: LegacyImportRunId,
+    pub provider_account_count: u64,
+    pub model_profile_count: u64,
+    pub completed_at: TimestampMillis,
+    pub replayed: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LegacyImportRepositoryError {
     InvalidInput,
@@ -540,4 +557,9 @@ pub trait LegacyImportRepository: Send + Sync {
         &self,
         request: LegacyImportExecutionRequest,
     ) -> Result<LegacyImportReceipt, LegacyImportRepositoryError>;
+
+    fn materialize_provider_models(
+        &self,
+        request: LegacyProviderModelMaterializationRequest,
+    ) -> Result<LegacyProviderModelReceipt, LegacyImportRepositoryError>;
 }

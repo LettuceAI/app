@@ -494,3 +494,15 @@ an unassigned reference.
 Migration 2 stores immutable per-object legacy media completion receipts. Each receipt must match the sealed path, size, hash and destination asset, and SQLite verifies that the asset points to the recorded ready content-addressed blob. The first receipt advances the run from admitted to importing in the same transaction. A failed later object leaves earlier receipts replayable without marking the run complete.
 
 Legacy persona and lorebook materialization reuses the aggregate insert paths inside one immediate transaction after every assigned media object has a verified receipt. It preserves assigned root and entry IDs, authored fields and timestamps, legacy lorebook behavior, ordered entry and persona-binding semantics, and the default-persona singleton through its initial revision CAS. The immutable result receipt and completed run state commit with the graph. Exact retry survives reopen; missing receipts, changed plans, destination collisions, binding failures and default conflicts roll back all writes from that attempt. The legacy source database and storage tree are never mutated or removed and remain retained until separate verification and explicit user approval.
+
+Provider/model materialization rebuilds account secret references only from the
+sealed assignments and verified non-secret completion rows. One immediate
+transaction validates and inserts assigned provider accounts before their mapped
+model profiles, activates the mapped default model through the untouched initial
+settings revision, and writes an immutable result receipt. A collision, orphan,
+invalid mapped configuration, missing or mismatched secret receipt, or authored
+default rolls back every provider/model/default write while preserving completed
+media, graph and secret evidence. The run reaches completed only when both graph
+and provider/model receipts exist. Legacy prompt references, deprecated system
+prompts and unsupported field names remain sealed in the plan fingerprint and
+retained source for their named later migrations.

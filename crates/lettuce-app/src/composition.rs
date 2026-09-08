@@ -128,6 +128,16 @@ impl AppBackend {
         )
     }
 
+    pub fn legacy_provider_model_importer<'a, V>(
+        &'a self,
+        secret_store: &'a V,
+    ) -> crate::LegacyProviderModelImportCoordinator<'a, Database, V>
+    where
+        V: lettuce_settings::SecretStore + ?Sized,
+    {
+        crate::LegacyProviderModelImportCoordinator::new(self.database.as_ref(), secret_store)
+    }
+
     pub fn legacy_media_importer<'a, BR, AR>(
         &'a self,
         media_store: &'a lettuce_media::LocalMediaBlobStore<BR, AR>,
