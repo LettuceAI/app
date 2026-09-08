@@ -239,6 +239,22 @@ pub struct AsrVoiceExample {
     pub updated_at: TimestampMillis,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct AsrLearningBatch {
+    pub vocabulary: Vec<AsrVocabularyTerm>,
+    pub corrections: Vec<AsrCorrectionRule>,
+    pub ignored_suggestions: Vec<AsrIgnoredSuggestion>,
+    pub voice_examples: Vec<AsrVoiceExample>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AsrLearningImportReceipt {
+    pub vocabulary_count: u64,
+    pub correction_count: u64,
+    pub ignored_suggestion_count: u64,
+    pub voice_example_count: u64,
+}
+
 impl AsrVoiceExample {
     pub fn new(
         audio_asset_id: AssetId,
@@ -301,6 +317,10 @@ pub trait AsrLearningRepository: Send + Sync {
         &self,
         term: AsrVocabularyTerm,
     ) -> Result<AsrVocabularyTerm, AsrLearningRepositoryError>;
+    fn get_vocabulary(
+        &self,
+        id: AsrVocabularyTermId,
+    ) -> Result<Option<AsrVocabularyTerm>, AsrLearningRepositoryError>;
     fn delete_vocabulary(&self, id: AsrVocabularyTermId) -> Result<(), AsrLearningRepositoryError>;
     fn list_corrections(
         &self,
@@ -311,6 +331,10 @@ pub trait AsrLearningRepository: Send + Sync {
         &self,
         correction: AsrCorrectionRule,
     ) -> Result<AsrCorrectionRule, AsrLearningRepositoryError>;
+    fn get_correction(
+        &self,
+        id: AsrCorrectionId,
+    ) -> Result<Option<AsrCorrectionRule>, AsrLearningRepositoryError>;
     fn delete_correction(&self, id: AsrCorrectionId) -> Result<(), AsrLearningRepositoryError>;
     fn find_correction_pair(
         &self,
@@ -341,6 +365,11 @@ pub trait AsrLearningRepository: Send + Sync {
         &self,
         suggestion: AsrIgnoredSuggestion,
     ) -> Result<AsrIgnoredSuggestion, AsrLearningRepositoryError>;
+    fn list_ignored_suggestions(
+        &self,
+        language: Option<&str>,
+        scopes: &[String],
+    ) -> Result<Vec<AsrIgnoredSuggestion>, AsrLearningRepositoryError>;
     fn list_voice_examples(
         &self,
         language: Option<&str>,
@@ -352,6 +381,10 @@ pub trait AsrLearningRepository: Send + Sync {
     ) -> Result<AsrVoiceExample, AsrLearningRepositoryError>;
     fn delete_voice_example(&self, id: AsrVoiceExampleId)
     -> Result<(), AsrLearningRepositoryError>;
+    fn import_learning_batch(
+        &self,
+        batch: AsrLearningBatch,
+    ) -> Result<AsrLearningImportReceipt, AsrLearningRepositoryError>;
 }
 
 #[derive(Debug)]
@@ -386,6 +419,13 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
         self.repository.save_vocabulary(term).map_err(Into::into)
     }
 
+    pub fn get_vocabulary(
+        &self,
+        id: AsrVocabularyTermId,
+    ) -> Result<Option<AsrVocabularyTerm>, AsrLearningError> {
+        self.repository.get_vocabulary(id).map_err(Into::into)
+    }
+
     pub fn delete_vocabulary(&self, id: AsrVocabularyTermId) -> Result<(), AsrLearningError> {
         self.repository.delete_vocabulary(id).map_err(Into::into)
     }
@@ -409,6 +449,13 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
         self.repository
             .save_correction(correction)
             .map_err(Into::into)
+    }
+
+    pub fn get_correction(
+        &self,
+        id: AsrCorrectionId,
+    ) -> Result<Option<AsrCorrectionRule>, AsrLearningError> {
+        self.repository.get_correction(id).map_err(Into::into)
     }
 
     pub fn delete_correction(&self, id: AsrCorrectionId) -> Result<(), AsrLearningError> {
@@ -634,6 +681,38 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
         example.validate()?;
         self.repository
             .save_voice_example(example)
+            .map_err(Into::into)
+    }
+
+    pub fn list_ignored_suggestions(
+        &self,
+        language: Option<&str>,
+        scopes: &[String],
+    ) -> Result<Vec<AsrIgnoredSuggestion>, AsrLearningError> {
+        let (language, scopes) = normalize_query(language, scopes)?;
+        self.repository
+            .list_ignored_suggestions(language.as_deref(), &scopes)
+            .map_err(Into::into)
+    }
+
+    pub fn import_learning_batch(
+        &self,
+        batch: AsrLearningBatch,
+    ) -> Result<AsrLearningImportReceipt, AsrLearningError> {
+        for term in &batch.vocabulary {
+            term.validate()?;
+        }
+        for correction in &batch.corrections {
+            correction.validate()?;
+        }
+        for ignored in &batch.ignored_suggestions {
+            ignored.validate()?;
+        }
+        for example in &batch.voice_examples {
+            example.validate()?;
+        }
+        self.repository
+            .import_learning_batch(batch)
             .map_err(Into::into)
     }
 

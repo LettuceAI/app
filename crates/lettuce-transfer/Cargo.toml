@@ -15,6 +15,9 @@ workspace = true
 
 [dependencies]
 lettuce-context.workspace = true
+lettuce-media.workspace = true
 lettuce-models.workspace = true
 lettuce-settings.workspace = true
+lettuce-speech.workspace = true
 lettuce-types.workspace = true
+serde.workspace = true

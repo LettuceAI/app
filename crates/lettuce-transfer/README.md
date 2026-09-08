@@ -6,6 +6,13 @@ consistent encrypted backups, staged restore, and rollback.
 ## Boundary
 
 Compatibility transfer and full backup remain separate internal modules.
+
+The versioned ASR learning document is a bounded JSON-ready interchange format
+for vocabulary, corrections, ignored suggestions and managed voice examples.
+It preserves metrics and relationships without exporting native audio paths;
+version 3 carries each audio asset's logical kind, origin, redacted provenance,
+content hash, byte size, MIME type and duration. The application validates and
+remaps the complete graph before atomic import.
 External schemas never become internal domain schemas, and restore never
 destructively replaces live state before complete verification.
 

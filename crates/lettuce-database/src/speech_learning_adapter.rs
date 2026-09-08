@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
 use lettuce_speech::{
-    AsrCorrectionRule, AsrIgnoredSuggestion, AsrLearningRepository, AsrLearningRepositoryError,
-    AsrVocabularyTerm, AsrVoiceExample,
+    AsrCorrectionRule, AsrIgnoredSuggestion, AsrLearningBatch, AsrLearningImportReceipt,
+    AsrLearningRepository, AsrLearningRepositoryError, AsrVocabularyTerm, AsrVoiceExample,
 };
 use lettuce_types::{
     AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, AsrVoiceExampleId,
@@ -368,6 +368,21 @@ impl AsrLearningRepository for Database {
         Ok(stored)
     }
 
+    fn get_vocabulary(
+        &self,
+        id: AsrVocabularyTermId,
+    ) -> Result<Option<AsrVocabularyTerm>, AsrLearningRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
+        let term = load_vocabulary(&transaction, Some(id), None, &[])?
+            .into_iter()
+            .next();
+        transaction.commit().map_err(storage)?;
+        Ok(term)
+    }
+
     fn delete_vocabulary(&self, id: AsrVocabularyTermId) -> Result<(), AsrLearningRepositoryError> {
         let connection = self.connection().map_err(storage)?;
         connection
@@ -471,6 +486,21 @@ impl AsrLearningRepository for Database {
             .map_err(storage)?;
         transaction.commit().map_err(storage)?;
         Ok(stored)
+    }
+
+    fn get_correction(
+        &self,
+        id: AsrCorrectionId,
+    ) -> Result<Option<AsrCorrectionRule>, AsrLearningRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
+        let correction = load_corrections(&transaction, Some(id), None, &[])?
+            .into_iter()
+            .next();
+        transaction.commit().map_err(storage)?;
+        Ok(correction)
     }
 
     fn delete_correction(&self, id: AsrCorrectionId) -> Result<(), AsrLearningRepositoryError> {
@@ -655,6 +685,37 @@ impl AsrLearningRepository for Database {
         Ok(suggestion)
     }
 
+    fn list_ignored_suggestions(
+        &self,
+        language: Option<&str>,
+        scopes: &[String],
+    ) -> Result<Vec<AsrIgnoredSuggestion>, AsrLearningRepositoryError> {
+        let clause = query_clause(scopes)?;
+        let connection = self.connection().map_err(storage)?;
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT id, wrong, normalized_wrong, correct, normalized_correct, language,
+                        scope, ignored_count, last_ignored_at, created_at, updated_at
+                   FROM asr_ignored_suggestions
+                  WHERE scope IN ({clause})
+                    AND (? IS NULL OR language IS NULL OR language = ?)
+                  ORDER BY ignored_count DESC, updated_at DESC, id DESC"
+            ))
+            .map_err(storage)?;
+        let language = language.map(str::to_owned);
+        let values = query_values(scopes, &language);
+        let mut rows = statement
+            .query(rusqlite::params_from_iter(values))
+            .map_err(storage)?;
+        let mut ignored = Vec::new();
+        while let Some(row) = rows.next().map_err(storage)? {
+            let value = map_ignored_row(row).map_err(corrupt)?;
+            value.validate().map_err(corrupt)?;
+            ignored.push(value);
+        }
+        Ok(ignored)
+    }
+
     fn list_voice_examples(
         &self,
         language: Option<&str>,
@@ -748,6 +809,64 @@ impl AsrLearningRepository for Database {
             )
             .map_err(storage)?;
         Ok(())
+    }
+
+    fn import_learning_batch(
+        &self,
+        batch: AsrLearningBatch,
+    ) -> Result<AsrLearningImportReceipt, AsrLearningRepositoryError> {
+        let vocabulary_count = u64::try_from(batch.vocabulary.len()).map_err(corrupt)?;
+        let correction_count = u64::try_from(batch.corrections.len()).map_err(corrupt)?;
+        let ignored_suggestion_count =
+            u64::try_from(batch.ignored_suggestions.len()).map_err(corrupt)?;
+        let voice_example_count = u64::try_from(batch.voice_examples.len()).map_err(corrupt)?;
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        for term in batch.vocabulary {
+            term.validate().map_err(corrupt)?;
+            transaction
+                .execute(
+                    "INSERT INTO asr_vocabulary_terms (id,term,normalized_term,language,category,scope,priority,use_count,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                    params![term.id.to_string(), term.term, term.normalized_term, term.language, term.category, term.scope, term.priority, to_i64(term.use_count)?, term.created_at.get(), term.updated_at.get()],
+                )
+                .map_err(storage)?;
+        }
+        for correction in batch.corrections {
+            correction.validate().map_err(corrupt)?;
+            transaction
+                .execute(
+                    "INSERT INTO asr_corrections (id,wrong,normalized_wrong,correct,normalized_correct,language,scope,confidence,use_count,accepted_count,rejected_count,seen_count,last_seen_at,user_approved,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+                    params![correction.id.to_string(), correction.wrong, correction.normalized_wrong, correction.correct, correction.normalized_correct, correction.language, correction.scope, correction.confidence, to_i64(correction.use_count)?, to_i64(correction.accepted_count)?, to_i64(correction.rejected_count)?, to_i64(correction.seen_count)?, correction.last_seen_at.map(TimestampMillis::get), correction.user_approved, correction.created_at.get(), correction.updated_at.get()],
+                )
+                .map_err(storage)?;
+        }
+        for ignored in batch.ignored_suggestions {
+            ignored.validate().map_err(corrupt)?;
+            transaction
+                .execute(
+                    "INSERT INTO asr_ignored_suggestions (id,wrong,normalized_wrong,correct,normalized_correct,language,scope,ignored_count,last_ignored_at,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                    params![ignored.id.to_string(), ignored.wrong, ignored.normalized_wrong, ignored.correct, ignored.normalized_correct, ignored.language, ignored.scope, to_i64(ignored.ignored_count)?, ignored.last_ignored_at.get(), ignored.created_at.get(), ignored.updated_at.get()],
+                )
+                .map_err(storage)?;
+        }
+        for example in batch.voice_examples {
+            example.validate().map_err(corrupt)?;
+            transaction
+                .execute(
+                    "INSERT INTO asr_voice_examples (id,audio_asset_id,expected_text,normalized_expected_text,whisper_output,normalized_whisper_output,language,scope,vocabulary_term_id,correction_id,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                    params![example.id.to_string(), example.audio_asset_id.to_string(), example.expected_text, example.normalized_expected_text, example.whisper_output, example.normalized_whisper_output, example.language, example.scope, example.vocabulary_term_id.map(|id| id.to_string()), example.correction_id.map(|id| id.to_string()), example.created_at.get(), example.updated_at.get()],
+                )
+                .map_err(storage)?;
+        }
+        transaction.commit().map_err(storage)?;
+        Ok(AsrLearningImportReceipt {
+            vocabulary_count,
+            correction_count,
+            ignored_suggestion_count,
+            voice_example_count,
+        })
     }
 }
 

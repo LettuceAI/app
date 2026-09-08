@@ -66,8 +66,15 @@ normalized expected/Whisper text, optional language and scope, and optional
 vocabulary/correction links. They list newest-first through the learning port,
 support update and deletion, and reuse the edit-learning algorithm to return at
 most one suggested correction. Raw filesystem paths are no longer part of the
-record. Legacy voice-example rows will be mapped to verified imported media in
-the later ASR transfer slice.
+record. The learning repository also accepts a fully validated four-class batch
+in one transaction and exposes filtered ignored suggestions for export.
+
+Versioned learning-library export preserves the legacy language and scope
+filters plus every counter and optional link, using managed audio asset IDs in
+place of native paths and retaining content and redacted provenance evidence.
+Import rejects unknown versions, oversized or malformed documents, incomplete
+link graphs and changed managed audio, allocates fresh learning IDs, remaps
+voice links and commits all rows only when every managed audio asset is valid.
 
 Installed-model downloads, microphone IPC and file-format expansion remain
 later ASR slices. TTS has not started.

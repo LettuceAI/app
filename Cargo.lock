@@ -1451,9 +1451,12 @@ name = "lettuce-transfer"
 version = "0.1.0"
 dependencies = [
  "lettuce-context",
+ "lettuce-media",
  "lettuce-models",
  "lettuce-settings",
+ "lettuce-speech",
  "lettuce-types",
+ "serde",
 ]
 
 [[package]]

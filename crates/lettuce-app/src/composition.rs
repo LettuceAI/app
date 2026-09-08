@@ -201,6 +201,11 @@ impl AppBackend {
         lettuce_speech::AsrLearningLibrary::new(self.database.as_ref())
     }
 
+    #[must_use]
+    pub fn asr_learning_transfer(&self) -> crate::AsrLearningTransferCoordinator<'_, Database> {
+        crate::AsrLearningTransferCoordinator::new(self.database.as_ref())
+    }
+
     pub fn run_speech_transcription<A: lettuce_speech::AsrAudioSource + ?Sized>(
         &self,
         work: crate::SpeechTranscriptionClaimedWork,

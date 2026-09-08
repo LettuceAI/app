@@ -9,15 +9,64 @@
 use std::fmt;
 
 use lettuce_context::{PromptEntryDraft, PromptPurpose};
+use lettuce_media::{AssetKind, AssetOrigin, AssetProvenanceV1};
 use lettuce_models::{ModelKind, ModelProfileConfig, ProviderConfig, ProviderProtocol};
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef, SecretValue};
+use lettuce_speech::{AsrCorrectionRule, AsrIgnoredSuggestion, AsrVocabularyTerm, AsrVoiceExample};
 use lettuce_types::{
     AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, AsrVoiceExampleId, AssetId,
     ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId, PersonaId,
     PromptDocumentId, ProviderAccountId, TimestampMillis,
 };
+use serde::{Deserialize, Serialize};
 
 pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
+pub const ASR_LEARNING_DOCUMENT_VERSION: u32 = 3;
+pub const ASR_LEARNING_RECORD_LIMIT: usize = 40_000;
+pub const ASR_LEARNING_TABLE_LIMIT: usize = 10_000;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsrLearningDocument {
+    pub version: u32,
+    pub vocabulary: Vec<AsrVocabularyTerm>,
+    pub corrections: Vec<AsrCorrectionRule>,
+    pub ignored_suggestions: Vec<AsrIgnoredSuggestion>,
+    pub voice_examples: Vec<AsrVoiceExample>,
+    pub audio_assets: Vec<AsrLearningAudioAsset>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AsrLearningAudioAsset {
+    pub asset_id: AssetId,
+    pub kind: AssetKind,
+    pub origin: AssetOrigin,
+    pub provenance: AssetProvenanceV1,
+    pub content_hash: ContentHash,
+    pub byte_size: u64,
+    pub mime_type: String,
+    pub duration_ms: Option<u64>,
+}
+
+impl AsrLearningDocument {
+    #[must_use]
+    pub fn within_bounds(&self) -> bool {
+        self.version == ASR_LEARNING_DOCUMENT_VERSION
+            && self.vocabulary.len() <= ASR_LEARNING_TABLE_LIMIT
+            && self.corrections.len() <= ASR_LEARNING_TABLE_LIMIT
+            && self.ignored_suggestions.len() <= ASR_LEARNING_TABLE_LIMIT
+            && self.voice_examples.len() <= ASR_LEARNING_TABLE_LIMIT
+            && self.audio_assets.len() <= ASR_LEARNING_TABLE_LIMIT
+            && self
+                .vocabulary
+                .len()
+                .checked_add(self.corrections.len())
+                .and_then(|count| count.checked_add(self.ignored_suggestions.len()))
+                .and_then(|count| count.checked_add(self.voice_examples.len()))
+                .is_some_and(|count| count <= ASR_LEARNING_RECORD_LIMIT)
+    }
+}
 pub const LEGACY_PERSONA_PLAN_LIMIT: u32 = 10_000;
 pub const LEGACY_LOREBOOK_PLAN_LIMIT: u32 = 10_000;
 pub const LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT: u32 = 100_000;

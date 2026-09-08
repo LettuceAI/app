@@ -6,6 +6,7 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod asr_learning_transfer;
 mod built_in_prompts;
 mod companion_consolidation_dispatch;
 mod companion_consolidation_execution;
@@ -68,6 +69,7 @@ mod staged_lorebook_writer_job;
 mod speech_transcription;
 mod whisper_models;
 
+pub use asr_learning_transfer::*;
 pub use built_in_prompts::*;
 pub use companion_consolidation_dispatch::*;
 pub use companion_consolidation_execution::*;

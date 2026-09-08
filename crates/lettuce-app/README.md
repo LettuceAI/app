@@ -841,6 +841,13 @@ through assigned typed IDs, and binds examples only to completed managed audio.
 Its immutable receipt replays after reopen without overwriting live learning
 data; graph import can proceed before voice audio is available.
 
+The ASR learning transfer coordinator exports the four filtered learning record
+classes as one bounded versioned document. Import validates every record and
+link before allocating fresh IDs, verifies each ready managed audio asset
+against its content and redacted provenance evidence, remaps voice links and
+delegates one atomic batch to the speech repository. Missing or changed audio
+and malformed later records leave earlier records uncommitted.
+
 The speech-transcription coordinator admits an idempotent interactive
 `SpeechTranscribe` job, binds it to one immutable audio/model request, claims it
 through the generic worker lifecycle, and coordinates managed audio decoding,

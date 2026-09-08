@@ -557,3 +557,9 @@ non-audio assets. File-backed coverage proves create, update, edit-derived
 suggestion, link clearing, deletion and two reopen cycles. Legacy ASR row
 transfer resolves assigned managed audio assets, so native paths are never
 copied into live records.
+
+The ASR repository lists ignored suggestions with the same scope/language
+semantics as the other learning records and imports a validated learning batch
+in one immediate transaction. Fresh IDs and remapped links are inserted only if
+all referenced managed audio exists; any constraint failure rolls back the
+complete batch.
