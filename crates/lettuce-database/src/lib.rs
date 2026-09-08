@@ -39,8 +39,8 @@ mod tool_adapter;
 mod usage_adapter;
 
 pub use legacy_database_preflight::{
-    plan_legacy_lorebooks, plan_legacy_personas, plan_legacy_provider_models,
-    preflight_legacy_database,
+    LegacyDatabaseProviderSecretSource, plan_legacy_lorebooks, plan_legacy_personas,
+    plan_legacy_provider_models, preflight_legacy_database,
 };
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
@@ -4124,6 +4124,7 @@ mod tests {
                 "legacy_import_media_completions",
                 "legacy_import_results",
                 "legacy_import_runs",
+                "legacy_import_secret_completions",
                 "lorebook_entries",
                 "lorebooks",
                 "media_assets",

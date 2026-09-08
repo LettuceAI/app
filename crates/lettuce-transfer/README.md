@@ -44,6 +44,13 @@ opaque `SecretRef`. These assignments contain names and identities only; secret
 values remain in the retained legacy database until the later secret-transfer
 step verifies and writes them through `SecretStore`.
 
+Provider secret transfer uses a narrow source port that yields temporary
+zeroizing values only for the sealed API-key and header assignments. Durable
+completion receipts contain the destination reference, secure-store generation
+and completion time, never plaintext or a reusable value digest. Source-set
+changes conflict before writes, and retries verify an already-present value so a
+crash between the secure-store write and SQLite receipt does not rotate it.
+
 The composed media plan deduplicates persona avatar, persona design-reference
 and lorebook avatar uses by relative legacy file, retaining bounded byte size
 and BLAKE3 evidence for later ingestion. Missing, unsafe, ambiguous and

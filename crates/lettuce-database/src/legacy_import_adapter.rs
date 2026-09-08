@@ -14,8 +14,9 @@ use lettuce_transfer::{
     LegacyImportAssignment, LegacyImportExecutionRequest, LegacyImportMediaCompletion,
     LegacyImportMediaCompletionRequest, LegacyImportMediaSource, LegacyImportProviderSecretSource,
     LegacyImportReceipt, LegacyImportRepository, LegacyImportRepositoryError,
-    LegacyImportRunStatus, LegacyImportSources, LegacyKeywordMatchMode,
-    LegacyLorebookDetectionPolicy, LegacyMediaUse, LegacyPendingProviderSecret,
+    LegacyImportRunStatus, LegacyImportSecretCompletion, LegacyImportSecretCompletionRequest,
+    LegacyImportSources, LegacyKeywordMatchMode, LegacyLorebookDetectionPolicy, LegacyMediaUse,
+    LegacyPendingProviderSecret,
 };
 use lettuce_types::{
     AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId,
@@ -138,6 +139,68 @@ impl LegacyImportRepository for Database {
         let completion =
             load_media_completion(&transaction, request.run_id, &request.relative_path)?
                 .ok_or(LegacyImportRepositoryError::Storage)?;
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(completion)
+    }
+
+    fn get_secret_completion(
+        &self,
+        run_id: LegacyImportRunId,
+        source: &LegacyImportProviderSecretSource,
+    ) -> Result<Option<LegacyImportSecretCompletion>, LegacyImportRepositoryError> {
+        let connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        load_secret_completion(&connection, run_id, source)
+    }
+
+    fn complete_secret(
+        &self,
+        request: LegacyImportSecretCompletionRequest,
+    ) -> Result<LegacyImportSecretCompletion, LegacyImportRepositoryError> {
+        if request.generation == 0 {
+            return Err(LegacyImportRepositoryError::InvalidInput);
+        }
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        if let Some(mut existing) =
+            load_secret_completion(&transaction, request.run_id, &request.source)?
+        {
+            if existing.destination_ref != request.destination_ref
+                || existing.generation != request.generation
+            {
+                return Err(LegacyImportRepositoryError::Conflict);
+            }
+            existing.replayed = true;
+            transaction
+                .commit()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            return Ok(existing);
+        }
+        let (source_kind, source_detail) = secret_source_parts(&request.source);
+        transaction
+            .execute(
+                "INSERT INTO legacy_import_secret_completions (run_id,source_kind,source_key,source_detail,destination_ref,generation,completed_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![
+                    request.run_id.to_string(),
+                    source_kind,
+                    request.source.provider_account_id.to_string(),
+                    source_detail,
+                    request.destination_ref.to_string(),
+                    i64::try_from(request.generation)
+                        .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                    request.completed_at.get(),
+                ],
+            )
+            .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        let completion = load_secret_completion(&transaction, request.run_id, &request.source)?
+            .ok_or(LegacyImportRepositoryError::Storage)?;
         transaction
             .commit()
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
@@ -380,6 +443,42 @@ impl LegacyImportRepository for Database {
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
         Ok(receipt)
     }
+}
+
+fn secret_source_parts(source: &LegacyImportProviderSecretSource) -> (&str, &str) {
+    match &source.secret {
+        LegacyPendingProviderSecret::ApiKey => ("provider_api_key", ""),
+        LegacyPendingProviderSecret::Header { name } => ("provider_secret_header", name.as_str()),
+    }
+}
+
+fn load_secret_completion(
+    connection: &rusqlite::Connection,
+    run_id: LegacyImportRunId,
+    source: &LegacyImportProviderSecretSource,
+) -> Result<Option<LegacyImportSecretCompletion>, LegacyImportRepositoryError> {
+    let (source_kind, source_detail) = secret_source_parts(source);
+    connection
+        .query_row(
+            "SELECT destination_ref,generation,completed_at FROM legacy_import_secret_completions WHERE run_id=?1 AND source_kind=?2 AND source_key=?3 AND source_detail=?4",
+            params![run_id.to_string(), source_kind, source.provider_account_id.to_string(), source_detail],
+            |row| {
+                let reference = uuid::Uuid::parse_str(&row.get::<_, String>(0)?)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let generation = u64::try_from(row.get::<_, i64>(1)?)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                Ok(LegacyImportSecretCompletion {
+                    run_id,
+                    source: source.clone(),
+                    destination_ref: SecretRef::from_uuid(reference),
+                    generation,
+                    completed_at: TimestampMillis::new(row.get(2)?),
+                    replayed: false,
+                })
+            },
+        )
+        .optional()
+        .map_err(|_| LegacyImportRepositoryError::Storage)
 }
 
 fn expected_graph_receipt_status(sources: &LegacyImportSources) -> LegacyImportRunStatus {

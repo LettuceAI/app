@@ -484,6 +484,13 @@ counts and cost amounts surviving reopen without a second lookup.
 
 Migration 1 also stores sealed legacy import admissions and their stable destination ID assignments. Admission is one immediate transaction: the source schema, inventory and plan fingerprints are immutable, assignments can only be inserted while the run is being admitted, and a rollback leaves neither the run nor a partial mapping. Exact replay survives reopen; a changed binding or source set conflicts. Provider accounts additionally receive stable secret-owner IDs, and pending API keys and ordered header names receive opaque secret references. The assignment schema has no secret-value column and admission does not create provider, model, persona, lorebook, entry, asset, or blob rows. Graph materialization leaves a provider-bearing run importing so later provider transfer can complete the same sealed run.
 
+The read-only legacy provider-secret adapter lists only planned API-key/header
+metadata, then loads one exact value into `SecretValue` on demand. It ignores the
+obsolete pre-v7 API-key reference and never opens the source writable. Migration
+1 records immutable per-secret completion generations tied to the sealed
+assignment. These receipts contain no value or digest and cannot be inserted for
+an unassigned reference.
+
 Migration 2 stores immutable per-object legacy media completion receipts. Each receipt must match the sealed path, size, hash and destination asset, and SQLite verifies that the asset points to the recorded ready content-addressed blob. The first receipt advances the run from admitted to importing in the same transaction. A failed later object leaves earlier receipts replayable without marking the run complete.
 
 Legacy persona and lorebook materialization reuses the aggregate insert paths inside one immediate transaction after every assigned media object has a verified receipt. It preserves assigned root and entry IDs, authored fields and timestamps, legacy lorebook behavior, ordered entry and persona-binding semantics, and the default-persona singleton through its initial revision CAS. The immutable result receipt and completed run state commit with the graph. Exact retry survives reopen; missing receipts, changed plans, destination collisions, binding failures and default conflicts roll back all writes from that attempt. The legacy source database and storage tree are never mutated or removed and remain retained until separate verification and explicit user approval.

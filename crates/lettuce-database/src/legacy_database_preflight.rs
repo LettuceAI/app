@@ -8,23 +8,24 @@ use lettuce_models::{
     ProviderConfig, ProviderProtocol, QueryParameterName, ReasoningEffort, ReasoningMode,
     SecretHeader, WireRole, validate_provider_connection,
 };
-use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
+use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef, SecretValue};
 use lettuce_transfer::{
     LEGACY_DATABASE_SCHEMA_VERSION, LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT,
     LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT, LEGACY_LOREBOOK_PLAN_LIMIT, LEGACY_MODEL_PROFILE_PLAN_LIMIT,
     LEGACY_PERSONA_PLAN_LIMIT, LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT, LegacyCrop,
     LegacyDatabaseInventory, LegacyDatabasePreflightError, LegacyImageRecommendation,
-    LegacyKeywordMatchMode, LegacyLorebookCandidate, LegacyLorebookDetectionPolicy,
-    LegacyLorebookEntryCandidate, LegacyLorebookPlan, LegacyMediaReference,
-    LegacyModelProfileCandidate, LegacyPendingProviderSecret, LegacyPersonaCandidate,
-    LegacyPersonaPlan, LegacyProviderAccountCandidate, LegacyProviderAccountOrigin,
-    LegacyProviderModelPlan,
+    LegacyImportProviderSecretSource, LegacyKeywordMatchMode, LegacyLorebookCandidate,
+    LegacyLorebookDetectionPolicy, LegacyLorebookEntryCandidate, LegacyLorebookPlan,
+    LegacyMediaReference, LegacyModelProfileCandidate, LegacyPendingProviderSecret,
+    LegacyPersonaCandidate, LegacyPersonaPlan, LegacyProviderAccountCandidate,
+    LegacyProviderAccountOrigin, LegacyProviderModelPlan, LegacyProviderSecretSource,
+    LegacyProviderSecretSourceError,
 };
 use lettuce_types::{
     LorebookEntryId, LorebookId, ModelProfileId, PersonaId, ProviderAccountId, Revision,
     TimestampMillis,
 };
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde_json::{Map, Value};
 
 const ROOT_TABLES: [(&str, &str); 10] = [
@@ -92,6 +93,75 @@ pub fn plan_legacy_provider_models(
         LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT,
         LEGACY_MODEL_PROFILE_PLAN_LIMIT,
     )
+}
+
+#[derive(Debug, Clone)]
+pub struct LegacyDatabaseProviderSecretSource {
+    path: std::path::PathBuf,
+}
+
+impl LegacyDatabaseProviderSecretSource {
+    #[must_use]
+    pub fn new(path: impl Into<std::path::PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+}
+
+impl LegacyProviderSecretSource for LegacyDatabaseProviderSecretSource {
+    fn sources(
+        &self,
+    ) -> Result<Vec<LegacyImportProviderSecretSource>, LegacyProviderSecretSourceError> {
+        let plan = plan_legacy_provider_models(&self.path).map_err(|error| match error {
+            LegacyDatabasePreflightError::Unavailable => {
+                LegacyProviderSecretSourceError::Unavailable
+            }
+            _ => LegacyProviderSecretSourceError::Invalid,
+        })?;
+        let mut sources = plan
+            .provider_accounts
+            .into_iter()
+            .filter(|provider| provider.origin == LegacyProviderAccountOrigin::Stored)
+            .flat_map(|provider| {
+                provider.pending_secrets.into_iter().map(move |secret| {
+                    LegacyImportProviderSecretSource {
+                        provider_account_id: provider.id,
+                        secret,
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        sources.sort();
+        Ok(sources)
+    }
+
+    fn load(
+        &self,
+        source: &LegacyImportProviderSecretSource,
+    ) -> Result<SecretValue, LegacyProviderSecretSourceError> {
+        let connection =
+            open_validated(&self.path).map_err(|_| LegacyProviderSecretSourceError::Unavailable)?;
+        let value = match &source.secret {
+            LegacyPendingProviderSecret::ApiKey => connection
+                .query_row(
+                    "SELECT api_key FROM provider_credentials WHERE id=?1",
+                    [source.provider_account_id.to_string()],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map_err(|_| LegacyProviderSecretSourceError::Invalid)?
+                .flatten(),
+            LegacyPendingProviderSecret::Header { name } => connection
+                .query_row(
+                    "SELECT value FROM json_each((SELECT headers FROM provider_credentials WHERE id=?1)) WHERE key=?2 AND type='text'",
+                    params![source.provider_account_id.to_string(), name.as_str()],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|_| LegacyProviderSecretSourceError::Invalid)?,
+        }
+        .ok_or(LegacyProviderSecretSourceError::Missing)?;
+        SecretValue::new(value).map_err(|_| LegacyProviderSecretSourceError::Invalid)
+    }
 }
 
 fn plan_legacy_provider_models_with_limits(
@@ -1917,6 +1987,48 @@ mod tests {
         assert_eq!(
             router_model.config.capabilities.streaming,
             CapabilityStatus::Unsupported
+        );
+        let source = LegacyDatabaseProviderSecretSource::new(&path);
+        assert_eq!(
+            source.sources().expect("list secret sources"),
+            vec![
+                LegacyImportProviderSecretSource {
+                    provider_account_id: router_id,
+                    secret: LegacyPendingProviderSecret::ApiKey,
+                },
+                LegacyImportProviderSecretSource {
+                    provider_account_id: router_id,
+                    secret: LegacyPendingProviderSecret::Header {
+                        name: HeaderName::new("X-Alpha").expect("header name"),
+                    },
+                },
+                LegacyImportProviderSecretSource {
+                    provider_account_id: router_id,
+                    secret: LegacyPendingProviderSecret::Header {
+                        name: HeaderName::new("X-Zeta").expect("header name"),
+                    },
+                },
+            ]
+        );
+        let api_key = source
+            .load(&LegacyImportProviderSecretSource {
+                provider_account_id: router_id,
+                secret: LegacyPendingProviderSecret::ApiKey,
+            })
+            .expect("load API key");
+        assert!(api_key.with(|value| value == "router-secret"));
+        let header = source
+            .load(&LegacyImportProviderSecretSource {
+                provider_account_id: router_id,
+                secret: LegacyPendingProviderSecret::Header {
+                    name: HeaderName::new("X-Alpha").expect("header name"),
+                },
+            })
+            .expect("load header");
+        assert!(header.with(|value| value == "alpha-secret"));
+        assert_eq!(
+            std::fs::read(&path).expect("read source after secret reads"),
+            before
         );
         std::fs::remove_file(path).expect("remove legacy database");
     }

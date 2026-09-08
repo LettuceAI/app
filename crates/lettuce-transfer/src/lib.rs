@@ -9,7 +9,7 @@
 use std::fmt;
 
 use lettuce_models::{ModelKind, ModelProfileConfig, ProviderConfig, ProviderProtocol};
-use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
+use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef, SecretValue};
 use lettuce_types::{
     AssetId, ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId,
     PersonaId, ProviderAccountId, TimestampMillis,
@@ -437,6 +437,43 @@ pub struct LegacyImportMediaCompletion {
     pub replayed: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyImportSecretCompletionRequest {
+    pub run_id: LegacyImportRunId,
+    pub source: LegacyImportProviderSecretSource,
+    pub destination_ref: SecretRef,
+    pub generation: u64,
+    pub completed_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyImportSecretCompletion {
+    pub run_id: LegacyImportRunId,
+    pub source: LegacyImportProviderSecretSource,
+    pub destination_ref: SecretRef,
+    pub generation: u64,
+    pub completed_at: TimestampMillis,
+    pub replayed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyProviderSecretSourceError {
+    Unavailable,
+    Missing,
+    Invalid,
+}
+
+pub trait LegacyProviderSecretSource: Send + Sync {
+    fn sources(
+        &self,
+    ) -> Result<Vec<LegacyImportProviderSecretSource>, LegacyProviderSecretSourceError>;
+
+    fn load(
+        &self,
+        source: &LegacyImportProviderSecretSource,
+    ) -> Result<SecretValue, LegacyProviderSecretSourceError>;
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LegacyImportExecutionRequest {
     pub run_id: LegacyImportRunId,
@@ -487,6 +524,17 @@ pub trait LegacyImportRepository: Send + Sync {
         &self,
         request: LegacyImportMediaCompletionRequest,
     ) -> Result<LegacyImportMediaCompletion, LegacyImportRepositoryError>;
+
+    fn get_secret_completion(
+        &self,
+        run_id: LegacyImportRunId,
+        source: &LegacyImportProviderSecretSource,
+    ) -> Result<Option<LegacyImportSecretCompletion>, LegacyImportRepositoryError>;
+
+    fn complete_secret(
+        &self,
+        request: LegacyImportSecretCompletionRequest,
+    ) -> Result<LegacyImportSecretCompletion, LegacyImportRepositoryError>;
 
     fn materialize(
         &self,

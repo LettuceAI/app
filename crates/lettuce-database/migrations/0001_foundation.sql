@@ -123,6 +123,18 @@ CREATE TABLE legacy_import_assignments (
     )
 ) STRICT;
 
+CREATE TABLE legacy_import_secret_completions (
+    run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('provider_api_key','provider_secret_header')),
+    source_key TEXT NOT NULL,
+    source_detail TEXT NOT NULL DEFAULT '',
+    destination_ref TEXT NOT NULL,
+    generation INTEGER NOT NULL CHECK (generation >= 1),
+    completed_at INTEGER NOT NULL,
+    PRIMARY KEY (run_id, source_kind, source_key, source_detail),
+    UNIQUE (run_id, destination_ref)
+) STRICT;
+
 CREATE TRIGGER legacy_import_runs_binding_immutable
 BEFORE UPDATE OF id, source_schema_version, inventory_fingerprint, plan_fingerprint, admitted_at ON legacy_import_runs
 BEGIN
@@ -163,4 +175,33 @@ CREATE TRIGGER legacy_import_assignments_delete_forbidden
 BEFORE DELETE ON legacy_import_assignments
 BEGIN
     SELECT RAISE(ABORT, 'legacy import assignment is immutable');
+END;
+
+CREATE TRIGGER legacy_import_secret_completions_insert_guard
+BEFORE INSERT ON legacy_import_secret_completions
+WHEN NOT EXISTS (
+    SELECT 1
+    FROM legacy_import_assignments AS assignment
+    JOIN legacy_import_runs AS run ON run.id = assignment.run_id
+    WHERE assignment.run_id = NEW.run_id
+      AND assignment.source_kind = NEW.source_kind
+      AND assignment.source_key = NEW.source_key
+      AND assignment.source_detail = NEW.source_detail
+      AND assignment.destination_id = NEW.destination_ref
+      AND run.status IN ('admitted','importing')
+)
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import secret completion is invalid');
+END;
+
+CREATE TRIGGER legacy_import_secret_completions_update_forbidden
+BEFORE UPDATE ON legacy_import_secret_completions
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import secret completion is immutable');
+END;
+
+CREATE TRIGGER legacy_import_secret_completions_delete_forbidden
+BEFORE DELETE ON legacy_import_secret_completions
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import secret completion is immutable');
 END;
