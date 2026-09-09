@@ -74,6 +74,11 @@ export const changelog: ChangelogEntry[] = [
       {
         type: "bugfix",
         description:
+          "Embeddings no longer fail to start on macOS with a \"different Team IDs\" error. The ONNX Runtime downloaded at runtime is signed by Microsoft, which macOS refused to load into the app, and it is now re-signed locally before it is loaded.",
+      },
+      {
+        type: "bugfix",
+        description:
           "The debug view no longer shows an OpenAI endpoint for local llama.cpp requests. Unregistered providers default to a localhost URL instead of the OpenAI API.",
       },
       {
