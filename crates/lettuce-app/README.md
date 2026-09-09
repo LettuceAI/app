@@ -895,3 +895,14 @@ that verification before loading native code. Managed removal validates model
 ownership, clears every cached Whisper context before deleting bytes, then
 conditionally deletes the exact immutable manifest. Missing retries are no-ops;
 retained legacy files cannot enter this removal path.
+
+The TTS configuration coordinator creates remote-provider credentials only in
+the injected native secret store under `AudioApiKey` ownership, then persists
+their reference through the speech repository. Key rotation uses secret
+generation compare-and-swap. Provider metadata and user voices use repository
+revision compare-and-swap, and provider kind cannot change during an update.
+Provider deletion first validates the exact revision, atomically removes its
+voice graph, and deletes the matching secret generation. A native-store failure
+after metadata deletion returns an opaque retry receipt; callers cannot forge
+its secret identity. Kokoro rejects credentials. Provider transports,
+synthesis, voice discovery and preview caching remain later TTS slices.

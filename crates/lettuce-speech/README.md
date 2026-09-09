@@ -93,3 +93,10 @@ timestamps across updates and validate stored data when read. Provider deletion
 returns its secret metadata for separate native-secret cleanup and atomically
 cascades its user voices. Provider HTTP adapters, voice discovery, synthesis,
 preview caches and Kokoro execution remain later TTS slices.
+
+The application coordinator now owns native-secret creation, generation-safe
+rotation and deletion around this repository. A failed secret cleanup after an
+already committed provider deletion produces an opaque exact retry receipt.
+Provider configuration updates cannot switch kinds, which avoids silently
+reusing one provider's credential under a different protocol; changing kinds is
+a delete-and-create operation.

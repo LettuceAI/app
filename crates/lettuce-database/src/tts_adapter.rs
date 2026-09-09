@@ -208,6 +208,7 @@ impl TtsConfigurationRepository for Database {
     fn delete_audio_provider(
         &self,
         id: AudioProviderId,
+        expected_revision: Revision,
     ) -> Result<AudioProvider, TtsConfigurationRepositoryError> {
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
@@ -222,8 +223,17 @@ impl TtsConfigurationRepository for Database {
             .optional()
             .map_err(corrupt)?
             .ok_or(TtsConfigurationRepositoryError::NotFound)?;
+        if provider.revision != expected_revision {
+            return Err(TtsConfigurationRepositoryError::StaleRevision);
+        }
         transaction
-            .execute("DELETE FROM audio_providers WHERE id=?1", [id.to_string()])
+            .execute(
+                "DELETE FROM audio_providers WHERE id=?1 AND revision=?2",
+                params![
+                    id.to_string(),
+                    i64::try_from(expected_revision.get()).map_err(corrupt)?
+                ],
+            )
             .map_err(storage)?;
         transaction.commit().map_err(storage)?;
         Ok(provider)
@@ -421,7 +431,7 @@ mod tests {
             Err(TtsConfigurationRepositoryError::StaleRevision)
         );
         let removed = database
-            .delete_audio_provider(provider.id)
+            .delete_audio_provider(provider.id, Revision::new(2))
             .expect("provider delete");
         assert_eq!(removed, updated);
         assert_eq!(database.get_user_voice(voice.id).expect("voice get"), None);

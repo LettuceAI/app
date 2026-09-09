@@ -150,6 +150,7 @@ pub trait TtsConfigurationRepository: Send + Sync {
     fn delete_audio_provider(
         &self,
         id: AudioProviderId,
+        expected_revision: Revision,
     ) -> Result<AudioProvider, TtsConfigurationRepositoryError>;
     fn upsert_user_voice(
         &self,

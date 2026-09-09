@@ -190,6 +190,13 @@ impl AppBackend {
         crate::UsageCostCoordinator::new(self.database.as_ref(), provider)
     }
 
+    pub fn tts_configuration<'a, S: lettuce_settings::SecretStore + ?Sized>(
+        &'a self,
+        secret_store: &'a S,
+    ) -> crate::TtsConfigurationCoordinator<'a, Database, S> {
+        crate::TtsConfigurationCoordinator::new(self.database.as_ref(), secret_store)
+    }
+
     #[must_use]
     pub fn speech_transcriptions(
         &self,
