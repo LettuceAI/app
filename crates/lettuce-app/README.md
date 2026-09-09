@@ -969,3 +969,8 @@ network access. Progress aggregates the bundle with bounded checkpoints.
 Cancellation remains available until the first verified file commit, after
 which the job finishes or retries the remaining bundle under its irreversible
 stage. Voice downloads, removal and native Kokoro execution remain later slices.
+The Kokoro voice catalog reads the same immutable repository revision through
+the central JSON client. It accepts only bounded `voices/<safe-id>.bin` entries
+with coherent LFS size and SHA-256 metadata, sorts and deduplicates IDs, and
+merges exact installed flags from the managed inventory. Catalog reads do not
+download, remove or expose native voice paths.

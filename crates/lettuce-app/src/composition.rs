@@ -249,6 +249,12 @@ impl AppBackend {
         lettuce_network::JsonClient::new().map(crate::WhisperRemoteCatalog::new)
     }
 
+    pub fn kokoro_remote_voice_catalog(
+        &self,
+    ) -> Result<crate::KokoroRemoteVoiceCatalog, lettuce_network::JsonClientError> {
+        lettuce_network::JsonClient::new().map(crate::KokoroRemoteVoiceCatalog::new)
+    }
+
     pub fn whisper_downloads(
         &self,
         install_root: impl AsRef<Path>,

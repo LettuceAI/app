@@ -75,3 +75,7 @@ exact byte size and SHA-256. Confined partial files resume by complete artifact
 identity, verify before rename and replay already installed bytes only after
 reverification. The pinned inventory follows the upstream
 [Kokoro ONNX repository](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/tree/1939ad2a8e416c0acfeecc08a694d14ef25f2231).
+Remote Kokoro voice descriptors preserve the same pinned revision, exact
+`voices/<safe-id>.bin` path, byte size and SHA-256. Voice IDs retain the legacy
+ASCII alphanumeric, underscore and hyphen rule. The descriptor does not install
+or expose a native path.
