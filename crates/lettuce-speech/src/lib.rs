@@ -14,6 +14,7 @@ mod learning;
 mod openai_tts;
 mod remote_tts;
 mod tts;
+mod tts_catalog;
 mod whisper_runtime;
 
 pub use asr::*;
@@ -25,4 +26,5 @@ pub use learning::*;
 pub use openai_tts::*;
 pub use remote_tts::*;
 pub use tts::*;
+pub use tts_catalog::*;
 pub use whisper_runtime::*;

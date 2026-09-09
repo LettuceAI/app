@@ -169,3 +169,10 @@ the application boundary. It routes each frozen remote provider configuration
 to its existing adapter and shares one host-configured bounded network client.
 It contains no wire logic. Kokoro rejects explicitly until its native runtime
 is installed behind the same port.
+
+The built-in TTS catalog preserves the exact legacy model IDs and display names
+for all six provider kinds, the separate ElevenLabs voice-design models, and
+the ten Gemini voice IDs with gender and description labels. Kokoro exposes all
+three variants on desktop and only Int8 on mobile as before. Other built-in
+voice lists stay empty because ElevenLabs and hosted Fish require discovery,
+Fish Speech uses a server reference, and Kokoro lists installed voice assets.
