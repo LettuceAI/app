@@ -602,5 +602,9 @@ post-mutation aggregate, including ordered media references but no media bytes;
 revision updates bind the pre-mutation snapshot hash as their base. Aggregate
 and journal writes share one immediate transaction, so a missing or duplicate
 media reference, stale CAS or later SQL failure rolls back both. Exact retries
-return the stored persona without allocating another sequence. Default and
-lifecycle mutations remain unwired.
+return the stored persona without allocating another sequence. Persona default
+set and clear append a canonical singleton update in the same immediate
+transaction as their existing CAS write. Exact retries preserve the first
+timestamp and sequence; missing or archived targets, stale revisions and either
+singleton or journal failures leave both sides unchanged. Persona lifecycle
+mutations remain unwired.

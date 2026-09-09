@@ -1,4 +1,6 @@
-use lettuce_characters::{Persona, PersonaMedia, PersonaMediaLink, PersonaMediaSlot};
+use lettuce_characters::{
+    Persona, PersonaDefaultState, PersonaMedia, PersonaMediaLink, PersonaMediaSlot,
+};
 use lettuce_types::{AssetId, OperationId, PersonaId, Revision};
 use uuid::Uuid;
 
@@ -6,6 +8,8 @@ use crate::{CanonicalPayload, SyncChangeError, SyncEntity};
 
 pub const PERSONA_SYNC_SCHEMA: &str = "persona.snapshot";
 pub const PERSONA_SYNC_VERSION: u32 = 1;
+pub const PERSONA_DEFAULT_SYNC_SCHEMA: &str = "persona.default";
+pub const PERSONA_DEFAULT_SYNC_VERSION: u32 = 1;
 
 const PERSONA_OPERATION_NAMESPACE: Uuid = Uuid::from_u128(0x8ea33b8a_f812_55df_9cae_12ac8f0f99a1);
 
@@ -30,6 +34,25 @@ pub fn canonical_persona_payload(persona: &Persona) -> Result<CanonicalPayload, 
 
 pub fn persona_sync_entity(id: PersonaId) -> Result<SyncEntity, PersonaSyncError> {
     SyncEntity::new("persona", id.to_string()).map_err(|_| PersonaSyncError::InvalidPayload)
+}
+
+pub fn canonical_persona_default_payload(
+    state: &PersonaDefaultState,
+) -> Result<CanonicalPayload, PersonaSyncError> {
+    state
+        .validate()
+        .map_err(|_| PersonaSyncError::InvalidPersona)?;
+    let bytes = serde_json::to_vec(state).map_err(|_| PersonaSyncError::Encoding)?;
+    CanonicalPayload::new(
+        PERSONA_DEFAULT_SYNC_SCHEMA,
+        PERSONA_DEFAULT_SYNC_VERSION,
+        bytes,
+    )
+    .map_err(|_: SyncChangeError| PersonaSyncError::InvalidPayload)
+}
+
+pub fn persona_default_sync_entity() -> Result<SyncEntity, PersonaSyncError> {
+    SyncEntity::new("persona_default", "application").map_err(|_| PersonaSyncError::InvalidPayload)
 }
 
 #[must_use]
@@ -105,6 +128,19 @@ pub fn persona_reorder_media_operation(
     persona_intent_operation(id, "reorder_media", expected_revision, &intent)
 }
 
+#[must_use]
+pub fn persona_set_default_operation(
+    expected_revision: Revision,
+    persona_id: PersonaId,
+) -> OperationId {
+    default_operation("set", expected_revision, &persona_id.to_string())
+}
+
+#[must_use]
+pub fn persona_clear_default_operation(expected_revision: Revision) -> OperationId {
+    default_operation("clear", expected_revision, "none")
+}
+
 fn persona_operation(id: PersonaId, action: &str, revision: Revision) -> OperationId {
     let name = format!("{action}\0{id}\0{}", revision.get());
     OperationId::from_uuid(Uuid::new_v5(&PERSONA_OPERATION_NAMESPACE, name.as_bytes()))
@@ -117,6 +153,11 @@ fn persona_intent_operation(
     intent: &str,
 ) -> OperationId {
     let name = format!("{action}\0{id}\0{}\0{intent}", revision.get());
+    OperationId::from_uuid(Uuid::new_v5(&PERSONA_OPERATION_NAMESPACE, name.as_bytes()))
+}
+
+fn default_operation(action: &str, revision: Revision, intent: &str) -> OperationId {
+    let name = format!("default\0{action}\0{}\0{intent}", revision.get());
     OperationId::from_uuid(Uuid::new_v5(&PERSONA_OPERATION_NAMESPACE, name.as_bytes()))
 }
 
@@ -249,6 +290,21 @@ mod tests {
                 first,
                 0,
             )
+        );
+        assert_eq!(
+            persona_set_default_operation(Revision::new(2), id),
+            persona_set_default_operation(Revision::new(2), id)
+        );
+        assert_ne!(
+            persona_set_default_operation(Revision::new(2), id),
+            persona_set_default_operation(
+                Revision::new(2),
+                PersonaId::from_uuid(Uuid::from_u128(4)),
+            )
+        );
+        assert_ne!(
+            persona_set_default_operation(Revision::new(2), id),
+            persona_clear_default_operation(Revision::new(2))
         );
     }
 }
