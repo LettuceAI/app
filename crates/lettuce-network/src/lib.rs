@@ -20,6 +20,8 @@ const MAX_RETRIES: u32 = 2;
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
 const REFERER_HEADER: &str = "https://github.com/LettuceAI/";
 const TITLE_HEADER: &str = "LettuceAI";
+const ARTIFACT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_ARTIFACT_REDIRECTS: usize = 5;
 
 /// A one-shot credential for a JSON POST. It is consumed by the request and
 /// is never installed as a client default.
@@ -154,6 +156,201 @@ pub enum JsonClientError {
     ResponseTooLarge,
     #[error("HTTP transport failed")]
     Transport,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ArtifactDownloadError {
+    #[error("artifact request is invalid")]
+    InvalidRequest,
+    #[error("artifact response is invalid")]
+    InvalidResponse,
+    #[error("artifact transport failed")]
+    Transport,
+}
+
+#[derive(Clone)]
+pub struct ArtifactDownloadClient {
+    client: reqwest::Client,
+}
+
+impl fmt::Debug for ArtifactDownloadClient {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ArtifactDownloadClient")
+    }
+}
+
+pub struct ArtifactDownloadStream {
+    response: reqwest::Response,
+    start: u64,
+    expected_size: u64,
+    received: u64,
+}
+
+impl fmt::Debug for ArtifactDownloadStream {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ArtifactDownloadStream")
+            .field("start", &self.start)
+            .field("expected_size", &self.expected_size)
+            .field("received", &self.received)
+            .finish()
+    }
+}
+
+impl ArtifactDownloadClient {
+    pub fn new() -> Result<Self, ArtifactDownloadError> {
+        let redirect = redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= MAX_ARTIFACT_REDIRECTS
+                || attempt.url().scheme() != "https"
+            {
+                attempt.stop()
+            } else {
+                attempt.follow()
+            }
+        });
+        let client = reqwest::Client::builder()
+            .redirect(redirect)
+            .referer(false)
+            .no_proxy()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .build()
+            .map_err(|_| ArtifactDownloadError::Transport)?;
+        Ok(Self { client })
+    }
+
+    pub async fn open_hugging_face(
+        &self,
+        repository: &str,
+        revision: &str,
+        filename: &str,
+        offset: u64,
+        expected_size: u64,
+    ) -> Result<ArtifactDownloadStream, ArtifactDownloadError> {
+        if !valid_repository(repository)
+            || revision.len() != 40
+            || !revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || !valid_artifact_filename(filename)
+            || expected_size == 0
+            || offset > expected_size
+        {
+            return Err(ArtifactDownloadError::InvalidRequest);
+        }
+        let mut url = Url::parse("https://huggingface.co")
+            .map_err(|_| ArtifactDownloadError::InvalidRequest)?;
+        url.path_segments_mut()
+            .map_err(|_| ArtifactDownloadError::InvalidRequest)?
+            .extend(repository.split('/'))
+            .push("resolve")
+            .push(revision)
+            .push(filename);
+        let mut request = self.client.get(url);
+        if offset > 0 {
+            request = request.header(header::RANGE, format!("bytes={offset}-"));
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|_| ArtifactDownloadError::Transport)?;
+        let status = response.status().as_u16();
+        let start = if status == 206 {
+            parse_content_range(response.headers(), expected_size)?
+        } else if status == 200 {
+            0
+        } else {
+            return Err(ArtifactDownloadError::InvalidResponse);
+        };
+        let remaining = expected_size
+            .checked_sub(start)
+            .ok_or(ArtifactDownloadError::InvalidResponse)?;
+        if response
+            .content_length()
+            .is_some_and(|length| length > remaining)
+        {
+            return Err(ArtifactDownloadError::InvalidResponse);
+        }
+        Ok(ArtifactDownloadStream {
+            response,
+            start,
+            expected_size,
+            received: 0,
+        })
+    }
+}
+
+impl ArtifactDownloadStream {
+    #[must_use]
+    pub const fn start(&self) -> u64 {
+        self.start
+    }
+
+    pub async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, ArtifactDownloadError> {
+        let chunk = tokio::time::timeout(ARTIFACT_IDLE_TIMEOUT, self.response.chunk())
+            .await
+            .map_err(|_| ArtifactDownloadError::Transport)?
+            .map_err(|_| ArtifactDownloadError::Transport)?;
+        let Some(chunk) = chunk else {
+            return Ok(None);
+        };
+        self.received = self
+            .received
+            .checked_add(
+                u64::try_from(chunk.len()).map_err(|_| ArtifactDownloadError::InvalidResponse)?,
+            )
+            .ok_or(ArtifactDownloadError::InvalidResponse)?;
+        if self.start.saturating_add(self.received) > self.expected_size {
+            return Err(ArtifactDownloadError::InvalidResponse);
+        }
+        Ok(Some(chunk.to_vec()))
+    }
+}
+
+fn valid_repository(repository: &str) -> bool {
+    let mut segments = repository.split('/');
+    matches!((segments.next(), segments.next(), segments.next()), (Some(owner), Some(name), None) if valid_path_segment(owner) && valid_path_segment(name))
+}
+
+fn valid_artifact_filename(filename: &str) -> bool {
+    valid_path_segment(filename) && filename.len() <= MAX_PATH_BYTES
+}
+
+fn valid_path_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_METADATA_BYTES
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+fn parse_content_range(
+    headers: &header::HeaderMap,
+    expected_size: u64,
+) -> Result<u64, ArtifactDownloadError> {
+    let value = headers
+        .get(header::CONTENT_RANGE)
+        .and_then(|value| value.to_str().ok())
+        .ok_or(ArtifactDownloadError::InvalidResponse)?;
+    let range = value
+        .strip_prefix("bytes ")
+        .ok_or(ArtifactDownloadError::InvalidResponse)?;
+    let (bounds, total) = range
+        .split_once('/')
+        .ok_or(ArtifactDownloadError::InvalidResponse)?;
+    let (start, end) = bounds
+        .split_once('-')
+        .ok_or(ArtifactDownloadError::InvalidResponse)?;
+    let start = start
+        .parse::<u64>()
+        .map_err(|_| ArtifactDownloadError::InvalidResponse)?;
+    let end = end
+        .parse::<u64>()
+        .map_err(|_| ArtifactDownloadError::InvalidResponse)?;
+    let total = total
+        .parse::<u64>()
+        .map_err(|_| ArtifactDownloadError::InvalidResponse)?;
+    if total != expected_size || start > end || end >= total {
+        return Err(ArtifactDownloadError::InvalidResponse);
+    }
+    Ok(start)
 }
 
 /// Extra PEM roots the user trusts (legacy `appState.trustedCertificates`).
@@ -1200,6 +1397,31 @@ mod tests {
             build_url("https://example.com/v1/../", "/chat"),
             Err(JsonClientError::InvalidUrl)
         );
+    }
+
+    #[test]
+    fn artifact_ranges_require_coherent_pinned_totals() {
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
+            header::CONTENT_RANGE,
+            header::HeaderValue::from_static("bytes 5-9/10"),
+        );
+        assert_eq!(parse_content_range(&headers, 10), Ok(5));
+        assert_eq!(
+            parse_content_range(&headers, 11),
+            Err(ArtifactDownloadError::InvalidResponse)
+        );
+        headers.insert(
+            header::CONTENT_RANGE,
+            header::HeaderValue::from_static("bytes 9-5/10"),
+        );
+        assert_eq!(
+            parse_content_range(&headers, 10),
+            Err(ArtifactDownloadError::InvalidResponse)
+        );
+        assert!(valid_repository("ggerganov/whisper.cpp"));
+        assert!(!valid_repository("ggerganov/whisper.cpp/extra"));
+        assert!(!valid_artifact_filename("../ggml-base.bin"));
     }
 
     #[tokio::test]

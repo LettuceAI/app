@@ -42,6 +42,14 @@ commits retain their stage artifact for recovery; ordinary dropped writers
 clean up their own stage file. A single authority-wide mutation lock
 serializes operations within that authority; it is not a cross-process lock.
 
+`ConfinedInstallStore` is the purpose-specific exception for large native model
+artifacts that must later be opened by a C runtime. Its composition-time root
+is canonicalized once, all operational names remain checked `ObjectKey`s, and
+descriptor-relative no-follow files retain stable partial bytes across process
+restart. It bounds appends and atomically renames a caller-verified partial.
+Only the committed file exposes an internal native path for construction of a
+verified runtime manifest; partial paths and install roots are never returned.
+
 Generic root deletion is not exposed. File removal is an in-process move to an
 opaque trash receipt with collision-safe, retryable restore. Receipts are
 authority-bound, validate opaque internal names, and include source/destination

@@ -78,5 +78,7 @@ voice links and commits all rows only when every managed audio asset is valid.
 The application compatibility adapter converts retained version-2 exports into
 this boundary after safely ingesting their referenced audio files.
 
-Installed-model downloads, microphone IPC and file-format expansion remain
-later ASR slices. TTS has not started.
+Pinned, resumable installed-model downloads now compose through model-hub,
+network, platform and durable artifact-install jobs. Microphone IPC,
+file-format expansion and managed model removal remain later ASR slices. TTS
+has not started.

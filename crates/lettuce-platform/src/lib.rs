@@ -12,6 +12,7 @@ mod atomic;
 mod authority;
 mod directories;
 mod error;
+mod install;
 mod keys;
 mod managed;
 mod model;
@@ -22,6 +23,7 @@ pub use atomic::StagedWrite;
 pub use authority::FilesystemAuthority;
 pub use directories::{DirectorySnapshot, ManagedRoot, RootKind};
 pub use error::PlatformError;
+pub use install::{ConfinedInstallStore, InstallPreparation, InstalledFile, ResumableInstall};
 pub use keys::ObjectKey;
 pub use managed::ManagedFiles;
 pub use model::{

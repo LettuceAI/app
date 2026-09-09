@@ -876,6 +876,15 @@ metadata with coherent LFS size and SHA-256 evidence, retains the legacy
 recommendation classifications, and rejects mutable or incomplete entries
 before download admission.
 
+The Whisper download coordinator admits the pinned remote identity as a durable
+artifact-install job, reports bounded byte progress, preserves matching partial
+bytes across restart, and cooperatively cancels before the irreversible install
+stage. It accepts a resumed response only at the requested byte offset, safely
+restarts when a server returns the complete object, verifies upstream SHA-256,
+atomically installs, and admits the existing BLAKE3 manifest afterward. A crash
+between rename and manifest admission recovers from the verified final file;
+completed jobs replay without another network request or a public native path.
+
 The Whisper-model coordinator scans the retained legacy model directory through
 the bounded model-hub inspection contract, records each verified manifest, and
 replays exact admissions after reopen without changing source bytes. Resolution

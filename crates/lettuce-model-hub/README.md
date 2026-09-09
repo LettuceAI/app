@@ -42,5 +42,14 @@ recommendation sets remain unchanged. Mutable branch names and files without
 complete LFS metadata are rejected. Hugging Face documents repository-tree file
 metadata and LFS SHA-256 identities in its
 [Hub API](https://huggingface.co/docs/huggingface_hub/en/package_reference/hf_api).
-Download execution, managed installation and removal remain later model-hub
-work; the old unpinned Hugging Face `main` URL is not copied.
+Managed removal remains later model-hub work; the old unpinned Hugging Face
+`main` URL is not copied.
+
+Pinned Whisper downloads use one confined install root and a stable partial
+name derived from the complete remote identity. Partial bytes survive process
+restart, are never treated as installed, and resume only for the same revision,
+size and SHA-256. A complete partial must match the upstream SHA-256 before an
+atomic rename. The installed manifest is then built from the final file with
+the existing BLAKE3 identity; a matching final file replays recovery after a
+rename-before-database crash. Neither partial nor final native paths enter the
+public download result.

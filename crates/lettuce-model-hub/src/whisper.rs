@@ -4,8 +4,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use lettuce_platform::{ConfinedInstallStore, InstallPreparation, ObjectKey, ResumableInstall};
 use lettuce_types::{ContentHash, TimestampMillis};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::InstalledModelArtifact;
 
@@ -40,16 +42,7 @@ impl RemoteWhisperModel {
         let model_id = model_id_from_filename(&filename)?;
         let source_revision = source_revision.into();
         let sha256 = sha256.into().to_ascii_lowercase();
-        if source_revision.len() != 40
-            || !source_revision.bytes().all(|byte| byte.is_ascii_hexdigit())
-            || byte_size == 0
-            || byte_size > MAX_WHISPER_MODEL_BYTES
-            || sha256.len() != SHA256_HEX_LENGTH
-            || !sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
-        {
-            return Err(WhisperModelError::InvalidManifest);
-        }
-        Ok(Self {
+        let model = Self {
             english_only: model_id.contains(".en"),
             quantized: model_id.contains("-q"),
             recommended: is_recommended(&model_id),
@@ -60,7 +53,197 @@ impl RemoteWhisperModel {
             source_revision: source_revision.to_ascii_lowercase(),
             byte_size,
             sha256,
-        })
+        };
+        model.validate()?;
+        Ok(model)
+    }
+
+    pub fn validate(&self) -> Result<(), WhisperModelError> {
+        if model_id_from_filename(&self.filename)? != self.model_id
+            || self.source_revision.len() != 40
+            || !self
+                .source_revision
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+            || self.source_revision != self.source_revision.to_ascii_lowercase()
+            || self.byte_size == 0
+            || self.byte_size > MAX_WHISPER_MODEL_BYTES
+            || self.sha256.len() != SHA256_HEX_LENGTH
+            || !self.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || self.sha256 != self.sha256.to_ascii_lowercase()
+            || self.english_only != self.model_id.contains(".en")
+            || self.quantized != self.model_id.contains("-q")
+            || self.recommended != is_recommended(&self.model_id)
+            || self.recommended_for_mobile != is_recommended_for_mobile(&self.model_id)
+            || self.recommended_for_desktop != is_recommended_for_desktop(&self.model_id)
+        {
+            return Err(WhisperModelError::InvalidManifest);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct WhisperInstallStore {
+    inner: ConfinedInstallStore,
+}
+
+#[derive(Debug)]
+pub enum WhisperInstallPreparation {
+    Installed(InstalledWhisperManifest),
+    Download(WhisperDownloadSession),
+}
+
+#[derive(Debug)]
+pub struct WhisperDownloadSession {
+    inner: ResumableInstall,
+    remote: RemoteWhisperModel,
+    admitted_at: TimestampMillis,
+}
+
+impl WhisperInstallStore {
+    pub fn open(root_path: impl AsRef<Path>) -> Result<Self, WhisperModelError> {
+        ConfinedInstallStore::open(root_path)
+            .map(|inner| Self { inner })
+            .map_err(map_platform_error)
+    }
+
+    pub fn prepare(
+        &self,
+        remote: RemoteWhisperModel,
+        admitted_at: TimestampMillis,
+    ) -> Result<WhisperInstallPreparation, WhisperModelError> {
+        remote.validate()?;
+        let partial_name = partial_name(&remote);
+        let partial = ObjectKey::from_segments(["downloads", partial_name.as_str()])
+            .map_err(map_platform_error)?;
+        let target = ObjectKey::from_segments([remote.model_id.as_str(), remote.filename.as_str()])
+            .map_err(map_platform_error)?;
+        match self
+            .inner
+            .prepare(partial, target, remote.byte_size)
+            .map_err(map_platform_error)?
+        {
+            InstallPreparation::Installed(mut installed) => {
+                if installed.len() != remote.byte_size {
+                    return Err(WhisperModelError::Mismatch);
+                }
+                installed.rewind().map_err(map_platform_error)?;
+                verify_sha256(&mut installed, remote.byte_size, &remote.sha256)?;
+                Ok(WhisperInstallPreparation::Installed(installed_manifest(
+                    installed.native_path(),
+                    &remote,
+                    admitted_at,
+                )?))
+            }
+            InstallPreparation::Resume(inner) => Ok(WhisperInstallPreparation::Download(
+                WhisperDownloadSession {
+                    inner,
+                    remote,
+                    admitted_at,
+                },
+            )),
+        }
+    }
+}
+
+impl WhisperDownloadSession {
+    #[must_use]
+    pub const fn offset(&self) -> u64 {
+        self.inner.offset()
+    }
+
+    pub fn restart(&mut self) -> Result<(), WhisperModelError> {
+        self.inner.restart().map_err(map_platform_error)
+    }
+
+    pub fn append(&mut self, bytes: &[u8]) -> Result<u64, WhisperModelError> {
+        self.inner.append(bytes).map_err(map_platform_error)
+    }
+
+    pub fn finish(mut self) -> Result<InstalledWhisperManifest, WhisperModelError> {
+        if self.inner.offset() != self.remote.byte_size {
+            return Err(WhisperModelError::Mismatch);
+        }
+        self.inner.sync().map_err(map_platform_error)?;
+        self.inner.rewind().map_err(map_platform_error)?;
+        verify_sha256(&mut self.inner, self.remote.byte_size, &self.remote.sha256)?;
+        let path = self.inner.commit().map_err(map_platform_error)?;
+        installed_manifest(&path, &self.remote, self.admitted_at)
+    }
+}
+
+fn partial_name(remote: &RemoteWhisperModel) -> String {
+    let mut hash = blake3::Hasher::new();
+    for value in [
+        remote.model_id.as_bytes(),
+        remote.source_revision.as_bytes(),
+        remote.sha256.as_bytes(),
+    ] {
+        hash.update(value);
+        hash.update(&[0]);
+    }
+    hash.update(&remote.byte_size.to_le_bytes());
+    format!("{}.part", hash.finalize().to_hex())
+}
+
+fn verify_sha256(
+    file: &mut impl Read,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> Result<(), WhisperModelError> {
+    let mut hasher = Sha256::new();
+    let mut total = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|_| WhisperModelError::Unreadable)?;
+        if read == 0 {
+            break;
+        }
+        total = total
+            .checked_add(u64::try_from(read).map_err(|_| WhisperModelError::Mismatch)?)
+            .ok_or(WhisperModelError::Mismatch)?;
+        if total > expected_size {
+            return Err(WhisperModelError::Mismatch);
+        }
+        hasher.update(&buffer[..read]);
+    }
+    if total != expected_size || format!("{:x}", hasher.finalize()) != expected_sha256 {
+        return Err(WhisperModelError::Mismatch);
+    }
+    Ok(())
+}
+
+fn installed_manifest(
+    path: &Path,
+    remote: &RemoteWhisperModel,
+    admitted_at: TimestampMillis,
+) -> Result<InstalledWhisperManifest, WhisperModelError> {
+    let blake3 = hash_file(path, remote.byte_size)?;
+    Ok(InstalledWhisperManifest {
+        model_id: remote.model_id.clone(),
+        source_revision: remote.source_revision.clone(),
+        model: InstalledModelArtifact {
+            path: path.to_path_buf(),
+            byte_size: remote.byte_size,
+            blake3,
+        },
+        english_only: remote.english_only,
+        quantized: remote.quantized,
+        admitted_at,
+    })
+}
+
+fn map_platform_error(error: lettuce_platform::PlatformError) -> WhisperModelError {
+    match error {
+        lettuce_platform::PlatformError::SymlinkEscape => WhisperModelError::Symlink,
+        lettuce_platform::PlatformError::Denied | lettuce_platform::PlatformError::InvalidKey => {
+            WhisperModelError::OutsideSource
+        }
+        lettuce_platform::PlatformError::LimitExceeded => WhisperModelError::Mismatch,
+        _ => WhisperModelError::Unreadable,
     }
 }
 
@@ -444,6 +627,73 @@ mod tests {
         assert!(model.recommended_for_mobile);
         assert!(!model.recommended_for_desktop);
         assert!(RemoteWhisperModel::pinned("ggml-base.bin", "main", 42, "cd".repeat(32)).is_err());
+    }
+
+    #[test]
+    fn resumes_verified_download_and_replays_installed_manifest() {
+        let root = std::env::temp_dir().join(format!("whisper-install-{}", OperationId::new()));
+        let bytes = b"verified whisper bytes";
+        let remote = RemoteWhisperModel::pinned(
+            "ggml-base.bin",
+            "ab".repeat(20),
+            bytes.len() as u64,
+            format!("{:x}", Sha256::digest(bytes)),
+        )
+        .expect("remote model");
+        let store = WhisperInstallStore::open(&root).expect("install store");
+        let WhisperInstallPreparation::Download(mut first) = store
+            .prepare(remote.clone(), TimestampMillis::new(10))
+            .expect("first preparation")
+        else {
+            panic!("expected download");
+        };
+        first.append(&bytes[..7]).expect("partial write");
+        drop(first);
+
+        let store = WhisperInstallStore::open(&root).expect("reopened store");
+        let WhisperInstallPreparation::Download(mut resumed) = store
+            .prepare(remote.clone(), TimestampMillis::new(10))
+            .expect("resumed preparation")
+        else {
+            panic!("expected resumed download");
+        };
+        assert_eq!(resumed.offset(), 7);
+        resumed.append(&bytes[7..]).expect("remaining write");
+        let manifest = resumed.finish().expect("verified install");
+        assert_eq!(manifest.source_revision, remote.source_revision);
+        manifest.verify().expect("installed manifest");
+
+        let WhisperInstallPreparation::Installed(replayed) = store
+            .prepare(remote, TimestampMillis::new(10))
+            .expect("replayed preparation")
+        else {
+            panic!("expected installed model");
+        };
+        assert_eq!(replayed, manifest);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn keeps_bad_complete_download_out_of_the_installed_directory() {
+        let root = std::env::temp_dir().join(format!("whisper-install-{}", OperationId::new()));
+        let remote = RemoteWhisperModel::pinned(
+            "ggml-base.bin",
+            "ab".repeat(20),
+            3,
+            format!("{:x}", Sha256::digest(b"good")),
+        )
+        .expect("remote model");
+        let store = WhisperInstallStore::open(&root).expect("install store");
+        let WhisperInstallPreparation::Download(mut download) = store
+            .prepare(remote, TimestampMillis::new(10))
+            .expect("preparation")
+        else {
+            panic!("expected download");
+        };
+        download.append(b"bad").expect("download bytes");
+        assert_eq!(download.finish(), Err(WhisperModelError::Mismatch));
+        assert!(!root.join("base/ggml-base.bin").exists());
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]

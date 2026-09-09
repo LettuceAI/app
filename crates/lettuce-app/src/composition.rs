@@ -208,6 +208,18 @@ impl AppBackend {
         lettuce_network::JsonClient::new().map(crate::WhisperRemoteCatalog::new)
     }
 
+    pub fn whisper_downloads(
+        &self,
+        install_root: impl AsRef<Path>,
+    ) -> Result<crate::WhisperDownloadCoordinator<'_, Database, Database>, crate::WhisperDownloadError>
+    {
+        crate::WhisperDownloadCoordinator::new(
+            self.database.as_ref(),
+            self.database.as_ref(),
+            install_root,
+        )
+    }
+
     #[must_use]
     pub fn whisper_runtime(&self) -> &WhisperCppRuntime<Database> {
         self.whisper_runtime.as_ref()

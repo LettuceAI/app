@@ -36,3 +36,10 @@ Values can borrow request-local strings; they are percent encoded by the central
 client. Existing GET callers delegate with an empty list. OpenRouter's HTTP
 fixture verifies a generation ID containing plus, ampersand and equals signs
 cannot create another query parameter. Existing query and response bounds apply.
+
+`ArtifactDownloadClient` is the narrow unauthenticated Hugging Face transport
+for large pinned artifacts. It constructs the repository URL from validated
+segments, sends an optional byte range, accepts only coherent complete or
+partial responses, limits redirects to five HTTPS locations, applies a
+per-chunk idle timeout, and leaves backpressure and cancellation with the
+caller. The model-hub layer owns expected-size and digest verification.

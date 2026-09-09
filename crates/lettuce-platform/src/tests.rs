@@ -2,7 +2,7 @@
 
 use std::{
     fs,
-    io::{self, Write},
+    io::{self, Read, Write},
     sync::{Arc, Barrier},
     thread,
 };
@@ -358,5 +358,46 @@ fn errors_and_receipts_do_not_expose_native_paths() {
         .remove_to_trash(&write, ObjectKey::single("value").unwrap())
         .unwrap();
     assert!(!format!("{receipt:?}").contains("/tmp"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn confined_install_resumes_and_commits_only_complete_caller_verified_bytes() {
+    let root = std::env::temp_dir().join(format!("lettuce-install-{}", Uuid::new_v4()));
+    let partial = ObjectKey::from_segments(["downloads", "artifact.part"]).unwrap();
+    let target = ObjectKey::from_segments(["models", "artifact.bin"]).unwrap();
+    let store = ConfinedInstallStore::open(&root).unwrap();
+    let InstallPreparation::Resume(mut first) =
+        store.prepare(partial.clone(), target.clone(), 6).unwrap()
+    else {
+        panic!("expected partial");
+    };
+    first.append(b"abc").unwrap();
+    drop(first);
+
+    let store = ConfinedInstallStore::open(&root).unwrap();
+    let InstallPreparation::Resume(mut resumed) = store.prepare(partial, target, 6).unwrap() else {
+        panic!("expected resumed partial");
+    };
+    assert_eq!(resumed.offset(), 3);
+    resumed.append(b"def").unwrap();
+    resumed.rewind().unwrap();
+    let mut bytes = Vec::new();
+    resumed.read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, b"abcdef");
+    let path = resumed.commit().unwrap();
+    assert_eq!(fs::read(path).unwrap(), b"abcdef");
+
+    let InstallPreparation::Installed(installed) = store
+        .prepare(
+            ObjectKey::from_segments(["downloads", "artifact.part"]).unwrap(),
+            ObjectKey::from_segments(["models", "artifact.bin"]).unwrap(),
+            6,
+        )
+        .unwrap()
+    else {
+        panic!("expected installed file");
+    };
+    assert_eq!(installed.len(), 6);
     fs::remove_dir_all(root).unwrap();
 }
