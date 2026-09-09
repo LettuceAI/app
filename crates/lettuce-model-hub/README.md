@@ -79,3 +79,6 @@ Remote Kokoro voice descriptors preserve the same pinned revision, exact
 `voices/<safe-id>.bin` path, byte size and SHA-256. Voice IDs retain the legacy
 ASCII alphanumeric, underscore and hyphen rule. The descriptor does not install
 or expose a native path.
+Voice installation uses revision, ID, path, size and SHA-256 as its complete
+partial identity. It commits only verified bytes below the managed `voices`
+directory and rechecks every requested voice before reporting a batch installed.

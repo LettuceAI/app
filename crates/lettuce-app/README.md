@@ -974,3 +974,9 @@ the central JSON client. It accepts only bounded `voices/<safe-id>.bin` entries
 with coherent LFS size and SHA-256 metadata, sorts and deduplicates IDs, and
 merges exact installed flags from the managed inventory. Catalog reads do not
 download, remove or expose native voice paths.
+Selected Kokoro voices install as one stable-ID artifact job for either a
+single voice or a batch such as the legacy starter pack. Selection is sorted
+and deduplicated before admission. Each voice resumes from an identity-bound
+confined partial, verifies pinned size and SHA-256 before atomic commit, and is
+reverified on successful replay without network access. Progress covers the
+whole batch and cancellation ends at the first verified voice commit.
