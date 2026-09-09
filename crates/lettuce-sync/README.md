@@ -30,13 +30,16 @@ as the journal row.
 
 The first entity codec is the complete validated persona snapshot. It includes
 authored fields, lifecycle, revision/timestamps and ordered media references,
-while media bytes remain content-addressed elsewhere. Stable create and revise
-operation identities let the SQLite persona repository append the insert or
-update in the same transaction as its aggregate mutation. The update base is
-the canonical pre-mutation snapshot hash.
+while media bytes remain content-addressed elsewhere. Stable create, revise and
+media-mutation operation identities let the SQLite persona repository append
+the insert or update in the same transaction as its aggregate mutation. Media
+operation identities bind the normalized mutation kind and intent. The update
+base is the canonical pre-mutation snapshot hash.
 
-Persona media-only mutations, default selection, lifecycle changes and every
-other aggregate still need explicit journal wiring. Peer negotiation, staged
-apply, conflict resolution, blob exchange and legacy sync-state migration also
-remain later slices. No legacy database, source or user asset is read, rewritten
-or deleted by this crate.
+Persona media replacement, attachment, detachment and reordering now journal
+the complete resulting snapshot atomically and replay exact retries without a
+second sequence. Default selection, lifecycle changes and every other aggregate
+still need explicit journal wiring. Peer negotiation, staged apply, conflict
+resolution, blob exchange and legacy sync-state migration also remain later
+slices. No legacy database, source or user asset is read, rewritten or deleted
+by this crate.

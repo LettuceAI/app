@@ -596,11 +596,11 @@ returns the stored change; changed reuse conflicts, and a failed insert rolls
 back the device state and frontier. Aggregate coverage is added explicitly at
 each repository transaction rather than through arbitrary SQL capture.
 
-Persona repository create and authored revision are the first atomic journal
-call sites. Their canonical payload is the complete post-mutation aggregate,
-including ordered media references but no media bytes; revision updates bind
-the pre-mutation snapshot hash as their base. Journal admission happens before
-the persona write inside the same immediate transaction, so a missing media
-reference, stale CAS or later SQL failure rolls back both. Exact create and
-revision retries return the stored persona without allocating another sequence.
-Persona media-only, default and lifecycle mutations remain unwired.
+Persona repository create, authored revision and all four media mutations are
+atomic journal call sites. Their canonical payload is the complete
+post-mutation aggregate, including ordered media references but no media bytes;
+revision updates bind the pre-mutation snapshot hash as their base. Aggregate
+and journal writes share one immediate transaction, so a missing or duplicate
+media reference, stale CAS or later SQL failure rolls back both. Exact retries
+return the stored persona without allocating another sequence. Default and
+lifecycle mutations remain unwired.

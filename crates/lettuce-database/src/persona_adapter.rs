@@ -12,7 +12,9 @@ use lettuce_characters::{
 };
 use lettuce_sync::{
     ChangeOperation, LocalChangeJournalError, NewCanonicalChange, canonical_persona_payload,
-    persona_create_operation, persona_revise_operation, persona_sync_entity,
+    persona_attach_media_operation, persona_create_operation, persona_detach_media_operation,
+    persona_reorder_media_operation, persona_revise_operation, persona_sync_entity,
+    persona_update_media_operation,
 };
 use lettuce_types::{AssetId, Page, PageRequest, PersonaId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
@@ -94,6 +96,35 @@ fn persona_update_change(
         Some(canonical_persona_payload(after).map_err(|_| RepositoryError::Storage)?),
     )
     .map_err(|_| RepositoryError::Storage)
+}
+
+fn replay_persona_media_change(
+    tx: &Transaction<'_>,
+    operation: lettuce_types::OperationId,
+    id: PersonaId,
+    expected_revision: Revision,
+) -> Result<Option<Persona>, RepositoryError> {
+    let Some(change) = load_local_change_in(tx, operation).map_err(sync_error)? else {
+        return Ok(None);
+    };
+    let current = load_persona(tx, id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::NotFound)?;
+    let next = expected_revision
+        .next()
+        .map_err(|_| RepositoryError::Storage)?;
+    if current.revision != next
+        || change.entity() != &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?
+        || change.operation() != ChangeOperation::Update
+        || change.payload()
+            != Some(&canonical_persona_payload(&current).map_err(|_| RepositoryError::Storage)?)
+    {
+        return Err(RepositoryError::StaleRevision {
+            expected: expected_revision,
+            actual: current.revision,
+        });
+    }
+    Ok(Some(current))
 }
 
 fn apply_persona_draft(
@@ -844,17 +875,28 @@ impl PersonaRepository for Database {
         now: TimestampMillis,
     ) -> Result<Persona, RepositoryError> {
         let media = normalize_media(media)?;
+        let operation = persona_update_media_operation(id, expected_revision, &media);
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        ensure_active(&tx, id, expected_revision)?;
+        if let Some(persona) = replay_persona_media_change(&tx, operation, id, expected_revision)? {
+            tx.commit().map_err(db_error)?;
+            return Ok(persona);
+        }
+        let before = ensure_active(&tx, id, expected_revision)?;
         image_assets(&tx, media.links.iter().map(|link| link.asset_id))?;
         replace_media(&tx, id, &media)?;
         update_root(&tx, id, expected_revision, now)?;
         let persona = load_persona(&tx, id)
             .map_err(db_error)?
             .ok_or(RepositoryError::Storage)?;
+        let request = persona_update_change(&before, &persona)?;
+        let admission =
+            record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
+        if !admission.created {
+            return Err(RepositoryError::Storage);
+        }
         tx.commit().map_err(db_error)?;
         Ok(persona)
     }
@@ -866,10 +908,15 @@ impl PersonaRepository for Database {
         link: PersonaMediaLink,
         now: TimestampMillis,
     ) -> Result<Persona, RepositoryError> {
+        let operation = persona_attach_media_operation(id, expected_revision, &link);
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        if let Some(persona) = replay_persona_media_change(&tx, operation, id, expected_revision)? {
+            tx.commit().map_err(db_error)?;
+            return Ok(persona);
+        }
         let current = ensure_active(&tx, id, expected_revision)?;
         image_assets(&tx, [link.asset_id])?;
         if current
@@ -928,6 +975,12 @@ impl PersonaRepository for Database {
         let persona = load_persona(&tx, id)
             .map_err(db_error)?
             .ok_or(RepositoryError::Storage)?;
+        let request = persona_update_change(&current, &persona)?;
+        let admission =
+            record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
+        if !admission.created {
+            return Err(RepositoryError::Storage);
+        }
         tx.commit().map_err(db_error)?;
         Ok(persona)
     }
@@ -940,11 +993,17 @@ impl PersonaRepository for Database {
         slot: PersonaMediaSlot,
         now: TimestampMillis,
     ) -> Result<Persona, RepositoryError> {
+        let operation = persona_detach_media_operation(id, expected_revision, asset_id, slot);
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        if let Some(persona) = replay_persona_media_change(&tx, operation, id, expected_revision)? {
+            tx.commit().map_err(db_error)?;
+            return Ok(persona);
+        }
         let current = ensure_active(&tx, id, expected_revision)?;
+        let before = current.clone();
         if !current
             .media
             .links
@@ -972,6 +1031,12 @@ impl PersonaRepository for Database {
         let persona = load_persona(&tx, id)
             .map_err(db_error)?
             .ok_or(RepositoryError::Storage)?;
+        let request = persona_update_change(&before, &persona)?;
+        let admission =
+            record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
+        if !admission.created {
+            return Err(RepositoryError::Storage);
+        }
         tx.commit().map_err(db_error)?;
         Ok(persona)
     }
@@ -985,11 +1050,18 @@ impl PersonaRepository for Database {
         target_ordinal: u32,
         now: TimestampMillis,
     ) -> Result<Persona, RepositoryError> {
+        let operation =
+            persona_reorder_media_operation(id, expected_revision, slot, asset_id, target_ordinal);
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        if let Some(persona) = replay_persona_media_change(&tx, operation, id, expected_revision)? {
+            tx.commit().map_err(db_error)?;
+            return Ok(persona);
+        }
         let current = ensure_active(&tx, id, expected_revision)?;
+        let before = current.clone();
         let mut selected: Vec<_> = current
             .media
             .links
@@ -1026,6 +1098,12 @@ impl PersonaRepository for Database {
         let persona = load_persona(&tx, id)
             .map_err(db_error)?
             .ok_or(RepositoryError::Storage)?;
+        let request = persona_update_change(&before, &persona)?;
+        let admission =
+            record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
+        if !admission.created {
+            return Err(RepositoryError::Storage);
+        }
         tx.commit().map_err(db_error)?;
         Ok(persona)
     }
@@ -1603,6 +1681,266 @@ mod tests {
                 )
                 .expect("sequence"),
             2
+        );
+    }
+
+    #[test]
+    fn persona_media_mutations_commit_canonical_changes_once_and_roll_back_together() {
+        let database = Database::open_in_memory().expect("database");
+        let first = image_asset(&database, 'f');
+        let second = image_asset(&database, 'g');
+        let third = image_asset(&database, 'h');
+        let created = PersonaRepository::create(
+            &database,
+            Persona::new(
+                PersonaId::new(),
+                "Artist".into(),
+                "Collects visual references".into(),
+                TimestampMillis::new(10),
+            )
+            .expect("persona"),
+        )
+        .expect("create");
+
+        let replacement = PersonaMedia {
+            links: vec![
+                PersonaMediaLink {
+                    asset_id: second,
+                    slot: PersonaMediaSlot::DesignReference,
+                    ordinal: 1,
+                },
+                PersonaMediaLink {
+                    asset_id: first,
+                    slot: PersonaMediaSlot::DesignReference,
+                    ordinal: 0,
+                },
+            ],
+        };
+        let updated = PersonaRepository::update_media(
+            &database,
+            created.id,
+            created.revision,
+            replacement.clone(),
+            TimestampMillis::new(20),
+        )
+        .expect("update media");
+        assert_eq!(
+            PersonaRepository::update_media(
+                &database,
+                created.id,
+                created.revision,
+                replacement.clone(),
+                TimestampMillis::new(21),
+            )
+            .expect("update replay"),
+            updated
+        );
+
+        let attached_link = PersonaMediaLink {
+            asset_id: third,
+            slot: PersonaMediaSlot::DesignReference,
+            ordinal: 1,
+        };
+        let attached = PersonaRepository::attach_media(
+            &database,
+            updated.id,
+            updated.revision,
+            attached_link.clone(),
+            TimestampMillis::new(30),
+        )
+        .expect("attach");
+        assert_eq!(
+            PersonaRepository::attach_media(
+                &database,
+                updated.id,
+                updated.revision,
+                attached_link.clone(),
+                TimestampMillis::new(31),
+            )
+            .expect("attach replay"),
+            attached
+        );
+
+        let reordered = PersonaRepository::reorder_media(
+            &database,
+            attached.id,
+            attached.revision,
+            PersonaMediaSlot::DesignReference,
+            third,
+            0,
+            TimestampMillis::new(40),
+        )
+        .expect("reorder");
+        assert_eq!(
+            PersonaRepository::reorder_media(
+                &database,
+                attached.id,
+                attached.revision,
+                PersonaMediaSlot::DesignReference,
+                third,
+                0,
+                TimestampMillis::new(41),
+            )
+            .expect("reorder replay"),
+            reordered
+        );
+
+        let detached = PersonaRepository::detach_media(
+            &database,
+            reordered.id,
+            reordered.revision,
+            first,
+            PersonaMediaSlot::DesignReference,
+            TimestampMillis::new(50),
+        )
+        .expect("detach");
+        assert_eq!(
+            PersonaRepository::detach_media(
+                &database,
+                reordered.id,
+                reordered.revision,
+                first,
+                PersonaMediaSlot::DesignReference,
+                TimestampMillis::new(51),
+            )
+            .expect("detach replay"),
+            detached
+        );
+
+        let operations = [
+            persona_update_media_operation(created.id, created.revision, &replacement),
+            persona_attach_media_operation(updated.id, updated.revision, &attached_link),
+            persona_reorder_media_operation(
+                attached.id,
+                attached.revision,
+                PersonaMediaSlot::DesignReference,
+                third,
+                0,
+            ),
+            persona_detach_media_operation(
+                reordered.id,
+                reordered.revision,
+                first,
+                PersonaMediaSlot::DesignReference,
+            ),
+        ];
+        let snapshots = [&updated, &attached, &reordered, &detached];
+        let bases = [&created, &updated, &attached, &reordered];
+        let connection = database.connection().expect("connection");
+        for (index, ((operation, snapshot), base)) in
+            operations.into_iter().zip(snapshots).zip(bases).enumerate()
+        {
+            let change = load_local_change_in(&connection, operation)
+                .expect("change read")
+                .expect("media change");
+            assert_eq!(change.origin_sequence(), index as u64 + 2);
+            assert_eq!(change.operation(), ChangeOperation::Update);
+            assert_eq!(
+                change.base_revision(),
+                Some(
+                    canonical_persona_payload(base)
+                        .expect("base payload")
+                        .content_hash()
+                )
+            );
+            assert_eq!(
+                serde_json::from_slice::<Persona>(change.payload().expect("media payload").bytes())
+                    .expect("decode media payload"),
+                *snapshot
+            );
+        }
+        drop(connection);
+
+        let missing_media = PersonaMedia {
+            links: vec![PersonaMediaLink {
+                asset_id: AssetId::new(),
+                slot: PersonaMediaSlot::Avatar,
+                ordinal: 0,
+            }],
+        };
+        assert!(
+            PersonaRepository::update_media(
+                &database,
+                detached.id,
+                detached.revision,
+                missing_media,
+                TimestampMillis::new(60),
+            )
+            .is_err()
+        );
+        assert!(
+            PersonaRepository::attach_media(
+                &database,
+                detached.id,
+                detached.revision,
+                PersonaMediaLink {
+                    asset_id: third,
+                    slot: PersonaMediaSlot::DesignReference,
+                    ordinal: 0,
+                },
+                TimestampMillis::new(61),
+            )
+            .is_err()
+        );
+        assert!(matches!(
+            PersonaRepository::detach_media(
+                &database,
+                detached.id,
+                created.revision,
+                third,
+                PersonaMediaSlot::DesignReference,
+                TimestampMillis::new(62),
+            ),
+            Err(RepositoryError::StaleRevision { .. })
+        ));
+
+        let failed_operation = persona_update_media_operation(
+            detached.id,
+            detached.revision,
+            &PersonaMedia::default(),
+        );
+        let connection = database.connection().expect("connection");
+        connection
+            .execute_batch(&format!(
+                "CREATE TEMP TRIGGER reject_persona_media_change
+                 BEFORE INSERT ON sync_changes
+                 WHEN NEW.operation_id = '{}'
+                 BEGIN SELECT RAISE(ABORT, 'reject media journal'); END;",
+                failed_operation
+            ))
+            .expect("failure trigger");
+        drop(connection);
+        assert!(
+            PersonaRepository::update_media(
+                &database,
+                detached.id,
+                detached.revision,
+                PersonaMedia::default(),
+                TimestampMillis::new(70),
+            )
+            .is_err()
+        );
+        assert_eq!(
+            PersonaRepository::get(&database, detached.id).expect("persona after rollback"),
+            Some(detached)
+        );
+        let connection = database.connection().expect("connection");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM sync_changes", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("change count"),
+            5
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT origin_sequence FROM sync_local_state WHERE id = 1",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("sequence"),
+            5
         );
     }
 

@@ -1,5 +1,5 @@
-use lettuce_characters::Persona;
-use lettuce_types::{OperationId, PersonaId, Revision};
+use lettuce_characters::{Persona, PersonaMedia, PersonaMediaLink, PersonaMediaSlot};
+use lettuce_types::{AssetId, OperationId, PersonaId, Revision};
 use uuid::Uuid;
 
 use crate::{CanonicalPayload, SyncChangeError, SyncEntity};
@@ -42,9 +42,110 @@ pub fn persona_revise_operation(id: PersonaId, expected_revision: Revision) -> O
     persona_operation(id, "revise", expected_revision)
 }
 
+#[must_use]
+pub fn persona_update_media_operation(
+    id: PersonaId,
+    expected_revision: Revision,
+    media: &PersonaMedia,
+) -> OperationId {
+    let mut links = media.links.clone();
+    links.sort_by_key(|link| {
+        (
+            media_slot_rank(link.slot),
+            if link.slot == PersonaMediaSlot::Avatar {
+                0
+            } else {
+                link.ordinal
+            },
+            link.asset_id.to_string(),
+        )
+    });
+    let intent = links
+        .iter()
+        .map(media_link_identity)
+        .collect::<Vec<_>>()
+        .join(";");
+    persona_intent_operation(id, "update_media", expected_revision, &intent)
+}
+
+#[must_use]
+pub fn persona_attach_media_operation(
+    id: PersonaId,
+    expected_revision: Revision,
+    link: &PersonaMediaLink,
+) -> OperationId {
+    persona_intent_operation(
+        id,
+        "attach_media",
+        expected_revision,
+        &media_link_identity(link),
+    )
+}
+
+#[must_use]
+pub fn persona_detach_media_operation(
+    id: PersonaId,
+    expected_revision: Revision,
+    asset_id: AssetId,
+    slot: PersonaMediaSlot,
+) -> OperationId {
+    let intent = format!("{}:{asset_id}", media_slot_identity(slot));
+    persona_intent_operation(id, "detach_media", expected_revision, &intent)
+}
+
+#[must_use]
+pub fn persona_reorder_media_operation(
+    id: PersonaId,
+    expected_revision: Revision,
+    slot: PersonaMediaSlot,
+    asset_id: AssetId,
+    target_ordinal: u32,
+) -> OperationId {
+    let intent = format!("{}:{asset_id}:{target_ordinal}", media_slot_identity(slot));
+    persona_intent_operation(id, "reorder_media", expected_revision, &intent)
+}
+
 fn persona_operation(id: PersonaId, action: &str, revision: Revision) -> OperationId {
     let name = format!("{action}\0{id}\0{}", revision.get());
     OperationId::from_uuid(Uuid::new_v5(&PERSONA_OPERATION_NAMESPACE, name.as_bytes()))
+}
+
+fn persona_intent_operation(
+    id: PersonaId,
+    action: &str,
+    revision: Revision,
+    intent: &str,
+) -> OperationId {
+    let name = format!("{action}\0{id}\0{}\0{intent}", revision.get());
+    OperationId::from_uuid(Uuid::new_v5(&PERSONA_OPERATION_NAMESPACE, name.as_bytes()))
+}
+
+fn media_link_identity(link: &PersonaMediaLink) -> String {
+    let ordinal = if link.slot == PersonaMediaSlot::Avatar {
+        0
+    } else {
+        link.ordinal
+    };
+    format!(
+        "{}:{}:{}",
+        media_slot_identity(link.slot),
+        link.asset_id,
+        ordinal
+    )
+}
+
+fn media_slot_identity(slot: PersonaMediaSlot) -> &'static str {
+    match slot {
+        PersonaMediaSlot::Avatar => "avatar",
+        PersonaMediaSlot::DesignReference => "design_reference",
+    }
+}
+
+fn media_slot_rank(slot: PersonaMediaSlot) -> u8 {
+    match slot {
+        PersonaMediaSlot::Avatar => 0,
+        PersonaMediaSlot::DesignReference => 1,
+    }
 }
 
 #[cfg(test)]
@@ -87,6 +188,15 @@ mod tests {
     #[test]
     fn persona_operation_identity_is_stable_per_mutation_boundary() {
         let id = persona().id;
+        let first = AssetId::from_uuid(Uuid::from_u128(2));
+        let second = AssetId::from_uuid(Uuid::from_u128(3));
+        let media = PersonaMedia {
+            links: vec![PersonaMediaLink {
+                asset_id: first,
+                slot: PersonaMediaSlot::DesignReference,
+                ordinal: 0,
+            }],
+        };
 
         assert_eq!(persona_create_operation(id), persona_create_operation(id));
         assert_eq!(
@@ -100,6 +210,45 @@ mod tests {
         assert_ne!(
             persona_create_operation(id),
             persona_revise_operation(id, Revision::INITIAL)
+        );
+        assert_eq!(
+            persona_update_media_operation(id, Revision::new(2), &media),
+            persona_update_media_operation(id, Revision::new(2), &media)
+        );
+        assert_ne!(
+            persona_attach_media_operation(
+                id,
+                Revision::new(2),
+                &PersonaMediaLink {
+                    asset_id: first,
+                    slot: PersonaMediaSlot::DesignReference,
+                    ordinal: 0,
+                },
+            ),
+            persona_attach_media_operation(
+                id,
+                Revision::new(2),
+                &PersonaMediaLink {
+                    asset_id: second,
+                    slot: PersonaMediaSlot::DesignReference,
+                    ordinal: 0,
+                },
+            )
+        );
+        assert_ne!(
+            persona_detach_media_operation(
+                id,
+                Revision::new(2),
+                first,
+                PersonaMediaSlot::DesignReference,
+            ),
+            persona_reorder_media_operation(
+                id,
+                Revision::new(2),
+                PersonaMediaSlot::DesignReference,
+                first,
+                0,
+            )
         );
     }
 }
