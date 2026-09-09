@@ -959,3 +959,13 @@ unsupported variants, empty files, symlinks and inspection races fail. The
 legacy automatic `system-kokoro` database row is not reproduced because local
 providers already use the ordinary typed configuration boundary and no longer
 persist an editable asset root.
+
+Kokoro model bundles install through one durable interactive artifact job. The
+application accepts a host-constructed confined install store, never an
+operational asset path, and downloads the four pinned files through the central
+ranged artifact client. Partial bytes and completed shared files survive retry;
+success requires all four files to reverify, and completed jobs replay without
+network access. Progress aggregates the bundle with bounded checkpoints.
+Cancellation remains available until the first verified file commit, after
+which the job finishes or retries the remaining bundle under its irreversible
+stage. Voice downloads, removal and native Kokoro execution remain later slices.

@@ -67,3 +67,11 @@ and tokenizer-config artifacts and discovers sorted, case-sensitive
 `voices/*.bin` IDs. Every reported artifact is nonempty, bounded and BLAKE3
 identified; symlinks and invalid artifacts fail inspection. Downloads,
 phonemization and ONNX execution remain outside this inventory slice.
+
+Kokoro model installation pins the legacy four-file bundle to immutable
+Hugging Face revision `1939ad2a8e416c0acfeecc08a694d14ef25f2231`. The three
+shared JSON files and the selected FP32, FP16 or Int8 ONNX file each retain an
+exact byte size and SHA-256. Confined partial files resume by complete artifact
+identity, verify before rename and replay already installed bytes only after
+reverification. The pinned inventory follows the upstream
+[Kokoro ONNX repository](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/tree/1939ad2a8e416c0acfeecc08a694d14ef25f2231).

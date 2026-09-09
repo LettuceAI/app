@@ -261,6 +261,14 @@ impl AppBackend {
         )
     }
 
+    #[must_use]
+    pub fn kokoro_downloads(
+        &self,
+        installs: lettuce_model_hub::KokoroInstallStore,
+    ) -> crate::KokoroDownloadCoordinator<'_, Database> {
+        crate::KokoroDownloadCoordinator::new(self.database.as_ref(), installs)
+    }
+
     pub fn remove_managed_whisper_model(
         &self,
         install_root: impl AsRef<Path>,
