@@ -217,6 +217,13 @@ impl AppBackend {
         crate::TtsVoiceRefreshCoordinator::new(self.database.as_ref(), secrets)
     }
 
+    pub fn tts_provider_verification<'a, S: lettuce_settings::SecretStore + ?Sized>(
+        &'a self,
+        secrets: &'a S,
+    ) -> crate::TtsProviderVerificationCoordinator<'a, Database, S> {
+        crate::TtsProviderVerificationCoordinator::new(self.database.as_ref(), secrets)
+    }
+
     #[must_use]
     pub fn speech_transcriptions(
         &self,

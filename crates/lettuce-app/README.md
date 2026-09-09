@@ -911,6 +911,11 @@ or invalid responses, and atomically replace that provider's bounded ordered
 cache after the complete fetch succeeds. Preview caching remains a later TTS
 slice.
 
+ElevenLabs provider verification loads the existing provider and its exact
+`AudioApiKey` secret scope before calling the typed verification transport. HTTP
+credential rejection returns `false`; configuration, secret-store and transport
+failures remain distinguishable errors.
+
 The TTS synthesis coordinator admits an idempotent interactive
 `SpeechSynthesize` job and persists its provider, text, voice, prompt and output
 policy before execution. It claims work through the generic job lifecycle,

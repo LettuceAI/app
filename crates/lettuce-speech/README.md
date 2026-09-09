@@ -192,3 +192,8 @@ state, tags, languages, trimmed description, library category and Fish engine
 labels. A response with `has_more` rejects before cache replacement so the first
 page cannot erase older configured voices. The wire contract follows the
 official [Fish Audio model-list API](https://docs.fish.audio/api-reference/endpoint/model/list-models).
+
+ElevenLabs credential verification uses the legacy `GET /v1/voices` probe with
+the scoped `xi-api-key`. Any successful HTTP status verifies the credential;
+other HTTP statuses return `false`, while bounded-client transport failures stay
+distinct typed errors.
