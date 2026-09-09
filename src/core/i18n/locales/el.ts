@@ -1469,10 +1469,12 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(εσωτερική ζωή / προγραμματισμένες σημειώσεις)",
       tokenBreakdownHistorySuffix: "(τελευταία {{count}} μηνύματα)",
       tokenBreakdownEntriesSuffix: "({{count}} καταχωρίσεις)",
+      tokenBreakdownCharactersSuffix: "({{count}} χαρακτήρες)",
       tokenBreakdownCat: {
         system: "Σύστημα",
         character: "Χαρακτήρας",
         persona: "Περσόνα",
+        groupCast: "Καστ ομάδας",
         memory: "Αναμνήσεις",
         lorebook: "Βιβλίο Γνώσης",
         authorNote: "Σημείωση Συγγραφέα",

@@ -1469,10 +1469,12 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(innerlijk leven / geplande notities)",
       tokenBreakdownHistorySuffix: "(laatste {{count}} berichten)",
       tokenBreakdownEntriesSuffix: "({{count}} vermeldingen)",
+      tokenBreakdownCharactersSuffix: "({{count}} personages)",
       tokenBreakdownCat: {
         system: "Systeem",
         character: "Karakter",
         persona: "Persona",
+        groupCast: "Groepscast",
         memory: "Herinneringen",
         lorebook: "Lorebook",
         authorNote: "Auteursnotitie",

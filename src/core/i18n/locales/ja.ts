@@ -1469,10 +1469,12 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(内面 / 予約ノート)",
       tokenBreakdownHistorySuffix: "(直近 {{count}} 件のメッセージ)",
       tokenBreakdownEntriesSuffix: "({{count}} 件のエントリ)",
+      tokenBreakdownCharactersSuffix: "({{count}} 人のキャラクター)",
       tokenBreakdownCat: {
         system: "システム",
         character: "キャラクター",
         persona: "ペルソナ",
+        groupCast: "グループキャスト",
         memory: "メモリ",
         lorebook: "ロアブック",
         authorNote: "作者ノート",

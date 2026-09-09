@@ -1469,10 +1469,12 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(kehidupan batin / catatan terjadwal)",
       tokenBreakdownHistorySuffix: "({{count}} pesan terakhir)",
       tokenBreakdownEntriesSuffix: "({{count}} entri)",
+      tokenBreakdownCharactersSuffix: "({{count}} karakter)",
       tokenBreakdownCat: {
         system: "Sistem",
         character: "Karakter",
         persona: "Persona",
+        groupCast: "Pemeran grup",
         memory: "Memori",
         lorebook: "Lorebook",
         authorNote: "Catatan Penulis",

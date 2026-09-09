@@ -1469,10 +1469,12 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(внутренняя жизнь / запланированные заметки)",
       tokenBreakdownHistorySuffix: "(последние {{count}} сообщений)",
       tokenBreakdownEntriesSuffix: "({{count}} записей)",
+      tokenBreakdownCharactersSuffix: "({{count}} персонажей)",
       tokenBreakdownCat: {
         system: "Система",
         character: "Персонаж",
         persona: "Персона",
+        groupCast: "Состав группы",
         memory: "Воспоминания",
         lorebook: "Лорбук",
         authorNote: "Заметка автора",

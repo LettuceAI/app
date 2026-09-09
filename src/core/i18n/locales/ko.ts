@@ -1469,10 +1469,12 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(내면 / 예약된 노트)",
       tokenBreakdownHistorySuffix: "(최근 {{count}}개 메시지)",
       tokenBreakdownEntriesSuffix: "({{count}}개 항목)",
+      tokenBreakdownCharactersSuffix: "({{count}}명 캐릭터)",
       tokenBreakdownCat: {
         system: "시스템",
         character: "캐릭터",
         persona: "페르소나",
+        groupCast: "그룹 캐스트",
         memory: "기억",
         lorebook: "로어북",
         authorNote: "작가 노트",

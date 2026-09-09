@@ -1469,10 +1469,12 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(panloob na buhay / mga naka-iskedyul na tala)",
       tokenBreakdownHistorySuffix: "(huling {{count}} mensahe)",
       tokenBreakdownEntriesSuffix: "({{count}} entry)",
+      tokenBreakdownCharactersSuffix: "({{count}} character)",
       tokenBreakdownCat: {
         system: "System",
         character: "Karakter",
         persona: "Persona",
+        groupCast: "Group cast",
         memory: "Mga Alaala",
         lorebook: "Lorebook",
         authorNote: "Tala ng May-akda",

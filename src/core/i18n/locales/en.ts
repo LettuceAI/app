@@ -1576,10 +1576,12 @@ export const enMessages = {
       tokenBreakdownCompanionSuffix: "(inner life / scheduled notes)",
       tokenBreakdownHistorySuffix: "(last {{count}} messages)",
       tokenBreakdownEntriesSuffix: "({{count}} entries)",
+      tokenBreakdownCharactersSuffix: "({{count}} characters)",
       tokenBreakdownCat: {
         system: "System",
         character: "Character",
         persona: "Persona",
+        groupCast: "Group cast",
         memory: "Memories",
         lorebook: "Lorebook",
         authorNote: "Author's Note",

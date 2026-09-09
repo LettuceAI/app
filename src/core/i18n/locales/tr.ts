@@ -1469,10 +1469,12 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(iç dünya / planlanmış notlar)",
       tokenBreakdownHistorySuffix: "(son {{count}} mesaj)",
       tokenBreakdownEntriesSuffix: "({{count}} girdi)",
+      tokenBreakdownCharactersSuffix: "({{count}} karakter)",
       tokenBreakdownCat: {
         system: "Sistem",
         character: "Karakter",
         persona: "Persona",
+        groupCast: "Grup kadrosu",
         memory: "Anılar",
         lorebook: "Lore kitabı",
         authorNote: "Yazar notu",

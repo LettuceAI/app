@@ -2,11 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   getMessageDebugSnapshot,
+  getGroupChatMessageDebugSnapshot,
   type ChatMessageDebugSnapshot,
 } from "../../../../core/chat/manager";
 import { useI18n, type TranslationKey } from "../../../../core/i18n/context";
 import { countTokensBatch } from "../../../../core/tokens";
-import type { StoredMessage } from "../../../../core/storage/schemas";
+// Minimal shape the breakdown needs from a message — satisfied by both the 1:1
+// StoredMessage and the group-chat GroupMessage.
+type BreakdownMessage = {
+  usage?: { promptTokens?: number | null } | null;
+  usedLorebookEntries?: string[] | null;
+};
 
 type PromptEntryLike = {
   id?: unknown;
@@ -19,6 +25,7 @@ export type BreakdownCategory =
   | "system"
   | "character"
   | "persona"
+  | "groupCast"
   | "memory"
   | "lorebook"
   | "authorNote"
@@ -29,6 +36,7 @@ const CATEGORY_ORDER: BreakdownCategory[] = [
   "system",
   "character",
   "persona",
+  "groupCast",
   "memory",
   "lorebook",
   "authorNote",
@@ -40,6 +48,7 @@ const CATEGORY_LABEL_KEYS: Record<BreakdownCategory, TranslationKey> = {
   system: "chats.debugPage.tokenBreakdownCat.system",
   character: "chats.debugPage.tokenBreakdownCat.character",
   persona: "chats.debugPage.tokenBreakdownCat.persona",
+  groupCast: "chats.debugPage.tokenBreakdownCat.groupCast",
   memory: "chats.debugPage.tokenBreakdownCat.memory",
   lorebook: "chats.debugPage.tokenBreakdownCat.lorebook",
   authorNote: "chats.debugPage.tokenBreakdownCat.authorNote",
@@ -52,6 +61,7 @@ const CATEGORY_COLORS: Record<BreakdownCategory, string> = {
   system: "#6366f1", // indigo
   character: "#ec4899", // pink
   persona: "#14b8a6", // teal
+  groupCast: "#f97316", // orange
   memory: "#10b981", // emerald
   lorebook: "#f59e0b", // amber
   authorNote: "#84cc16", // lime (kept clear of the red reserved segment)
@@ -66,6 +76,13 @@ const RESERVED_COLOR = "#ef4444"; // red
 const FREE_COLOR = "#9ca3af"; // grey
 // Indigo for the occupied portion in the simple context usage bar (bar 2).
 const OCCUPIED_COLOR = "#6366f1"; // indigo
+
+// Only local providers reserve the completion budget inside the context window
+// (n_ctx / num_ctx = prompt + completion), so "reserved for response" is shown
+// only for them. Remote providers manage the context window server-side and
+// treat max_tokens as a pure response cap — no reservation to display. Mirrors
+// the backend (chat_manager/execution/provider_fields.rs).
+const RESERVING_PROVIDER_IDS = new Set(["llamacpp", "ollama"]);
 
 /** Flatten an entry/message content (string or multimodal parts) into plain text. */
 function contentToText(content: unknown): string {
@@ -142,6 +159,7 @@ export type TokenBreakdownData = {
   historyCount: number;
   memoryEntryCount: number;
   lorebookEntryCount: number;
+  groupCastCount: number;
   segments: BreakdownSegment[];
 };
 
@@ -154,6 +172,7 @@ export function useMessageDebugSnapshot(
   sessionId: string | null | undefined,
   messageId: string | null | undefined,
   enabled: boolean,
+  variant: "direct" | "group" = "direct",
 ): ChatMessageDebugSnapshot | null {
   const [snapshot, setSnapshot] = useState<ChatMessageDebugSnapshot | null>(null);
 
@@ -163,7 +182,9 @@ export function useMessageDebugSnapshot(
       return;
     }
     let cancelled = false;
-    void getMessageDebugSnapshot({ sessionId, messageId })
+    const load =
+      variant === "group" ? getGroupChatMessageDebugSnapshot : getMessageDebugSnapshot;
+    void load({ sessionId, messageId })
       .then((next) => {
         if (!cancelled) setSnapshot(next);
       })
@@ -173,7 +194,7 @@ export function useMessageDebugSnapshot(
     return () => {
       cancelled = true;
     };
-  }, [sessionId, messageId, enabled]);
+  }, [sessionId, messageId, enabled, variant]);
 
   return snapshot;
 }
@@ -185,7 +206,7 @@ export function useMessageDebugSnapshot(
  */
 export function useTokenBreakdown(
   snapshot: ChatMessageDebugSnapshot | null,
-  message: StoredMessage | null,
+  message: BreakdownMessage | null,
 ): TokenBreakdownData {
   const [breakdown, setBreakdown] = useState<TokenBreakdown | null>(null);
   const [loading, setLoading] = useState(false);
@@ -227,6 +248,7 @@ export function useTokenBreakdown(
     };
     addInline("character", snapshot.characterProfileContent);
     addInline("persona", snapshot.personaContent);
+    addInline("groupCast", snapshot.groupCastContent);
     addInline("lorebook", snapshot.lorebookContent);
     addInline("memory", snapshot.contextSummaryContent);
     addInline("memory", snapshot.keyMemoriesContent);
@@ -243,6 +265,7 @@ export function useTokenBreakdown(
     const INLINE_CATEGORIES: BreakdownCategory[] = [
       "character",
       "persona",
+      "groupCast",
       "lorebook",
       "memory",
       "authorNote",
@@ -310,8 +333,8 @@ export function useTokenBreakdown(
   // includes the reasoning budget the adapter adds on top of max_tokens (see
   // provider_adapter/llamacpp.rs / ollama). We read that instead of the plain
   // configured max_tokens so the bar reflects what really gets held back.
-  const providerId = (snapshot?.providerId ?? "").toLowerCase();
-  const reservesCompletion = providerId === "llamacpp" || providerId === "ollama";
+  const providerId = (snapshot?.providerId ?? "").trim().toLowerCase();
+  const reservesCompletion = RESERVING_PROVIDER_IDS.has(providerId);
   const configuredMaxTokens = (() => {
     const requestSettings = snapshot?.requestSettings as Record<string, unknown> | undefined;
     return typeof requestSettings?.maxTokens === "number"
@@ -357,6 +380,7 @@ export function useTokenBreakdown(
   }, [snapshot]);
   const memoryEntryCount = snapshot?.memoryEntryCount ?? 0;
   const lorebookEntryCount = message?.usedLorebookEntries?.length ?? 0;
+  const groupCastCount = snapshot?.groupCastCount ?? 0;
 
   // Breakdown segments are the prompt categories only, sorted by share (largest
   // first). The reserved completion budget is no longer part of the breakdown —
@@ -388,6 +412,7 @@ export function useTokenBreakdown(
     historyCount,
     memoryEntryCount,
     lorebookEntryCount,
+    groupCastCount,
     segments,
   };
 }
@@ -411,6 +436,7 @@ export function PromptTokenBreakdownBars({ data }: { data: TokenBreakdownData })
     historyCount,
     memoryEntryCount,
     lorebookEntryCount,
+    groupCastCount,
     segments,
   } = data;
 
@@ -419,6 +445,10 @@ export function PromptTokenBreakdownBars({ data }: { data: TokenBreakdownData })
     switch (key) {
       case "companion":
         return t("chats.debugPage.tokenBreakdownCompanionSuffix");
+      case "groupCast":
+        return t("chats.debugPage.tokenBreakdownCharactersSuffix", {
+          count: String(groupCastCount),
+        });
       case "history":
         return t("chats.debugPage.tokenBreakdownHistorySuffix", {
           count: String(historyCount),

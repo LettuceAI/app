@@ -1469,10 +1469,12 @@ export const plMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(życie wewnętrzne / zaplanowane notatki)",
       tokenBreakdownHistorySuffix: "(ostatnie {{count}} wiadomości)",
       tokenBreakdownEntriesSuffix: "({{count}} wpisów)",
+      tokenBreakdownCharactersSuffix: "({{count}} postaci)",
       tokenBreakdownCat: {
         system: "System",
         character: "Postać",
         persona: "Persona",
+        groupCast: "Obsada grupy",
         memory: "Wspomnienia",
         lorebook: "Lorebook",
         authorNote: "Notatka autora",

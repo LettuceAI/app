@@ -1469,10 +1469,12 @@ export const ptMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(vida interior / notas agendadas)",
       tokenBreakdownHistorySuffix: "(últimas {{count}} mensagens)",
       tokenBreakdownEntriesSuffix: "({{count}} entradas)",
+      tokenBreakdownCharactersSuffix: "({{count}} personagens)",
       tokenBreakdownCat: {
         system: "Sistema",
         character: "Personagem",
         persona: "Persona",
+        groupCast: "Elenco do grupo",
         memory: "Memórias",
         lorebook: "Lorebook",
         authorNote: "Nota do autor",

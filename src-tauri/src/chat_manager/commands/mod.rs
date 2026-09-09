@@ -81,6 +81,12 @@ pub struct ChatMessageDebugSnapshot {
     pub author_note_content: String,
     pub companion_state_content: String,
     pub scheduled_notes_content: String,
+    // Raw text of the `{{group_characters}}` cast block. Only populated for group
+    // chat snapshots; empty for 1:1 chats where that placeholder does not exist.
+    pub group_cast_content: String,
+    // Group chat only: number of other participants whose profiles are in the
+    // group cast block (0 for 1:1 chats).
+    pub group_cast_count: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -672,6 +678,8 @@ pub fn chat_message_debug_snapshot(
         author_note_content: prompt_sources.author_note,
         companion_state_content: prompt_sources.companion_state,
         scheduled_notes_content: prompt_sources.scheduled_notes,
+        group_cast_content: String::new(),
+        group_cast_count: 0,
     })
 }
 

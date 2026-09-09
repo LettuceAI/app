@@ -1469,10 +1469,12 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(內心 / 排程筆記 (inner life / scheduled notes))",
       tokenBreakdownHistorySuffix: "(最近 {{count}} 則訊息 (last {{count}} messages))",
       tokenBreakdownEntriesSuffix: "({{count}} 個條目 (entries))",
+      tokenBreakdownCharactersSuffix: "({{count}} 個角色 (characters))",
       tokenBreakdownCat: {
         system: "系統 (System)",
         character: "角色 (Character)",
         persona: "人設 (Persona)",
+        groupCast: "群組角色 (Group cast)",
         memory: "記憶 (Memories)",
         lorebook: "設定集 (Lorebook)",
         authorNote: "作者備注 (Author's Note)",

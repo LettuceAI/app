@@ -1469,10 +1469,12 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(आंतरिक जीवन / शेड्यूल्ड नोट्स)",
       tokenBreakdownHistorySuffix: "(अंतिम {{count}} संदेश)",
       tokenBreakdownEntriesSuffix: "({{count}} प्रविष्टियाँ)",
+      tokenBreakdownCharactersSuffix: "({{count}} कैरेक्टर)",
       tokenBreakdownCat: {
         system: "सिस्टम",
         character: "कैरेक्टर",
         persona: "पर्सोना",
+        groupCast: "ग्रुप कास्ट",
         memory: "यादें",
         lorebook: "लोरबुक",
         authorNote: "लेखक की टिप्पणी",

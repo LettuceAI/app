@@ -494,6 +494,7 @@ macro_rules! invoke_handler {
             crate::storage_manager::group_sessions::group_session_toggle_memory_pin,
             crate::storage_manager::group_sessions::group_session_set_memory_cold_state,
             crate::group_chat_manager::group_chat_add_user_message,
+            crate::group_chat_manager::group_chat_message_debug_snapshot,
             crate::group_chat_manager::group_chat_send,
             crate::group_chat_manager::group_chat_regenerate,
             crate::group_chat_manager::group_chat_continue,

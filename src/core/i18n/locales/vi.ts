@@ -1469,10 +1469,12 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownCompanionSuffix: "(đời sống nội tâm / ghi chú theo lịch)",
       tokenBreakdownHistorySuffix: "({{count}} tin nhắn gần nhất)",
       tokenBreakdownEntriesSuffix: "({{count}} mục)",
+      tokenBreakdownCharactersSuffix: "({{count}} nhân vật)",
       tokenBreakdownCat: {
         system: "Hệ thống",
         character: "Nhân vật",
         persona: "Persona",
+        groupCast: "Dàn nhân vật nhóm",
         memory: "Ký ức",
         lorebook: "Sách lore",
         authorNote: "Ghi chú tác giả",
