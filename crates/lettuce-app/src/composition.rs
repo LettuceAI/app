@@ -284,6 +284,14 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub const fn kokoro_voice_blends(
+        &self,
+        installs: lettuce_model_hub::KokoroVoiceInstallStore,
+    ) -> crate::KokoroVoiceBlendCoordinator {
+        crate::KokoroVoiceBlendCoordinator::new(installs)
+    }
+
+    #[must_use]
     pub const fn kokoro_phonemization(
         &self,
         installs: lettuce_model_hub::KokoroInstallStore,

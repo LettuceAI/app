@@ -85,3 +85,8 @@ directory and rechecks every requested voice before reporting a batch installed.
 Managed removal verifies the exact pinned artifact and confined target before
 deleting a model variant or voice. Missing files replay as already removed;
 model removal preserves the shared config and tokenizer artifacts.
+Installed Kokoro voice bytes cross into the speech runtime only through a
+purpose-specific materialization method. It validates the pinned descriptor and
+streams the confined file through the same size and SHA-256 check that retains
+the bounded bytes. The materialized value has no serialization and its debug
+form exposes only the voice ID and byte count.

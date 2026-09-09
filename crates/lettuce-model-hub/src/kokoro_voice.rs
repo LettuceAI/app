@@ -1,4 +1,4 @@
-use std::{io::Read, path::Path};
+use std::{fmt, io::Read, path::Path};
 
 use lettuce_platform::{ConfinedInstallStore, InstallPreparation, ObjectKey, ResumableInstall};
 use sha2::{Digest, Sha256};
@@ -22,6 +22,33 @@ pub struct RemoteKokoroVoice {
 #[derive(Debug)]
 pub struct KokoroVoiceInstallStore {
     inner: ConfinedInstallStore,
+}
+
+pub struct MaterializedKokoroVoice {
+    id: String,
+    bytes: Box<[u8]>,
+}
+
+impl MaterializedKokoroVoice {
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl fmt::Debug for MaterializedKokoroVoice {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MaterializedKokoroVoice")
+            .field("id", &self.id)
+            .field("byte_len", &self.bytes.len())
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -139,6 +166,35 @@ impl KokoroVoiceInstallStore {
         Ok(Some(installed))
     }
 
+    pub fn materialize(
+        &self,
+        remotes: &[RemoteKokoroVoice],
+    ) -> Result<Option<Vec<MaterializedKokoroVoice>>, KokoroInstallError> {
+        let mut materialized = Vec::with_capacity(remotes.len());
+        for remote in remotes {
+            remote.validate()?;
+            let filename = format!("{}.bin", remote.id);
+            let target = ObjectKey::from_segments(["voices", filename.as_str()])
+                .map_err(KokoroInstallError::Platform)?;
+            let Some(mut file) = self
+                .inner
+                .inspect(&target)
+                .map_err(KokoroInstallError::Platform)?
+            else {
+                return Ok(None);
+            };
+            let mut bytes = Vec::with_capacity(
+                usize::try_from(remote.byte_size).map_err(|_| KokoroInstallError::Mismatch)?,
+            );
+            verify_voice_with(&mut file, remote, |chunk| bytes.extend_from_slice(chunk))?;
+            materialized.push(MaterializedKokoroVoice {
+                id: remote.id.clone(),
+                bytes: bytes.into_boxed_slice(),
+            });
+        }
+        Ok(Some(materialized))
+    }
+
     pub fn remove_managed(&self, remote: &RemoteKokoroVoice) -> Result<bool, KokoroInstallError> {
         remote.validate()?;
         let filename = format!("{}.bin", remote.id);
@@ -215,6 +271,14 @@ fn verify_voice(
     file: &mut impl Read,
     remote: &RemoteKokoroVoice,
 ) -> Result<(), KokoroInstallError> {
+    verify_voice_with(file, remote, |_| {})
+}
+
+fn verify_voice_with(
+    file: &mut impl Read,
+    remote: &RemoteKokoroVoice,
+    mut consume: impl FnMut(&[u8]),
+) -> Result<(), KokoroInstallError> {
     let mut hash = Sha256::new();
     let mut total = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
@@ -232,6 +296,7 @@ fn verify_voice(
             return Err(KokoroInstallError::Mismatch);
         }
         hash.update(&buffer[..read]);
+        consume(&buffer[..read]);
     }
     if total != remote.byte_size || format!("{:x}", hash.finalize()) != remote.sha256 {
         return Err(KokoroInstallError::Mismatch);
@@ -308,6 +373,13 @@ mod tests {
         resumed.append(&bytes[8..]).expect("remaining voice");
         let installed = resumed.finish().expect("verified voice");
         assert_eq!(installed.id, "af_heart");
+        let materialized = store
+            .materialize(std::slice::from_ref(&remote))
+            .expect("materialization")
+            .expect("installed voice");
+        assert_eq!(materialized[0].id(), "af_heart");
+        assert_eq!(materialized[0].bytes(), bytes);
+        assert!(!format!("{:?}", materialized[0]).contains("verified voice bytes"));
         assert_eq!(
             store
                 .installed(std::slice::from_ref(&remote))

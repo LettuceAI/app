@@ -989,3 +989,8 @@ Kokoro phonemization runs only after the complete pinned model bundle is
 reverified through its confined install store. The application supplies the
 purpose-specific eSpeak capability to the speech boundary and accepts no
 operational model, tokenizer, config or executable path per request.
+Kokoro voice blending resolves each normalized voice ID to one pinned remote
+descriptor, revalidates and materializes its confined installed bytes, then
+hands only bounded voice material to the speech boundary. Missing or ambiguous
+descriptors and changed assets fail before style selection; native paths do not
+cross the coordinator.

@@ -248,3 +248,9 @@ segmentation, lexicon replacement, batched eSpeak fallback and the complete
 upstream character-to-token table. Inputs, lexicon entries and token output are
 bounded. Process execution is supplied only through the purpose-specific
 platform phonemizer capability; ONNX and audio synthesis remain separate.
+Kokoro voice style loading preserves the 256-float little-endian row format,
+first-seen duplicate merge order, positive-weight normalization, weighted
+per-row blending, shorter-voice last-row extension and token-count row clamp.
+The boundary rejects malformed rows, unsafe IDs, nonfinite samples and weights,
+and arithmetic overflow. It returns normalized blend metadata plus bounded
+style rows; ONNX execution and audio synthesis remain separate.
