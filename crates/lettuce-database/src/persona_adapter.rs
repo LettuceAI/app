@@ -392,7 +392,7 @@ fn persona_row(connection: &Connection, id: PersonaId) -> Result<Option<Persona>
         .optional()
 }
 
-fn load_persona(
+pub(crate) fn load_persona(
     connection: &Connection,
     id: PersonaId,
 ) -> Result<Option<Persona>, rusqlite::Error> {
@@ -438,7 +438,9 @@ pub(crate) fn get_persona(
     load_persona(connection, id).map_err(db_error)
 }
 
-fn read_default(connection: &Connection) -> Result<PersonaDefaultState, rusqlite::Error> {
+pub(crate) fn read_default(
+    connection: &Connection,
+) -> Result<PersonaDefaultState, rusqlite::Error> {
     let state = connection
         .query_row(
             "SELECT default_persona_id,revision,created_at,updated_at FROM persona_defaults WHERE id=1",
@@ -581,6 +583,81 @@ pub(crate) fn insert_persona(
     load_persona(tx, persona.id)
         .map_err(db_error)?
         .ok_or(RepositoryError::Storage)
+}
+
+pub(crate) fn apply_synced_persona(
+    tx: &Transaction<'_>,
+    persona: Persona,
+) -> Result<Persona, RepositoryError> {
+    persona.validate()?;
+    image_assets(tx, persona.media.links.iter().map(|link| link.asset_id))?;
+    let media = normalize_media(persona.media.clone())?;
+    if load_persona(tx, persona.id).map_err(db_error)?.is_none() {
+        return insert_persona(tx, persona);
+    }
+    let crop = persona
+        .avatar_crop
+        .as_ref()
+        .map(|value| encode(value, CROP_VERSION))
+        .transpose()?;
+    let recommendation = persona
+        .image_recommendation
+        .as_ref()
+        .map(|value| encode(value, RECOMMENDATION_VERSION))
+        .transpose()?;
+    tx.execute(
+        "UPDATE personas SET status=?2,title=?3,normalized_title=?4,nickname=?5,
+         normalized_nickname=?6,description=?7,design_description=?8,
+         avatar_crop_json=?9,image_recommendation_json=?10,revision=?11,
+         created_at=?12,updated_at=?13 WHERE id=?1",
+        params![
+            persona.id.to_string(),
+            status_name(persona.status),
+            persona.title,
+            canonical_title(&persona.title),
+            persona.nickname,
+            persona.nickname.as_deref().map(canonical_title),
+            persona.description,
+            persona.design_description,
+            crop,
+            recommendation,
+            sql_u64(persona.revision.get())?,
+            persona.created_at.get(),
+            persona.updated_at.get()
+        ],
+    )
+    .map_err(db_error)?;
+    replace_media(tx, persona.id, &media)?;
+    load_persona(tx, persona.id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::Storage)
+}
+
+pub(crate) fn apply_synced_persona_default(
+    tx: &Transaction<'_>,
+    state: PersonaDefaultState,
+) -> Result<PersonaDefaultState, RepositoryError> {
+    state.validate()?;
+    if let Some(id) = state.persona_id {
+        let persona = load_persona(tx, id)
+            .map_err(db_error)?
+            .ok_or(RepositoryError::NotFound)?;
+        if persona.status != LifecycleStatus::Active {
+            return Err(RepositoryError::Archived);
+        }
+    }
+    tx.execute(
+        "UPDATE persona_defaults SET default_persona_id=?1,revision=?2,
+         created_at=?3,updated_at=?4 WHERE id=1",
+        params![
+            state.persona_id.map(|id| id.to_string()),
+            sql_u64(state.revision.get())?,
+            state.created_at.get(),
+            state.updated_at.get()
+        ],
+    )
+    .map_err(db_error)?;
+    read_default(tx).map_err(db_error)
 }
 
 pub(crate) fn revise_persona(

@@ -616,4 +616,13 @@ Migration 19 also stores durable monotonic peer frontiers. The sync adapter
 exports the local canonical journal in bounded causal-ready batches, rejects a
 gap instead of silently skipping it, clamps acknowledgements to the local
 frontier and preserves them across reopen. Network sessions, incoming apply and
-conflict handling remain outside this storage slice.
+conflict handling were deliberately left to the following storage slice.
+
+Migration 19 now also stores immutable incoming batches and conflict evidence.
+Persona/default batches are staged before application, then supported snapshots,
+remote changes, causal frontiers, conflict evidence and remote-clock observation
+commit atomically. Exact committed delivery replays across reopen. Unknown
+schemas, origin gaps and missing materialization dependencies stay pending with
+their original bytes. The adapter never deletes pending input or either side of
+a conflict; resolution, peer transport, authentication and blob transfer remain
+later sync work.

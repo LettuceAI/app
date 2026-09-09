@@ -13,7 +13,7 @@ CREATE TABLE sync_frontiers (
 
 CREATE TABLE sync_changes (
     change_id TEXT PRIMARY KEY CHECK (length(change_id) = 36),
-    operation_id TEXT NOT NULL UNIQUE CHECK (length(operation_id) = 36),
+    operation_id TEXT UNIQUE CHECK (operation_id IS NULL OR length(operation_id) = 36),
     format_version INTEGER NOT NULL CHECK (format_version >= 1),
     fingerprint TEXT NOT NULL UNIQUE CHECK (length(fingerprint) = 64),
     origin_device_id TEXT NOT NULL CHECK (length(origin_device_id) = 36),
@@ -67,20 +67,66 @@ CREATE TABLE sync_peer_frontiers (
     PRIMARY KEY (peer_device_id, origin_device_id)
 ) STRICT;
 
+CREATE TABLE sync_incoming_batches (
+    batch_id TEXT PRIMARY KEY CHECK (length(batch_id) = 36),
+    peer_device_id TEXT NOT NULL CHECK (length(peer_device_id) = 36),
+    batch_hash TEXT NOT NULL CHECK (length(batch_hash) = 64),
+    change_count INTEGER NOT NULL CHECK (change_count BETWEEN 1 AND 256),
+    payload_bytes INTEGER NOT NULL CHECK (payload_bytes BETWEEN 0 AND 16777216),
+    state TEXT NOT NULL CHECK (state IN ('staged', 'pending', 'committed')),
+    pending_reason TEXT,
+    created_at INTEGER NOT NULL,
+    committed_at INTEGER,
+    CHECK (
+        (state = 'committed' AND committed_at IS NOT NULL AND pending_reason IS NULL) OR
+        (state <> 'committed' AND committed_at IS NULL)
+    )
+) STRICT;
+
+CREATE TABLE sync_incoming_changes (
+    batch_id TEXT NOT NULL REFERENCES sync_incoming_batches(batch_id) ON DELETE RESTRICT,
+    change_id TEXT NOT NULL CHECK (length(change_id) = 36),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64),
+    document BLOB NOT NULL CHECK (length(document) BETWEEN 1 AND 131072),
+    payload_bytes BLOB CHECK (payload_bytes IS NULL OR length(payload_bytes) BETWEEN 1 AND 8388608),
+    PRIMARY KEY (batch_id, change_id),
+    UNIQUE (batch_id, ordinal)
+) STRICT;
+
+CREATE TABLE sync_conflicts (
+    conflict_id TEXT PRIMARY KEY CHECK (length(conflict_id) = 36),
+    entity_kind TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    current_change_id TEXT REFERENCES sync_changes(change_id) ON DELETE RESTRICT,
+    incoming_change_id TEXT NOT NULL UNIQUE REFERENCES sync_changes(change_id) ON DELETE RESTRICT,
+    winning_side TEXT NOT NULL CHECK (winning_side IN ('current', 'incoming')),
+    current_payload BLOB,
+    incoming_payload BLOB NOT NULL,
+    detected_at INTEGER NOT NULL
+) STRICT;
+
 CREATE INDEX sync_changes_origin_idx
 ON sync_changes(origin_device_id, origin_sequence);
 
 CREATE INDEX sync_changes_entity_idx
 ON sync_changes(entity_kind, entity_id, origin_device_id, origin_sequence);
 
+CREATE INDEX sync_incoming_batches_state_idx
+ON sync_incoming_batches(peer_device_id, state, created_at);
+
 CREATE TRIGGER sync_local_state_update_guard
 BEFORE UPDATE ON sync_local_state
 WHEN NEW.id <> OLD.id OR
      NEW.device_id <> OLD.device_id OR
-     NEW.origin_sequence <> OLD.origin_sequence + 1 OR
-     NEW.hlc_wall_time < OLD.hlc_wall_time OR
-     (NEW.hlc_wall_time = OLD.hlc_wall_time AND NEW.hlc_counter <> OLD.hlc_counter + 1) OR
-     (NEW.hlc_wall_time > OLD.hlc_wall_time AND NEW.hlc_counter <> 0)
+     NOT (
+       (NEW.origin_sequence = OLD.origin_sequence + 1 AND
+        ((NEW.hlc_wall_time = OLD.hlc_wall_time AND NEW.hlc_counter = OLD.hlc_counter + 1) OR
+         (NEW.hlc_wall_time > OLD.hlc_wall_time AND NEW.hlc_counter = 0))) OR
+       (NEW.origin_sequence = OLD.origin_sequence AND
+        (NEW.hlc_wall_time > OLD.hlc_wall_time OR
+         (NEW.hlc_wall_time = OLD.hlc_wall_time AND NEW.hlc_counter > OLD.hlc_counter)))
+     )
 BEGIN
     SELECT RAISE(ABORT, 'invalid local sync clock transition');
 END;
@@ -128,4 +174,47 @@ CREATE TRIGGER sync_peer_frontiers_no_delete
 BEFORE DELETE ON sync_peer_frontiers
 BEGIN
     SELECT RAISE(ABORT, 'peer acknowledgements are durable');
+END;
+
+CREATE TRIGGER sync_incoming_batches_update_guard
+BEFORE UPDATE ON sync_incoming_batches
+WHEN NEW.batch_id <> OLD.batch_id OR
+     NEW.peer_device_id <> OLD.peer_device_id OR
+     NEW.batch_hash <> OLD.batch_hash OR
+     NEW.change_count <> OLD.change_count OR
+     NEW.payload_bytes <> OLD.payload_bytes OR
+     NEW.created_at <> OLD.created_at OR
+     OLD.state = 'committed'
+BEGIN
+    SELECT RAISE(ABORT, 'invalid incoming batch transition');
+END;
+
+CREATE TRIGGER sync_incoming_batches_no_delete
+BEFORE DELETE ON sync_incoming_batches
+BEGIN
+    SELECT RAISE(ABORT, 'incoming sync batches are durable');
+END;
+
+CREATE TRIGGER sync_incoming_changes_no_update
+BEFORE UPDATE ON sync_incoming_changes
+BEGIN
+    SELECT RAISE(ABORT, 'incoming sync changes are immutable');
+END;
+
+CREATE TRIGGER sync_incoming_changes_no_delete
+BEFORE DELETE ON sync_incoming_changes
+BEGIN
+    SELECT RAISE(ABORT, 'incoming sync changes are durable');
+END;
+
+CREATE TRIGGER sync_conflicts_no_update
+BEFORE UPDATE ON sync_conflicts
+BEGIN
+    SELECT RAISE(ABORT, 'sync conflicts require explicit resolution');
+END;
+
+CREATE TRIGGER sync_conflicts_no_delete
+BEFORE DELETE ON sync_conflicts
+BEGIN
+    SELECT RAISE(ABORT, 'sync conflicts are durable');
 END;

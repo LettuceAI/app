@@ -1,16 +1,26 @@
 use std::collections::BTreeMap;
 
+use lettuce_characters::{Persona, PersonaDefaultState, RepositoryError};
 use lettuce_sync::{
     CANONICAL_CHANGE_VERSION, CanonicalChange, CanonicalPayload, CausalFrontier, ChangeOperation,
-    HybridTimestamp, LocalChangeAdmission, LocalChangeJournal, LocalChangeJournalError,
-    MAX_FRONTIER_DEVICES, MAX_OUTBOUND_CHANGES, MAX_OUTBOUND_PAYLOAD_BYTES, NewCanonicalChange,
-    OutboundChangeBatch, SyncChangeId, SyncDeviceId, SyncEntity,
+    HybridTimestamp, IncomingBatchAdmission, IncomingBatchResult, IncomingBatchState,
+    IncomingChangeError, IncomingChangeRepository, LocalChangeAdmission, LocalChangeJournal,
+    LocalChangeJournalError, MAX_FRONTIER_DEVICES, MAX_INCOMING_CHANGES,
+    MAX_INCOMING_PAYLOAD_BYTES, MAX_OUTBOUND_CHANGES, MAX_OUTBOUND_PAYLOAD_BYTES,
+    NewCanonicalChange, OutboundChangeBatch, PERSONA_DEFAULT_SYNC_SCHEMA,
+    PERSONA_DEFAULT_SYNC_VERSION, PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION, SyncChangeId,
+    SyncDeviceId, SyncEntity, canonical_batch_hash, canonical_persona_default_payload,
+    canonical_persona_payload,
 };
-use lettuce_types::{ContentHash, OperationId, TimestampMillis};
-use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, params};
+use lettuce_types::{ContentHash, OperationId, PersonaId, TimestampMillis};
+use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::Database;
+use crate::persona_adapter::{
+    apply_synced_persona, apply_synced_persona_default, load_persona, read_default,
+};
 
 fn storage(_: impl std::fmt::Debug) -> LocalChangeJournalError {
     LocalChangeJournalError::Storage
@@ -18,6 +28,107 @@ fn storage(_: impl std::fmt::Debug) -> LocalChangeJournalError {
 
 fn corrupt(_: impl std::fmt::Debug) -> LocalChangeJournalError {
     LocalChangeJournalError::Corrupt
+}
+
+fn incoming_storage(_: impl std::fmt::Debug) -> IncomingChangeError {
+    IncomingChangeError::Storage
+}
+
+fn incoming_corrupt(_: impl std::fmt::Debug) -> IncomingChangeError {
+    IncomingChangeError::Corrupt
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredIncomingChange {
+    version: u32,
+    id: String,
+    origin_device: String,
+    origin_sequence: u64,
+    wall_time: i64,
+    counter: u32,
+    base_frontier: Vec<(String, u64)>,
+    entity_kind: String,
+    entity_id: String,
+    operation: String,
+    base_revision: Option<String>,
+    payload_schema: Option<String>,
+    payload_version: Option<u32>,
+    fingerprint: String,
+}
+
+impl StoredIncomingChange {
+    fn from_change(change: &CanonicalChange) -> Self {
+        Self {
+            version: change.version(),
+            id: change.id().as_uuid().to_string(),
+            origin_device: change.origin_device().as_uuid().to_string(),
+            origin_sequence: change.origin_sequence(),
+            wall_time: change.timestamp().wall_time().get(),
+            counter: change.timestamp().counter(),
+            base_frontier: change
+                .base_frontier()
+                .iter()
+                .map(|(device, sequence)| (device.as_uuid().to_string(), *sequence))
+                .collect(),
+            entity_kind: change.entity().kind().into(),
+            entity_id: change.entity().id().into(),
+            operation: operation_name(change.operation()).into(),
+            base_revision: change.base_revision().map(ToString::to_string),
+            payload_schema: change.payload().map(|payload| payload.schema().into()),
+            payload_version: change.payload().map(CanonicalPayload::version),
+            fingerprint: change.fingerprint().to_string(),
+        }
+    }
+
+    fn into_change(
+        self,
+        payload_bytes: Option<Vec<u8>>,
+    ) -> Result<CanonicalChange, IncomingChangeError> {
+        if self.version != CANONICAL_CHANGE_VERSION {
+            return Err(IncomingChangeError::Corrupt);
+        }
+        let id = SyncChangeId::from_uuid(Uuid::parse_str(&self.id).map_err(incoming_corrupt)?);
+        let origin_device = SyncDeviceId::from_uuid(
+            Uuid::parse_str(&self.origin_device).map_err(incoming_corrupt)?,
+        );
+        let mut frontier = CausalFrontier::new();
+        for (device, sequence) in self.base_frontier {
+            let device =
+                SyncDeviceId::from_uuid(Uuid::parse_str(&device).map_err(incoming_corrupt)?);
+            if frontier.insert(device, sequence).is_some() {
+                return Err(IncomingChangeError::Corrupt);
+            }
+        }
+        let payload = match (self.payload_schema, self.payload_version, payload_bytes) {
+            (None, None, None) => None,
+            (Some(schema), Some(version), Some(bytes)) => {
+                Some(CanonicalPayload::new(schema, version, bytes).map_err(incoming_corrupt)?)
+            }
+            _ => return Err(IncomingChangeError::Corrupt),
+        };
+        let change = CanonicalChange::new(
+            id,
+            origin_device,
+            self.origin_sequence,
+            HybridTimestamp::new(TimestampMillis::new(self.wall_time), self.counter),
+            frontier,
+            SyncEntity::new(self.entity_kind, self.entity_id).map_err(incoming_corrupt)?,
+            operation_from_name(&self.operation).map_err(incoming_corrupt)?,
+            self.base_revision
+                .map(ContentHash::parse)
+                .transpose()
+                .map_err(incoming_corrupt)?,
+            payload,
+        )
+        .map_err(incoming_corrupt)?;
+        if change.fingerprint()
+            != &ContentHash::parse(self.fingerprint).map_err(incoming_corrupt)?
+        {
+            return Err(IncomingChangeError::Corrupt);
+        }
+        Ok(change)
+    }
 }
 
 fn operation_name(operation: ChangeOperation) -> &'static str {
@@ -125,7 +236,7 @@ pub(crate) fn record_local_change_in(
         request.payload().cloned(),
     )
     .map_err(|_| LocalChangeJournalError::Invalid)?;
-    insert_change(connection, operation_id, &change, now)?;
+    insert_change(connection, Some(operation_id), &change, now)?;
     Ok(LocalChangeAdmission {
         change,
         created: true,
@@ -358,9 +469,6 @@ fn next_identity_and_stamp(
         .optional()
         .map_err(storage)?;
     let Some((device, sequence, wall_time, counter)) = state else {
-        if !frontier.is_empty() {
-            return Err(LocalChangeJournalError::Corrupt);
-        }
         let device = SyncDeviceId::new();
         connection
             .execute(
@@ -374,7 +482,9 @@ fn next_identity_and_stamp(
     };
     let device = SyncDeviceId::from_uuid(Uuid::parse_str(&device).map_err(corrupt)?);
     let current_sequence = u64::try_from(sequence).map_err(corrupt)?;
-    if current_sequence == 0 || frontier.get(&device) != Some(&current_sequence) {
+    if (current_sequence == 0 && frontier.contains_key(&device))
+        || (current_sequence > 0 && frontier.get(&device) != Some(&current_sequence))
+    {
         return Err(LocalChangeJournalError::Corrupt);
     }
     let sequence = sequence
@@ -408,9 +518,69 @@ fn next_identity_and_stamp(
     ))
 }
 
+fn observe_remote_clock(
+    connection: &Connection,
+    remote: HybridTimestamp,
+    now: TimestampMillis,
+) -> Result<(), LocalChangeJournalError> {
+    let state = connection
+        .query_row(
+            "SELECT hlc_wall_time, hlc_counter FROM sync_local_state WHERE id = 1",
+            [],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    let remote_wall = remote.wall_time().get();
+    let remote_counter = i64::from(remote.counter());
+    let Some((local_wall, local_counter)) = state else {
+        let wall = now.get().max(remote_wall);
+        let counter = if wall == remote_wall {
+            remote_counter
+                .checked_add(1)
+                .ok_or(LocalChangeJournalError::Exhausted)?
+        } else {
+            0
+        };
+        connection
+            .execute(
+                "INSERT INTO sync_local_state
+                 (id, device_id, origin_sequence, hlc_wall_time, hlc_counter)
+                 VALUES (1, ?1, 0, ?2, ?3)",
+                params![SyncDeviceId::new().as_uuid().to_string(), wall, counter],
+            )
+            .map_err(storage)?;
+        return Ok(());
+    };
+    let wall = now.get().max(local_wall).max(remote_wall);
+    let counter = if wall == local_wall && wall == remote_wall {
+        local_counter
+            .max(remote_counter)
+            .checked_add(1)
+            .ok_or(LocalChangeJournalError::Exhausted)?
+    } else if wall == local_wall {
+        local_counter
+            .checked_add(1)
+            .ok_or(LocalChangeJournalError::Exhausted)?
+    } else if wall == remote_wall {
+        remote_counter
+            .checked_add(1)
+            .ok_or(LocalChangeJournalError::Exhausted)?
+    } else {
+        0
+    };
+    connection
+        .execute(
+            "UPDATE sync_local_state SET hlc_wall_time = ?1, hlc_counter = ?2 WHERE id = 1",
+            params![wall, counter],
+        )
+        .map_err(storage)?;
+    Ok(())
+}
+
 fn insert_change(
     connection: &Connection,
-    operation_id: OperationId,
+    operation_id: Option<OperationId>,
     change: &CanonicalChange,
     created_at: TimestampMillis,
 ) -> Result<(), LocalChangeJournalError> {
@@ -441,7 +611,7 @@ fn insert_change(
              )",
             params![
                 change.id().as_uuid().to_string(),
-                operation_id.to_string(),
+                operation_id.map(|id| id.to_string()),
                 i64::from(change.version()),
                 change.fingerprint().as_str(),
                 change.origin_device().as_uuid().to_string(),
@@ -485,6 +655,311 @@ fn insert_change(
             ],
         )
         .map_err(storage)?;
+    Ok(())
+}
+
+fn load_change_by_id(
+    connection: &Connection,
+    id: SyncChangeId,
+) -> Result<Option<CanonicalChange>, IncomingChangeError> {
+    let row = connection
+        .query_row(
+            "SELECT change_id, format_version, fingerprint, origin_device_id,
+                    origin_sequence, hlc_wall_time, hlc_counter, entity_kind,
+                    entity_id, operation, base_revision, payload_schema,
+                    payload_version, payload_bytes, payload_hash
+             FROM sync_changes WHERE change_id = ?1",
+            [id.as_uuid().to_string()],
+            StoredChangeRow::from_row,
+        )
+        .optional()
+        .map_err(incoming_storage)?;
+    row.map(|row| hydrate_change(connection, row).map_err(incoming_corrupt))
+        .transpose()
+}
+
+fn load_materialized_change(
+    connection: &Connection,
+    entity: &SyncEntity,
+    payload_hash: &ContentHash,
+) -> Result<Option<CanonicalChange>, IncomingChangeError> {
+    let id = connection
+        .query_row(
+            "SELECT change_id FROM sync_changes
+             WHERE entity_kind = ?1 AND entity_id = ?2 AND payload_hash = ?3
+             ORDER BY hlc_wall_time DESC, hlc_counter DESC,
+                      origin_device_id DESC, origin_sequence DESC, change_id DESC
+             LIMIT 1",
+            params![entity.kind(), entity.id(), payload_hash.as_str()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(incoming_storage)?;
+    id.map(|id| {
+        let id = SyncChangeId::from_uuid(Uuid::parse_str(&id).map_err(incoming_corrupt)?);
+        load_change_by_id(connection, id)?.ok_or(IncomingChangeError::Corrupt)
+    })
+    .transpose()
+}
+
+fn load_staged_changes(
+    connection: &Connection,
+    batch_id: OperationId,
+) -> Result<Vec<CanonicalChange>, IncomingChangeError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT change_id, fingerprint, document, payload_bytes
+             FROM sync_incoming_changes WHERE batch_id = ?1 ORDER BY ordinal",
+        )
+        .map_err(incoming_storage)?;
+    let rows = statement
+        .query_map([batch_id.to_string()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+                row.get::<_, Option<Vec<u8>>>(3)?,
+            ))
+        })
+        .map_err(incoming_storage)?;
+    let mut changes = Vec::new();
+    for row in rows {
+        let (id, fingerprint, document, payload_bytes) = row.map_err(incoming_storage)?;
+        let stored: StoredIncomingChange =
+            serde_json::from_slice(&document).map_err(incoming_corrupt)?;
+        let change = stored.into_change(payload_bytes)?;
+        if change.id().as_uuid().to_string() != id || change.fingerprint().as_str() != fingerprint {
+            return Err(IncomingChangeError::Corrupt);
+        }
+        changes.push(change);
+    }
+    Ok(changes)
+}
+
+fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeError> {
+    let Some(payload) = change.payload() else {
+        return Ok(false);
+    };
+    match (change.entity().kind(), payload.schema(), payload.version()) {
+        ("persona", PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION) => {
+            let persona: Persona =
+                serde_json::from_slice(payload.bytes()).map_err(incoming_corrupt)?;
+            persona.validate().map_err(incoming_corrupt)?;
+            if persona.id.to_string() != change.entity().id()
+                || !matches!(
+                    change.operation(),
+                    ChangeOperation::Insert | ChangeOperation::Update
+                )
+            {
+                return Err(IncomingChangeError::Corrupt);
+            }
+            Ok(true)
+        }
+        ("persona_default", PERSONA_DEFAULT_SYNC_SCHEMA, PERSONA_DEFAULT_SYNC_VERSION) => {
+            let state: PersonaDefaultState =
+                serde_json::from_slice(payload.bytes()).map_err(incoming_corrupt)?;
+            state.validate().map_err(incoming_corrupt)?;
+            if change.entity().id() != "application"
+                || change.operation() != ChangeOperation::Update
+            {
+                return Err(IncomingChangeError::Corrupt);
+            }
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
+fn incoming_wins(incoming: &CanonicalChange, current: &CanonicalChange) -> bool {
+    (
+        incoming.timestamp(),
+        incoming.origin_device(),
+        incoming.origin_sequence(),
+        incoming.id(),
+    ) > (
+        current.timestamp(),
+        current.origin_device(),
+        current.origin_sequence(),
+        current.id(),
+    )
+}
+
+enum ApplyOneError {
+    Pending,
+    Corrupt,
+    Storage,
+}
+
+fn repository_apply_error(error: RepositoryError) -> ApplyOneError {
+    match error {
+        RepositoryError::NotFound
+        | RepositoryError::Archived
+        | RepositoryError::HasDependencies => ApplyOneError::Pending,
+        RepositoryError::Storage => ApplyOneError::Storage,
+        _ => ApplyOneError::Corrupt,
+    }
+}
+
+fn insert_conflict(
+    tx: &Transaction<'_>,
+    change: &CanonicalChange,
+    current: Option<&CanonicalChange>,
+    current_payload: Option<&[u8]>,
+    incoming_payload: &[u8],
+    winner_is_incoming: bool,
+    now: TimestampMillis,
+) -> Result<(), ApplyOneError> {
+    let conflict_id = Uuid::new_v5(&change.id().as_uuid(), b"entity-conflict");
+    tx.execute(
+        "INSERT INTO sync_conflicts (
+           conflict_id, entity_kind, entity_id, current_change_id,
+           incoming_change_id, winning_side, current_payload, incoming_payload,
+           detected_at
+         ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
+         ON CONFLICT(incoming_change_id) DO NOTHING",
+        params![
+            conflict_id.to_string(),
+            change.entity().kind(),
+            change.entity().id(),
+            current.map(|value| value.id().as_uuid().to_string()),
+            change.id().as_uuid().to_string(),
+            if winner_is_incoming {
+                "incoming"
+            } else {
+                "current"
+            },
+            current_payload,
+            incoming_payload,
+            now.get()
+        ],
+    )
+    .map_err(|_| ApplyOneError::Storage)?;
+    Ok(())
+}
+
+fn apply_persona_change(
+    tx: &Transaction<'_>,
+    change: &CanonicalChange,
+    now: TimestampMillis,
+) -> Result<bool, ApplyOneError> {
+    let payload = change.payload().ok_or(ApplyOneError::Corrupt)?;
+    let incoming: Persona =
+        serde_json::from_slice(payload.bytes()).map_err(|_| ApplyOneError::Corrupt)?;
+    let id = change
+        .entity()
+        .id()
+        .parse::<PersonaId>()
+        .map_err(|_| ApplyOneError::Corrupt)?;
+    if incoming.id != id {
+        return Err(ApplyOneError::Corrupt);
+    }
+    let current = load_persona(tx, id).map_err(|_| ApplyOneError::Storage)?;
+    let current_payload = current
+        .as_ref()
+        .map(canonical_persona_payload)
+        .transpose()
+        .map_err(|_| ApplyOneError::Corrupt)?;
+    let same = current_payload
+        .as_ref()
+        .is_some_and(|value| value.content_hash() == payload.content_hash());
+    let clean_update = current_payload.as_ref().is_some_and(|value| {
+        change.operation() == ChangeOperation::Update
+            && change.base_revision() == Some(value.content_hash())
+    });
+    let clean_insert = current.is_none() && change.operation() == ChangeOperation::Insert;
+    if current.is_none() && !clean_insert {
+        return Err(ApplyOneError::Pending);
+    }
+    let conflict = !same && !clean_update && !clean_insert;
+    let current_change = current_payload
+        .as_ref()
+        .map(|value| load_materialized_change(tx, change.entity(), value.content_hash()))
+        .transpose()
+        .map_err(|error| match error {
+            IncomingChangeError::Storage => ApplyOneError::Storage,
+            _ => ApplyOneError::Corrupt,
+        })?
+        .flatten();
+    let winner_is_incoming = !conflict
+        || current_change
+            .as_ref()
+            .is_some_and(|current| incoming_wins(change, current));
+    observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
+    insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
+    if winner_is_incoming && !same {
+        apply_synced_persona(tx, incoming).map_err(repository_apply_error)?;
+    }
+    if conflict {
+        insert_conflict(
+            tx,
+            change,
+            current_change.as_ref(),
+            current_payload.as_ref().map(CanonicalPayload::bytes),
+            payload.bytes(),
+            winner_is_incoming,
+            now,
+        )?;
+    }
+    Ok(conflict)
+}
+
+fn apply_persona_default_change(
+    tx: &Transaction<'_>,
+    change: &CanonicalChange,
+    now: TimestampMillis,
+) -> Result<bool, ApplyOneError> {
+    let payload = change.payload().ok_or(ApplyOneError::Corrupt)?;
+    let incoming: PersonaDefaultState =
+        serde_json::from_slice(payload.bytes()).map_err(|_| ApplyOneError::Corrupt)?;
+    let current = read_default(tx).map_err(|_| ApplyOneError::Storage)?;
+    let current_payload =
+        canonical_persona_default_payload(&current).map_err(|_| ApplyOneError::Corrupt)?;
+    let same = current_payload.content_hash() == payload.content_hash();
+    let clean_update = change.base_revision() == Some(current_payload.content_hash());
+    let conflict = !same && !clean_update;
+    let current_change =
+        load_materialized_change(tx, change.entity(), current_payload.content_hash()).map_err(
+            |error| match error {
+                IncomingChangeError::Storage => ApplyOneError::Storage,
+                _ => ApplyOneError::Corrupt,
+            },
+        )?;
+    let winner_is_incoming = !conflict
+        || current_change
+            .as_ref()
+            .is_some_and(|current| incoming_wins(change, current));
+    observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
+    insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
+    if winner_is_incoming && !same {
+        apply_synced_persona_default(tx, incoming).map_err(repository_apply_error)?;
+    }
+    if conflict {
+        insert_conflict(
+            tx,
+            change,
+            current_change.as_ref(),
+            Some(current_payload.bytes()),
+            payload.bytes(),
+            winner_is_incoming,
+            now,
+        )?;
+    }
+    Ok(conflict)
+}
+
+fn mark_batch_pending(
+    connection: &Connection,
+    batch_id: OperationId,
+    reason: &str,
+) -> Result<(), IncomingChangeError> {
+    connection
+        .execute(
+            "UPDATE sync_incoming_batches
+             SET state = 'pending', pending_reason = ?2
+             WHERE batch_id = ?1 AND state <> 'committed'",
+            params![batch_id.to_string(), reason],
+        )
+        .map_err(incoming_storage)?;
     Ok(())
 }
 
@@ -644,13 +1119,264 @@ impl LocalChangeJournal for Database {
     }
 }
 
+impl IncomingChangeRepository for Database {
+    fn stage_incoming_batch(
+        &self,
+        peer: SyncDeviceId,
+        batch_id: OperationId,
+        declared_hash: &ContentHash,
+        changes: &[CanonicalChange],
+        now: TimestampMillis,
+    ) -> Result<IncomingBatchAdmission, IncomingChangeError> {
+        let payload_bytes = changes.iter().try_fold(0usize, |total, change| {
+            total
+                .checked_add(change.payload().map_or(0, |payload| payload.bytes().len()))
+                .ok_or(IncomingChangeError::InvalidBatch)
+        })?;
+        if changes.is_empty()
+            || changes.len() > MAX_INCOMING_CHANGES
+            || payload_bytes > MAX_INCOMING_PAYLOAD_BYTES
+        {
+            return Err(IncomingChangeError::InvalidBatch);
+        }
+        if &canonical_batch_hash(changes) != declared_hash {
+            return Err(IncomingChangeError::InvalidBatchHash);
+        }
+        let mut encoded = Vec::with_capacity(changes.len());
+        for change in changes {
+            let document = serde_json::to_vec(&StoredIncomingChange::from_change(change))
+                .map_err(incoming_corrupt)?;
+            if document.len() > 131_072 {
+                return Err(IncomingChangeError::InvalidBatch);
+            }
+            encoded.push(document);
+        }
+        let mut connection = self.connection().map_err(incoming_storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(incoming_storage)?;
+        if let Some((stored_peer, stored_hash, stored_count, state)) = transaction
+            .query_row(
+                "SELECT peer_device_id, batch_hash, change_count, state
+                 FROM sync_incoming_batches WHERE batch_id = ?1",
+                [batch_id.to_string()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(incoming_storage)?
+        {
+            if stored_peer != peer.as_uuid().to_string()
+                || stored_hash != declared_hash.as_str()
+                || stored_count != i64::try_from(changes.len()).map_err(incoming_corrupt)?
+            {
+                return Err(IncomingChangeError::Conflict);
+            }
+            let state = match state.as_str() {
+                "staged" => IncomingBatchState::Staged,
+                "pending" => IncomingBatchState::Pending,
+                "committed" => IncomingBatchState::Committed,
+                _ => return Err(IncomingChangeError::Corrupt),
+            };
+            transaction.commit().map_err(incoming_storage)?;
+            return Ok(IncomingBatchAdmission {
+                state,
+                created: false,
+            });
+        }
+        transaction
+            .execute(
+                "INSERT INTO sync_incoming_batches (
+                   batch_id, peer_device_id, batch_hash, change_count,
+                   payload_bytes, state, created_at
+                 ) VALUES (?1,?2,?3,?4,?5,'staged',?6)",
+                params![
+                    batch_id.to_string(),
+                    peer.as_uuid().to_string(),
+                    declared_hash.as_str(),
+                    i64::try_from(changes.len()).map_err(incoming_corrupt)?,
+                    i64::try_from(payload_bytes).map_err(incoming_corrupt)?,
+                    now.get()
+                ],
+            )
+            .map_err(incoming_storage)?;
+        for (ordinal, (change, document)) in changes.iter().zip(encoded).enumerate() {
+            transaction
+                .execute(
+                    "INSERT INTO sync_incoming_changes (
+                       batch_id, change_id, ordinal, fingerprint, document, payload_bytes
+                     ) VALUES (?1,?2,?3,?4,?5,?6)",
+                    params![
+                        batch_id.to_string(),
+                        change.id().as_uuid().to_string(),
+                        i64::try_from(ordinal).map_err(incoming_corrupt)?,
+                        change.fingerprint().as_str(),
+                        document,
+                        change.payload().map(CanonicalPayload::bytes)
+                    ],
+                )
+                .map_err(incoming_storage)?;
+        }
+        transaction.commit().map_err(incoming_storage)?;
+        Ok(IncomingBatchAdmission {
+            state: IncomingBatchState::Staged,
+            created: true,
+        })
+    }
+
+    fn apply_incoming_batch(
+        &self,
+        batch_id: OperationId,
+        now: TimestampMillis,
+    ) -> Result<IncomingBatchResult, IncomingChangeError> {
+        let mut connection = self.connection().map_err(incoming_storage)?;
+        let (stored_hash, expected_count, state) = connection
+            .query_row(
+                "SELECT batch_hash, change_count, state
+                 FROM sync_incoming_batches WHERE batch_id = ?1",
+                [batch_id.to_string()],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(incoming_storage)?
+            .ok_or(IncomingChangeError::NotFound)?;
+        if state == "committed" {
+            return Ok(IncomingBatchResult {
+                state: IncomingBatchState::Committed,
+                applied: 0,
+                duplicates: usize::try_from(expected_count).map_err(incoming_corrupt)?,
+                conflicts: 0,
+                frontier: load_frontier(&connection).map_err(incoming_corrupt)?,
+            });
+        }
+        if !matches!(state.as_str(), "staged" | "pending") {
+            return Err(IncomingChangeError::Corrupt);
+        }
+        let changes = load_staged_changes(&connection, batch_id)?;
+        if changes.len() != usize::try_from(expected_count).map_err(incoming_corrupt)?
+            || canonical_batch_hash(&changes).as_str() != stored_hash
+        {
+            return Err(IncomingChangeError::Corrupt);
+        }
+        let mut has_unsupported_change = false;
+        for change in &changes {
+            has_unsupported_change |= !supported_change(change)?;
+        }
+        if has_unsupported_change {
+            mark_batch_pending(&connection, batch_id, "unsupported_schema")?;
+            return Ok(IncomingBatchResult {
+                state: IncomingBatchState::Pending,
+                applied: 0,
+                duplicates: 0,
+                conflicts: 0,
+                frontier: load_frontier(&connection).map_err(incoming_corrupt)?,
+            });
+        }
+        let mut simulated = load_frontier(&connection).map_err(incoming_corrupt)?;
+        let mut duplicates = 0usize;
+        for change in &changes {
+            if let Some(existing) = load_change_by_id(&connection, change.id())? {
+                if existing != *change {
+                    return Err(IncomingChangeError::Conflict);
+                }
+                duplicates += 1;
+                continue;
+            }
+            let expected = simulated
+                .get(&change.origin_device())
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(1);
+            if change.origin_sequence() != expected
+                || change.base_frontier().iter().any(|(origin, required)| {
+                    simulated.get(origin).copied().unwrap_or(0) < *required
+                })
+            {
+                mark_batch_pending(&connection, batch_id, "causal_dependency")?;
+                return Ok(IncomingBatchResult {
+                    state: IncomingBatchState::Pending,
+                    applied: 0,
+                    duplicates,
+                    conflicts: 0,
+                    frontier: load_frontier(&connection).map_err(incoming_corrupt)?,
+                });
+            }
+            simulated.insert(change.origin_device(), change.origin_sequence());
+        }
+
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(incoming_storage)?;
+        let mut applied = 0usize;
+        let mut conflicts = 0usize;
+        for change in &changes {
+            if load_change_by_id(&transaction, change.id())?.is_some() {
+                continue;
+            }
+            let result = match change.entity().kind() {
+                "persona" => apply_persona_change(&transaction, change, now),
+                "persona_default" => apply_persona_default_change(&transaction, change, now),
+                _ => Err(ApplyOneError::Corrupt),
+            };
+            match result {
+                Ok(conflict) => {
+                    applied += 1;
+                    conflicts += usize::from(conflict);
+                }
+                Err(ApplyOneError::Pending) => {
+                    drop(transaction);
+                    mark_batch_pending(&connection, batch_id, "materialization_dependency")?;
+                    return Ok(IncomingBatchResult {
+                        state: IncomingBatchState::Pending,
+                        applied: 0,
+                        duplicates,
+                        conflicts: 0,
+                        frontier: load_frontier(&connection).map_err(incoming_corrupt)?,
+                    });
+                }
+                Err(ApplyOneError::Corrupt) => return Err(IncomingChangeError::Corrupt),
+                Err(ApplyOneError::Storage) => return Err(IncomingChangeError::Storage),
+            }
+        }
+        transaction
+            .execute(
+                "UPDATE sync_incoming_batches
+                 SET state = 'committed', pending_reason = NULL, committed_at = ?2
+                 WHERE batch_id = ?1",
+                params![batch_id.to_string(), now.get()],
+            )
+            .map_err(incoming_storage)?;
+        transaction.commit().map_err(incoming_storage)?;
+        Ok(IncomingBatchResult {
+            state: IncomingBatchState::Committed,
+            applied,
+            duplicates,
+            conflicts,
+            frontier: simulated,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use lettuce_characters::{
         Persona, PersonaArchiveRequest, PersonaDraftUpdate, PersonaRepository,
     };
-    use lettuce_types::PersonaId;
+    use lettuce_sync::persona_sync_entity;
+    use lettuce_types::{PersonaId, Revision};
 
     fn request(bytes: &[u8]) -> NewCanonicalChange {
         NewCanonicalChange::new(
@@ -972,5 +1698,249 @@ mod tests {
         );
         drop(database);
         std::fs::remove_file(path).expect("remove test database");
+    }
+
+    #[test]
+    fn incoming_persona_batches_apply_replay_and_preserve_pending_conflicts() {
+        let source_path = std::env::temp_dir().join(format!(
+            "sync-incoming-source-{}.sqlite3",
+            OperationId::new()
+        ));
+        let target_path = std::env::temp_dir().join(format!(
+            "sync-incoming-target-{}.sqlite3",
+            OperationId::new()
+        ));
+        let peer = SyncDeviceId::new();
+        let persona_id = PersonaId::new();
+        let source = Database::open(&source_path).expect("source database");
+        let created = PersonaRepository::create(
+            &source,
+            Persona::new(
+                persona_id,
+                "Writer".into(),
+                "Writes careful prose".into(),
+                TimestampMillis::new(10),
+            )
+            .expect("persona"),
+        )
+        .expect("create source persona");
+        PersonaRepository::set_default(
+            &source,
+            persona_id,
+            Revision::INITIAL,
+            TimestampMillis::new(20),
+        )
+        .expect("set source default");
+        let revised = PersonaRepository::revise(
+            &source,
+            persona_id,
+            created.revision,
+            PersonaDraftUpdate {
+                title: "Editor".into(),
+                description: "Edits careful prose".into(),
+                nickname: Some("E".into()),
+                design_description: None,
+                avatar_crop: None,
+                image_recommendation: None,
+            },
+            TimestampMillis::new(30),
+        )
+        .expect("revise source persona");
+        let archived = PersonaRepository::archive(
+            &source,
+            PersonaArchiveRequest {
+                persona_id,
+                expected_persona_revision: revised.revision,
+                expected_default_revision: Some(Revision::new(2)),
+                now: TimestampMillis::new(40),
+            },
+        )
+        .expect("archive source persona");
+        let initial = source
+            .outbound_changes(
+                &CausalFrontier::new(),
+                MAX_OUTBOUND_CHANGES,
+                MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("initial outbound batch");
+        assert_eq!(initial.changes.len(), 5);
+
+        let initial_batch_id = OperationId::new();
+        let initial_hash = canonical_batch_hash(&initial.changes);
+        {
+            let target = Database::open(&target_path).expect("target database");
+            assert!(
+                target
+                    .stage_incoming_batch(
+                        peer,
+                        initial_batch_id,
+                        &initial_hash,
+                        &initial.changes,
+                        TimestampMillis::new(50),
+                    )
+                    .expect("stage initial batch")
+                    .created
+            );
+        }
+        let target = Database::open(&target_path).expect("reopen target database");
+        let applied = target
+            .apply_incoming_batch(initial_batch_id, TimestampMillis::new(51))
+            .expect("apply initial batch");
+        assert_eq!(applied.state, IncomingBatchState::Committed);
+        assert_eq!(applied.applied, 5);
+        assert_eq!(applied.conflicts, 0);
+        assert_eq!(
+            PersonaRepository::get(&target, persona_id).expect("target persona"),
+            Some(archived.persona.clone())
+        );
+        assert_eq!(
+            PersonaRepository::get_default_snapshot(&target)
+                .expect("target default")
+                .state,
+            archived.default
+        );
+        let replay = target
+            .apply_incoming_batch(initial_batch_id, TimestampMillis::new(52))
+            .expect("replay initial batch");
+        assert_eq!(replay.state, IncomingBatchState::Committed);
+        assert_eq!(replay.duplicates, 5);
+        let staged_replay = target
+            .stage_incoming_batch(
+                peer,
+                initial_batch_id,
+                &initial_hash,
+                &initial.changes,
+                TimestampMillis::new(53),
+            )
+            .expect("replay staged input");
+        assert_eq!(staged_replay.state, IncomingBatchState::Committed);
+        assert!(!staged_replay.created);
+
+        let target_restored = PersonaRepository::restore(
+            &target,
+            persona_id,
+            archived.persona.revision,
+            TimestampMillis::new(60),
+        )
+        .expect("restore target persona");
+        let source_restored = PersonaRepository::restore(
+            &source,
+            persona_id,
+            archived.persona.revision,
+            TimestampMillis::new(100),
+        )
+        .expect("restore source persona");
+        assert_ne!(target_restored, source_restored);
+        let (&source_device, _) = source
+            .local_frontier()
+            .expect("source frontier")
+            .iter()
+            .next()
+            .expect("source device");
+        let conflict_batch = source
+            .outbound_changes(
+                &CausalFrontier::from([(source_device, 5)]),
+                MAX_OUTBOUND_CHANGES,
+                MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("conflicting outbound batch");
+        assert_eq!(conflict_batch.changes.len(), 1);
+        let conflict_batch_id = OperationId::new();
+        target
+            .stage_incoming_batch(
+                peer,
+                conflict_batch_id,
+                &canonical_batch_hash(&conflict_batch.changes),
+                &conflict_batch.changes,
+                TimestampMillis::new(101),
+            )
+            .expect("stage conflict");
+        let conflict = target
+            .apply_incoming_batch(conflict_batch_id, TimestampMillis::new(102))
+            .expect("apply conflict");
+        assert_eq!(conflict.state, IncomingBatchState::Committed);
+        assert_eq!(conflict.conflicts, 1);
+        assert_eq!(
+            PersonaRepository::get(&target, persona_id).expect("target winner"),
+            Some(source_restored)
+        );
+
+        let future_origin = SyncDeviceId::new();
+        let future_change = CanonicalChange::new(
+            SyncChangeId::new(),
+            future_origin,
+            1,
+            HybridTimestamp::new(TimestampMillis::new(110), 0),
+            CausalFrontier::new(),
+            persona_sync_entity(persona_id).expect("future entity"),
+            ChangeOperation::Update,
+            Some(ContentHash::parse("11".repeat(32)).expect("base hash")),
+            Some(
+                CanonicalPayload::new("persona.future", 2, b"future".to_vec())
+                    .expect("future payload"),
+            ),
+        )
+        .expect("future change");
+        let future_batch_id = OperationId::new();
+        target
+            .stage_incoming_batch(
+                peer,
+                future_batch_id,
+                &canonical_batch_hash(std::slice::from_ref(&future_change)),
+                std::slice::from_ref(&future_change),
+                TimestampMillis::new(111),
+            )
+            .expect("stage future change");
+        assert_eq!(
+            target
+                .apply_incoming_batch(future_batch_id, TimestampMillis::new(112))
+                .expect("retain future change")
+                .state,
+            IncomingBatchState::Pending
+        );
+
+        let missing_change = CanonicalChange::new(
+            SyncChangeId::new(),
+            SyncDeviceId::new(),
+            2,
+            HybridTimestamp::new(TimestampMillis::new(120), 0),
+            CausalFrontier::new(),
+            persona_sync_entity(persona_id).expect("missing entity"),
+            ChangeOperation::Update,
+            Some(ContentHash::parse("22".repeat(32)).expect("base hash")),
+            Some(canonical_persona_payload(&target_restored).expect("missing payload")),
+        )
+        .expect("missing change");
+        let missing_batch_id = OperationId::new();
+        target
+            .stage_incoming_batch(
+                peer,
+                missing_batch_id,
+                &canonical_batch_hash(std::slice::from_ref(&missing_change)),
+                std::slice::from_ref(&missing_change),
+                TimestampMillis::new(121),
+            )
+            .expect("stage missing sequence");
+        assert_eq!(
+            target
+                .apply_incoming_batch(missing_batch_id, TimestampMillis::new(122))
+                .expect("retain missing sequence")
+                .state,
+            IncomingBatchState::Pending
+        );
+
+        assert_eq!(
+            target
+                .connection()
+                .expect("connection")
+                .query_row("SELECT count(*) FROM sync_conflicts", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("conflict count"),
+            1
+        );
+        drop(target);
+        drop(source);
+        std::fs::remove_file(target_path).expect("remove target database");
+        std::fs::remove_file(source_path).expect("remove source database");
     }
 }

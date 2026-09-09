@@ -57,3 +57,12 @@ retain origin order and require every causal dependency; a missing local
 sequence fails closed. Caller limits are capped at 256 changes and 16 MiB of
 payload. Peer acknowledgements only advance and are clamped to facts present in
 the local frontier.
+
+Incoming replication now has one bounded canonical batch boundary. A batch hash
+binds ordered change fingerprints; the repository stages metadata and payloads
+durably before apply. The first materializer accepts complete persona and
+default snapshots, advances change/frontier evidence in the same transaction as
+the aggregate, observes remote hybrid clocks and replays committed delivery
+after restart. Unsupported schemas and causal gaps remain pending. Concurrent
+persona changes retain both snapshots and deterministic winner evidence in an
+immutable conflict record.
