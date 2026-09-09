@@ -7,9 +7,11 @@ mod conflict;
 mod incoming;
 mod journal;
 mod persona;
+mod session;
 
 pub use change::*;
 pub use conflict::*;
 pub use incoming::*;
 pub use journal::*;
 pub use persona::*;
+pub use session::*;

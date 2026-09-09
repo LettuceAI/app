@@ -60,6 +60,11 @@ impl AppBackend {
         self.database.as_ref()
     }
 
+    #[must_use]
+    pub fn sync_hello(&self) -> crate::SyncHelloCoordinator<'_, Database> {
+        crate::SyncHelloCoordinator::new(self.database.as_ref())
+    }
+
     pub fn preflight_legacy_database(
         &self,
         path: impl AsRef<Path>,

@@ -595,6 +595,9 @@ immediate transaction as a validated canonical change. Exact operation replay
 returns the stored change; changed reuse conflicts, and a failed insert rolls
 back the device state and frontier. Aggregate coverage is added explicitly at
 each repository transaction rather than through arbitrary SQL capture.
+The same port can initialize and read the stable device identity before the
+first change, leaving the frontier empty and the first later change at sequence
+one. This supports session hello creation and survives reopen.
 
 Persona repository create, authored revision and all four media mutations are
 atomic journal call sites. Their canonical payload is the complete
@@ -628,5 +631,6 @@ a conflict. Bounded conflict reads decode and validate both typed candidates.
 Choosing current or other atomically applies a fresh revision, appends a local
 canonical change and records the immutable resolution; exact replay survives
 reopen. Replicated changes that causally dominate both candidates close the
-corresponding remote conflict as superseded. Peer transport, authentication and
+corresponding remote conflict as superseded. Session hello identity now consumes
+the durable device ID through the sync port. Peer transport, authentication and
 blob transfer remain later sync work.

@@ -404,6 +404,25 @@ fn local_device(connection: &Connection) -> Result<Option<SyncDeviceId>, LocalCh
         .transpose()
 }
 
+fn ensure_local_device(
+    connection: &Connection,
+    now: TimestampMillis,
+) -> Result<SyncDeviceId, LocalChangeJournalError> {
+    if let Some(device) = local_device(connection)? {
+        return Ok(device);
+    }
+    let device = SyncDeviceId::new();
+    connection
+        .execute(
+            "INSERT INTO sync_local_state
+             (id, device_id, origin_sequence, hlc_wall_time, hlc_counter)
+             VALUES (1, ?1, 0, ?2, 0)",
+            params![device.as_uuid().to_string(), now.get()],
+        )
+        .map_err(storage)?;
+    Ok(device)
+}
+
 fn change_for_sequence(
     connection: &Connection,
     device: SyncDeviceId,
@@ -1282,6 +1301,19 @@ fn conflict_candidates(
 }
 
 impl LocalChangeJournal for Database {
+    fn local_device_id(
+        &self,
+        now: TimestampMillis,
+    ) -> Result<SyncDeviceId, LocalChangeJournalError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let device = ensure_local_device(&transaction, now)?;
+        transaction.commit().map_err(storage)?;
+        Ok(device)
+    }
+
     fn record_local_change(
         &self,
         operation_id: OperationId,
@@ -1891,6 +1923,41 @@ mod tests {
             Some(&1)
         );
         assert!(second.change.observes(&first.change));
+    }
+
+    #[test]
+    fn local_device_identity_survives_reopen_before_the_first_change() {
+        let path = std::env::temp_dir().join(format!(
+            "sync-device-identity-{}.sqlite3",
+            OperationId::new()
+        ));
+        let first_device = {
+            let database = Database::open(&path).expect("database");
+            let device = database
+                .local_device_id(TimestampMillis::new(100))
+                .expect("device identity");
+            assert!(database.local_frontier().expect("frontier").is_empty());
+            device
+        };
+        let database = Database::open(&path).expect("reopen");
+        assert_eq!(
+            database
+                .local_device_id(TimestampMillis::new(200))
+                .expect("reopened device identity"),
+            first_device
+        );
+        let first_change = database
+            .record_local_change(
+                OperationId::new(),
+                request(b"first"),
+                TimestampMillis::new(200),
+            )
+            .expect("first change")
+            .change;
+        assert_eq!(first_change.origin_device(), first_device);
+        assert_eq!(first_change.origin_sequence(), 1);
+        drop(database);
+        std::fs::remove_file(path).expect("remove database");
     }
 
     #[test]

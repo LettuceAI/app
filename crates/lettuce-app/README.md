@@ -1014,3 +1014,10 @@ shape and merged for the primary normalized voice before eSpeak runs. Missing
 files preserve the empty lexicon; malformed, oversized, unsafe or changing files
 fail without rewriting or deleting user data. Android eSpeak hosting remains a
 later platform slice.
+
+The application sync hello coordinator initializes the database-owned device
+identity before any change exists and builds a bounded current-protocol hello
+with a caller-owned fresh session ID. Device identity survives reopen while
+session identity rotates. Transport code will supply its authenticated peer
+identity to the sync-domain negotiator; the application does not persist the
+legacy one-time PIN or invent a trusted-peer registry.

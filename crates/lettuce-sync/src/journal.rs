@@ -95,6 +95,11 @@ pub enum LocalChangeJournalError {
 }
 
 pub trait LocalChangeJournal: Send + Sync {
+    fn local_device_id(
+        &self,
+        now: TimestampMillis,
+    ) -> Result<SyncDeviceId, LocalChangeJournalError>;
+
     fn record_local_change(
         &self,
         operation_id: OperationId,

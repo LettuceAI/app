@@ -73,3 +73,13 @@ candidate is retained, so the decision observes and propagates beyond both
 concurrent changes. The original evidence remains durable; exact decisions
 replay after restart, changed or stale decisions fail, and a later observed
 resolution marks the corresponding remote conflict superseded.
+
+Session hello negotiation now uses the durable local device identity and a
+fresh session identity. It requires exact app and protocol versions plus a
+fingerprint of the supported canonical payload schemas, replacing the legacy
+dependency on positional SQLite schema equality. Device names and version
+strings are bounded, authenticated transport identity must match the hello, and
+both peers use the smaller validated batch limits. Pairing remains
+session-scoped, matching the legacy UI; no persistent peer-trust model is
+invented. Secure pairing transport, status flow and actual exchange remain
+separate work.
