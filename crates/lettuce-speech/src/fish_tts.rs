@@ -9,8 +9,9 @@ use lettuce_settings::{HeaderName, SecretValue};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AudioProvider, AudioProviderConfig, DiscoveredVoiceDraft, RuntimeSynthesis, SynthesisRequest,
-    TtsRuntime, TtsRuntimeError, VoiceDiscovery, VoiceDiscoveryError,
+    AudioProvider, AudioProviderConfig, AudioProviderVerificationError, AudioProviderVerifier,
+    DiscoveredVoiceDraft, RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError,
+    VoiceDiscovery, VoiceDiscoveryError,
 };
 
 const ENDPOINT: &str = "https://api.fish.audio";
@@ -78,6 +79,48 @@ struct FishModel {
     languages: Vec<String>,
     #[serde(default)]
     description: String,
+}
+
+#[async_trait]
+impl AudioProviderVerifier for FishTtsRuntime {
+    async fn verify_audio_provider(
+        &self,
+        provider: &AudioProvider,
+        credential: &SecretValue,
+    ) -> Result<bool, AudioProviderVerificationError> {
+        provider
+            .validate()
+            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+        if !matches!(&provider.config, AudioProviderConfig::FishTts) {
+            return Err(AudioProviderVerificationError::InvalidInput);
+        }
+        let auth = credential
+            .with(|value| SecretValue::new(value.to_owned()))
+            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+        let response = self
+            .network
+            .get_json_with_query(
+                &self.endpoint,
+                "/model",
+                &[
+                    JsonQueryParameter {
+                        name: "self",
+                        value: "true",
+                    },
+                    JsonQueryParameter {
+                        name: "page_size",
+                        value: "1",
+                    },
+                ],
+                &[],
+                JsonAuth::Bearer(auth),
+                Vec::new(),
+                RequestPolicy::PROBE,
+            )
+            .await
+            .map_err(map_verification_network)?;
+        Ok((200..300).contains(&response.status))
+    }
 }
 
 #[async_trait]
@@ -266,6 +309,18 @@ fn map_discovery_network(error: JsonClientError) -> VoiceDiscoveryError {
         | JsonClientError::ResponseTooLarge => VoiceDiscoveryError::InvalidData,
         JsonClientError::Transport | JsonClientError::ClientConfiguration => {
             VoiceDiscoveryError::Unavailable
+        }
+    }
+}
+
+fn map_verification_network(error: JsonClientError) -> AudioProviderVerificationError {
+    match error {
+        JsonClientError::InvalidUrl
+        | JsonClientError::InvalidRequest
+        | JsonClientError::RequestTooLarge
+        | JsonClientError::ResponseTooLarge => AudioProviderVerificationError::InvalidInput,
+        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
+            AudioProviderVerificationError::Unavailable
         }
     }
 }
@@ -482,6 +537,49 @@ mod tests {
                 )
                 .await,
             Err(VoiceDiscoveryError::InvalidData)
+        );
+    }
+
+    #[tokio::test]
+    async fn verifies_credentials_from_http_status() {
+        let (endpoint, captured) =
+            server(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}".to_vec()).await;
+        let runtime = FishTtsRuntime::with_endpoint(
+            Arc::new(JsonClient::new().expect("network client")),
+            endpoint,
+        );
+        let provider = request(None).provider;
+        assert!(
+            runtime
+                .verify_audio_provider(
+                    &provider,
+                    &SecretValue::new("verification-canary").expect("secret"),
+                )
+                .await
+                .expect("verification")
+        );
+        {
+            let captured = captured.lock().expect("captured request");
+            let headers = String::from_utf8_lossy(&captured);
+            assert!(headers.starts_with("GET /model?self=true&page_size=1 HTTP/1.1"));
+            assert!(
+                headers
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer verification-canary")
+            );
+        }
+
+        let (endpoint, _) =
+            server(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 2\r\n\r\n{}".to_vec()).await;
+        let runtime = FishTtsRuntime::with_endpoint(
+            Arc::new(JsonClient::new().expect("network client")),
+            endpoint,
+        );
+        assert!(
+            !runtime
+                .verify_audio_provider(&provider, &SecretValue::new("rejected").expect("secret"),)
+                .await
+                .expect("rejected verification")
         );
     }
 

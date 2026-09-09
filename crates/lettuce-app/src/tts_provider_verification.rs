@@ -38,7 +38,10 @@ where
             .ok_or(TtsProviderVerificationError::Configuration(
                 TtsConfigurationRepositoryError::NotFound,
             ))?;
-        if !matches!(&provider.config, AudioProviderConfig::Elevenlabs) {
+        if !matches!(
+            &provider.config,
+            AudioProviderConfig::Elevenlabs | AudioProviderConfig::FishTts
+        ) {
             return Err(TtsProviderVerificationError::InvalidInput);
         }
         let reference = provider
@@ -94,7 +97,10 @@ mod tests {
             provider: &AudioProvider,
             credential: &SecretValue,
         ) -> Result<bool, AudioProviderVerificationError> {
-            assert!(matches!(provider.config, AudioProviderConfig::Elevenlabs));
+            assert!(matches!(
+                provider.config,
+                AudioProviderConfig::Elevenlabs | AudioProviderConfig::FishTts
+            ));
             credential.with(|value| assert_eq!(value, "verification-secret-canary"));
             Ok(true)
         }
@@ -118,6 +124,21 @@ mod tests {
                 .verify(provider.id, &Verifier)
                 .await
                 .expect("verification")
+        );
+        let fish = TtsConfigurationCoordinator::new(&database, &secrets)
+            .create_audio_provider(
+                "Fish Audio".into(),
+                AudioProviderConfig::FishTts,
+                Some(SecretValue::new("verification-secret-canary").expect("secret")),
+                TimestampMillis::new(2),
+            )
+            .await
+            .expect("Fish provider");
+        assert!(
+            TtsProviderVerificationCoordinator::new(&database, &secrets)
+                .verify(fish.id, &Verifier)
+                .await
+                .expect("Fish verification")
         );
     }
 }

@@ -197,3 +197,7 @@ ElevenLabs credential verification uses the legacy `GET /v1/voices` probe with
 the scoped `xi-api-key`. Any successful HTTP status verifies the credential;
 other HTTP statuses return `false`, while bounded-client transport failures stay
 distinct typed errors.
+
+Hosted Fish credential verification uses the legacy bearer-authenticated
+`GET /model?self=true&page_size=1` probe. It shares the same successful-status
+boolean and distinct bounded-client failure semantics.
