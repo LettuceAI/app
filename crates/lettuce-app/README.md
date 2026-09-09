@@ -904,8 +904,9 @@ revision compare-and-swap, and provider kind cannot change during an update.
 Provider deletion first validates the exact revision, atomically removes its
 voice graph, and deletes the matching secret generation. A native-store failure
 after metadata deletion returns an opaque retry receipt; callers cannot forge
-its secret identity. Kokoro rejects credentials. Provider transports,
-voice discovery and preview caching remain later TTS slices.
+its secret identity. Kokoro rejects credentials. Remote provider transports are
+constructed with the host's current TLS policy; voice discovery and preview
+caching remain later TTS slices.
 
 The TTS synthesis coordinator admits an idempotent interactive
 `SpeechSynthesize` job and persists its provider, text, voice, prompt and output
@@ -917,5 +918,7 @@ persistent. Cancellation is checked before secret access, before dispatch and
 after the provider response so late audio is not stored. Transient provider,
 secret, media or repository failures requeue the same immutable request;
 invalid inputs and audio fail terminally. Successful results replay after
-reopen without another provider call. Provider-specific HTTP transports are
-the next TTS slices.
+reopen without another provider call. The application composition root exposes
+one remote TTS runtime that routes the frozen provider kind through the five
+completed HTTP adapters. Kokoro remains unavailable until its native runtime
+slice.

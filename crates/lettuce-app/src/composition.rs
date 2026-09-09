@@ -202,6 +202,14 @@ impl AppBackend {
         crate::TtsSynthesisCoordinator::new(self.database.as_ref(), self.database.as_ref())
     }
 
+    pub fn remote_tts_runtime(
+        &self,
+        tls_policy: &lettuce_network::TlsPolicy,
+    ) -> Result<lettuce_speech::RemoteTtsRuntime, lettuce_network::JsonClientError> {
+        let network = Arc::new(lettuce_network::JsonClient::with_tls(tls_policy)?);
+        Ok(lettuce_speech::RemoteTtsRuntime::new(network))
+    }
+
     #[must_use]
     pub fn speech_transcriptions(
         &self,

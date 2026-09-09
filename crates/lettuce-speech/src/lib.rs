@@ -12,6 +12,7 @@ mod fish_tts;
 mod gemini_tts;
 mod learning;
 mod openai_tts;
+mod remote_tts;
 mod tts;
 mod whisper_runtime;
 
@@ -22,5 +23,6 @@ pub use fish_tts::*;
 pub use gemini_tts::*;
 pub use learning::*;
 pub use openai_tts::*;
+pub use remote_tts::*;
 pub use tts::*;
 pub use whisper_runtime::*;

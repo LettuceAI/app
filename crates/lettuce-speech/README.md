@@ -163,3 +163,9 @@ assuming the first part contains audio, which avoids rejecting valid metadata
 parts without changing the selected audio. Malformed JSON/base64 and missing
 audio reject without exposing the provider body. Static model and voice
 catalogs plus credential verification remain later configuration slices.
+
+`RemoteTtsRuntime` is the single provider-dispatching implementation used by
+the application boundary. It routes each frozen remote provider configuration
+to its existing adapter and shares one host-configured bounded network client.
+It contains no wire logic. Kokoro rejects explicitly until its native runtime
+is installed behind the same port.
