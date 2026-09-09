@@ -917,6 +917,8 @@ verification transport. HTTP credential rejection returns `false`;
 configuration, secret-store and transport failures remain distinguishable
 errors. Gemini verification also requires the stored project and location. Fish
 Speech verification supports both scoped-secret and unauthenticated servers.
+OpenAI-compatible verification requires its stored base URL and scoped secret
+and performs a real standard models probe instead of returning success locally.
 
 The TTS synthesis coordinator admits an idempotent interactive
 `SpeechSynthesize` job and persists its provider, text, voice, prompt and output

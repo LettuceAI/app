@@ -44,6 +44,7 @@ where
                 | AudioProviderConfig::FishTts
                 | AudioProviderConfig::Gemini { .. }
                 | AudioProviderConfig::FishSpeech { .. }
+                | AudioProviderConfig::OpenAiCompatible { .. }
         ) {
             return Err(TtsProviderVerificationError::InvalidInput);
         }
@@ -107,6 +108,7 @@ mod tests {
                     | AudioProviderConfig::FishTts
                     | AudioProviderConfig::Gemini { .. }
                     | AudioProviderConfig::FishSpeech { .. }
+                    | AudioProviderConfig::OpenAiCompatible { .. }
             ));
             if matches!(provider.config, AudioProviderConfig::FishSpeech { .. }) {
                 assert!(credential.is_none());
@@ -188,6 +190,24 @@ mod tests {
                 .verify(fish_speech.id, &Verifier)
                 .await
                 .expect("Fish Speech verification")
+        );
+        let open_ai = TtsConfigurationCoordinator::new(&database, &secrets)
+            .create_audio_provider(
+                "OpenAI-compatible".into(),
+                AudioProviderConfig::OpenAiCompatible {
+                    base_url: Some("https://speech.example".into()),
+                    request_path: None,
+                },
+                Some(SecretValue::new("verification-secret-canary").expect("secret")),
+                TimestampMillis::new(5),
+            )
+            .await
+            .expect("OpenAI-compatible provider");
+        assert!(
+            TtsProviderVerificationCoordinator::new(&database, &secrets)
+                .verify(open_ai.id, &Verifier)
+                .await
+                .expect("OpenAI-compatible verification")
         );
     }
 }

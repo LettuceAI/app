@@ -6,7 +6,10 @@ use lettuce_network::{JsonAuth, JsonClient, JsonClientError, RequestPolicy};
 use lettuce_settings::{SecretValue, SecretValueError};
 use serde::Serialize;
 
-use crate::{AudioProviderConfig, RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError};
+use crate::{
+    AudioProvider, AudioProviderConfig, AudioProviderVerificationError, AudioProviderVerifier,
+    RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError,
+};
 
 const DEFAULT_REQUEST_PATH: &str = "/v1/audio/speech";
 
@@ -30,6 +33,42 @@ struct OpenAiTtsRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     instructions: Option<&'a str>,
     response_format: &'static str,
+}
+
+#[async_trait]
+impl AudioProviderVerifier for OpenAiCompatibleTtsRuntime {
+    async fn verify_audio_provider(
+        &self,
+        provider: &AudioProvider,
+        credential: Option<&SecretValue>,
+    ) -> Result<bool, AudioProviderVerificationError> {
+        provider
+            .validate()
+            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+        let AudioProviderConfig::OpenAiCompatible { base_url, .. } = &provider.config else {
+            return Err(AudioProviderVerificationError::InvalidInput);
+        };
+        let endpoint = base_url
+            .as_deref()
+            .ok_or(AudioProviderVerificationError::InvalidInput)?;
+        let credential = credential.ok_or(AudioProviderVerificationError::InvalidInput)?;
+        let auth = credential
+            .with(|value| SecretValue::new(value.to_owned()))
+            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+        let response = self
+            .network
+            .get_json(
+                endpoint,
+                "/v1/models",
+                &[],
+                JsonAuth::Bearer(auth),
+                Vec::new(),
+                RequestPolicy::PROBE,
+            )
+            .await
+            .map_err(map_verification_network)?;
+        Ok((200..300).contains(&response.status))
+    }
 }
 
 #[async_trait]
@@ -123,6 +162,18 @@ fn map_network(error: JsonClientError) -> TtsRuntimeError {
         | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected,
         JsonClientError::Transport | JsonClientError::ClientConfiguration => {
             TtsRuntimeError::Unavailable
+        }
+    }
+}
+
+fn map_verification_network(error: JsonClientError) -> AudioProviderVerificationError {
+    match error {
+        JsonClientError::InvalidUrl
+        | JsonClientError::InvalidRequest
+        | JsonClientError::RequestTooLarge
+        | JsonClientError::ResponseTooLarge => AudioProviderVerificationError::InvalidInput,
+        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
+            AudioProviderVerificationError::Unavailable
         }
     }
 }
@@ -277,5 +328,46 @@ mod tests {
                 .await,
             Err(TtsRuntimeError::Cancelled)
         ));
+    }
+
+    #[tokio::test]
+    async fn verifies_credentials_with_the_standard_models_probe() {
+        let response = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}".to_vec();
+        let (endpoint, captured) = server(response).await;
+        let runtime =
+            OpenAiCompatibleTtsRuntime::new(Arc::new(JsonClient::new().expect("network client")));
+        let provider = request(endpoint).provider;
+        assert!(
+            runtime
+                .verify_audio_provider(
+                    &provider,
+                    Some(&SecretValue::new("verification-canary").expect("secret")),
+                )
+                .await
+                .expect("verification")
+        );
+        {
+            let captured = captured.lock().expect("captured request");
+            let headers = String::from_utf8_lossy(&captured);
+            assert!(headers.starts_with("GET /api/v1/models HTTP/1.1"));
+            assert!(
+                headers
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer verification-canary")
+            );
+        }
+
+        let response = b"HTTP/1.1 404 Not Found\r\nContent-Length: 2\r\n\r\n{}".to_vec();
+        let (endpoint, _) = server(response).await;
+        let provider = request(endpoint).provider;
+        assert!(
+            !runtime
+                .verify_audio_provider(
+                    &provider,
+                    Some(&SecretValue::new("rejected").expect("secret")),
+                )
+                .await
+                .expect("rejected verification")
+        );
     }
 }

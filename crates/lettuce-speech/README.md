@@ -210,3 +210,9 @@ forced `us-central1`, and retains the shared status and transport semantics.
 Self-hosted Fish Speech verification probes `/v1/health` below the configured
 base URL and sends bearer authentication only when the provider has a secret.
 It preserves the shared successful-status boolean and typed transport failure.
+
+OpenAI-compatible credential verification corrects the legacy unconditional
+success by issuing the standard bearer-authenticated `GET /v1/models` probe
+below the configured base URL. A compatible server without that route rejects
+verification rather than reporting fabricated success. The endpoint follows the
+official [OpenAI models API](https://platform.openai.com/docs/api-reference/models/list).
