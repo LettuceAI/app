@@ -119,3 +119,14 @@ trimmed optional instructions. The adapter retains a bounded response MIME with
 the legacy MP3 fallback, maps retryable HTTP and transport failures to runtime
 unavailability, and drops the in-flight request when the job cancellation token
 fires. Provider error bodies and credentials never enter runtime errors or logs.
+
+`ElevenLabsTtsRuntime` preserves the hosted ElevenLabs synthesis contract: the
+voice remains a path segment, `output_format=mp3_44100_128` is a typed query,
+the scoped credential is sent only as `xi-api-key`, and the JSON body contains
+the authored text and selected model. ElevenLabs does not consume the optional
+voice prompt. The response remains MP3 as in the legacy flow, with cancellation
+and retry classification delegated through the same bounded network client.
+Voice identifiers containing path separators or encoded traversal are now
+rejected before transport instead of being interpolated into the URL. Voice
+discovery, library search, design, preview creation and saved-voice creation
+remain later TTS slices.

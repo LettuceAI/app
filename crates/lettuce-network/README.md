@@ -31,7 +31,8 @@ and encoded separators are rejected. Provider-owned non-secret query values
 use a bounded typed parameter list instead of being embedded in paths; secret
 query authentication remains a separate redacted credential type.
 
-`get_json_with_query` uses the same validated parameter list as streaming POST.
+`get_json_with_query` and buffered `post_json_with_query` use the same validated
+parameter list as streaming POST.
 Values can borrow request-local strings; they are percent encoded by the central
 client. Existing GET callers delegate with an empty list. OpenRouter's HTTP
 fixture verifies a generation ID containing plus, ampersand and equals signs

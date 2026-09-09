@@ -496,10 +496,43 @@ impl JsonClient {
         secret_headers: Vec<JsonSecretHeader>,
         policy: RequestPolicy,
     ) -> Result<JsonResponse, JsonClientError> {
+        self.post_json_with_query(
+            endpoint,
+            path,
+            &[],
+            body,
+            static_headers,
+            auth,
+            secret_headers,
+            policy,
+        )
+        .await
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is a distinct transport concern; bundling them hides the policy"
+    )]
+    pub async fn post_json_with_query(
+        &self,
+        endpoint: &str,
+        path: &str,
+        query: &[JsonQueryParameter<'_>],
+        body: Vec<u8>,
+        static_headers: &[JsonStaticHeader],
+        auth: JsonAuth,
+        secret_headers: Vec<JsonSecretHeader>,
+        policy: RequestPolicy,
+    ) -> Result<JsonResponse, JsonClientError> {
         if body.len() > MAX_REQUEST_BYTES {
             return Err(JsonClientError::RequestTooLarge);
         }
-        let url = build_url(endpoint, path)?;
+        let mut url = build_url(endpoint, path)?;
+        validate_query(query)?;
+        if !query.is_empty() {
+            url.query_pairs_mut()
+                .extend_pairs(query.iter().map(|entry| (entry.name, entry.value)));
+        }
         validate_header_collection(static_headers, &auth, &secret_headers)?;
         let request = self
             .client(policy)

@@ -6,12 +6,14 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod asr;
+mod elevenlabs_tts;
 mod learning;
 mod openai_tts;
 mod tts;
 mod whisper_runtime;
 
 pub use asr::*;
+pub use elevenlabs_tts::*;
 pub use learning::*;
 pub use openai_tts::*;
 pub use tts::*;
