@@ -586,3 +586,12 @@ semantics as the other learning records and imports a validated learning batch
 in one immediate transaction. Fresh IDs and remapped links are inserted only if
 all referenced managed audio exists; any constraint failure rolls back the
 complete batch.
+
+Migration 19 starts the canonical sync journal. It keeps one durable local
+device identity, monotonic origin sequence and hybrid clock, the current causal
+frontier, immutable change rows and their immutable frontier snapshots. The
+sync-owned repository port allocates identity and clock facts in the same
+immediate transaction as a validated canonical change. Exact operation replay
+returns the stored change; changed reuse conflicts, and a failed insert rolls
+back the device state and frontier. Domain repository mutations are not yet
+wired to this helper, so no aggregate is claimed synchronizable in this slice.

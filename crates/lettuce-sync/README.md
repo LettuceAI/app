@@ -22,7 +22,14 @@ revision, update requires both and delete requires a base revision without a
 payload. Payloads retain the legacy eight-megabyte single-revision ceiling while
 identifiers and causal frontiers now have explicit bounds.
 
-Journal persistence, entity-specific codecs, peer negotiation, staged apply,
-conflict resolution, blob exchange and legacy sync-state migration remain later
-slices. No current database, legacy source or user asset is read, rewritten or
-deleted by this crate.
+The local journal port admits a validated change request under a stable
+operation ID and returns the allocated immutable change. Exact retries replay;
+changed operation reuse conflicts. The SQLite adapter owns device identity,
+monotonic origin sequence and hybrid-clock allocation in the same transaction
+as the journal row.
+
+Wiring entity-specific codecs into each domain repository transaction, peer
+negotiation, staged apply, conflict resolution, blob exchange and legacy
+sync-state migration remain later slices. The journal alone does not make an
+aggregate synchronizable. No legacy database, source or user asset is read,
+rewritten or deleted by this crate.

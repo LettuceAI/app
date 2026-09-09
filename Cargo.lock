@@ -1250,6 +1250,7 @@ dependencies = [
  "lettuce-models",
  "lettuce-settings",
  "lettuce-speech",
+ "lettuce-sync",
  "lettuce-transfer",
  "lettuce-types",
  "lettuce-usage",
