@@ -1366,6 +1366,7 @@ mod tests {
             body: body.as_bytes().to_vec(),
             request_id: None,
             retry_after: None,
+            content_type: None,
         }
     }
 
@@ -1485,6 +1486,7 @@ mod tests {
             body: br#"{"id":"response-id","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}"#.to_vec(),
             request_id: Some("request-id".to_owned()),
             retry_after: None,
+            content_type: None,
         })
         .expect("valid response");
         assert_eq!(outcome.provider_request_id.as_deref(), Some("request-id"));
@@ -1608,6 +1610,7 @@ mod tests {
             body: b"secret-prompt-canary".to_vec(),
             request_id: None,
             retry_after: None,
+            content_type: None,
         })
         .expect_err("provider rejection");
         assert!(matches!(
@@ -1626,6 +1629,7 @@ mod tests {
             body: br#"{"error":{"code":"rate_limit","message":"try later"}}"#.to_vec(),
             request_id: Some("request-id".to_owned()),
             retry_after: None,
+            content_type: None,
         })
         .expect_err("provider rejection");
         let AdapterError::Provider(failure) = &error else {
@@ -1662,6 +1666,7 @@ mod tests {
                 body: b"provider-error-canary".to_vec(),
                 request_id: None,
                 retry_after: None,
+                content_type: None,
             })
             .expect_err("status must be classified");
             assert!(matches!(

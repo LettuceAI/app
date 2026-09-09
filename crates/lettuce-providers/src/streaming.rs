@@ -116,6 +116,7 @@ async fn read_error_response(
         body,
         request_id: response.request_id,
         retry_after: response.retry_after,
+        content_type: None,
     };
     Err(AdapterError::from_response(&response).unwrap_or(AdapterError::Transport))
 }

@@ -111,3 +111,11 @@ temporary with an admitted expiry; message audio is persistent. The durable
 result retains only managed asset identity, content hash, detected MIME, size
 and completion time. Provider-specific HTTP transports, voice discovery,
 preview cache policy and Kokoro execution remain later TTS slices.
+
+`OpenAiCompatibleTtsRuntime` implements the first remote synthesis transport
+through the central bounded network client. It preserves the legacy bearer-auth
+request, configurable endpoint/path, MP3 response request, authored input and
+trimmed optional instructions. The adapter retains a bounded response MIME with
+the legacy MP3 fallback, maps retryable HTTP and transport failures to runtime
+unavailability, and drops the in-flight request when the job cancellation token
+fires. Provider error bodies and credentials never enter runtime errors or logs.

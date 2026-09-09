@@ -202,6 +202,7 @@ mod tests {
             body: body.as_bytes().to_vec(),
             request_id: None,
             retry_after: None,
+            content_type: None,
         }
     }
 

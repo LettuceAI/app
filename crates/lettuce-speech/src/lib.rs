@@ -7,10 +7,12 @@
 
 mod asr;
 mod learning;
+mod openai_tts;
 mod tts;
 mod whisper_runtime;
 
 pub use asr::*;
 pub use learning::*;
+pub use openai_tts::*;
 pub use tts::*;
 pub use whisper_runtime::*;

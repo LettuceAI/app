@@ -82,6 +82,7 @@ pub struct JsonResponse {
     pub body: Vec<u8>,
     pub request_id: Option<String>,
     pub retry_after: Option<String>,
+    pub content_type: Option<String>,
 }
 
 /// Bounded ownership of an HTTP response body. Dropping this value closes the
@@ -138,6 +139,7 @@ impl fmt::Debug for JsonResponse {
             .field("body", &"[REDACTED]")
             .field("request_id", &"[REDACTED]")
             .field("retry_after", &"[REDACTED]")
+            .field("content_type", &self.content_type)
             .finish()
     }
 }
@@ -769,6 +771,7 @@ async fn read_response(response: reqwest::Response) -> Result<JsonResponse, Json
     let request_id = bounded_header(&response, "x-request-id")
         .or_else(|| bounded_header(&response, "request-id"));
     let retry_after = bounded_header(&response, "retry-after");
+    let content_type = bounded_header(&response, "content-type");
     if response
         .content_length()
         .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
@@ -792,6 +795,7 @@ async fn read_response(response: reqwest::Response) -> Result<JsonResponse, Json
         body,
         request_id,
         retry_after,
+        content_type,
     })
 }
 
@@ -1348,6 +1352,7 @@ mod tests {
             body: b"prompt-canary".to_vec(),
             request_id: Some("header-canary".to_owned()),
             retry_after: Some("retry-canary".to_owned()),
+            content_type: None,
         };
         let debug = format!("{response:?}");
         assert!(!debug.contains("prompt-canary"));

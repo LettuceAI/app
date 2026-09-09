@@ -779,6 +779,7 @@ mod tests {
             body: br#"{"model":"m","message":{"role":"assistant","content":"hey"},"done":true,"done_reason":"length","prompt_eval_count":11,"eval_count":2}"#.to_vec(),
             request_id: None,
             retry_after: None,
+            content_type: None,
         })
         .expect("response");
         assert_eq!(outcome.finish_reason, FinishReason::Length);
@@ -800,6 +801,7 @@ mod tests {
                 body: br#"{"message":{"content":""},"done":true}"#.to_vec(),
                 request_id: None,
                 retry_after: None,
+                content_type: None,
             }),
             Err(AdapterError::EmptyResponse)
         );
@@ -832,6 +834,7 @@ mod tests {
             body: br#"{"message":{"content":"<think>tagged</think>visible","thinking":"native"},"done":true}"#.to_vec(),
             request_id: None,
             retry_after: None,
+            content_type: None,
         })
         .expect("response");
         assert_eq!(
@@ -851,6 +854,7 @@ mod tests {
             body: br#"{"message":{"content":"<think>same</think>visible","thinking":"same","reasoning":"second"},"done":true}"#.to_vec(),
             request_id: None,
             retry_after: None,
+            content_type: None,
         })
         .expect("response");
         assert_eq!(
@@ -979,6 +983,7 @@ mod tests {
             body: br#"{"message":{"content":"checking","tool_calls":[{"type":"function","function":{"index":0,"name":"lookup_weather","arguments":{"city":"Paris"}}},{"id":"call-2","type":"function","function":{"index":1,"name":"lookup_weather","arguments":{"city":"London"}}}]},"done":true,"done_reason":"stop"}"#.to_vec(),
             request_id: None,
             retry_after: None,
+            content_type: None,
         })
         .expect("tool response");
         assert_eq!(outcome.candidates[0].tool_calls.len(), 2);
@@ -1000,6 +1005,7 @@ mod tests {
                     body: body.as_bytes().to_vec(),
                     request_id: None,
                     retry_after: None,
+                    content_type: None,
                 }),
                 Err(AdapterError::MalformedResponse)
             );

@@ -37,6 +37,11 @@ client. Existing GET callers delegate with an empty list. OpenRouter's HTTP
 fixture verifies a generation ID containing plus, ampersand and equals signs
 cannot create another query parameter. Existing query and response bounds apply.
 
+Buffered responses also retain a bounded `Content-Type` value. Binary-producing
+adapters can pass the provider's declared media type into their domain-owned
+validation boundary without constructing a separate HTTP client; response
+bodies, request identifiers and retry metadata remain redacted from debug output.
+
 `ArtifactDownloadClient` is the narrow unauthenticated Hugging Face transport
 for large pinned artifacts. It constructs the repository URL from validated
 segments, sends an optional byte range, accepts only coherent complete or

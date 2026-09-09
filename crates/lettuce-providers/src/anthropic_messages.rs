@@ -1289,6 +1289,7 @@ mod tests {
             body: body.as_bytes().to_vec(),
             request_id: None,
             retry_after: None,
+            content_type: None,
         }
     }
 
@@ -1733,6 +1734,7 @@ mod tests {
                 body: b"key-canary".to_vec(),
                 request_id: None,
                 retry_after: None,
+                content_type: None,
             }),
             Err(AdapterError::Provider(ProviderFailure {
                 kind: ProviderFailureKind::CredentialRejected,
