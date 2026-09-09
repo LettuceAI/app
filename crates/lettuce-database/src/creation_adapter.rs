@@ -2424,6 +2424,11 @@ mod tests {
         DetectionPolicy, KeywordMatchMode, LifecycleStatus as LorebookLifecycleStatus,
         LorebookBehaviorVersion, LorebookEntryDraft, LorebookMetadataDraft, LorebookRepository,
     };
+    use lettuce_media::{
+        AssetKind, AssetOrigin, AssetProvenanceV1, BlobState, MediaAsset, MediaAssetRepository,
+        MediaBlob, MediaBlobRepository, MediaKind, RetentionClass,
+    };
+    use lettuce_types::ContentHash;
 
     use crate::Database;
 
@@ -2572,23 +2577,47 @@ mod tests {
     fn image_asset(database: &Database, marker: u8) -> AssetId {
         let blob_id = MediaBlobId::new();
         let asset_id = AssetId::new();
-        let connection = database.connection().expect("database lock");
-        connection
-            .execute(
-                "INSERT INTO media_blobs \
-                 (id,content_hash,kind,mime_type,byte_size,width,height,validation_version,state,created_at,updated_at) \
-                 VALUES (?1,?2,'image','image/png',1,1,1,1,'ready',1,1)",
-                rusqlite::params![blob_id.to_string(), format!("{marker:02x}").repeat(32)],
+        let blob = MediaBlobRepository::register(
+            database,
+            MediaBlob {
+                id: blob_id,
+                content_hash: ContentHash::parse(format!("{marker:02x}").repeat(32))
+                    .expect("hash"),
+                kind: MediaKind::Image,
+                mime_type: "image/png".into(),
+                byte_size: 1,
+                width: Some(1),
+                height: Some(1),
+                duration_ms: None,
+                validation_version: 1,
+                state: BlobState::Staged,
+                created_at: TimestampMillis::new(1),
+                updated_at: TimestampMillis::new(1),
+            },
+        )
+        .expect("insert image blob");
+        let blob = MediaBlobRepository::finalize_staged_to_ready(
+            database,
+            blob.id,
+            TimestampMillis::new(1),
+        )
+        .expect("ready image blob");
+        MediaAssetRepository::create(
+            database,
+            MediaAsset::new(
+                asset_id,
+                blob.id,
+                AssetKind::Illustration,
+                AssetOrigin::Upload,
+                RetentionClass::Library,
+                AssetProvenanceV1::default(),
+                Revision::INITIAL,
+                TimestampMillis::new(1),
+                TimestampMillis::new(1),
             )
-            .expect("insert image blob");
-        connection
-            .execute(
-                "INSERT INTO media_assets \
-                 (id,blob_id,blob_kind,kind,origin,retention,provenance_json,revision,created_at,updated_at) \
-                 VALUES (?1,?2,'image','illustration','upload','library','{}',1,1,1)",
-                rusqlite::params![asset_id.to_string(), blob_id.to_string()],
-            )
-            .expect("insert image asset");
+            .expect("image asset"),
+        )
+        .expect("insert image asset");
         asset_id
     }
 

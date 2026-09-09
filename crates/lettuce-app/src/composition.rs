@@ -70,6 +70,14 @@ impl AppBackend {
         crate::SyncExchangeCoordinator::new(self.database.as_ref())
     }
 
+    #[must_use]
+    pub fn sync_media<'a, BR, AR>(
+        &'a self,
+        media: &'a lettuce_media::LocalSyncMediaStore<BR, AR>,
+    ) -> crate::SyncMediaCoordinator<'a, Database, BR, AR> {
+        crate::SyncMediaCoordinator::new(self.database.as_ref(), media)
+    }
+
     pub fn preflight_legacy_database(
         &self,
         path: impl AsRef<Path>,

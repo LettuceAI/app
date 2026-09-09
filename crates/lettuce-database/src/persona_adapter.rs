@@ -12,12 +12,12 @@ use lettuce_characters::{
 };
 use lettuce_sync::{
     ChangeOperation, LocalChangeJournalError, NewCanonicalChange,
-    canonical_persona_default_payload, canonical_persona_payload,
-    persona_archive_default_operation, persona_archive_operation, persona_attach_media_operation,
-    persona_clear_default_operation, persona_create_operation, persona_default_sync_entity,
-    persona_detach_media_operation, persona_reorder_media_operation, persona_restore_operation,
-    persona_revise_operation, persona_set_default_operation, persona_sync_entity,
-    persona_update_media_operation,
+    canonical_persona_default_payload, canonical_persona_payload, media_asset_create_operation,
+    media_asset_insert_change, persona_archive_default_operation, persona_archive_operation,
+    persona_attach_media_operation, persona_clear_default_operation, persona_create_operation,
+    persona_default_sync_entity, persona_detach_media_operation, persona_reorder_media_operation,
+    persona_restore_operation, persona_revise_operation, persona_set_default_operation,
+    persona_sync_entity, persona_update_media_operation,
 };
 use lettuce_types::{AssetId, Page, PageRequest, PersonaId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
@@ -342,6 +342,36 @@ fn image_assets(
                 },
             ));
         }
+    }
+    Ok(())
+}
+
+fn record_persona_media_assets(
+    tx: &Transaction<'_>,
+    ids: impl IntoIterator<Item = AssetId>,
+    now: TimestampMillis,
+) -> Result<(), RepositoryError> {
+    let mut ids = ids.into_iter().collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids.dedup();
+    for id in ids {
+        let asset = crate::load_asset_with_blob(tx, id)
+            .map_err(db_error)?
+            .ok_or(RepositoryError::NotFound)?;
+        let blob = tx
+            .query_row(
+                &format!(
+                    "SELECT {} FROM media_blobs WHERE id=?1",
+                    crate::MEDIA_BLOB_COLUMNS
+                ),
+                [asset.blob_id.to_string()],
+                crate::media_from_row,
+            )
+            .map_err(db_error)?;
+        let request = media_asset_insert_change(&lettuce_media::SyncMediaAsset { asset, blob })
+            .map_err(|_| RepositoryError::Storage)?;
+        record_local_change_in(tx, media_asset_create_operation(id), &request, now)
+            .map_err(sync_error)?;
     }
     Ok(())
 }
@@ -789,6 +819,11 @@ impl PersonaRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        record_persona_media_assets(
+            &tx,
+            canonical.media.links.iter().map(|link| link.asset_id),
+            canonical.created_at,
+        )?;
         let admission = record_local_change_in(&tx, operation, &request, canonical.created_at)
             .map_err(sync_error)?;
         let stored = if admission.created {
@@ -982,6 +1017,11 @@ impl PersonaRepository for Database {
         let before = ensure_active(&tx, id, expected_revision)?;
         let expected = apply_persona_draft(before.clone(), &draft, now)?;
         let request = persona_update_change(&before, &expected)?;
+        record_persona_media_assets(
+            &tx,
+            expected.media.links.iter().map(|link| link.asset_id),
+            now,
+        )?;
         let admission =
             record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
         if !admission.created {
@@ -1022,6 +1062,11 @@ impl PersonaRepository for Database {
             .map_err(db_error)?
             .ok_or(RepositoryError::Storage)?;
         let request = persona_update_change(&before, &persona)?;
+        record_persona_media_assets(
+            &tx,
+            persona.media.links.iter().map(|link| link.asset_id),
+            now,
+        )?;
         let admission =
             record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
         if !admission.created {
@@ -1108,6 +1153,11 @@ impl PersonaRepository for Database {
             .map_err(db_error)?
             .ok_or(RepositoryError::Storage)?;
         let request = persona_update_change(&current, &persona)?;
+        record_persona_media_assets(
+            &tx,
+            persona.media.links.iter().map(|link| link.asset_id),
+            now,
+        )?;
         let admission =
             record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
         if !admission.created {
@@ -1166,6 +1216,11 @@ impl PersonaRepository for Database {
             .map_err(db_error)?
             .ok_or(RepositoryError::Storage)?;
         let request = persona_update_change(&before, &persona)?;
+        record_persona_media_assets(
+            &tx,
+            persona.media.links.iter().map(|link| link.asset_id),
+            now,
+        )?;
         let admission =
             record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
         if !admission.created {
@@ -1235,6 +1290,11 @@ impl PersonaRepository for Database {
             .map_err(db_error)?
             .ok_or(RepositoryError::Storage)?;
         let request = persona_update_change(&before, &persona)?;
+        record_persona_media_assets(
+            &tx,
+            persona.media.links.iter().map(|link| link.asset_id),
+            now,
+        )?;
         let admission =
             record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
         if !admission.created {
@@ -1483,6 +1543,11 @@ impl PersonaRepository for Database {
         let result = PersonaArchiveResult { persona, default };
         result.validate()?;
         let persona_change = persona_update_change(&current, &result.persona)?;
+        record_persona_media_assets(
+            &tx,
+            result.persona.media.links.iter().map(|link| link.asset_id),
+            request.now,
+        )?;
         let admission = record_local_change_in(&tx, operation, &persona_change, request.now)
             .map_err(sync_error)?;
         if !admission.created {
@@ -1566,6 +1631,11 @@ impl PersonaRepository for Database {
             .map_err(db_error)?
             .ok_or(RepositoryError::Storage)?;
         let change = persona_update_change(&current, &persona)?;
+        record_persona_media_assets(
+            &tx,
+            persona.media.links.iter().map(|link| link.asset_id),
+            now,
+        )?;
         let admission = record_local_change_in(&tx, operation, &change, now).map_err(sync_error)?;
         if !admission.created {
             return Err(RepositoryError::Storage);
@@ -2065,7 +2135,7 @@ mod tests {
             let change = load_local_change_in(&connection, operation)
                 .expect("change read")
                 .expect("media change");
-            assert_eq!(change.origin_sequence(), index as u64 + 2);
+            assert_eq!(change.origin_sequence(), [4, 6, 7, 8][index]);
             assert_eq!(change.operation(), ChangeOperation::Update);
             assert_eq!(
                 change.base_revision(),
@@ -2162,7 +2232,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM sync_changes", [], |row| row
                     .get::<_, i64>(0))
                 .expect("change count"),
-            5
+            8
         );
         assert_eq!(
             connection
@@ -2172,7 +2242,7 @@ mod tests {
                     |row| row.get::<_, i64>(0),
                 )
                 .expect("sequence"),
-            5
+            8
         );
     }
 
@@ -2266,9 +2336,9 @@ mod tests {
         )
         .expect("restore change read")
         .expect("restore change");
-        assert_eq!(archive_change.origin_sequence(), 3);
-        assert_eq!(default_change.origin_sequence(), 4);
-        assert_eq!(restore_change.origin_sequence(), 5);
+        assert_eq!(archive_change.origin_sequence(), 5);
+        assert_eq!(default_change.origin_sequence(), 6);
+        assert_eq!(restore_change.origin_sequence(), 7);
         assert_eq!(
             archive_change.base_revision(),
             Some(

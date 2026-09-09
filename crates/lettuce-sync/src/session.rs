@@ -3,8 +3,9 @@ use uuid::Uuid;
 
 use crate::{
     CanonicalChange, CausalFrontier, MAX_CANONICAL_PAYLOAD_BYTES, MAX_INCOMING_CHANGES,
-    MAX_INCOMING_PAYLOAD_BYTES, PERSONA_DEFAULT_SYNC_SCHEMA, PERSONA_DEFAULT_SYNC_VERSION,
-    PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION, SyncDeviceId, canonical_batch_hash,
+    MAX_INCOMING_PAYLOAD_BYTES, MEDIA_ASSET_SYNC_SCHEMA, MEDIA_ASSET_SYNC_VERSION,
+    PERSONA_DEFAULT_SYNC_SCHEMA, PERSONA_DEFAULT_SYNC_VERSION, PERSONA_SYNC_SCHEMA,
+    PERSONA_SYNC_VERSION, SyncDeviceId, canonical_batch_hash,
 };
 
 pub const SYNC_PROTOCOL_VERSION: u32 = 1;
@@ -348,6 +349,7 @@ pub fn negotiate_sync_session(
 pub fn current_sync_schema_fingerprint() -> ContentHash {
     let mut hasher = blake3::Hasher::new_derive_key("lettuce.sync.schemas.v1");
     for (schema, version) in [
+        (MEDIA_ASSET_SYNC_SCHEMA, MEDIA_ASSET_SYNC_VERSION),
         (PERSONA_DEFAULT_SYNC_SCHEMA, PERSONA_DEFAULT_SYNC_VERSION),
         (PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION),
     ] {
@@ -402,7 +404,7 @@ mod tests {
     fn current_schema_fingerprint_is_stable_and_complete() {
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "35d9d4b80ecb0292b043cb531b99ba11c2039b0c60af2b2de1c6d8de360380c4"
+            "f59d621aa4be626ced608e4f587aa0543d481b12ad0248e7e53e98d456955f17"
         );
     }
 

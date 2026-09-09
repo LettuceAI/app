@@ -65,6 +65,7 @@ use lettuce_settings::{
     GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
     SecretOwnerId, SecretRef, StoredGlobalSettings,
 };
+use lettuce_sync::{MediaSyncError, PersonaMediaSyncRepository};
 use lettuce_types::{
     AssetId, ContentHash, MediaBlobId, ModelProfileId, Page, PageRequest, ProviderAccountId,
     Revision, TimestampMillis,
@@ -1706,6 +1707,82 @@ impl MediaAssetRepository for Database {
             None
         };
         Ok(Page { items, next_cursor })
+    }
+}
+
+impl PersonaMediaSyncRepository for Database {
+    fn referenced_persona_media(&self) -> Result<Vec<AssetId>, MediaSyncError> {
+        let connection = self.connection().map_err(|_| MediaSyncError::Storage)?;
+        let mut statement = connection
+            .prepare("SELECT DISTINCT asset_id FROM persona_media ORDER BY asset_id LIMIT ?1")
+            .map_err(|_| MediaSyncError::Storage)?;
+        let rows = statement
+            .query_map(
+                [i64::try_from(lettuce_sync::MAX_SYNC_MEDIA_ASSETS + 1)
+                    .map_err(|_| MediaSyncError::Storage)?],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|_| MediaSyncError::Storage)?;
+        let mut assets = Vec::new();
+        for row in rows {
+            assets.push(
+                row.map_err(|_| MediaSyncError::Storage)?
+                    .parse()
+                    .map_err(|_| MediaSyncError::Storage)?,
+            );
+        }
+        if assets.len() > lettuce_sync::MAX_SYNC_MEDIA_ASSETS {
+            return Err(MediaSyncError::LimitExceeded);
+        }
+        Ok(assets)
+    }
+
+    fn pending_persona_media(
+        &self,
+    ) -> Result<Vec<lettuce_sync::CanonicalMediaAsset>, MediaSyncError> {
+        let connection = self.connection().map_err(|_| MediaSyncError::Storage)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT change_row.payload_bytes
+                 FROM sync_incoming_changes AS change_row
+                 JOIN sync_incoming_batches AS batch ON batch.batch_id = change_row.batch_id
+                 WHERE batch.state = 'pending'
+                   AND json_extract(change_row.document, '$.payload_schema') = ?1
+                   AND json_extract(change_row.document, '$.payload_version') = ?2
+                 ORDER BY change_row.change_id LIMIT ?3",
+            )
+            .map_err(|_| MediaSyncError::Storage)?;
+        let rows = statement
+            .query_map(
+                params![
+                    lettuce_sync::MEDIA_ASSET_SYNC_SCHEMA,
+                    i64::from(lettuce_sync::MEDIA_ASSET_SYNC_VERSION),
+                    i64::try_from(lettuce_sync::MAX_SYNC_MEDIA_ASSETS + 1)
+                        .map_err(|_| MediaSyncError::Storage)?
+                ],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .map_err(|_| MediaSyncError::Storage)?;
+        let mut assets = Vec::new();
+        for row in rows {
+            let asset: lettuce_sync::CanonicalMediaAsset = serde_json::from_slice(
+                &row.map_err(|_| MediaSyncError::Storage)?,
+            )
+            .map_err(|_| MediaSyncError::Storage)?;
+            asset.validate().map_err(|_| MediaSyncError::Storage)?;
+            assets.push(asset);
+        }
+        if assets.len() > lettuce_sync::MAX_SYNC_MEDIA_ASSETS {
+            return Err(MediaSyncError::LimitExceeded);
+        }
+        assets.sort_by_key(|value| value.asset.id);
+        for pair in assets.windows(2) {
+            if pair[0].asset.id == pair[1].asset.id && pair[0] != pair[1] {
+                return Err(MediaSyncError::Storage);
+            }
+        }
+        assets.dedup_by_key(|value| value.asset.id);
+        Ok(assets)
     }
 }
 

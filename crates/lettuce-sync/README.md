@@ -46,8 +46,8 @@ Persona archive and restore use distinct lifecycle operation identities and the
 same complete snapshot update contract. Archiving the selected default also
 emits a distinct default-clear update in the same transaction, so both
 revisions and both journal rows either commit together or remain unchanged.
-Every other aggregate still needs explicit journal wiring. Peer negotiation,
-blob exchange and legacy sync-state migration remain later slices. No legacy
+Every other aggregate still needs explicit journal wiring. Other aggregate blob
+families and legacy sync-state migration remain later slices. No legacy
 database, source or user asset is read, rewritten or deleted by this crate.
 
 The journal now exposes its local causal frontier, bounded outbound batches and
@@ -88,3 +88,13 @@ Canonical session frames carry either one validated identity-and-hash-bound
 change batch or explicit quiescence, followed by an acknowledgement containing
 the exact optional batch ID and causal frontier. Batch construction enforces the
 negotiated count and byte limits before a transport can send or accept it.
+
+Persona-referenced media now has one canonical asset snapshot containing the
+logical asset metadata and its ready content descriptor. The persona repository
+journals each referenced asset at most once, immediately before the persona
+snapshot in the same transaction. Persona-independent media is not added to the
+sync journal. Incoming media changes remain durably pending until the verified
+logical asset is available, so a persona can never materialize with dangling
+image references. Catalogs are limited to 256 distinct persona assets and blob
+chunks to one MiB. Blob identity remains the BLAKE3 content hash; native paths
+and bytes never enter canonical change payloads.

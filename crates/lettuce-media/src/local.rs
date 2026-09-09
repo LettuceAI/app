@@ -1,11 +1,12 @@
 //! A bounded, local content-addressed media ingestion/use-case adapter.
 
-use std::io::{self, Read};
+use std::io::{self, Read, Seek, SeekFrom};
+use std::path::Path;
 
 use blake3::Hash;
 use lettuce_platform::{
-    ManagedFiles, ObjectKey, ObjectKind, ParentSyncStatus, PlatformError, ReadCapability,
-    ReadHandle, WriteCapability,
+    ConfinedInstallStore, InstallPreparation, ManagedFiles, ObjectKey, ObjectKind,
+    ParentSyncStatus, PlatformError, ReadCapability, ReadHandle, WriteCapability,
 };
 use lettuce_types::{AssetId, ContentHash, MediaBlobId, Revision, TimestampMillis};
 
@@ -18,6 +19,7 @@ use crate::{
 /// The first local ingestion slice is deliberately bounded to 64 MiB per
 /// object. This is also below the platform facade's maximum read size.
 pub const MAX_MEDIA_BLOB_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_SYNC_MEDIA_CHUNK_BYTES: usize = 1024 * 1024;
 /// Image dimensions are read from bounded headers only; no decoder is used.
 /// This guards downstream decoders from pathological allocation requests.
 const MAX_IMAGE_PIXELS: u64 = 100_000_000;
@@ -63,6 +65,28 @@ impl IngestRequest {
 pub struct IngestedMedia {
     pub asset: MediaAsset,
     pub blob: MediaBlob,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncMediaAsset {
+    pub asset: MediaAsset,
+    pub blob: MediaBlob,
+}
+
+impl SyncMediaAsset {
+    pub fn validate(&self) -> Result<(), MediaStoreError> {
+        self.asset
+            .validate_for_blob_kind(self.blob.kind)
+            .map_err(|_| MediaStoreError::InvalidMetadata)?;
+        self.blob
+            .validate()
+            .map_err(|_| MediaStoreError::InvalidMetadata)?;
+        if self.asset.blob_id != self.blob.id || self.blob.state != BlobState::Ready {
+            return Err(MediaStoreError::InvalidMetadata);
+        }
+        Ok(())
+    }
 }
 
 /// A ready asset opened through a descriptor-backed managed read handle.
@@ -141,6 +165,216 @@ pub struct LocalMediaBlobStore<BR, AR> {
     write_capability: WriteCapability,
     blobs: BR,
     assets: AR,
+}
+
+pub struct LocalSyncMediaStore<BR, AR> {
+    files: ConfinedInstallStore,
+    blobs: BR,
+    assets: AR,
+}
+
+impl<BR, AR> std::fmt::Debug for LocalSyncMediaStore<BR, AR> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("LocalSyncMediaStore(<confined media root>)")
+    }
+}
+
+impl<BR, AR> LocalSyncMediaStore<BR, AR> {
+    pub fn open(root: impl AsRef<Path>, blobs: BR, assets: AR) -> Result<Self, MediaStoreError> {
+        Ok(Self {
+            files: ConfinedInstallStore::open(root).map_err(MediaStoreError::File)?,
+            blobs,
+            assets,
+        })
+    }
+}
+
+impl<BR, AR> LocalSyncMediaStore<BR, AR>
+where
+    BR: MediaBlobRepository,
+    AR: MediaAssetRepository,
+{
+    pub fn snapshot(&self, asset_id: AssetId) -> Result<crate::SyncMediaAsset, MediaStoreError> {
+        let asset = self
+            .assets
+            .get(asset_id)
+            .map_err(|_| MediaStoreError::RepositoryData)?
+            .ok_or(MediaStoreError::AssetNotFound)?;
+        let blob = self
+            .blobs
+            .get(asset.blob_id)
+            .map_err(|_| MediaStoreError::RepositoryData)?
+            .ok_or(MediaStoreError::BlobNotFound)?;
+        if blob.state != BlobState::Ready || asset.kind.blob_kind() != blob.kind {
+            return Err(MediaStoreError::NotReady);
+        }
+        let mut file = self
+            .files
+            .inspect(&object_key(&blob.content_hash)?)
+            .map_err(MediaStoreError::File)?
+            .ok_or(MediaStoreError::ObjectMissing)?;
+        if file.len() != blob.byte_size || hash_reader(&mut file)? != blob.content_hash {
+            return Err(MediaStoreError::ObjectMetadataMismatch);
+        }
+        Ok(crate::SyncMediaAsset { asset, blob })
+    }
+
+    pub fn receive_offset(&self, value: &crate::SyncMediaAsset) -> Result<u64, MediaStoreError> {
+        value.validate()?;
+        match self.prepare(value)? {
+            InstallPreparation::Installed(mut file) => {
+                if file.len() != value.blob.byte_size
+                    || hash_reader(&mut file)? != value.blob.content_hash
+                {
+                    return Err(MediaStoreError::ObjectConflict);
+                }
+                Ok(value.blob.byte_size)
+            }
+            InstallPreparation::Resume(file) => Ok(file.offset()),
+        }
+    }
+
+    pub fn append_sync_chunk(
+        &self,
+        value: &crate::SyncMediaAsset,
+        offset: u64,
+        bytes: &[u8],
+    ) -> Result<u64, MediaStoreError> {
+        if bytes.len() > crate::MAX_SYNC_MEDIA_CHUNK_BYTES {
+            return Err(MediaStoreError::InputTooLarge);
+        }
+        match self.prepare(value)? {
+            InstallPreparation::Installed(_) => {
+                if offset == value.blob.byte_size && bytes.is_empty() {
+                    Ok(offset)
+                } else {
+                    Err(MediaStoreError::ObjectConflict)
+                }
+            }
+            InstallPreparation::Resume(mut file) => {
+                if file.offset() != offset {
+                    return Err(MediaStoreError::ObjectConflict);
+                }
+                file.append(bytes).map_err(MediaStoreError::File)
+            }
+        }
+    }
+
+    pub fn finish_sync_asset(
+        &self,
+        value: &crate::SyncMediaAsset,
+        now: TimestampMillis,
+    ) -> Result<IngestedMedia, MediaStoreError> {
+        value.validate()?;
+        match self.prepare(value)? {
+            InstallPreparation::Installed(mut file) => {
+                if file.len() != value.blob.byte_size
+                    || hash_reader(&mut file)? != value.blob.content_hash
+                {
+                    return Err(MediaStoreError::ObjectConflict);
+                }
+            }
+            InstallPreparation::Resume(mut file) => {
+                if file.offset() != value.blob.byte_size {
+                    return Err(MediaStoreError::ObjectMetadataMismatch);
+                }
+                file.rewind().map_err(MediaStoreError::File)?;
+                if hash_reader(&mut file)? != value.blob.content_hash {
+                    file.restart().map_err(MediaStoreError::File)?;
+                    return Err(MediaStoreError::ObjectConflict);
+                }
+                file.commit_new().map_err(MediaStoreError::File)?;
+            }
+        }
+        let mut staged = value.blob.clone();
+        staged.state = BlobState::Staged;
+        staged.updated_at = now;
+        let registered = self
+            .blobs
+            .register(staged)
+            .map_err(|_| MediaStoreError::CatalogFailure)?;
+        if registered.content_hash != value.blob.content_hash
+            || registered.kind != value.blob.kind
+            || registered.mime_type != value.blob.mime_type
+            || registered.byte_size != value.blob.byte_size
+            || registered.width != value.blob.width
+            || registered.height != value.blob.height
+            || registered.duration_ms != value.blob.duration_ms
+            || registered.validation_version != value.blob.validation_version
+        {
+            return Err(MediaStoreError::CatalogFailure);
+        }
+        let blob = if registered.state == BlobState::Ready {
+            registered
+        } else {
+            self.blobs
+                .finalize_staged_to_ready(registered.id, now)
+                .map_err(|_| MediaStoreError::CatalogFailure)?
+        };
+        let mut asset = value.asset.clone();
+        asset.blob_id = blob.id;
+        let asset = match self.assets.create(asset.clone()) {
+            Ok(asset) => asset,
+            Err(MediaAssetRepositoryError::AlreadyExists) => {
+                let existing = self
+                    .assets
+                    .get(asset.id)
+                    .map_err(|_| MediaStoreError::CatalogFailure)?
+                    .ok_or(MediaStoreError::CatalogFailure)?;
+                if existing != asset {
+                    return Err(MediaStoreError::CatalogFailure);
+                }
+                existing
+            }
+            Err(_) => return Err(MediaStoreError::CatalogFailure),
+        };
+        Ok(IngestedMedia { asset, blob })
+    }
+
+    pub fn read_sync_chunk(
+        &self,
+        hash: &ContentHash,
+        offset: u64,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, MediaStoreError> {
+        if max_bytes == 0 || max_bytes > crate::MAX_SYNC_MEDIA_CHUNK_BYTES {
+            return Err(MediaStoreError::InputTooLarge);
+        }
+        let blob = self
+            .blobs
+            .find_by_hash(hash)
+            .map_err(|_| MediaStoreError::RepositoryData)?
+            .ok_or(MediaStoreError::BlobNotFound)?;
+        if blob.state != BlobState::Ready || offset > blob.byte_size {
+            return Err(MediaStoreError::NotReady);
+        }
+        let mut file = self
+            .files
+            .inspect(&object_key(hash)?)
+            .map_err(MediaStoreError::File)?
+            .ok_or(MediaStoreError::ObjectMissing)?;
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|_| MediaStoreError::InputRead)?;
+        let remaining = usize::try_from(blob.byte_size - offset).unwrap_or(usize::MAX);
+        let mut bytes = vec![0; max_bytes.min(remaining)];
+        file.read_exact(&mut bytes)
+            .map_err(|_| MediaStoreError::InputRead)?;
+        Ok(bytes)
+    }
+
+    fn prepare(
+        &self,
+        value: &crate::SyncMediaAsset,
+    ) -> Result<InstallPreparation, MediaStoreError> {
+        value.validate()?;
+        self.files
+            .prepare(
+                sync_partial_key(&value.blob.content_hash)?,
+                object_key(&value.blob.content_hash)?,
+                value.blob.byte_size,
+            )
+            .map_err(MediaStoreError::File)
+    }
 }
 
 impl<BR, AR> std::fmt::Debug for LocalMediaBlobStore<BR, AR> {
@@ -851,6 +1085,26 @@ fn object_key(hash: &ContentHash) -> Result<ObjectKey, MediaStoreError> {
         hash.as_str(),
     ])
     .map_err(MediaStoreError::File)
+}
+
+fn sync_partial_key(hash: &ContentHash) -> Result<ObjectKey, MediaStoreError> {
+    ObjectKey::from_segments(["sync", &format!("{}.partial", hash.as_str())])
+        .map_err(MediaStoreError::File)
+}
+
+fn hash_reader(reader: &mut impl Read) -> Result<ContentHash, MediaStoreError> {
+    let mut hasher = blake3::Hasher::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|_| MediaStoreError::InputRead)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(content_hash(hasher.finalize()))
 }
 
 fn mime_matches(declared: &str, detected: &str) -> bool {

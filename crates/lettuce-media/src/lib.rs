@@ -22,7 +22,7 @@ pub use blob::{
     MediaKind,
 };
 pub use local::{
-    IngestRequest, IngestedMedia, LocalMediaBlobStore, MAX_MEDIA_BLOB_BYTES, MediaStoreError,
-    OpenedMediaAsset,
+    IngestRequest, IngestedMedia, LocalMediaBlobStore, LocalSyncMediaStore, MAX_MEDIA_BLOB_BYTES,
+    MAX_SYNC_MEDIA_CHUNK_BYTES, MediaStoreError, OpenedMediaAsset, SyncMediaAsset,
 };
 pub use repository::{MediaAssetRepository, MediaAssetRepositoryError};

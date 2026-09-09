@@ -23,7 +23,8 @@ pub enum BlobState {
     Missing,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MediaBlob {
     pub id: MediaBlobId,
     pub content_hash: ContentHash,

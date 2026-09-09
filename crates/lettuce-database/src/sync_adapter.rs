@@ -7,12 +7,12 @@ use lettuce_sync::{
     IncomingBatchResult, IncomingBatchState, IncomingChangeError, IncomingChangeRepository,
     LocalChangeAdmission, LocalChangeJournal, LocalChangeJournalError, MAX_FRONTIER_DEVICES,
     MAX_INCOMING_CHANGES, MAX_INCOMING_PAYLOAD_BYTES, MAX_OUTBOUND_CHANGES,
-    MAX_OUTBOUND_PAYLOAD_BYTES, MAX_UNRESOLVED_CONFLICTS, NewCanonicalChange, OutboundChangeBatch,
-    PERSONA_DEFAULT_SYNC_SCHEMA, PERSONA_DEFAULT_SYNC_VERSION, PERSONA_SYNC_SCHEMA,
-    PERSONA_SYNC_VERSION, PersonaConflict, PersonaConflictCandidate, PersonaConflictRepository,
-    PersonaConflictValue, SyncChangeId, SyncDeviceId, SyncEntity, canonical_batch_hash,
-    canonical_persona_default_payload, canonical_persona_payload, persona_default_sync_entity,
-    persona_sync_entity,
+    MAX_OUTBOUND_PAYLOAD_BYTES, MAX_UNRESOLVED_CONFLICTS, MEDIA_ASSET_SYNC_SCHEMA,
+    MEDIA_ASSET_SYNC_VERSION, NewCanonicalChange, OutboundChangeBatch, PERSONA_DEFAULT_SYNC_SCHEMA,
+    PERSONA_DEFAULT_SYNC_VERSION, PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION, PersonaConflict,
+    PersonaConflictCandidate, PersonaConflictRepository, PersonaConflictValue, SyncChangeId,
+    SyncDeviceId, SyncEntity, canonical_batch_hash, canonical_persona_default_payload,
+    canonical_persona_payload, persona_default_sync_entity, persona_sync_entity,
 };
 use lettuce_types::{ContentHash, OperationId, PersonaId, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
@@ -803,6 +803,17 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             }
             Ok(true)
         }
+        ("media_asset", MEDIA_ASSET_SYNC_SCHEMA, MEDIA_ASSET_SYNC_VERSION) => {
+            let value: lettuce_media::SyncMediaAsset =
+                serde_json::from_slice(payload.bytes()).map_err(incoming_corrupt)?;
+            value.validate().map_err(incoming_corrupt)?;
+            if value.asset.id.to_string() != change.entity().id()
+                || change.operation() != ChangeOperation::Insert
+            {
+                return Err(IncomingChangeError::Corrupt);
+            }
+            Ok(true)
+        }
         _ => Ok(false),
     }
 }
@@ -1009,6 +1020,56 @@ fn apply_persona_change(
     }
     resolve_dominated_conflicts(tx, change, now, None)?;
     Ok(conflict)
+}
+
+fn apply_media_asset_change(
+    tx: &Transaction<'_>,
+    change: &CanonicalChange,
+    now: TimestampMillis,
+) -> Result<bool, ApplyOneError> {
+    let payload = change.payload().ok_or(ApplyOneError::Corrupt)?;
+    let incoming: lettuce_media::SyncMediaAsset =
+        serde_json::from_slice(payload.bytes()).map_err(|_| ApplyOneError::Corrupt)?;
+    incoming.validate().map_err(|_| ApplyOneError::Corrupt)?;
+    let id = change
+        .entity()
+        .id()
+        .parse::<lettuce_types::AssetId>()
+        .map_err(|_| ApplyOneError::Corrupt)?;
+    if incoming.asset.id != id {
+        return Err(ApplyOneError::Corrupt);
+    }
+    let current = crate::load_asset_with_blob(tx, id)
+        .map_err(|_| ApplyOneError::Storage)?
+        .ok_or(ApplyOneError::Pending)?;
+    let blob = tx
+        .query_row(
+            &format!(
+                "SELECT {} FROM media_blobs WHERE id=?1",
+                crate::MEDIA_BLOB_COLUMNS
+            ),
+            [current.blob_id.to_string()],
+            crate::media_from_row,
+        )
+        .map_err(|_| ApplyOneError::Storage)?;
+    let mut expected = incoming.asset;
+    expected.blob_id = current.blob_id;
+    if current != expected
+        || blob.content_hash != incoming.blob.content_hash
+        || blob.kind != incoming.blob.kind
+        || blob.mime_type != incoming.blob.mime_type
+        || blob.byte_size != incoming.blob.byte_size
+        || blob.width != incoming.blob.width
+        || blob.height != incoming.blob.height
+        || blob.duration_ms != incoming.blob.duration_ms
+        || blob.validation_version != incoming.blob.validation_version
+        || blob.state != lettuce_media::BlobState::Ready
+    {
+        return Err(ApplyOneError::Corrupt);
+    }
+    observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
+    insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
+    Ok(false)
 }
 
 fn apply_persona_default_change(
@@ -1821,6 +1882,7 @@ impl IncomingChangeRepository for Database {
                 continue;
             }
             let result = match change.entity().kind() {
+                "media_asset" => apply_media_asset_change(&transaction, change, now),
                 "persona" => apply_persona_change(&transaction, change, now),
                 "persona_default" => apply_persona_default_change(&transaction, change, now),
                 _ => Err(ApplyOneError::Corrupt),

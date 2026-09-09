@@ -1030,4 +1030,14 @@ quiescent. An acknowledgement must name and causally cover the sent batch.
 Cancellation is available to every transport await and checked before each
 storage boundary. Unsupported input remains staged and returns a pending outcome
 without acknowledgement, so an upgraded retry can resume without data loss.
-Sockets, secure session pairing, status events and blob exchange remain later.
+Sockets, secure session pairing and status events remain later.
+
+The persona-media sync coordinator exchanges only the bounded catalog of assets
+currently referenced by personas and pulls missing content through a typed
+authenticated transport. A caller first stages the canonical change batch; a
+media dependency returns `Pending`. The media coordinator then resumes and
+verifies only catalog entries that exactly match those staged canonical media
+facts, commits their logical assets, and the same batch replay materializes the
+persona without redispatch or data loss. Cancellation is
+checked around every transport wait and mutation boundary. Socket framing,
+pairing and UI status remain outside this slice.

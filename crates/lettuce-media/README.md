@@ -51,3 +51,11 @@ assets can share one blob and one synced asset can have different availability
 on different devices.
 
 Local ingest can now accept a caller-owned `AssetId` for durable import workflows. It still validates and content-addresses the bytes before cataloging; an exact retry returns the existing ready asset and blob, while changed content or metadata conflicts without creating a second logical asset. Ordinary uploads continue to allocate a fresh logical identity.
+
+Persona sync uses a separate confined media-root adapter. It reads only ready
+content-addressed objects, resumes a fixed hash-owned partial after interruption
+or reopen, accepts chunks no larger than one MiB, and verifies declared size and
+BLAKE3 before atomic object availability. Catalog rows are committed only after
+the bytes verify. Existing objects are never replaced, and multiple remote
+logical assets with the same hash reuse one local blob. The adapter exposes no
+native path and has no delete operation.

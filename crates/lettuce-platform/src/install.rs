@@ -260,6 +260,12 @@ impl Read for InstalledFile {
     }
 }
 
+impl Seek for InstalledFile {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        self.file.seek(position)
+    }
+}
+
 impl ResumableInstall {
     #[must_use]
     pub const fn offset(&self) -> u64 {
@@ -307,6 +313,26 @@ impl ResumableInstall {
         let target = path_for(&self.target);
         self.root
             .rename(&source, &self.root, &target)
+            .map_err(PlatformError::from)?;
+        Ok(self.root_path.join(target))
+    }
+
+    pub fn commit_new(self) -> Result<PathBuf, PlatformError> {
+        self.file.sync_all().map_err(PlatformError::from)?;
+        drop(self.file);
+        let source = path_for(&self.partial);
+        let target = path_for(&self.target);
+        self.root
+            .hard_link(&source, &self.root, &target)
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    PlatformError::Conflict
+                } else {
+                    PlatformError::from(error)
+                }
+            })?;
+        self.root
+            .remove_file(&source)
             .map_err(PlatformError::from)?;
         Ok(self.root_path.join(target))
     }
