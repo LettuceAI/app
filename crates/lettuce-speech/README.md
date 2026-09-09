@@ -130,3 +130,14 @@ Voice identifiers containing path separators or encoded traversal are now
 rejected before transport instead of being interpolated into the URL. Voice
 discovery, library search, design, preview creation and saved-voice creation
 remain later TTS slices.
+
+`FishTtsRuntime` preserves the hosted Fish Audio synthesis request, including
+bearer authentication, the selected model header and reference voice, MP3 at
+44.1 kHz and 128 kbps, normalization, normal latency, zero volume and loudness
+normalization. Its prompt-derived speed formula is unchanged: parse a positive
+finite JSON number, cast it to `f32`, clamp it to `0.7..=1.3`, and otherwise use
+`1.0`. The response remains `audio/mpeg`, and the bounded client owns retries,
+timeouts and cancellation. Durable admission requires an explicit model, so a
+caller that wants the legacy fallback must select `s2-pro` before admission
+instead of leaving mutable fallback selection inside the transport. Fish voice
+discovery and cache refresh remain a later TTS slice.

@@ -7,6 +7,7 @@
 
 mod asr;
 mod elevenlabs_tts;
+mod fish_tts;
 mod learning;
 mod openai_tts;
 mod tts;
@@ -14,6 +15,7 @@ mod whisper_runtime;
 
 pub use asr::*;
 pub use elevenlabs_tts::*;
+pub use fish_tts::*;
 pub use learning::*;
 pub use openai_tts::*;
 pub use tts::*;
