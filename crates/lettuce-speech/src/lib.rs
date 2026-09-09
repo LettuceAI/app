@@ -15,6 +15,7 @@ mod openai_tts;
 mod remote_tts;
 mod tts;
 mod tts_catalog;
+mod tts_discovery;
 mod whisper_runtime;
 
 pub use asr::*;
@@ -27,4 +28,5 @@ pub use openai_tts::*;
 pub use remote_tts::*;
 pub use tts::*;
 pub use tts_catalog::*;
+pub use tts_discovery::*;
 pub use whisper_runtime::*;

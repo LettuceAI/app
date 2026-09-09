@@ -1,12 +1,15 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use async_trait::async_trait;
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_network::{JsonAuth, JsonClient, JsonClientError, JsonQueryParameter, RequestPolicy};
 use lettuce_settings::{HeaderName, SecretValue};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{AudioProviderConfig, RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError};
+use crate::{
+    AudioProvider, AudioProviderConfig, DiscoveredVoiceDraft, RuntimeSynthesis, SynthesisRequest,
+    TtsRuntime, TtsRuntimeError, VoiceDiscovery, VoiceDiscoveryError,
+};
 
 const ENDPOINT: &str = "https://api.elevenlabs.io";
 const OUTPUT_FORMAT: &str = "mp3_44100_128";
@@ -36,6 +39,90 @@ impl ElevenLabsTtsRuntime {
 struct ElevenLabsRequest<'a> {
     text: &'a str,
     model_id: &'a str,
+}
+
+#[derive(Deserialize)]
+struct ElevenLabsVoicesResponse {
+    voices: Vec<ElevenLabsVoice>,
+    #[serde(default)]
+    has_more: bool,
+}
+
+#[derive(Deserialize)]
+struct ElevenLabsVoice {
+    voice_id: String,
+    name: String,
+    preview_url: Option<String>,
+    #[serde(default)]
+    labels: BTreeMap<String, String>,
+    category: Option<String>,
+    description: Option<String>,
+}
+
+#[async_trait]
+impl VoiceDiscovery for ElevenLabsTtsRuntime {
+    async fn fetch_configured_voices(
+        &self,
+        provider: &AudioProvider,
+        credential: &SecretValue,
+    ) -> Result<Vec<DiscoveredVoiceDraft>, VoiceDiscoveryError> {
+        provider
+            .validate()
+            .map_err(|_| VoiceDiscoveryError::InvalidData)?;
+        if !matches!(&provider.config, AudioProviderConfig::Elevenlabs) {
+            return Err(VoiceDiscoveryError::InvalidData);
+        }
+        let auth = JsonAuth::Header {
+            name: HeaderName::new("xi-api-key").map_err(|_| VoiceDiscoveryError::InvalidData)?,
+            value: credential
+                .with(|value| SecretValue::new(value.to_owned()))
+                .map_err(|_| VoiceDiscoveryError::InvalidData)?,
+        };
+        let response = self
+            .network
+            .get_json(
+                &self.endpoint,
+                "/v1/voices",
+                &[],
+                auth,
+                Vec::new(),
+                RequestPolicy::PROBE,
+            )
+            .await
+            .map_err(map_discovery_network)?;
+        if !(200..300).contains(&response.status) {
+            return Err(match response.status {
+                408 | 429 | 500..=599 => VoiceDiscoveryError::Unavailable,
+                _ => VoiceDiscoveryError::InvalidData,
+            });
+        }
+        let response: ElevenLabsVoicesResponse =
+            serde_json::from_slice(&response.body).map_err(|_| VoiceDiscoveryError::InvalidData)?;
+        if response.has_more || response.voices.len() > crate::MAX_DISCOVERED_VOICES {
+            return Err(VoiceDiscoveryError::InvalidData);
+        }
+        response
+            .voices
+            .into_iter()
+            .map(|voice| {
+                let mut labels = voice.labels;
+                if let Some(category) = voice.category {
+                    labels.insert("category".into(), category);
+                }
+                if let Some(description) = voice.description {
+                    labels.insert("description".into(), description);
+                }
+                let voice = DiscoveredVoiceDraft {
+                    voice_id: voice.voice_id,
+                    name: voice.name,
+                    preview_url: voice.preview_url,
+                    labels,
+                };
+                voice.validate()?;
+                Ok(voice)
+            })
+            .collect()
+    }
 }
 
 #[async_trait]
@@ -113,6 +200,18 @@ fn map_network(error: JsonClientError) -> TtsRuntimeError {
     }
 }
 
+fn map_discovery_network(error: JsonClientError) -> VoiceDiscoveryError {
+    match error {
+        JsonClientError::InvalidUrl
+        | JsonClientError::InvalidRequest
+        | JsonClientError::RequestTooLarge
+        | JsonClientError::ResponseTooLarge => VoiceDiscoveryError::InvalidData,
+        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
+            VoiceDiscoveryError::Unavailable
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -128,7 +227,7 @@ mod tests {
 
     use super::*;
 
-    async fn server() -> (String, Arc<Mutex<Vec<u8>>>) {
+    async fn server(response: Vec<u8>) -> (String, Arc<Mutex<Vec<u8>>>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
         let address = listener.local_addr().expect("address");
         let captured = Arc::new(Mutex::new(Vec::new()));
@@ -163,10 +262,7 @@ mod tests {
                 }
             }
             *request.lock().expect("captured request") = bytes;
-            stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nID3audio")
-                .await
-                .expect("write response");
+            stream.write_all(&response).await.expect("write response");
         });
         (format!("http://{address}"), captured)
     }
@@ -196,7 +292,8 @@ mod tests {
 
     #[tokio::test]
     async fn sends_legacy_endpoint_auth_query_and_payload() {
-        let (endpoint, captured) = server().await;
+        let (endpoint, captured) =
+            server(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nID3audio".to_vec()).await;
         let runtime = ElevenLabsTtsRuntime::with_endpoint(
             Arc::new(JsonClient::new().expect("network client")),
             endpoint,
@@ -248,5 +345,42 @@ mod tests {
                 .await,
             Err(TtsRuntimeError::Rejected)
         ));
+    }
+
+    #[tokio::test]
+    async fn discovers_configured_voices_and_merges_provider_metadata() {
+        let body = br#"{"voices":[{"voice_id":"voice-1","name":"Narrator","preview_url":"https://audio.example/preview.mp3","labels":{"accent":"calm","category":"old"},"category":"professional","description":"Warm voice"}],"has_more":false}"#;
+        let headers = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+        let response = headers
+            .into_bytes()
+            .into_iter()
+            .chain(body.iter().copied())
+            .collect();
+        let (endpoint, captured) = server(response).await;
+        let runtime = ElevenLabsTtsRuntime::with_endpoint(
+            Arc::new(JsonClient::new().expect("network client")),
+            endpoint,
+        );
+        let voices = runtime
+            .fetch_configured_voices(
+                &request("voice").provider,
+                &SecretValue::new("api-key-canary").expect("secret"),
+            )
+            .await
+            .expect("voice discovery");
+        assert_eq!(voices.len(), 1);
+        assert_eq!(voices[0].voice_id, "voice-1");
+        assert_eq!(voices[0].name, "Narrator");
+        assert_eq!(voices[0].labels["accent"], "calm");
+        assert_eq!(voices[0].labels["category"], "professional");
+        assert_eq!(voices[0].labels["description"], "Warm voice");
+        let captured = captured.lock().expect("captured request");
+        let headers = String::from_utf8_lossy(&captured);
+        assert!(headers.starts_with("GET /v1/voices HTTP/1.1"));
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("xi-api-key: api-key-canary")
+        );
     }
 }

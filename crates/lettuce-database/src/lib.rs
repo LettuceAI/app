@@ -4143,6 +4143,7 @@ mod tests {
                 "creation_staged_lorebook_writer_runs",
                 "creation_turns",
                 "creation_workflows",
+                "discovered_tts_voices",
                 "dynamic_memory_admitted_tool_calls",
                 "dynamic_memory_background_round_settlements",
                 "dynamic_memory_background_tool_results",

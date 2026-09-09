@@ -58,6 +58,35 @@ ON user_voices(created_at DESC, id DESC);
 CREATE INDEX user_voices_provider
 ON user_voices(provider_id, created_at DESC, id DESC);
 
+CREATE TABLE discovered_tts_voices (
+    provider_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    voice_id TEXT NOT NULL CHECK (
+        length(CAST(voice_id AS BLOB)) BETWEEN 1 AND 4096
+        AND instr(voice_id, char(0)) = 0
+    ),
+    name TEXT NOT NULL CHECK (
+        length(CAST(name AS BLOB)) BETWEEN 1 AND 256
+        AND instr(name, char(0)) = 0
+    ),
+    preview_url TEXT CHECK (
+        preview_url IS NULL
+        OR (length(CAST(preview_url AS BLOB)) BETWEEN 1 AND 4096 AND instr(preview_url, char(0)) = 0)
+    ),
+    labels_json TEXT NOT NULL CHECK (
+        json_valid(labels_json)
+        AND json_extract(labels_json, '$.format_version') = 1
+        AND json_type(labels_json, '$.value') = 'object'
+    ),
+    cached_at INTEGER NOT NULL,
+    PRIMARY KEY(provider_id, voice_id),
+    UNIQUE(provider_id, ordinal),
+    FOREIGN KEY(provider_id) REFERENCES audio_providers(id) ON DELETE CASCADE
+) STRICT;
+
+CREATE INDEX discovered_tts_voices_order
+ON discovered_tts_voices(provider_id, ordinal);
+
 CREATE TRIGGER audio_providers_stable_identity
 BEFORE UPDATE ON audio_providers
 WHEN NEW.id <> OLD.id

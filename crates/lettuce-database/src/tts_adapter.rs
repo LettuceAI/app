@@ -1,9 +1,10 @@
-use std::str::FromStr;
+use std::{collections::BTreeMap, str::FromStr};
 
 use lettuce_settings::{SecretOwnerId, SecretRef};
 use lettuce_speech::{
-    AudioProvider, AudioProviderConfig, AudioProviderKind, TtsConfigurationRepository,
-    TtsConfigurationRepositoryError, UserVoice,
+    AudioProvider, AudioProviderConfig, AudioProviderKind, DiscoveredVoice,
+    DiscoveredVoiceRepository, TtsConfigurationRepository, TtsConfigurationRepositoryError,
+    UserVoice, VoiceDiscoveryRepositoryError,
 };
 use lettuce_types::{AudioProviderId, Revision, TimestampMillis, VoiceProfileId};
 use rusqlite::{OptionalExtension, Row, params};
@@ -11,6 +12,7 @@ use rusqlite::{OptionalExtension, Row, params};
 use crate::{Database, decode_versioned, encode_versioned};
 
 const AUDIO_PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
+const DISCOVERED_VOICE_LABELS_FORMAT_VERSION: u32 = 1;
 
 fn storage(_: impl std::fmt::Debug) -> TtsConfigurationRepositoryError {
     TtsConfigurationRepositoryError::Storage
@@ -362,6 +364,110 @@ impl TtsConfigurationRepository for Database {
     }
 }
 
+impl DiscoveredVoiceRepository for Database {
+    fn replace_discovered_voices(
+        &self,
+        provider_id: AudioProviderId,
+        voices: Vec<DiscoveredVoice>,
+    ) -> Result<Vec<DiscoveredVoice>, VoiceDiscoveryRepositoryError> {
+        for (ordinal, voice) in voices.iter().enumerate() {
+            voice
+                .validate()
+                .map_err(|_| VoiceDiscoveryRepositoryError::InvalidData)?;
+            if voice.provider_id != provider_id || voice.ordinal as usize != ordinal {
+                return Err(VoiceDiscoveryRepositoryError::InvalidData);
+            }
+        }
+        let mut connection = self
+            .connection()
+            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+        let exists = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM audio_providers WHERE id=?1)",
+                [provider_id.to_string()],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+        if !exists {
+            return Err(VoiceDiscoveryRepositoryError::ProviderMissing);
+        }
+        transaction
+            .execute(
+                "DELETE FROM discovered_tts_voices WHERE provider_id=?1",
+                [provider_id.to_string()],
+            )
+            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+        for voice in &voices {
+            let labels = encode_versioned(&voice.labels, DISCOVERED_VOICE_LABELS_FORMAT_VERSION)
+                .map_err(|_| VoiceDiscoveryRepositoryError::InvalidData)?;
+            transaction
+                .execute(
+                    "INSERT INTO discovered_tts_voices (
+                        provider_id, ordinal, voice_id, name, preview_url, labels_json, cached_at
+                     ) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                    params![
+                        provider_id.to_string(),
+                        i64::from(voice.ordinal),
+                        voice.voice_id,
+                        voice.name,
+                        voice.preview_url,
+                        labels,
+                        voice.cached_at.get(),
+                    ],
+                )
+                .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+        }
+        transaction
+            .commit()
+            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+        Ok(voices)
+    }
+
+    fn list_discovered_voices(
+        &self,
+        provider_id: AudioProviderId,
+    ) -> Result<Vec<DiscoveredVoice>, VoiceDiscoveryRepositoryError> {
+        let connection = self
+            .connection()
+            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT provider_id, ordinal, voice_id, name, preview_url, labels_json, cached_at
+                 FROM discovered_tts_voices WHERE provider_id=?1 ORDER BY ordinal",
+            )
+            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?;
+        statement
+            .query_map([provider_id.to_string()], |row| {
+                let labels = decode_versioned::<BTreeMap<String, String>>(
+                    &row.get::<_, String>(5)?,
+                    DISCOVERED_VOICE_LABELS_FORMAT_VERSION,
+                )
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let voice = DiscoveredVoice {
+                    provider_id: AudioProviderId::from_str(&row.get::<_, String>(0)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    ordinal: u32::try_from(row.get::<_, i64>(1)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    voice_id: row.get(2)?,
+                    name: row.get(3)?,
+                    preview_url: row.get(4)?,
+                    labels,
+                    cached_at: TimestampMillis::new(row.get(6)?),
+                };
+                voice
+                    .validate()
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                Ok(voice)
+            })
+            .map_err(|_| VoiceDiscoveryRepositoryError::Storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|_| VoiceDiscoveryRepositoryError::InvalidData)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -445,6 +551,72 @@ mod tests {
         assert_eq!(
             database.upsert_user_voice(voice, None),
             Err(TtsConfigurationRepositoryError::ProviderMissing)
+        );
+    }
+
+    #[test]
+    fn discovered_voice_replacement_is_ordered_atomic_and_cascades() {
+        let database = Database::open_in_memory().expect("database");
+        let provider = provider(1);
+        database
+            .upsert_audio_provider(provider.clone(), None)
+            .expect("provider insert");
+        let drafts = vec![
+            lettuce_speech::DiscoveredVoiceDraft {
+                voice_id: "voice-b".into(),
+                name: "Second".into(),
+                preview_url: None,
+                labels: BTreeMap::from([("category".into(), "professional".into())]),
+            },
+            lettuce_speech::DiscoveredVoiceDraft {
+                voice_id: "voice-a".into(),
+                name: "First".into(),
+                preview_url: Some("https://audio.example/first.mp3".into()),
+                labels: BTreeMap::new(),
+            },
+        ];
+        let voices = lettuce_speech::materialize_discovered_voices(
+            provider.id,
+            drafts,
+            TimestampMillis::new(2),
+        )
+        .expect("materialize voices");
+        assert_eq!(
+            database
+                .replace_discovered_voices(provider.id, voices.clone())
+                .expect("replace voices"),
+            voices
+        );
+        assert_eq!(
+            database
+                .list_discovered_voices(provider.id)
+                .expect("list voices")
+                .iter()
+                .map(|voice| voice.voice_id.as_str())
+                .collect::<Vec<_>>(),
+            ["voice-b", "voice-a"]
+        );
+        let mut invalid = voices;
+        invalid[0].ordinal = 1;
+        assert_eq!(
+            database.replace_discovered_voices(provider.id, invalid),
+            Err(VoiceDiscoveryRepositoryError::InvalidData)
+        );
+        assert_eq!(
+            database
+                .list_discovered_voices(provider.id)
+                .expect("retained voices")
+                .len(),
+            2
+        );
+        database
+            .delete_audio_provider(provider.id, Revision::INITIAL)
+            .expect("provider delete");
+        assert!(
+            database
+                .list_discovered_voices(provider.id)
+                .expect("cascaded voices")
+                .is_empty()
         );
     }
 

@@ -210,6 +210,13 @@ impl AppBackend {
         Ok(lettuce_speech::RemoteTtsRuntime::new(network))
     }
 
+    pub fn tts_voice_refresh<'a, S: lettuce_settings::SecretStore + ?Sized>(
+        &'a self,
+        secrets: &'a S,
+    ) -> crate::TtsVoiceRefreshCoordinator<'a, Database, S> {
+        crate::TtsVoiceRefreshCoordinator::new(self.database.as_ref(), secrets)
+    }
+
     #[must_use]
     pub fn speech_transcriptions(
         &self,

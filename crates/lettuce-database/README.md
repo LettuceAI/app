@@ -9,6 +9,12 @@ delete dependent voices atomically when that provider is removed. The deleted
 provider record is returned through the domain port so native-secret cleanup
 can run separately without storing plaintext in SQLite.
 
+Migration 17 also stores bounded discovered TTS voices by provider and response
+ordinal. Refresh replacement runs in one immediate transaction, preserves the
+provider response order and versioned label map, and cascades with provider
+deletion. Failed or invalid replacement leaves the prior rebuildable cache
+intact.
+
 The usage ledger also reads the terminal usage event by turn and attempt
 (`get_for_attempt`) through the existing event query; it adds no schema.
 
