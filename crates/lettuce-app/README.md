@@ -911,10 +911,11 @@ or invalid responses, and atomically replace that provider's bounded ordered
 cache after the complete fetch succeeds. Preview caching remains a later TTS
 slice.
 
-ElevenLabs and hosted Fish provider verification load the existing provider and
-its exact `AudioApiKey` secret scope before calling the typed verification
-transport. HTTP credential rejection returns `false`; configuration,
-secret-store and transport failures remain distinguishable errors.
+ElevenLabs, hosted Fish and Gemini provider verification load the existing
+provider and its exact `AudioApiKey` secret scope before calling the typed
+verification transport. HTTP credential rejection returns `false`;
+configuration, secret-store and transport failures remain distinguishable
+errors. Gemini verification also requires the stored project and location.
 
 The TTS synthesis coordinator admits an idempotent interactive
 `SpeechSynthesize` job and persists its provider, text, voice, prompt and output

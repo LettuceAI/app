@@ -7,7 +7,10 @@ use lettuce_network::{JsonAuth, JsonClient, JsonClientError, JsonSecretHeader, R
 use lettuce_settings::{HeaderName, SecretValue};
 use serde::{Deserialize, Serialize};
 
-use crate::{AudioProviderConfig, RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError};
+use crate::{
+    AudioProvider, AudioProviderConfig, AudioProviderVerificationError, AudioProviderVerifier,
+    RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError,
+};
 
 #[derive(Debug, Clone)]
 pub struct GeminiTtsRuntime {
@@ -95,6 +98,60 @@ struct GeminiPart {
 #[derive(Deserialize)]
 struct GeminiInlineData {
     data: String,
+}
+
+#[async_trait]
+impl AudioProviderVerifier for GeminiTtsRuntime {
+    async fn verify_audio_provider(
+        &self,
+        provider: &AudioProvider,
+        credential: &SecretValue,
+    ) -> Result<bool, AudioProviderVerificationError> {
+        provider
+            .validate()
+            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+        let AudioProviderConfig::Gemini {
+            project_id,
+            location,
+        } = &provider.config
+        else {
+            return Err(AudioProviderVerificationError::InvalidInput);
+        };
+        let project_id = project_id
+            .as_deref()
+            .ok_or(AudioProviderVerificationError::InvalidInput)?;
+        if !valid_host_label(location) || !valid_path_segment(project_id) {
+            return Err(AudioProviderVerificationError::InvalidInput);
+        }
+        let auth = credential
+            .with(|value| SecretValue::new(value.to_owned()))
+            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+        let project_header = SecretValue::new(project_id.to_owned())
+            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+        let endpoint = self
+            .endpoint_override
+            .clone()
+            .unwrap_or_else(|| format!("https://{location}-aiplatform.googleapis.com"));
+        let path =
+            format!("/v1beta1/projects/{project_id}/locations/{location}/publishers/google/models");
+        let response = self
+            .network
+            .get_json(
+                &endpoint,
+                &path,
+                &[],
+                JsonAuth::Bearer(auth),
+                vec![JsonSecretHeader {
+                    name: HeaderName::new("x-goog-user-project")
+                        .map_err(|_| AudioProviderVerificationError::InvalidInput)?,
+                    value: project_header,
+                }],
+                RequestPolicy::PROBE,
+            )
+            .await
+            .map_err(map_verification_network)?;
+        Ok((200..300).contains(&response.status))
+    }
 }
 
 #[async_trait]
@@ -229,6 +286,18 @@ fn map_network(error: JsonClientError) -> TtsRuntimeError {
         | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected,
         JsonClientError::Transport | JsonClientError::ClientConfiguration => {
             TtsRuntimeError::Unavailable
+        }
+    }
+}
+
+fn map_verification_network(error: JsonClientError) -> AudioProviderVerificationError {
+    match error {
+        JsonClientError::InvalidUrl
+        | JsonClientError::InvalidRequest
+        | JsonClientError::RequestTooLarge
+        | JsonClientError::ResponseTooLarge => AudioProviderVerificationError::InvalidInput,
+        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
+            AudioProviderVerificationError::Unavailable
         }
     }
 }
@@ -415,5 +484,50 @@ mod tests {
                 .await,
             Err(TtsRuntimeError::Cancelled)
         ));
+    }
+
+    #[tokio::test]
+    async fn verifies_credentials_in_the_configured_location() {
+        let (endpoint, captured) = server("200 OK", b"{}".to_vec()).await;
+        let runtime = GeminiTtsRuntime::with_endpoint(
+            Arc::new(JsonClient::new().expect("network client")),
+            endpoint,
+        );
+        let mut provider = request("project-canary").provider;
+        provider.config = AudioProviderConfig::Gemini {
+            project_id: Some("project-canary".into()),
+            location: "europe-west4".into(),
+        };
+        assert!(
+            runtime
+                .verify_audio_provider(
+                    &provider,
+                    &SecretValue::new("access-token-canary").expect("secret"),
+                )
+                .await
+                .expect("verification")
+        );
+        {
+            let captured = captured.lock().expect("captured request");
+            let headers = String::from_utf8_lossy(&captured);
+            assert!(headers.starts_with(
+                "GET /v1beta1/projects/project-canary/locations/europe-west4/publishers/google/models HTTP/1.1"
+            ));
+            let headers = headers.to_ascii_lowercase();
+            assert!(headers.contains("authorization: bearer access-token-canary"));
+            assert!(headers.contains("x-goog-user-project: project-canary"));
+        }
+
+        let (endpoint, _) = server("403 Forbidden", b"{}".to_vec()).await;
+        let runtime = GeminiTtsRuntime::with_endpoint(
+            Arc::new(JsonClient::new().expect("network client")),
+            endpoint,
+        );
+        assert!(
+            !runtime
+                .verify_audio_provider(&provider, &SecretValue::new("rejected").expect("secret"),)
+                .await
+                .expect("rejected verification")
+        );
     }
 }

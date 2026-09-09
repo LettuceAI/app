@@ -40,7 +40,9 @@ where
             ))?;
         if !matches!(
             &provider.config,
-            AudioProviderConfig::Elevenlabs | AudioProviderConfig::FishTts
+            AudioProviderConfig::Elevenlabs
+                | AudioProviderConfig::FishTts
+                | AudioProviderConfig::Gemini { .. }
         ) {
             return Err(TtsProviderVerificationError::InvalidInput);
         }
@@ -99,7 +101,9 @@ mod tests {
         ) -> Result<bool, AudioProviderVerificationError> {
             assert!(matches!(
                 provider.config,
-                AudioProviderConfig::Elevenlabs | AudioProviderConfig::FishTts
+                AudioProviderConfig::Elevenlabs
+                    | AudioProviderConfig::FishTts
+                    | AudioProviderConfig::Gemini { .. }
             ));
             credential.with(|value| assert_eq!(value, "verification-secret-canary"));
             Ok(true)
@@ -139,6 +143,24 @@ mod tests {
                 .verify(fish.id, &Verifier)
                 .await
                 .expect("Fish verification")
+        );
+        let gemini = TtsConfigurationCoordinator::new(&database, &secrets)
+            .create_audio_provider(
+                "Gemini TTS".into(),
+                AudioProviderConfig::Gemini {
+                    project_id: Some("project-canary".into()),
+                    location: "europe-west4".into(),
+                },
+                Some(SecretValue::new("verification-secret-canary").expect("secret")),
+                TimestampMillis::new(3),
+            )
+            .await
+            .expect("Gemini provider");
+        assert!(
+            TtsProviderVerificationCoordinator::new(&database, &secrets)
+                .verify(gemini.id, &Verifier)
+                .await
+                .expect("Gemini verification")
         );
     }
 }

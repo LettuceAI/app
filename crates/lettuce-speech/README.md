@@ -201,3 +201,8 @@ distinct typed errors.
 Hosted Fish credential verification uses the legacy bearer-authenticated
 `GET /model?self=true&page_size=1` probe. It shares the same successful-status
 boolean and distinct bounded-client failure semantics.
+
+Gemini credential verification probes the project-scoped Vertex publisher-model
+path with bearer authentication and `x-goog-user-project`. It uses the provider's
+validated configured location, correcting the legacy verifier that silently
+forced `us-central1`, and retains the shared status and transport semantics.
