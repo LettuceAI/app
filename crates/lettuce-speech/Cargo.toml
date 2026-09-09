@@ -21,6 +21,7 @@ vulkan = ["whisper-rs/vulkan"]
 metal = ["whisper-rs/metal"]
 
 [dependencies]
+async-trait.workspace = true
 lettuce-jobs.workspace = true
 lettuce-media.workspace = true
 lettuce-model-hub.workspace = true

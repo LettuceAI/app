@@ -1,10 +1,20 @@
-use lettuce_settings::{SecretOwnerId, SecretRef};
-use lettuce_types::{AudioProviderId, Revision, TimestampMillis, VoiceProfileId};
+use async_trait::async_trait;
+use lettuce_jobs::handle::CancellationToken;
+use lettuce_media::{
+    AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, LocalMediaBlobStore,
+    MediaAssetRepository, MediaBlobRepository, MediaStoreError, RetentionClass,
+};
+use lettuce_settings::{SecretOwnerId, SecretRef, SecretValue};
+use lettuce_types::{
+    AssetId, AudioProviderId, ContentHash, JobId, RequestId, Revision, TimestampMillis,
+    VoiceProfileId,
+};
 use serde::{Deserialize, Serialize};
 
 const MAX_LABEL_BYTES: usize = 256;
 const MAX_VALUE_BYTES: usize = 4096;
 const MAX_PROMPT_BYTES: usize = 16_384;
+const MAX_SYNTHESIS_TEXT_BYTES: usize = 1_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -202,6 +212,268 @@ fn validate_optional(value: &Option<String>) -> Result<(), TtsConfigurationError
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TtsOutputPolicy {
+    Preview { expires_at: TimestampMillis },
+    Retained,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SynthesisRequest {
+    pub id: RequestId,
+    pub provider: AudioProvider,
+    pub model_id: String,
+    pub voice_id: String,
+    pub prompt: Option<String>,
+    pub text: String,
+    pub output_asset_id: AssetId,
+    pub output_policy: TtsOutputPolicy,
+    pub created_at: TimestampMillis,
+}
+
+impl SynthesisRequest {
+    pub fn validate(&self) -> Result<(), TtsSynthesisValidationError> {
+        self.provider
+            .validate()
+            .map_err(|_| TtsSynthesisValidationError::InvalidRequest)?;
+        let credential_valid = match self.provider.config.provider_kind() {
+            AudioProviderKind::Kokoro => self.provider.api_key_ref.is_none(),
+            AudioProviderKind::FishSpeech => true,
+            AudioProviderKind::GeminiTts
+            | AudioProviderKind::Elevenlabs
+            | AudioProviderKind::FishTts
+            | AudioProviderKind::OpenAiTts => self.provider.api_key_ref.is_some(),
+        };
+        if !credential_valid {
+            return Err(TtsSynthesisValidationError::InvalidRequest);
+        }
+        validate_synthesis_identifier(&self.model_id, MAX_VALUE_BYTES)?;
+        validate_synthesis_identifier(&self.voice_id, MAX_VALUE_BYTES)?;
+        validate_synthesis_payload(&self.text, MAX_SYNTHESIS_TEXT_BYTES, false)?;
+        if let Some(prompt) = &self.prompt {
+            validate_synthesis_payload(prompt, MAX_PROMPT_BYTES, true)?;
+        }
+        if matches!(
+            self.output_policy,
+            TtsOutputPolicy::Preview { expires_at } if expires_at <= self.created_at
+        ) {
+            return Err(TtsSynthesisValidationError::InvalidRequest);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SynthesisResult {
+    pub request_id: RequestId,
+    pub audio_asset_id: AssetId,
+    pub content_hash: ContentHash,
+    pub byte_size: u64,
+    pub mime_type: String,
+    pub completed_at: TimestampMillis,
+}
+
+impl SynthesisResult {
+    pub fn validate_for(
+        &self,
+        request: &SynthesisRequest,
+    ) -> Result<(), TtsSynthesisValidationError> {
+        if self.request_id != request.id
+            || self.audio_asset_id != request.output_asset_id
+            || self.byte_size == 0
+            || self.byte_size > lettuce_media::MAX_MEDIA_BLOB_BYTES
+            || !matches!(
+                self.mime_type.as_str(),
+                "audio/wav" | "audio/mpeg" | "audio/ogg" | "audio/flac" | "audio/mp4"
+            )
+            || self.completed_at < request.created_at
+        {
+            return Err(TtsSynthesisValidationError::InvalidResult);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "status")]
+pub enum SynthesisState {
+    Pending,
+    Succeeded { result: SynthesisResult },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SynthesisRecord {
+    pub job_id: JobId,
+    pub request: SynthesisRequest,
+    pub state: SynthesisState,
+}
+
+impl SynthesisRecord {
+    pub fn validate(&self) -> Result<(), TtsSynthesisValidationError> {
+        self.request.validate()?;
+        if let SynthesisState::Succeeded { result } = &self.state {
+            result.validate_for(&self.request)?;
+        }
+        Ok(())
+    }
+}
+
+pub struct RuntimeSynthesis {
+    pub bytes: Vec<u8>,
+    pub declared_mime_type: String,
+}
+
+impl std::fmt::Debug for RuntimeSynthesis {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RuntimeSynthesis")
+            .field("byte_size", &self.bytes.len())
+            .field("declared_mime_type", &self.declared_mime_type)
+            .finish()
+    }
+}
+
+#[async_trait]
+pub trait TtsRuntime: Send + Sync {
+    async fn synthesize(
+        &self,
+        request: &SynthesisRequest,
+        credential: Option<&SecretValue>,
+        cancellation: &CancellationToken,
+    ) -> Result<RuntimeSynthesis, TtsRuntimeError>;
+}
+
+pub trait TtsAudioSink: Send + Sync {
+    fn ingest(
+        &self,
+        job_id: JobId,
+        request: &SynthesisRequest,
+        output: RuntimeSynthesis,
+        completed_at: TimestampMillis,
+    ) -> Result<SynthesisResult, TtsAudioError>;
+}
+
+impl<BR, AR> TtsAudioSink for LocalMediaBlobStore<BR, AR>
+where
+    BR: MediaBlobRepository,
+    AR: MediaAssetRepository,
+{
+    fn ingest(
+        &self,
+        job_id: JobId,
+        request: &SynthesisRequest,
+        output: RuntimeSynthesis,
+        completed_at: TimestampMillis,
+    ) -> Result<SynthesisResult, TtsAudioError> {
+        request.validate()?;
+        let retention = match request.output_policy {
+            TtsOutputPolicy::Preview { expires_at } => RetentionClass::Temporary { expires_at },
+            TtsOutputPolicy::Retained => RetentionClass::Persistent,
+        };
+        let ingested = self
+            .ingest_with_id(
+                request.output_asset_id,
+                output.bytes.as_slice(),
+                IngestRequest::new(
+                    AssetKind::SynthesizedSpeech,
+                    AssetOrigin::Synthesized,
+                    retention,
+                    AssetProvenanceV1 {
+                        producing_job_id: Some(job_id),
+                        source_label: Some("tts".into()),
+                        ..AssetProvenanceV1::default()
+                    },
+                )
+                .with_declared_mime_type(output.declared_mime_type),
+            )
+            .map_err(TtsAudioError::Media)?;
+        Ok(SynthesisResult {
+            request_id: request.id,
+            audio_asset_id: ingested.asset.id,
+            content_hash: ingested.blob.content_hash,
+            byte_size: ingested.blob.byte_size,
+            mime_type: ingested.blob.mime_type,
+            completed_at,
+        })
+    }
+}
+
+pub trait SynthesisRepository: Send + Sync {
+    fn admit(&self, record: SynthesisRecord) -> Result<SynthesisRecord, SynthesisRepositoryError>;
+    fn get(&self, job_id: JobId) -> Result<SynthesisRecord, SynthesisRepositoryError>;
+    fn settle(
+        &self,
+        job_id: JobId,
+        result: SynthesisResult,
+    ) -> Result<SynthesisRecord, SynthesisRepositoryError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum TtsSynthesisValidationError {
+    #[error("TTS synthesis request is invalid")]
+    InvalidRequest,
+    #[error("TTS synthesis result is invalid")]
+    InvalidResult,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum TtsRuntimeError {
+    #[error("TTS synthesis was cancelled")]
+    Cancelled,
+    #[error("TTS runtime is unavailable")]
+    Unavailable,
+    #[error("TTS runtime rejected the request")]
+    Rejected,
+    #[error("TTS runtime failed")]
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum TtsAudioError {
+    #[error("TTS output is invalid")]
+    Invalid(#[from] TtsSynthesisValidationError),
+    #[error("TTS output media failed: {0}")]
+    Media(MediaStoreError),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum SynthesisRepositoryError {
+    #[error("TTS synthesis was not found")]
+    NotFound,
+    #[error("TTS synthesis conflicts with durable state")]
+    Conflict,
+    #[error("TTS synthesis data are invalid")]
+    InvalidData,
+    #[error("TTS synthesis storage failed")]
+    Storage,
+}
+
+fn validate_synthesis_identifier(
+    value: &str,
+    max_bytes: usize,
+) -> Result<(), TtsSynthesisValidationError> {
+    if value.is_empty() || value.len() > max_bytes || value.trim() != value || value.contains('\0')
+    {
+        return Err(TtsSynthesisValidationError::InvalidRequest);
+    }
+    Ok(())
+}
+
+fn validate_synthesis_payload(
+    value: &str,
+    max_bytes: usize,
+    allow_empty: bool,
+) -> Result<(), TtsSynthesisValidationError> {
+    if (!allow_empty && value.is_empty()) || value.len() > max_bytes || value.contains('\0') {
+        return Err(TtsSynthesisValidationError::InvalidRequest);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,6 +531,40 @@ mod tests {
         assert_eq!(
             provider(AudioProviderConfig::Kokoro { variant: None }).validate(),
             Err(TtsConfigurationError::InvalidData)
+        );
+    }
+
+    #[test]
+    fn synthesis_request_validates_retention_and_credentials() {
+        let mut request = SynthesisRequest {
+            id: RequestId::new(),
+            provider: provider(AudioProviderConfig::OpenAiCompatible {
+                base_url: None,
+                request_path: None,
+            }),
+            model_id: "tts-1".into(),
+            voice_id: "alloy".into(),
+            prompt: None,
+            text: "Read this message.".into(),
+            output_asset_id: AssetId::new(),
+            output_policy: TtsOutputPolicy::Preview {
+                expires_at: TimestampMillis::new(2),
+            },
+            created_at: TimestampMillis::new(1),
+        };
+        assert_eq!(request.validate(), Ok(()));
+        request.output_policy = TtsOutputPolicy::Preview {
+            expires_at: request.created_at,
+        };
+        assert_eq!(
+            request.validate(),
+            Err(TtsSynthesisValidationError::InvalidRequest)
+        );
+        request.output_policy = TtsOutputPolicy::Retained;
+        request.provider.api_key_ref = None;
+        assert_eq!(
+            request.validate(),
+            Err(TtsSynthesisValidationError::InvalidRequest)
         );
     }
 }

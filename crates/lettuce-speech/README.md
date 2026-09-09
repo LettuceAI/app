@@ -100,3 +100,14 @@ already committed provider deletion produces an opaque exact retry receipt.
 Provider configuration updates cannot switch kinds, which avoids silently
 reusing one provider's credential under a different protocol; changing kinds is
 a delete-and-create operation.
+
+The synthesis contract freezes the provider metadata, model, voice, optional
+prompt, text, output asset identity and retention choice in one bounded request.
+Remote credentials are loaded only through the scoped secret reference and are
+borrowed by the provider-neutral async runtime port. Runtime audio bytes are
+redacted from debug output and must pass the existing media header and MIME
+validation before becoming a synthesized-speech asset. Preview output is
+temporary with an admitted expiry; message audio is persistent. The durable
+result retains only managed asset identity, content hash, detected MIME, size
+and completion time. Provider-specific HTTP transports, voice discovery,
+preview cache policy and Kokoro execution remain later TTS slices.

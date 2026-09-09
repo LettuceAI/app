@@ -471,6 +471,13 @@ speech-request identity, and a ready audio asset; request/model/audio bindings
 cannot change after admission. A result can settle once and remains available
 after process reopen so job recovery can finish without transcribing twice.
 
+Migration 18 stores one immutable TTS synthesis request and successful result
+against a `speech_synthesize` job. Settlement requires the request's exact
+synthesized-speech asset, producing-job provenance, and admitted temporary or
+persistent retention. Scalar request and result projections are validated
+against versioned documents on every read. Repeated admission and settlement
+must be exact, and completed evidence cannot be updated or deleted.
+
 Migration 15 stores immutable installed-Whisper manifests separately from user
 media. Scalar model/path/size/hash projections must match the versioned
 manifest, and repeated admission is exact. Updates remain disabled. The

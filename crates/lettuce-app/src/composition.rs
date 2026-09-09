@@ -198,6 +198,11 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn tts_syntheses(&self) -> crate::TtsSynthesisCoordinator<'_, Database, Database> {
+        crate::TtsSynthesisCoordinator::new(self.database.as_ref(), self.database.as_ref())
+    }
+
+    #[must_use]
     pub fn speech_transcriptions(
         &self,
     ) -> crate::SpeechTranscriptionCoordinator<'_, Database, Database> {

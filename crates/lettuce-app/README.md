@@ -905,4 +905,17 @@ Provider deletion first validates the exact revision, atomically removes its
 voice graph, and deletes the matching secret generation. A native-store failure
 after metadata deletion returns an opaque retry receipt; callers cannot forge
 its secret identity. Kokoro rejects credentials. Provider transports,
-synthesis, voice discovery and preview caching remain later TTS slices.
+voice discovery and preview caching remain later TTS slices.
+
+The TTS synthesis coordinator admits an idempotent interactive
+`SpeechSynthesize` job and persists its provider, text, voice, prompt and output
+policy before execution. It claims work through the generic job lifecycle,
+loads the exact audio-provider secret when required, calls an injected runtime,
+and admits returned bytes through the media boundary under a deterministic
+asset identity. Preview output is temporary and retained chat audio is
+persistent. Cancellation is checked before secret access, before dispatch and
+after the provider response so late audio is not stored. Transient provider,
+secret, media or repository failures requeue the same immutable request;
+invalid inputs and audio fail terminally. Successful results replay after
+reopen without another provider call. Provider-specific HTTP transports are
+the next TTS slices.
