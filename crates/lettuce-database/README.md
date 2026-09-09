@@ -593,5 +593,14 @@ frontier, immutable change rows and their immutable frontier snapshots. The
 sync-owned repository port allocates identity and clock facts in the same
 immediate transaction as a validated canonical change. Exact operation replay
 returns the stored change; changed reuse conflicts, and a failed insert rolls
-back the device state and frontier. Domain repository mutations are not yet
-wired to this helper, so no aggregate is claimed synchronizable in this slice.
+back the device state and frontier. Aggregate coverage is added explicitly at
+each repository transaction rather than through arbitrary SQL capture.
+
+Persona repository create and authored revision are the first atomic journal
+call sites. Their canonical payload is the complete post-mutation aggregate,
+including ordered media references but no media bytes; revision updates bind
+the pre-mutation snapshot hash as their base. Journal admission happens before
+the persona write inside the same immediate transaction, so a missing media
+reference, stale CAS or later SQL failure rolls back both. Exact create and
+revision retries return the stored persona without allocating another sequence.
+Persona media-only, default and lifecycle mutations remain unwired.

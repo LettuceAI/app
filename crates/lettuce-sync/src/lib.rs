@@ -4,6 +4,8 @@
 
 mod change;
 mod journal;
+mod persona;
 
 pub use change::*;
 pub use journal::*;
+pub use persona::*;

@@ -15,6 +15,8 @@ workspace = true
 
 [dependencies]
 blake3.workspace = true
+lettuce-characters.workspace = true
 lettuce-types.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true

@@ -10,12 +10,17 @@ use lettuce_characters::{
     PersonaDependencyReader, PersonaDraftUpdate, PersonaMedia, PersonaMediaLink, PersonaMediaSlot,
     PersonaRepository, PersonaSearch, RepositoryError,
 };
+use lettuce_sync::{
+    ChangeOperation, LocalChangeJournalError, NewCanonicalChange, canonical_persona_payload,
+    persona_create_operation, persona_revise_operation, persona_sync_entity,
+};
 use lettuce_types::{AssetId, Page, PageRequest, PersonaId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use unicode_normalization::UnicodeNormalization;
 
 use super::Database;
+use crate::sync_adapter::{load_local_change_in, record_local_change_in};
 const CROP_VERSION: u32 = 1;
 const RECOMMENDATION_VERSION: u32 = 1;
 const CURSOR_VERSION: u32 = 1;
@@ -58,6 +63,57 @@ fn db_error(error: rusqlite::Error) -> RepositoryError {
         }
         _ => RepositoryError::Storage,
     }
+}
+
+fn sync_error(error: LocalChangeJournalError) -> RepositoryError {
+    match error {
+        LocalChangeJournalError::Conflict => RepositoryError::AlreadyExists,
+        _ => RepositoryError::Storage,
+    }
+}
+
+fn persona_insert_change(persona: &Persona) -> Result<NewCanonicalChange, RepositoryError> {
+    NewCanonicalChange::new(
+        persona_sync_entity(persona.id).map_err(|_| RepositoryError::Storage)?,
+        ChangeOperation::Insert,
+        None,
+        Some(canonical_persona_payload(persona).map_err(|_| RepositoryError::Storage)?),
+    )
+    .map_err(|_| RepositoryError::Storage)
+}
+
+fn persona_update_change(
+    before: &Persona,
+    after: &Persona,
+) -> Result<NewCanonicalChange, RepositoryError> {
+    let before = canonical_persona_payload(before).map_err(|_| RepositoryError::Storage)?;
+    NewCanonicalChange::new(
+        persona_sync_entity(after.id).map_err(|_| RepositoryError::Storage)?,
+        ChangeOperation::Update,
+        Some(before.content_hash().clone()),
+        Some(canonical_persona_payload(after).map_err(|_| RepositoryError::Storage)?),
+    )
+    .map_err(|_| RepositoryError::Storage)
+}
+
+fn apply_persona_draft(
+    mut persona: Persona,
+    draft: &PersonaDraftUpdate,
+    now: TimestampMillis,
+) -> Result<Persona, RepositoryError> {
+    persona.title.clone_from(&draft.title);
+    persona.description.clone_from(&draft.description);
+    persona.nickname.clone_from(&draft.nickname);
+    persona
+        .design_description
+        .clone_from(&draft.design_description);
+    persona.avatar_crop = draft.avatar_crop;
+    persona
+        .image_recommendation
+        .clone_from(&draft.image_recommendation);
+    persona.bump_revision(now)?;
+    persona.validate()?;
+    Ok(persona)
 }
 
 fn encode<T: Serialize>(value: &T, version: u32) -> Result<String, RepositoryError> {
@@ -565,11 +621,30 @@ fn load_page(
 
 impl PersonaRepository for Database {
     fn create(&self, persona: Persona) -> Result<Persona, RepositoryError> {
+        let mut canonical = persona.clone();
+        canonical.media = normalize_media(canonical.media)?;
+        canonical.validate()?;
+        let operation = persona_create_operation(canonical.id);
+        let request = persona_insert_change(&canonical)?;
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        let stored = insert_persona(&tx, persona)?;
+        let admission = record_local_change_in(&tx, operation, &request, canonical.created_at)
+            .map_err(sync_error)?;
+        let stored = if admission.created {
+            insert_persona(&tx, canonical)?
+        } else {
+            let stored = load_persona(&tx, persona.id)
+                .map_err(db_error)?
+                .ok_or(RepositoryError::Storage)?;
+            if canonical_persona_payload(&stored).map_err(|_| RepositoryError::Storage)?
+                != *admission.change.payload().ok_or(RepositoryError::Storage)?
+            {
+                return Err(RepositoryError::Storage);
+            }
+            stored
+        };
         tx.commit().map_err(db_error)?;
         Ok(stored)
     }
@@ -704,11 +779,59 @@ impl PersonaRepository for Database {
         draft: PersonaDraftUpdate,
         now: TimestampMillis,
     ) -> Result<Persona, RepositoryError> {
+        draft.validate()?;
+        let operation = persona_revise_operation(id, expected_revision);
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        if let Some(change) = load_local_change_in(&tx, operation).map_err(sync_error)? {
+            let current = load_persona(&tx, id)
+                .map_err(db_error)?
+                .ok_or(RepositoryError::NotFound)?;
+            let next = expected_revision
+                .next()
+                .map_err(|_| RepositoryError::Storage)?;
+            let expected = apply_persona_draft(
+                Persona {
+                    revision: expected_revision,
+                    updated_at: current.created_at,
+                    ..current.clone()
+                },
+                &draft,
+                now,
+            )?;
+            if current.revision != next
+                || current != expected
+                || change.entity()
+                    != &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?
+                || change.operation() != ChangeOperation::Update
+                || change.payload()
+                    != Some(
+                        &canonical_persona_payload(&current)
+                            .map_err(|_| RepositoryError::Storage)?,
+                    )
+            {
+                return Err(RepositoryError::StaleRevision {
+                    expected: expected_revision,
+                    actual: current.revision,
+                });
+            }
+            tx.commit().map_err(db_error)?;
+            return Ok(current);
+        }
+        let before = ensure_active(&tx, id, expected_revision)?;
+        let expected = apply_persona_draft(before.clone(), &draft, now)?;
+        let request = persona_update_change(&before, &expected)?;
+        let admission =
+            record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
+        if !admission.created {
+            return Err(RepositoryError::Storage);
+        }
         let persona = revise_persona(&tx, id, expected_revision, draft, now)?;
+        if persona != expected {
+            return Err(RepositoryError::Storage);
+        }
         tx.commit().map_err(db_error)?;
         Ok(persona)
     }
@@ -1308,6 +1431,179 @@ mod tests {
         };
         persona.validate().expect("fixture persona");
         persona
+    }
+
+    #[test]
+    fn persona_create_and_revise_commit_canonical_changes_once() {
+        let database = Database::open_in_memory().expect("database");
+        let value = Persona::new(
+            PersonaId::new(),
+            "Writer".into(),
+            "A careful writer".into(),
+            TimestampMillis::new(10),
+        )
+        .expect("persona");
+        let created = PersonaRepository::create(&database, value.clone()).expect("create");
+        assert_eq!(
+            PersonaRepository::create(&database, value).expect("create replay"),
+            created
+        );
+        let create_change = load_local_change_in(
+            &database.connection().expect("connection"),
+            persona_create_operation(created.id),
+        )
+        .expect("create change")
+        .expect("create journal row");
+        assert_eq!(create_change.origin_sequence(), 1);
+        assert_eq!(create_change.operation(), ChangeOperation::Insert);
+        assert_eq!(
+            serde_json::from_slice::<Persona>(
+                create_change.payload().expect("create payload").bytes()
+            )
+            .expect("decode create"),
+            created
+        );
+
+        let draft = PersonaDraftUpdate {
+            title: "Editor".into(),
+            description: "A careful editor".into(),
+            nickname: Some("Ed".into()),
+            design_description: Some("Blue ink".into()),
+            avatar_crop: None,
+            image_recommendation: None,
+        };
+        let revised = PersonaRepository::revise(
+            &database,
+            created.id,
+            created.revision,
+            draft.clone(),
+            TimestampMillis::new(20),
+        )
+        .expect("revise");
+        assert_eq!(
+            PersonaRepository::revise(
+                &database,
+                created.id,
+                created.revision,
+                draft,
+                TimestampMillis::new(20),
+            )
+            .expect("revise replay"),
+            revised
+        );
+        let revise_change = load_local_change_in(
+            &database.connection().expect("connection"),
+            persona_revise_operation(created.id, created.revision),
+        )
+        .expect("revise change")
+        .expect("revise journal row");
+        assert_eq!(revise_change.origin_sequence(), 2);
+        assert_eq!(revise_change.operation(), ChangeOperation::Update);
+        assert_eq!(
+            revise_change.base_revision(),
+            Some(
+                create_change
+                    .payload()
+                    .expect("create payload")
+                    .content_hash()
+            )
+        );
+        assert_eq!(
+            serde_json::from_slice::<Persona>(
+                revise_change.payload().expect("revise payload").bytes()
+            )
+            .expect("decode revise"),
+            revised
+        );
+    }
+
+    #[test]
+    fn persona_sync_conflicts_and_failed_domain_writes_add_no_change() {
+        let database = Database::open_in_memory().expect("database");
+        let id = PersonaId::new();
+        let original = Persona::new(
+            id,
+            "Writer".into(),
+            "A careful writer".into(),
+            TimestampMillis::new(10),
+        )
+        .expect("persona");
+        let created = PersonaRepository::create(&database, original).expect("create");
+        let changed = Persona::new(
+            id,
+            "Changed".into(),
+            "Different input".into(),
+            TimestampMillis::new(10),
+        )
+        .expect("changed persona");
+        assert_eq!(
+            PersonaRepository::create(&database, changed),
+            Err(RepositoryError::AlreadyExists)
+        );
+        let stale = PersonaRepository::revise(
+            &database,
+            id,
+            created.revision,
+            PersonaDraftUpdate {
+                title: "First".into(),
+                description: "First revision".into(),
+                nickname: None,
+                design_description: None,
+                avatar_crop: None,
+                image_recommendation: None,
+            },
+            TimestampMillis::new(20),
+        )
+        .expect("first revision");
+        assert!(matches!(
+            PersonaRepository::revise(
+                &database,
+                id,
+                created.revision,
+                PersonaDraftUpdate {
+                    title: "Second".into(),
+                    description: "Changed retry".into(),
+                    nickname: None,
+                    design_description: None,
+                    avatar_crop: None,
+                    image_recommendation: None,
+                },
+                TimestampMillis::new(20),
+            ),
+            Err(RepositoryError::StaleRevision { actual, .. }) if actual == stale.revision
+        ));
+
+        let mut invalid = Persona::new(
+            PersonaId::new(),
+            "Invalid media".into(),
+            "References a missing asset".into(),
+            TimestampMillis::new(30),
+        )
+        .expect("persona");
+        invalid.media.links.push(PersonaMediaLink {
+            asset_id: AssetId::new(),
+            slot: PersonaMediaSlot::Avatar,
+            ordinal: 0,
+        });
+        assert!(PersonaRepository::create(&database, invalid).is_err());
+        let connection = database.connection().expect("connection");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM sync_changes", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("change count"),
+            2
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT origin_sequence FROM sync_local_state WHERE id = 1",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("sequence"),
+            2
+        );
     }
 
     #[test]

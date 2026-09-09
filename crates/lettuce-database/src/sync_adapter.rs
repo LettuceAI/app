@@ -76,7 +76,7 @@ impl StoredChangeRow {
     }
 }
 
-fn load_by_operation(
+pub(crate) fn load_local_change_in(
     connection: &Connection,
     operation_id: OperationId,
 ) -> Result<Option<CanonicalChange>, LocalChangeJournalError> {
@@ -93,6 +93,42 @@ fn load_by_operation(
         .optional()
         .map_err(storage)?;
     row.map(|row| hydrate_change(connection, row)).transpose()
+}
+
+pub(crate) fn record_local_change_in(
+    connection: &Connection,
+    operation_id: OperationId,
+    request: &NewCanonicalChange,
+    now: TimestampMillis,
+) -> Result<LocalChangeAdmission, LocalChangeJournalError> {
+    if let Some(change) = load_local_change_in(connection, operation_id)? {
+        if !request_matches(&change, request) {
+            return Err(LocalChangeJournalError::Conflict);
+        }
+        return Ok(LocalChangeAdmission {
+            change,
+            created: false,
+        });
+    }
+    let frontier = load_frontier(connection)?;
+    let (device, sequence, timestamp) = next_identity_and_stamp(connection, now, &frontier)?;
+    let change = CanonicalChange::new(
+        SyncChangeId::new(),
+        device,
+        sequence,
+        timestamp,
+        frontier,
+        request.entity().clone(),
+        request.operation(),
+        request.base_revision().cloned(),
+        request.payload().cloned(),
+    )
+    .map_err(|_| LocalChangeJournalError::Invalid)?;
+    insert_change(connection, operation_id, &change, now)?;
+    Ok(LocalChangeAdmission {
+        change,
+        created: true,
+    })
 }
 
 fn hydrate_change(
@@ -377,36 +413,9 @@ impl LocalChangeJournal for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        if let Some(change) = load_by_operation(&transaction, operation_id)? {
-            if !request_matches(&change, &request) {
-                return Err(LocalChangeJournalError::Conflict);
-            }
-            transaction.commit().map_err(storage)?;
-            return Ok(LocalChangeAdmission {
-                change,
-                created: false,
-            });
-        }
-        let frontier = load_frontier(&transaction)?;
-        let (device, sequence, timestamp) = next_identity_and_stamp(&transaction, now, &frontier)?;
-        let change = CanonicalChange::new(
-            SyncChangeId::new(),
-            device,
-            sequence,
-            timestamp,
-            frontier,
-            request.entity().clone(),
-            request.operation(),
-            request.base_revision().cloned(),
-            request.payload().cloned(),
-        )
-        .map_err(|_| LocalChangeJournalError::Invalid)?;
-        insert_change(&transaction, operation_id, &change, now)?;
+        let admission = record_local_change_in(&transaction, operation_id, &request, now)?;
         transaction.commit().map_err(storage)?;
-        Ok(LocalChangeAdmission {
-            change,
-            created: true,
-        })
+        Ok(admission)
     }
 
     fn local_change_for_operation(
@@ -414,7 +423,7 @@ impl LocalChangeJournal for Database {
         operation_id: OperationId,
     ) -> Result<Option<CanonicalChange>, LocalChangeJournalError> {
         let connection = self.connection().map_err(storage)?;
-        load_by_operation(&connection, operation_id)
+        load_local_change_in(&connection, operation_id)
     }
 }
 

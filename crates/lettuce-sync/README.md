@@ -28,8 +28,15 @@ changed operation reuse conflicts. The SQLite adapter owns device identity,
 monotonic origin sequence and hybrid-clock allocation in the same transaction
 as the journal row.
 
-Wiring entity-specific codecs into each domain repository transaction, peer
-negotiation, staged apply, conflict resolution, blob exchange and legacy
-sync-state migration remain later slices. The journal alone does not make an
-aggregate synchronizable. No legacy database, source or user asset is read,
-rewritten or deleted by this crate.
+The first entity codec is the complete validated persona snapshot. It includes
+authored fields, lifecycle, revision/timestamps and ordered media references,
+while media bytes remain content-addressed elsewhere. Stable create and revise
+operation identities let the SQLite persona repository append the insert or
+update in the same transaction as its aggregate mutation. The update base is
+the canonical pre-mutation snapshot hash.
+
+Persona media-only mutations, default selection, lifecycle changes and every
+other aggregate still need explicit journal wiring. Peer negotiation, staged
+apply, conflict resolution, blob exchange and legacy sync-state migration also
+remain later slices. No legacy database, source or user asset is read, rewritten
+or deleted by this crate.
