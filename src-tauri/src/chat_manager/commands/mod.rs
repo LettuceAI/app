@@ -30,8 +30,8 @@ use super::types::{
     ChatGenerateLorebookEntryDraftArgs, ChatGenerateLorebookKeywordDraftArgs,
     ChatGenerateSceneImageArgs, ChatGenerateScenePromptArgs, ChatRegenerateArgs, ChatTurnResult,
     ContinueResult, ImageAttachment, LorebookEntryDraftResult, LorebookKeywordDraftResult,
-    PromptTemplateType, RegenerateResult, Session, Settings, StoredMessage, SystemPromptEntry,
-    SystemPromptTemplate,
+    MemoryEmbedding, PromptTemplateType, RegenerateResult, Session, Settings, StoredMessage,
+    SystemPromptEntry, SystemPromptTemplate,
 };
 use crate::storage_manager::sessions::{messages_upsert_batch_typed, session_upsert_meta_typed};
 
@@ -475,6 +475,18 @@ pub async fn chat_continue(
         .await
 }
 
+/// Strip an optional leading `<score>::` prefix from a stored memory ref,
+/// returning the underlying memory text. Refs are persisted either as plain text
+/// or as `"{match_score}::{text}"` (see completion/regenerate memory_refs).
+fn memory_ref_text(reference: &str) -> &str {
+    if let Some((prefix, rest)) = reference.split_once("::") {
+        if prefix.trim().parse::<f64>().is_ok() {
+            return rest;
+        }
+    }
+    reference
+}
+
 #[tauri::command]
 pub fn chat_message_debug_snapshot(
     app: AppHandle,
@@ -530,8 +542,39 @@ pub fn chat_message_debug_snapshot(
         }
     };
 
+    // Reconstruct the memories that were injected into {{key_memories}} from the
+    // stored refs instead of running a live (async) retrieval, so the debug
+    // snapshot mirrors what generation actually shipped. Refs are persisted as
+    // plain text or as `"{match_score}::{text}"` (see completion/regenerate).
+    let retrieved_memories: Vec<MemoryEmbedding> = target_message
+        .memory_refs
+        .iter()
+        .filter_map(|reference| {
+            let text = memory_ref_text(reference);
+            prompt_session
+                .memory_embeddings
+                .iter()
+                .find(|memory| memory.id == *reference || memory.text == text)
+                .cloned()
+                .or_else(|| {
+                    serde_json::from_value(json!({
+                        "id": reference,
+                        "text": text,
+                        "embedding": Vec::<f32>::new(),
+                    }))
+                    .ok()
+                })
+        })
+        .collect();
+
     let prompt_entries = append_image_directive_instructions(
-        context.build_system_prompt(&character, &model, persona.as_ref(), &prompt_session),
+        context.build_system_prompt(
+            &character,
+            &model,
+            persona.as_ref(),
+            &prompt_session,
+            &retrieved_memories,
+        ),
         &context.settings,
     );
     let (prompt_template_source, prompt_template_id, prompt_template_name) =
@@ -544,6 +587,7 @@ pub fn chat_message_debug_snapshot(
         persona.as_ref(),
         &prompt_session,
         &context.settings,
+        &retrieved_memories,
     );
 
     let system_role = crate::chat_manager::request_builder::system_role_for(&credential);

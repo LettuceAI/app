@@ -278,12 +278,19 @@ impl RegenerateFlow {
                     &model,
                     prompt_persona.as_ref(),
                     &session,
+                    &relevant_memories,
                 ),
                 settings,
             )
         } else {
             append_image_directive_instructions(
-                context.build_system_prompt(&character, &model, persona.as_ref(), &session),
+                context.build_system_prompt(
+                    &character,
+                    &model,
+                    persona.as_ref(),
+                    &session,
+                    &relevant_memories,
+                ),
                 settings,
             )
         };

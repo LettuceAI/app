@@ -13,9 +13,9 @@ use crate::chat_manager::temporal::{
     time_placeholder_values,
 };
 use crate::chat_manager::types::{
-    Character, Model, Persona, PromptEntryChatMode, PromptEntryCondition, PromptEntryImageSlot,
-    PromptEntryInfoSource, PromptEntryPayload, PromptEntryPosition, PromptEntryRole, Session,
-    Settings, SystemPromptEntry,
+    Character, MemoryEmbedding, Model, Persona, PromptEntryChatMode, PromptEntryCondition,
+    PromptEntryImageSlot, PromptEntryInfoSource, PromptEntryPayload, PromptEntryPosition,
+    PromptEntryRole, Session, Settings, SystemPromptEntry,
 };
 use crate::storage_manager::db::open_db;
 use crate::storage_manager::lorebook::{get_character_active_lorebook_ids, get_lorebook};
@@ -3403,6 +3403,7 @@ pub(crate) fn debug_prompt_source_contents(
     persona: Option<&Persona>,
     session: &Session,
     settings: &Settings,
+    retrieved_memories: &[MemoryEmbedding],
 ) -> DebugPromptSourceContents {
     let dynamic_memory_active = is_dynamic_memory_active(settings, character);
     let companion_mode = companion::is_companion_mode(session, character);
@@ -3448,10 +3449,8 @@ pub(crate) fn debug_prompt_source_contents(
     };
 
     let key_memories = if dynamic_memory_active {
-        session
-            .memory_embeddings
+        retrieved_memories
             .iter()
-            .filter(|mem| (!mem.is_cold || mem.is_pinned) && mem.superseded_by.is_none())
             .map(|mem| format_memory_for_prompt(mem, companion_now))
             .collect::<Vec<_>>()
             .join("\n")
@@ -3474,11 +3473,7 @@ pub(crate) fn debug_prompt_source_contents(
         .unwrap_or_default();
 
     let memory_entry_count = if dynamic_memory_active {
-        session
-            .memory_embeddings
-            .iter()
-            .filter(|mem| (!mem.is_cold || mem.is_pinned) && mem.superseded_by.is_none())
-            .count() as u32
+        retrieved_memories.len() as u32
     } else {
         session
             .memories
@@ -3519,6 +3514,12 @@ pub fn build_system_prompt_entries(
     persona: Option<&Persona>,
     session: &Session,
     settings: &Settings,
+    // In dynamic-memory mode, the memories actually retrieved for this turn.
+    // {{key_memories}} is filled from these instead of the whole hot bank, so
+    // the prompt only carries the relevant memories (the separate retrieved
+    // block in the flows is removed). Empty in manual-memory mode / when nothing
+    // was retrieved. Non-chat callers pass &[] and keep the manual-memory path.
+    retrieved_memories: &[MemoryEmbedding],
 ) -> Vec<SystemPromptEntry> {
     let mut debug_parts: Vec<Value> = Vec::new();
     let dynamic_memory_active = is_dynamic_memory_active(settings, character);
@@ -3667,12 +3668,22 @@ pub fn build_system_prompt_entries(
     let time_awareness_enabled = companion_mode && companion_time_awareness_enabled(session);
     let has_author_note = author_note_text.is_some();
     let has_key_memories = if dynamic_memory_active {
-        session
-            .memory_embeddings
-            .iter()
-            .any(|memory| (!memory.is_cold || memory.is_pinned) && memory.superseded_by.is_none())
+        !retrieved_memories.is_empty()
     } else {
         has_manual_memories(&session.memories)
+    };
+    // Text used to fill {{key_memories}} in dynamic mode: the retrieved relevant
+    // memories (not the whole hot bank). Rendered here so we can substitute it
+    // into template entries before render_with_context runs.
+    let dynamic_key_memories_text = if dynamic_memory_active {
+        let memory_now = companion_effective_now(session);
+        retrieved_memories
+            .iter()
+            .map(|memory| format_memory_for_prompt(memory, memory_now))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        String::new()
     };
     let scene_generation_enabled = settings
         .advanced_settings
@@ -3740,9 +3751,19 @@ pub fn build_system_prompt_entries(
         if skip_scene_placeholder_entries && has_scene_placeholder(&entry.content) {
             continue;
         }
+        // In dynamic mode, resolve {{key_memories}} here from the retrieved
+        // memories before render_with_context runs — its all-hot fill then finds
+        // no placeholder left and is a no-op. Keeps the shared renderer untouched.
+        let entry_content = if dynamic_memory_active {
+            entry
+                .content
+                .replace("{{key_memories}}", &dynamic_key_memories_text)
+        } else {
+            entry.content.clone()
+        };
         let rendered = render_with_context(
             app,
-            &entry.content,
+            &entry_content,
             character,
             persona,
             session,
@@ -3791,10 +3812,8 @@ pub fn build_system_prompt_entries(
 
     let rendered_key_memories = if dynamic_memory_active {
         let memory_now = companion_effective_now(session);
-        session
-            .memory_embeddings
+        retrieved_memories
             .iter()
-            .filter(|mem| (!mem.is_cold || mem.is_pinned) && mem.superseded_by.is_none())
             .map(|mem| format_memory_for_prompt(mem, memory_now))
             .collect::<Vec<_>>()
     } else if has_manual_memories(&session.memories) {
