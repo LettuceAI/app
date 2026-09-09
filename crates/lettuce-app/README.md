@@ -1021,3 +1021,13 @@ with a caller-owned fresh session ID. Device identity survives reopen while
 session identity rotates. Transport code will supply its authenticated peer
 identity to the sync-domain negotiator; the application does not persist the
 legacy one-time PIN or invent a trusted-peer registry.
+
+The sync exchange coordinator runs the canonical change phase over a narrow
+already-authenticated transport. It negotiates hello compatibility, exchanges
+frontiers, sends and durably stages/applies bounded batches in both directions,
+records monotonic peer acknowledgements and finishes only after both sides are
+quiescent. An acknowledgement must name and causally cover the sent batch.
+Cancellation is available to every transport await and checked before each
+storage boundary. Unsupported input remains staged and returns a pending outcome
+without acknowledgement, so an upgraded retry can resume without data loss.
+Sockets, secure session pairing, status events and blob exchange remain later.

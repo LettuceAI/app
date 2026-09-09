@@ -65,6 +65,11 @@ impl AppBackend {
         crate::SyncHelloCoordinator::new(self.database.as_ref())
     }
 
+    #[must_use]
+    pub fn sync_exchange(&self) -> crate::SyncExchangeCoordinator<'_, Database> {
+        crate::SyncExchangeCoordinator::new(self.database.as_ref())
+    }
+
     pub fn preflight_legacy_database(
         &self,
         path: impl AsRef<Path>,

@@ -83,3 +83,8 @@ both peers use the smaller validated batch limits. Pairing remains
 session-scoped, matching the legacy UI; no persistent peer-trust model is
 invented. Secure pairing transport, status flow and actual exchange remain
 separate work.
+
+Canonical session frames carry either one validated identity-and-hash-bound
+change batch or explicit quiescence, followed by an acknowledgement containing
+the exact optional batch ID and causal frontier. Batch construction enforces the
+negotiated count and byte limits before a transport can send or accept it.

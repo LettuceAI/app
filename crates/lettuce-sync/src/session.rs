@@ -1,10 +1,10 @@
-use lettuce_types::ContentHash;
+use lettuce_types::{ContentHash, OperationId};
 use uuid::Uuid;
 
 use crate::{
-    MAX_CANONICAL_PAYLOAD_BYTES, MAX_INCOMING_CHANGES, MAX_INCOMING_PAYLOAD_BYTES,
-    PERSONA_DEFAULT_SYNC_SCHEMA, PERSONA_DEFAULT_SYNC_VERSION, PERSONA_SYNC_SCHEMA,
-    PERSONA_SYNC_VERSION, SyncDeviceId,
+    CanonicalChange, CausalFrontier, MAX_CANONICAL_PAYLOAD_BYTES, MAX_INCOMING_CHANGES,
+    MAX_INCOMING_PAYLOAD_BYTES, PERSONA_DEFAULT_SYNC_SCHEMA, PERSONA_DEFAULT_SYNC_VERSION,
+    PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION, SyncDeviceId, canonical_batch_hash,
 };
 
 pub const SYNC_PROTOCOL_VERSION: u32 = 1;
@@ -208,6 +208,84 @@ pub struct NegotiatedSyncSession {
     pub limits: SyncTransferLimits,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncChangeBatch {
+    batch_id: OperationId,
+    batch_hash: ContentHash,
+    changes: Vec<CanonicalChange>,
+}
+
+impl SyncChangeBatch {
+    pub fn new(
+        batch_id: OperationId,
+        changes: Vec<CanonicalChange>,
+        limits: SyncTransferLimits,
+    ) -> Result<Self, SyncSessionError> {
+        let batch_hash = canonical_batch_hash(&changes);
+        Self::from_parts(batch_id, batch_hash, changes, limits)
+    }
+
+    pub fn from_parts(
+        batch_id: OperationId,
+        batch_hash: ContentHash,
+        changes: Vec<CanonicalChange>,
+        limits: SyncTransferLimits,
+    ) -> Result<Self, SyncSessionError> {
+        let payload_bytes = changes.iter().try_fold(0usize, |total, change| {
+            total.checked_add(change.payload().map_or(0, |payload| payload.bytes().len()))
+        });
+        if changes.is_empty()
+            || changes.len() > limits.max_changes_per_batch
+            || changes.iter().any(|change| {
+                change
+                    .payload()
+                    .is_some_and(|payload| payload.bytes().len() > limits.max_change_payload_bytes)
+            })
+            || payload_bytes.is_none_or(|bytes| bytes > limits.max_batch_payload_bytes)
+            || canonical_batch_hash(&changes) != batch_hash
+        {
+            return Err(SyncSessionError::InvalidChangeBatch);
+        }
+        Ok(Self {
+            batch_id,
+            batch_hash,
+            changes,
+        })
+    }
+
+    #[must_use]
+    pub const fn batch_id(&self) -> OperationId {
+        self.batch_id
+    }
+
+    #[must_use]
+    pub const fn batch_hash(&self) -> &ContentHash {
+        &self.batch_hash
+    }
+
+    #[must_use]
+    pub fn changes(&self) -> &[CanonicalChange] {
+        &self.changes
+    }
+
+    #[must_use]
+    pub fn into_changes(self) -> Vec<CanonicalChange> {
+        self.changes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SyncChangeFrame {
+    Batch(SyncChangeBatch),
+    Quiescent { frontier: CausalFrontier },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncBatchAcknowledgement {
+    pub batch_id: Option<OperationId>,
+    pub frontier: CausalFrontier,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SyncSessionError {
     #[error("sync app version is empty, unbounded, or contains control characters")]
@@ -216,6 +294,8 @@ pub enum SyncSessionError {
     InvalidDeviceName,
     #[error("sync transfer limits are invalid")]
     InvalidTransferLimits,
+    #[error("sync change batch is empty, unbounded, or has an invalid hash")]
+    InvalidChangeBatch,
     #[error("authenticated peer identity does not match the sync hello")]
     AuthenticatedIdentityMismatch,
     #[error("both sync peers use the same device identity")]
@@ -286,6 +366,8 @@ fn valid_text(value: &str, max_bytes: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{ChangeOperation, HybridTimestamp, SyncChangeId, SyncEntity};
+    use lettuce_types::TimestampMillis;
 
     fn hello(device: u128, session: u128) -> SyncHello {
         SyncHello::current(
@@ -296,6 +378,24 @@ mod tests {
             SyncTransferLimits::default(),
         )
         .expect("hello")
+    }
+
+    fn change() -> CanonicalChange {
+        CanonicalChange::new(
+            SyncChangeId::from_uuid(Uuid::from_u128(30)),
+            SyncDeviceId::from_uuid(Uuid::from_u128(1)),
+            1,
+            HybridTimestamp::new(TimestampMillis::new(1), 0),
+            CausalFrontier::new(),
+            SyncEntity::new("persona", Uuid::from_u128(2).to_string()).expect("entity"),
+            ChangeOperation::Insert,
+            None,
+            Some(
+                crate::CanonicalPayload::new("persona.snapshot", 1, b"payload".to_vec())
+                    .expect("payload"),
+            ),
+        )
+        .expect("change")
     }
 
     #[test]
@@ -396,6 +496,37 @@ mod tests {
         assert_eq!(
             negotiate_sync_session(&local, &peer, peer_device),
             Err(SyncSessionError::SchemaMismatch)
+        );
+    }
+
+    #[test]
+    fn change_batches_bind_identity_order_hash_and_negotiated_limits() {
+        let batch_id = OperationId::from_uuid(Uuid::from_u128(40));
+        let change = change();
+        let batch = SyncChangeBatch::new(
+            batch_id,
+            vec![change.clone()],
+            SyncTransferLimits::default(),
+        )
+        .expect("batch");
+        assert_eq!(batch.batch_id(), batch_id);
+        assert_eq!(batch.changes(), std::slice::from_ref(&change));
+        assert_eq!(
+            SyncChangeBatch::from_parts(
+                batch_id,
+                ContentHash::parse("11".repeat(32)).expect("wrong hash"),
+                vec![change.clone()],
+                SyncTransferLimits::default()
+            ),
+            Err(SyncSessionError::InvalidChangeBatch)
+        );
+        assert_eq!(
+            SyncChangeBatch::new(
+                batch_id,
+                vec![change],
+                SyncTransferLimits::new(1, 1, 1).expect("small limits")
+            ),
+            Err(SyncSessionError::InvalidChangeBatch)
         );
     }
 }
