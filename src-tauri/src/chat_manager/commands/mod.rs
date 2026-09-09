@@ -67,6 +67,20 @@ pub struct ChatMessageDebugSnapshot {
     pub request_messages: Vec<Value>,
     pub request_body: Value,
     pub notes: Vec<String>,
+    // Raw contents of the individual prompt placeholders. Present so the frontend
+    // token breakdown can attribute tokens to character profile / persona /
+    // lorebook / memories / author note / companion state / scheduled notes even
+    // when a template renders them inline (i.e. they never appear as standalone
+    // prompt entries).
+    pub character_profile_content: String,
+    pub persona_content: String,
+    pub memory_entry_count: u32,
+    pub lorebook_content: String,
+    pub context_summary_content: String,
+    pub key_memories_content: String,
+    pub author_note_content: String,
+    pub companion_state_content: String,
+    pub scheduled_notes_content: String,
 }
 
 #[derive(Clone, Copy)]
@@ -518,6 +532,14 @@ pub fn chat_message_debug_snapshot(
         resolve_debug_prompt_template(&app, &prompt_session, &character, &context.settings);
     let (relative_entries, in_chat_entries) = partition_prompt_entries(prompt_entries.clone());
 
+    let prompt_sources = prompt_engine::debug_prompt_source_contents(
+        &app,
+        &character,
+        persona.as_ref(),
+        &prompt_session,
+        &context.settings,
+    );
+
     let system_role = crate::chat_manager::request_builder::system_role_for(&credential);
     let character_name = character.name.as_str();
     let persona_name = persona
@@ -641,6 +663,15 @@ pub fn chat_message_debug_snapshot(
         request_messages,
         request_body: built.body,
         notes,
+        character_profile_content: prompt_sources.character_profile,
+        persona_content: prompt_sources.persona_description,
+        memory_entry_count: prompt_sources.memory_entry_count,
+        lorebook_content: prompt_sources.lorebook,
+        context_summary_content: prompt_sources.context_summary,
+        key_memories_content: prompt_sources.key_memories,
+        author_note_content: prompt_sources.author_note,
+        companion_state_content: prompt_sources.companion_state,
+        scheduled_notes_content: prompt_sources.scheduled_notes,
     })
 }
 

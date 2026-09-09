@@ -34,6 +34,11 @@ import { getMessageCompanionEffect, readSettings } from "../../../../core/storag
 import { useI18n } from "../../../../core/i18n/context";
 import { isDevelopmentMode } from "../../../../core/utils/env";
 import { useSessionAttachments } from "../../../hooks/useSessionAttachment";
+import {
+  useMessageDebugSnapshot,
+  useTokenBreakdown,
+  PromptTokenBreakdownBars,
+} from "./PromptTokenBreakdown";
 
 interface MessageActionState {
   message: StoredMessage;
@@ -336,6 +341,19 @@ export function MessageActionsBottomSheet({
   const firstTokenMs = messageAction?.message.usage?.firstTokenMs;
   const tokensPerSecond = messageAction?.message.usage?.tokensPerSecond;
   const mtpStats = messageAction?.message.usage?.mtpStats;
+
+  // Prompt / context breakdown bars for assistant messages. Loads the same
+  // reconstructed snapshot the debug page uses and reuses its shared component.
+  const isAssistantBreakdown = messageAction?.message.role === "assistant";
+  const breakdownSnapshot = useMessageDebugSnapshot(
+    sessionId,
+    messageAction?.message.id ?? null,
+    Boolean(isAssistantBreakdown && sessionId),
+  );
+  const breakdownData = useTokenBreakdown(
+    breakdownSnapshot,
+    messageAction?.message ?? null,
+  );
   const loadedEditAttachments = useSessionAttachments(editAttachments);
   const editingAttachment =
     loadedEditAttachments.find((attachment) => attachment.id === editingAttachmentId) ?? null;
@@ -653,6 +671,20 @@ export function MessageActionsBottomSheet({
                   </div>
                 </div>
               )}
+
+              {!isSceneMessage &&
+                isAssistantBreakdown &&
+                (breakdownData.breakdown || breakdownData.loading) && (
+                  <div className="mb-3 p-3 rounded-lg border border-fg/10 bg-fg/5">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Activity size={14} className="text-fg/60" />
+                      <span className="text-xs font-medium text-fg/80">
+                        {t("chats.debugPage.tokenBreakdown")}
+                      </span>
+                    </div>
+                    <PromptTokenBreakdownBars data={breakdownData} />
+                  </div>
+                )}
 
               {/* Basic actions */}
               {canEdit && (

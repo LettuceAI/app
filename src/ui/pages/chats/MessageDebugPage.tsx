@@ -4,8 +4,7 @@ import { ArrowLeft, Copy, ChevronRight, ChevronDown } from "lucide-react";
 
 import { getMessageDebugSnapshot, type ChatMessageDebugSnapshot } from "../../../core/chat/manager";
 import { getSession, readSettings } from "../../../core/storage/repo";
-import { useI18n, type TranslationKey } from "../../../core/i18n/context";
-import { countTokensBatch } from "../../../core/tokens";
+import { useI18n } from "../../../core/i18n/context";
 import type { Session, Settings, StoredMessage } from "../../../core/storage/schemas";
 import {
   getMessageDebugTrace,
@@ -70,94 +69,6 @@ function extractAttempts(trace: ChatRequestDebugTrace | null): DebugAttempt[] {
 
   return attempts;
 }
-
-type PromptEntryLike = {
-  id?: unknown;
-  name?: unknown;
-  role?: unknown;
-  content?: unknown;
-};
-
-type BreakdownCategory =
-  | "systemPersona"
-  | "memory"
-  | "lorebook"
-  | "authorNote"
-  | "companion"
-  | "history";
-
-const CATEGORY_ORDER: BreakdownCategory[] = [
-  "systemPersona",
-  "memory",
-  "lorebook",
-  "authorNote",
-  "companion",
-  "history",
-];
-
-const CATEGORY_LABEL_KEYS: Record<BreakdownCategory, TranslationKey> = {
-  systemPersona: "chats.debugPage.tokenBreakdownCat.systemPersona",
-  memory: "chats.debugPage.tokenBreakdownCat.memory",
-  lorebook: "chats.debugPage.tokenBreakdownCat.lorebook",
-  authorNote: "chats.debugPage.tokenBreakdownCat.authorNote",
-  companion: "chats.debugPage.tokenBreakdownCat.companion",
-  history: "chats.debugPage.tokenBreakdownCat.history",
-};
-
-/** Flatten an entry/message content (string or multimodal parts) into plain text. */
-function contentToText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part && typeof part === "object" && "text" in part) {
-          const text = (part as { text?: unknown }).text;
-          return typeof text === "string" ? text : "";
-        }
-        return "";
-      })
-      .join("");
-  }
-  return "";
-}
-
-/** Map a system prompt entry to a breakdown category via its stable id/name. */
-function categorizeEntry(entry: PromptEntryLike): BreakdownCategory {
-  const id = typeof entry.id === "string" ? entry.id.toLowerCase() : "";
-  const name = typeof entry.name === "string" ? entry.name.toLowerCase() : "";
-  const has = (needle: string) => id.includes(needle) || name.includes(needle);
-
-  if (
-    id === "runtime_retrieved_memories" ||
-    id === "entry_context_summary" ||
-    id === "entry_key_memories" ||
-    has("memor") ||
-    has("context summary")
-  ) {
-    return "memory";
-  }
-  if (id === "entry_lorebook" || has("lorebook") || has("world information")) {
-    return "lorebook";
-  }
-  if (id === "entry_author_note" || has("author")) {
-    return "authorNote";
-  }
-  if (
-    id === "entry_companion_state" ||
-    id === "entry_scheduled_notes" ||
-    has("companion") ||
-    has("scheduled notes")
-  ) {
-    return "companion";
-  }
-  return "systemPersona";
-}
-
-type TokenBreakdown = {
-  rows: { category: BreakdownCategory; tokens: number }[];
-  total: number;
-};
 
 function Collapsible({
   title,
@@ -299,8 +210,6 @@ export function MessageDebugPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [snapshot, setSnapshot] = useState<ChatMessageDebugSnapshot | null>(null);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
-  const [breakdown, setBreakdown] = useState<TokenBreakdown | null>(null);
-  const [breakdownLoading, setBreakdownLoading] = useState(false);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -347,73 +256,6 @@ export function MessageDebugPage() {
       cancelled = true;
     };
   }, [messageId, sessionId]);
-
-  useEffect(() => {
-    if (!snapshot) {
-      setBreakdown(null);
-      setBreakdownLoading(false);
-      return;
-    }
-    let cancelled = false;
-
-    // Category buckets come from the reconstructed system prompt entries (which
-    // still carry their id/name), while chat history is counted from the
-    // user/assistant request messages. System-role request messages are skipped
-    // to avoid double-counting the entries they were assembled from.
-    const items: { category: BreakdownCategory; text: string }[] = [];
-    for (const raw of snapshot.promptEntries as PromptEntryLike[]) {
-      const text = contentToText(raw?.content);
-      if (!text) continue;
-      items.push({ category: categorizeEntry(raw), text });
-    }
-    for (const raw of snapshot.requestMessages as PromptEntryLike[]) {
-      const role = typeof raw?.role === "string" ? raw.role.toLowerCase() : "";
-      if (role !== "user" && role !== "assistant") continue;
-      const text = contentToText(raw?.content);
-      if (!text) continue;
-      items.push({ category: "history", text });
-    }
-
-    if (items.length === 0) {
-      setBreakdown({ rows: [], total: 0 });
-      setBreakdownLoading(false);
-      return;
-    }
-
-    setBreakdownLoading(true);
-    void countTokensBatch(items.map((item) => item.text))
-      .then((counts) => {
-        if (cancelled) return;
-        const totals = new Map<BreakdownCategory, number>();
-        counts.forEach((count, index) => {
-          const category = items[index]?.category;
-          if (!category) return;
-          totals.set(category, (totals.get(category) ?? 0) + count);
-        });
-        const rows = CATEGORY_ORDER.filter((category) => totals.has(category)).map(
-          (category) => ({ category, tokens: totals.get(category) ?? 0 }),
-        );
-        const total = rows.reduce((sum, row) => sum + row.tokens, 0);
-        setBreakdown({ rows, total });
-      })
-      .catch((error) => {
-        console.error("Failed to compute prompt token breakdown:", error);
-        if (!cancelled) setBreakdown(null);
-      })
-      .finally(() => {
-        if (!cancelled) setBreakdownLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [snapshot]);
-
-  const contextLength = useMemo(() => {
-    const settings = snapshot?.requestSettings as Record<string, unknown> | undefined;
-    const value = settings?.contextLength;
-    return typeof value === "number" && value > 0 ? value : null;
-  }, [snapshot]);
 
   const trace = useSyncExternalStore(
     subscribeChatDebugStore,
@@ -517,65 +359,6 @@ export function MessageDebugPage() {
             />
           </div>
         </Collapsible>
-
-        {snapshot && (breakdown || breakdownLoading) ? (
-          <Collapsible title={t("chats.debugPage.tokenBreakdown")} defaultOpen>
-            <div className="space-y-3 font-mono text-xs">
-              {breakdown && breakdown.rows.length > 0 ? (
-                <>
-                  <div className="text-fg/50">
-                    {t("chats.debugPage.tokenBreakdownEstimate")}
-                  </div>
-                  <div className="space-y-2">
-                    {breakdown.rows.map((row) => {
-                      const pct =
-                        breakdown.total > 0
-                          ? Math.round((row.tokens / breakdown.total) * 100)
-                          : 0;
-                      return (
-                        <div key={row.category}>
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-fg/80">{t(CATEGORY_LABEL_KEYS[row.category])}</span>
-                            <span className="tabular-nums text-fg/60">
-                              {row.tokens} · {pct}%
-                            </span>
-                          </div>
-                          <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-fg/10">
-                            <div
-                              className="h-full rounded bg-fg/40"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="flex items-center justify-between border-t border-fg/10 pt-2 text-fg/80">
-                    <span>{t("chats.debugPage.tokenBreakdownTotal")}</span>
-                    <span className="tabular-nums">{breakdown.total}</span>
-                  </div>
-                  {contextLength ? (
-                    <div className="flex items-center justify-between text-fg/60">
-                      <span>{t("chats.debugPage.tokenBreakdownContext")}</span>
-                      <span className="tabular-nums">
-                        {t("chats.debugPage.tokenBreakdownUsage", {
-                          used: String(breakdown.total),
-                          limit: String(contextLength),
-                          percent: String(Math.round((breakdown.total / contextLength) * 100)),
-                        })}
-                      </span>
-                    </div>
-                  ) : null}
-                  <div className="leading-relaxed text-fg/40">
-                    {t("chats.debugPage.tokenBreakdownNote")}
-                  </div>
-                </>
-              ) : (
-                <div className="text-fg/50">{t("chats.debugPage.tokenBreakdownComputing")}</div>
-              )}
-            </div>
-          </Collapsible>
-        ) : null}
 
         {!trace ? (
           <section className="rounded-xl border border-fg/10 bg-fg/5 p-4 font-mono text-xs text-fg/60">

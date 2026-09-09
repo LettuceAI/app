@@ -3379,6 +3379,139 @@ pub(crate) fn scene_generation_uses_local_image_model(settings: &Settings) -> bo
         .unwrap_or(false)
 }
 
+/// Raw contents of the individual prompt placeholders, so the debug snapshot
+/// can attribute tokens to each source even when a template renders them inline
+/// via `{{lorebook}}`, `{{key_memories}}`, etc. (in which case they never become
+/// standalone entries). Mirrors the placeholder value computation in
+/// `build_system_prompt_entries`.
+#[derive(Default)]
+pub(crate) struct DebugPromptSourceContents {
+    pub character_profile: String,
+    pub persona_description: String,
+    pub lorebook: String,
+    pub context_summary: String,
+    pub key_memories: String,
+    pub author_note: String,
+    pub companion_state: String,
+    pub scheduled_notes: String,
+    pub memory_entry_count: u32,
+}
+
+pub(crate) fn debug_prompt_source_contents(
+    app: &AppHandle,
+    character: &Character,
+    persona: Option<&Persona>,
+    session: &Session,
+    settings: &Settings,
+) -> DebugPromptSourceContents {
+    let dynamic_memory_active = is_dynamic_memory_active(settings, character);
+    let companion_mode = companion::is_companion_mode(session, character);
+    let companion_now = companion_effective_now(session);
+
+    // Character profile ("char sheet") = definition, falling back to the UI
+    // description, with identity name placeholders resolved — byte-identical to
+    // what {{char.desc}} renders into the prompt. Persona description mirrors
+    // {{persona.desc}}. Both are inline in the template, so we surface them
+    // separately for the token breakdown.
+    let char_name = character.name.as_str();
+    let persona_name = persona.map(|item| item.title.as_str()).unwrap_or("user");
+    let character_profile = character
+        .definition
+        .as_ref()
+        .or(character.description.as_ref())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("")
+        .replace("{{char}}", char_name)
+        .replace("{{persona}}", persona_name)
+        .replace("{{user}}", persona_name);
+    let persona_description = persona
+        .map(|item| item.description.trim())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("")
+        .to_string();
+
+    let lorebook = get_lorebook_content(app, &character.id, persona, session)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+
+    let context_summary = if dynamic_memory_active {
+        session
+            .memory_summary
+            .as_deref()
+            .map(|summary| summary.trim().to_string())
+            .filter(|summary| !summary.is_empty())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let key_memories = if dynamic_memory_active {
+        session
+            .memory_embeddings
+            .iter()
+            .filter(|mem| (!mem.is_cold || mem.is_pinned) && mem.superseded_by.is_none())
+            .map(|mem| format_memory_for_prompt(mem, companion_now))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else if has_manual_memories(&session.memories) {
+        render_manual_memory_lines(&session.memories)
+    } else {
+        String::new()
+    };
+
+    let author_note = render_author_note_text(character, persona, session).unwrap_or_default();
+
+    // render_prompt_state emits a fixed instruction preamble (the first four
+    // meta lines explaining how to read the relationship metrics) followed by
+    // the actual live state. That preamble is generic system guidance, not
+    // companion state — so we drop it here and only attribute the real state to
+    // the companion bucket. The preamble stays folded into the system bucket
+    // (it is inline in the template and not reattributed).
+    let companion_state = companion::render_prompt_state(session, character, persona, companion_now)
+        .map(|full| full.splitn(5, '\n').nth(4).unwrap_or("").trim().to_string())
+        .unwrap_or_default();
+
+    let memory_entry_count = if dynamic_memory_active {
+        session
+            .memory_embeddings
+            .iter()
+            .filter(|mem| (!mem.is_cold || mem.is_pinned) && mem.superseded_by.is_none())
+            .count() as u32
+    } else {
+        session
+            .memories
+            .iter()
+            .filter(|entry| !entry.trim().is_empty())
+            .count() as u32
+    };
+
+    let scheduled_notes = if companion_mode {
+        crate::storage_manager::companion_scheduled_notes::render_scheduled_notes_block(
+            app,
+            &character.id,
+            companion_now,
+        )
+        .unwrap_or(None)
+        .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    DebugPromptSourceContents {
+        character_profile,
+        persona_description,
+        lorebook,
+        context_summary,
+        key_memories,
+        author_note,
+        companion_state,
+        scheduled_notes,
+        memory_entry_count,
+    }
+}
+
 pub fn build_system_prompt_entries(
     app: &AppHandle,
     character: &Character,

@@ -48,6 +48,17 @@ export interface ChatMessageDebugSnapshot {
   requestMessages: unknown[];
   requestBody: unknown;
   notes: string[];
+  // Raw contents of the individual prompt placeholders (empty when unused),
+  // so the token breakdown can attribute inline-rendered sources.
+  characterProfileContent: string;
+  personaContent: string;
+  memoryEntryCount: number;
+  lorebookContent: string;
+  contextSummaryContent: string;
+  keyMemoriesContent: string;
+  authorNoteContent: string;
+  companionStateContent: string;
+  scheduledNotesContent: string;
 }
 
 export interface LorebookEntryDraft {
