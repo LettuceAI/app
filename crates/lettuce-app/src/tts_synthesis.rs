@@ -461,6 +461,27 @@ mod tests {
         cancel_after_response: bool,
     }
 
+    struct LocalRuntime {
+        calls: Arc<Mutex<u32>>,
+    }
+
+    #[async_trait]
+    impl TtsRuntime for LocalRuntime {
+        async fn synthesize(
+            &self,
+            _: &SynthesisRequest,
+            credential: Option<&lettuce_settings::SecretValue>,
+            _: &lettuce_jobs::handle::CancellationToken,
+        ) -> Result<RuntimeSynthesis, TtsRuntimeError> {
+            assert!(credential.is_none());
+            *self.calls.lock().expect("calls") += 1;
+            Ok(RuntimeSynthesis {
+                bytes: wav_fixture(),
+                declared_mime_type: "audio/wav".into(),
+            })
+        }
+    }
+
     #[async_trait]
     impl TtsRuntime for Runtime {
         async fn synthesize(
@@ -565,6 +586,72 @@ mod tests {
             .await
             .expect("stored secret");
         store
+    }
+
+    #[tokio::test]
+    async fn durable_runner_routes_kokoro_without_a_secret_or_remote_call() {
+        let root = std::env::temp_dir().join(format!("lettuce-tts-{}", RequestId::new()));
+        std::fs::create_dir_all(&root).expect("create root");
+        let path = root.join("app.sqlite3");
+        let database = Database::open(&path).expect("database");
+        let media = media_store(&path, &root.join("media"));
+        let coordinator = TtsSynthesisCoordinator::new(&database, &database);
+        let mut request = request(SecretRef::new(), TtsOutputPolicy::Retained);
+        request.provider.label = "Local speech".into();
+        request.provider.api_key_ref = None;
+        request.provider.config = AudioProviderConfig::Kokoro {
+            variant: Some("int8".into()),
+        };
+        request.model_id = "int8".into();
+        request.voice_id = "af_heart".into();
+        request.prompt = Some(r#"{"speed":1.0}"#.into());
+        let output_asset_id = request.output_asset_id;
+        let admitted = coordinator.admit(request).expect("admitted");
+        let work = coordinator
+            .claim(
+                admitted.job.id,
+                WorkerId::new(),
+                NOW,
+                Duration::from_secs(30),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim")
+            .expect("work");
+        let remote_calls = Arc::new(Mutex::new(0));
+        let kokoro_calls = Arc::new(Mutex::new(0));
+        let runtime = crate::ApplicationTtsRuntime::new(
+            Arc::new(LocalRuntime {
+                calls: remote_calls.clone(),
+            }),
+            Arc::new(LocalRuntime {
+                calls: kokoro_calls.clone(),
+            }),
+        );
+
+        let result = coordinator
+            .run(
+                work,
+                &InMemorySecretStore::new(),
+                &runtime,
+                &media,
+                CancellationReason::User,
+                TimestampMillis::new(2_000),
+            )
+            .await
+            .expect("run");
+
+        assert!(matches!(
+            result,
+            TtsSynthesisRunResult::Succeeded(success) if success.job.state == JobState::Succeeded
+        ));
+        assert_eq!(*kokoro_calls.lock().expect("Kokoro calls"), 1);
+        assert_eq!(*remote_calls.lock().expect("remote calls"), 0);
+        assert!(
+            MediaAssetRepository::get(&database, output_asset_id)
+                .expect("asset read")
+                .is_some()
+        );
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[tokio::test]

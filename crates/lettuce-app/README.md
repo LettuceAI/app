@@ -1001,5 +1001,12 @@ offline path.
 The Kokoro native synthesis coordinator revalidates the complete pinned model
 bundle, selects its exact model artifact and runs cancellation-aware ONNX chunk
 inference into a bounded WAV. It consumes already validated phonemization and
-voice styles. Persisted TTS request parsing and remote/local runtime routing
-remain separate so the native boundary cannot accept caller-owned asset paths.
+voice styles. The application TTS runtime now routes persisted Kokoro requests
+to this native path while every other provider keeps the existing remote
+runtime. It preserves the legacy model override, single or camel-case JSON voice
+blend document and positive speed from the voice prompt, resolves only verified
+offline voice descriptors, runs blocking native work outside the async worker
+and returns the WAV through the existing durable media settlement. Missing
+installable assets and runtime libraries retry; malformed requests and changed
+artifacts fail before audio ingestion. The optional legacy `lexicon.json` source
+and Android eSpeak host remain later bounded host-storage work.

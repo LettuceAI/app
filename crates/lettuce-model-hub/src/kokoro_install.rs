@@ -1,4 +1,4 @@
-use std::{io::Read, path::Path};
+use std::{io::Read, path::Path, sync::Arc};
 
 use lettuce_platform::{ConfinedInstallStore, InstallPreparation, ObjectKey, ResumableInstall};
 use sha2::{Digest, Sha256};
@@ -135,9 +135,9 @@ pub fn pinned_kokoro_model(variant: KokoroModelVariant) -> RemoteKokoroModel {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KokoroInstallStore {
-    inner: ConfinedInstallStore,
+    inner: Arc<ConfinedInstallStore>,
 }
 
 #[derive(Debug)]
@@ -155,7 +155,9 @@ pub struct KokoroDownloadSession {
 impl KokoroInstallStore {
     pub fn open(root: impl AsRef<Path>) -> Result<Self, KokoroInstallError> {
         Ok(Self {
-            inner: ConfinedInstallStore::open(root).map_err(KokoroInstallError::Platform)?,
+            inner: Arc::new(
+                ConfinedInstallStore::open(root).map_err(KokoroInstallError::Platform)?,
+            ),
         })
     }
 

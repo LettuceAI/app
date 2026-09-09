@@ -31,7 +31,7 @@ struct InstalledKokoroVoiceManifest {
     voice: RemoteKokoroVoice,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KokoroVoiceInstallStore {
     inner: Arc<ConfinedInstallStore>,
 }

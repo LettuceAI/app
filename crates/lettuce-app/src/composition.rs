@@ -210,6 +210,24 @@ impl AppBackend {
         Ok(lettuce_speech::RemoteTtsRuntime::new(network))
     }
 
+    pub fn tts_runtime(
+        &self,
+        tls_policy: &lettuce_network::TlsPolicy,
+        models: lettuce_model_hub::KokoroInstallStore,
+        voices: lettuce_model_hub::KokoroVoiceInstallStore,
+        phonemizer: Arc<dyn lettuce_platform::EspeakPhonemizer>,
+        runtime_link: lettuce_speech::KokoroOnnxRuntimeLink,
+    ) -> Result<crate::ApplicationTtsRuntime, lettuce_network::JsonClientError> {
+        let remote = Arc::new(self.remote_tts_runtime(tls_policy)?);
+        let kokoro = Arc::new(crate::KokoroTtsRuntime::new(
+            models,
+            voices,
+            phonemizer,
+            runtime_link,
+        ));
+        Ok(crate::ApplicationTtsRuntime::new(remote, kokoro))
+    }
+
     pub fn tts_voice_refresh<'a, S: lettuce_settings::SecretStore + ?Sized>(
         &'a self,
         secrets: &'a S,
