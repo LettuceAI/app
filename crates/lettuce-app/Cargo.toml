@@ -22,6 +22,8 @@ asr-metal = ["lettuce-speech/metal"]
 
 [dependencies]
 async-trait.workspace = true
+bincode.workspace = true
+chacha20poly1305.workspace = true
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 lettuce-types.workspace = true
 lettuce-contracts.workspace = true
@@ -53,7 +55,8 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["net", "io-util"] }
 blake3.workspace = true
 chrono.workspace = true
+rand.workspace = true
 uuid.workspace = true

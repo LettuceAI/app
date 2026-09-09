@@ -1,4 +1,5 @@
 use lettuce_types::{ContentHash, OperationId};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -13,7 +14,8 @@ pub const SYNC_PROTOCOL_VERSION: u32 = 1;
 const MAX_APP_VERSION_BYTES: usize = 64;
 const MAX_DEVICE_NAME_BYTES: usize = 128;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct SyncSessionId(Uuid);
 
 impl SyncSessionId {
@@ -39,7 +41,7 @@ impl Default for SyncSessionId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncTransferLimits {
     max_changes_per_batch: usize,
     max_change_payload_bytes: usize,
@@ -106,7 +108,7 @@ impl Default for SyncTransferLimits {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncHello {
     app_version: String,
     protocol_version: u32,
@@ -209,7 +211,7 @@ pub struct NegotiatedSyncSession {
     pub limits: SyncTransferLimits,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncChangeBatch {
     batch_id: OperationId,
     batch_hash: ContentHash,
@@ -275,13 +277,13 @@ impl SyncChangeBatch {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SyncChangeFrame {
     Batch(SyncChangeBatch),
     Quiescent { frontier: CausalFrontier },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncBatchAcknowledgement {
     pub batch_id: Option<OperationId>,
     pub frontier: CausalFrontier,

@@ -1,5 +1,6 @@
 pub use lettuce_media::SyncMediaAsset as CanonicalMediaAsset;
 use lettuce_types::{AssetId, ContentHash, OperationId};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{CanonicalPayload, ChangeOperation, NewCanonicalChange, SyncChangeError, SyncEntity};
@@ -11,7 +12,7 @@ pub const MAX_SYNC_BLOB_CHUNK_BYTES: usize = 1024 * 1024;
 
 const MEDIA_OPERATION_NAMESPACE: Uuid = Uuid::from_u128(0x3e934fc4_8568_56ee_b508_470b653b7542);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncMediaCatalog {
     assets: Vec<CanonicalMediaAsset>,
 }
@@ -41,7 +42,7 @@ impl SyncMediaCatalog {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncBlobChunk {
     pub content_hash: ContentHash,
     pub offset: u64,

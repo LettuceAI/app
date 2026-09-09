@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use lettuce_types::{ContentHash, TimestampMillis};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const CANONICAL_CHANGE_VERSION: u32 = 1;
@@ -11,7 +12,8 @@ const MAX_ENTITY_KIND_BYTES: usize = 64;
 const MAX_ENTITY_ID_BYTES: usize = 512;
 const MAX_SCHEMA_BYTES: usize = 128;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct SyncChangeId(Uuid);
 
 impl SyncChangeId {
@@ -37,7 +39,8 @@ impl Default for SyncChangeId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct SyncDeviceId(Uuid);
 
 impl SyncDeviceId {
@@ -63,7 +66,7 @@ impl Default for SyncDeviceId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct HybridTimestamp {
     wall_time: TimestampMillis,
     counter: u32,
@@ -86,14 +89,14 @@ impl HybridTimestamp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ChangeOperation {
     Insert,
     Update,
     Delete,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SyncEntity {
     kind: String,
     id: String,
@@ -123,7 +126,7 @@ impl SyncEntity {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CanonicalPayload {
     schema: String,
     version: u32,
@@ -182,7 +185,7 @@ impl CanonicalPayload {
 
 pub type CausalFrontier = BTreeMap<SyncDeviceId, u64>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CanonicalChange {
     version: u32,
     id: SyncChangeId,

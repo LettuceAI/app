@@ -1039,5 +1039,21 @@ media dependency returns `Pending`. The media coordinator then resumes and
 verifies only catalog entries that exactly match those staged canonical media
 facts, commits their logical assets, and the same batch replay materializes the
 persona without redispatch or data loss. Cancellation is
-checked around every transport wait and mutation boundary. Socket framing,
-pairing and UI status remain outside this slice.
+checked around every transport wait and mutation boundary.
+
+The production loopback/LAN sync transport now binds a caller-selected socket,
+creates or accepts a six-digit session PIN and returns the sync transport traits
+only after both peers prove the PIN over fresh challenges. The proof binds both
+ephemeral connection roles and durable device identities; the resulting
+ChaCha20-Poly1305 session uses direction-separated monotonic nonces. Every typed
+frame is length-prefixed, capped at 20 MiB before allocation, decoded with the
+same bound and reconstructed through current domain validators. Host/client
+ordering prevents two large change frames from filling both socket buffers, and
+a bounded early-frame queue lets one peer serve media chunks while entering the
+next phase. Cancellation covers accept, connect and every read/write; disconnect
+leaves the database batch and confined media partial available for a fresh
+session. A pending persona-media batch therefore reconnects, transfers one
+shared blob for two logical assets and then converges through the existing
+coordinators. Listener discovery, durable peer trust and frontend status events
+remain separate frontend work; coordinator completion and errors are the
+backend status boundary.

@@ -81,8 +81,16 @@ dependency on positional SQLite schema equality. Device names and version
 strings are bounded, authenticated transport identity must match the hello, and
 both peers use the smaller validated batch limits. Pairing remains
 session-scoped, matching the legacy UI; no persistent peer-trust model is
-invented. Secure pairing transport, status flow and actual exchange remain
-separate work.
+invented. The application layer now supplies secure pairing and the actual
+exchange; frontend status flow remains later work.
+
+The session, change, acknowledgement and persona-media frame values support the
+application transport's bounded binary codec. Decoding alone does not grant
+validity: the transport reconstructs every received hello, frontier, canonical
+change, batch and catalog through the existing constructors before a
+coordinator can observe it. Pairing, encryption, socket ownership and
+cancellation remain in `lettuce-app`; this crate contains no network access or
+trusted-peer persistence.
 
 Canonical session frames carry either one validated identity-and-hash-bound
 change batch or explicit quiescence, followed by an acknowledgement containing
