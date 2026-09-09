@@ -54,6 +54,11 @@ read-only inspection of known artifact keys. Directory and file symlinks are
 rejected, missing directories return an empty inventory, and consumers still
 cannot supply native paths after the store is opened.
 
+Desktop Kokoro phonemization uses a purpose-specific eSpeak NG capability. It
+accepts bounded text and a validated language, passes fixed arguments over
+stdin, and can use standard executable lookup or an existing absolute
+executable plus existing data directory. It exposes no generic process runner.
+
 Generic root deletion is not exposed. File removal is an in-process move to an
 opaque trash receipt with collision-safe, retryable restore. Receipts are
 authority-bound, validate opaque internal names, and include source/destination

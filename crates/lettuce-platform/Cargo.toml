@@ -17,4 +17,5 @@ workspace = true
 cap-primitives.workspace = true
 cap-std.workspace = true
 lettuce-types.workspace = true
+thiserror.workspace = true
 uuid.workspace = true

@@ -1392,6 +1392,7 @@ dependencies = [
  "cap-primitives",
  "cap-std",
  "lettuce-types",
+ "thiserror 2.0.20",
  "uuid",
 ]
 
@@ -1444,6 +1445,7 @@ dependencies = [
  "lettuce-media",
  "lettuce-model-hub",
  "lettuce-network",
+ "lettuce-platform",
  "lettuce-settings",
  "lettuce-types",
  "regex",

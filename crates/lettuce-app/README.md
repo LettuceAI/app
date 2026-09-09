@@ -985,3 +985,7 @@ the current bytes and confined target before deletion, and treats missing bytes
 as an idempotent replay. Removing a model variant preserves its shared JSON
 assets. A later install receives a deterministic successor job instead of
 replaying an earlier success whose artifact was explicitly removed.
+Kokoro phonemization runs only after the complete pinned model bundle is
+reverified through its confined install store. The application supplies the
+purpose-specific eSpeak capability to the speech boundary and accepts no
+operational model, tokenizer, config or executable path per request.

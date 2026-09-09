@@ -283,6 +283,14 @@ impl AppBackend {
         crate::KokoroVoiceDownloadCoordinator::new(self.database.as_ref(), installs)
     }
 
+    #[must_use]
+    pub const fn kokoro_phonemization(
+        &self,
+        installs: lettuce_model_hub::KokoroInstallStore,
+    ) -> crate::KokoroPhonemizationCoordinator {
+        crate::KokoroPhonemizationCoordinator::new(installs)
+    }
+
     pub fn remove_managed_kokoro_model(
         &self,
         installs: &lettuce_model_hub::KokoroInstallStore,

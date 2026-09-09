@@ -12,6 +12,7 @@ mod atomic;
 mod authority;
 mod directories;
 mod error;
+mod espeak;
 mod install;
 mod keys;
 mod managed;
@@ -23,6 +24,7 @@ pub use atomic::StagedWrite;
 pub use authority::FilesystemAuthority;
 pub use directories::{DirectorySnapshot, ManagedRoot, RootKind};
 pub use error::PlatformError;
+pub use espeak::{EspeakNgError, EspeakNgProcess, EspeakPhonemizer};
 pub use install::{
     ConfinedDirectoryEntry, ConfinedInstallStore, InstallPreparation, InstalledFile,
     ResumableInstall,

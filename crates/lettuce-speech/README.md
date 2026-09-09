@@ -241,3 +241,10 @@ success by issuing the standard bearer-authenticated `GET /v1/models` probe
 below the configured base URL. A compatible server without that route rejects
 verification rather than reporting fabricated success. The endpoint follows the
 official [OpenAI models API](https://platform.openai.com/docs/api-reference/models/list).
+
+Kokoro phonemization preserves the legacy voice-prefix language mapping,
+markdown normalization, inline IPA and stress annotations, punctuation
+segmentation, lexicon replacement, batched eSpeak fallback and the complete
+upstream character-to-token table. Inputs, lexicon entries and token output are
+bounded. Process execution is supplied only through the purpose-specific
+platform phonemizer capability; ONNX and audio synthesis remain separate.
