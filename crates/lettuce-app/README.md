@@ -870,6 +870,12 @@ SQLite-backed ASR learning library and a composed run method that supplies both
 the real learning and Whisper adapters to a claimed transcription. Host
 scheduling and microphone IPC remain later integration work.
 
+The remote Whisper catalog resolves the current Hugging Face repository head to
+an immutable commit before reading its file tree. It exposes only bounded model
+metadata with coherent LFS size and SHA-256 evidence, retains the legacy
+recommendation classifications, and rejects mutable or incomplete entries
+before download admission.
+
 The Whisper-model coordinator scans the retained legacy model directory through
 the bounded model-hub inspection contract, records each verified manifest, and
 replays exact admissions after reopen without changing source bytes. Resolution

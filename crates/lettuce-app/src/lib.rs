@@ -68,6 +68,7 @@ mod staged_lorebook_writer_dispatch;
 mod staged_lorebook_writer_execution;
 mod staged_lorebook_writer_job;
 mod speech_transcription;
+mod whisper_catalog;
 mod whisper_models;
 
 pub use asr_learning_transfer::*;
@@ -131,6 +132,7 @@ pub use staged_lorebook_writer_dispatch::*;
 pub use staged_lorebook_writer_execution::*;
 pub use staged_lorebook_writer_job::*;
 pub use speech_transcription::*;
+pub use whisper_catalog::*;
 pub use whisper_models::*;
 
 #[cfg(test)]

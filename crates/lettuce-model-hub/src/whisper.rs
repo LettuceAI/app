@@ -12,6 +12,57 @@ use crate::InstalledModelArtifact;
 pub const MAX_WHISPER_MODEL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MAX_MODEL_ID_SCALARS: usize = 128;
 const MAX_SOURCE_REVISION_BYTES: usize = 128;
+const SHA256_HEX_LENGTH: usize = 64;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteWhisperModel {
+    pub model_id: String,
+    pub filename: String,
+    pub source_revision: String,
+    pub byte_size: u64,
+    pub sha256: String,
+    pub english_only: bool,
+    pub quantized: bool,
+    pub recommended: bool,
+    pub recommended_for_mobile: bool,
+    pub recommended_for_desktop: bool,
+}
+
+impl RemoteWhisperModel {
+    pub fn pinned(
+        filename: impl Into<String>,
+        source_revision: impl Into<String>,
+        byte_size: u64,
+        sha256: impl Into<String>,
+    ) -> Result<Self, WhisperModelError> {
+        let filename = filename.into();
+        let model_id = model_id_from_filename(&filename)?;
+        let source_revision = source_revision.into();
+        let sha256 = sha256.into().to_ascii_lowercase();
+        if source_revision.len() != 40
+            || !source_revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || byte_size == 0
+            || byte_size > MAX_WHISPER_MODEL_BYTES
+            || sha256.len() != SHA256_HEX_LENGTH
+            || !sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(WhisperModelError::InvalidManifest);
+        }
+        Ok(Self {
+            english_only: model_id.contains(".en"),
+            quantized: model_id.contains("-q"),
+            recommended: is_recommended(&model_id),
+            recommended_for_mobile: is_recommended_for_mobile(&model_id),
+            recommended_for_desktop: is_recommended_for_desktop(&model_id),
+            model_id,
+            filename,
+            source_revision: source_revision.to_ascii_lowercase(),
+            byte_size,
+            sha256,
+        })
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -305,6 +356,47 @@ fn whisper_filename(model_id: &str) -> String {
     format!("ggml-{model_id}.bin")
 }
 
+fn is_recommended(model_id: &str) -> bool {
+    matches!(
+        model_id,
+        "base.en"
+            | "base"
+            | "small.en"
+            | "small"
+            | "medium.en-q5_0"
+            | "medium-q5_0"
+            | "large-v3-turbo-q5_0"
+    )
+}
+
+fn is_recommended_for_mobile(model_id: &str) -> bool {
+    matches!(
+        model_id,
+        "tiny.en"
+            | "tiny"
+            | "base.en-q5_1"
+            | "base-q5_1"
+            | "base.en"
+            | "base"
+            | "small.en-q5_1"
+            | "small-q5_1"
+    )
+}
+
+fn is_recommended_for_desktop(model_id: &str) -> bool {
+    matches!(
+        model_id,
+        "small.en"
+            | "small"
+            | "medium.en-q5_0"
+            | "medium-q5_0"
+            | "medium.en"
+            | "medium"
+            | "large-v3-turbo-q5_0"
+            | "large-v3-turbo"
+    )
+}
+
 fn hash_file(path: &Path, expected_size: u64) -> Result<ContentHash, WhisperModelError> {
     let mut file = File::open(path).map_err(|_| WhisperModelError::Unreadable)?;
     let mut hasher = blake3::Hasher::new();
@@ -336,6 +428,23 @@ fn hash_file(path: &Path, expected_size: u64) -> Result<ContentHash, WhisperMode
 mod tests {
     use super::*;
     use lettuce_types::OperationId;
+
+    #[test]
+    fn pins_remote_models_and_preserves_legacy_recommendations() {
+        let model = RemoteWhisperModel::pinned(
+            "ggml-small.en-q5_1.bin",
+            "ab".repeat(20),
+            42,
+            "cd".repeat(32),
+        )
+        .expect("remote model");
+        assert_eq!(model.model_id, "small.en-q5_1");
+        assert!(model.english_only);
+        assert!(model.quantized);
+        assert!(model.recommended_for_mobile);
+        assert!(!model.recommended_for_desktop);
+        assert!(RemoteWhisperModel::pinned("ggml-base.bin", "main", 42, "cd".repeat(32)).is_err());
+    }
 
     #[test]
     fn admits_and_verifies_a_confined_legacy_model() {

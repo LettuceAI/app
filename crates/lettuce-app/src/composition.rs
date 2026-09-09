@@ -202,6 +202,12 @@ impl AppBackend {
         crate::WhisperModelCoordinator::new(self.database.as_ref())
     }
 
+    pub fn whisper_remote_catalog(
+        &self,
+    ) -> Result<crate::WhisperRemoteCatalog, lettuce_network::JsonClientError> {
+        lettuce_network::JsonClient::new().map(crate::WhisperRemoteCatalog::new)
+    }
+
     #[must_use]
     pub fn whisper_runtime(&self) -> &WhisperCppRuntime<Database> {
         self.whisper_runtime.as_ref()

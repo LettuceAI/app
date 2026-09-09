@@ -33,6 +33,14 @@ admission time. Retained legacy discovery is bounded to the old two-level
 hashes regular files without moving or deleting them. The durable catalog keeps
 legacy filename sorting, so an omitted selection resolves to the same first
 installed model used by chat and group chat. Every runtime resolution rechecks
-the file size and digest before exposing its internal verified path. Remote
-catalog fetching, pinned downloads, managed installation and removal remain the
-next model-hub work; the old unpinned Hugging Face `main` URL is not copied.
+the file size and digest before exposing its internal verified path.
+
+Remote Whisper catalog entries require an immutable forty-character repository
+revision plus coherent LFS byte size and SHA-256 evidence. Model IDs,
+English-only and quantization detection, and the legacy general/mobile/desktop
+recommendation sets remain unchanged. Mutable branch names and files without
+complete LFS metadata are rejected. Hugging Face documents repository-tree file
+metadata and LFS SHA-256 identities in its
+[Hub API](https://huggingface.co/docs/huggingface_hub/en/package_reference/hf_api).
+Download execution, managed installation and removal remain later model-hub
+work; the old unpinned Hugging Face `main` URL is not copied.
