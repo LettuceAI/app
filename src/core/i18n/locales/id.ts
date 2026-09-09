@@ -6965,6 +6965,13 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "Buat kunci baru jika belum ada.",
           s4: "Salin kunci dan tempelkan ke LettuceAI.",
         },
+        modelrunner: {
+          title: "Cara menemukan kunci API ModelRunner Anda",
+          s1: "Kunjungi modelrunner.ai dan masuk.",
+          s2: "Buka Settings, lalu API Keys.",
+          s3: "Buat kunci baru jika belum ada.",
+          s4: "Salin kunci dan tempelkan ke LettuceAI.",
+        },
         anannas: {
           title: "Cara menemukan kunci API Anannas Anda",
           s1: "Buka dashboard.anannas.ai dan masuk.",

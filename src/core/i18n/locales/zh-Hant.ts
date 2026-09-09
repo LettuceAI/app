@@ -7781,6 +7781,13 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "如果看不到金鑰，請建立新金鑰。",
           s4: "複製金鑰並貼入 LettuceAI。",
         },
+        modelrunner: {
+          title: "如何找到您的 ModelRunner API 金鑰",
+          s1: "前往 modelrunner.ai 並登入。",
+          s2: "開啟 Settings，然後前往 API Keys。",
+          s3: "如果看不到金鑰，請建立新金鑰。",
+          s4: "複製金鑰並貼入 LettuceAI。",
+        },
         anannas: {
           title: "如何找到您的 Anannas API 金鑰",
           s1: "前往 dashboard.anannas.ai 並登入。",

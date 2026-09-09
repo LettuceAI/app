@@ -6965,6 +6965,13 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "見当たらない場合は新しいキーを作成します。",
           s4: "キーをコピーしてLettuceAIに貼り付けます。",
         },
+        modelrunner: {
+          title: "ModelRunner APIキーの見つけ方",
+          s1: "modelrunner.aiにアクセスしてサインインします。",
+          s2: "Settings を開き、API Keys に移動します。",
+          s3: "見当たらない場合は新しいキーを作成します。",
+          s4: "キーをコピーしてLettuceAIに貼り付けます。",
+        },
         anannas: {
           title: "Anannas APIキーの見つけ方",
           s1: "dashboard.anannas.aiにアクセスしてログインします。",

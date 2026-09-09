@@ -7781,6 +7781,13 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "Opprett en ny nøkkel hvis du ikke ser en.",
           s4: "Kopier nøkkelen og lim den inn i LettuceAI.",
         },
+        modelrunner: {
+          title: "Slik finner du ModelRunner API-nøkkelen",
+          s1: "Besøk modelrunner.ai og logg inn.",
+          s2: "Åpne Settings og deretter API Keys.",
+          s3: "Opprett en ny nøkkel hvis du ikke ser en.",
+          s4: "Kopier nøkkelen og lim den inn i LettuceAI.",
+        },
         anannas: {
           title: "Slik finner du Anannas API-nøkkelen",
           s1: "Gå til dashboard.anannas.ai og logg inn.",

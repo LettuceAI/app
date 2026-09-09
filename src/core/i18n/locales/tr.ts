@@ -7781,6 +7781,13 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "Görmüyorsanız yeni bir anahtar oluşturun.",
           s4: "Anahtarı kopyalayıp LettuceAI'ye yapıştırın.",
         },
+        modelrunner: {
+          title: "ModelRunner API anahtarınızı nasıl bulursunuz",
+          s1: "modelrunner.ai adresini ziyaret edin ve oturum açın.",
+          s2: "Settings ve ardından API Keys bölümünü açın.",
+          s3: "Görmüyorsanız yeni bir anahtar oluşturun.",
+          s4: "Anahtarı kopyalayıp LettuceAI'ye yapıştırın.",
+        },
         anannas: {
           title: "_Nasıl yapılır? ",
           s1: "Dashboard.anannas.ai adresine gidin ve giriş yapın.",

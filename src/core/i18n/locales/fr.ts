@@ -7781,6 +7781,13 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "Crée une nouvelle clé si tu n'en vois pas.",
           s4: "Copie la clé et colle-la dans LettuceAI.",
         },
+        modelrunner: {
+          title: "Comment trouver ta clé API ModelRunner",
+          s1: "Visite modelrunner.ai et connecte-toi.",
+          s2: "Ouvre Settings, puis API Keys.",
+          s3: "Crée une nouvelle clé si tu n'en vois pas.",
+          s4: "Copie la clé et colle-la dans LettuceAI.",
+        },
         anannas: {
           title: "Comment trouver ta clé API Anannas",
           s1: "Va sur dashboard.anannas.ai et connecte-toi.",
