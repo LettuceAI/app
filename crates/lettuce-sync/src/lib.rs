@@ -1,7 +1,7 @@
-//! Domain changeset replication and conflict handling.
-//!
-//! The intended ownership, boundaries, migration path, and acceptance gates are
-//! specified in the crate PLAN.md. This crate starts behavior-empty so the
-//! legacy monolith cannot leak in through premature compatibility APIs.
+//! Canonical domain changes and replication policy.
 
 #![deny(unsafe_op_in_unsafe_fn)]
+
+mod change;
+
+pub use change::*;
