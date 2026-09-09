@@ -90,3 +90,9 @@ purpose-specific materialization method. It validates the pinned descriptor and
 streams the confined file through the same size and SHA-256 check that retains
 the bounded bytes. The materialized value has no serialization and its debug
 form exposes only the voice ID and byte count.
+Each completed managed voice also has a bounded immutable versioned descriptor
+sidecar. Reopen builds the offline descriptor catalog only from sidecars whose
+ID, revision, path, size and SHA-256 still match their voice bytes. A missing,
+malformed or mismatched sidecar makes that voice unavailable to verified
+synthesis but never deletes or overwrites its binary. Explicit managed removal
+deletes the verified voice and its matching sidecar.

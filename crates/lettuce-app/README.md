@@ -948,7 +948,7 @@ invalid inputs and audio fail terminally. Successful results replay after
 reopen without another provider call. The application composition root exposes
 one remote TTS runtime that routes the frozen provider kind through the five
 completed HTTP adapters. Kokoro remains unavailable until its native runtime
-slice.
+is routed through the durable synthesis job.
 
 The Kokoro asset inventory coordinator is constructed once from a host-resolved
 managed root. Its operations accept only a variant and optional selected voice,
@@ -968,7 +968,7 @@ success requires all four files to reverify, and completed jobs replay without
 network access. Progress aggregates the bundle with bounded checkpoints.
 Cancellation remains available until the first verified file commit, after
 which the job finishes or retries the remaining bundle under its irreversible
-stage. Voice downloads, removal and native Kokoro execution remain later slices.
+stage.
 The Kokoro voice catalog reads the same immutable repository revision through
 the central JSON client. It accepts only bounded `voices/<safe-id>.bin` entries
 with coherent LFS size and SHA-256 metadata, sorts and deduplicates IDs, and
@@ -993,7 +993,11 @@ Kokoro voice blending resolves each normalized voice ID to one pinned remote
 descriptor, revalidates and materializes its confined installed bytes, then
 hands only bounded voice material to the speech boundary. Missing or ambiguous
 descriptors and changed assets fail before style selection; native paths do not
-cross the coordinator.
+cross the coordinator. Completed installs persist an immutable bounded
+descriptor sidecar, so persisted voice selections can resolve and reverify
+their blend after restart without fetching the remote catalog. Sidecar-free or
+invalid retained binaries remain untouched and unavailable to this verified
+offline path.
 The Kokoro native synthesis coordinator revalidates the complete pinned model
 bundle, selects its exact model artifact and runs cancellation-aware ONNX chunk
 inference into a bounded WAV. It consumes already validated phonemization and

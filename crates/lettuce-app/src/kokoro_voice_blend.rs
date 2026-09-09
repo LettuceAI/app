@@ -59,6 +59,14 @@ impl KokoroVoiceBlendCoordinator {
             .collect::<Vec<_>>();
         blend_kokoro_voices(&normalized, &materials).map_err(Into::into)
     }
+
+    pub fn blend_installed(
+        &self,
+        specs: &[KokoroVoiceBlendSpec],
+    ) -> Result<KokoroVoiceBlend, KokoroVoiceBlendCoordinatorError> {
+        let remotes = self.installs.installed_descriptors()?;
+        self.blend(&remotes, specs)
+    }
 }
 
 #[cfg(test)]
@@ -90,16 +98,16 @@ mod tests {
         };
         download.append(&bytes).expect("voice bytes");
         download.finish().expect("verified voice");
-        let coordinator = KokoroVoiceBlendCoordinator::new(installs);
+        drop(installs);
+        let coordinator = KokoroVoiceBlendCoordinator::new(
+            KokoroVoiceInstallStore::open(&root).expect("reopened install store"),
+        );
 
         let blend = coordinator
-            .blend(
-                &[remote],
-                &[KokoroVoiceBlendSpec {
-                    voice_id: "af_heart".to_owned(),
-                    weight: 4.0,
-                }],
-            )
+            .blend_installed(&[KokoroVoiceBlendSpec {
+                voice_id: "af_heart".to_owned(),
+                weight: 4.0,
+            }])
             .expect("voice blend");
 
         assert_eq!(blend.normalized_specs()[0].weight, 1.0);
