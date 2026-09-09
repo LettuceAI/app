@@ -43,24 +43,26 @@ where
             AudioProviderConfig::Elevenlabs
                 | AudioProviderConfig::FishTts
                 | AudioProviderConfig::Gemini { .. }
+                | AudioProviderConfig::FishSpeech { .. }
         ) {
             return Err(TtsProviderVerificationError::InvalidInput);
         }
-        let reference = provider
-            .api_key_ref
-            .ok_or(TtsProviderVerificationError::InvalidInput)?;
-        let credential = self
-            .secrets
-            .load(
-                &reference,
-                &SecretPurpose::AudioApiKey {
-                    owner: provider.secret_owner_id,
-                },
-            )
-            .await
-            .map_err(TtsProviderVerificationError::SecretStore)?;
+        let credential = match provider.api_key_ref {
+            Some(reference) => Some(
+                self.secrets
+                    .load(
+                        &reference,
+                        &SecretPurpose::AudioApiKey {
+                            owner: provider.secret_owner_id,
+                        },
+                    )
+                    .await
+                    .map_err(TtsProviderVerificationError::SecretStore)?,
+            ),
+            None => None,
+        };
         verifier
-            .verify_audio_provider(&provider, &credential)
+            .verify_audio_provider(&provider, credential.as_ref())
             .await
             .map_err(TtsProviderVerificationError::Verification)
     }
@@ -97,15 +99,22 @@ mod tests {
         async fn verify_audio_provider(
             &self,
             provider: &AudioProvider,
-            credential: &SecretValue,
+            credential: Option<&SecretValue>,
         ) -> Result<bool, AudioProviderVerificationError> {
             assert!(matches!(
                 provider.config,
                 AudioProviderConfig::Elevenlabs
                     | AudioProviderConfig::FishTts
                     | AudioProviderConfig::Gemini { .. }
+                    | AudioProviderConfig::FishSpeech { .. }
             ));
-            credential.with(|value| assert_eq!(value, "verification-secret-canary"));
+            if matches!(provider.config, AudioProviderConfig::FishSpeech { .. }) {
+                assert!(credential.is_none());
+            } else {
+                credential
+                    .expect("credential")
+                    .with(|value| assert_eq!(value, "verification-secret-canary"));
+            }
             Ok(true)
         }
     }
@@ -161,6 +170,24 @@ mod tests {
                 .verify(gemini.id, &Verifier)
                 .await
                 .expect("Gemini verification")
+        );
+        let fish_speech = TtsConfigurationCoordinator::new(&database, &secrets)
+            .create_audio_provider(
+                "Fish Speech".into(),
+                AudioProviderConfig::FishSpeech {
+                    base_url: Some("http://127.0.0.1:8080".into()),
+                    request_path: None,
+                },
+                None,
+                TimestampMillis::new(4),
+            )
+            .await
+            .expect("Fish Speech provider");
+        assert!(
+            TtsProviderVerificationCoordinator::new(&database, &secrets)
+                .verify(fish_speech.id, &Verifier)
+                .await
+                .expect("Fish Speech verification")
         );
     }
 }

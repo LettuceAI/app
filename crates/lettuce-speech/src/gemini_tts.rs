@@ -105,7 +105,7 @@ impl AudioProviderVerifier for GeminiTtsRuntime {
     async fn verify_audio_provider(
         &self,
         provider: &AudioProvider,
-        credential: &SecretValue,
+        credential: Option<&SecretValue>,
     ) -> Result<bool, AudioProviderVerificationError> {
         provider
             .validate()
@@ -123,6 +123,7 @@ impl AudioProviderVerifier for GeminiTtsRuntime {
         if !valid_host_label(location) || !valid_path_segment(project_id) {
             return Err(AudioProviderVerificationError::InvalidInput);
         }
+        let credential = credential.ok_or(AudioProviderVerificationError::InvalidInput)?;
         let auth = credential
             .with(|value| SecretValue::new(value.to_owned()))
             .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
@@ -502,7 +503,7 @@ mod tests {
             runtime
                 .verify_audio_provider(
                     &provider,
-                    &SecretValue::new("access-token-canary").expect("secret"),
+                    Some(&SecretValue::new("access-token-canary").expect("secret")),
                 )
                 .await
                 .expect("verification")
@@ -525,7 +526,10 @@ mod tests {
         );
         assert!(
             !runtime
-                .verify_audio_provider(&provider, &SecretValue::new("rejected").expect("secret"),)
+                .verify_audio_provider(
+                    &provider,
+                    Some(&SecretValue::new("rejected").expect("secret")),
+                )
                 .await
                 .expect("rejected verification")
         );

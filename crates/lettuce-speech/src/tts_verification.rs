@@ -8,7 +8,7 @@ pub trait AudioProviderVerifier: Send + Sync {
     async fn verify_audio_provider(
         &self,
         provider: &AudioProvider,
-        credential: &SecretValue,
+        credential: Option<&SecretValue>,
     ) -> Result<bool, AudioProviderVerificationError>;
 }
 

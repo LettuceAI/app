@@ -6,10 +6,14 @@ use lettuce_network::{JsonAuth, JsonClient, JsonClientError, RequestPolicy};
 use lettuce_settings::SecretValue;
 use serde::Serialize;
 
-use crate::{AudioProviderConfig, RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError};
+use crate::{
+    AudioProvider, AudioProviderConfig, AudioProviderVerificationError, AudioProviderVerifier,
+    RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError,
+};
 
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:8080";
 const DEFAULT_REQUEST_PATH: &str = "/v1/tts";
+const HEALTH_PATH: &str = "/v1/health";
 
 #[derive(Debug, Clone)]
 pub struct FishSpeechTtsRuntime {
@@ -28,6 +32,43 @@ struct FishSpeechRequest<'a> {
     text: &'a str,
     reference_id: &'a str,
     format: &'static str,
+}
+
+#[async_trait]
+impl AudioProviderVerifier for FishSpeechTtsRuntime {
+    async fn verify_audio_provider(
+        &self,
+        provider: &AudioProvider,
+        credential: Option<&SecretValue>,
+    ) -> Result<bool, AudioProviderVerificationError> {
+        provider
+            .validate()
+            .map_err(|_| AudioProviderVerificationError::InvalidInput)?;
+        let AudioProviderConfig::FishSpeech { base_url, .. } = &provider.config else {
+            return Err(AudioProviderVerificationError::InvalidInput);
+        };
+        let auth = match credential {
+            Some(credential) => JsonAuth::Bearer(
+                credential
+                    .with(|value| SecretValue::new(value.to_owned()))
+                    .map_err(|_| AudioProviderVerificationError::InvalidInput)?,
+            ),
+            None => JsonAuth::None,
+        };
+        let response = self
+            .network
+            .get_json(
+                base_url.as_deref().unwrap_or(DEFAULT_ENDPOINT),
+                HEALTH_PATH,
+                &[],
+                auth,
+                Vec::new(),
+                RequestPolicy::PROBE,
+            )
+            .await
+            .map_err(map_verification_network)?;
+        Ok((200..300).contains(&response.status))
+    }
 }
 
 #[async_trait]
@@ -107,6 +148,18 @@ fn map_network(error: JsonClientError) -> TtsRuntimeError {
         | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected,
         JsonClientError::Transport | JsonClientError::ClientConfiguration => {
             TtsRuntimeError::Unavailable
+        }
+    }
+}
+
+fn map_verification_network(error: JsonClientError) -> AudioProviderVerificationError {
+    match error {
+        JsonClientError::InvalidUrl
+        | JsonClientError::InvalidRequest
+        | JsonClientError::RequestTooLarge
+        | JsonClientError::ResponseTooLarge => AudioProviderVerificationError::InvalidInput,
+        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
+            AudioProviderVerificationError::Unavailable
         }
     }
 }
@@ -257,5 +310,46 @@ mod tests {
                 .await,
             Err(TtsRuntimeError::Cancelled)
         ));
+    }
+
+    #[tokio::test]
+    async fn verifies_health_with_optional_authentication() {
+        let response = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n".to_vec();
+        let (endpoint, captured) = server(response).await;
+        let runtime =
+            FishSpeechTtsRuntime::new(Arc::new(JsonClient::new().expect("network client")));
+        let provider = request(endpoint, true).provider;
+        assert!(
+            runtime
+                .verify_audio_provider(
+                    &provider,
+                    Some(&SecretValue::new("health-canary").expect("secret")),
+                )
+                .await
+                .expect("authenticated health")
+        );
+        {
+            let captured = captured.lock().expect("captured request");
+            let headers = String::from_utf8_lossy(&captured);
+            assert!(headers.starts_with("GET /root/v1/health HTTP/1.1"));
+            assert!(
+                headers
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer health-canary")
+            );
+        }
+
+        let response = b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 2\r\n\r\n{}".to_vec();
+        let (endpoint, captured) = server(response).await;
+        let provider = request(endpoint, false).provider;
+        assert!(
+            !runtime
+                .verify_audio_provider(&provider, None)
+                .await
+                .expect("unauthenticated health rejection")
+        );
+        let captured = captured.lock().expect("captured request");
+        let headers = String::from_utf8_lossy(&captured);
+        assert!(!headers.to_ascii_lowercase().contains("authorization:"));
     }
 }

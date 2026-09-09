@@ -206,3 +206,7 @@ Gemini credential verification probes the project-scoped Vertex publisher-model
 path with bearer authentication and `x-goog-user-project`. It uses the provider's
 validated configured location, correcting the legacy verifier that silently
 forced `us-central1`, and retains the shared status and transport semantics.
+
+Self-hosted Fish Speech verification probes `/v1/health` below the configured
+base URL and sends bearer authentication only when the provider has a secret.
+It preserves the shared successful-status boolean and typed transport failure.
