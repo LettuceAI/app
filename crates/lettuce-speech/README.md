@@ -141,3 +141,14 @@ timeouts and cancellation. Durable admission requires an explicit model, so a
 caller that wants the legacy fallback must select `s2-pro` before admission
 instead of leaving mutable fallback selection inside the transport. Fish voice
 discovery and cache refresh remain a later TTS slice.
+
+`FishSpeechTtsRuntime` preserves the self-hosted Fish Speech contract with the
+legacy `http://127.0.0.1:8080` and `/v1/tts` defaults, configurable endpoint and
+path, optional bearer authentication, exact authored text, reference voice and
+MP3 output. The model is selected by the server at startup and the protocol does
+not consume the stored model label or optional prompt. The response remains
+`audio/mpeg`; retry, timeout and cancellation behavior stays inside the bounded
+network client. Durable admission requires an explicit reference voice instead
+of preserving the legacy ambiguous request that omitted `reference_id` for a
+blank selection. Health verification and server-default model presentation
+remain later configuration slices.
