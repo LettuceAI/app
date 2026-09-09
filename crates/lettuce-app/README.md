@@ -920,6 +920,18 @@ Speech verification supports both scoped-secret and unauthenticated servers.
 OpenAI-compatible verification requires its stored base URL and scoped secret
 and performs a real standard models probe instead of returning success locally.
 
+The ElevenLabs voice-design coordinator admits only a stored ElevenLabs
+provider, freezes its provider snapshot, trims and validates the active editor's
+sample and description, and resolves only that provider's scoped `AudioApiKey`.
+It passes cancellation into the shared remote runtime and sends decoded preview
+bytes directly to the existing media sink. Each result retains the generated
+voice ID, finite duration, detected MP3 MIME, content hash, size and temporary
+managed asset identity; provider base64 and plaintext credentials never cross
+that boundary. The generated ID remains available for the following saved-voice
+creation slice. Voice-design preview requests are interactive and transient;
+their audio assets carry an admitted expiry instead of adding another durable
+job or request table.
+
 The TTS synthesis coordinator admits an idempotent interactive
 `SpeechSynthesize` job and persists its provider, text, voice, prompt and output
 policy before execution. It claims work through the generic job lifecycle,

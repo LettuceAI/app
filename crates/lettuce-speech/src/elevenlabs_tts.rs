@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_network::{JsonAuth, JsonClient, JsonClientError, JsonQueryParameter, RequestPolicy};
 use lettuce_settings::{HeaderName, SecretValue};
@@ -8,7 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AudioProvider, AudioProviderConfig, AudioProviderVerificationError, AudioProviderVerifier,
-    DiscoveredVoiceDraft, RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError,
+    DiscoveredVoiceDraft, RuntimeSynthesis, RuntimeVoiceDesignPreview, SynthesisRequest,
+    TtsRuntime, TtsRuntimeError, VoiceDesignRequest, VoiceDesignRuntime, VoiceDesignRuntimeError,
     VoiceDiscovery, VoiceDiscoveryError,
 };
 
@@ -40,6 +42,31 @@ impl ElevenLabsTtsRuntime {
 struct ElevenLabsRequest<'a> {
     text: &'a str,
     model_id: &'a str,
+}
+
+#[derive(Serialize)]
+struct ElevenLabsVoiceDesignRequest<'a> {
+    text: &'a str,
+    voice_description: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    loudness: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_previews: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct ElevenLabsVoiceDesignResponse {
+    previews: Vec<ElevenLabsVoiceDesignPreview>,
+}
+
+#[derive(Deserialize)]
+struct ElevenLabsVoiceDesignPreview {
+    generated_voice_id: String,
+    audio_base_64: String,
+    duration_secs: f64,
+    media_type: String,
 }
 
 #[derive(Deserialize)]
@@ -219,6 +246,86 @@ impl TtsRuntime for ElevenLabsTtsRuntime {
     }
 }
 
+#[async_trait]
+impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
+    async fn design_voice(
+        &self,
+        request: &VoiceDesignRequest,
+        credential: &SecretValue,
+        cancellation: &CancellationToken,
+    ) -> Result<Vec<RuntimeVoiceDesignPreview>, VoiceDesignRuntimeError> {
+        request
+            .validate()
+            .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+        let auth = JsonAuth::Header {
+            name: HeaderName::new("xi-api-key").map_err(|_| VoiceDesignRuntimeError::Rejected)?,
+            value: credential
+                .with(|value| SecretValue::new(value.to_owned()))
+                .map_err(|_| VoiceDesignRuntimeError::Rejected)?,
+        };
+        let body = serde_json::to_vec(&ElevenLabsVoiceDesignRequest {
+            text: &request.text_sample,
+            voice_description: &request.voice_description,
+            model_id: request.model_id.as_deref(),
+            loudness: None,
+            num_previews: request.num_previews,
+        })
+        .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+        if cancellation.is_cancelled() {
+            return Err(VoiceDesignRuntimeError::Cancelled);
+        }
+        let response = tokio::select! {
+            response = self.network.post_json(
+                &self.endpoint,
+                "/v1/text-to-voice/design",
+                body,
+                &[],
+                auth,
+                Vec::new(),
+                RequestPolicy::GENERATION,
+            ) => response.map_err(map_voice_design_network)?,
+            () = cancellation.cancelled() => return Err(VoiceDesignRuntimeError::Cancelled),
+        };
+        if !(200..300).contains(&response.status) {
+            return Err(match response.status {
+                408 | 429 | 500..=599 => VoiceDesignRuntimeError::Unavailable,
+                _ => VoiceDesignRuntimeError::Rejected,
+            });
+        }
+        if cancellation.is_cancelled() {
+            return Err(VoiceDesignRuntimeError::Cancelled);
+        }
+        let response: ElevenLabsVoiceDesignResponse = serde_json::from_slice(&response.body)
+            .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+        if response.previews.is_empty()
+            || response.previews.len() > 3
+            || request
+                .num_previews
+                .is_some_and(|count| response.previews.len() != count as usize)
+        {
+            return Err(VoiceDesignRuntimeError::Rejected);
+        }
+        response
+            .previews
+            .into_iter()
+            .map(|preview| {
+                let output = RuntimeVoiceDesignPreview {
+                    generated_voice_id: preview.generated_voice_id,
+                    bytes: STANDARD
+                        .decode(preview.audio_base_64)
+                        .map_err(|_| VoiceDesignRuntimeError::Rejected)?,
+                    duration_secs: preview.duration_secs,
+                    declared_mime_type: preview.media_type,
+                };
+                output
+                    .validate()
+                    .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+                Ok(output)
+            })
+            .collect()
+    }
+}
+
 fn valid_path_segment(value: &str) -> bool {
     !value.is_empty()
         && value
@@ -234,6 +341,18 @@ fn map_network(error: JsonClientError) -> TtsRuntimeError {
         | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected,
         JsonClientError::Transport | JsonClientError::ClientConfiguration => {
             TtsRuntimeError::Unavailable
+        }
+    }
+}
+
+fn map_voice_design_network(error: JsonClientError) -> VoiceDesignRuntimeError {
+    match error {
+        JsonClientError::InvalidUrl
+        | JsonClientError::InvalidRequest
+        | JsonClientError::RequestTooLarge
+        | JsonClientError::ResponseTooLarge => VoiceDesignRuntimeError::Rejected,
+        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
+            VoiceDesignRuntimeError::Unavailable
         }
     }
 }
@@ -340,6 +459,19 @@ mod tests {
         }
     }
 
+    fn design_request() -> VoiceDesignRequest {
+        VoiceDesignRequest {
+            id: RequestId::new(),
+            provider: request("voice").provider,
+            text_sample: "A".repeat(100),
+            voice_description: "A warm and expressive narrator".into(),
+            model_id: Some("eleven_ttv_v3".into()),
+            num_previews: Some(1),
+            expires_at: TimestampMillis::new(10_000),
+            created_at: TimestampMillis::new(1),
+        }
+    }
+
     #[tokio::test]
     async fn sends_legacy_endpoint_auth_query_and_payload() {
         let (endpoint, captured) =
@@ -395,6 +527,53 @@ mod tests {
                 .await,
             Err(TtsRuntimeError::Rejected)
         ));
+    }
+
+    #[tokio::test]
+    async fn designs_voice_with_legacy_payload_and_decodes_preview_audio() {
+        let body = br#"{"previews":[{"generated_voice_id":"generated-1","audio_base_64":"SUQzYXVkaW8=","duration_secs":2.5,"media_type":"audio/mpeg"}]}"#;
+        let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len())
+            .into_bytes()
+            .into_iter()
+            .chain(body.iter().copied())
+            .collect();
+        let (endpoint, captured) = server(response).await;
+        let runtime = ElevenLabsTtsRuntime::with_endpoint(
+            Arc::new(JsonClient::new().expect("network client")),
+            endpoint,
+        );
+        let previews = runtime
+            .design_voice(
+                &design_request(),
+                &SecretValue::new("voice-design-canary").expect("secret"),
+                &CancellationToken::new(),
+            )
+            .await
+            .expect("voice design");
+        assert_eq!(previews.len(), 1);
+        assert_eq!(previews[0].generated_voice_id, "generated-1");
+        assert_eq!(previews[0].bytes, b"ID3audio");
+        assert_eq!(previews[0].duration_secs, 2.5);
+
+        let captured = captured.lock().expect("captured request");
+        let split = captured
+            .windows(4)
+            .position(|value| value == b"\r\n\r\n")
+            .expect("request headers");
+        let headers = String::from_utf8_lossy(&captured[..split]);
+        assert!(headers.starts_with("POST /v1/text-to-voice/design HTTP/1.1"));
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("xi-api-key: voice-design-canary")
+        );
+        let value: serde_json::Value =
+            serde_json::from_slice(&captured[split + 4..]).expect("request JSON");
+        assert_eq!(value["text"], "A".repeat(100));
+        assert_eq!(value["voice_description"], "A warm and expressive narrator");
+        assert_eq!(value["model_id"], "eleven_ttv_v3");
+        assert_eq!(value["num_previews"], 1);
+        assert!(value.get("loudness").is_none());
     }
 
     #[tokio::test]

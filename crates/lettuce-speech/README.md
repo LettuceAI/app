@@ -127,9 +127,20 @@ the authored text and selected model. ElevenLabs does not consume the optional
 voice prompt. The response remains MP3 as in the legacy flow, with cancellation
 and retry classification delegated through the same bounded network client.
 Voice identifiers containing path separators or encoded traversal are now
-rejected before transport instead of being interpolated into the URL. Voice
-discovery, library search, design, preview creation and saved-voice creation
-remain later TTS slices.
+rejected before transport instead of being interpolated into the URL.
+
+The same ElevenLabs adapter implements typed voice-design previews through
+`POST /v1/text-to-voice/design`. It preserves the legacy authored sample,
+description, optional design model, omitted loudness and optional preview
+count, then decodes provider base64 inside the adapter. Preview identity,
+finite duration and MP3 media type remain typed while raw bytes are exposed
+only to the media sink. Input validation follows the current provider limits:
+100 to 1,000 sample characters, 20 to 1,000 description characters, one of
+the two catalogued design models when supplied, and at most three previews.
+This deliberately rejects the legacy editor's empty description before a
+billable request. The contract is documented by the official
+[ElevenLabs voice-design API](https://elevenlabs.io/docs/api-reference/text-to-voice/design).
+Saved-voice creation remains the next TTS slice.
 
 `FishTtsRuntime` preserves the hosted Fish Audio synthesis request, including
 bearer authentication, the selected model header and reference voice, MP3 at
@@ -167,8 +178,9 @@ catalogs plus credential verification remain later configuration slices.
 `RemoteTtsRuntime` is the single provider-dispatching implementation used by
 the application boundary. It routes each frozen remote provider configuration
 to its existing adapter and shares one host-configured bounded network client.
-It contains no wire logic. Kokoro rejects explicitly until its native runtime
-is installed behind the same port.
+It also routes ElevenLabs voice design through that adapter and contains no
+wire logic. Kokoro rejects explicitly until its native runtime is installed
+behind the same port.
 
 The built-in TTS catalog preserves the exact legacy model IDs and display names
 for all six provider kinds, the separate ElevenLabs voice-design models, and
@@ -182,8 +194,8 @@ scoped `xi-api-key`. It preserves response order, voice ID, name, optional
 preview URL and provider labels, with category and description overwriting the
 same legacy label keys. Duplicate IDs, oversized fields and paginated partial
 responses reject before persistence, correcting the legacy behavior that could
-replace a complete cache with an incomplete first page. Public-library search,
-voice design and saved-voice creation remain separate operations.
+replace a complete cache with an incomplete first page. The orphan provider
+search command and saved-voice creation remain separate operations.
 
 Configured hosted Fish discovery preserves the legacy authenticated `GET /model`
 request for up to 100 account models with `sort_by=created_at`. It keeps TTS and
