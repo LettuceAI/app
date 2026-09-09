@@ -606,5 +606,8 @@ return the stored persona without allocating another sequence. Persona default
 set and clear append a canonical singleton update in the same immediate
 transaction as their existing CAS write. Exact retries preserve the first
 timestamp and sequence; missing or archived targets, stale revisions and either
-singleton or journal failures leave both sides unchanged. Persona lifecycle
-mutations remain unwired.
+singleton or journal failures leave both sides unchanged. Persona archive and
+restore journal the complete lifecycle transition. A selected persona archive
+also journals the coupled default clear; failure of either change rolls back
+both aggregate writes and both sequence allocations. Restore does not reselect
+the persona, matching the existing lifecycle contract.

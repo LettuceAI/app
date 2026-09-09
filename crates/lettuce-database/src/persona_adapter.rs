@@ -12,10 +12,12 @@ use lettuce_characters::{
 };
 use lettuce_sync::{
     ChangeOperation, LocalChangeJournalError, NewCanonicalChange,
-    canonical_persona_default_payload, canonical_persona_payload, persona_attach_media_operation,
+    canonical_persona_default_payload, canonical_persona_payload,
+    persona_archive_default_operation, persona_archive_operation, persona_attach_media_operation,
     persona_clear_default_operation, persona_create_operation, persona_default_sync_entity,
-    persona_detach_media_operation, persona_reorder_media_operation, persona_revise_operation,
-    persona_set_default_operation, persona_sync_entity, persona_update_media_operation,
+    persona_detach_media_operation, persona_reorder_media_operation, persona_restore_operation,
+    persona_revise_operation, persona_set_default_operation, persona_sync_entity,
+    persona_update_media_operation,
 };
 use lettuce_types::{AssetId, Page, PageRequest, PersonaId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
@@ -113,7 +115,7 @@ fn persona_default_update_change(
     .map_err(|_| RepositoryError::Storage)
 }
 
-fn replay_persona_media_change(
+fn replay_persona_update_change(
     tx: &Transaction<'_>,
     operation: lettuce_types::OperationId,
     id: PersonaId,
@@ -930,7 +932,7 @@ impl PersonaRepository for Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         if let Some(persona) =
-            replay_persona_media_change(&tx, operation, id, expected_revision, now)?
+            replay_persona_update_change(&tx, operation, id, expected_revision, now)?
         {
             tx.commit().map_err(db_error)?;
             return Ok(persona);
@@ -965,7 +967,7 @@ impl PersonaRepository for Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         if let Some(persona) =
-            replay_persona_media_change(&tx, operation, id, expected_revision, now)?
+            replay_persona_update_change(&tx, operation, id, expected_revision, now)?
         {
             tx.commit().map_err(db_error)?;
             return Ok(persona);
@@ -1052,7 +1054,7 @@ impl PersonaRepository for Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         if let Some(persona) =
-            replay_persona_media_change(&tx, operation, id, expected_revision, now)?
+            replay_persona_update_change(&tx, operation, id, expected_revision, now)?
         {
             tx.commit().map_err(db_error)?;
             return Ok(persona);
@@ -1112,7 +1114,7 @@ impl PersonaRepository for Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
         if let Some(persona) =
-            replay_persona_media_change(&tx, operation, id, expected_revision, now)?
+            replay_persona_update_change(&tx, operation, id, expected_revision, now)?
         {
             tx.commit().map_err(db_error)?;
             return Ok(persona);
@@ -1286,10 +1288,42 @@ impl PersonaRepository for Database {
         request: PersonaArchiveRequest,
     ) -> Result<PersonaArchiveResult, RepositoryError> {
         request.validate()?;
+        let operation = persona_archive_operation(
+            request.persona_id,
+            request.expected_persona_revision,
+            request.expected_default_revision,
+        );
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        if let Some(persona) = replay_persona_update_change(
+            &tx,
+            operation,
+            request.persona_id,
+            request.expected_persona_revision,
+            request.now,
+        )? {
+            let default = if let Some(expected_default) = request.expected_default_revision {
+                replay_persona_default_change(
+                    &tx,
+                    persona_archive_default_operation(
+                        request.persona_id,
+                        request.expected_persona_revision,
+                        expected_default,
+                    ),
+                    expected_default,
+                    request.now,
+                )?
+                .unwrap_or(read_default(&tx).map_err(db_error)?)
+            } else {
+                read_default(&tx).map_err(db_error)?
+            };
+            let result = PersonaArchiveResult { persona, default };
+            result.validate()?;
+            tx.commit().map_err(db_error)?;
+            return Ok(result);
+        }
         let current = load_persona(&tx, request.persona_id)
             .map_err(db_error)?
             .ok_or(RepositoryError::NotFound)?;
@@ -1302,16 +1336,16 @@ impl PersonaRepository for Database {
         if current.status != LifecycleStatus::Active {
             return Err(RepositoryError::Archived);
         }
-        let default = read_default(&tx).map_err(db_error)?;
-        let is_default = default.persona_id == Some(request.persona_id);
+        let before_default = read_default(&tx).map_err(db_error)?;
+        let is_default = before_default.persona_id == Some(request.persona_id);
         if is_default {
             let expected_default = request
                 .expected_default_revision
                 .ok_or(RepositoryError::MissingDefaultRevision)?;
-            if default.revision != expected_default {
+            if before_default.revision != expected_default {
                 return Err(RepositoryError::StaleRevision {
                     expected: expected_default,
-                    actual: default.revision,
+                    actual: before_default.revision,
                 });
             }
         }
@@ -1371,6 +1405,32 @@ impl PersonaRepository for Database {
         let default = read_default(&tx).map_err(db_error)?;
         let result = PersonaArchiveResult { persona, default };
         result.validate()?;
+        let persona_change = persona_update_change(&current, &result.persona)?;
+        let admission = record_local_change_in(&tx, operation, &persona_change, request.now)
+            .map_err(sync_error)?;
+        if !admission.created {
+            return Err(RepositoryError::Storage);
+        }
+        if is_default {
+            let expected_default = request
+                .expected_default_revision
+                .ok_or(RepositoryError::MissingDefaultRevision)?;
+            let default_change = persona_default_update_change(&before_default, &result.default)?;
+            let admission = record_local_change_in(
+                &tx,
+                persona_archive_default_operation(
+                    request.persona_id,
+                    request.expected_persona_revision,
+                    expected_default,
+                ),
+                &default_change,
+                request.now,
+            )
+            .map_err(sync_error)?;
+            if !admission.created {
+                return Err(RepositoryError::Storage);
+            }
+        }
         tx.commit().map_err(db_error)?;
         Ok(result)
     }
@@ -1381,10 +1441,17 @@ impl PersonaRepository for Database {
         expected_revision: Revision,
         now: TimestampMillis,
     ) -> Result<Persona, RepositoryError> {
+        let operation = persona_restore_operation(id, expected_revision);
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        if let Some(persona) =
+            replay_persona_update_change(&tx, operation, id, expected_revision, now)?
+        {
+            tx.commit().map_err(db_error)?;
+            return Ok(persona);
+        }
         let current = load_persona(&tx, id)
             .map_err(db_error)?
             .ok_or(RepositoryError::NotFound)?;
@@ -1421,6 +1488,11 @@ impl PersonaRepository for Database {
         let persona = load_persona(&tx, id)
             .map_err(db_error)?
             .ok_or(RepositoryError::Storage)?;
+        let change = persona_update_change(&current, &persona)?;
+        let admission = record_local_change_in(&tx, operation, &change, now).map_err(sync_error)?;
+        if !admission.created {
+            return Err(RepositoryError::Storage);
+        }
         tx.commit().map_err(db_error)?;
         Ok(persona)
     }
@@ -2060,16 +2132,17 @@ mod tests {
             vec![DependencyReference::PersonaDefault]
         );
 
-        let result = PersonaRepository::archive(
-            &database,
-            PersonaArchiveRequest {
-                persona_id: stored.id,
-                expected_persona_revision: stored.revision,
-                expected_default_revision: Some(default.revision),
-                now: TimestampMillis::new(3),
-            },
-        )
-        .expect("archive");
+        let archive_request = PersonaArchiveRequest {
+            persona_id: stored.id,
+            expected_persona_revision: stored.revision,
+            expected_default_revision: Some(default.revision),
+            now: TimestampMillis::new(3),
+        };
+        let result = PersonaRepository::archive(&database, archive_request).expect("archive");
+        assert_eq!(
+            PersonaRepository::archive(&database, archive_request).expect("archive replay"),
+            result
+        );
         assert_eq!(result.persona.status, LifecycleStatus::Archived);
         assert_eq!(result.default.persona_id, None);
         let restored = PersonaRepository::restore(
@@ -2079,6 +2152,16 @@ mod tests {
             TimestampMillis::new(4),
         )
         .expect("restore");
+        assert_eq!(
+            PersonaRepository::restore(
+                &database,
+                stored.id,
+                result.persona.revision,
+                TimestampMillis::new(4),
+            )
+            .expect("restore replay"),
+            restored
+        );
         assert_eq!(restored.status, LifecycleStatus::Active);
         assert_eq!(
             PersonaRepository::get_default_snapshot(&database)
@@ -2086,6 +2169,59 @@ mod tests {
                 .state
                 .persona_id,
             None
+        );
+        let connection = database.connection().expect("connection");
+        let archive_change = load_local_change_in(
+            &connection,
+            persona_archive_operation(stored.id, stored.revision, Some(default.revision)),
+        )
+        .expect("archive change read")
+        .expect("archive change");
+        let default_change = load_local_change_in(
+            &connection,
+            persona_archive_default_operation(stored.id, stored.revision, default.revision),
+        )
+        .expect("default change read")
+        .expect("archive default change");
+        let restore_change = load_local_change_in(
+            &connection,
+            persona_restore_operation(stored.id, result.persona.revision),
+        )
+        .expect("restore change read")
+        .expect("restore change");
+        assert_eq!(archive_change.origin_sequence(), 3);
+        assert_eq!(default_change.origin_sequence(), 4);
+        assert_eq!(restore_change.origin_sequence(), 5);
+        assert_eq!(
+            archive_change.base_revision(),
+            Some(
+                canonical_persona_payload(&stored)
+                    .expect("archive base")
+                    .content_hash()
+            )
+        );
+        assert_eq!(
+            default_change.base_revision(),
+            Some(
+                canonical_persona_default_payload(&default)
+                    .expect("default base")
+                    .content_hash()
+            )
+        );
+        assert_eq!(
+            restore_change.base_revision(),
+            Some(
+                canonical_persona_payload(&result.persona)
+                    .expect("restore base")
+                    .content_hash()
+            )
+        );
+        assert_eq!(
+            serde_json::from_slice::<Persona>(
+                restore_change.payload().expect("restore payload").bytes()
+            )
+            .expect("decode restore"),
+            restored
         );
     }
 
@@ -2856,8 +2992,8 @@ mod tests {
         )
         .expect("clear change read")
         .expect("clear change");
-        assert_eq!(set_change.origin_sequence(), 3);
-        assert_eq!(clear_change.origin_sequence(), 4);
+        assert_eq!(set_change.origin_sequence(), 4);
+        assert_eq!(clear_change.origin_sequence(), 5);
         assert_eq!(
             set_change.base_revision(),
             Some(
@@ -2947,7 +3083,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM sync_changes", [], |row| row
                     .get::<_, i64>(0))
                 .expect("change count"),
-            4
+            5
         );
         assert_eq!(
             connection
@@ -2957,7 +3093,7 @@ mod tests {
                     |row| row.get::<_, i64>(0),
                 )
                 .expect("sequence"),
-            4
+            5
         );
     }
 
@@ -3078,6 +3214,60 @@ mod tests {
                 .state
                 .persona_id,
             Some(value.id)
+        );
+        let connection = database.connection().expect("lock");
+        connection
+            .execute_batch(&format!(
+                "CREATE TEMP TRIGGER fail_persona_archive_default_journal
+                 BEFORE INSERT ON sync_changes
+                 WHEN NEW.operation_id = '{}'
+                 BEGIN SELECT RAISE(ABORT, 'injected archive journal failure'); END;",
+                persona_archive_default_operation(value.id, value.revision, default.revision)
+            ))
+            .expect("journal failure trigger");
+        drop(connection);
+        assert!(
+            PersonaRepository::archive(
+                &database,
+                PersonaArchiveRequest {
+                    persona_id: value.id,
+                    expected_persona_revision: value.revision,
+                    expected_default_revision: Some(default.revision),
+                    now: TimestampMillis::new(3),
+                },
+            )
+            .is_err()
+        );
+        assert_eq!(
+            PersonaRepository::get(&database, value.id)
+                .expect("persona after journal rollback")
+                .expect("persona")
+                .status,
+            LifecycleStatus::Active
+        );
+        assert_eq!(
+            PersonaRepository::get_default_snapshot(&database)
+                .expect("default after journal rollback")
+                .state,
+            default
+        );
+        let connection = database.connection().expect("connection");
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM sync_changes", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("change count"),
+            2
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT origin_sequence FROM sync_local_state WHERE id = 1",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("sequence"),
+            2
         );
     }
 

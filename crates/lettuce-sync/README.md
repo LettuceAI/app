@@ -42,7 +42,11 @@ second sequence. The revisioned application-default persona singleton has its
 own versioned canonical state, entity identity and intent-bound set/clear
 operations. Default selection changes share their SQLite transaction with one
 canonical update and retain the prior singleton snapshot hash as the base.
-Persona lifecycle changes and every other aggregate still need explicit journal
-wiring. Peer negotiation, staged apply, conflict resolution, blob exchange and
-legacy sync-state migration also remain later slices. No legacy database,
-source or user asset is read, rewritten or deleted by this crate.
+Persona archive and restore use distinct lifecycle operation identities and the
+same complete snapshot update contract. Archiving the selected default also
+emits a distinct default-clear update in the same transaction, so both
+revisions and both journal rows either commit together or remain unchanged.
+Every other aggregate still needs explicit journal wiring. Peer negotiation,
+staged apply, conflict resolution, blob exchange and legacy sync-state migration
+also remain later slices. No legacy database, source or user asset is read,
+rewritten or deleted by this crate.

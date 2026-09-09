@@ -141,6 +141,33 @@ pub fn persona_clear_default_operation(expected_revision: Revision) -> Operation
     default_operation("clear", expected_revision, "none")
 }
 
+#[must_use]
+pub fn persona_archive_operation(
+    id: PersonaId,
+    expected_revision: Revision,
+    expected_default_revision: Option<Revision>,
+) -> OperationId {
+    let intent = expected_default_revision
+        .map(|revision| revision.get().to_string())
+        .unwrap_or_else(|| "none".into());
+    persona_intent_operation(id, "archive", expected_revision, &intent)
+}
+
+#[must_use]
+pub fn persona_archive_default_operation(
+    id: PersonaId,
+    expected_persona_revision: Revision,
+    expected_default_revision: Revision,
+) -> OperationId {
+    let intent = format!("{id}:{}", expected_persona_revision.get());
+    default_operation("archive_clear", expected_default_revision, &intent)
+}
+
+#[must_use]
+pub fn persona_restore_operation(id: PersonaId, expected_revision: Revision) -> OperationId {
+    persona_operation(id, "restore", expected_revision)
+}
+
 fn persona_operation(id: PersonaId, action: &str, revision: Revision) -> OperationId {
     let name = format!("{action}\0{id}\0{}", revision.get());
     OperationId::from_uuid(Uuid::new_v5(&PERSONA_OPERATION_NAMESPACE, name.as_bytes()))
@@ -305,6 +332,18 @@ mod tests {
         assert_ne!(
             persona_set_default_operation(Revision::new(2), id),
             persona_clear_default_operation(Revision::new(2))
+        );
+        assert_ne!(
+            persona_archive_operation(id, Revision::new(2), Some(Revision::new(3))),
+            persona_archive_operation(id, Revision::new(2), None)
+        );
+        assert_ne!(
+            persona_archive_default_operation(id, Revision::new(2), Revision::new(3),),
+            persona_clear_default_operation(Revision::new(3))
+        );
+        assert_ne!(
+            persona_archive_operation(id, Revision::new(2), None),
+            persona_restore_operation(id, Revision::new(2))
         );
     }
 }
