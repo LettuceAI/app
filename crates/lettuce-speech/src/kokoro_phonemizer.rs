@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use lettuce_platform::{EspeakNgError, EspeakPhonemizer};
+use serde::Deserialize;
 
 const MAX_TEXT_BYTES: usize = 64 * 1024;
 const MAX_TOKENS: usize = 65_536;
@@ -38,6 +39,51 @@ pub enum KokoroPhonemizationError {
     Process(EspeakNgError),
     #[error("Kokoro phonemization exceeds its token limit")]
     LimitExceeded,
+    #[error("Kokoro lexicon is invalid")]
+    InvalidLexicon,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum KokoroLexiconFile {
+    Flat(HashMap<String, String>),
+    Scoped {
+        #[serde(default)]
+        global: HashMap<String, String>,
+        #[serde(flatten)]
+        by_language: HashMap<String, HashMap<String, String>>,
+    },
+}
+
+pub fn parse_kokoro_lexicon(
+    bytes: &[u8],
+    language: &str,
+) -> Result<HashMap<String, String>, KokoroPhonemizationError> {
+    let parsed = serde_json::from_slice::<KokoroLexiconFile>(bytes)
+        .map_err(|_| KokoroPhonemizationError::InvalidLexicon)?;
+    let mut entries = match parsed {
+        KokoroLexiconFile::Flat(entries) => entries,
+        KokoroLexiconFile::Scoped {
+            mut global,
+            by_language,
+        } => {
+            if let Some(language_entries) = by_language.get(language) {
+                for (key, value) in language_entries {
+                    global.insert(key.clone(), value.clone());
+                }
+            }
+            global
+        }
+    };
+    entries.retain(|key, value| !key.trim().is_empty() && !value.trim().is_empty());
+    if entries.len() > 4096
+        || entries
+            .iter()
+            .any(|(key, value)| key.len() > 256 || value.len() > 4096)
+    {
+        return Err(KokoroPhonemizationError::InvalidLexicon);
+    }
+    Ok(entries)
 }
 
 #[must_use]
@@ -821,6 +867,26 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+
+    #[test]
+    fn lexicon_preserves_flat_and_scoped_legacy_documents() {
+        let flat = parse_kokoro_lexicon(r#"{"Lettuce":"lɛtɪs","":"ignored"}"#.as_bytes(), "en-US")
+            .expect("flat lexicon");
+        assert_eq!(flat.len(), 1);
+        assert_eq!(flat["Lettuce"], "lɛtɪs");
+
+        let scoped = parse_kokoro_lexicon(
+            br#"{"global":{"Lettuce":"global","Shared":"same"},"en-US":{"Lettuce":"american"},"en-GB":{"Lettuce":"british"}}"#,
+            "en-GB",
+        )
+        .expect("scoped lexicon");
+        assert_eq!(scoped["Lettuce"], "british");
+        assert_eq!(scoped["Shared"], "same");
+        assert_eq!(
+            parse_kokoro_lexicon(b"not JSON", "en-US"),
+            Err(KokoroPhonemizationError::InvalidLexicon)
+        );
+    }
 
     #[derive(Debug)]
     struct FixturePhonemizer {

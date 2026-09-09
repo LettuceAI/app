@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use async_trait::async_trait;
 use lettuce_jobs::handle::CancellationToken;
@@ -11,7 +11,8 @@ use lettuce_settings::SecretValue;
 use lettuce_speech::{
     AudioProviderConfig, AudioProviderKind, KokoroOnnxRuntimeLink, KokoroPhonemizationError,
     KokoroPhonemizationInput, KokoroRuntimeError, KokoroVoiceBlendSpec, KokoroVoiceError,
-    RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError,
+    RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError, kokoro_voice_language,
+    parse_kokoro_lexicon,
 };
 use serde::Deserialize;
 
@@ -126,6 +127,15 @@ impl TtsRuntime for KokoroTtsRuntime {
                 .ok_or(TtsRuntimeError::Rejected)?
                 .voice_id
                 .clone();
+            let lexicon = models
+                .materialize_lexicon()
+                .map_err(map_lexicon_store_error)?
+                .map(|material| {
+                    parse_kokoro_lexicon(material.bytes(), kokoro_voice_language(&primary_voice))
+                })
+                .transpose()
+                .map_err(|_| TtsRuntimeError::Rejected)?
+                .unwrap_or_default();
             let phonemization = KokoroPhonemizationCoordinator::new(models.clone())
                 .phonemize(
                     &model,
@@ -133,7 +143,7 @@ impl TtsRuntime for KokoroTtsRuntime {
                     &KokoroPhonemizationInput {
                         voice_id: primary_voice,
                         text,
-                        lexicon: HashMap::new(),
+                        lexicon,
                     },
                 )
                 .map_err(map_phonemization_error)?;
@@ -210,11 +220,23 @@ fn map_voice_error(error: KokoroVoiceBlendCoordinatorError) -> TtsRuntimeError {
     }
 }
 
+fn map_lexicon_store_error(error: KokoroInstallError) -> TtsRuntimeError {
+    match error {
+        KokoroInstallError::Platform(_) => TtsRuntimeError::Unavailable,
+        KokoroInstallError::InvalidManifest => TtsRuntimeError::Rejected,
+        KokoroInstallError::Mismatch
+        | KokoroInstallError::Unreadable
+        | KokoroInstallError::InvalidArtifact => TtsRuntimeError::Failed,
+    }
+}
+
 fn map_phonemization_error(error: KokoroPhonemizationCoordinatorError) -> TtsRuntimeError {
     match error {
         KokoroPhonemizationCoordinatorError::Install(KokoroInstallError::InvalidManifest)
         | KokoroPhonemizationCoordinatorError::Phonemization(
-            KokoroPhonemizationError::InvalidInput | KokoroPhonemizationError::LimitExceeded,
+            KokoroPhonemizationError::InvalidInput
+            | KokoroPhonemizationError::LimitExceeded
+            | KokoroPhonemizationError::InvalidLexicon,
         ) => TtsRuntimeError::Rejected,
         KokoroPhonemizationCoordinatorError::MissingAssets
         | KokoroPhonemizationCoordinatorError::Install(KokoroInstallError::Platform(_))
@@ -348,6 +370,50 @@ mod tests {
             Err(TtsRuntimeError::Unavailable)
         ));
         assert_eq!(phonemizer.0.load(Ordering::Relaxed), 0);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn malformed_lexicon_fails_before_espeak_and_onnx() {
+        let root = std::env::temp_dir().join(format!(
+            "kokoro-tts-lexicon-{}",
+            lettuce_types::OperationId::new()
+        ));
+        let voice_bytes = std::iter::repeat_n(2.5_f32, lettuce_speech::KOKORO_STYLE_DIMENSIONS)
+            .flat_map(f32::to_le_bytes)
+            .collect::<Vec<_>>();
+        let remote = lettuce_model_hub::RemoteKokoroVoice::pinned(
+            "af_heart",
+            lettuce_model_hub::KOKORO_SOURCE_REVISION,
+            u64::try_from(voice_bytes.len()).expect("voice size"),
+            "e3389576be529aa72dbdaf5de49605c383ac1e6c91815e735500bf362260cc2c",
+        )
+        .expect("remote voice");
+        let voices = KokoroVoiceInstallStore::open(&root).expect("voice store");
+        let lettuce_model_hub::KokoroVoicePreparation::Download(mut download) =
+            voices.prepare(remote).expect("voice preparation")
+        else {
+            panic!("expected voice download");
+        };
+        download.append(&voice_bytes).expect("voice bytes");
+        download.finish().expect("installed voice");
+        std::fs::write(root.join("lexicon.json"), b"not JSON").expect("lexicon");
+        let phonemizer = Arc::new(CountingPhonemizer(AtomicUsize::new(0)));
+        let runtime = KokoroTtsRuntime::new(
+            KokoroInstallStore::open(&root).expect("model store"),
+            voices,
+            phonemizer.clone(),
+            KokoroOnnxRuntimeLink::Linked,
+        );
+
+        assert!(matches!(
+            runtime
+                .synthesize(&request(), None, &CancellationToken::new())
+                .await,
+            Err(TtsRuntimeError::Rejected)
+        ));
+        assert_eq!(phonemizer.0.load(Ordering::Relaxed), 0);
+        assert!(root.join("lexicon.json").exists());
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 

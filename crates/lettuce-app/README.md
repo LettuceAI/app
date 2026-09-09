@@ -1008,5 +1008,9 @@ blend document and positive speed from the voice prompt, resolves only verified
 offline voice descriptors, runs blocking native work outside the async worker
 and returns the WAV through the existing durable media settlement. Missing
 installable assets and runtime libraries retry; malformed requests and changed
-artifacts fail before audio ingestion. The optional legacy `lexicon.json` source
-and Android eSpeak host remain later bounded host-storage work.
+artifacts fail before audio ingestion. The optional legacy `lexicon.json` is
+read as a bounded pathless snapshot, parsed in its flat or global-plus-language
+shape and merged for the primary normalized voice before eSpeak runs. Missing
+files preserve the empty lexicon; malformed, oversized, unsafe or changing files
+fail without rewriting or deleting user data. Android eSpeak hosting remains a
+later platform slice.

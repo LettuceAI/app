@@ -246,8 +246,11 @@ Kokoro phonemization preserves the legacy voice-prefix language mapping,
 markdown normalization, inline IPA and stress annotations, punctuation
 segmentation, lexicon replacement, batched eSpeak fallback and the complete
 upstream character-to-token table. Inputs, lexicon entries and token output are
-bounded. Process execution is supplied only through the purpose-specific
-platform phonemizer capability; ONNX and audio synthesis remain separate.
+bounded. Flat and `global` plus language-scoped legacy lexicon documents retain
+their exact merge order, with the selected language overriding global entries;
+malformed or excessive documents reject. Process execution is supplied only
+through the purpose-specific platform phonemizer capability; ONNX and audio
+synthesis remain separate.
 Kokoro voice style loading preserves the 256-float little-endian row format,
 first-seen duplicate merge order, positive-weight normalization, weighted
 per-row blending, shorter-voice last-row extension and token-count row clamp.
@@ -261,4 +264,4 @@ termination. The legacy 510-token punctuation-aware splitting, token-count
 style lookup, 240-sample linear crossfade and 24 kHz mono PCM16 WAV encoding
 are preserved. Nonfinite or oversized inference output fails before media
 ingestion. Routing persisted Kokoro TTS requests into this runtime remains the
-next application slice.
+application boundary's responsibility.

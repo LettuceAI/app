@@ -1,4 +1,4 @@
-use std::{io::Read, path::Path, sync::Arc};
+use std::{fmt, io::Read, path::Path, sync::Arc};
 
 use lettuce_platform::{ConfinedInstallStore, InstallPreparation, ObjectKey, ResumableInstall};
 use sha2::{Digest, Sha256};
@@ -7,6 +7,7 @@ use crate::{InstalledModelArtifact, KokoroModelVariant, ModelArtifactError};
 
 pub const KOKORO_REPOSITORY: &str = "onnx-community/Kokoro-82M-v1.0-ONNX";
 pub const KOKORO_SOURCE_REVISION: &str = "1939ad2a8e416c0acfeecc08a694d14ef25f2231";
+const MAX_KOKORO_LEXICON_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KokoroArtifactRole {
@@ -140,6 +141,26 @@ pub struct KokoroInstallStore {
     inner: Arc<ConfinedInstallStore>,
 }
 
+pub struct MaterializedKokoroLexicon {
+    bytes: Box<[u8]>,
+}
+
+impl MaterializedKokoroLexicon {
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+impl fmt::Debug for MaterializedKokoroLexicon {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MaterializedKokoroLexicon")
+            .field("byte_len", &self.bytes.len())
+            .finish()
+    }
+}
+
 #[derive(Debug)]
 pub enum KokoroArtifactPreparation {
     Installed(InstalledModelArtifact),
@@ -228,6 +249,40 @@ impl KokoroInstallStore {
             variant: model.variant,
             source_revision: model.source_revision.to_owned(),
             artifacts,
+        }))
+    }
+
+    pub fn materialize_lexicon(
+        &self,
+    ) -> Result<Option<MaterializedKokoroLexicon>, KokoroInstallError> {
+        let target = ObjectKey::single("lexicon.json").map_err(KokoroInstallError::Platform)?;
+        let Some(mut file) = self
+            .inner
+            .inspect(&target)
+            .map_err(KokoroInstallError::Platform)?
+        else {
+            return Ok(None);
+        };
+        if file.len() > MAX_KOKORO_LEXICON_BYTES {
+            return Err(KokoroInstallError::InvalidArtifact);
+        }
+        let capacity =
+            usize::try_from(file.len()).map_err(|_| KokoroInstallError::InvalidArtifact)?;
+        let mut bytes = Vec::with_capacity(capacity);
+        file.read_to_end(&mut bytes)
+            .map_err(|_| KokoroInstallError::Unreadable)?;
+        if bytes.len() != capacity {
+            return Err(KokoroInstallError::Mismatch);
+        }
+        file.rewind().map_err(KokoroInstallError::Platform)?;
+        let mut verification = Vec::with_capacity(capacity);
+        file.read_to_end(&mut verification)
+            .map_err(|_| KokoroInstallError::Unreadable)?;
+        if verification != bytes {
+            return Err(KokoroInstallError::Mismatch);
+        }
+        Ok(Some(MaterializedKokoroLexicon {
+            bytes: bytes.into_boxed_slice(),
         }))
     }
 
@@ -365,6 +420,43 @@ mod tests {
     use lettuce_types::OperationId;
 
     use super::*;
+
+    #[test]
+    fn lexicon_materialization_is_bounded_pathless_and_read_only() {
+        let root = std::env::temp_dir().join(format!(
+            "kokoro-lexicon-{}",
+            lettuce_types::OperationId::new()
+        ));
+        std::fs::create_dir_all(&root).expect("root");
+        let content = r#"{"Lettuce":"lɛtɪs"}"#.as_bytes();
+        let path = root.join("lexicon.json");
+        let store = KokoroInstallStore::open(&root).expect("install store");
+        assert!(
+            store
+                .materialize_lexicon()
+                .expect("missing lexicon")
+                .is_none()
+        );
+        std::fs::write(&path, content).expect("lexicon");
+
+        let material = store
+            .materialize_lexicon()
+            .expect("lexicon read")
+            .expect("lexicon");
+        assert_eq!(material.bytes(), content);
+        assert!(!format!("{material:?}").contains("Lettuce"));
+        assert_eq!(std::fs::read(&path).expect("retained lexicon"), content);
+        std::fs::write(&path, vec![b'x'; 1024 * 1024 + 1]).expect("oversized lexicon");
+        assert!(matches!(
+            store.materialize_lexicon(),
+            Err(KokoroInstallError::InvalidArtifact)
+        ));
+        assert_eq!(
+            std::fs::metadata(&path).expect("retained metadata").len(),
+            1024 * 1024 + 1
+        );
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
 
     #[test]
     fn pinned_bundle_preserves_exact_four_file_plan() {
