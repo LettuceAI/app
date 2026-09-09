@@ -1441,6 +1441,7 @@ dependencies = [
  "lettuce-jobs",
  "lettuce-media",
  "lettuce-model-hub",
+ "lettuce-settings",
  "lettuce-types",
  "regex",
  "serde",

@@ -24,6 +24,7 @@ metal = ["whisper-rs/metal"]
 lettuce-jobs.workspace = true
 lettuce-media.workspace = true
 lettuce-model-hub.workspace = true
+lettuce-settings.workspace = true
 lettuce-types.workspace = true
 regex = "1"
 serde.workspace = true

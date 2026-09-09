@@ -1,5 +1,14 @@
 # lettuce-database
 
+Migration 17 persists TTS audio-provider metadata and user voice profiles.
+Provider kinds and versioned configurations are cross-checked on every read;
+credential rows contain only scoped native-secret references and owner IDs.
+Provider and voice updates use revision compare-and-swap while retaining their
+creation timestamps. Foreign keys require every voice to have a provider and
+delete dependent voices atomically when that provider is removed. The deleted
+provider record is returned through the domain port so native-secret cleanup
+can run separately without storing plaintext in SQLite.
+
 The usage ledger also reads the terminal usage event by turn and attempt
 (`get_for_attempt`) through the existing event query; it adds no schema.
 

@@ -63,6 +63,7 @@ macro_rules! define_id {
 }
 
 define_id!(AssetId);
+define_id!(AudioProviderId);
 define_id!(AsrCorrectionId);
 define_id!(AsrIgnoredSuggestionId);
 define_id!(AsrVocabularyTermId);

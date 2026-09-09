@@ -7,8 +7,10 @@
 
 mod asr;
 mod learning;
+mod tts;
 mod whisper_runtime;
 
 pub use asr::*;
 pub use learning::*;
+pub use tts::*;
 pub use whisper_runtime::*;

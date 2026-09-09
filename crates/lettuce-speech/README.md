@@ -81,5 +81,15 @@ this boundary after safely ingesting their referenced audio files.
 Pinned, resumable installed-model downloads now compose through model-hub,
 network, platform and durable artifact-install jobs. Managed removal clears the
 process-wide Whisper context cache before deleting verified owned bytes.
-Microphone IPC and file-format expansion remain later ASR slices. TTS has not
-started.
+Microphone IPC and file-format expansion remain later ASR slices.
+
+The first TTS slice defines the six legacy audio-provider kinds as a closed
+typed configuration and persists provider metadata through a repository port.
+API keys are represented only by a scoped secret reference and owner identity;
+plaintext credentials are not part of the domain or SQLite schema. User voices
+retain their provider, name, model, voice and optional authored prompt through
+the same port. Both aggregates use revision compare-and-swap, retain creation
+timestamps across updates and validate stored data when read. Provider deletion
+returns its secret metadata for separate native-secret cleanup and atomically
+cascades its user voices. Provider HTTP adapters, voice discovery, synthesis,
+preview caches and Kokoro execution remain later TTS slices.
