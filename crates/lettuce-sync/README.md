@@ -47,9 +47,8 @@ same complete snapshot update contract. Archiving the selected default also
 emits a distinct default-clear update in the same transaction, so both
 revisions and both journal rows either commit together or remain unchanged.
 Every other aggregate still needs explicit journal wiring. Peer negotiation,
-staged apply, conflict resolution, blob exchange and legacy sync-state migration
-also remain later slices. No legacy database, source or user asset is read,
-rewritten or deleted by this crate.
+blob exchange and legacy sync-state migration remain later slices. No legacy
+database, source or user asset is read, rewritten or deleted by this crate.
 
 The journal now exposes its local causal frontier, bounded outbound batches and
 durable peer acknowledgements. Outbound reads start after the peer frontier,
@@ -66,3 +65,11 @@ the aggregate, observes remote hybrid clocks and replays committed delivery
 after restart. Unsupported schemas and causal gaps remain pending. Concurrent
 persona changes retain both snapshots and deterministic winner evidence in an
 immutable conflict record.
+
+Persona conflicts can be listed as at most 100 typed current/other candidates
+and resolved by choosing either side. Resolution always creates a new local
+canonical snapshot with a fresh aggregate revision, even when the current
+candidate is retained, so the decision observes and propagates beyond both
+concurrent changes. The original evidence remains durable; exact decisions
+replay after restart, changed or stale decisions fail, and a later observed
+resolution marks the corresponding remote conflict superseded.

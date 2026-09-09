@@ -624,5 +624,9 @@ remote changes, causal frontiers, conflict evidence and remote-clock observation
 commit atomically. Exact committed delivery replays across reopen. Unknown
 schemas, origin gaps and missing materialization dependencies stay pending with
 their original bytes. The adapter never deletes pending input or either side of
-a conflict; resolution, peer transport, authentication and blob transfer remain
-later sync work.
+a conflict. Bounded conflict reads decode and validate both typed candidates.
+Choosing current or other atomically applies a fresh revision, appends a local
+canonical change and records the immutable resolution; exact replay survives
+reopen. Replicated changes that causally dominate both candidates close the
+corresponding remote conflict as superseded. Peer transport, authentication and
+blob transfer remain later sync work.

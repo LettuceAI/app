@@ -101,9 +101,19 @@ CREATE TABLE sync_conflicts (
     current_change_id TEXT REFERENCES sync_changes(change_id) ON DELETE RESTRICT,
     incoming_change_id TEXT NOT NULL UNIQUE REFERENCES sync_changes(change_id) ON DELETE RESTRICT,
     winning_side TEXT NOT NULL CHECK (winning_side IN ('current', 'incoming')),
-    current_payload BLOB,
+    current_payload BLOB NOT NULL,
     incoming_payload BLOB NOT NULL,
-    detected_at INTEGER NOT NULL
+    detected_at INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'unresolved' CHECK (status IN ('unresolved', 'resolved')),
+    resolution_choice TEXT CHECK (resolution_choice IN ('current', 'other', 'superseded')),
+    resolved_by_change_id TEXT REFERENCES sync_changes(change_id) ON DELETE RESTRICT,
+    resolved_at INTEGER,
+    CHECK (
+        (status = 'unresolved' AND resolution_choice IS NULL AND
+         resolved_by_change_id IS NULL AND resolved_at IS NULL) OR
+        (status = 'resolved' AND resolution_choice IS NOT NULL AND
+         resolved_by_change_id IS NOT NULL AND resolved_at IS NOT NULL)
+    )
 ) STRICT;
 
 CREATE INDEX sync_changes_origin_idx
@@ -207,10 +217,20 @@ BEGIN
     SELECT RAISE(ABORT, 'incoming sync changes are durable');
 END;
 
-CREATE TRIGGER sync_conflicts_no_update
+CREATE TRIGGER sync_conflicts_update_guard
 BEFORE UPDATE ON sync_conflicts
+WHEN NEW.conflict_id <> OLD.conflict_id OR
+     NEW.entity_kind <> OLD.entity_kind OR
+     NEW.entity_id <> OLD.entity_id OR
+     NEW.current_change_id IS NOT OLD.current_change_id OR
+     NEW.incoming_change_id <> OLD.incoming_change_id OR
+     NEW.winning_side <> OLD.winning_side OR
+     NEW.current_payload IS NOT OLD.current_payload OR
+     NEW.incoming_payload <> OLD.incoming_payload OR
+     NEW.detected_at <> OLD.detected_at OR
+     OLD.status <> 'unresolved' OR NEW.status <> 'resolved'
 BEGIN
-    SELECT RAISE(ABORT, 'sync conflicts require explicit resolution');
+    SELECT RAISE(ABORT, 'invalid sync conflict transition');
 END;
 
 CREATE TRIGGER sync_conflicts_no_delete

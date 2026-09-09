@@ -3,14 +3,16 @@ use std::collections::BTreeMap;
 use lettuce_characters::{Persona, PersonaDefaultState, RepositoryError};
 use lettuce_sync::{
     CANONICAL_CHANGE_VERSION, CanonicalChange, CanonicalPayload, CausalFrontier, ChangeOperation,
-    HybridTimestamp, IncomingBatchAdmission, IncomingBatchResult, IncomingBatchState,
-    IncomingChangeError, IncomingChangeRepository, LocalChangeAdmission, LocalChangeJournal,
-    LocalChangeJournalError, MAX_FRONTIER_DEVICES, MAX_INCOMING_CHANGES,
-    MAX_INCOMING_PAYLOAD_BYTES, MAX_OUTBOUND_CHANGES, MAX_OUTBOUND_PAYLOAD_BYTES,
-    NewCanonicalChange, OutboundChangeBatch, PERSONA_DEFAULT_SYNC_SCHEMA,
-    PERSONA_DEFAULT_SYNC_VERSION, PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION, SyncChangeId,
-    SyncDeviceId, SyncEntity, canonical_batch_hash, canonical_persona_default_payload,
-    canonical_persona_payload,
+    ConflictChoice, ConflictRepositoryError, HybridTimestamp, IncomingBatchAdmission,
+    IncomingBatchResult, IncomingBatchState, IncomingChangeError, IncomingChangeRepository,
+    LocalChangeAdmission, LocalChangeJournal, LocalChangeJournalError, MAX_FRONTIER_DEVICES,
+    MAX_INCOMING_CHANGES, MAX_INCOMING_PAYLOAD_BYTES, MAX_OUTBOUND_CHANGES,
+    MAX_OUTBOUND_PAYLOAD_BYTES, MAX_UNRESOLVED_CONFLICTS, NewCanonicalChange, OutboundChangeBatch,
+    PERSONA_DEFAULT_SYNC_SCHEMA, PERSONA_DEFAULT_SYNC_VERSION, PERSONA_SYNC_SCHEMA,
+    PERSONA_SYNC_VERSION, PersonaConflict, PersonaConflictCandidate, PersonaConflictRepository,
+    PersonaConflictValue, SyncChangeId, SyncDeviceId, SyncEntity, canonical_batch_hash,
+    canonical_persona_default_payload, canonical_persona_payload, persona_default_sync_entity,
+    persona_sync_entity,
 };
 use lettuce_types::{ContentHash, OperationId, PersonaId, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
@@ -213,6 +215,16 @@ pub(crate) fn record_local_change_in(
     request: &NewCanonicalChange,
     now: TimestampMillis,
 ) -> Result<LocalChangeAdmission, LocalChangeJournalError> {
+    record_local_change_in_skipping(connection, operation_id, request, now, None)
+}
+
+fn record_local_change_in_skipping(
+    connection: &Connection,
+    operation_id: OperationId,
+    request: &NewCanonicalChange,
+    now: TimestampMillis,
+    skipped_conflict: Option<OperationId>,
+) -> Result<LocalChangeAdmission, LocalChangeJournalError> {
     if let Some(change) = load_local_change_in(connection, operation_id)? {
         if !request_matches(&change, request) {
             return Err(LocalChangeJournalError::Conflict);
@@ -237,6 +249,12 @@ pub(crate) fn record_local_change_in(
     )
     .map_err(|_| LocalChangeJournalError::Invalid)?;
     insert_change(connection, Some(operation_id), &change, now)?;
+    resolve_dominated_conflicts(connection, &change, now, skipped_conflict).map_err(|error| {
+        match error {
+            ApplyOneError::Storage => LocalChangeJournalError::Storage,
+            _ => LocalChangeJournalError::Corrupt,
+        }
+    })?;
     Ok(LocalChangeAdmission {
         change,
         created: true,
@@ -837,6 +855,76 @@ fn insert_conflict(
     Ok(())
 }
 
+fn resolve_dominated_conflicts(
+    connection: &Connection,
+    winner: &CanonicalChange,
+    now: TimestampMillis,
+    skipped_conflict: Option<OperationId>,
+) -> Result<(), ApplyOneError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT conflict_id, current_change_id, incoming_change_id
+             FROM sync_conflicts
+             WHERE status = 'unresolved' AND entity_kind = ?1 AND entity_id = ?2
+               AND current_change_id IS NOT NULL",
+        )
+        .map_err(|_| ApplyOneError::Storage)?;
+    let rows = statement
+        .query_map(
+            params![winner.entity().kind(), winner.entity().id()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .map_err(|_| ApplyOneError::Storage)?;
+    let mut resolved = Vec::new();
+    for row in rows {
+        let (conflict_id, current_id, incoming_id) = row.map_err(|_| ApplyOneError::Storage)?;
+        if skipped_conflict.is_some_and(|skipped| skipped.to_string() == conflict_id) {
+            continue;
+        }
+        let current_id = SyncChangeId::from_uuid(
+            Uuid::parse_str(&current_id).map_err(|_| ApplyOneError::Corrupt)?,
+        );
+        let incoming_id = SyncChangeId::from_uuid(
+            Uuid::parse_str(&incoming_id).map_err(|_| ApplyOneError::Corrupt)?,
+        );
+        let current = load_change_by_id(connection, current_id)
+            .map_err(|error| match error {
+                IncomingChangeError::Storage => ApplyOneError::Storage,
+                _ => ApplyOneError::Corrupt,
+            })?
+            .ok_or(ApplyOneError::Corrupt)?;
+        let incoming = load_change_by_id(connection, incoming_id)
+            .map_err(|error| match error {
+                IncomingChangeError::Storage => ApplyOneError::Storage,
+                _ => ApplyOneError::Corrupt,
+            })?
+            .ok_or(ApplyOneError::Corrupt)?;
+        if (winner.id() == current.id() || winner.observes(&current))
+            && (winner.id() == incoming.id() || winner.observes(&incoming))
+        {
+            resolved.push(conflict_id);
+        }
+    }
+    drop(statement);
+    for conflict_id in resolved {
+        connection
+            .execute(
+                "UPDATE sync_conflicts SET status = 'resolved',
+             resolution_choice = 'superseded', resolved_by_change_id = ?2,
+             resolved_at = ?3 WHERE conflict_id = ?1 AND status = 'unresolved'",
+                params![conflict_id, winner.id().as_uuid().to_string(), now.get()],
+            )
+            .map_err(|_| ApplyOneError::Storage)?;
+    }
+    Ok(())
+}
+
 fn apply_persona_change(
     tx: &Transaction<'_>,
     change: &CanonicalChange,
@@ -900,6 +988,7 @@ fn apply_persona_change(
             now,
         )?;
     }
+    resolve_dominated_conflicts(tx, change, now, None)?;
     Ok(conflict)
 }
 
@@ -944,6 +1033,7 @@ fn apply_persona_default_change(
             now,
         )?;
     }
+    resolve_dominated_conflicts(tx, change, now, None)?;
     Ok(conflict)
 }
 
@@ -961,6 +1051,234 @@ fn mark_batch_pending(
         )
         .map_err(incoming_storage)?;
     Ok(())
+}
+
+fn conflict_storage(_: impl std::fmt::Debug) -> ConflictRepositoryError {
+    ConflictRepositoryError::Storage
+}
+
+fn conflict_corrupt(_: impl std::fmt::Debug) -> ConflictRepositoryError {
+    ConflictRepositoryError::Corrupt
+}
+
+fn conflict_value(
+    entity_kind: &str,
+    entity_id: &str,
+    payload: &[u8],
+) -> Result<PersonaConflictValue, ConflictRepositoryError> {
+    match entity_kind {
+        "persona" => {
+            let persona: Persona = serde_json::from_slice(payload).map_err(conflict_corrupt)?;
+            persona.validate().map_err(conflict_corrupt)?;
+            if persona.id.to_string() != entity_id {
+                return Err(ConflictRepositoryError::Corrupt);
+            }
+            Ok(PersonaConflictValue::Persona(persona))
+        }
+        "persona_default" => {
+            if entity_id != "application" {
+                return Err(ConflictRepositoryError::Corrupt);
+            }
+            let state: PersonaDefaultState =
+                serde_json::from_slice(payload).map_err(conflict_corrupt)?;
+            state.validate().map_err(conflict_corrupt)?;
+            Ok(PersonaConflictValue::Default(state))
+        }
+        _ => Err(ConflictRepositoryError::Corrupt),
+    }
+}
+
+fn conflict_candidate(
+    connection: &Connection,
+    change_id: Option<&str>,
+    entity_kind: &str,
+    entity_id: &str,
+    payload: &[u8],
+) -> Result<PersonaConflictCandidate, ConflictRepositoryError> {
+    let change = change_id
+        .map(|id| {
+            let id = SyncChangeId::from_uuid(Uuid::parse_str(id).map_err(conflict_corrupt)?);
+            load_change_by_id(connection, id)
+                .map_err(|error| match error {
+                    IncomingChangeError::Storage => ConflictRepositoryError::Storage,
+                    _ => ConflictRepositoryError::Corrupt,
+                })?
+                .ok_or(ConflictRepositoryError::Corrupt)
+        })
+        .transpose()?;
+    Ok(PersonaConflictCandidate {
+        change_id: change.as_ref().map(CanonicalChange::id),
+        device_id: change.as_ref().map(CanonicalChange::origin_device),
+        timestamp: change.as_ref().map(|value| value.timestamp().wall_time()),
+        value: conflict_value(entity_kind, entity_id, payload)?,
+    })
+}
+
+fn resolution_value(
+    selected: &PersonaConflictValue,
+    current: &PersonaConflictValue,
+    now: TimestampMillis,
+) -> Result<PersonaConflictValue, ConflictRepositoryError> {
+    match (selected, current) {
+        (PersonaConflictValue::Persona(selected), PersonaConflictValue::Persona(current)) => {
+            let mut resolved = selected.clone();
+            resolved.id = current.id;
+            resolved.revision = current.revision.next().map_err(conflict_corrupt)?;
+            resolved.created_at = current.created_at;
+            resolved.updated_at = now;
+            resolved.validate().map_err(conflict_corrupt)?;
+            Ok(PersonaConflictValue::Persona(resolved))
+        }
+        (PersonaConflictValue::Default(selected), PersonaConflictValue::Default(current)) => {
+            let mut resolved = selected.clone();
+            resolved.revision = current.revision.next().map_err(conflict_corrupt)?;
+            resolved.created_at = current.created_at;
+            resolved.updated_at = now;
+            resolved.validate().map_err(conflict_corrupt)?;
+            Ok(PersonaConflictValue::Default(resolved))
+        }
+        _ => Err(ConflictRepositoryError::Corrupt),
+    }
+}
+
+fn resolution_request(
+    entity_kind: &str,
+    current: &PersonaConflictValue,
+    resolved: &PersonaConflictValue,
+) -> Result<NewCanonicalChange, ConflictRepositoryError> {
+    let (entity, current_payload, resolved_payload) = match (current, resolved) {
+        (PersonaConflictValue::Persona(current), PersonaConflictValue::Persona(resolved)) => (
+            persona_sync_entity(current.id).map_err(conflict_corrupt)?,
+            canonical_persona_payload(current).map_err(conflict_corrupt)?,
+            canonical_persona_payload(resolved).map_err(conflict_corrupt)?,
+        ),
+        (PersonaConflictValue::Default(current), PersonaConflictValue::Default(resolved)) => (
+            persona_default_sync_entity().map_err(conflict_corrupt)?,
+            canonical_persona_default_payload(current).map_err(conflict_corrupt)?,
+            canonical_persona_default_payload(resolved).map_err(conflict_corrupt)?,
+        ),
+        _ => return Err(ConflictRepositoryError::Corrupt),
+    };
+    if entity.kind() != entity_kind {
+        return Err(ConflictRepositoryError::Corrupt);
+    }
+    NewCanonicalChange::new(
+        entity,
+        ChangeOperation::Update,
+        Some(current_payload.content_hash().clone()),
+        Some(resolved_payload),
+    )
+    .map_err(conflict_corrupt)
+}
+
+fn apply_resolution_value(
+    tx: &Transaction<'_>,
+    value: PersonaConflictValue,
+) -> Result<(), ConflictRepositoryError> {
+    let map_error = |error| match error {
+        RepositoryError::Storage => ConflictRepositoryError::Storage,
+        _ => ConflictRepositoryError::Conflict,
+    };
+    match value {
+        PersonaConflictValue::Persona(persona) => {
+            apply_synced_persona(tx, persona).map_err(map_error)?;
+        }
+        PersonaConflictValue::Default(state) => {
+            apply_synced_persona_default(tx, state).map_err(map_error)?;
+        }
+    }
+    Ok(())
+}
+
+fn materialized_conflict_value(
+    connection: &Connection,
+    entity_kind: &str,
+    entity_id: &str,
+) -> Result<PersonaConflictValue, ConflictRepositoryError> {
+    match entity_kind {
+        "persona" => {
+            let id = entity_id.parse::<PersonaId>().map_err(conflict_corrupt)?;
+            let persona = load_persona(connection, id)
+                .map_err(conflict_storage)?
+                .ok_or(ConflictRepositoryError::Conflict)?;
+            Ok(PersonaConflictValue::Persona(persona))
+        }
+        "persona_default" if entity_id == "application" => read_default(connection)
+            .map(PersonaConflictValue::Default)
+            .map_err(conflict_storage),
+        _ => Err(ConflictRepositoryError::Corrupt),
+    }
+}
+
+fn conflict_choice_name(choice: ConflictChoice) -> &'static str {
+    match choice {
+        ConflictChoice::Current => "current",
+        ConflictChoice::Other => "other",
+    }
+}
+
+fn map_local_conflict_error(error: LocalChangeJournalError) -> ConflictRepositoryError {
+    match error {
+        LocalChangeJournalError::Conflict => ConflictRepositoryError::Conflict,
+        _ => ConflictRepositoryError::Storage,
+    }
+}
+
+struct StoredConflictRecord {
+    entity_kind: String,
+    entity_id: String,
+    current_change_id: Option<String>,
+    incoming_change_id: String,
+    winning_side: String,
+    current_payload: Vec<u8>,
+    incoming_payload: Vec<u8>,
+    detected_at: i64,
+    status: String,
+    resolution_choice: Option<String>,
+    resolved_by_change_id: Option<String>,
+}
+
+impl StoredConflictRecord {
+    fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            entity_kind: row.get(0)?,
+            entity_id: row.get(1)?,
+            current_change_id: row.get(2)?,
+            incoming_change_id: row.get(3)?,
+            winning_side: row.get(4)?,
+            current_payload: row.get(5)?,
+            incoming_payload: row.get(6)?,
+            detected_at: row.get(7)?,
+            status: row.get(8)?,
+            resolution_choice: row.get(9)?,
+            resolved_by_change_id: row.get(10)?,
+        })
+    }
+}
+
+fn conflict_candidates(
+    connection: &Connection,
+    record: &StoredConflictRecord,
+) -> Result<(PersonaConflictCandidate, PersonaConflictCandidate), ConflictRepositoryError> {
+    let prior = conflict_candidate(
+        connection,
+        record.current_change_id.as_deref(),
+        &record.entity_kind,
+        &record.entity_id,
+        &record.current_payload,
+    )?;
+    let incoming = conflict_candidate(
+        connection,
+        Some(&record.incoming_change_id),
+        &record.entity_kind,
+        &record.entity_id,
+        &record.incoming_payload,
+    )?;
+    match record.winning_side.as_str() {
+        "current" => Ok((prior, incoming)),
+        "incoming" => Ok((incoming, prior)),
+        _ => Err(ConflictRepositoryError::Corrupt),
+    }
 }
 
 impl LocalChangeJournal for Database {
@@ -1116,6 +1434,151 @@ impl LocalChangeJournal for Database {
     ) -> Result<CausalFrontier, LocalChangeJournalError> {
         let connection = self.connection().map_err(storage)?;
         load_peer_frontier(&connection, peer)
+    }
+}
+
+impl PersonaConflictRepository for Database {
+    fn unresolved_persona_conflicts(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<PersonaConflict>, ConflictRepositoryError> {
+        let connection = self.connection().map_err(conflict_storage)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT entity_kind, entity_id, current_change_id,
+                        incoming_change_id, winning_side, current_payload,
+                        incoming_payload, detected_at, status,
+                        resolution_choice, resolved_by_change_id, conflict_id
+                 FROM sync_conflicts WHERE status = 'unresolved'
+                 ORDER BY detected_at DESC, conflict_id
+                 LIMIT ?1",
+            )
+            .map_err(conflict_storage)?;
+        let rows = statement
+            .query_map(
+                [i64::try_from(limit.min(MAX_UNRESOLVED_CONFLICTS)).map_err(conflict_corrupt)?],
+                |row| {
+                    Ok((
+                        StoredConflictRecord::from_row(row)?,
+                        row.get::<_, String>(11)?,
+                    ))
+                },
+            )
+            .map_err(conflict_storage)?;
+        let mut conflicts = Vec::new();
+        for row in rows {
+            let (record, id) = row.map_err(conflict_storage)?;
+            let (current, other) = conflict_candidates(&connection, &record)?;
+            conflicts.push(PersonaConflict {
+                id: id.parse().map_err(conflict_corrupt)?,
+                entity_kind: record.entity_kind,
+                entity_id: record.entity_id,
+                detected_at: TimestampMillis::new(record.detected_at),
+                current,
+                other,
+            });
+        }
+        Ok(conflicts)
+    }
+
+    fn resolve_persona_conflict(
+        &self,
+        conflict_id: OperationId,
+        expected_current_change: Option<SyncChangeId>,
+        choice: ConflictChoice,
+        resolution_id: OperationId,
+        now: TimestampMillis,
+    ) -> Result<CanonicalChange, ConflictRepositoryError> {
+        let mut connection = self.connection().map_err(conflict_storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(conflict_storage)?;
+        let record = transaction
+            .query_row(
+                "SELECT entity_kind, entity_id, current_change_id,
+                        incoming_change_id, winning_side, current_payload,
+                        incoming_payload, detected_at, status,
+                        resolution_choice, resolved_by_change_id
+                 FROM sync_conflicts WHERE conflict_id = ?1",
+                [conflict_id.to_string()],
+                StoredConflictRecord::from_row,
+            )
+            .optional()
+            .map_err(conflict_storage)?
+            .ok_or(ConflictRepositoryError::NotFound)?;
+        let (current, other) = conflict_candidates(&transaction, &record)?;
+        if current.change_id != expected_current_change {
+            return Err(ConflictRepositoryError::Conflict);
+        }
+        if record.status == "resolved" {
+            let resolved_id = record
+                .resolved_by_change_id
+                .ok_or(ConflictRepositoryError::Corrupt)?;
+            if record.resolution_choice.as_deref() != Some(conflict_choice_name(choice)) {
+                return Err(ConflictRepositoryError::Conflict);
+            }
+            let change = load_local_change_in(&transaction, resolution_id)
+                .map_err(map_local_conflict_error)?
+                .ok_or(ConflictRepositoryError::Conflict)?;
+            if change.id().as_uuid().to_string() != resolved_id {
+                return Err(ConflictRepositoryError::Conflict);
+            }
+            transaction.commit().map_err(conflict_storage)?;
+            return Ok(change);
+        }
+        if record.status != "unresolved"
+            || record.resolution_choice.is_some()
+            || record.resolved_by_change_id.is_some()
+        {
+            return Err(ConflictRepositoryError::Corrupt);
+        }
+        let materialized =
+            materialized_conflict_value(&transaction, &record.entity_kind, &record.entity_id)?;
+        if materialized != current.value {
+            return Err(ConflictRepositoryError::Conflict);
+        }
+        let selected = match choice {
+            ConflictChoice::Current => &current.value,
+            ConflictChoice::Other => &other.value,
+        };
+        let resolved = resolution_value(selected, &materialized, now)?;
+        let request = resolution_request(&record.entity_kind, &materialized, &resolved)?;
+        let admission = record_local_change_in_skipping(
+            &transaction,
+            resolution_id,
+            &request,
+            now,
+            Some(conflict_id),
+        )
+        .map_err(map_local_conflict_error)?;
+        if !admission.created {
+            return Err(ConflictRepositoryError::Conflict);
+        }
+        apply_resolution_value(&transaction, resolved)?;
+        let changed = transaction
+            .execute(
+                "UPDATE sync_conflicts SET status = 'resolved',
+                   resolution_choice = ?2, resolved_by_change_id = ?3,
+                   resolved_at = ?4 WHERE conflict_id = ?1 AND status = 'unresolved'",
+                params![
+                    conflict_id.to_string(),
+                    conflict_choice_name(choice),
+                    admission.change.id().as_uuid().to_string(),
+                    now.get()
+                ],
+            )
+            .map_err(conflict_storage)?;
+        if changed != 1 {
+            return Err(ConflictRepositoryError::Conflict);
+        }
+        resolve_dominated_conflicts(&transaction, &admission.change, now, None).map_err(
+            |error| match error {
+                ApplyOneError::Storage => ConflictRepositoryError::Storage,
+                _ => ConflictRepositoryError::Corrupt,
+            },
+        )?;
+        transaction.commit().map_err(conflict_storage)?;
+        Ok(admission.change)
     }
 }
 
@@ -1831,12 +2294,43 @@ mod tests {
         )
         .expect("restore source persona");
         assert_ne!(target_restored, source_restored);
-        let (&source_device, _) = source
+        let source_device = initial.changes[0].origin_device();
+        let (&target_device, _) = target
             .local_frontier()
-            .expect("source frontier")
+            .expect("target frontier")
             .iter()
-            .next()
-            .expect("source device");
+            .find(|(device, _)| {
+                !initial
+                    .changes
+                    .iter()
+                    .any(|change| change.origin_device() == **device)
+            })
+            .expect("target device");
+        let target_restore_batch = target
+            .outbound_changes(
+                &CausalFrontier::from([(source_device, 6)]),
+                MAX_OUTBOUND_CHANGES,
+                MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("target restore batch");
+        assert_eq!(target_restore_batch.changes.len(), 1);
+        let target_restore_batch_id = OperationId::new();
+        source
+            .stage_incoming_batch(
+                peer,
+                target_restore_batch_id,
+                &canonical_batch_hash(&target_restore_batch.changes),
+                &target_restore_batch.changes,
+                TimestampMillis::new(100),
+            )
+            .expect("stage target restore");
+        assert_eq!(
+            source
+                .apply_incoming_batch(target_restore_batch_id, TimestampMillis::new(101))
+                .expect("apply target restore")
+                .conflicts,
+            1
+        );
         let conflict_batch = source
             .outbound_changes(
                 &CausalFrontier::from([(source_device, 5)]),
@@ -1862,7 +2356,185 @@ mod tests {
         assert_eq!(conflict.conflicts, 1);
         assert_eq!(
             PersonaRepository::get(&target, persona_id).expect("target winner"),
-            Some(source_restored)
+            Some(source_restored.clone())
+        );
+
+        let target_conflicts = target
+            .unresolved_persona_conflicts(MAX_UNRESOLVED_CONFLICTS)
+            .expect("target conflicts");
+        assert_eq!(target_conflicts.len(), 1);
+        assert_eq!(
+            target.resolve_persona_conflict(
+                target_conflicts[0].id,
+                None,
+                ConflictChoice::Other,
+                OperationId::new(),
+                TimestampMillis::new(129),
+            ),
+            Err(ConflictRepositoryError::Conflict)
+        );
+        let first_resolution_id = OperationId::new();
+        let first_resolution = target
+            .resolve_persona_conflict(
+                target_conflicts[0].id,
+                target_conflicts[0].current.change_id,
+                ConflictChoice::Other,
+                first_resolution_id,
+                TimestampMillis::new(130),
+            )
+            .expect("choose other persona");
+        drop(target);
+        let target = Database::open(&target_path).expect("reopen resolved target");
+        assert_eq!(
+            target
+                .resolve_persona_conflict(
+                    target_conflicts[0].id,
+                    target_conflicts[0].current.change_id,
+                    ConflictChoice::Other,
+                    first_resolution_id,
+                    TimestampMillis::new(999),
+                )
+                .expect("replay persona resolution"),
+            first_resolution
+        );
+        assert_eq!(
+            target.resolve_persona_conflict(
+                target_conflicts[0].id,
+                target_conflicts[0].current.change_id,
+                ConflictChoice::Current,
+                first_resolution_id,
+                TimestampMillis::new(999),
+            ),
+            Err(ConflictRepositoryError::Conflict)
+        );
+        assert!(
+            target
+                .unresolved_persona_conflicts(MAX_UNRESOLVED_CONFLICTS)
+                .expect("resolved target conflicts")
+                .is_empty()
+        );
+        let first_resolution_batch = target
+            .outbound_changes(
+                &CausalFrontier::from([(source_device, 6), (target_device, 1)]),
+                MAX_OUTBOUND_CHANGES,
+                MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("persona resolution batch");
+        assert_eq!(first_resolution_batch.changes, vec![first_resolution]);
+        let first_resolution_batch_id = OperationId::new();
+        source
+            .stage_incoming_batch(
+                peer,
+                first_resolution_batch_id,
+                &canonical_batch_hash(&first_resolution_batch.changes),
+                &first_resolution_batch.changes,
+                TimestampMillis::new(131),
+            )
+            .expect("stage persona resolution");
+        source
+            .apply_incoming_batch(first_resolution_batch_id, TimestampMillis::new(132))
+            .expect("apply persona resolution");
+        assert!(
+            source
+                .unresolved_persona_conflicts(MAX_UNRESOLVED_CONFLICTS)
+                .expect("superseded source conflicts")
+                .is_empty()
+        );
+
+        PersonaRepository::set_default(
+            &target,
+            persona_id,
+            Revision::new(3),
+            TimestampMillis::new(200),
+        )
+        .expect("set target default");
+        PersonaRepository::set_default(
+            &source,
+            persona_id,
+            Revision::new(3),
+            TimestampMillis::new(210),
+        )
+        .expect("set source default");
+        let target_default_batch = target
+            .outbound_changes(
+                &CausalFrontier::from([(source_device, 6), (target_device, 2)]),
+                MAX_OUTBOUND_CHANGES,
+                MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("target default batch");
+        let target_default_batch_id = OperationId::new();
+        source
+            .stage_incoming_batch(
+                peer,
+                target_default_batch_id,
+                &canonical_batch_hash(&target_default_batch.changes),
+                &target_default_batch.changes,
+                TimestampMillis::new(211),
+            )
+            .expect("stage target default");
+        source
+            .apply_incoming_batch(target_default_batch_id, TimestampMillis::new(212))
+            .expect("apply target default");
+        let source_default_batch = source
+            .outbound_changes(
+                &CausalFrontier::from([(source_device, 6), (target_device, 2)]),
+                MAX_OUTBOUND_CHANGES,
+                MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("source default batch");
+        let source_default_batch_id = OperationId::new();
+        target
+            .stage_incoming_batch(
+                peer,
+                source_default_batch_id,
+                &canonical_batch_hash(&source_default_batch.changes),
+                &source_default_batch.changes,
+                TimestampMillis::new(213),
+            )
+            .expect("stage source default");
+        target
+            .apply_incoming_batch(source_default_batch_id, TimestampMillis::new(214))
+            .expect("apply source default");
+        let default_conflicts = target
+            .unresolved_persona_conflicts(MAX_UNRESOLVED_CONFLICTS)
+            .expect("default conflicts");
+        assert_eq!(default_conflicts.len(), 1);
+        let second_resolution_id = OperationId::new();
+        let second_resolution = target
+            .resolve_persona_conflict(
+                default_conflicts[0].id,
+                default_conflicts[0].current.change_id,
+                ConflictChoice::Current,
+                second_resolution_id,
+                TimestampMillis::new(220),
+            )
+            .expect("choose current default");
+        let second_resolution_batch = target
+            .outbound_changes(
+                &CausalFrontier::from([(source_device, 7), (target_device, 3)]),
+                MAX_OUTBOUND_CHANGES,
+                MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("default resolution batch");
+        assert_eq!(second_resolution_batch.changes, vec![second_resolution]);
+        let second_resolution_batch_id = OperationId::new();
+        source
+            .stage_incoming_batch(
+                peer,
+                second_resolution_batch_id,
+                &canonical_batch_hash(&second_resolution_batch.changes),
+                &second_resolution_batch.changes,
+                TimestampMillis::new(221),
+            )
+            .expect("stage default resolution");
+        source
+            .apply_incoming_batch(second_resolution_batch_id, TimestampMillis::new(222))
+            .expect("apply default resolution");
+        assert!(
+            source
+                .unresolved_persona_conflicts(MAX_UNRESOLVED_CONFLICTS)
+                .expect("resolved source default conflict")
+                .is_empty()
         );
 
         let future_origin = SyncDeviceId::new();
@@ -1929,15 +2601,21 @@ mod tests {
             IncomingBatchState::Pending
         );
 
-        assert_eq!(
-            target
-                .connection()
-                .expect("connection")
-                .query_row("SELECT count(*) FROM sync_conflicts", [], |row| row
-                    .get::<_, i64>(0))
-                .expect("conflict count"),
-            1
-        );
+        let resolution_choices = target
+            .connection()
+            .expect("connection")
+            .prepare(
+                "SELECT resolution_choice
+                 FROM sync_conflicts
+                 WHERE status = 'resolved'
+                 ORDER BY resolution_choice ASC",
+            )
+            .expect("prepare resolved conflicts")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query resolved conflicts")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect resolved conflicts");
+        assert_eq!(resolution_choices, vec!["current", "other"]);
         drop(target);
         drop(source);
         std::fs::remove_file(target_path).expect("remove target database");
