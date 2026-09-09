@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AudioProvider, AudioProviderConfig, AudioProviderVerificationError, AudioProviderVerifier,
-    DiscoveredVoiceDraft, RuntimeSynthesis, RuntimeVoiceDesignPreview, SynthesisRequest,
-    TtsRuntime, TtsRuntimeError, VoiceDesignRequest, VoiceDesignRuntime, VoiceDesignRuntimeError,
-    VoiceDiscovery, VoiceDiscoveryError,
+    CreatedVoice, DiscoveredVoiceDraft, RuntimeSynthesis, RuntimeVoiceDesignPreview,
+    SynthesisRequest, TtsRuntime, TtsRuntimeError, VoiceCreationRequest, VoiceDesignRequest,
+    VoiceDesignRuntime, VoiceDesignRuntimeError, VoiceDiscovery, VoiceDiscoveryError,
 };
 
 const ENDPOINT: &str = "https://api.elevenlabs.io";
@@ -67,6 +67,20 @@ struct ElevenLabsVoiceDesignPreview {
     audio_base_64: String,
     duration_secs: f64,
     media_type: String,
+}
+
+#[derive(Serialize)]
+struct ElevenLabsVoiceCreationRequest<'a> {
+    voice_name: &'a str,
+    generated_voice_id: &'a str,
+    voice_description: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    labels: Option<BTreeMap<String, String>>,
+}
+
+#[derive(Deserialize)]
+struct ElevenLabsVoiceCreationResponse {
+    voice_id: String,
 }
 
 #[derive(Deserialize)]
@@ -324,6 +338,63 @@ impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
             })
             .collect()
     }
+
+    async fn create_voice(
+        &self,
+        request: &VoiceCreationRequest,
+        credential: &SecretValue,
+        cancellation: &CancellationToken,
+    ) -> Result<CreatedVoice, VoiceDesignRuntimeError> {
+        request
+            .validate()
+            .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+        let auth = JsonAuth::Header {
+            name: HeaderName::new("xi-api-key").map_err(|_| VoiceDesignRuntimeError::Rejected)?,
+            value: credential
+                .with(|value| SecretValue::new(value.to_owned()))
+                .map_err(|_| VoiceDesignRuntimeError::Rejected)?,
+        };
+        let body = serde_json::to_vec(&ElevenLabsVoiceCreationRequest {
+            voice_name: &request.voice_name,
+            generated_voice_id: &request.generated_voice_id,
+            voice_description: &request.voice_description,
+            labels: None,
+        })
+        .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+        if cancellation.is_cancelled() {
+            return Err(VoiceDesignRuntimeError::Cancelled);
+        }
+        let response = tokio::select! {
+            response = self.network.post_json(
+                &self.endpoint,
+                "/v1/text-to-voice",
+                body,
+                &[],
+                auth,
+                Vec::new(),
+                RequestPolicy::GENERATION,
+            ) => response.map_err(map_voice_design_network)?,
+            () = cancellation.cancelled() => return Err(VoiceDesignRuntimeError::Cancelled),
+        };
+        if !(200..300).contains(&response.status) {
+            return Err(match response.status {
+                408 | 429 | 500..=599 => VoiceDesignRuntimeError::Unavailable,
+                _ => VoiceDesignRuntimeError::Rejected,
+            });
+        }
+        if cancellation.is_cancelled() {
+            return Err(VoiceDesignRuntimeError::Cancelled);
+        }
+        let response: ElevenLabsVoiceCreationResponse = serde_json::from_slice(&response.body)
+            .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+        let created = CreatedVoice {
+            voice_id: response.voice_id,
+        };
+        created
+            .validate()
+            .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+        Ok(created)
+    }
 }
 
 fn valid_path_segment(value: &str) -> bool {
@@ -472,6 +543,15 @@ mod tests {
         }
     }
 
+    fn creation_request() -> VoiceCreationRequest {
+        VoiceCreationRequest {
+            provider: request("voice").provider,
+            voice_name: "Storyteller".into(),
+            generated_voice_id: "generated-1".into(),
+            voice_description: "A warm and expressive narrator".into(),
+        }
+    }
+
     #[tokio::test]
     async fn sends_legacy_endpoint_auth_query_and_payload() {
         let (endpoint, captured) =
@@ -574,6 +654,49 @@ mod tests {
         assert_eq!(value["model_id"], "eleven_ttv_v3");
         assert_eq!(value["num_previews"], 1);
         assert!(value.get("loudness").is_none());
+    }
+
+    #[tokio::test]
+    async fn creates_voice_from_generated_preview_with_legacy_payload() {
+        let body = br#"{"voice_id":"created-voice-1","name":"Storyteller"}"#;
+        let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len())
+            .into_bytes()
+            .into_iter()
+            .chain(body.iter().copied())
+            .collect();
+        let (endpoint, captured) = server(response).await;
+        let runtime = ElevenLabsTtsRuntime::with_endpoint(
+            Arc::new(JsonClient::new().expect("network client")),
+            endpoint,
+        );
+        let created = runtime
+            .create_voice(
+                &creation_request(),
+                &SecretValue::new("voice-create-canary").expect("secret"),
+                &CancellationToken::new(),
+            )
+            .await
+            .expect("voice creation");
+        assert_eq!(created.voice_id, "created-voice-1");
+
+        let captured = captured.lock().expect("captured request");
+        let split = captured
+            .windows(4)
+            .position(|value| value == b"\r\n\r\n")
+            .expect("request headers");
+        let headers = String::from_utf8_lossy(&captured[..split]);
+        assert!(headers.starts_with("POST /v1/text-to-voice HTTP/1.1"));
+        assert!(
+            headers
+                .to_ascii_lowercase()
+                .contains("xi-api-key: voice-create-canary")
+        );
+        let value: serde_json::Value =
+            serde_json::from_slice(&captured[split + 4..]).expect("request JSON");
+        assert_eq!(value["voice_name"], "Storyteller");
+        assert_eq!(value["generated_voice_id"], "generated-1");
+        assert_eq!(value["voice_description"], "A warm and expressive narrator");
+        assert!(value.get("labels").is_none());
     }
 
     #[tokio::test]

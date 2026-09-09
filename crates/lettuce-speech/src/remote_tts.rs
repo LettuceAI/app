@@ -6,10 +6,10 @@ use lettuce_network::JsonClient;
 use lettuce_settings::SecretValue;
 
 use crate::{
-    AudioProviderConfig, ElevenLabsTtsRuntime, FishSpeechTtsRuntime, FishTtsRuntime,
+    AudioProviderConfig, CreatedVoice, ElevenLabsTtsRuntime, FishSpeechTtsRuntime, FishTtsRuntime,
     GeminiTtsRuntime, OpenAiCompatibleTtsRuntime, RuntimeSynthesis, RuntimeVoiceDesignPreview,
-    SynthesisRequest, TtsRuntime, TtsRuntimeError, VoiceDesignRequest, VoiceDesignRuntime,
-    VoiceDesignRuntimeError,
+    SynthesisRequest, TtsRuntime, TtsRuntimeError, VoiceCreationRequest, VoiceDesignRequest,
+    VoiceDesignRuntime, VoiceDesignRuntimeError,
 };
 
 pub struct RemoteTtsRuntime {
@@ -65,6 +65,17 @@ impl VoiceDesignRuntime for RemoteTtsRuntime {
     ) -> Result<Vec<RuntimeVoiceDesignPreview>, VoiceDesignRuntimeError> {
         self.voice_design
             .design_voice(request, credential, cancellation)
+            .await
+    }
+
+    async fn create_voice(
+        &self,
+        request: &VoiceCreationRequest,
+        credential: &SecretValue,
+        cancellation: &CancellationToken,
+    ) -> Result<CreatedVoice, VoiceDesignRuntimeError> {
+        self.voice_design
+            .create_voice(request, credential, cancellation)
             .await
     }
 }
@@ -135,6 +146,17 @@ mod tests {
                 duration_secs: 1.0,
                 declared_mime_type: "audio/mpeg".into(),
             }])
+        }
+
+        async fn create_voice(
+            &self,
+            _: &VoiceCreationRequest,
+            _: &SecretValue,
+            _: &CancellationToken,
+        ) -> Result<CreatedVoice, VoiceDesignRuntimeError> {
+            Ok(CreatedVoice {
+                voice_id: self.0.into(),
+            })
         }
     }
 
@@ -226,6 +248,20 @@ mod tests {
             .await
             .expect("routed voice design");
         assert_eq!(designed[0].generated_voice_id, "designed");
+        let created = runtime
+            .create_voice(
+                &VoiceCreationRequest {
+                    provider: design_request.provider,
+                    voice_name: "Storyteller".into(),
+                    generated_voice_id: "generated-1".into(),
+                    voice_description: "A warm and expressive narrator".into(),
+                },
+                &SecretValue::new("secret").expect("secret"),
+                &CancellationToken::new(),
+            )
+            .await
+            .expect("routed voice creation");
+        assert_eq!(created.voice_id, "designed");
         assert!(matches!(
             runtime
                 .synthesize(

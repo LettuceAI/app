@@ -1,9 +1,9 @@
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_settings::{SecretPurpose, SecretStore, SecretStoreError};
 use lettuce_speech::{
-    AudioProviderConfig, TtsConfigurationRepository, TtsConfigurationRepositoryError,
-    VoiceDesignAudioError, VoiceDesignPreview, VoiceDesignPreviewSink, VoiceDesignRequest,
-    VoiceDesignRuntime, VoiceDesignRuntimeError, VoiceDesignValidationError,
+    AudioProviderConfig, CreatedVoice, TtsConfigurationRepository, TtsConfigurationRepositoryError,
+    VoiceCreationRequest, VoiceDesignAudioError, VoiceDesignPreview, VoiceDesignPreviewSink,
+    VoiceDesignRequest, VoiceDesignRuntime, VoiceDesignRuntimeError, VoiceDesignValidationError,
 };
 use lettuce_types::{AudioProviderId, RequestId, TimestampMillis};
 
@@ -16,6 +16,14 @@ pub struct VoiceDesignPreviewDraft {
     pub num_previews: Option<u32>,
     pub expires_at: TimestampMillis,
     pub created_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoiceCreationDraft {
+    pub provider_id: AudioProviderId,
+    pub voice_name: String,
+    pub generated_voice_id: String,
+    pub voice_description: String,
 }
 
 #[derive(Debug)]
@@ -62,6 +70,30 @@ where
             num_previews: draft.num_previews,
             expires_at: draft.expires_at,
             created_at: draft.created_at,
+        };
+        request.validate()?;
+        Ok(request)
+    }
+
+    pub fn admit_creation(
+        &self,
+        draft: VoiceCreationDraft,
+    ) -> Result<VoiceCreationRequest, TtsVoiceDesignError> {
+        let provider = self
+            .repository
+            .get_audio_provider(draft.provider_id)
+            .map_err(TtsVoiceDesignError::Configuration)?
+            .ok_or(TtsVoiceDesignError::Configuration(
+                TtsConfigurationRepositoryError::NotFound,
+            ))?;
+        if !matches!(provider.config, AudioProviderConfig::Elevenlabs) {
+            return Err(TtsVoiceDesignError::InvalidInput);
+        }
+        let request = VoiceCreationRequest {
+            provider,
+            voice_name: draft.voice_name.trim().to_owned(),
+            generated_voice_id: draft.generated_voice_id.trim().to_owned(),
+            voice_description: draft.voice_description.trim().to_owned(),
         };
         request.validate()?;
         Ok(request)
@@ -128,6 +160,40 @@ where
         }
         Ok(previews)
     }
+
+    pub async fn create_voice<E: VoiceDesignRuntime + ?Sized>(
+        &self,
+        request: &VoiceCreationRequest,
+        runtime: &E,
+        cancellation: &CancellationToken,
+    ) -> Result<CreatedVoice, TtsVoiceDesignError> {
+        request.validate()?;
+        if cancellation.is_cancelled() {
+            return Err(TtsVoiceDesignError::Runtime(
+                VoiceDesignRuntimeError::Cancelled,
+            ));
+        }
+        let reference = request
+            .provider
+            .api_key_ref
+            .ok_or(TtsVoiceDesignError::InvalidInput)?;
+        let credential = self
+            .secrets
+            .load(
+                &reference,
+                &SecretPurpose::AudioApiKey {
+                    owner: request.provider.secret_owner_id,
+                },
+            )
+            .await
+            .map_err(TtsVoiceDesignError::SecretStore)?;
+        let created = runtime
+            .create_voice(request, &credential, cancellation)
+            .await
+            .map_err(TtsVoiceDesignError::Runtime)?;
+        created.validate()?;
+        Ok(created)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -177,6 +243,20 @@ mod tests {
                 duration_secs: 2.5,
                 declared_mime_type: "audio/mpeg".into(),
             }])
+        }
+
+        async fn create_voice(
+            &self,
+            request: &VoiceCreationRequest,
+            credential: &SecretValue,
+            _: &CancellationToken,
+        ) -> Result<CreatedVoice, VoiceDesignRuntimeError> {
+            assert_eq!(request.voice_name, "Storyteller");
+            assert_eq!(request.generated_voice_id, "generated-voice-1");
+            credential.with(|value| assert_eq!(value, "voice-design-secret-canary"));
+            Ok(CreatedVoice {
+                voice_id: "created-voice-1".into(),
+            })
         }
     }
 
@@ -253,6 +333,19 @@ mod tests {
                 expires_at: TimestampMillis::new(10_000)
             }
         );
+        let creation = coordinator
+            .admit_creation(VoiceCreationDraft {
+                provider_id: provider.id,
+                voice_name: "  Storyteller  ".into(),
+                generated_voice_id: "  generated-voice-1  ".into(),
+                voice_description: "  A warm and expressive narrator  ".into(),
+            })
+            .expect("creation admission");
+        let created = coordinator
+            .create_voice(&creation, &Runtime, &CancellationToken::new())
+            .await
+            .expect("created voice");
+        assert_eq!(created.voice_id, "created-voice-1");
 
         let wrong_provider = TtsConfigurationCoordinator::new(&database, &secrets)
             .create_audio_provider(

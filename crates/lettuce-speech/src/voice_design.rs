@@ -108,6 +108,51 @@ pub struct VoiceDesignPreview {
     pub completed_at: TimestampMillis,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VoiceCreationRequest {
+    pub provider: AudioProvider,
+    pub voice_name: String,
+    pub generated_voice_id: String,
+    pub voice_description: String,
+}
+
+impl VoiceCreationRequest {
+    pub fn validate(&self) -> Result<(), VoiceDesignValidationError> {
+        self.provider
+            .validate()
+            .map_err(|_| VoiceDesignValidationError::InvalidRequest)?;
+        if !matches!(self.provider.config, AudioProviderConfig::Elevenlabs)
+            || self.provider.api_key_ref.is_none()
+            || !valid_trimmed_scalars(&self.voice_name, 1, 256)
+            || !valid_identifier(&self.generated_voice_id)
+            || !valid_trimmed_scalars(
+                &self.voice_description,
+                MIN_DESCRIPTION_SCALARS,
+                MAX_DESCRIPTION_SCALARS,
+            )
+        {
+            return Err(VoiceDesignValidationError::InvalidRequest);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatedVoice {
+    pub voice_id: String,
+}
+
+impl CreatedVoice {
+    pub fn validate(&self) -> Result<(), VoiceDesignValidationError> {
+        if !valid_identifier(&self.voice_id) {
+            return Err(VoiceDesignValidationError::InvalidResult);
+        }
+        Ok(())
+    }
+}
+
 impl VoiceDesignPreview {
     pub fn validate_for(
         &self,
@@ -136,6 +181,13 @@ pub trait VoiceDesignRuntime: Send + Sync {
         credential: &SecretValue,
         cancellation: &CancellationToken,
     ) -> Result<Vec<RuntimeVoiceDesignPreview>, VoiceDesignRuntimeError>;
+
+    async fn create_voice(
+        &self,
+        request: &VoiceCreationRequest,
+        credential: &SecretValue,
+        cancellation: &CancellationToken,
+    ) -> Result<CreatedVoice, VoiceDesignRuntimeError>;
 }
 
 pub trait VoiceDesignPreviewSink: Send + Sync {
@@ -277,6 +329,21 @@ mod tests {
         assert_eq!(
             request.validate(),
             Err(VoiceDesignValidationError::InvalidRequest)
+        );
+
+        let creation = VoiceCreationRequest {
+            provider: self::request().provider,
+            voice_name: "Storyteller".into(),
+            generated_voice_id: "generated-voice-1".into(),
+            voice_description: "A warm and expressive narrator".into(),
+        };
+        assert_eq!(creation.validate(), Ok(()));
+        assert_eq!(
+            CreatedVoice {
+                voice_id: "created-voice-1".into()
+            }
+            .validate(),
+            Ok(())
         );
     }
 }

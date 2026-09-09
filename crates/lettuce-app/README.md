@@ -927,10 +927,13 @@ It passes cancellation into the shared remote runtime and sends decoded preview
 bytes directly to the existing media sink. Each result retains the generated
 voice ID, finite duration, detected MP3 MIME, content hash, size and temporary
 managed asset identity; provider base64 and plaintext credentials never cross
-that boundary. The generated ID remains available for the following saved-voice
-creation slice. Voice-design preview requests are interactive and transient;
+that boundary. Voice-design preview requests are interactive and transient;
 their audio assets carry an admitted expiry instead of adding another durable
-job or request table.
+job or request table. The same coordinator admits saved-voice creation from one
+generated preview, resolves the same scoped secret, calls the remote runtime and
+returns the validated provider voice ID. The active legacy flow then passes that
+ID to the existing user-voice configuration save; it did not refresh the
+provider cache, so this boundary does not add an unrelated refresh.
 
 The TTS synthesis coordinator admits an idempotent interactive
 `SpeechSynthesize` job and persists its provider, text, voice, prompt and output

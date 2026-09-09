@@ -140,7 +140,17 @@ the two catalogued design models when supplied, and at most three previews.
 This deliberately rejects the legacy editor's empty description before a
 billable request. The contract is documented by the official
 [ElevenLabs voice-design API](https://elevenlabs.io/docs/api-reference/text-to-voice/design).
-Saved-voice creation remains the next TTS slice.
+
+The same typed runtime creates the selected preview through `POST
+/v1/text-to-voice`. It preserves the authored voice name, generated preview ID,
+description, omitted labels and scoped `xi-api-key`, and returns only a validated
+provider voice ID from the private response DTO. Creation requires the current
+20-to-1,000-character description contract and the local user-voice name bound
+before the billable call. Provider errors remain redacted and use the existing
+retryable HTTP classification. The wire contract follows the official
+[ElevenLabs create-voice API](https://elevenlabs.io/docs/api-reference/text-to-voice/create/).
+Persisting the returned ID as a user voice remains owned by the existing TTS
+configuration boundary.
 
 `FishTtsRuntime` preserves the hosted Fish Audio synthesis request, including
 bearer authentication, the selected model header and reference voice, MP3 at
@@ -195,7 +205,7 @@ preview URL and provider labels, with category and description overwriting the
 same legacy label keys. Duplicate IDs, oversized fields and paginated partial
 responses reject before persistence, correcting the legacy behavior that could
 replace a complete cache with an incomplete first page. The orphan provider
-search command and saved-voice creation remain separate operations.
+search command remains separate.
 
 Configured hosted Fish discovery preserves the legacy authenticated `GET /model`
 request for up to 100 account models with `sort_by=created_at`. It keeps TTS and
