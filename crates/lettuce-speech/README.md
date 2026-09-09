@@ -184,3 +184,11 @@ same legacy label keys. Duplicate IDs, oversized fields and paginated partial
 responses reject before persistence, correcting the legacy behavior that could
 replace a complete cache with an incomplete first page. Public-library search,
 voice design and saved-voice creation remain separate operations.
+
+Configured hosted Fish discovery preserves the legacy authenticated `GET /model`
+request for up to 100 account models with `sort_by=created_at`. It keeps TTS and
+missing-type models, excludes singing-conversion and failed models, and maps
+state, tags, languages, trimmed description, library category and Fish engine
+labels. A response with `has_more` rejects before cache replacement so the first
+page cannot erase older configured voices. The wire contract follows the
+official [Fish Audio model-list API](https://docs.fish.audio/api-reference/endpoint/model/list-models).

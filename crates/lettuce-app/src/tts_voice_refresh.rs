@@ -49,7 +49,10 @@ where
             .ok_or(TtsVoiceRefreshError::Configuration(
                 TtsConfigurationRepositoryError::NotFound,
             ))?;
-        if !matches!(&provider.config, AudioProviderConfig::Elevenlabs) {
+        if !matches!(
+            &provider.config,
+            AudioProviderConfig::Elevenlabs | AudioProviderConfig::FishTts
+        ) {
             return Err(TtsVoiceRefreshError::InvalidInput);
         }
         let reference = provider
@@ -115,7 +118,7 @@ mod tests {
             _: &AudioProvider,
             credential: &SecretValue,
         ) -> Result<Vec<DiscoveredVoiceDraft>, VoiceDiscoveryError> {
-            credential.with(|value| assert_eq!(value, "eleven-secret-canary"));
+            credential.with(|value| assert_eq!(value, "configured-secret-canary"));
             self.outcome.clone()
         }
     }
@@ -130,14 +133,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn refreshes_with_scoped_secret_and_retains_cache_on_fetch_failure() {
+    async fn refreshes_supported_providers_and_retains_cache_on_fetch_failure() {
         let database = Database::open_in_memory().expect("database");
         let secrets = InMemorySecretStore::new();
         let provider = TtsConfigurationCoordinator::new(&database, &secrets)
             .create_audio_provider(
                 "ElevenLabs".into(),
                 AudioProviderConfig::Elevenlabs,
-                Some(SecretValue::new("eleven-secret-canary").expect("secret")),
+                Some(SecretValue::new("configured-secret-canary").expect("secret")),
                 TimestampMillis::new(1),
             )
             .await
@@ -173,6 +176,29 @@ mod tests {
         assert_eq!(
             coordinator.list(provider.id).expect("cached voices"),
             voices
+        );
+        let fish = TtsConfigurationCoordinator::new(&database, &secrets)
+            .create_audio_provider(
+                "Fish Audio".into(),
+                AudioProviderConfig::FishTts,
+                Some(SecretValue::new("configured-secret-canary").expect("secret")),
+                TimestampMillis::new(4),
+            )
+            .await
+            .expect("Fish provider");
+        assert_eq!(
+            coordinator
+                .refresh(
+                    fish.id,
+                    &Discovery {
+                        outcome: Ok(vec![draft("fish-voice")]),
+                    },
+                    TimestampMillis::new(5),
+                )
+                .await
+                .expect("Fish refresh")[0]
+                .voice_id,
+            "fish-voice"
         );
     }
 }

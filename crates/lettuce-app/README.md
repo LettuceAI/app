@@ -905,11 +905,11 @@ Provider deletion first validates the exact revision, atomically removes its
 voice graph, and deletes the matching secret generation. A native-store failure
 after metadata deletion returns an opaque retry receipt; callers cannot forge
 its secret identity. Kokoro rejects credentials. Remote provider transports are
-constructed with the host's current TLS policy. ElevenLabs configured-voice
-refresh loads only the provider's scoped secret, rejects partial or invalid
-responses, and atomically replaces that provider's bounded ordered cache after
-the complete fetch succeeds. Fish discovery and preview caching remain later
-TTS slices.
+constructed with the host's current TLS policy. ElevenLabs and hosted Fish
+configured-voice refresh load only the provider's scoped secret, reject partial
+or invalid responses, and atomically replace that provider's bounded ordered
+cache after the complete fetch succeeds. Preview caching remains a later TTS
+slice.
 
 The TTS synthesis coordinator admits an idempotent interactive
 `SpeechSynthesize` job and persists its provider, text, voice, prompt and output

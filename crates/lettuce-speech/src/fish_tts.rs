@@ -1,14 +1,20 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use async_trait::async_trait;
 use lettuce_jobs::handle::CancellationToken;
-use lettuce_network::{JsonAuth, JsonClient, JsonClientError, JsonSecretHeader, RequestPolicy};
+use lettuce_network::{
+    JsonAuth, JsonClient, JsonClientError, JsonQueryParameter, JsonSecretHeader, RequestPolicy,
+};
 use lettuce_settings::{HeaderName, SecretValue};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{AudioProviderConfig, RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError};
+use crate::{
+    AudioProvider, AudioProviderConfig, DiscoveredVoiceDraft, RuntimeSynthesis, SynthesisRequest,
+    TtsRuntime, TtsRuntimeError, VoiceDiscovery, VoiceDiscoveryError,
+};
 
 const ENDPOINT: &str = "https://api.fish.audio";
+const MAX_FISH_VOICES: usize = 100;
 
 #[derive(Debug, Clone)]
 pub struct FishTtsRuntime {
@@ -48,6 +54,118 @@ struct FishTtsRequest<'a> {
     normalize: bool,
     latency: &'static str,
     prosody: FishProsodyControl,
+}
+
+#[derive(Deserialize)]
+struct FishModelsResponse {
+    items: Vec<FishModel>,
+    #[serde(default)]
+    has_more: bool,
+}
+
+#[derive(Deserialize)]
+struct FishModel {
+    #[serde(rename = "_id")]
+    id: String,
+    title: String,
+    #[serde(default, rename = "type")]
+    model_type: Option<String>,
+    #[serde(default)]
+    state: Option<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    languages: Vec<String>,
+    #[serde(default)]
+    description: String,
+}
+
+#[async_trait]
+impl VoiceDiscovery for FishTtsRuntime {
+    async fn fetch_configured_voices(
+        &self,
+        provider: &AudioProvider,
+        credential: &SecretValue,
+    ) -> Result<Vec<DiscoveredVoiceDraft>, VoiceDiscoveryError> {
+        provider
+            .validate()
+            .map_err(|_| VoiceDiscoveryError::InvalidData)?;
+        if !matches!(&provider.config, AudioProviderConfig::FishTts) {
+            return Err(VoiceDiscoveryError::InvalidData);
+        }
+        let auth = credential
+            .with(|value| SecretValue::new(value.to_owned()))
+            .map_err(|_| VoiceDiscoveryError::InvalidData)?;
+        let response = self
+            .network
+            .get_json_with_query(
+                &self.endpoint,
+                "/model",
+                &[
+                    JsonQueryParameter {
+                        name: "self",
+                        value: "true",
+                    },
+                    JsonQueryParameter {
+                        name: "page_size",
+                        value: "100",
+                    },
+                    JsonQueryParameter {
+                        name: "sort_by",
+                        value: "created_at",
+                    },
+                ],
+                &[],
+                JsonAuth::Bearer(auth),
+                Vec::new(),
+                RequestPolicy::PROBE,
+            )
+            .await
+            .map_err(map_discovery_network)?;
+        if !(200..300).contains(&response.status) {
+            return Err(match response.status {
+                408 | 429 | 500..=599 => VoiceDiscoveryError::Unavailable,
+                _ => VoiceDiscoveryError::InvalidData,
+            });
+        }
+        let response: FishModelsResponse =
+            serde_json::from_slice(&response.body).map_err(|_| VoiceDiscoveryError::InvalidData)?;
+        if response.has_more || response.items.len() > MAX_FISH_VOICES {
+            return Err(VoiceDiscoveryError::InvalidData);
+        }
+        response
+            .items
+            .into_iter()
+            .filter(|model| model.model_type.as_deref().unwrap_or("tts") == "tts")
+            .filter(|model| model.state.as_deref() != Some("failed"))
+            .map(|model| {
+                let mut labels = BTreeMap::new();
+                if let Some(state) = model.state {
+                    labels.insert("state".into(), state);
+                }
+                if !model.tags.is_empty() {
+                    labels.insert("tags".into(), model.tags.join(", "));
+                }
+                if !model.languages.is_empty() {
+                    labels.insert("languages".into(), model.languages.join(", "));
+                }
+                let description = model.description.trim();
+                if !description.is_empty() {
+                    labels.insert("description".into(), description.to_owned());
+                }
+                labels.insert("category".into(), "library".into());
+                labels.insert("engine".into(), "fish".into());
+                let voice = DiscoveredVoiceDraft {
+                    voice_id: model.id,
+                    name: model.title,
+                    preview_url: None,
+                    labels,
+                };
+                voice.validate()?;
+                Ok(voice)
+            })
+            .collect()
+    }
 }
 
 #[async_trait]
@@ -136,6 +254,18 @@ fn map_network(error: JsonClientError) -> TtsRuntimeError {
         | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected,
         JsonClientError::Transport | JsonClientError::ClientConfiguration => {
             TtsRuntimeError::Unavailable
+        }
+    }
+}
+
+fn map_discovery_network(error: JsonClientError) -> VoiceDiscoveryError {
+    match error {
+        JsonClientError::InvalidUrl
+        | JsonClientError::InvalidRequest
+        | JsonClientError::RequestTooLarge
+        | JsonClientError::ResponseTooLarge => VoiceDiscoveryError::InvalidData,
+        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
+            VoiceDiscoveryError::Unavailable
         }
     }
 }
@@ -283,6 +413,76 @@ mod tests {
                 .await,
             Err(TtsRuntimeError::Cancelled)
         ));
+    }
+
+    #[tokio::test]
+    async fn discovers_configured_tts_models_with_legacy_filters_and_labels() {
+        let body = br#"{"items":[{"_id":"voice-1","title":"Narrator","type":"tts","state":"trained","tags":["warm","calm"],"languages":["en","de"],"description":"  Studio voice  "},{"_id":"singing","title":"Singer","type":"svc","state":"trained"},{"_id":"failed","title":"Failed","type":"tts","state":"failed"},{"_id":"voice-2","title":"Default Type","description":""}],"has_more":false}"#;
+        let headers = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+        let response = headers
+            .into_bytes()
+            .into_iter()
+            .chain(body.iter().copied())
+            .collect();
+        let (endpoint, captured) = server(response).await;
+        let runtime = FishTtsRuntime::with_endpoint(
+            Arc::new(JsonClient::new().expect("network client")),
+            endpoint,
+        );
+        let provider = request(None).provider;
+        let voices = runtime
+            .fetch_configured_voices(
+                &provider,
+                &SecretValue::new("api-key-canary").expect("secret"),
+            )
+            .await
+            .expect("voice discovery");
+        assert_eq!(voices.len(), 2);
+        assert_eq!(voices[0].voice_id, "voice-1");
+        assert_eq!(voices[0].name, "Narrator");
+        assert_eq!(voices[0].preview_url, None);
+        assert_eq!(voices[0].labels["state"], "trained");
+        assert_eq!(voices[0].labels["tags"], "warm, calm");
+        assert_eq!(voices[0].labels["languages"], "en, de");
+        assert_eq!(voices[0].labels["description"], "Studio voice");
+        assert_eq!(voices[0].labels["category"], "library");
+        assert_eq!(voices[0].labels["engine"], "fish");
+        assert_eq!(voices[1].voice_id, "voice-2");
+        let captured = captured.lock().expect("captured request");
+        let captured = String::from_utf8_lossy(&captured);
+        assert!(
+            captured.starts_with("GET /model?self=true&page_size=100&sort_by=created_at HTTP/1.1")
+        );
+        assert!(
+            captured
+                .to_ascii_lowercase()
+                .contains("authorization: bearer api-key-canary")
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_partial_configured_model_pages() {
+        let body = br#"{"items":[],"has_more":true}"#;
+        let headers = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+        let response = headers
+            .into_bytes()
+            .into_iter()
+            .chain(body.iter().copied())
+            .collect();
+        let (endpoint, _) = server(response).await;
+        let runtime = FishTtsRuntime::with_endpoint(
+            Arc::new(JsonClient::new().expect("network client")),
+            endpoint,
+        );
+        assert_eq!(
+            runtime
+                .fetch_configured_voices(
+                    &request(None).provider,
+                    &SecretValue::new("secret").expect("secret"),
+                )
+                .await,
+            Err(VoiceDiscoveryError::InvalidData)
+        );
     }
 
     #[test]
