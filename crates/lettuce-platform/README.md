@@ -49,6 +49,10 @@ descriptor-relative no-follow files retain stable partial bytes across process
 restart. It bounds appends and atomically renames a caller-verified partial.
 Only the committed file exposes an internal native path for construction of a
 verified runtime manifest; partial paths and install roots are never returned.
+The same confined store supports bounded, sorted directory inventory and
+read-only inspection of known artifact keys. Directory and file symlinks are
+rejected, missing directories return an empty inventory, and consumers still
+cannot supply native paths after the store is opened.
 
 Generic root deletion is not exposed. File removal is an in-process move to an
 opaque trash receipt with collision-safe, retryable restore. Receipts are

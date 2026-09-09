@@ -58,3 +58,12 @@ persisted manifest to carry an immutable remote revision and the exact derived
 path under the selected managed install root. Missing bytes are an idempotent
 recovery case for a prior interrupted removal. Retained legacy manifests and
 external paths are refused and never deleted.
+
+Kokoro asset inventory opens one composition-owned confined root and exposes no
+operational path argument. It preserves the legacy desktop FP32, FP16 and Int8
+variants, the mobile-only Int8 restriction, nested-before-flat ONNX lookup and
+the `model_uint8.onnx` Int8 fallback. It reports the expected config, tokenizer
+and tokenizer-config artifacts and discovers sorted, case-sensitive
+`voices/*.bin` IDs. Every reported artifact is nonempty, bounded and BLAKE3
+identified; symlinks and invalid artifacts fail inspection. Downloads,
+phonemization and ONNX execution remain outside this inventory slice.

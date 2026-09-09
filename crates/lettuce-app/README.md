@@ -949,3 +949,13 @@ reopen without another provider call. The application composition root exposes
 one remote TTS runtime that routes the frozen provider kind through the five
 completed HTTP adapters. Kokoro remains unavailable until its native runtime
 slice.
+
+The Kokoro asset inventory coordinator is constructed once from a host-resolved
+managed root. Its operations accept only a variant and optional selected voice,
+return model/config/tokenizer presence plus bounded content identities, and list
+installed voices without exposing native paths. This replaces the legacy
+caller-supplied asset-root commands. Missing assets remain a usable status;
+unsupported variants, empty files, symlinks and inspection races fail. The
+legacy automatic `system-kokoro` database row is not reproduced because local
+providers already use the ordinary typed configuration boundary and no longer
+persist an editable asset root.

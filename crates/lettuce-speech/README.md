@@ -198,6 +198,9 @@ the ten Gemini voice IDs with gender and description labels. Kokoro exposes all
 three variants on desktop and only Int8 on mobile as before. Other built-in
 voice lists stay empty because ElevenLabs and hosted Fish require discovery,
 Fish Speech uses a server reference, and Kokoro lists installed voice assets.
+Kokoro catalog entries now come from the same model-hub variant definitions used
+by managed asset inspection, avoiding a second platform matrix while preserving
+the existing IDs and labels exactly.
 
 Configured ElevenLabs voice discovery uses the bounded central client and
 scoped `xi-api-key`. It preserves response order, voice ID, name, optional

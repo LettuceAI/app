@@ -4,8 +4,10 @@
 
 mod companion_emotion;
 mod embedding;
+mod kokoro;
 mod whisper;
 
 pub use companion_emotion::*;
 pub use embedding::*;
+pub use kokoro::*;
 pub use whisper::*;

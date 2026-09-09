@@ -18,6 +18,16 @@ pub struct TtsCatalogVoice {
 
 #[must_use]
 pub fn tts_catalog_models(provider_kind: AudioProviderKind) -> Vec<TtsCatalogModel> {
+    if provider_kind == AudioProviderKind::Kokoro {
+        return lettuce_model_hub::kokoro_supported_model_variants()
+            .into_iter()
+            .map(|variant| TtsCatalogModel {
+                id: variant.id,
+                name: variant.label,
+                provider_kind,
+            })
+            .collect();
+    }
     let values: &[(&str, &str)] = match provider_kind {
         AudioProviderKind::GeminiTts => &[
             ("gemini-2.5-flash-tts", "Gemini 2.5 Flash TTS"),
@@ -46,7 +56,7 @@ pub fn tts_catalog_models(provider_kind: AudioProviderKind) -> Vec<TtsCatalogMod
             ("tts-1", "tts-1"),
             ("tts-1-hd", "tts-1-hd"),
         ],
-        AudioProviderKind::Kokoro => kokoro_models(),
+        AudioProviderKind::Kokoro => unreachable!(),
     };
     values
         .iter()
@@ -108,20 +118,6 @@ pub fn tts_catalog_voices(provider_kind: AudioProviderKind) -> Vec<TtsCatalogVoi
         labels: BTreeMap::from([("gender", gender), ("description", description)]),
     })
     .collect()
-}
-
-#[cfg(any(target_os = "android", target_os = "ios"))]
-fn kokoro_models() -> &'static [(&'static str, &'static str)] {
-    &[("int8", "Kokoro Int8")]
-}
-
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn kokoro_models() -> &'static [(&'static str, &'static str)] {
-    &[
-        ("fp32", "Kokoro FP32"),
-        ("fp16", "Kokoro FP16"),
-        ("int8", "Kokoro Int8"),
-    ]
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use cap_primitives::fs::FollowSymlinks;
+use cap_primitives::fs::{FollowSymlinks, open_dir_nofollow};
 use cap_std::{ambient_authority, fs::OpenOptions};
 
 use crate::{ObjectKey, PlatformError};
@@ -25,6 +25,13 @@ pub struct InstalledFile {
     path: PathBuf,
     file: cap_std::fs::File,
     len: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfinedDirectoryEntry {
+    pub name: String,
+    pub is_file: bool,
+    pub len: u64,
 }
 
 #[derive(Debug)]
@@ -111,6 +118,86 @@ impl ConfinedInstallStore {
             offset,
             max_bytes,
         }))
+    }
+
+    pub fn inspect(&self, target: &ObjectKey) -> Result<Option<InstalledFile>, PlatformError> {
+        let target_path = path_for(target);
+        match self.root.symlink_metadata(&target_path) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() || !metadata.is_file() {
+                    return Err(PlatformError::SymlinkEscape);
+                }
+                let mut options = OpenOptions::new();
+                options.read(true);
+                options._cap_fs_ext_follow(FollowSymlinks::No);
+                let file = self
+                    .root
+                    .open_with(&target_path, &options)
+                    .map_err(PlatformError::from)?;
+                let opened = file.metadata().map_err(PlatformError::from)?;
+                if !opened.is_file() || opened.len() != metadata.len() {
+                    return Err(PlatformError::Conflict);
+                }
+                Ok(Some(InstalledFile {
+                    path: self.root_path.join(target_path),
+                    file,
+                    len: opened.len(),
+                }))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(PlatformError::from(error)),
+        }
+    }
+
+    pub fn list(
+        &self,
+        directory: &ObjectKey,
+        limit: usize,
+    ) -> Result<Vec<ConfinedDirectoryEntry>, PlatformError> {
+        if limit == 0 || limit > 1_024 {
+            return Err(PlatformError::LimitExceeded);
+        }
+        let directory_path = path_for(directory);
+        let metadata = match self.root.symlink_metadata(&directory_path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(PlatformError::from(error)),
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(PlatformError::SymlinkEscape);
+        }
+        let native = self
+            .root
+            .try_clone()
+            .map_err(PlatformError::from)?
+            .into_std_file();
+        let directory = open_dir_nofollow(&native, &directory_path)
+            .map(cap_std::fs::Dir::from_std_file)
+            .map_err(PlatformError::from)?;
+        let mut entries = Vec::new();
+        for item in directory.read_dir(".").map_err(PlatformError::from)? {
+            if entries.len() >= limit {
+                return Err(PlatformError::LimitExceeded);
+            }
+            let item = item.map_err(PlatformError::from)?;
+            let name = item
+                .file_name()
+                .into_string()
+                .map_err(|_| PlatformError::InvalidKey)?;
+            let file_type = item.file_type().map_err(PlatformError::from)?;
+            let len = if file_type.is_file() {
+                item.metadata().map_err(PlatformError::from)?.len()
+            } else {
+                0
+            };
+            entries.push(ConfinedDirectoryEntry {
+                name,
+                is_file: file_type.is_file(),
+                len,
+            });
+        }
+        entries.sort_by(|left, right| left.name.cmp(&right.name));
+        Ok(entries)
     }
 
     pub fn remove_installed(
