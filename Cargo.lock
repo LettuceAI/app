@@ -1448,6 +1448,7 @@ dependencies = [
  "lettuce-platform",
  "lettuce-settings",
  "lettuce-types",
+ "ort",
  "regex",
  "serde",
  "serde_json",

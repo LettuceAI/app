@@ -30,6 +30,7 @@ lettuce-network.workspace = true
 lettuce-platform.workspace = true
 lettuce-settings.workspace = true
 lettuce-types.workspace = true
+ort.workspace = true
 regex = "1"
 serde.workspace = true
 serde_json.workspace = true

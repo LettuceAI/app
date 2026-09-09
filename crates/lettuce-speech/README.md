@@ -254,3 +254,11 @@ per-row blending, shorter-voice last-row extension and token-count row clamp.
 The boundary rejects malformed rows, unsafe IDs, nonfinite samples and weights,
 and arithmetic overflow. It returns normalized blend metadata plus bounded
 style rows; ONNX execution and audio synthesis remain separate.
+Native Kokoro inference loads the verified ONNX model at optimization level 3,
+accepts either `input_ids` or `tokens`, preserves float or Int32 speed input,
+pads each token chunk with boundary zeros and supports cooperative ONNX run
+termination. The legacy 510-token punctuation-aware splitting, token-count
+style lookup, 240-sample linear crossfade and 24 kHz mono PCM16 WAV encoding
+are preserved. Nonfinite or oversized inference output fails before media
+ingestion. Routing persisted Kokoro TTS requests into this runtime remains the
+next application slice.

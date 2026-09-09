@@ -299,6 +299,14 @@ impl AppBackend {
         crate::KokoroPhonemizationCoordinator::new(installs)
     }
 
+    #[must_use]
+    pub const fn kokoro_native_synthesis(
+        &self,
+        installs: lettuce_model_hub::KokoroInstallStore,
+    ) -> crate::KokoroNativeSynthesisCoordinator {
+        crate::KokoroNativeSynthesisCoordinator::new(installs)
+    }
+
     pub fn remove_managed_kokoro_model(
         &self,
         installs: &lettuce_model_hub::KokoroInstallStore,

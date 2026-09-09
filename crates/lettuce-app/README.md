@@ -994,3 +994,8 @@ descriptor, revalidates and materializes its confined installed bytes, then
 hands only bounded voice material to the speech boundary. Missing or ambiguous
 descriptors and changed assets fail before style selection; native paths do not
 cross the coordinator.
+The Kokoro native synthesis coordinator revalidates the complete pinned model
+bundle, selects its exact model artifact and runs cancellation-aware ONNX chunk
+inference into a bounded WAV. It consumes already validated phonemization and
+voice styles. Persisted TTS request parsing and remote/local runtime routing
+remain separate so the native boundary cannot accept caller-owned asset paths.
