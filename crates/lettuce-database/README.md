@@ -464,9 +464,10 @@ after process reopen so job recovery can finish without transcribing twice.
 
 Migration 15 stores immutable installed-Whisper manifests separately from user
 media. Scalar model/path/size/hash projections must match the versioned
-manifest, and repeated admission is exact. Updates and deletion are disabled in
-this slice so retained legacy model evidence cannot be silently replaced or
-removed before verified migration and an explicit removal workflow.
+manifest, and repeated admission is exact. Updates remain disabled. The
+model-hub removal workflow may conditionally delete the exact stored manifest
+only after its managed bytes are gone; retained legacy models are refused
+before this repository call.
 
 Staged lorebook final apply reuses the existing lorebook aggregate insert/replace
 functions inside the project transaction. The committed project stores its

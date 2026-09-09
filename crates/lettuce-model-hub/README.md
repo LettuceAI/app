@@ -42,8 +42,7 @@ recommendation sets remain unchanged. Mutable branch names and files without
 complete LFS metadata are rejected. Hugging Face documents repository-tree file
 metadata and LFS SHA-256 identities in its
 [Hub API](https://huggingface.co/docs/huggingface_hub/en/package_reference/hf_api).
-Managed removal remains later model-hub work; the old unpinned Hugging Face
-`main` URL is not copied.
+The old unpinned Hugging Face `main` URL is not copied.
 
 Pinned Whisper downloads use one confined install root and a stable partial
 name derived from the complete remote identity. Partial bytes survive process
@@ -53,3 +52,9 @@ atomic rename. The installed manifest is then built from the final file with
 the existing BLAKE3 identity; a matching final file replays recovery after a
 rename-before-database crash. Neither partial nor final native paths enter the
 public download result.
+
+Managed removal accepts a model identity rather than a path. It requires the
+persisted manifest to carry an immutable remote revision and the exact derived
+path under the selected managed install root. Missing bytes are an idempotent
+recovery case for a prior interrupted removal. Retained legacy manifests and
+external paths are refused and never deleted.

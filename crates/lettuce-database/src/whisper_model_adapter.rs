@@ -156,4 +156,39 @@ impl WhisperModelRepository for Database {
         transaction.commit().map_err(storage)?;
         Ok(models)
     }
+
+    fn remove_whisper_model(
+        &self,
+        expected: &InstalledWhisperManifest,
+    ) -> Result<bool, WhisperModelRepositoryError> {
+        expected.validate().map_err(corrupt)?;
+        let payload =
+            encode_versioned(expected, WHISPER_MANIFEST_FORMAT_VERSION).map_err(storage)?;
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let current = load_all_in(&transaction, Some(&expected.model_id))?
+            .into_iter()
+            .next();
+        let Some(current) = current else {
+            transaction.commit().map_err(storage)?;
+            return Ok(false);
+        };
+        if current != *expected {
+            return Err(WhisperModelRepositoryError::Conflict);
+        }
+        let removed = transaction
+            .execute(
+                "DELETE FROM installed_whisper_models
+                 WHERE model_id = ?1 AND manifest_json = ?2",
+                params![expected.model_id, payload],
+            )
+            .map_err(storage)?;
+        if removed != 1 {
+            return Err(WhisperModelRepositoryError::Conflict);
+        }
+        transaction.commit().map_err(storage)?;
+        Ok(true)
+    }
 }

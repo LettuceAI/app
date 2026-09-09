@@ -1,10 +1,11 @@
 use std::path::Path;
 
 use lettuce_model_hub::{
-    InstalledWhisperManifest, VerifiedWhisperArtifacts, WhisperModelError, WhisperModelRepository,
-    WhisperModelRepositoryError, inspect_legacy_whisper_models, select_default_whisper_model,
+    InstalledWhisperManifest, VerifiedWhisperArtifacts, WhisperInstallStore, WhisperModelError,
+    WhisperModelRepository, WhisperModelRepositoryError, inspect_legacy_whisper_models,
+    select_default_whisper_model,
 };
-use lettuce_speech::{AsrModelDescriptor, AsrModelId};
+use lettuce_speech::{AsrModelDescriptor, AsrModelId, AsrRuntimeError, WhisperCppRuntime};
 use lettuce_types::TimestampMillis;
 
 #[derive(Debug, thiserror::Error)]
@@ -13,10 +14,19 @@ pub enum WhisperModelCoordinatorError {
     Model(#[from] WhisperModelError),
     #[error("Whisper model persistence failed: {0}")]
     Repository(#[from] WhisperModelRepositoryError),
+    #[error("Whisper runtime failed: {0}")]
+    Runtime(#[from] AsrRuntimeError),
     #[error("Whisper model id is invalid")]
     InvalidModelId,
     #[error("Whisper model is not installed")]
     NotInstalled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WhisperModelRemoval {
+    pub removed: bool,
+    pub file_removed: bool,
+    pub cleared_cached_contexts: usize,
 }
 
 #[derive(Debug)]
@@ -72,12 +82,40 @@ impl<R: WhisperModelRepository + ?Sized> WhisperModelCoordinator<'_, R> {
         };
         Ok((descriptor, verified))
     }
+
+    pub fn remove_managed(
+        &self,
+        installs: &WhisperInstallStore,
+        runtime: &WhisperCppRuntime<R>,
+        model_id: &str,
+    ) -> Result<WhisperModelRemoval, WhisperModelCoordinatorError> {
+        let Some(manifest) = self.repository.get_whisper_model(model_id)? else {
+            return Ok(WhisperModelRemoval {
+                removed: false,
+                file_removed: false,
+                cleared_cached_contexts: 0,
+            });
+        };
+        installs.validate_managed(&manifest)?;
+        let cleared_cached_contexts = runtime.clear_cache()?;
+        let file_removed = installs.remove_managed(&manifest)?;
+        let removed = self.repository.remove_whisper_model(&manifest)?;
+        Ok(WhisperModelRemoval {
+            removed,
+            file_removed,
+            cleared_cached_contexts,
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use lettuce_database::Database;
-    use lettuce_model_hub::WhisperModelRepository;
+    use lettuce_model_hub::{
+        RemoteWhisperModel, WhisperInstallPreparation, WhisperInstallStore, WhisperModelRepository,
+    };
     use lettuce_types::{OperationId, TimestampMillis};
 
     use super::*;
@@ -152,6 +190,83 @@ mod tests {
             WhisperModelRepository::admit_whisper_model(&database, replacement),
             Err(WhisperModelRepositoryError::Conflict)
         );
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn removes_only_managed_models_after_clearing_runtime_cache_and_replays() {
+        let root = std::env::temp_dir().join(format!("managed-whisper-{}", OperationId::new()));
+        let install_root = root.join("models");
+        let store = WhisperInstallStore::open(&install_root).expect("install store");
+        let remote = RemoteWhisperModel::pinned(
+            "ggml-base.bin",
+            "ab".repeat(20),
+            13,
+            "012645b3bdfb7d07c105768b7c2bed0352e09c52b6064747b348c0a4866daee1",
+        )
+        .expect("remote model");
+        let WhisperInstallPreparation::Download(mut download) = store
+            .prepare(remote, TimestampMillis::new(10))
+            .expect("download")
+        else {
+            panic!("expected download");
+        };
+        download.append(b"managed model").expect("write model");
+        let manifest = download.finish().expect("finish model");
+        let database = Arc::new(Database::open_in_memory().expect("database"));
+        WhisperModelRepository::admit_whisper_model(database.as_ref(), manifest.clone())
+            .expect("admit manifest");
+        let runtime = WhisperCppRuntime::new(database.clone());
+        let coordinator = WhisperModelCoordinator::new(database.as_ref());
+        let removed = coordinator
+            .remove_managed(&store, &runtime, "base")
+            .expect("remove model");
+        assert!(removed.removed);
+        assert!(removed.file_removed);
+        assert_eq!(removed.cleared_cached_contexts, 0);
+        assert!(!manifest.model.path.exists());
+        assert!(
+            WhisperModelRepository::get_whisper_model(database.as_ref(), "base")
+                .expect("model lookup")
+                .is_none()
+        );
+        assert_eq!(
+            coordinator
+                .remove_managed(&store, &runtime, "base")
+                .expect("removal replay"),
+            WhisperModelRemoval {
+                removed: false,
+                file_removed: false,
+                cleared_cached_contexts: 0,
+            }
+        );
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn refuses_to_remove_a_retained_legacy_model() {
+        let root = std::env::temp_dir().join(format!("legacy-whisper-{}", OperationId::new()));
+        let legacy_root = root.join("legacy");
+        let folder = legacy_root.join("base");
+        std::fs::create_dir_all(&folder).expect("legacy model directory");
+        let path = folder.join("ggml-base.bin");
+        std::fs::write(&path, b"legacy").expect("legacy model");
+        let manifest =
+            InstalledWhisperManifest::inspect_legacy(&legacy_root, &path, TimestampMillis::new(10))
+                .expect("legacy manifest");
+        let database = Arc::new(Database::open_in_memory().expect("database"));
+        WhisperModelRepository::admit_whisper_model(database.as_ref(), manifest)
+            .expect("admit legacy model");
+        let runtime = WhisperCppRuntime::new(database.clone());
+        let coordinator = WhisperModelCoordinator::new(database.as_ref());
+        let store = WhisperInstallStore::open(root.join("managed")).expect("install store");
+        assert!(matches!(
+            coordinator.remove_managed(&store, &runtime, "base"),
+            Err(WhisperModelCoordinatorError::Model(
+                WhisperModelError::OutsideSource
+            ))
+        ));
+        assert!(path.exists());
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 }

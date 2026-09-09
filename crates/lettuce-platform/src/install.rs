@@ -112,6 +112,35 @@ impl ConfinedInstallStore {
             max_bytes,
         }))
     }
+
+    pub fn remove_installed(
+        &self,
+        target: &ObjectKey,
+        expected_path: &Path,
+    ) -> Result<bool, PlatformError> {
+        let target_path = path_for(target);
+        if self.root_path.join(&target_path) != expected_path {
+            return Err(PlatformError::Denied);
+        }
+        match self.root.symlink_metadata(&target_path) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() || !metadata.is_file() {
+                    return Err(PlatformError::SymlinkEscape);
+                }
+                self.root
+                    .remove_file(&target_path)
+                    .map_err(PlatformError::from)?;
+                Ok(true)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(PlatformError::from(error)),
+        }
+    }
+
+    #[must_use]
+    pub fn owns_installed_path(&self, target: &ObjectKey, path: &Path) -> bool {
+        self.root_path.join(path_for(target)) == path
+    }
 }
 
 impl InstalledFile {

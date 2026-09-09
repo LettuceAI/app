@@ -79,6 +79,7 @@ The application compatibility adapter converts retained version-2 exports into
 this boundary after safely ingesting their referenced audio files.
 
 Pinned, resumable installed-model downloads now compose through model-hub,
-network, platform and durable artifact-install jobs. Microphone IPC,
-file-format expansion and managed model removal remain later ASR slices. TTS
-has not started.
+network, platform and durable artifact-install jobs. Managed removal clears the
+process-wide Whisper context cache before deleting verified owned bytes.
+Microphone IPC and file-format expansion remain later ASR slices. TTS has not
+started.

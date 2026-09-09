@@ -145,6 +145,46 @@ impl WhisperInstallStore {
             )),
         }
     }
+
+    pub fn remove_managed(
+        &self,
+        manifest: &InstalledWhisperManifest,
+    ) -> Result<bool, WhisperModelError> {
+        self.validate_managed(manifest)?;
+        let target = managed_target(manifest)?;
+        self.inner
+            .remove_installed(&target, &manifest.model.path)
+            .map_err(map_platform_error)
+    }
+
+    pub fn validate_managed(
+        &self,
+        manifest: &InstalledWhisperManifest,
+    ) -> Result<(), WhisperModelError> {
+        manifest.validate()?;
+        if manifest.source_revision.len() != 40
+            || !manifest
+                .source_revision
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(WhisperModelError::OutsideSource);
+        }
+        let target = managed_target(manifest)?;
+        if !self
+            .inner
+            .owns_installed_path(&target, &manifest.model.path)
+        {
+            return Err(WhisperModelError::OutsideSource);
+        }
+        Ok(())
+    }
+}
+
+fn managed_target(manifest: &InstalledWhisperManifest) -> Result<ObjectKey, WhisperModelError> {
+    let filename = whisper_filename(&manifest.model_id);
+    ObjectKey::from_segments([manifest.model_id.as_str(), filename.as_str()])
+        .map_err(map_platform_error)
 }
 
 impl WhisperDownloadSession {
@@ -360,6 +400,10 @@ pub trait WhisperModelRepository: Send + Sync {
     fn list_whisper_models(
         &self,
     ) -> Result<Vec<InstalledWhisperManifest>, WhisperModelRepositoryError>;
+    fn remove_whisper_model(
+        &self,
+        expected: &InstalledWhisperManifest,
+    ) -> Result<bool, WhisperModelRepositoryError>;
 }
 
 pub fn select_default_whisper_model(

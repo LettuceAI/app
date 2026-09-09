@@ -27,9 +27,3 @@ BEFORE UPDATE ON installed_whisper_models
 BEGIN
     SELECT RAISE(ABORT, 'installed Whisper manifest is immutable');
 END;
-
-CREATE TRIGGER installed_whisper_models_no_delete
-BEFORE DELETE ON installed_whisper_models
-BEGIN
-    SELECT RAISE(ABORT, 'installed Whisper manifest cannot be deleted yet');
-END;

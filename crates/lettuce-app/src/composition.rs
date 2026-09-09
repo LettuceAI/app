@@ -220,6 +220,16 @@ impl AppBackend {
         )
     }
 
+    pub fn remove_managed_whisper_model(
+        &self,
+        install_root: impl AsRef<Path>,
+        model_id: &str,
+    ) -> Result<crate::WhisperModelRemoval, crate::WhisperModelCoordinatorError> {
+        let installs = lettuce_model_hub::WhisperInstallStore::open(install_root)?;
+        self.whisper_models()
+            .remove_managed(&installs, self.whisper_runtime(), model_id)
+    }
+
     #[must_use]
     pub fn whisper_runtime(&self) -> &WhisperCppRuntime<Database> {
         self.whisper_runtime.as_ref()

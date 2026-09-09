@@ -365,6 +365,13 @@ mod tests {
         ) -> Result<Vec<InstalledWhisperManifest>, WhisperModelRepositoryError> {
             Ok(vec![self.manifest.clone()])
         }
+
+        fn remove_whisper_model(
+            &self,
+            _: &InstalledWhisperManifest,
+        ) -> Result<bool, WhisperModelRepositoryError> {
+            Ok(false)
+        }
     }
 
     fn fixture(path: &Path) -> (Arc<Repository>, AsrModelDescriptor) {

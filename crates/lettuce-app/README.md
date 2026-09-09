@@ -891,5 +891,7 @@ replays exact admissions after reopen without changing source bytes. Resolution
 preserves the legacy first-filename default or accepts an explicit installed
 model ID, then revalidates size and BLAKE3 before producing the speech request
 descriptor and runtime-only artifact handle. The runtime independently repeats
-that verification before loading native code. Model downloads remain a later
-ASR slice.
+that verification before loading native code. Managed removal validates model
+ownership, clears every cached Whisper context before deleting bytes, then
+conditionally deletes the exact immutable manifest. Missing retries are no-ops;
+retained legacy files cannot enter this removal path.
