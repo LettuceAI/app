@@ -611,3 +611,9 @@ restore journal the complete lifecycle transition. A selected persona archive
 also journals the coupled default clear; failure of either change rolls back
 both aggregate writes and both sequence allocations. Restore does not reselect
 the persona, matching the existing lifecycle contract.
+
+Migration 19 also stores durable monotonic peer frontiers. The sync adapter
+exports the local canonical journal in bounded causal-ready batches, rejects a
+gap instead of silently skipping it, clamps acknowledgements to the local
+frontier and preserves them across reopen. Network sessions, incoming apply and
+conflict handling remain outside this storage slice.

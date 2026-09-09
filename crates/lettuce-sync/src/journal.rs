@@ -1,6 +1,12 @@
 use lettuce_types::{ContentHash, OperationId, TimestampMillis};
 
-use crate::{CanonicalChange, CanonicalPayload, ChangeOperation, SyncChangeError, SyncEntity};
+use crate::{
+    CanonicalChange, CanonicalPayload, CausalFrontier, ChangeOperation, SyncChangeError,
+    SyncDeviceId, SyncEntity,
+};
+
+pub const MAX_OUTBOUND_CHANGES: usize = 256;
+pub const MAX_OUTBOUND_PAYLOAD_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewCanonicalChange {
@@ -59,6 +65,13 @@ pub struct LocalChangeAdmission {
     pub created: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboundChangeBatch {
+    pub changes: Vec<CanonicalChange>,
+    pub payload_bytes: usize,
+    pub has_more: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum LocalChangeJournalError {
     #[error("local sync change input is invalid")]
@@ -69,6 +82,14 @@ pub enum LocalChangeJournalError {
     Corrupt,
     #[error("local sync sequence or clock counter is exhausted")]
     Exhausted,
+    #[error("local sync frontier is invalid")]
+    InvalidFrontier,
+    #[error("local sync journal is missing an expected change sequence")]
+    MissingSequence,
+    #[error("local sync change exceeds the requested outbound payload limit")]
+    ChangeTooLarge,
+    #[error("local sync change has unsatisfied causal dependencies")]
+    UnsatisfiedDependencies,
     #[error("local sync journal storage failed")]
     Storage,
 }
@@ -85,4 +106,25 @@ pub trait LocalChangeJournal: Send + Sync {
         &self,
         operation_id: OperationId,
     ) -> Result<Option<CanonicalChange>, LocalChangeJournalError>;
+
+    fn local_frontier(&self) -> Result<CausalFrontier, LocalChangeJournalError>;
+
+    fn outbound_changes(
+        &self,
+        remote_frontier: &CausalFrontier,
+        max_changes: usize,
+        max_payload_bytes: usize,
+    ) -> Result<OutboundChangeBatch, LocalChangeJournalError>;
+
+    fn record_peer_acknowledgement(
+        &self,
+        peer: SyncDeviceId,
+        frontier: &CausalFrontier,
+        now: TimestampMillis,
+    ) -> Result<CausalFrontier, LocalChangeJournalError>;
+
+    fn peer_acknowledgement(
+        &self,
+        peer: SyncDeviceId,
+    ) -> Result<CausalFrontier, LocalChangeJournalError>;
 }

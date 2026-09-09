@@ -4217,6 +4217,7 @@ mod tests {
                 "sync_changes",
                 "sync_frontiers",
                 "sync_local_state",
+                "sync_peer_frontiers",
                 "tool_executions",
                 "turn_lorebooks",
                 "usage_costs",

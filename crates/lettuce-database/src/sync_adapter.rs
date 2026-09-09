@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use lettuce_sync::{
     CANONICAL_CHANGE_VERSION, CanonicalChange, CanonicalPayload, CausalFrontier, ChangeOperation,
     HybridTimestamp, LocalChangeAdmission, LocalChangeJournal, LocalChangeJournalError,
-    NewCanonicalChange, SyncChangeId, SyncDeviceId, SyncEntity,
+    MAX_FRONTIER_DEVICES, MAX_OUTBOUND_CHANGES, MAX_OUTBOUND_PAYLOAD_BYTES, NewCanonicalChange,
+    OutboundChangeBatch, SyncChangeId, SyncDeviceId, SyncEntity,
 };
 use lettuce_types::{ContentHash, OperationId, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, params};
@@ -250,6 +251,91 @@ fn load_frontier(connection: &Connection) -> Result<CausalFrontier, LocalChangeJ
     Ok(frontier)
 }
 
+fn validate_frontier(frontier: &CausalFrontier) -> Result<(), LocalChangeJournalError> {
+    if frontier.len() > MAX_FRONTIER_DEVICES || frontier.values().any(|sequence| *sequence == 0) {
+        return Err(LocalChangeJournalError::InvalidFrontier);
+    }
+    Ok(())
+}
+
+fn local_device(connection: &Connection) -> Result<Option<SyncDeviceId>, LocalChangeJournalError> {
+    connection
+        .query_row(
+            "SELECT device_id FROM sync_local_state WHERE id = 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage)?
+        .map(|value| {
+            Uuid::parse_str(&value)
+                .map(SyncDeviceId::from_uuid)
+                .map_err(corrupt)
+        })
+        .transpose()
+}
+
+fn change_for_sequence(
+    connection: &Connection,
+    device: SyncDeviceId,
+    sequence: u64,
+) -> Result<CanonicalChange, LocalChangeJournalError> {
+    let change_id = connection
+        .query_row(
+            "SELECT change_id FROM sync_changes
+             WHERE origin_device_id = ?1 AND origin_sequence = ?2",
+            params![
+                device.as_uuid().to_string(),
+                i64::try_from(sequence).map_err(|_| LocalChangeJournalError::Exhausted)?
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage)?
+        .ok_or(LocalChangeJournalError::MissingSequence)?;
+    let row = connection
+        .query_row(
+            "SELECT change_id, format_version, fingerprint, origin_device_id,
+                    origin_sequence, hlc_wall_time, hlc_counter, entity_kind,
+                    entity_id, operation, base_revision, payload_schema,
+                    payload_version, payload_bytes, payload_hash
+             FROM sync_changes WHERE change_id = ?1",
+            [change_id],
+            StoredChangeRow::from_row,
+        )
+        .map_err(storage)?;
+    hydrate_change(connection, row)
+}
+
+fn load_peer_frontier(
+    connection: &Connection,
+    peer: SyncDeviceId,
+) -> Result<CausalFrontier, LocalChangeJournalError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT origin_device_id, acknowledged_sequence
+             FROM sync_peer_frontiers WHERE peer_device_id = ?1
+             ORDER BY origin_device_id",
+        )
+        .map_err(storage)?;
+    let rows = statement
+        .query_map([peer.as_uuid().to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(storage)?;
+    let mut frontier = CausalFrontier::new();
+    for row in rows {
+        let (device, sequence) = row.map_err(storage)?;
+        let device = SyncDeviceId::from_uuid(Uuid::parse_str(&device).map_err(corrupt)?);
+        let sequence = u64::try_from(sequence).map_err(corrupt)?;
+        if sequence == 0 || frontier.insert(device, sequence).is_some() {
+            return Err(LocalChangeJournalError::Corrupt);
+        }
+    }
+    validate_frontier(&frontier)?;
+    Ok(frontier)
+}
+
 fn next_identity_and_stamp(
     connection: &Connection,
     now: TimestampMillis,
@@ -425,11 +511,146 @@ impl LocalChangeJournal for Database {
         let connection = self.connection().map_err(storage)?;
         load_local_change_in(&connection, operation_id)
     }
+
+    fn local_frontier(&self) -> Result<CausalFrontier, LocalChangeJournalError> {
+        let connection = self.connection().map_err(storage)?;
+        load_frontier(&connection)
+    }
+
+    fn outbound_changes(
+        &self,
+        remote_frontier: &CausalFrontier,
+        max_changes: usize,
+        max_payload_bytes: usize,
+    ) -> Result<OutboundChangeBatch, LocalChangeJournalError> {
+        validate_frontier(remote_frontier)?;
+        let connection = self.connection().map_err(storage)?;
+        let local_frontier = load_frontier(&connection)?;
+        let Some(device) = local_device(&connection)? else {
+            if !local_frontier.is_empty() {
+                return Err(LocalChangeJournalError::Corrupt);
+            }
+            return Ok(OutboundChangeBatch {
+                changes: Vec::new(),
+                payload_bytes: 0,
+                has_more: false,
+            });
+        };
+        let local_sequence = local_frontier.get(&device).copied().unwrap_or(0);
+        let seen = remote_frontier
+            .get(&device)
+            .copied()
+            .unwrap_or(0)
+            .min(local_sequence);
+        let max_changes = max_changes.min(MAX_OUTBOUND_CHANGES);
+        let max_payload_bytes = max_payload_bytes.min(MAX_OUTBOUND_PAYLOAD_BYTES);
+        if max_changes == 0 || max_payload_bytes == 0 {
+            return Ok(OutboundChangeBatch {
+                changes: Vec::new(),
+                payload_bytes: 0,
+                has_more: seen < local_sequence,
+            });
+        }
+        let mut simulated = remote_frontier.clone();
+        if seen == 0 {
+            simulated.remove(&device);
+        } else {
+            simulated.insert(device, seen);
+        }
+        let mut changes = Vec::new();
+        let mut payload_bytes = 0usize;
+        let mut sequence = seen.saturating_add(1);
+        while sequence <= local_sequence && changes.len() < max_changes {
+            let change = change_for_sequence(&connection, device, sequence)?;
+            let ready = change
+                .base_frontier()
+                .iter()
+                .all(|(origin, required)| simulated.get(origin).copied().unwrap_or(0) >= *required);
+            if !ready {
+                return Err(LocalChangeJournalError::UnsatisfiedDependencies);
+            }
+            let bytes = change.payload().map_or(0, |payload| payload.bytes().len());
+            if payload_bytes.saturating_add(bytes) > max_payload_bytes {
+                if changes.is_empty() {
+                    return Err(LocalChangeJournalError::ChangeTooLarge);
+                }
+                break;
+            }
+            payload_bytes += bytes;
+            simulated.insert(device, sequence);
+            changes.push(change);
+            sequence = sequence.saturating_add(1);
+        }
+        Ok(OutboundChangeBatch {
+            changes,
+            payload_bytes,
+            has_more: sequence <= local_sequence,
+        })
+    }
+
+    fn record_peer_acknowledgement(
+        &self,
+        peer: SyncDeviceId,
+        frontier: &CausalFrontier,
+        now: TimestampMillis,
+    ) -> Result<CausalFrontier, LocalChangeJournalError> {
+        validate_frontier(frontier)?;
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let local = load_frontier(&transaction)?;
+        for (origin, acknowledged) in frontier {
+            let bounded = (*acknowledged).min(local.get(origin).copied().unwrap_or(0));
+            if bounded == 0 {
+                continue;
+            }
+            transaction
+                .execute(
+                    "INSERT INTO sync_peer_frontiers
+                     (peer_device_id, origin_device_id, acknowledged_sequence, updated_at)
+                     VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT(peer_device_id, origin_device_id) DO UPDATE SET
+                       acknowledged_sequence = MAX(
+                         sync_peer_frontiers.acknowledged_sequence,
+                         excluded.acknowledged_sequence
+                       ),
+                       updated_at = CASE
+                         WHEN excluded.acknowledged_sequence >
+                              sync_peer_frontiers.acknowledged_sequence
+                         THEN excluded.updated_at
+                         ELSE sync_peer_frontiers.updated_at
+                       END",
+                    params![
+                        peer.as_uuid().to_string(),
+                        origin.as_uuid().to_string(),
+                        i64::try_from(bounded).map_err(|_| LocalChangeJournalError::Exhausted)?,
+                        now.get()
+                    ],
+                )
+                .map_err(storage)?;
+        }
+        let stored = load_peer_frontier(&transaction, peer)?;
+        transaction.commit().map_err(storage)?;
+        Ok(stored)
+    }
+
+    fn peer_acknowledgement(
+        &self,
+        peer: SyncDeviceId,
+    ) -> Result<CausalFrontier, LocalChangeJournalError> {
+        let connection = self.connection().map_err(storage)?;
+        load_peer_frontier(&connection, peer)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lettuce_characters::{
+        Persona, PersonaArchiveRequest, PersonaDraftUpdate, PersonaRepository,
+    };
+    use lettuce_types::PersonaId;
 
     fn request(bytes: &[u8]) -> NewCanonicalChange {
         NewCanonicalChange::new(
@@ -626,6 +847,128 @@ mod tests {
                 .local_change_for_operation(operation)
                 .expect("reload"),
             Some(admitted)
+        );
+        drop(database);
+        std::fs::remove_file(path).expect("remove test database");
+    }
+
+    #[test]
+    fn outbound_batches_and_peer_acknowledgements_survive_reopen() {
+        let path =
+            std::env::temp_dir().join(format!("sync-outbound-{}.sqlite3", OperationId::new()));
+        let peer = SyncDeviceId::new();
+        let (device, local_frontier) = {
+            let database = Database::open(&path).expect("database");
+            let created = PersonaRepository::create(
+                &database,
+                Persona::new(
+                    PersonaId::new(),
+                    "Writer".into(),
+                    "A careful writer".into(),
+                    TimestampMillis::new(10),
+                )
+                .expect("persona"),
+            )
+            .expect("create");
+            let revised = PersonaRepository::revise(
+                &database,
+                created.id,
+                created.revision,
+                PersonaDraftUpdate {
+                    title: "Editor".into(),
+                    description: "A careful editor".into(),
+                    nickname: None,
+                    design_description: None,
+                    avatar_crop: None,
+                    image_recommendation: None,
+                },
+                TimestampMillis::new(20),
+            )
+            .expect("revise");
+            PersonaRepository::archive(
+                &database,
+                PersonaArchiveRequest {
+                    persona_id: revised.id,
+                    expected_persona_revision: revised.revision,
+                    expected_default_revision: None,
+                    now: TimestampMillis::new(30),
+                },
+            )
+            .expect("archive");
+
+            let frontier = database.local_frontier().expect("local frontier");
+            let (&device, &sequence) = frontier.iter().next().expect("local device");
+            assert_eq!(sequence, 3);
+            let first = database
+                .outbound_changes(&CausalFrontier::new(), 2, MAX_OUTBOUND_PAYLOAD_BYTES)
+                .expect("first batch");
+            assert_eq!(
+                first
+                    .changes
+                    .iter()
+                    .map(CanonicalChange::origin_sequence)
+                    .collect::<Vec<_>>(),
+                vec![1, 2]
+            );
+            assert!(first.payload_bytes > 0);
+            assert!(first.has_more);
+
+            let remote = CausalFrontier::from([(device, 2)]);
+            let second = database
+                .outbound_changes(&remote, 20, MAX_OUTBOUND_PAYLOAD_BYTES)
+                .expect("second batch");
+            assert_eq!(second.changes.len(), 1);
+            assert_eq!(second.changes[0].origin_sequence(), 3);
+            assert!(!second.has_more);
+
+            let acknowledged = database
+                .record_peer_acknowledgement(
+                    peer,
+                    &CausalFrontier::from([(device, 99)]),
+                    TimestampMillis::new(40),
+                )
+                .expect("acknowledge");
+            assert_eq!(acknowledged.get(&device), Some(&3));
+            let unchanged = database
+                .record_peer_acknowledgement(
+                    peer,
+                    &CausalFrontier::from([(device, 1)]),
+                    TimestampMillis::new(50),
+                )
+                .expect("older acknowledgement");
+            assert_eq!(unchanged, acknowledged);
+            (device, frontier)
+        };
+
+        let database = Database::open(&path).expect("reopen");
+        assert_eq!(database.local_frontier().expect("frontier"), local_frontier);
+        assert_eq!(
+            database
+                .peer_acknowledgement(peer)
+                .expect("peer acknowledgement")
+                .get(&device),
+            Some(&3)
+        );
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch(
+                "DROP TRIGGER sync_change_frontiers_no_delete;
+                 DROP TRIGGER sync_changes_no_delete;
+                 DELETE FROM sync_change_frontiers
+                 WHERE change_id = (
+                   SELECT change_id FROM sync_changes WHERE origin_sequence = 2
+                 );
+                 DELETE FROM sync_changes WHERE origin_sequence = 2;",
+            )
+            .expect("create missing sequence");
+        assert_eq!(
+            database.outbound_changes(
+                &CausalFrontier::new(),
+                MAX_OUTBOUND_CHANGES,
+                MAX_OUTBOUND_PAYLOAD_BYTES,
+            ),
+            Err(LocalChangeJournalError::MissingSequence)
         );
         drop(database);
         std::fs::remove_file(path).expect("remove test database");

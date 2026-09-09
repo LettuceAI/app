@@ -59,6 +59,14 @@ CREATE TABLE sync_change_frontiers (
     PRIMARY KEY (change_id, origin_device_id)
 ) STRICT;
 
+CREATE TABLE sync_peer_frontiers (
+    peer_device_id TEXT NOT NULL CHECK (length(peer_device_id) = 36),
+    origin_device_id TEXT NOT NULL CHECK (length(origin_device_id) = 36),
+    acknowledged_sequence INTEGER NOT NULL CHECK (acknowledged_sequence >= 1),
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (peer_device_id, origin_device_id)
+) STRICT;
+
 CREATE INDEX sync_changes_origin_idx
 ON sync_changes(origin_device_id, origin_sequence);
 
@@ -105,4 +113,19 @@ CREATE TRIGGER sync_change_frontiers_no_delete
 BEFORE DELETE ON sync_change_frontiers
 BEGIN
     SELECT RAISE(ABORT, 'sync change frontiers are durable');
+END;
+
+CREATE TRIGGER sync_peer_frontiers_update_guard
+BEFORE UPDATE ON sync_peer_frontiers
+WHEN NEW.peer_device_id <> OLD.peer_device_id OR
+     NEW.origin_device_id <> OLD.origin_device_id OR
+     NEW.acknowledged_sequence < OLD.acknowledged_sequence
+BEGIN
+    SELECT RAISE(ABORT, 'invalid peer acknowledgement transition');
+END;
+
+CREATE TRIGGER sync_peer_frontiers_no_delete
+BEFORE DELETE ON sync_peer_frontiers
+BEGIN
+    SELECT RAISE(ABORT, 'peer acknowledgements are durable');
 END;
