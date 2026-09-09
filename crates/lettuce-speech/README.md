@@ -152,3 +152,14 @@ network client. Durable admission requires an explicit reference voice instead
 of preserving the legacy ambiguous request that omitted `reference_id` for a
 blank selection. Health verification and server-default model presentation
 remain later configuration slices.
+
+`GeminiTtsRuntime` preserves the Vertex AI location/project/model route, bearer
+access token, `x-goog-user-project`, fixed `en-us` speech configuration, legacy
+prompt-plus-text composition, lowercase voice resolution with `preview`
+selecting `kore`, and base64-decoded WAV output. Project, location and model
+segments are validated before URL construction. The response parser now finds
+the first actual inline-audio part across returned candidates instead of
+assuming the first part contains audio, which avoids rejecting valid metadata
+parts without changing the selected audio. Malformed JSON/base64 and missing
+audio reject without exposing the provider body. Static model and voice
+catalogs plus credential verification remain later configuration slices.

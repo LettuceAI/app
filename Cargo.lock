@@ -1439,6 +1439,7 @@ name = "lettuce-speech"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "lettuce-jobs",
  "lettuce-media",
  "lettuce-model-hub",
