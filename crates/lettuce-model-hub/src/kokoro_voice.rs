@@ -138,6 +138,26 @@ impl KokoroVoiceInstallStore {
         }
         Ok(Some(installed))
     }
+
+    pub fn remove_managed(&self, remote: &RemoteKokoroVoice) -> Result<bool, KokoroInstallError> {
+        remote.validate()?;
+        let filename = format!("{}.bin", remote.id);
+        let target = ObjectKey::from_segments(["voices", filename.as_str()])
+            .map_err(KokoroInstallError::Platform)?;
+        let Some(mut file) = self
+            .inner
+            .inspect(&target)
+            .map_err(KokoroInstallError::Platform)?
+        else {
+            return Ok(false);
+        };
+        verify_voice(&mut file, remote)?;
+        let path = file.native_path().to_path_buf();
+        drop(file);
+        self.inner
+            .remove_installed(&target, &path)
+            .map_err(KokoroInstallError::Platform)
+    }
 }
 
 impl KokoroVoiceDownloadSession {
@@ -290,12 +310,14 @@ mod tests {
         assert_eq!(installed.id, "af_heart");
         assert_eq!(
             store
-                .installed(&[remote])
+                .installed(std::slice::from_ref(&remote))
                 .expect("installed lookup")
                 .expect("installed voice")[0]
                 .artifact,
             installed.artifact
         );
+        assert!(store.remove_managed(&remote).expect("remove voice"));
+        assert!(!store.remove_managed(&remote).expect("removal replay"));
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 }

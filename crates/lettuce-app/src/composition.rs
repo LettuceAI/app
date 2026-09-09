@@ -283,6 +283,22 @@ impl AppBackend {
         crate::KokoroVoiceDownloadCoordinator::new(self.database.as_ref(), installs)
     }
 
+    pub fn remove_managed_kokoro_model(
+        &self,
+        installs: &lettuce_model_hub::KokoroInstallStore,
+        model: &lettuce_model_hub::RemoteKokoroModel,
+    ) -> Result<crate::KokoroManagedRemoval, crate::KokoroManagedRemovalError> {
+        crate::remove_managed_kokoro_model(installs, model)
+    }
+
+    pub fn remove_managed_kokoro_voice(
+        &self,
+        installs: &lettuce_model_hub::KokoroVoiceInstallStore,
+        voice: &lettuce_model_hub::RemoteKokoroVoice,
+    ) -> Result<crate::KokoroManagedRemoval, crate::KokoroManagedRemovalError> {
+        crate::remove_managed_kokoro_voice(installs, voice)
+    }
+
     pub fn remove_managed_whisper_model(
         &self,
         install_root: impl AsRef<Path>,

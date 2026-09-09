@@ -82,3 +82,6 @@ or expose a native path.
 Voice installation uses revision, ID, path, size and SHA-256 as its complete
 partial identity. It commits only verified bytes below the managed `voices`
 directory and rechecks every requested voice before reporting a batch installed.
+Managed removal verifies the exact pinned artifact and confined target before
+deleting a model variant or voice. Missing files replay as already removed;
+model removal preserves the shared config and tokenizer artifacts.

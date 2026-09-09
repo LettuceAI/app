@@ -228,6 +228,33 @@ impl KokoroInstallStore {
             artifacts,
         }))
     }
+
+    pub fn remove_managed_model(
+        &self,
+        model: &RemoteKokoroModel,
+    ) -> Result<bool, KokoroInstallError> {
+        model.validate()?;
+        let remote = model
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.role == KokoroArtifactRole::Model)
+            .ok_or(KokoroInstallError::InvalidManifest)?;
+        let target = ObjectKey::from_segments(remote.local_segments)
+            .map_err(KokoroInstallError::Platform)?;
+        let Some(mut file) = self
+            .inner
+            .inspect(&target)
+            .map_err(KokoroInstallError::Platform)?
+        else {
+            return Ok(false);
+        };
+        verify(&mut file, remote)?;
+        let path = file.native_path().to_path_buf();
+        drop(file);
+        self.inner
+            .remove_installed(&target, &path)
+            .map_err(KokoroInstallError::Platform)
+    }
 }
 
 impl KokoroDownloadSession {

@@ -172,33 +172,42 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
         let asset_id = download_asset_id(&model);
         let subject = JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string())
             .map_err(|_| KokoroDownloadError::InvalidWork)?;
-        let key = IdempotencyKey::new(format!("kokoro-install-{asset_id}"))
-            .map_err(|_| KokoroDownloadError::InvalidWork)?;
-        let admitted = self.jobs.create_or_get(
-            lettuce_jobs::JobSpec::new(
-                JobKind::ArtifactInstall,
-                subject,
-                OutcomeRef::ArtifactInstallation(asset_id),
-            )
-            .with_idempotency_key(key)
-            .with_priority(JobPriority::Interactive)
-            .with_resources(vec![
-                ResourceClass::Network,
-                ResourceClass::DiskRead,
-                ResourceClass::DiskWrite,
-                ResourceClass::Cpu,
-            ])
-            .with_policies(
-                RecoveryPolicy::Resume,
-                CancellationPolicy::UntilIrreversibleStage,
-            ),
-        )?;
-        validate_job(&admitted.job, &model)?;
-        Ok(KokoroDownloadAdmission {
-            model,
-            job: admitted.job,
-            created: admitted.created,
-        })
+        let mut key = format!("kokoro-install-{asset_id}");
+        for _ in 0..64 {
+            let admitted = self.jobs.create_or_get(
+                lettuce_jobs::JobSpec::new(
+                    JobKind::ArtifactInstall,
+                    subject.clone(),
+                    OutcomeRef::ArtifactInstallation(asset_id),
+                )
+                .with_idempotency_key(
+                    IdempotencyKey::new(key).map_err(|_| KokoroDownloadError::InvalidWork)?,
+                )
+                .with_priority(JobPriority::Interactive)
+                .with_resources(vec![
+                    ResourceClass::Network,
+                    ResourceClass::DiskRead,
+                    ResourceClass::DiskWrite,
+                    ResourceClass::Cpu,
+                ])
+                .with_policies(
+                    RecoveryPolicy::Resume,
+                    CancellationPolicy::UntilIrreversibleStage,
+                ),
+            )?;
+            validate_job(&admitted.job, &model)?;
+            if admitted.job.state != JobState::Succeeded
+                || self.installs.installed(&model)?.is_some()
+            {
+                return Ok(KokoroDownloadAdmission {
+                    model,
+                    job: admitted.job,
+                    created: admitted.created,
+                });
+            }
+            key = format!("kokoro-install-{asset_id}-after-{}", admitted.job.id);
+        }
+        Err(KokoroDownloadError::InvalidWork)
     }
 
     pub fn claim(
@@ -777,6 +786,19 @@ mod tests {
             std::fs::read(install_root.join("onnx/model_quantized.onnx")).expect("model"),
             b"model"
         );
+        let removal_store = KokoroInstallStore::open(&install_root).expect("removal store");
+        assert!(
+            crate::remove_managed_kokoro_model(&removal_store, &model)
+                .expect("remove model")
+                .removed
+        );
+        assert!(install_root.join("config.json").exists());
+        assert!(!install_root.join("onnx/model_quantized.onnx").exists());
+        let replacement = coordinator
+            .admit(model.clone())
+            .expect("replacement admission");
+        assert!(replacement.created);
+        assert_ne!(replacement.job.id, job_id);
         drop(coordinator);
         drop(database);
         std::fs::remove_dir_all(root).expect("cleanup");

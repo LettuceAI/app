@@ -980,3 +980,8 @@ and deduplicated before admission. Each voice resumes from an identity-bound
 confined partial, verifies pinned size and SHA-256 before atomic commit, and is
 reverified on successful replay without network access. Progress covers the
 whole batch and cancellation ends at the first verified voice commit.
+Managed Kokoro removal accepts only the pinned model or voice identity, verifies
+the current bytes and confined target before deletion, and treats missing bytes
+as an idempotent replay. Removing a model variant preserves its shared JSON
+assets. A later install receives a deterministic successor job instead of
+replaying an earlier success whose artifact was explicitly removed.

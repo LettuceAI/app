@@ -228,33 +228,42 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
         let asset_id = download_asset_id(&bundle);
         let subject = JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string())
             .map_err(|_| KokoroVoiceDownloadError::InvalidWork)?;
-        let key = IdempotencyKey::new(format!("kokoro-voices-{asset_id}"))
-            .map_err(|_| KokoroVoiceDownloadError::InvalidWork)?;
-        let admitted = self.jobs.create_or_get(
-            lettuce_jobs::JobSpec::new(
-                JobKind::ArtifactInstall,
-                subject,
-                OutcomeRef::ArtifactInstallation(asset_id),
-            )
-            .with_idempotency_key(key)
-            .with_priority(JobPriority::Interactive)
-            .with_resources(vec![
-                ResourceClass::Network,
-                ResourceClass::DiskRead,
-                ResourceClass::DiskWrite,
-                ResourceClass::Cpu,
-            ])
-            .with_policies(
-                RecoveryPolicy::Resume,
-                CancellationPolicy::UntilIrreversibleStage,
-            ),
-        )?;
-        validate_job(&admitted.job, &bundle)?;
-        Ok(KokoroVoiceDownloadAdmission {
-            bundle,
-            job: admitted.job,
-            created: admitted.created,
-        })
+        let mut key = format!("kokoro-voices-{asset_id}");
+        for _ in 0..64 {
+            let admitted = self.jobs.create_or_get(
+                lettuce_jobs::JobSpec::new(
+                    JobKind::ArtifactInstall,
+                    subject.clone(),
+                    OutcomeRef::ArtifactInstallation(asset_id),
+                )
+                .with_idempotency_key(
+                    IdempotencyKey::new(key).map_err(|_| KokoroVoiceDownloadError::InvalidWork)?,
+                )
+                .with_priority(JobPriority::Interactive)
+                .with_resources(vec![
+                    ResourceClass::Network,
+                    ResourceClass::DiskRead,
+                    ResourceClass::DiskWrite,
+                    ResourceClass::Cpu,
+                ])
+                .with_policies(
+                    RecoveryPolicy::Resume,
+                    CancellationPolicy::UntilIrreversibleStage,
+                ),
+            )?;
+            validate_job(&admitted.job, &bundle)?;
+            if admitted.job.state != JobState::Succeeded
+                || self.installs.installed(&bundle.voices)?.is_some()
+            {
+                return Ok(KokoroVoiceDownloadAdmission {
+                    bundle,
+                    job: admitted.job,
+                    created: admitted.created,
+                });
+            }
+            key = format!("kokoro-voices-{asset_id}-after-{}", admitted.job.id);
+        }
+        Err(KokoroVoiceDownloadError::InvalidWork)
     }
 
     pub fn claim(
@@ -857,6 +866,18 @@ mod tests {
             std::fs::read(install_root.join("voices/bm_george.bin")).expect("voice"),
             bytes_for("bm_george")
         );
+        let removal_store = KokoroVoiceInstallStore::open(&install_root).expect("removal store");
+        assert!(
+            crate::remove_managed_kokoro_voice(&removal_store, &bundle.voices[0])
+                .expect("remove voice")
+                .removed
+        );
+        assert!(!install_root.join("voices/af_heart.bin").exists());
+        let replacement = coordinator
+            .admit(bundle.clone())
+            .expect("replacement admission");
+        assert!(replacement.created);
+        assert_ne!(replacement.job.id, job_id);
         drop(coordinator);
         drop(database);
         std::fs::remove_dir_all(root).expect("cleanup");
