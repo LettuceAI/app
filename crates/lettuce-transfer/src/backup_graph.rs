@@ -2,8 +2,9 @@ use std::{collections::BTreeMap, fmt};
 
 use lettuce_context::{PromptDocument, PromptProvenance};
 use lettuce_models::{ModelProfile, ProviderAccount, validate_provider_connection};
-use lettuce_settings::{SecretPurpose, SecretRef, SecretValue};
-use lettuce_types::{ModelProfileId, PromptDocumentId};
+use lettuce_settings::{GlobalSettings, SecretPurpose, SecretRef, SecretValue};
+use lettuce_speech::{AudioProvider, UserVoice};
+use lettuce_types::{ModelProfileId, PromptDocumentId, Revision, TimestampMillis};
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use crate::BackupSection;
@@ -12,6 +13,8 @@ pub const PROVIDER_BACKUP_GRAPH_VERSION: u32 = 2;
 pub const MAX_BACKUP_PROVIDER_ACCOUNTS: usize = 128;
 pub const MAX_BACKUP_MODEL_PROFILES: usize = 2_048;
 pub const MAX_BACKUP_PROMPT_DOCUMENTS: usize = 2_048;
+pub const MAX_BACKUP_AUDIO_PROVIDERS: usize = 128;
+pub const MAX_BACKUP_USER_VOICES: usize = 4_096;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -22,6 +25,15 @@ pub struct ProviderBackupSelections {
     pub default_prompt_document_id: Option<PromptDocumentId>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupGlobalSettings {
+    pub value: GlobalSettings,
+    pub revision: Revision,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderBackupGraph {
@@ -30,6 +42,9 @@ pub struct ProviderBackupGraph {
     pub profiles: Vec<ModelProfile>,
     pub prompts: Vec<PromptDocument>,
     pub selections: ProviderBackupSelections,
+    pub settings: BackupGlobalSettings,
+    pub audio_providers: Vec<AudioProvider>,
+    pub user_voices: Vec<UserVoice>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -134,12 +149,22 @@ fn canonicalize_and_validate(
     if graph.accounts.len() > MAX_BACKUP_PROVIDER_ACCOUNTS
         || graph.profiles.len() > MAX_BACKUP_MODEL_PROFILES
         || graph.prompts.len() > MAX_BACKUP_PROMPT_DOCUMENTS
+        || graph.audio_providers.len() > MAX_BACKUP_AUDIO_PROVIDERS
+        || graph.user_voices.len() > MAX_BACKUP_USER_VOICES
     {
         return Err(ProviderBackupGraphError::LimitExceeded);
     }
     graph.accounts.sort_by_key(|account| account.id.to_string());
     graph.profiles.sort_by_key(|profile| profile.id.to_string());
     graph.prompts.sort_by_key(|prompt| prompt.id.to_string());
+    graph
+        .audio_providers
+        .sort_by_key(|provider| provider.id.to_string());
+    graph.user_voices.sort_by_key(|voice| voice.id.to_string());
+
+    if graph.settings.revision.get() == 0 || graph.settings.created_at > graph.settings.updated_at {
+        return Err(ProviderBackupGraphError::InvalidGraph);
+    }
 
     let mut account_ids = BTreeMap::new();
     let mut owner_ids = BTreeMap::new();
@@ -208,6 +233,43 @@ fn canonicalize_and_validate(
     {
         return Err(ProviderBackupGraphError::InvalidGraph);
     }
+    let generator = &graph.settings.value.lorebook_generator.selection;
+    if generator
+        .model_profile_id
+        .is_some_and(|id| !profile_ids.contains_key(&id))
+        || [
+            generator.planner_prompt_id,
+            generator.writer_prompt_id,
+            generator.refine_prompt_id,
+            generator.coherence_prompt_id,
+        ]
+        .into_iter()
+        .flatten()
+        .any(|id| !prompt_ids.contains_key(&id))
+    {
+        return Err(ProviderBackupGraphError::InvalidGraph);
+    }
+
+    let mut audio_provider_ids = BTreeMap::new();
+    for provider in &graph.audio_providers {
+        if provider.validate().is_err()
+            || provider.revision.get() == 0
+            || audio_provider_ids.insert(provider.id, ()).is_some()
+            || owner_ids.insert(provider.secret_owner_id, ()).is_some()
+        {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+    }
+    let mut voice_ids = BTreeMap::new();
+    for voice in &graph.user_voices {
+        if voice.validate().is_err()
+            || voice.revision.get() == 0
+            || !audio_provider_ids.contains_key(&voice.provider_id)
+            || voice_ids.insert(voice.id, ()).is_some()
+        {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+    }
     Ok(())
 }
 
@@ -232,6 +294,17 @@ fn expected_secrets(
                 SecretPurpose::ProviderSecretHeader {
                     owner: account.secret_owner_id,
                     name: header.name.clone(),
+                },
+            )?;
+        }
+    }
+    for provider in &graph.audio_providers {
+        if let Some(reference) = provider.api_key_ref {
+            insert_secret(
+                &mut expected,
+                reference,
+                SecretPurpose::AudioApiKey {
+                    owner: provider.secret_owner_id,
                 },
             )?;
         }
@@ -307,6 +380,14 @@ mod tests {
                 group_speaker_model_profile_id: None,
                 default_prompt_document_id: None,
             },
+            settings: BackupGlobalSettings {
+                value: GlobalSettings::default(),
+                revision: Revision::new(1),
+                created_at: TimestampMillis::new(1),
+                updated_at: TimestampMillis::new(1),
+            },
+            audio_providers: Vec::new(),
+            user_voices: Vec::new(),
         }
     }
 

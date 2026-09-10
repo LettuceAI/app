@@ -37,6 +37,13 @@ API keys and other secret-store values are required backup content; they remain
 isolated in authenticated encrypted sections and never appear in public
 metadata, logs or durable receipts.
 
+The version-2 configuration snapshot now includes the exact global settings
+payload, provider accounts, model profiles, prompt documents, audio providers
+and user voices. It validates all selections and ownership links as one graph.
+Both provider credentials and audio API keys are derived from opaque references
+and must be supplied as the exact scoped inventory before the sections can be
+sealed.
+
 The versioned ASR learning document is a bounded JSON-ready interchange format
 for vocabulary, corrections, ignored suggestions and managed voice examples.
 It preserves metrics and relationships without exporting native audio paths;

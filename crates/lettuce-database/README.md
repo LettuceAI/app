@@ -640,3 +640,8 @@ documents with ordered entries and their current global selections in one
 deferred SQLite transaction. The adapter returns typed non-secret domain data
 through the transfer-owned source port; native secret values remain behind the
 application's `SecretStore`.
+
+The same snapshot transaction includes the exact global settings payload and
+all audio providers and user voices. TTS ownership and voice-to-provider links
+are decoded through the existing validated row readers before the graph leaves
+the database boundary.

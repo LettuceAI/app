@@ -94,15 +94,18 @@ mod tests {
         InMemorySecretStore, SecretBackendError, SecretOwnerId, SecretPurpose, SecretRecord,
         SecretRef, SecretStatus, SecretStore, SecretStoreError, SecretValue,
     };
+    use lettuce_speech::{
+        AudioProvider, AudioProviderConfig, TtsConfigurationRepository, UserVoice,
+    };
     use lettuce_transfer::{BackupEnvelopeError, open_backup};
-    use lettuce_types::{OperationId, ProviderAccountId, Revision};
+    use lettuce_types::{
+        AudioProviderId, OperationId, ProviderAccountId, Revision, VoiceProfileId,
+    };
 
     use super::*;
     use crate::AppBackend;
 
     struct ChangingSecretStore {
-        reference: SecretRef,
-        purpose: SecretPurpose,
         status_calls: AtomicUsize,
     }
 
@@ -122,9 +125,7 @@ mod tests {
             reference: &SecretRef,
             purpose: &SecretPurpose,
         ) -> Result<SecretValue, SecretStoreError> {
-            if *reference != self.reference || *purpose != self.purpose {
-                return Err(SecretStoreError::PurposeMismatch);
-            }
+            let _ = (reference, purpose);
             SecretValue::new("changing-secret")
                 .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))
         }
@@ -134,12 +135,9 @@ mod tests {
             reference: &SecretRef,
             purpose: &SecretPurpose,
         ) -> Result<SecretStatus, SecretStoreError> {
-            if *reference != self.reference || *purpose != self.purpose {
-                return Err(SecretStoreError::PurposeMismatch);
-            }
             Ok(SecretStatus {
-                reference: self.reference,
-                purpose: self.purpose.clone(),
+                reference: *reference,
+                purpose: purpose.clone(),
                 generation: if self.status_calls.fetch_add(1, Ordering::SeqCst) == 0 {
                     1
                 } else {
@@ -198,6 +196,54 @@ mod tests {
             )
             .await
             .expect("store secret");
+        let audio_reference = SecretRef::new();
+        let audio_owner = SecretOwnerId::new();
+        let audio_provider_id = AudioProviderId::new();
+        TtsConfigurationRepository::upsert_audio_provider(
+            backend.database(),
+            AudioProvider {
+                id: audio_provider_id,
+                secret_owner_id: audio_owner,
+                label: "Speech provider".into(),
+                api_key_ref: Some(audio_reference),
+                config: AudioProviderConfig::OpenAiCompatible {
+                    base_url: None,
+                    request_path: None,
+                },
+                revision: Revision::new(1),
+                created_at: TimestampMillis::new(2),
+                updated_at: TimestampMillis::new(2),
+            },
+            None,
+        )
+        .expect("store audio provider");
+        TtsConfigurationRepository::upsert_user_voice(
+            backend.database(),
+            UserVoice {
+                id: VoiceProfileId::new(),
+                provider_id: audio_provider_id,
+                name: "Narrator".into(),
+                model_id: "tts-model".into(),
+                voice_id: "voice-one".into(),
+                prompt: Some("Warm delivery".into()),
+                revision: Revision::new(1),
+                created_at: TimestampMillis::new(2),
+                updated_at: TimestampMillis::new(2),
+            },
+            None,
+        )
+        .expect("store user voice");
+        secret_store
+            .put(
+                SecretRecord::new(
+                    audio_reference,
+                    SecretPurpose::AudioApiKey { owner: audio_owner },
+                ),
+                SecretValue::new("audio-backup-canary").expect("secret"),
+                None,
+            )
+            .await
+            .expect("store audio secret");
         drop(backend);
 
         let reopened = AppBackend::open(&path, TimestampMillis::new(3)).expect("reopen backend");
@@ -218,15 +264,30 @@ mod tests {
                 .any(|window| window == b"provider-backup-canary")
         );
         assert!(
+            sections[1]
+                .bytes
+                .windows("audio-backup-canary".len())
+                .any(|window| window == b"audio-backup-canary")
+        );
+        assert!(
             !sections[0]
                 .bytes
                 .windows("provider-backup-canary".len())
                 .any(|window| window == b"provider-backup-canary")
         );
+        assert!(
+            !sections[0]
+                .bytes
+                .windows("audio-backup-canary".len())
+                .any(|window| window == b"audio-backup-canary")
+        );
+        let metadata: serde_json::Value =
+            serde_json::from_slice(&sections[0].bytes).expect("metadata JSON");
+        assert_eq!(metadata["settings"]["value"]["analytics_enabled"], true);
+        assert_eq!(metadata["audio_providers"][0]["label"], "Speech provider");
+        assert_eq!(metadata["user_voices"][0]["name"], "Narrator");
 
         let changing = ChangingSecretStore {
-            reference,
-            purpose: SecretPurpose::ProviderApiKey { owner },
             status_calls: AtomicUsize::new(0),
         };
         assert_eq!(

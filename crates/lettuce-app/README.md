@@ -1066,3 +1066,8 @@ and secrets as separate authenticated sections. Secret plaintext is held in
 zeroizing buffers and never appears in public backup metadata, errors or Debug
 output. This is the first real graph in backup format version 2; remaining
 profile domains, media and restore are subsequent backup slices.
+
+That coordinator now includes global settings plus audio providers and user
+voices in the same database snapshot. Its derived secret inventory covers both
+provider credentials and every referenced `AudioApiKey`; either family must be
+complete and stable before encryption begins.

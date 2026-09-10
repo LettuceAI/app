@@ -33,7 +33,7 @@ fn kind_name(kind: AudioProviderKind) -> &'static str {
     }
 }
 
-fn provider_from_row(row: &Row<'_>) -> rusqlite::Result<AudioProvider> {
+pub(crate) fn provider_from_row(row: &Row<'_>) -> rusqlite::Result<AudioProvider> {
     let id = row.get::<_, String>(0)?;
     let owner = row.get::<_, String>(1)?;
     let stored_kind = row.get::<_, String>(2)?;
@@ -75,7 +75,7 @@ fn provider_from_row(row: &Row<'_>) -> rusqlite::Result<AudioProvider> {
     Ok(provider)
 }
 
-fn voice_from_row(row: &Row<'_>) -> rusqlite::Result<UserVoice> {
+pub(crate) fn voice_from_row(row: &Row<'_>) -> rusqlite::Result<UserVoice> {
     let voice = UserVoice {
         id: VoiceProfileId::from_str(&row.get::<_, String>(0)?)
             .map_err(|_| rusqlite::Error::InvalidQuery)?,
@@ -97,9 +97,9 @@ fn voice_from_row(row: &Row<'_>) -> rusqlite::Result<UserVoice> {
     Ok(voice)
 }
 
-const PROVIDER_SELECT: &str = "SELECT id, secret_owner_id, provider_kind, label,
+pub(crate) const PROVIDER_SELECT: &str = "SELECT id, secret_owner_id, provider_kind, label,
     api_key_secret_ref, config_json, revision, created_at, updated_at FROM audio_providers";
-const VOICE_SELECT: &str = "SELECT id, provider_id, name, model_id, voice_id, prompt,
+pub(crate) const VOICE_SELECT: &str = "SELECT id, provider_id, name, model_id, voice_id, prompt,
     revision, created_at, updated_at FROM user_voices";
 
 impl TtsConfigurationRepository for Database {

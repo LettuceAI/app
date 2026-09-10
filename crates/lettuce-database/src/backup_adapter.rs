@@ -1,8 +1,8 @@
 use lettuce_transfer::{
-    PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph, ProviderBackupSelections,
-    ProviderBackupSource, ProviderBackupSourceError,
+    BackupGlobalSettings, PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph,
+    ProviderBackupSelections, ProviderBackupSource, ProviderBackupSourceError,
 };
-use lettuce_types::{ModelProfileId, PromptDocumentId};
+use lettuce_types::{ModelProfileId, PromptDocumentId, Revision, TimestampMillis};
 use rusqlite::{OptionalExtension, TransactionBehavior};
 
 use crate::{Database, model_from_row, parse_id, provider_from_row};
@@ -59,34 +59,69 @@ impl ProviderBackupSource for Database {
             })
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(backup_error)?;
-        let selections = transaction
+        let (selections, settings) = transaction
             .query_row(
-                "SELECT default_model_profile_id,dynamic_memory_model_profile_id,group_speaker_model_profile_id,default_prompt_document_id FROM app_settings WHERE id=1",
+                "SELECT default_model_profile_id,dynamic_memory_model_profile_id,group_speaker_model_profile_id,default_prompt_document_id,format_version,payload_json,revision,created_at,updated_at FROM app_settings WHERE id=1",
                 [],
                 |row| {
-                    Ok(ProviderBackupSelections {
-                        default_model_profile_id: row
-                            .get::<_, Option<String>>(0)?
-                            .map(parse_id::<ModelProfileId>)
-                            .transpose()?,
-                        dynamic_memory_model_profile_id: row
-                            .get::<_, Option<String>>(1)?
-                            .map(parse_id::<ModelProfileId>)
-                            .transpose()?,
-                        group_speaker_model_profile_id: row
-                            .get::<_, Option<String>>(2)?
-                            .map(parse_id::<ModelProfileId>)
-                            .transpose()?,
-                        default_prompt_document_id: row
-                            .get::<_, Option<String>>(3)?
-                            .map(parse_id::<PromptDocumentId>)
-                            .transpose()?,
-                    })
+                    if row.get::<_, u32>(4)? != lettuce_settings::GLOBAL_SETTINGS_FORMAT_VERSION {
+                        return Err(rusqlite::Error::InvalidQuery);
+                    }
+                    let payload = row.get::<_, String>(5)?;
+                    Ok((
+                        ProviderBackupSelections {
+                            default_model_profile_id: row
+                                .get::<_, Option<String>>(0)?
+                                .map(parse_id::<ModelProfileId>)
+                                .transpose()?,
+                            dynamic_memory_model_profile_id: row
+                                .get::<_, Option<String>>(1)?
+                                .map(parse_id::<ModelProfileId>)
+                                .transpose()?,
+                            group_speaker_model_profile_id: row
+                                .get::<_, Option<String>>(2)?
+                                .map(parse_id::<ModelProfileId>)
+                                .transpose()?,
+                            default_prompt_document_id: row
+                                .get::<_, Option<String>>(3)?
+                                .map(parse_id::<PromptDocumentId>)
+                                .transpose()?,
+                        },
+                        BackupGlobalSettings {
+                            value: serde_json::from_str(&payload)
+                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                            revision: Revision::new(
+                                u64::try_from(row.get::<_, i64>(6)?)
+                                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                            ),
+                            created_at: TimestampMillis::new(row.get(7)?),
+                            updated_at: TimestampMillis::new(row.get(8)?),
+                        },
+                    ))
                 },
             )
             .optional()
             .map_err(backup_error)?
             .ok_or(ProviderBackupSourceError::InvalidData)?;
+        let audio_providers = transaction
+            .prepare(&format!(
+                "{} ORDER BY id",
+                crate::tts_adapter::PROVIDER_SELECT
+            ))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], crate::tts_adapter::provider_from_row)?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(backup_error)?;
+        let user_voices = transaction
+            .prepare(&format!("{} ORDER BY id", crate::tts_adapter::VOICE_SELECT))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], crate::tts_adapter::voice_from_row)?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(backup_error)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             version: PROVIDER_BACKUP_GRAPH_VERSION,
@@ -94,6 +129,9 @@ impl ProviderBackupSource for Database {
             profiles,
             prompts,
             selections,
+            settings,
+            audio_providers,
+            user_voices,
         })
     }
 }
