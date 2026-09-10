@@ -300,3 +300,15 @@ drop. Defaults, selected variants, starter ownership, model, prompt, scene and
 lorebook links must resolve inside the complete retained plan. Missing documents,
 unknown fields and normalized legacy binding order remain visible as conversion
 notices, and malformed or orphaned graphs reject before any mutation.
+
+Legacy reusable group profiles now join that same read-only plan. Ordered and
+muted members, explicit or inherited persona selection, archived state, chat and
+memory modes, all five speaker policies, per-member model overrides, group
+prompt selections, lorebook order and policy, raw appearance, starting-scene
+variants and both unresolved background locators remain intact. Director and
+Director Action are stored policies and require no persisted selected speaker;
+the legacy UI supplied that choice per send or continuation. Current group and
+member validation rejects duplicate or missing members, all-muted and undersized
+groups, orphan overrides and invalid selections before restore writes. Group
+lorebooks use the canonical ordered binding document. Group sessions remain in
+the attached inventory for the later conversation/runtime conversion slice.

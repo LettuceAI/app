@@ -4,14 +4,15 @@ use std::{
 };
 
 use lettuce_characters::{
-    CardStyle, CharacterPresentationV1, CharacterProfile, CharacterProvenance, ConversationStarter,
-    Crop, GradientSource, InteractionMode, MemoryPolicy, SceneDocumentV1, ScenePart,
+    CardStyle, CharacterPresentationV1, CharacterProfile, CharacterProvenance, ChatMode,
+    ConversationStarter, Crop, GradientSource, GroupMember, GroupProfile, InteractionMode,
+    LifecycleStatus, MemoryPolicy, SceneDocumentV1, ScenePart, Selection, SpeakerSelection,
     StarterMessage, StarterRole,
 };
 use lettuce_context::LorebookBinding;
 use lettuce_types::{
-    CharacterId, ConversationStarterId, LorebookId, ModelProfileId, PersonaId, Revision, SceneId,
-    SceneVariantId, StarterMessageId, TimestampMillis,
+    CharacterId, ConversationStarterId, GroupId, LorebookId, ModelProfileId, PersonaId, Revision,
+    SceneId, SceneVariantId, StarterMessageId, TimestampMillis,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -35,6 +36,8 @@ pub struct LegacyBackupAuthoredPlan {
     pub characters: Vec<LegacyBackupCharacterCandidate>,
     pub character_lorebooks: Vec<BackupLorebookBindings<CharacterId>>,
     pub persona_lorebooks: Vec<BackupLorebookBindings<PersonaId>>,
+    pub groups: Vec<LegacyBackupGroupCandidate>,
+    pub group_lorebooks: Vec<BackupLorebookBindings<GroupId>>,
     pub notices: Vec<LegacyBackupConversionNotice>,
     pub configuration: LegacyBackupConfigurationPlan,
 }
@@ -126,6 +129,27 @@ pub struct LegacyBackupStarterCandidate {
     pub prompt_source_id: Option<String>,
     pub lorebook_ids: Option<Vec<LorebookId>>,
     pub created_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyBackupGroupCandidate {
+    pub id: GroupId,
+    pub status: LifecycleStatus,
+    pub name: String,
+    pub chat_mode: ChatMode,
+    pub persona: Selection<PersonaId>,
+    pub speaker_selection: SpeakerSelection,
+    pub memory_policy: MemoryPolicy,
+    pub disable_character_lorebooks: bool,
+    pub group_conversation_prompt_source_id: Option<String>,
+    pub group_roleplay_prompt_source_id: Option<String>,
+    pub chat_appearance: Option<Value>,
+    pub members: Vec<GroupMember>,
+    pub starting_scene: Option<LegacyBackupSceneCandidate>,
+    pub background: Option<LegacyMediaReference>,
+    pub lorebook_ids: Vec<LorebookId>,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -309,6 +333,67 @@ struct CharacterLorebookRow {
     extra: BTreeMap<String, Value>,
 }
 
+#[derive(Deserialize)]
+struct GroupRow {
+    id: String,
+    name: String,
+    #[serde(default = "empty_json_array")]
+    character_ids: String,
+    #[serde(default = "empty_json_array")]
+    muted_character_ids: String,
+    persona_id: Option<String>,
+    created_at: i64,
+    updated_at: i64,
+    #[serde(default, deserialize_with = "nullable_bool")]
+    archived: bool,
+    #[serde(default = "default_chat_type")]
+    chat_type: String,
+    starting_scene: Option<String>,
+    background_image_path: Option<String>,
+    #[serde(default = "empty_json_array")]
+    lorebook_ids: String,
+    #[serde(default, deserialize_with = "nullable_bool")]
+    disable_character_lorebooks: bool,
+    chat_appearance: Option<String>,
+    #[serde(default = "default_speaker_selection")]
+    speaker_selection_method: String,
+    #[serde(default = "default_memory")]
+    memory_type: String,
+    character_model_overrides: Option<String>,
+    group_chat_prompt_template_id: Option<String>,
+    group_chat_roleplay_prompt_template_id: Option<String>,
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
+}
+
+#[derive(Deserialize)]
+struct GroupStartingSceneRow {
+    id: String,
+    content: String,
+    direction: Option<String>,
+    #[serde(alias = "backgroundImagePath")]
+    background_image_path: Option<String>,
+    #[serde(alias = "createdAt")]
+    created_at: i64,
+    #[serde(alias = "selectedVariantId")]
+    selected_variant_id: Option<String>,
+    #[serde(default)]
+    variants: Vec<GroupSceneVariantRow>,
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
+}
+
+#[derive(Deserialize)]
+struct GroupSceneVariantRow {
+    id: String,
+    content: String,
+    direction: Option<String>,
+    #[serde(alias = "createdAt")]
+    created_at: i64,
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
+}
+
 pub fn plan_legacy_backup_authored(
     mut configuration: LegacyBackupConfigurationPlan,
 ) -> Result<LegacyBackupAuthoredPlan, LegacyBackupAuthoredError> {
@@ -327,6 +412,11 @@ pub fn plan_legacy_backup_authored(
         LegacyBackupDocumentKind::Characters,
         CHARACTER_LIMIT,
     )?;
+    let group_rows: Vec<GroupRow> = document_rows(
+        &configuration,
+        LegacyBackupDocumentKind::GroupCharacters,
+        CHARACTER_LIMIT,
+    )?;
     let explicit_binding_rows: Option<Vec<CharacterLorebookRow>> = optional_rows(
         &configuration,
         LegacyBackupDocumentKind::CharacterLorebooks,
@@ -336,6 +426,7 @@ pub fn plan_legacy_backup_authored(
         LegacyBackupDocumentKind::Personas,
         LegacyBackupDocumentKind::Lorebooks,
         LegacyBackupDocumentKind::Characters,
+        LegacyBackupDocumentKind::GroupCharacters,
     ] {
         if !configuration
             .source
@@ -373,6 +464,16 @@ pub fn plan_legacy_backup_authored(
         &mut configuration.notices,
     )?;
     validate_starter_owners(&characters, &configuration.chat_templates)?;
+    let groups = map_groups(
+        &characters,
+        &personas,
+        &lorebooks,
+        &configuration.provider_models,
+        &configuration.prompts,
+        group_rows,
+        &mut configuration.notices,
+    )?;
+    let group_lorebooks = map_group_bindings(&groups);
     configuration.notices.sort();
     configuration.notices.dedup();
     Ok(LegacyBackupAuthoredPlan {
@@ -381,6 +482,8 @@ pub fn plan_legacy_backup_authored(
         characters,
         character_lorebooks,
         persona_lorebooks,
+        groups,
+        group_lorebooks,
         notices: configuration.notices.clone(),
         configuration,
     })
@@ -970,6 +1073,372 @@ fn map_starters(
         .collect()
 }
 
+fn map_groups(
+    characters: &[LegacyBackupCharacterCandidate],
+    personas: &LegacyPersonaPlan,
+    lorebooks: &LegacyLorebookPlan,
+    provider_models: &crate::LegacyProviderModelPlan,
+    prompts: &crate::LegacyPromptPlan,
+    rows: Vec<GroupRow>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> Result<Vec<LegacyBackupGroupCandidate>, LegacyBackupAuthoredError> {
+    let character_ids = characters
+        .iter()
+        .map(|character| character.id)
+        .collect::<BTreeSet<_>>();
+    let persona_ids = personas
+        .personas
+        .iter()
+        .map(|persona| persona.id)
+        .collect::<BTreeSet<_>>();
+    let lorebook_ids = lorebooks
+        .lorebooks
+        .iter()
+        .map(|lorebook| lorebook.id)
+        .collect::<BTreeSet<_>>();
+    let model_ids = provider_models
+        .model_profiles
+        .iter()
+        .map(|model| model.id)
+        .collect::<BTreeSet<_>>();
+    let prompt_ids = prompts
+        .prompts
+        .iter()
+        .map(|prompt| prompt.source_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut group_ids = BTreeSet::new();
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        report_extra(
+            LegacyBackupDocumentKind::GroupCharacters,
+            &row.extra,
+            notices,
+        );
+        let id = parse_id(&row.id, LegacyBackupDocumentKind::GroupCharacters, "id")?;
+        require_unique(
+            &mut group_ids,
+            id,
+            LegacyBackupDocumentKind::GroupCharacters,
+            "id",
+        )?;
+        require_nonblank(&row.name, LegacyBackupDocumentKind::GroupCharacters, "name")?;
+        validate_timestamps(
+            row.created_at,
+            row.updated_at,
+            LegacyBackupDocumentKind::GroupCharacters,
+        )?;
+        let member_ids = id_list::<CharacterId>(
+            &row.character_ids,
+            LegacyBackupDocumentKind::GroupCharacters,
+            "character_ids",
+        )?;
+        validate_ids(
+            &member_ids,
+            &character_ids,
+            LegacyBackupDocumentKind::GroupCharacters,
+            "character_ids",
+        )?;
+        let muted_ids = id_list::<CharacterId>(
+            &row.muted_character_ids,
+            LegacyBackupDocumentKind::GroupCharacters,
+            "muted_character_ids",
+        )?;
+        if muted_ids.iter().any(|member| !member_ids.contains(member)) {
+            return Err(orphan(
+                LegacyBackupDocumentKind::GroupCharacters,
+                "muted_character_ids",
+            ));
+        }
+        let raw_overrides = row
+            .character_model_overrides
+            .map(|value| {
+                serde_json::from_str::<BTreeMap<String, String>>(&value).map_err(|_| {
+                    malformed(
+                        LegacyBackupDocumentKind::GroupCharacters,
+                        "character_model_overrides",
+                    )
+                })
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let mut overrides = BTreeMap::new();
+        for (member_source, model_source) in raw_overrides {
+            let member = parse_id::<CharacterId>(
+                &member_source,
+                LegacyBackupDocumentKind::GroupCharacters,
+                "character_model_overrides.character_id",
+            )?;
+            if !member_ids.contains(&member) {
+                return Err(orphan(
+                    LegacyBackupDocumentKind::GroupCharacters,
+                    "character_model_overrides.character_id",
+                ));
+            }
+            let model = crate::legacy_backup_configuration::canonical_model_id(
+                &model_source,
+                notices,
+                "group_characters.character_model_overrides",
+            );
+            if !model_ids.contains(&model) {
+                return Err(orphan(
+                    LegacyBackupDocumentKind::GroupCharacters,
+                    "character_model_overrides.model_id",
+                ));
+            }
+            overrides.insert(member, model);
+        }
+        let members = member_ids
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(ordinal, character_id)| GroupMember {
+                character_id,
+                ordinal: ordinal as u32,
+                muted: muted_ids.contains(&character_id),
+                model_profile_override: overrides.get(&character_id).copied(),
+            })
+            .collect::<Vec<_>>();
+        let persona = optional_id::<PersonaId>(
+            row.persona_id,
+            LegacyBackupDocumentKind::GroupCharacters,
+            "persona_id",
+        )?
+        .map(Selection::Explicit)
+        .unwrap_or(Selection::Inherit);
+        if let Selection::Explicit(persona_id) = persona
+            && !persona_ids.contains(&persona_id)
+        {
+            return Err(orphan(
+                LegacyBackupDocumentKind::GroupCharacters,
+                "persona_id",
+            ));
+        }
+        let chat_mode = match row.chat_type.as_str() {
+            "conversation" => ChatMode::Conversation,
+            "roleplay" => ChatMode::Roleplay,
+            _ => {
+                return Err(malformed(
+                    LegacyBackupDocumentKind::GroupCharacters,
+                    "chat_type",
+                ));
+            }
+        };
+        let speaker_selection = match row.speaker_selection_method.as_str() {
+            "llm" => SpeakerSelection::Llm,
+            "heuristic" => SpeakerSelection::Heuristic,
+            "round_robin" => SpeakerSelection::RoundRobin,
+            "director" => SpeakerSelection::Director,
+            "director_action" => SpeakerSelection::DirectorAction,
+            _ => {
+                return Err(malformed(
+                    LegacyBackupDocumentKind::GroupCharacters,
+                    "speaker_selection_method",
+                ));
+            }
+        };
+        let memory_policy = match row.memory_type.as_str() {
+            "manual" => MemoryPolicy::Manual,
+            "dynamic" => MemoryPolicy::Dynamic,
+            _ => {
+                return Err(malformed(
+                    LegacyBackupDocumentKind::GroupCharacters,
+                    "memory_type",
+                ));
+            }
+        };
+        for (field, prompt) in [
+            (
+                "group_chat_prompt_template_id",
+                row.group_chat_prompt_template_id.as_deref(),
+            ),
+            (
+                "group_chat_roleplay_prompt_template_id",
+                row.group_chat_roleplay_prompt_template_id.as_deref(),
+            ),
+        ] {
+            if prompt.is_some_and(|prompt| !prompt_ids.contains(prompt)) {
+                return Err(orphan(LegacyBackupDocumentKind::GroupCharacters, field));
+            }
+        }
+        let bound_lorebooks = id_list::<LorebookId>(
+            &row.lorebook_ids,
+            LegacyBackupDocumentKind::GroupCharacters,
+            "lorebook_ids",
+        )?;
+        validate_ids(
+            &bound_lorebooks,
+            &lorebook_ids,
+            LegacyBackupDocumentKind::GroupCharacters,
+            "lorebook_ids",
+        )?;
+        let starting_scene = map_group_starting_scene(row.starting_scene, notices)?;
+        let status = if row.archived {
+            LifecycleStatus::Archived
+        } else {
+            LifecycleStatus::Active
+        };
+        let validation = GroupProfile {
+            id,
+            status,
+            name: row.name.clone(),
+            chat_mode,
+            persona: persona.clone(),
+            speaker_selection,
+            memory_policy,
+            disable_character_lorebooks: row.disable_character_lorebooks,
+            group_conversation_prompt_id: None,
+            group_roleplay_prompt_id: None,
+            presentation: lettuce_characters::ChatAppearanceV1::default(),
+            members: members.clone(),
+            starting_scene_id: starting_scene.as_ref().map(|scene| scene.id),
+            background_asset_id: None,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(row.created_at),
+            updated_at: TimestampMillis::new(row.updated_at),
+        };
+        validation
+            .validate()
+            .map_err(|_| malformed(LegacyBackupDocumentKind::GroupCharacters, "group_profile"))?;
+        result.push(LegacyBackupGroupCandidate {
+            id,
+            status,
+            name: row.name,
+            chat_mode,
+            persona,
+            speaker_selection,
+            memory_policy,
+            disable_character_lorebooks: row.disable_character_lorebooks,
+            group_conversation_prompt_source_id: normalize(row.group_chat_prompt_template_id),
+            group_roleplay_prompt_source_id: normalize(row.group_chat_roleplay_prompt_template_id),
+            chat_appearance: parse_json_document(
+                row.chat_appearance,
+                LegacyBackupDocumentKind::GroupCharacters,
+                "chat_appearance",
+            )?,
+            members,
+            starting_scene,
+            background: media(
+                row.background_image_path,
+                LegacyBackupDocumentKind::GroupCharacters,
+                "background_image_path",
+            )?,
+            lorebook_ids: bound_lorebooks,
+            created_at: TimestampMillis::new(row.created_at),
+            updated_at: TimestampMillis::new(row.updated_at),
+        });
+    }
+    Ok(result)
+}
+
+fn map_group_starting_scene(
+    value: Option<String>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> Result<Option<LegacyBackupSceneCandidate>, LegacyBackupAuthoredError> {
+    let Some(value) = normalize(value) else {
+        return Ok(None);
+    };
+    let row = serde_json::from_str::<GroupStartingSceneRow>(&value)
+        .map_err(|_| malformed(LegacyBackupDocumentKind::GroupCharacters, "starting_scene"))?;
+    report_extra(
+        LegacyBackupDocumentKind::GroupCharacters,
+        &row.extra,
+        notices,
+    );
+    if row.variants.len() > CHILD_LIMIT {
+        return Err(limit(LegacyBackupDocumentKind::GroupCharacters));
+    }
+    let id = parse_id(
+        &row.id,
+        LegacyBackupDocumentKind::GroupCharacters,
+        "starting_scene.id",
+    )?;
+    let selected_variant_id = optional_id(
+        row.selected_variant_id,
+        LegacyBackupDocumentKind::GroupCharacters,
+        "starting_scene.selected_variant_id",
+    )?;
+    let mut variant_ids = BTreeSet::new();
+    let variants = row
+        .variants
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, variant)| {
+            report_extra(
+                LegacyBackupDocumentKind::GroupCharacters,
+                &variant.extra,
+                notices,
+            );
+            let id = parse_id(
+                &variant.id,
+                LegacyBackupDocumentKind::GroupCharacters,
+                "starting_scene.variants.id",
+            )?;
+            require_unique(
+                &mut variant_ids,
+                id,
+                LegacyBackupDocumentKind::GroupCharacters,
+                "starting_scene.variants.id",
+            )?;
+            Ok::<_, LegacyBackupAuthoredError>(LegacyBackupSceneVariantCandidate {
+                id,
+                ordinal: u32::try_from(ordinal)
+                    .map_err(|_| limit(LegacyBackupDocumentKind::GroupCharacters))?,
+                content: text_document_for(
+                    variant.content,
+                    LegacyBackupDocumentKind::GroupCharacters,
+                )?,
+                direction: normalize(variant.direction),
+                created_at: TimestampMillis::new(variant.created_at),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if selected_variant_id.is_some_and(|selected| !variant_ids.contains(&selected)) {
+        return Err(orphan(
+            LegacyBackupDocumentKind::GroupCharacters,
+            "starting_scene.selected_variant_id",
+        ));
+    }
+    Ok(Some(LegacyBackupSceneCandidate {
+        id,
+        ordinal: 0,
+        content: text_document_for(row.content, LegacyBackupDocumentKind::GroupCharacters)?,
+        direction: normalize(row.direction),
+        background: media(
+            row.background_image_path,
+            LegacyBackupDocumentKind::GroupCharacters,
+            "starting_scene.background_image_path",
+        )?,
+        selected_variant_id,
+        variants,
+        created_at: TimestampMillis::new(row.created_at),
+    }))
+}
+
+fn map_group_bindings(
+    groups: &[LegacyBackupGroupCandidate],
+) -> Vec<BackupLorebookBindings<GroupId>> {
+    groups
+        .iter()
+        .map(|group| BackupLorebookBindings {
+            owner_id: group.id,
+            bindings: group
+                .lorebook_ids
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(ordinal, lorebook_id)| LorebookBinding {
+                    lorebook_id,
+                    enabled: true,
+                    ordinal: ordinal as u32,
+                    revision: Revision::INITIAL,
+                    created_at: group.created_at,
+                    updated_at: group.updated_at,
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 fn map_character_bindings(
     characters: &[LegacyBackupCharacterCandidate],
     lorebook_ids: &BTreeSet<LorebookId>,
@@ -1240,8 +1709,15 @@ fn crop(
 }
 
 fn text_document(text: String) -> Result<SceneDocumentV1, LegacyBackupAuthoredError> {
+    text_document_for(text, LegacyBackupDocumentKind::Characters)
+}
+
+fn text_document_for(
+    text: String,
+    document: LegacyBackupDocumentKind,
+) -> Result<SceneDocumentV1, LegacyBackupAuthoredError> {
     SceneDocumentV1::new(vec![ScenePart::Text { text }])
-        .map_err(|_| malformed(LegacyBackupDocumentKind::Characters, "scenes.content"))
+        .map_err(|_| malformed(document, "scenes.content"))
 }
 
 fn validate_presentation(
@@ -1299,6 +1775,17 @@ fn parse_json(
             serde_json::from_str(&value)
                 .map_err(|_| malformed(LegacyBackupDocumentKind::Characters, field))
         })
+        .transpose()
+        .map(|value| value.and_then(normalize_value))
+}
+
+fn parse_json_document(
+    value: Option<String>,
+    document: LegacyBackupDocumentKind,
+    field: &str,
+) -> Result<Option<Value>, LegacyBackupAuthoredError> {
+    value
+        .map(|value| serde_json::from_str(&value).map_err(|_| malformed(document, field)))
         .transpose()
         .map(|value| value.and_then(normalize_value))
 }
@@ -1479,6 +1966,12 @@ fn default_memory() -> String {
 }
 fn default_gradient_source() -> String {
     "base".to_owned()
+}
+fn default_chat_type() -> String {
+    "conversation".to_owned()
+}
+fn default_speaker_selection() -> String {
+    "llm".to_owned()
 }
 
 fn bool_or_integer<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
@@ -1737,6 +2230,113 @@ mod tests {
     }
 
     #[test]
+    fn group_profiles_preserve_director_policy_members_scene_and_media() {
+        let first_character = id(40);
+        let second_character = id(41);
+        let persona_id = id(42);
+        let lorebook_id = id(43);
+        let group_id = id(44);
+        let scene_id = id(45);
+        let variant_id = id(46);
+        let starting_scene = serde_json::to_string(&json!({
+            "id": scene_id,
+            "content": "The crew meets",
+            "direction": "At dusk",
+            "backgroundImagePath": "images/group-scene.png",
+            "createdAt": 8,
+            "selectedVariantId": variant_id,
+            "variants": [{
+                "id": variant_id,
+                "content": "The crew meets at dawn",
+                "createdAt": 9
+            }]
+        }))
+        .expect("starting scene fixture");
+        let plan = plan(vec![
+            document(
+                LegacyBackupDocumentKind::Personas,
+                json!([{
+                    "id": persona_id,
+                    "title": "Director",
+                    "description": "Represents the user",
+                    "created_at": 1,
+                    "updated_at": 1
+                }]),
+            ),
+            document(
+                LegacyBackupDocumentKind::Lorebooks,
+                json!([{
+                    "id": lorebook_id,
+                    "name": "World",
+                    "created_at": 1,
+                    "updated_at": 1
+                }]),
+            ),
+            document(
+                LegacyBackupDocumentKind::Characters,
+                json!([
+                    {"id": first_character, "name": "Mira", "created_at": 1, "updated_at": 1},
+                    {"id": second_character, "name": "Sol", "created_at": 1, "updated_at": 1}
+                ]),
+            ),
+            document(
+                LegacyBackupDocumentKind::GroupCharacters,
+                json!([{
+                    "id": group_id,
+                    "name": "Crew",
+                    "character_ids": format!("[\"{first_character}\",\"{second_character}\"]"),
+                    "muted_character_ids": format!("[\"{second_character}\"]"),
+                    "persona_id": persona_id,
+                    "created_at": 5,
+                    "updated_at": 10,
+                    "archived": true,
+                    "chat_type": "roleplay",
+                    "starting_scene": starting_scene,
+                    "background_image_path": "images/group.png",
+                    "lorebook_ids": format!("[\"{lorebook_id}\"]"),
+                    "disable_character_lorebooks": true,
+                    "chat_appearance": "{\"fontSize\":\"large\"}",
+                    "speaker_selection_method": "director",
+                    "memory_type": "dynamic"
+                }]),
+            ),
+        ])
+        .expect("group profile should plan");
+
+        let group = &plan.groups[0];
+        assert_eq!(group.status, LifecycleStatus::Archived);
+        assert_eq!(group.speaker_selection, SpeakerSelection::Director);
+        assert_eq!(
+            group.persona,
+            Selection::Explicit(
+                parse_id(&persona_id, LegacyBackupDocumentKind::Personas, "id")
+                    .expect("persona id")
+            )
+        );
+        assert_eq!(group.members.len(), 2);
+        assert!(!group.members[0].muted);
+        assert!(group.members[1].muted);
+        assert_eq!(
+            group
+                .starting_scene
+                .as_ref()
+                .map(|scene| scene.id.to_string()),
+            Some(scene_id)
+        );
+        assert_eq!(
+            group
+                .background
+                .as_ref()
+                .map(|media| media.locator.as_str()),
+            Some("images/group.png")
+        );
+        assert_eq!(
+            plan.group_lorebooks[0].bindings[0].lorebook_id.to_string(),
+            lorebook_id
+        );
+    }
+
+    #[test]
     fn missing_authored_documents_are_explicit_and_keep_the_source_plan() {
         let plan = plan(Vec::new()).expect("optional authored documents may be absent");
         assert!(plan.characters.is_empty());
@@ -1745,6 +2345,7 @@ mod tests {
             LegacyBackupDocumentKind::Personas,
             LegacyBackupDocumentKind::Lorebooks,
             LegacyBackupDocumentKind::Characters,
+            LegacyBackupDocumentKind::GroupCharacters,
         ] {
             assert!(plan.notices.iter().any(|notice| notice.kind
                 == LegacyBackupConversionNoticeKind::Absent
