@@ -634,3 +634,9 @@ reopen. Replicated changes that causally dominate both candidates close the
 corresponding remote conflict as superseded. Session hello identity now consumes
 the durable device ID through the sync port. Peer transport, authentication and
 blob transfer remain later sync work.
+
+Encrypted backup export reads provider accounts, model profiles, all prompt
+documents with ordered entries and their current global selections in one
+deferred SQLite transaction. The adapter returns typed non-secret domain data
+through the transfer-owned source port; native secret values remain behind the
+application's `SecretStore`.

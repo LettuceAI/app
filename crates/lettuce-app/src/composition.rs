@@ -648,6 +648,14 @@ impl AppBackend {
             Arc::clone(&self.inference_runtime),
         )
     }
+
+    #[must_use]
+    pub fn provider_backup<'a, S: lettuce_settings::SecretStore + ?Sized>(
+        &'a self,
+        secret_store: &'a S,
+    ) -> crate::ProviderBackupCoordinator<'a, Database, S> {
+        crate::ProviderBackupCoordinator::new(self.database.as_ref(), secret_store)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

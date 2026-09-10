@@ -2,6 +2,7 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod backup_adapter;
 mod character_adapter;
 mod consolidation_adapter;
 mod conversation_artifact_adapter;

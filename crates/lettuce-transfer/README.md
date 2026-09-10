@@ -7,7 +7,7 @@ consistent encrypted backups, staged restore, and rollback.
 
 Compatibility transfer and full backup remain separate internal modules.
 
-The backup boundary seals a bounded, versioned whole-profile envelope with
+Backup format version 2 seals a bounded, versioned whole-profile envelope with
 Argon2id-derived keys and independently generated XChaCha20-Poly1305 nonces for
 every section. The manifest binds each safe logical entry name, schema,
 plaintext size and BLAKE3 content hash into the authenticated data. Inspection
@@ -24,6 +24,18 @@ backup format's fast password hash, reused encryption nonce and unbound entry
 inventory. The uncompressed envelope also avoids archive traversal and
 decompression expansion at this boundary. Domain-row and secret export,
 profile restore and cutover remain later composed slices.
+
+Files with the version-2 envelope header use the current verifier. A legacy ZIP
+backup has no current envelope version and is classified as backup version 1
+for the compatibility reader. Unknown bytes are rejected instead of being
+guessed as legacy. Version 1 import will convert into the current staged restore
+plan; new exports never write the legacy format.
+
+A backup is complete only when it contains every user-owned profile domain,
+referenced media object and portable secret needed to recreate that profile.
+API keys and other secret-store values are required backup content; they remain
+isolated in authenticated encrypted sections and never appear in public
+metadata, logs or durable receipts.
 
 The versioned ASR learning document is a bounded JSON-ready interchange format
 for vocabulary, corrections, ignored suggestions and managed voice examples.

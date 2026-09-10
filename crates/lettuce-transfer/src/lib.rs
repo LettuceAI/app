@@ -7,8 +7,10 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod backup;
+mod backup_graph;
 
 pub use backup::*;
+pub use backup_graph::*;
 
 use std::fmt;
 

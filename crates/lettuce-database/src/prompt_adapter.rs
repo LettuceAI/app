@@ -322,7 +322,7 @@ fn read_document_row(row: &Row<'_>) -> rusqlite::Result<PromptDocument> {
     Ok(document)
 }
 
-fn load_document(
+pub(crate) fn load_document(
     connection: &Connection,
     id: PromptDocumentId,
 ) -> rusqlite::Result<Option<PromptDocument>> {

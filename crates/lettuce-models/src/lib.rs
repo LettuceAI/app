@@ -277,7 +277,7 @@ pub enum QueryParameterNameError {
     InvalidCharacter,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ProviderAccount {
     pub id: ProviderAccountId,
     pub secret_owner_id: SecretOwnerId,
@@ -494,7 +494,7 @@ pub struct ModelProfileConfig {
     pub capabilities: ModelCapabilities,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ModelProfile {
     pub id: ModelProfileId,
     pub provider_account_id: ProviderAccountId,

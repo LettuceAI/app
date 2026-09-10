@@ -1057,3 +1057,12 @@ shared blob for two logical assets and then converges through the existing
 coordinators. Listener discovery, durable peer trust and frontend status events
 remain separate frontend work; coordinator completion and errors are the
 backend status boundary.
+
+The provider backup coordinator reads one consistent provider/model/prompt
+snapshot, derives the exact referenced secret inventory, and loads only those
+values from the injected native `SecretStore`. It checks each secret generation
+before and after the read, rejects missing or rotating values, and seals metadata
+and secrets as separate authenticated sections. Secret plaintext is held in
+zeroizing buffers and never appears in public backup metadata, errors or Debug
+output. This is the first real graph in backup format version 2; remaining
+profile domains, media and restore are subsequent backup slices.

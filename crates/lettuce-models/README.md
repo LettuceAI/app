@@ -54,3 +54,7 @@ operations can explicitly disable caching.
 OpenRouter routing stores only an optional endpoint tag. A model-level pin
 wins over the global default, is rejected for other provider kinds, and never
 stores endpoint display names, logos, or pricing cache data.
+
+Provider accounts and model profiles expose serialization only for the
+validated canonical backup snapshot. Secret fields remain opaque references;
+plaintext values are never model-domain data.

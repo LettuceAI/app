@@ -11,13 +11,14 @@ use rand::{RngCore, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-pub const BACKUP_ENVELOPE_VERSION: u32 = 1;
+pub const BACKUP_ENVELOPE_VERSION: u32 = 2;
 pub const MAX_BACKUP_ENTRIES: usize = 256;
 pub const MAX_BACKUP_ENTRY_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_BACKUP_TOTAL_BYTES: usize = 512 * 1024 * 1024;
 pub const MAX_BACKUP_WRITE_CHUNK_BYTES: usize = 1024 * 1024;
 
-const MAGIC: [u8; 16] = *b"LETTUCE-BACKUP3\0";
+const MAGIC: [u8; 16] = *b"LETTUCE-BACKUP2\0";
+const LEGACY_ZIP_PREFIX: [u8; 4] = *b"PK\x03\x04";
 const MAX_MANIFEST_BYTES: usize = 256 * 1024;
 const MAX_APP_VERSION_BYTES: usize = 64;
 const MAX_ENTRY_NAME_BYTES: usize = 512;
@@ -33,7 +34,18 @@ const ARGON2_LANES: u32 = 1;
 pub struct BackupSection {
     pub name: String,
     pub schema: String,
-    pub bytes: Vec<u8>,
+    pub bytes: Zeroizing<Vec<u8>>,
+}
+
+impl BackupSection {
+    #[must_use]
+    pub fn new(name: impl Into<String>, schema: impl Into<String>, bytes: Vec<u8>) -> Self {
+        Self {
+            name: name.into(),
+            schema: schema.into(),
+            bytes: Zeroizing::new(bytes),
+        }
+    }
 }
 
 impl fmt::Debug for BackupSection {
@@ -54,6 +66,23 @@ pub struct BackupInfo {
     pub app_version: String,
     pub entry_count: usize,
     pub plaintext_bytes: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupFormatVersion {
+    LegacyV1,
+    CurrentV2,
+}
+
+pub fn detect_backup_format(bytes: &[u8]) -> Result<BackupFormatVersion, BackupEnvelopeError> {
+    if bytes.starts_with(&MAGIC) {
+        parse_envelope(bytes)?;
+        Ok(BackupFormatVersion::CurrentV2)
+    } else if bytes.starts_with(&LEGACY_ZIP_PREFIX) {
+        Ok(BackupFormatVersion::LegacyV1)
+    } else {
+        Err(BackupEnvelopeError::InvalidEnvelope)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -259,7 +288,7 @@ pub fn open_backup(
         .map(|(descriptor, mut bytes)| BackupSection {
             name: descriptor.name,
             schema: descriptor.schema,
-            bytes: std::mem::take(&mut *bytes),
+            bytes: Zeroizing::new(std::mem::take(&mut *bytes)),
         })
         .collect())
 }
@@ -651,16 +680,16 @@ mod tests {
 
     fn sections() -> Vec<BackupSection> {
         vec![
-            BackupSection {
-                name: "data/personas.json".into(),
-                schema: "persona.snapshot.v1".into(),
-                bytes: br#"[{"title":"Private persona"}]"#.to_vec(),
-            },
-            BackupSection {
-                name: "media/blake3/asset.bin".into(),
-                schema: "media.blob.v1".into(),
-                bytes: b"exact media bytes".to_vec(),
-            },
+            BackupSection::new(
+                "data/personas.json",
+                "persona.snapshot.v1",
+                br#"[{"title":"Private persona"}]"#.to_vec(),
+            ),
+            BackupSection::new(
+                "media/blake3/asset.bin",
+                "media.blob.v1",
+                b"exact media bytes".to_vec(),
+            ),
         ]
     }
 
@@ -678,6 +707,11 @@ mod tests {
         let second = inspect_backup(&envelope).expect("inspect backup again");
 
         assert_eq!(first, second);
+        assert_eq!(first.version, 2);
+        assert_eq!(
+            detect_backup_format(&envelope),
+            Ok(BackupFormatVersion::CurrentV2)
+        );
         assert_eq!(first.entry_count, 2);
         assert_eq!(
             first.plaintext_bytes,
@@ -695,6 +729,18 @@ mod tests {
         assert_ne!(
             parsed.manifest.entries[0].nonce,
             parsed.manifest.entries[1].nonce
+        );
+    }
+
+    #[test]
+    fn unversioned_legacy_zip_is_classified_as_version_one() {
+        assert_eq!(
+            detect_backup_format(b"PK\x03\x04legacy archive bytes"),
+            Ok(BackupFormatVersion::LegacyV1)
+        );
+        assert_eq!(
+            detect_backup_format(b"unrecognized backup"),
+            Err(BackupEnvelopeError::InvalidEnvelope)
         );
     }
 
