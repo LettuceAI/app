@@ -691,3 +691,9 @@ It preserves operations that emit no event, verifies scalar result projections,
 event timestamps, ownership and current foreign-key targets, and applies bounded
 global limits before the journal leaves SQLite. Consumer delivery state is not
 fabricated because migration 8 stores no lease or acknowledgement table.
+
+Normalized companion relationships, session emotion vectors, ordered driver and
+active signals, continuity episodes and immutable state-apply receipts are read
+in the same deferred backup transaction. The adapter preserves initial-state and
+replacement hashes, persona-key projections, revisions and row timestamps while
+reusing the state adapter's strict vector and signal readers.

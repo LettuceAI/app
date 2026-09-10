@@ -197,3 +197,11 @@ depend on them. Validation requires contiguous event sequences, exact operation
 links and timestamps, and valid history, runtime and usage references. The
 legacy UI emitted transient Tauri events; the current schema has no durable
 consumer lease or delivery state to export.
+
+The companion-state document preserves persona-scoped relationship state,
+conversation-owned emotion vectors and ordered signals, continuity episodes and
+immutable replacement receipts. Storage-only initial-state and replacement
+hashes plus row revisions and timestamps remain explicit, so restore can retain
+launch and update idempotency. Validation binds each session and episode to its
+authored character, optional persona and direct conversation without changing
+any companion-state formula.

@@ -286,8 +286,11 @@ mod tests {
     use lettuce_characters::{
         Character, CharacterDefaults, CharacterMedia, CharacterPresentationV1, CharacterProfile,
         CharacterProvenance, CharacterRepository, ConversationStarter, CreateCharacterPlan,
-        CreateGroupPlan, GroupMember, GroupProfile, GroupRepository, Persona, PersonaRepository,
-        SpeakerSelection, StarterMessage, StarterRole,
+        CreateGroupPlan, GroupMember, GroupProfile, GroupRepository, InteractionMode, Persona,
+        PersonaRepository, SpeakerSelection, StarterMessage, StarterRole,
+    };
+    use lettuce_companions::{
+        CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
     };
     use lettuce_context::{
         DetectionPolicy, LorebookBehaviorVersion, LorebookMetadataDraft, LorebookRepository,
@@ -517,9 +520,9 @@ mod tests {
         )
         .expect("store lorebook");
         let mut direct_starter_id = None;
-        let character_ids = ["Ada", "Bea"].map(|name| {
+        let character_ids = ["Ada", "Bea", "Cora"].map(|name| {
             let id = CharacterId::new();
-            let starters = if name == "Ada" {
+            let starters = if name == "Cora" {
                 let starter_id = lettuce_types::ConversationStarterId::new();
                 direct_starter_id = Some(starter_id);
                 vec![
@@ -547,6 +550,11 @@ mod tests {
             } else {
                 Vec::new()
             };
+            let mut defaults = CharacterDefaults::default();
+            if name == "Cora" {
+                defaults.interaction_mode = InteractionMode::Companion;
+                defaults.companion_soul = Some(Default::default());
+            }
             CharacterRepository::create(
                 backend.database(),
                 CreateCharacterPlan {
@@ -560,7 +568,7 @@ mod tests {
                             design_description: None,
                         },
                         CharacterProvenance::default(),
-                        CharacterDefaults::default(),
+                        defaults,
                         CharacterPresentationV1::default(),
                         None,
                         CharacterMedia::default(),
@@ -582,6 +590,7 @@ mod tests {
             character_ids
                 .iter()
                 .copied()
+                .take(2)
                 .enumerate()
                 .map(|(ordinal, character_id)| GroupMember {
                     character_id,
@@ -611,7 +620,7 @@ mod tests {
                         display_name: "User".into(),
                         authored_description: None,
                     },
-                    character_id: character_ids[0],
+                    character_id: character_ids[2],
                     scene: LaunchSelection::Disabled,
                     starter: LaunchSelection::Explicit(
                         direct_starter_id.expect("direct starter id"),
@@ -625,6 +634,31 @@ mod tests {
             .expect("launch direct conversation")
             .value
             .conversation;
+        let companion_owner = CompanionStateOwner {
+            conversation_id: direct_conversation.id,
+            character_id: character_ids[2],
+            persona_id: Some(persona.id),
+        };
+        let companion_state = CompanionStateRepository::get(backend.database(), companion_owner)
+            .expect("read companion state")
+            .expect("companion state");
+        let mut replacement_state = companion_state.state;
+        replacement_state.active_signals = vec!["backup continuity".into()];
+        replacement_state.relationship_state.interaction_count = 1;
+        replacement_state.relationship_state.last_interaction_at = TimestampMillis::new(4);
+        replacement_state.updated_at = TimestampMillis::new(4);
+        let companion_receipt = CompanionStateRepository::replace(
+            backend.database(),
+            companion_owner,
+            lettuce_types::OperationRecordId::new(),
+            CompanionStateReplacement {
+                expected_session_revision: companion_state.session_revision,
+                expected_relationship_revision: companion_state.relationship_revision,
+                state: replacement_state,
+                applied_at: TimestampMillis::new(4),
+            },
+        )
+        .expect("replace companion state");
         let user_participant_id = direct_conversation
             .participants
             .iter()
@@ -1215,7 +1249,7 @@ mod tests {
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 17);
+        assert_eq!(sections.len(), 19);
         assert!(
             sections[1]
                 .bytes
@@ -1324,6 +1358,8 @@ mod tests {
             serde_json::from_slice(&sections[6].bytes).expect("conversation usage JSON");
         let outbox: lettuce_transfer::ConversationOutboxBackup =
             serde_json::from_slice(&sections[7].bytes).expect("conversation outbox JSON");
+        let companion: lettuce_transfer::CompanionStateBackup =
+            serde_json::from_slice(&sections[8].bytes).expect("companion state JSON");
         assert_eq!(usage.events.len(), 2);
         let known = usage
             .events
@@ -1377,6 +1413,26 @@ mod tests {
         assert_eq!(
             corrupt_outbox.canonicalize_and_validate(&history, &runtime, &usage),
             Err(lettuce_transfer::ConversationOutboxBackupError::InvalidData)
+        );
+        assert_eq!(companion.relationships.len(), 1);
+        assert_eq!(companion.sessions.len(), 1);
+        assert_eq!(companion.episodes.len(), 1);
+        assert_eq!(companion.receipts.len(), 1);
+        assert_eq!(companion.sessions[0].owner, companion_owner);
+        assert_eq!(
+            companion.sessions[0].active_signals,
+            vec!["backup continuity"]
+        );
+        assert_eq!(companion.episodes[0].episode_index, 1);
+        assert_eq!(companion.receipts[0].receipt, companion_receipt);
+        let current_graph =
+            lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(reopened.database())
+                .expect("current backup graph");
+        let mut corrupt_companion = companion.clone();
+        corrupt_companion.episodes[0].episode_index = 0;
+        assert_eq!(
+            corrupt_companion.canonicalize_and_validate(&current_graph.authored, &history),
+            Err(lettuce_transfer::CompanionStateBackupError::InvalidData)
         );
         let backed_up_job = jobs
             .jobs
@@ -1471,7 +1527,7 @@ mod tests {
                 .as_array()
                 .expect("characters array")
                 .len(),
-            2
+            3
         );
         assert_eq!(
             metadata["authored"]["groups"][0]["group"]["name"],

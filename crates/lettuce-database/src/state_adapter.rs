@@ -161,7 +161,7 @@ fn replace_signals(
     Ok(())
 }
 
-fn read_vector(
+pub(crate) fn read_vector(
     tx: &Transaction<'_>,
     conversation_id: ConversationId,
     kind: &str,
@@ -189,7 +189,7 @@ fn read_vector(
     .map_err(corrupt)
 }
 
-fn read_signals(
+pub(crate) fn read_signals(
     tx: &Transaction<'_>,
     conversation_id: ConversationId,
     scope: &str,

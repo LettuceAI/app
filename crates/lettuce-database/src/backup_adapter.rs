@@ -3,10 +3,12 @@ use lettuce_transfer::{
     AuthoredProfileBackup, BackupConversation, BackupConversationOutbox, BackupConversationRuntime,
     BackupConversationUsage, BackupGenerationAttemptRuntime, BackupGenerationCheckpoint,
     BackupGenerationTurn, BackupGlobalSettings, BackupJobInference, BackupLorebookBindings,
-    BackupMessage, CONVERSATION_HISTORY_BACKUP_VERSION, CONVERSATION_OUTBOX_BACKUP_VERSION,
-    CONVERSATION_RUNTIME_BACKUP_VERSION, CONVERSATION_USAGE_BACKUP_VERSION,
-    ConversationHistoryBackup, ConversationOutboxBackup, ConversationRuntimeBackup,
-    ConversationUsageBackup, JOB_BACKUP_VERSION, JobBackup, MAX_BACKUP_AUTHORED_ROOTS,
+    BackupMessage, COMPANION_STATE_BACKUP_VERSION, CONVERSATION_HISTORY_BACKUP_VERSION,
+    CONVERSATION_OUTBOX_BACKUP_VERSION, CONVERSATION_RUNTIME_BACKUP_VERSION,
+    CONVERSATION_USAGE_BACKUP_VERSION, CompanionStateBackup, ConversationHistoryBackup,
+    ConversationOutboxBackup, ConversationRuntimeBackup, ConversationUsageBackup,
+    JOB_BACKUP_VERSION, JobBackup, MAX_BACKUP_AUTHORED_ROOTS, MAX_BACKUP_COMPANION_RECEIPTS,
+    MAX_BACKUP_COMPANION_RELATIONSHIPS, MAX_BACKUP_COMPANION_SESSIONS,
     MAX_BACKUP_CONVERSATION_OPERATIONS, MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS,
     MAX_BACKUP_CONVERSATION_USAGE_EVENTS, MAX_BACKUP_CONVERSATIONS,
     MAX_BACKUP_GENERATION_CHECKPOINTS, MAX_BACKUP_GENERATION_TURNS, MAX_BACKUP_JOB_EVENTS,
@@ -16,8 +18,8 @@ use lettuce_transfer::{
     ProviderBackupSelections, ProviderBackupSource, ProviderBackupSourceError,
 };
 use lettuce_types::{
-    AssetId, CharacterId, ConversationId, GenerationAttemptId, GroupId, LorebookId, ModelProfileId,
-    PersonaId, PromptDocumentId, Revision, TimestampMillis,
+    AssetId, CharacterId, ContentHash, ConversationId, GenerationAttemptId, GroupId, LorebookId,
+    ModelProfileId, OperationRecordId, PersonaId, PromptDocumentId, Revision, TimestampMillis,
 };
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
@@ -28,6 +30,334 @@ fn backup_error(error: rusqlite::Error) -> ProviderBackupSourceError {
         ProviderBackupSourceError::InvalidData
     } else {
         ProviderBackupSourceError::Storage
+    }
+}
+
+fn read_companion_state(
+    transaction: &rusqlite::Transaction<'_>,
+) -> Result<CompanionStateBackup, ProviderBackupSourceError> {
+    let relationships = transaction
+        .prepare(&format!(
+            "SELECT character_id,persona_key,persona_id,closeness,trust,affection,tension,stability,interaction_count,last_interaction_at,revision,created_at,updated_at FROM companion_relationship_states ORDER BY character_id,persona_key LIMIT {}",
+            MAX_BACKUP_COMPANION_RELATIONSHIPS + 1
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    let character_id = row.get::<_, String>(0)?;
+                    let persona_key = row.get::<_, String>(1)?;
+                    let persona_id = row.get::<_, Option<String>>(2)?;
+                    Ok((
+                        character_id,
+                        persona_key,
+                        persona_id,
+                        row.get::<_, f64>(3)?,
+                        row.get::<_, f64>(4)?,
+                        row.get::<_, f64>(5)?,
+                        row.get::<_, f64>(6)?,
+                        row.get::<_, f64>(7)?,
+                        row.get::<_, i64>(8)?,
+                        row.get::<_, i64>(9)?,
+                        row.get::<_, i64>(10)?,
+                        row.get::<_, i64>(11)?,
+                        row.get::<_, i64>(12)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    if relationships.len() > MAX_BACKUP_COMPANION_RELATIONSHIPS {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    let relationships = relationships
+        .into_iter()
+        .map(
+            |(
+                character_id,
+                persona_key,
+                persona_id,
+                closeness,
+                trust,
+                affection,
+                tension,
+                stability,
+                interaction_count,
+                last_interaction_at,
+                revision,
+                created_at,
+                updated_at,
+            )| {
+                let persona_id = persona_id
+                    .map(|value| value.parse::<PersonaId>())
+                    .transpose()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                validate_persona_key(&persona_key, persona_id)?;
+                Ok(lettuce_transfer::BackupCompanionRelationship {
+                    character_id: character_id
+                        .parse()
+                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    persona_id,
+                    state: lettuce_companions::RelationshipState {
+                        closeness,
+                        trust,
+                        affection,
+                        tension,
+                        stability,
+                        interaction_count: u32::try_from(interaction_count)
+                            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        last_interaction_at: TimestampMillis::new(last_interaction_at),
+                    },
+                    revision: backup_revision(revision)?,
+                    created_at: TimestampMillis::new(created_at),
+                    updated_at: TimestampMillis::new(updated_at),
+                })
+            },
+        )
+        .collect::<Result<Vec<_>, _>>()?;
+    let session_rows = transaction
+        .prepare(&format!(
+            "SELECT conversation_id,character_id,persona_key,persona_id,initial_hash,confidence,emotional_updated_at,state_updated_at,revision,created_at,updated_at FROM companion_session_states ORDER BY conversation_id LIMIT {}",
+            MAX_BACKUP_COMPANION_SESSIONS + 1
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Vec<u8>>(4)?,
+                        row.get::<_, f64>(5)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, i64>(8)?,
+                        row.get::<_, i64>(9)?,
+                        row.get::<_, i64>(10)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    if session_rows.len() > MAX_BACKUP_COMPANION_SESSIONS {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    let mut sessions = Vec::with_capacity(session_rows.len());
+    for row in session_rows {
+        let conversation_id: ConversationId = row
+            .0
+            .parse()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let persona_id = row
+            .3
+            .map(|value| value.parse::<PersonaId>())
+            .transpose()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        validate_persona_key(&row.2, persona_id)?;
+        sessions.push(lettuce_transfer::BackupCompanionSession {
+            owner: lettuce_companions::CompanionStateOwner {
+                conversation_id,
+                character_id: row
+                    .1
+                    .parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                persona_id,
+            },
+            initial_state_hash: backup_hash(&row.4)?,
+            emotional_state: lettuce_companions::EmotionalState {
+                felt: crate::state_adapter::read_vector(transaction, conversation_id, "felt")
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                expressed: crate::state_adapter::read_vector(
+                    transaction,
+                    conversation_id,
+                    "expressed",
+                )
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                blocked: crate::state_adapter::read_vector(transaction, conversation_id, "blocked")
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                momentum: crate::state_adapter::read_vector(
+                    transaction,
+                    conversation_id,
+                    "momentum",
+                )
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                active_drivers: crate::state_adapter::read_signals(
+                    transaction,
+                    conversation_id,
+                    "driver",
+                )
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                confidence: row.5,
+                updated_at: TimestampMillis::new(row.6),
+            },
+            active_signals: crate::state_adapter::read_signals(
+                transaction,
+                conversation_id,
+                "active",
+            )
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            state_updated_at: TimestampMillis::new(row.7),
+            revision: backup_revision(row.8)?,
+            created_at: TimestampMillis::new(row.9),
+            updated_at: TimestampMillis::new(row.10),
+        });
+    }
+    let episodes = transaction
+        .prepare(&format!(
+            "SELECT conversation_id,character_id,persona_key,persona_id,episode_index,previous_conversation_id,started_at,ended_at,updated_at FROM companion_continuity_episodes ORDER BY conversation_id LIMIT {}",
+            MAX_BACKUP_COMPANION_SESSIONS + 1
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, Option<i64>>(7)?,
+                        row.get::<_, i64>(8)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    if episodes.len() > MAX_BACKUP_COMPANION_SESSIONS {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    let episodes = episodes
+        .into_iter()
+        .map(|row| {
+            let persona_id = row
+                .3
+                .map(|value| value.parse::<PersonaId>())
+                .transpose()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            validate_persona_key(&row.2, persona_id)?;
+            Ok(lettuce_companions::CompanionContinuityEpisode {
+                conversation_id: row
+                    .0
+                    .parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                character_id: row
+                    .1
+                    .parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                persona_id,
+                episode_index: u32::try_from(row.4)
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                previous_conversation_id: row
+                    .5
+                    .map(|value| value.parse())
+                    .transpose()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                started_at: TimestampMillis::new(row.6),
+                ended_at: row.7.map(TimestampMillis::new),
+                updated_at: TimestampMillis::new(row.8),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let receipt_rows = transaction
+        .prepare(&format!(
+            "SELECT operation_id,conversation_id,character_id,persona_key,expected_session_revision,resulting_session_revision,expected_relationship_revision,resulting_relationship_revision,applied_at,change_hash FROM companion_state_apply_receipts ORDER BY applied_at,operation_id LIMIT {}",
+            MAX_BACKUP_COMPANION_RECEIPTS + 1
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, i64>(5)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, i64>(8)?,
+                        row.get::<_, Vec<u8>>(9)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    if receipt_rows.len() > MAX_BACKUP_COMPANION_RECEIPTS {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    let receipts = receipt_rows
+        .into_iter()
+        .map(|row| {
+            let persona_id = (row.3 != "__default__")
+                .then(|| row.3.parse::<PersonaId>())
+                .transpose()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            validate_persona_key(&row.3, persona_id)?;
+            Ok(lettuce_transfer::BackupCompanionStateReceipt {
+                receipt: lettuce_companions::CompanionStateApplyReceipt {
+                    operation_id: row
+                        .0
+                        .parse::<OperationRecordId>()
+                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    owner: lettuce_companions::CompanionStateOwner {
+                        conversation_id: row
+                            .1
+                            .parse()
+                            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        character_id: row
+                            .2
+                            .parse()
+                            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                        persona_id,
+                    },
+                    expected_session_revision: backup_revision(row.4)?,
+                    resulting_session_revision: backup_revision(row.5)?,
+                    expected_relationship_revision: backup_revision(row.6)?,
+                    resulting_relationship_revision: backup_revision(row.7)?,
+                    applied_at: TimestampMillis::new(row.8),
+                },
+                change_hash: backup_hash(&row.9)?,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(CompanionStateBackup {
+        version: COMPANION_STATE_BACKUP_VERSION,
+        relationships,
+        sessions,
+        episodes,
+        receipts,
+    })
+}
+
+fn backup_revision(value: i64) -> Result<Revision, ProviderBackupSourceError> {
+    let value = u64::try_from(value).map_err(|_| ProviderBackupSourceError::InvalidData)?;
+    if value == 0 {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    Ok(Revision::new(value))
+}
+
+fn backup_hash(value: &[u8]) -> Result<ContentHash, ProviderBackupSourceError> {
+    let bytes: [u8; 32] = value
+        .try_into()
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+    ContentHash::parse(blake3::Hash::from_bytes(bytes).to_hex().to_string())
+        .map_err(|_| ProviderBackupSourceError::InvalidData)
+}
+
+fn validate_persona_key(
+    key: &str,
+    persona_id: Option<PersonaId>,
+) -> Result<(), ProviderBackupSourceError> {
+    let expected = persona_id
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "__default__".to_owned());
+    if key == expected {
+        Ok(())
+    } else {
+        Err(ProviderBackupSourceError::InvalidData)
     }
 }
 
@@ -308,6 +638,7 @@ impl ProviderBackupSource for Database {
         let job_backup = read_job_backup(&transaction)?;
         let conversation_usage = read_conversation_usage(&transaction, &job_backup)?;
         let conversation_outbox = read_conversation_outbox(&transaction, &conversation_history)?;
+        let companion_state = read_companion_state(&transaction)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             version: PROVIDER_BACKUP_GRAPH_VERSION,
@@ -336,6 +667,7 @@ impl ProviderBackupSource for Database {
             job_backup,
             conversation_usage,
             conversation_outbox,
+            companion_state,
         })
     }
 }

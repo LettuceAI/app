@@ -1115,3 +1115,9 @@ Conversation operation replay records and the complete immutable outbox journal
 are exported from the same reopened snapshot. The scenario verifies contiguous
 event order, terminal usage linkage, retained operations that emitted no event,
 and rejection of a duplicated sequence.
+
+The export also retains normalized companion relationship and session state,
+ordered signals, continuity episodes and immutable replacement receipts. Its
+file-backed scenario applies a real state transition, reopens the database,
+checks exact owner, signal, episode and receipt identity, and rejects a corrupt
+episode index. The companion calculation itself is unchanged.

@@ -95,6 +95,8 @@ pub struct ProviderBackupGraph {
     pub conversation_usage: crate::ConversationUsageBackup,
     #[serde(skip)]
     pub conversation_outbox: crate::ConversationOutboxBackup,
+    #[serde(skip)]
+    pub companion_state: crate::CompanionStateBackup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -207,6 +209,8 @@ pub fn provider_backup_sections(
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let conversation_outbox = serde_json::to_vec(&graph.conversation_outbox)
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
+    let companion_state = serde_json::to_vec(&graph.companion_state)
+        .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let ordered_secrets = expected
         .keys()
         .map(|reference| supplied[reference])
@@ -246,6 +250,11 @@ pub fn provider_backup_sections(
             "data/conversation-outbox.json",
             "conversation-outbox.v1",
             conversation_outbox,
+        ),
+        BackupSection::new(
+            "data/companion-state.json",
+            "companion-state.v1",
+            companion_state,
         ),
     ];
     sections.extend(media_sections);
@@ -632,7 +641,11 @@ fn canonicalize_and_validate(
             crate::ConversationOutboxBackupError::InvalidData => {
                 ProviderBackupGraphError::InvalidGraph
             }
-        })
+        })?;
+    graph
+        .companion_state
+        .canonicalize_and_validate(&graph.authored, &graph.conversation_history)
+        .map_err(|_| ProviderBackupGraphError::InvalidGraph)
 }
 
 fn validate_job_links(graph: &ProviderBackupGraph) -> Result<(), ProviderBackupGraphError> {
@@ -1078,6 +1091,13 @@ mod tests {
                 version: crate::CONVERSATION_OUTBOX_BACKUP_VERSION,
                 conversations: Vec::new(),
             },
+            companion_state: crate::CompanionStateBackup {
+                version: crate::COMPANION_STATE_BACKUP_VERSION,
+                relationships: Vec::new(),
+                sessions: Vec::new(),
+                episodes: Vec::new(),
+                receipts: Vec::new(),
+            },
         }
     }
 
@@ -1101,7 +1121,7 @@ mod tests {
         assert!(!format!("{secret:?}").contains("backup-secret-canary"));
         let sections = provider_backup_sections(source_graph, vec![secret], Vec::new(), Vec::new())
             .expect("sections");
-        assert_eq!(sections.len(), 8);
+        assert_eq!(sections.len(), 9);
         assert!(
             sections[1]
                 .bytes
@@ -1237,7 +1257,7 @@ mod tests {
             Vec::new(),
         )
         .expect("media sections");
-        assert_eq!(sections.len(), 9);
-        assert_eq!(&*sections[8].bytes, &bytes);
+        assert_eq!(sections.len(), 10);
+        assert_eq!(&*sections[9].bytes, &bytes);
     }
 }

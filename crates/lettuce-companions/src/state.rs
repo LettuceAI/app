@@ -267,7 +267,8 @@ impl RelationshipDefaults {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EmotionalState {
     pub felt: EmotionVector,
     pub expressed: EmotionVector,
@@ -278,7 +279,8 @@ pub struct EmotionalState {
     pub updated_at: TimestampMillis,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RelationshipState {
     pub closeness: f64,
     pub trust: f64,
@@ -289,7 +291,8 @@ pub struct RelationshipState {
     pub last_interaction_at: TimestampMillis,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompanionRuntimeState {
     pub emotional_state: EmotionalState,
     pub relationship_state: RelationshipState,
@@ -322,7 +325,8 @@ pub struct CompanionTurnTransition {
     pub current: CompanionRuntimeState,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompanionStateOwner {
     pub conversation_id: ConversationId,
     pub character_id: CharacterId,
@@ -345,7 +349,8 @@ pub struct CompanionStateReplacement {
     pub applied_at: TimestampMillis,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompanionStateApplyReceipt {
     pub operation_id: OperationRecordId,
     pub owner: CompanionStateOwner,
@@ -393,7 +398,8 @@ pub trait CompanionStateRepository: Send + Sync {
     ) -> Result<CompanionStateApplyReceipt, CompanionStateRepositoryError>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompanionContinuityEpisode {
     pub conversation_id: ConversationId,
     pub character_id: CharacterId,
