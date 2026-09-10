@@ -307,6 +307,16 @@ Finite historical values remain exact, including values produced by old
 calculator behavior, while current pricing and offloader formulas remain
 unchanged. The source inventory stays attached and no usage row is written.
 
+The legacy model-pricing cache is retained separately as bounded historical
+evidence. Each entry keeps its exact model key, original JSON text and cache
+timestamp; known camelCase price fields must parse as finite nonnegative USD
+values, while unknown fields remain visible as conversion notices. A null
+payload still preserves the legacy cached absence. These entries lack the
+current provider account, endpoint, revision and capture evidence required by
+the immutable cost basis, so they are historical-only and never populate the
+live provider cache. No cost is recalculated and the version-1 pricing formula,
+runtime calculator and smart-offloader outputs remain unchanged.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established
