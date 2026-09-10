@@ -1115,9 +1115,9 @@ fn blob_state_name(value: BlobState) -> &'static str {
     }
 }
 
-const MEDIA_BLOB_COLUMNS: &str = "id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at";
+pub(crate) const MEDIA_BLOB_COLUMNS: &str = "id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at";
 
-fn media_from_row(row: &Row<'_>) -> rusqlite::Result<MediaBlob> {
+pub(crate) fn media_from_row(row: &Row<'_>) -> rusqlite::Result<MediaBlob> {
     let kind = match row.get::<_, String>(2)?.as_str() {
         "image" => MediaKind::Image,
         "audio" => MediaKind::Audio,
@@ -1511,7 +1511,7 @@ fn decode_library_cursor(
     Ok(Some((cursor.updated_at, id)))
 }
 
-fn load_asset_with_blob(
+pub(crate) fn load_asset_with_blob(
     connection: &Connection,
     id: AssetId,
 ) -> Result<Option<MediaAsset>, rusqlite::Error> {

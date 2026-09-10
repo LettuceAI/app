@@ -44,6 +44,18 @@ Both provider credentials and audio API keys are derived from opaque references
 and must be supplied as the exact scoped inventory before the sections can be
 sealed.
 
+The same consistent snapshot contains every authored persona and its default
+selection, lorebook with ordered entries, character with ordered scenes,
+variants and starters, and reusable group with ordered members and its starting
+scene. Character, persona and group lorebook bindings remain separate ordered
+documents. Archived roots are retained. Model, prompt, voice, lorebook and media
+references must all resolve inside the snapshot before sealing.
+
+All logical media assets and physical blob metadata are included once by typed
+identity, including records shared by several authored roots. The metadata binds
+kind, content hash, byte size and lifecycle state. Reading and sealing the actual
+content-addressed media bytes is the next backup slice.
+
 The versioned ASR learning document is a bounded JSON-ready interchange format
 for vocabulary, corrections, ignored suggestions and managed voice examples.
 It preserves metrics and relationships without exporting native audio paths;

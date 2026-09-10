@@ -113,7 +113,8 @@ impl CreateCharacterPlan {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CharacterDetails {
     pub character: Character,
     pub scenes: Vec<Scene>,
@@ -121,7 +122,20 @@ pub struct CharacterDetails {
     pub starters: Vec<ConversationStarter>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl CharacterDetails {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        CreateCharacterPlan {
+            character: self.character.clone(),
+            scenes: self.scenes.clone(),
+            variants: self.variants.clone(),
+            starters: self.starters.clone(),
+        }
+        .validate()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GroupStartingScene {
     pub scene: Scene,
     pub variants: Vec<SceneVariant>,
@@ -171,7 +185,8 @@ impl CreateGroupPlan {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GroupDetails {
     pub group: GroupProfile,
     pub starting_scene: Option<GroupStartingScene>,

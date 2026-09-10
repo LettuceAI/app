@@ -645,3 +645,10 @@ The same snapshot transaction includes the exact global settings payload and
 all audio providers and user voices. TTS ownership and voice-to-provider links
 are decoded through the existing validated row readers before the graph leaves
 the database boundary.
+
+That transaction also reads every authored persona, lorebook, character and
+group aggregate through the existing aggregate decoders, including archived
+roots, ordered children and every owner-lorebook binding. It includes all media
+asset and blob metadata in stable ID order. The transfer graph rejects dangling
+model, prompt, voice, lorebook and media references before encryption; SQLite
+does not read media files or secret values.

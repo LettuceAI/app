@@ -1064,10 +1064,15 @@ values from the injected native `SecretStore`. It checks each secret generation
 before and after the read, rejects missing or rotating values, and seals metadata
 and secrets as separate authenticated sections. Secret plaintext is held in
 zeroizing buffers and never appears in public backup metadata, errors or Debug
-output. This is the first real graph in backup format version 2; remaining
-profile domains, media and restore are subsequent backup slices.
+output.
 
 That coordinator now includes global settings plus audio providers and user
 voices in the same database snapshot. Its derived secret inventory covers both
 provider credentials and every referenced `AudioApiKey`; either family must be
 complete and stable before encryption begins.
+
+The same export now carries the complete authored persona, lorebook, character
+and group graph plus all logical media and blob metadata. A file-backed scenario
+reopens that graph before export and verifies its default persona, roots and
+ordered ownership documents. Media byte collection and restore remain the next
+separate application slices.

@@ -87,6 +87,14 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
     };
 
+    use lettuce_characters::{
+        Character, CharacterDefaults, CharacterMedia, CharacterPresentationV1, CharacterProfile,
+        CharacterProvenance, CharacterRepository, CreateCharacterPlan, CreateGroupPlan,
+        GroupMember, GroupProfile, GroupRepository, Persona, PersonaRepository,
+    };
+    use lettuce_context::{
+        DetectionPolicy, LorebookBehaviorVersion, LorebookMetadataDraft, LorebookRepository,
+    };
     use lettuce_models::{
         ProviderAccount, ProviderAccountRepository, ProviderConfig, ProviderProtocol,
     };
@@ -99,7 +107,8 @@ mod tests {
     };
     use lettuce_transfer::{BackupEnvelopeError, open_backup};
     use lettuce_types::{
-        AudioProviderId, OperationId, ProviderAccountId, Revision, VoiceProfileId,
+        AudioProviderId, CharacterId, GroupId, OperationId, PersonaId, ProviderAccountId, Revision,
+        VoiceProfileId,
     };
 
     use super::*;
@@ -244,6 +253,92 @@ mod tests {
             )
             .await
             .expect("store audio secret");
+        let persona = PersonaRepository::create(
+            backend.database(),
+            Persona::new(
+                PersonaId::new(),
+                "Backup persona".into(),
+                "Preserved authored profile".into(),
+                TimestampMillis::new(2),
+            )
+            .expect("persona"),
+        )
+        .expect("store persona");
+        let default = PersonaRepository::get_default_snapshot(backend.database())
+            .expect("default snapshot")
+            .state;
+        PersonaRepository::set_default(
+            backend.database(),
+            persona.id,
+            default.revision,
+            TimestampMillis::new(3),
+        )
+        .expect("set default persona");
+        LorebookRepository::create(
+            backend.database(),
+            LorebookMetadataDraft {
+                name: "Backup lorebook".into(),
+                detection_policy: DetectionPolicy::RecentMessageWindow,
+                icon_asset_id: None,
+                behavior_version: LorebookBehaviorVersion::LegacyV1,
+            },
+            Vec::new(),
+            TimestampMillis::new(2),
+        )
+        .expect("store lorebook");
+        let character_ids = ["Ada", "Bea"].map(|name| {
+            let id = CharacterId::new();
+            CharacterRepository::create(
+                backend.database(),
+                CreateCharacterPlan {
+                    character: Character::new(
+                        id,
+                        CharacterProfile {
+                            name: name.into(),
+                            nickname: None,
+                            description: Some("A member of the backup cast".into()),
+                            definition: None,
+                            design_description: None,
+                        },
+                        CharacterProvenance::default(),
+                        CharacterDefaults::default(),
+                        CharacterPresentationV1::default(),
+                        None,
+                        CharacterMedia::default(),
+                        TimestampMillis::new(2),
+                    )
+                    .expect("character"),
+                    scenes: Vec::new(),
+                    variants: Vec::new(),
+                    starters: Vec::new(),
+                },
+            )
+            .expect("store character");
+            id
+        });
+        GroupRepository::create(
+            backend.database(),
+            CreateGroupPlan {
+                group: GroupProfile::new(
+                    GroupId::new(),
+                    "Backup cast".into(),
+                    character_ids
+                        .into_iter()
+                        .enumerate()
+                        .map(|(ordinal, character_id)| GroupMember {
+                            character_id,
+                            ordinal: u32::try_from(ordinal).expect("ordinal"),
+                            muted: false,
+                            model_profile_override: None,
+                        })
+                        .collect(),
+                    TimestampMillis::new(2),
+                )
+                .expect("group"),
+                starting_scene: None,
+            },
+        )
+        .expect("store group");
         drop(backend);
 
         let reopened = AppBackend::open(&path, TimestampMillis::new(3)).expect("reopen backend");
@@ -286,6 +381,32 @@ mod tests {
         assert_eq!(metadata["settings"]["value"]["analytics_enabled"], true);
         assert_eq!(metadata["audio_providers"][0]["label"], "Speech provider");
         assert_eq!(metadata["user_voices"][0]["name"], "Narrator");
+        assert_eq!(
+            metadata["authored"]["personas"][0]["title"],
+            "Backup persona"
+        );
+        assert_eq!(
+            metadata["authored"]["persona_default"]["persona_id"],
+            persona.id.to_string()
+        );
+        assert_eq!(
+            metadata["authored"]["lorebooks"]
+                .as_array()
+                .expect("lorebooks array")
+                .len(),
+            1
+        );
+        assert_eq!(
+            metadata["authored"]["characters"]
+                .as_array()
+                .expect("characters array")
+                .len(),
+            2
+        );
+        assert_eq!(
+            metadata["authored"]["groups"][0]["group"]["name"],
+            "Backup cast"
+        );
 
         let changing = ChangingSecretStore {
             status_calls: AtomicUsize::new(0),

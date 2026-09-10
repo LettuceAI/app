@@ -348,7 +348,7 @@ fn load_scene(
     Ok(starting)
 }
 
-fn load_details(
+pub(crate) fn load_details(
     tx: &Connection,
     group_id: GroupId,
 ) -> Result<Option<GroupDetails>, rusqlite::Error> {

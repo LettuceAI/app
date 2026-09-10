@@ -254,7 +254,7 @@ fn parse_entry(row: &Row<'_>, book: LorebookId) -> rusqlite::Result<LorebookEntr
     })
 }
 
-fn load_details(
+pub(crate) fn load_details(
     connection: &Connection,
     id: LorebookId,
 ) -> rusqlite::Result<Option<LorebookDetails>> {
@@ -800,7 +800,7 @@ impl Database {
 }
 
 #[derive(Clone, Copy)]
-enum OwnerKind {
+pub(crate) enum OwnerKind {
     Character,
     Persona,
     Group,
@@ -889,7 +889,7 @@ fn parse_binding(row: &Row<'_>) -> rusqlite::Result<LorebookBinding> {
     })
 }
 
-fn read_bindings(
+pub(crate) fn read_bindings(
     tx: &Transaction<'_>,
     kind: OwnerKind,
     owner: &str,

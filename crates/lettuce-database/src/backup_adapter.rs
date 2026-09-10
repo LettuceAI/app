@@ -1,8 +1,12 @@
 use lettuce_transfer::{
-    BackupGlobalSettings, PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph,
+    AuthoredProfileBackup, BackupGlobalSettings, BackupLorebookBindings, MAX_BACKUP_AUTHORED_ROOTS,
+    MAX_BACKUP_MEDIA_RECORDS, PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph,
     ProviderBackupSelections, ProviderBackupSource, ProviderBackupSourceError,
 };
-use lettuce_types::{ModelProfileId, PromptDocumentId, Revision, TimestampMillis};
+use lettuce_types::{
+    AssetId, CharacterId, GroupId, LorebookId, ModelProfileId, PersonaId, PromptDocumentId,
+    Revision, TimestampMillis,
+};
 use rusqlite::{OptionalExtension, TransactionBehavior};
 
 use crate::{Database, model_from_row, parse_id, provider_from_row};
@@ -122,6 +126,113 @@ impl ProviderBackupSource for Database {
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(backup_error)?;
+        let persona_ids = read_ids::<PersonaId>(
+            &transaction,
+            &format!(
+                "SELECT id FROM personas ORDER BY id LIMIT {}",
+                MAX_BACKUP_AUTHORED_ROOTS + 1
+            ),
+        )?;
+        let personas = persona_ids
+            .iter()
+            .copied()
+            .map(|id| {
+                crate::persona_adapter::load_persona(&transaction, id)?
+                    .ok_or(rusqlite::Error::InvalidQuery)
+            })
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(backup_error)?;
+        let persona_default =
+            crate::persona_adapter::read_default(&transaction).map_err(backup_error)?;
+        let lorebook_ids = read_ids::<LorebookId>(
+            &transaction,
+            &format!(
+                "SELECT id FROM lorebooks ORDER BY id LIMIT {}",
+                MAX_BACKUP_AUTHORED_ROOTS + 1
+            ),
+        )?;
+        let lorebooks = lorebook_ids
+            .iter()
+            .copied()
+            .map(|id| {
+                crate::lorebook_adapter::load_details(&transaction, id)?
+                    .ok_or(rusqlite::Error::InvalidQuery)
+            })
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(backup_error)?;
+        let character_ids = read_ids::<CharacterId>(
+            &transaction,
+            &format!(
+                "SELECT id FROM characters ORDER BY id LIMIT {}",
+                MAX_BACKUP_AUTHORED_ROOTS + 1
+            ),
+        )?;
+        let characters = character_ids
+            .iter()
+            .copied()
+            .map(|id| {
+                crate::character_adapter::load_details(&transaction, id)?
+                    .ok_or(rusqlite::Error::InvalidQuery)
+            })
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(backup_error)?;
+        let group_ids = read_ids::<GroupId>(
+            &transaction,
+            &format!(
+                "SELECT id FROM groups ORDER BY id LIMIT {}",
+                MAX_BACKUP_AUTHORED_ROOTS + 1
+            ),
+        )?;
+        let groups = group_ids
+            .iter()
+            .copied()
+            .map(|id| {
+                crate::group_adapter::load_details(&transaction, id)?
+                    .ok_or(rusqlite::Error::InvalidQuery)
+            })
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(backup_error)?;
+        let character_lorebooks = read_bindings(
+            &transaction,
+            crate::lorebook_adapter::OwnerKind::Character,
+            &character_ids,
+        )?;
+        let persona_lorebooks = read_bindings(
+            &transaction,
+            crate::lorebook_adapter::OwnerKind::Persona,
+            &persona_ids,
+        )?;
+        let group_lorebooks = read_bindings(
+            &transaction,
+            crate::lorebook_adapter::OwnerKind::Group,
+            &group_ids,
+        )?;
+        let asset_ids = read_ids::<AssetId>(
+            &transaction,
+            &format!(
+                "SELECT id FROM media_assets ORDER BY id LIMIT {}",
+                MAX_BACKUP_MEDIA_RECORDS + 1
+            ),
+        )?;
+        let media_assets = asset_ids
+            .into_iter()
+            .map(|id| {
+                crate::load_asset_with_blob(&transaction, id)?.ok_or(rusqlite::Error::InvalidQuery)
+            })
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(backup_error)?;
+        let media_blobs = transaction
+            .prepare(&format!(
+                "SELECT {} FROM media_blobs ORDER BY id LIMIT {}",
+                crate::MEDIA_BLOB_COLUMNS,
+                MAX_BACKUP_MEDIA_RECORDS + 1
+            ))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], crate::media_from_row)?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(backup_error)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             version: PROVIDER_BACKUP_GRAPH_VERSION,
@@ -132,6 +243,54 @@ impl ProviderBackupSource for Database {
             settings,
             audio_providers,
             user_voices,
+            authored: AuthoredProfileBackup {
+                personas,
+                persona_default,
+                lorebooks,
+                characters,
+                groups,
+                character_lorebooks,
+                persona_lorebooks,
+                group_lorebooks,
+                media_assets,
+                media_blobs,
+            },
         })
     }
+}
+
+fn read_ids<Id>(
+    transaction: &rusqlite::Transaction<'_>,
+    query: &str,
+) -> Result<Vec<Id>, ProviderBackupSourceError>
+where
+    Id: std::str::FromStr,
+{
+    transaction
+        .prepare(query)
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| parse_id(row.get(0)?))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)
+}
+
+fn read_bindings<Id>(
+    transaction: &rusqlite::Transaction<'_>,
+    kind: crate::lorebook_adapter::OwnerKind,
+    owner_ids: &[Id],
+) -> Result<Vec<BackupLorebookBindings<Id>>, ProviderBackupSourceError>
+where
+    Id: Copy + ToString,
+{
+    owner_ids
+        .iter()
+        .copied()
+        .map(|owner_id| {
+            crate::lorebook_adapter::read_bindings(transaction, kind, &owner_id.to_string())
+                .map(|bindings| BackupLorebookBindings { owner_id, bindings })
+                .map_err(|_| ProviderBackupSourceError::InvalidData)
+        })
+        .collect()
 }

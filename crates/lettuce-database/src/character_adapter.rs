@@ -408,7 +408,7 @@ fn parse_character_row(row: &Row<'_>, id: CharacterId) -> rusqlite::Result<Chara
     Ok(character)
 }
 
-fn load_details(
+pub(crate) fn load_details(
     connection: &Connection,
     character_id: CharacterId,
 ) -> Result<Option<lettuce_characters::CharacterDetails>, rusqlite::Error> {

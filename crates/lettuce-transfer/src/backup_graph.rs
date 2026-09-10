@@ -1,10 +1,22 @@
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
-use lettuce_context::{PromptDocument, PromptProvenance};
+use lettuce_characters::{
+    CharacterDetails, GroupDetails, Persona, PersonaDefaultState, Selection, VoicePreference,
+};
+use lettuce_context::{
+    LorebookBinding, LorebookDetails, PromptDocument, PromptProvenance, validate_bindings,
+};
+use lettuce_media::{MediaAsset, MediaBlob};
 use lettuce_models::{ModelProfile, ProviderAccount, validate_provider_connection};
 use lettuce_settings::{GlobalSettings, SecretPurpose, SecretRef, SecretValue};
 use lettuce_speech::{AudioProvider, UserVoice};
-use lettuce_types::{ModelProfileId, PromptDocumentId, Revision, TimestampMillis};
+use lettuce_types::{
+    CharacterId, GroupId, LorebookId, ModelProfileId, PersonaId, PromptDocumentId, Revision,
+    TimestampMillis,
+};
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use crate::BackupSection;
@@ -15,6 +27,8 @@ pub const MAX_BACKUP_MODEL_PROFILES: usize = 2_048;
 pub const MAX_BACKUP_PROMPT_DOCUMENTS: usize = 2_048;
 pub const MAX_BACKUP_AUDIO_PROVIDERS: usize = 128;
 pub const MAX_BACKUP_USER_VOICES: usize = 4_096;
+pub const MAX_BACKUP_AUTHORED_ROOTS: usize = 4_096;
+pub const MAX_BACKUP_MEDIA_RECORDS: usize = 65_536;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -34,6 +48,28 @@ pub struct BackupGlobalSettings {
     pub updated_at: TimestampMillis,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupLorebookBindings<Owner> {
+    pub owner_id: Owner,
+    pub bindings: Vec<LorebookBinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthoredProfileBackup {
+    pub personas: Vec<Persona>,
+    pub persona_default: PersonaDefaultState,
+    pub lorebooks: Vec<LorebookDetails>,
+    pub characters: Vec<CharacterDetails>,
+    pub groups: Vec<GroupDetails>,
+    pub character_lorebooks: Vec<BackupLorebookBindings<CharacterId>>,
+    pub persona_lorebooks: Vec<BackupLorebookBindings<PersonaId>>,
+    pub group_lorebooks: Vec<BackupLorebookBindings<GroupId>>,
+    pub media_assets: Vec<MediaAsset>,
+    pub media_blobs: Vec<MediaBlob>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderBackupGraph {
@@ -45,6 +81,7 @@ pub struct ProviderBackupGraph {
     pub settings: BackupGlobalSettings,
     pub audio_providers: Vec<AudioProvider>,
     pub user_voices: Vec<UserVoice>,
+    pub authored: AuthoredProfileBackup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -151,6 +188,12 @@ fn canonicalize_and_validate(
         || graph.prompts.len() > MAX_BACKUP_PROMPT_DOCUMENTS
         || graph.audio_providers.len() > MAX_BACKUP_AUDIO_PROVIDERS
         || graph.user_voices.len() > MAX_BACKUP_USER_VOICES
+        || graph.authored.personas.len() > MAX_BACKUP_AUTHORED_ROOTS
+        || graph.authored.lorebooks.len() > MAX_BACKUP_AUTHORED_ROOTS
+        || graph.authored.characters.len() > MAX_BACKUP_AUTHORED_ROOTS
+        || graph.authored.groups.len() > MAX_BACKUP_AUTHORED_ROOTS
+        || graph.authored.media_assets.len() > MAX_BACKUP_MEDIA_RECORDS
+        || graph.authored.media_blobs.len() > MAX_BACKUP_MEDIA_RECORDS
     {
         return Err(ProviderBackupGraphError::LimitExceeded);
     }
@@ -161,6 +204,7 @@ fn canonicalize_and_validate(
         .audio_providers
         .sort_by_key(|provider| provider.id.to_string());
     graph.user_voices.sort_by_key(|voice| voice.id.to_string());
+    canonicalize_authored(&mut graph.authored);
 
     if graph.settings.revision.get() == 0 || graph.settings.created_at > graph.settings.updated_at {
         return Err(ProviderBackupGraphError::InvalidGraph);
@@ -269,6 +313,217 @@ fn canonicalize_and_validate(
         {
             return Err(ProviderBackupGraphError::InvalidGraph);
         }
+    }
+    validate_authored(graph, &profile_ids, &prompt_ids, &voice_ids)?;
+    Ok(())
+}
+
+fn canonicalize_authored(authored: &mut AuthoredProfileBackup) {
+    authored.personas.sort_by_key(|value| value.id.to_string());
+    authored
+        .lorebooks
+        .sort_by_key(|value| value.book.id.to_string());
+    authored
+        .characters
+        .sort_by_key(|value| value.character.id.to_string());
+    authored
+        .groups
+        .sort_by_key(|value| value.group.id.to_string());
+    authored
+        .character_lorebooks
+        .sort_by_key(|value| value.owner_id.to_string());
+    authored
+        .persona_lorebooks
+        .sort_by_key(|value| value.owner_id.to_string());
+    authored
+        .group_lorebooks
+        .sort_by_key(|value| value.owner_id.to_string());
+    authored
+        .media_assets
+        .sort_by_key(|value| value.id.to_string());
+    authored
+        .media_blobs
+        .sort_by_key(|value| value.id.to_string());
+}
+
+fn validate_authored(
+    graph: &ProviderBackupGraph,
+    profile_ids: &BTreeMap<ModelProfileId, ()>,
+    prompt_ids: &BTreeMap<PromptDocumentId, ()>,
+    voice_ids: &BTreeMap<lettuce_types::VoiceProfileId, ()>,
+) -> Result<(), ProviderBackupGraphError> {
+    let authored = &graph.authored;
+    let mut persona_ids = BTreeSet::new();
+    for persona in &authored.personas {
+        if persona.validate().is_err() || !persona_ids.insert(persona.id) {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+    }
+    if authored.persona_default.validate().is_err()
+        || authored
+            .persona_default
+            .persona_id
+            .is_some_and(|id| !persona_ids.contains(&id))
+    {
+        return Err(ProviderBackupGraphError::InvalidGraph);
+    }
+    let mut lorebook_ids = BTreeSet::new();
+    for details in &authored.lorebooks {
+        if details.validate().is_err() || !lorebook_ids.insert(details.book.id) {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+    }
+    let mut character_ids = BTreeSet::new();
+    for details in &authored.characters {
+        let character = &details.character;
+        if details.validate().is_err()
+            || !character_ids.insert(character.id)
+            || character
+                .defaults
+                .model_profile_id
+                .is_some_and(|id| !profile_ids.contains_key(&id))
+            || [
+                character.defaults.direct_prompt_id,
+                character.defaults.group_conversation_prompt_id,
+                character.defaults.group_roleplay_prompt_id,
+            ]
+            .into_iter()
+            .flatten()
+            .any(|id| !prompt_ids.contains_key(&id))
+            || matches!(
+                character.defaults.voice,
+                Some(VoicePreference::VoiceProfile(id)) if !voice_ids.contains_key(&id)
+            )
+        {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+        for starter in &details.starters {
+            if starter
+                .prompt_id
+                .is_some_and(|id| !prompt_ids.contains_key(&id))
+                || matches!(
+                    &starter.lorebooks,
+                    Selection::Explicit(ids) if ids.iter().any(|id| !lorebook_ids.contains(id))
+                )
+            {
+                return Err(ProviderBackupGraphError::InvalidGraph);
+            }
+        }
+    }
+    let mut group_ids = BTreeSet::new();
+    for details in &authored.groups {
+        let group = &details.group;
+        if details.validate().is_err()
+            || !group_ids.insert(group.id)
+            || group.members.iter().any(|member| {
+                !character_ids.contains(&member.character_id)
+                    || member
+                        .model_profile_override
+                        .is_some_and(|id| !profile_ids.contains_key(&id))
+            })
+            || matches!(group.persona, Selection::Explicit(id) if !persona_ids.contains(&id))
+            || [
+                group.group_conversation_prompt_id,
+                group.group_roleplay_prompt_id,
+            ]
+            .into_iter()
+            .flatten()
+            .any(|id| !prompt_ids.contains_key(&id))
+        {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+    }
+    validate_owner_bindings(&authored.character_lorebooks, &character_ids, &lorebook_ids)?;
+    validate_owner_bindings(&authored.persona_lorebooks, &persona_ids, &lorebook_ids)?;
+    validate_owner_bindings(&authored.group_lorebooks, &group_ids, &lorebook_ids)?;
+
+    let mut blob_kinds = BTreeMap::new();
+    for blob in &authored.media_blobs {
+        if blob.validate().is_err() || blob_kinds.insert(blob.id, blob.kind).is_some() {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+    }
+    let mut asset_ids = BTreeSet::new();
+    for asset in &authored.media_assets {
+        if asset
+            .validate_for_blob_kind(
+                *blob_kinds
+                    .get(&asset.blob_id)
+                    .ok_or(ProviderBackupGraphError::InvalidGraph)?,
+            )
+            .is_err()
+            || !asset_ids.insert(asset.id)
+        {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+    }
+    let referenced_assets = authored
+        .personas
+        .iter()
+        .flat_map(|value| value.media.links.iter().map(|link| link.asset_id))
+        .chain(
+            authored
+                .lorebooks
+                .iter()
+                .filter_map(|value| value.book.icon_asset_id),
+        )
+        .chain(authored.characters.iter().flat_map(|details| {
+            details
+                .character
+                .media
+                .links
+                .iter()
+                .map(|link| link.asset_id)
+                .chain(details.character.presentation.referenced_asset_ids())
+                .chain(
+                    details
+                        .scenes
+                        .iter()
+                        .flat_map(|scene| scene.assets.iter().map(|link| link.asset_id)),
+                )
+        }))
+        .chain(authored.groups.iter().flat_map(|details| {
+            details
+                .group
+                .background_asset_id
+                .into_iter()
+                .chain(details.group.presentation.referenced_asset_ids())
+                .chain(
+                    details
+                        .starting_scene
+                        .iter()
+                        .flat_map(|scene| scene.scene.assets.iter().map(|link| link.asset_id)),
+                )
+        }));
+    if referenced_assets
+        .into_iter()
+        .any(|id| !asset_ids.contains(&id))
+    {
+        return Err(ProviderBackupGraphError::InvalidGraph);
+    }
+    Ok(())
+}
+
+fn validate_owner_bindings<Owner: Ord>(
+    owners: &[BackupLorebookBindings<Owner>],
+    owner_ids: &BTreeSet<Owner>,
+    lorebook_ids: &BTreeSet<LorebookId>,
+) -> Result<(), ProviderBackupGraphError> {
+    let mut seen = BTreeSet::new();
+    for owner in owners {
+        if !owner_ids.contains(&owner.owner_id)
+            || !seen.insert(&owner.owner_id)
+            || validate_bindings(&owner.bindings).is_err()
+            || owner
+                .bindings
+                .iter()
+                .any(|binding| !lorebook_ids.contains(&binding.lorebook_id))
+        {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+    }
+    if seen.len() != owner_ids.len() {
+        return Err(ProviderBackupGraphError::InvalidGraph);
     }
     Ok(())
 }
@@ -388,6 +643,23 @@ mod tests {
             },
             audio_providers: Vec::new(),
             user_voices: Vec::new(),
+            authored: AuthoredProfileBackup {
+                personas: Vec::new(),
+                persona_default: PersonaDefaultState {
+                    persona_id: None,
+                    revision: Revision::new(1),
+                    created_at: TimestampMillis::new(1),
+                    updated_at: TimestampMillis::new(1),
+                },
+                lorebooks: Vec::new(),
+                characters: Vec::new(),
+                groups: Vec::new(),
+                character_lorebooks: Vec::new(),
+                persona_lorebooks: Vec::new(),
+                group_lorebooks: Vec::new(),
+                media_assets: Vec::new(),
+                media_blobs: Vec::new(),
+            },
         }
     }
 
@@ -444,6 +716,48 @@ mod tests {
         duplicate_graph.accounts.push(duplicate_account);
         assert_eq!(
             provider_backup_secret_requirements(&duplicate_graph),
+            Err(ProviderBackupGraphError::InvalidGraph)
+        );
+    }
+
+    #[test]
+    fn authored_roots_require_complete_bindings_and_valid_defaults() {
+        let reference = SecretRef::new();
+        let mut source_graph = graph(reference);
+        let persona = Persona::new(
+            PersonaId::new(),
+            "Traveler".into(),
+            "A complete authored persona".into(),
+            TimestampMillis::new(2),
+        )
+        .expect("persona");
+        source_graph.authored.personas.push(persona.clone());
+        source_graph.authored.persona_default.persona_id = Some(persona.id);
+        assert_eq!(
+            provider_backup_secret_requirements(&source_graph),
+            Err(ProviderBackupGraphError::InvalidGraph)
+        );
+
+        source_graph
+            .authored
+            .persona_lorebooks
+            .push(BackupLorebookBindings {
+                owner_id: persona.id,
+                bindings: Vec::new(),
+            });
+        assert_eq!(
+            provider_backup_secret_requirements(&source_graph),
+            Ok(vec![(
+                reference,
+                SecretPurpose::ProviderApiKey {
+                    owner: source_graph.accounts[0].secret_owner_id,
+                },
+            )])
+        );
+
+        source_graph.authored.persona_default.persona_id = Some(PersonaId::new());
+        assert_eq!(
+            provider_backup_secret_requirements(&source_graph),
             Err(ProviderBackupGraphError::InvalidGraph)
         );
     }

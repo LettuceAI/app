@@ -52,6 +52,11 @@ lists reject reuse of one logical `AssetId` across slots. Presentation exposes
 deterministic recursive logical-asset references; unresolved legacy widget
 tokens are excluded.
 
+Complete character and group detail aggregates are serializable and validate by
+reusing their create-plan invariants. This lets the transfer boundary preserve
+their owned ordered graphs without defining a parallel backup-only character
+model.
+
 Scene draft updates carry only scalar draft fields. Asset replacement is a
 complete base-and-variant association operation, and scene/starter mutations
 use the character root revision as their authoritative CAS token. Removing a
