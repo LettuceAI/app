@@ -286,3 +286,17 @@ checked when their owning legacy document is present. The complete decrypted
 source inventory remains attached to the plan, including converted documents,
 so later slices can recover fields that do not yet have a canonical owner without
 reopening, deleting or rewriting the backup.
+
+The authored-profile conversion slice adds bounded persona, lorebook and
+character candidates without writing live state. It preserves the default
+persona, every authored text and provenance field, legacy presentation and
+companion payloads, ordered rules, scenes and variants, chat starters, LoRA
+recommendations, timestamps and unresolved media locators. Existing persona,
+lorebook, character-profile, scene-document, starter-message and ordered
+lorebook-binding contracts validate the parts they own. Character and persona
+lorebook order remains explicit; the optional compatibility binding document
+also retains disabled rows instead of repeating the legacy importer’s silent
+drop. Defaults, selected variants, starter ownership, model, prompt, scene and
+lorebook links must resolve inside the complete retained plan. Missing documents,
+unknown fields and normalized legacy binding order remain visible as conversion
+notices, and malformed or orphaned graphs reject before any mutation.

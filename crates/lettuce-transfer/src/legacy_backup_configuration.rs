@@ -84,6 +84,7 @@ pub struct LegacyBackupChatTemplateCandidate {
     pub name: String,
     pub scene_source_id: Option<String>,
     pub prompt_source_id: Option<String>,
+    pub has_lorebook_override: bool,
     pub lorebook_source_ids: Vec<String>,
     pub messages: Vec<LegacyBackupChatTemplateMessage>,
     pub created_at: TimestampMillis,
@@ -1596,6 +1597,7 @@ fn map_chat_templates(
                 ));
             }
         }
+        let has_lorebook_override = row.lorebook_ids_override.is_some();
         let lorebook_ids: Vec<String> = row
             .lorebook_ids_override
             .as_deref()
@@ -1705,6 +1707,7 @@ fn map_chat_templates(
             name: row.name,
             scene_source_id: normalize_option(row.scene_id),
             prompt_source_id: normalize_option(row.prompt_template_id),
+            has_lorebook_override,
             lorebook_source_ids: lorebook_ids,
             messages,
             created_at: TimestampMillis::new(row.created_at),
@@ -2517,7 +2520,7 @@ fn canonical_provider_id(
         ))
     })
 }
-fn canonical_model_id(
+pub(crate) fn canonical_model_id(
     value: &str,
     notices: &mut Vec<LegacyBackupConversionNotice>,
     field: &str,
