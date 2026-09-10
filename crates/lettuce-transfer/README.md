@@ -283,6 +283,17 @@ plan. Conversation attachments, generated images and other later-domain media
 stay attached to the source inventory and are not misclassified as orphaned by
 this authored-only slice.
 
+The version-1 ASR backup document now maps into the same bounded read-only plan
+used by SQLite migration. It preserves the exported authored and normalized
+text, language, scope, category, priority, confidence, approval, counters and
+timestamps, while assigning deterministic plan-local IDs from retained archive
+order because the legacy exporter omitted database IDs. Duplicate semantic
+rows, invalid normalization, metrics, flags or timestamps reject before any
+write. The legacy full-backup path never exported managed voice examples,
+their audio or learning relationships, so the plan reports that absence and
+does not fabricate them. All decrypted documents and archive media remain
+attached; this slice neither writes learning rows nor ingests audio.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established
