@@ -273,6 +273,16 @@ conversion or writes. The decoder accepts bytes so desktop files and Android
 `content://` provider streams share the same format path without treating a URI
 as a native path or deleting its source.
 
+Authored version-1 media locators now resolve directly against those retained
+archive bytes before any ingest. Persona and character avatars use their exact
+owner directories; lorebook icons, design references and character/group/scene
+backgrounds use the legacy image-reference convention. Shared archive objects
+are hashed once and retain every typed owner and ordinal use. Missing,
+ambiguous, unsafe, oversized or over-limit references reject the whole media
+plan. Conversation attachments, generated images and other later-domain media
+stay attached to the source inventory and are not misclassified as orphaned by
+this authored-only slice.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established

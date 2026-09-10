@@ -631,6 +631,39 @@ pub(crate) fn plan_fingerprint(
                     hash.u32(3);
                     hash.text(&lorebook_id.to_string());
                 }
+                LegacyMediaUse::CharacterAvatar { character_id } => {
+                    hash.u32(5);
+                    hash.text(&character_id.to_string());
+                }
+                LegacyMediaUse::CharacterBackground { character_id } => {
+                    hash.u32(6);
+                    hash.text(&character_id.to_string());
+                }
+                LegacyMediaUse::CharacterDesignReference {
+                    character_id,
+                    ordinal,
+                } => {
+                    hash.u32(7);
+                    hash.text(&character_id.to_string());
+                    hash.u32(*ordinal);
+                }
+                LegacyMediaUse::CharacterSceneBackground {
+                    character_id,
+                    scene_id,
+                } => {
+                    hash.u32(8);
+                    hash.text(&character_id.to_string());
+                    hash.text(&scene_id.to_string());
+                }
+                LegacyMediaUse::GroupBackground { group_id } => {
+                    hash.u32(9);
+                    hash.text(&group_id.to_string());
+                }
+                LegacyMediaUse::GroupSceneBackground { group_id, scene_id } => {
+                    hash.u32(10);
+                    hash.text(&group_id.to_string());
+                    hash.text(&scene_id.to_string());
+                }
                 LegacyMediaUse::AsrVoiceExample { source_id } => {
                     hash.u32(4);
                     hash.i64(*source_id);

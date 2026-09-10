@@ -18,6 +18,7 @@ mod job_backup;
 mod legacy_backup;
 mod legacy_backup_authored;
 mod legacy_backup_configuration;
+mod legacy_backup_media;
 mod memory_backup;
 mod memory_projection_backup;
 mod restore_plan;
@@ -36,6 +37,7 @@ pub use job_backup::*;
 pub use legacy_backup::*;
 pub use legacy_backup_authored::*;
 pub use legacy_backup_configuration::*;
+pub use legacy_backup_media::*;
 pub use memory_backup::*;
 pub use memory_projection_backup::*;
 pub use restore_plan::*;
@@ -51,8 +53,8 @@ use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef, SecretValue};
 use lettuce_speech::{AsrCorrectionRule, AsrIgnoredSuggestion, AsrVocabularyTerm, AsrVoiceExample};
 use lettuce_types::{
     AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, AsrVoiceExampleId, AssetId,
-    ContentHash, LegacyImportRunId, LorebookEntryId, LorebookId, ModelProfileId, PersonaId,
-    PromptDocumentId, ProviderAccountId, TimestampMillis,
+    CharacterId, ContentHash, GroupId, LegacyImportRunId, LorebookEntryId, LorebookId,
+    ModelProfileId, PersonaId, PromptDocumentId, ProviderAccountId, SceneId, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
@@ -556,6 +558,12 @@ pub enum LegacyMediaUse {
     PersonaAvatar { persona_id: PersonaId },
     PersonaDesignReference { persona_id: PersonaId, ordinal: u32 },
     LorebookAvatar { lorebook_id: LorebookId },
+    CharacterAvatar { character_id: CharacterId },
+    CharacterBackground { character_id: CharacterId },
+    CharacterDesignReference { character_id: CharacterId, ordinal: u32 },
+    CharacterSceneBackground { character_id: CharacterId, scene_id: SceneId },
+    GroupBackground { group_id: GroupId },
+    GroupSceneBackground { group_id: GroupId, scene_id: SceneId },
     AsrVoiceExample { source_id: i64 },
 }
 
