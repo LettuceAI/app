@@ -296,7 +296,8 @@ mod tests {
         ConversationKind, ConversationReader, ConversationRepository, GenerationCheckpointEnvelope,
         GenerationCheckpointEvent, GenerationFailureCode, GenerationTurnStatus, MessageDraft,
         MessagePart, MessageRole, MessageVisibility, OperationToken, SendConversation,
-        ToolExecution, ToolExecutionRepository, ToolExecutionStatus, ToolOutput,
+        ToolExecution, ToolExecutionRepository, ToolExecutionStatus, ToolOutput, UsageCounters,
+        UsageOutcome, UsageRecord, UsageUnavailableReason,
     };
     use lettuce_database::Database;
     use lettuce_jobs::{
@@ -324,11 +325,14 @@ mod tests {
         ConversationHistoryBackupError, JobBackup, open_backup,
     };
     use lettuce_types::{
-        AudioProviderId, CharacterId, GenerationAttemptId, GroupId, MessageId, ModelProfileId,
-        OperationId, PersonaId, ProviderAccountId, Revision, StarterMessageId, ToolExecutionId,
-        UsageEventId, VoiceProfileId,
+        AudioProviderId, CharacterId, GroupId, MessageId, ModelProfileId, OperationId, PersonaId,
+        ProviderAccountId, Revision, StarterMessageId, ToolExecutionId, UsageEventId,
+        VoiceProfileId,
     };
-    use lettuce_usage::{JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger};
+    use lettuce_usage::{
+        JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger, ModelPricing,
+        OpenRouterCostInput, UsageCostBasis, UsageCostLedger, UsageLedger,
+    };
 
     use super::*;
     use crate::{
@@ -761,6 +765,62 @@ mod tests {
                 .expect("conversation after send")
                 .conversation
                 .revision;
+        let usage_model_id = ModelProfileId::new();
+        let known_usage = UsageLedger::record(
+            backend.database(),
+            UsageRecord {
+                turn_id: pending_send.turn.id,
+                attempt_id,
+                outcome: UsageOutcome::Failed,
+                usage: UsageCounters::Known(lettuce_conversations::InferenceUsage {
+                    provider_reported_cost: None,
+                    cache_write_tokens: Some(3),
+                    web_search_requests: Some(0),
+                    cached_input_tokens: Some(5),
+                    reasoning_tokens: Some(2),
+                    input_tokens: 21,
+                    output_tokens: 8,
+                }),
+                model_profile_id: Some(usage_model_id),
+                model_revision: Some(Revision::INITIAL),
+                provider_account_id: Some(provider_account_id),
+                provider_account_revision: Some(Revision::INITIAL),
+                recorded_at: TimestampMillis::new(12),
+            },
+        )
+        .expect("record known conversation usage");
+        UsageCostLedger::record_cost(
+            backend.database(),
+            known_usage.id,
+            UsageCostBasis {
+                model_profile_id: usage_model_id,
+                provider_account_id,
+                source: "Backup fixture pricing".into(),
+                captured_at: TimestampMillis::new(12),
+                pricing: ModelPricing {
+                    prompt: "0.001".into(),
+                    completion: "0.002".into(),
+                    request: "0".into(),
+                    image: "0".into(),
+                    image_output: "0".into(),
+                    web_search: "0".into(),
+                    internal_reasoning: "0".into(),
+                    input_cache_read: "0.0005".into(),
+                    input_cache_write: "0.0015".into(),
+                },
+                input: OpenRouterCostInput {
+                    prompt_tokens: 21,
+                    completion_tokens: 8,
+                    cached_prompt_tokens: 5,
+                    cache_write_tokens: 3,
+                    reasoning_tokens: 2,
+                    web_search_requests: 0,
+                    authoritative_total_cost: None,
+                },
+                openrouter: None,
+            },
+        )
+        .expect("record conversation cost");
         ConversationRepository::fail_generation(
             backend.database(),
             pending_send.turn.id,
@@ -776,10 +836,127 @@ mod tests {
                 .expect("failure digest"),
             },
             GenerationFailureCode::Internal,
-            UsageEventId::new(),
-            TimestampMillis::new(12),
+            known_usage.id,
+            TimestampMillis::new(13),
         )
         .expect("fail generation after settled tool");
+        let direct_after_failure =
+            ConversationReader::get(backend.database(), direct_conversation.id)
+                .expect("conversation after first failure")
+                .conversation;
+        let unavailable_send = ConversationRepository::begin_send(
+            backend.database(),
+            &SendConversation {
+                conversation_id: direct_after_failure.id,
+                branch_id: direct_after_failure.active_branch_id,
+                expected_revision: direct_after_failure.revision,
+                operation: OperationToken {
+                    key: lettuce_jobs::IdempotencyKey::new("backup-unavailable-send")
+                        .expect("operation key"),
+                    request_digest: ContentHash::parse(
+                        blake3::hash(b"backup unavailable send")
+                            .to_hex()
+                            .to_string(),
+                    )
+                    .expect("request digest"),
+                },
+                message: MessageDraft {
+                    role: MessageRole::User,
+                    author_participant_id: Some(user_participant_id),
+                    parts: vec![MessagePart::Text {
+                        text: "Preserve unavailable usage too.".into(),
+                    }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+                swap_roles: false,
+            },
+            TimestampMillis::new(14),
+        )
+        .expect("begin unavailable generation")
+        .value;
+        let mut unavailable_turn_revision = unavailable_send.turn.revision;
+        for (sequence, status) in [
+            GenerationTurnStatus::Preparing,
+            GenerationTurnStatus::ContextPrepared,
+            GenerationTurnStatus::Running,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let sequence = u64::try_from(sequence + 1).expect("checkpoint sequence");
+            unavailable_turn_revision = ConversationRepository::append_event(
+                backend.database(),
+                unavailable_send.turn.id,
+                unavailable_turn_revision,
+                &OperationToken {
+                    key: lettuce_jobs::IdempotencyKey::new(format!(
+                        "backup-unavailable-stage-{sequence}"
+                    ))
+                    .expect("stage key"),
+                    request_digest: ContentHash::parse(
+                        blake3::hash(format!("backup unavailable stage {sequence}").as_bytes())
+                            .to_hex()
+                            .to_string(),
+                    )
+                    .expect("stage digest"),
+                },
+                GenerationCheckpointEnvelope {
+                    turn_id: unavailable_send.turn.id,
+                    attempt_id: unavailable_send.attempt.id,
+                    job_id: None,
+                    correlation_id: None,
+                    sequence,
+                    event: GenerationCheckpointEvent::Stage { status },
+                },
+                TimestampMillis::new(14 + i64::try_from(sequence).expect("checkpoint time")),
+            )
+            .expect("append unavailable stage")
+            .value
+            .revision;
+        }
+        let unavailable_usage = UsageLedger::record(
+            backend.database(),
+            UsageRecord {
+                turn_id: unavailable_send.turn.id,
+                attempt_id: unavailable_send.attempt.id,
+                outcome: UsageOutcome::Failed,
+                usage: UsageCounters::Unavailable(UsageUnavailableReason::TransportFailed),
+                model_profile_id: None,
+                model_revision: None,
+                provider_account_id: None,
+                provider_account_revision: None,
+                recorded_at: TimestampMillis::new(18),
+            },
+        )
+        .expect("record unavailable conversation usage");
+        let unavailable_conversation_revision =
+            ConversationReader::get(backend.database(), direct_conversation.id)
+                .expect("conversation with unavailable turn")
+                .conversation
+                .revision;
+        ConversationRepository::fail_generation(
+            backend.database(),
+            unavailable_send.turn.id,
+            unavailable_send.attempt.id,
+            unavailable_conversation_revision,
+            unavailable_turn_revision,
+            &OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("backup-unavailable-failure")
+                    .expect("failure key"),
+                request_digest: ContentHash::parse(
+                    blake3::hash(b"backup unavailable failure")
+                        .to_hex()
+                        .to_string(),
+                )
+                .expect("failure digest"),
+            },
+            GenerationFailureCode::ProviderUnavailable,
+            unavailable_usage.id,
+            TimestampMillis::new(19),
+        )
+        .expect("fail unavailable generation");
         let group_conversation = backend
             .launch_group_conversation(
                 &GroupConversationLaunchRequest {
@@ -987,7 +1164,7 @@ mod tests {
             .admit_job_usage(JobInferenceUsage {
                 id: usage_id,
                 job_id: backup_job.id,
-                logical_attempt_id: GenerationAttemptId::new(),
+                logical_attempt_id: attempt_id,
                 model_profile_id: ModelProfileId::new(),
                 model_revision: Revision::INITIAL,
                 provider_account_id,
@@ -1037,7 +1214,7 @@ mod tests {
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 15);
+        assert_eq!(sections.len(), 16);
         assert!(
             sections[1]
                 .bytes
@@ -1088,7 +1265,7 @@ mod tests {
             &direct.aggregate.conversation.kind,
             ConversationKind::Direct(_)
         ));
-        assert_eq!(direct.messages.len(), 3);
+        assert_eq!(direct.messages.len(), 4);
         assert_eq!(
             direct.messages[0].revisions[0].parts,
             vec![MessagePart::Text {
@@ -1142,6 +1319,27 @@ mod tests {
         let runtime: lettuce_transfer::ConversationRuntimeBackup =
             serde_json::from_slice(&sections[4].bytes).expect("conversation runtime JSON");
         let jobs: JobBackup = serde_json::from_slice(&sections[5].bytes).expect("jobs JSON");
+        let usage: lettuce_transfer::ConversationUsageBackup =
+            serde_json::from_slice(&sections[6].bytes).expect("conversation usage JSON");
+        assert_eq!(usage.events.len(), 2);
+        let known = usage
+            .events
+            .iter()
+            .find(|entry| entry.event.id == known_usage.id)
+            .expect("known usage");
+        assert!(known.cost_basis.is_some());
+        assert_eq!(known.overlapping_job_inference_ids, vec![usage_id]);
+        let unavailable = usage
+            .events
+            .iter()
+            .find(|entry| entry.event.id == unavailable_usage.id)
+            .expect("unavailable usage");
+        assert!(matches!(
+            unavailable.event.record.usage,
+            UsageCounters::Unavailable(UsageUnavailableReason::TransportFailed)
+        ));
+        assert!(unavailable.cost_basis.is_none());
+        assert!(unavailable.overlapping_job_inference_ids.is_empty());
         let backed_up_job = jobs
             .jobs
             .iter()
@@ -1176,7 +1374,7 @@ mod tests {
             .iter()
             .find(|value| value.conversation_id == direct_conversation.id)
             .expect("direct runtime");
-        assert_eq!(direct_runtime.turns.len(), 1);
+        assert_eq!(direct_runtime.turns.len(), 2);
         assert_eq!(direct_runtime.turns[0].turn.id, pending_send.turn.id);
         assert_eq!(direct_runtime.turns[0].turn.attempts.len(), 1);
         assert_eq!(direct_runtime.turns[0].attempts.len(), 1);

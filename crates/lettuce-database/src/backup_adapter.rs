@@ -1,16 +1,17 @@
 use lettuce_transfer::{
     ASR_LEARNING_DOCUMENT_VERSION, AsrLearningAudioAsset, AsrLearningDocument,
-    AuthoredProfileBackup, BackupConversation, BackupConversationRuntime,
+    AuthoredProfileBackup, BackupConversation, BackupConversationRuntime, BackupConversationUsage,
     BackupGenerationAttemptRuntime, BackupGenerationCheckpoint, BackupGenerationTurn,
     BackupGlobalSettings, BackupJobInference, BackupLorebookBindings, BackupMessage,
     CONVERSATION_HISTORY_BACKUP_VERSION, CONVERSATION_RUNTIME_BACKUP_VERSION,
-    ConversationHistoryBackup, ConversationRuntimeBackup, JOB_BACKUP_VERSION, JobBackup,
-    MAX_BACKUP_AUTHORED_ROOTS, MAX_BACKUP_CONVERSATIONS, MAX_BACKUP_GENERATION_CHECKPOINTS,
-    MAX_BACKUP_GENERATION_TURNS, MAX_BACKUP_JOB_EVENTS, MAX_BACKUP_JOB_INFERENCE_EVENTS,
-    MAX_BACKUP_JOBS, MAX_BACKUP_MEDIA_RECORDS, MAX_BACKUP_MESSAGE_CANDIDATES,
-    MAX_BACKUP_MESSAGE_REVISIONS, MAX_BACKUP_MESSAGES, MAX_BACKUP_TOOL_EXECUTIONS,
-    PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph, ProviderBackupSelections,
-    ProviderBackupSource, ProviderBackupSourceError,
+    CONVERSATION_USAGE_BACKUP_VERSION, ConversationHistoryBackup, ConversationRuntimeBackup,
+    ConversationUsageBackup, JOB_BACKUP_VERSION, JobBackup, MAX_BACKUP_AUTHORED_ROOTS,
+    MAX_BACKUP_CONVERSATION_USAGE_EVENTS, MAX_BACKUP_CONVERSATIONS,
+    MAX_BACKUP_GENERATION_CHECKPOINTS, MAX_BACKUP_GENERATION_TURNS, MAX_BACKUP_JOB_EVENTS,
+    MAX_BACKUP_JOB_INFERENCE_EVENTS, MAX_BACKUP_JOBS, MAX_BACKUP_MEDIA_RECORDS,
+    MAX_BACKUP_MESSAGE_CANDIDATES, MAX_BACKUP_MESSAGE_REVISIONS, MAX_BACKUP_MESSAGES,
+    MAX_BACKUP_TOOL_EXECUTIONS, PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph,
+    ProviderBackupSelections, ProviderBackupSource, ProviderBackupSourceError,
 };
 use lettuce_types::{
     AssetId, CharacterId, ConversationId, GenerationAttemptId, GroupId, LorebookId, ModelProfileId,
@@ -303,6 +304,7 @@ impl ProviderBackupSource for Database {
         let conversation_history = read_conversation_history(&transaction)?;
         let conversation_runtime = read_conversation_runtime(&transaction, &conversation_history)?;
         let job_backup = read_job_backup(&transaction)?;
+        let conversation_usage = read_conversation_usage(&transaction, &job_backup)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             version: PROVIDER_BACKUP_GRAPH_VERSION,
@@ -329,8 +331,68 @@ impl ProviderBackupSource for Database {
             conversation_history,
             conversation_runtime,
             job_backup,
+            conversation_usage,
         })
     }
+}
+
+fn read_conversation_usage(
+    transaction: &rusqlite::Transaction<'_>,
+    jobs: &JobBackup,
+) -> Result<ConversationUsageBackup, ProviderBackupSourceError> {
+    let usage = crate::usage_adapter::load_all_usage_in(transaction)
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+    if usage.len() > MAX_BACKUP_CONVERSATION_USAGE_EVENTS {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    let mut costs = std::collections::BTreeMap::new();
+    let mut statement = transaction
+        .prepare("SELECT event_id,basis_json FROM usage_costs ORDER BY event_id")
+        .map_err(backup_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(backup_error)?;
+    for row in rows {
+        let (event_id, basis) = row.map_err(backup_error)?;
+        let event_id: lettuce_types::UsageEventId = event_id
+            .parse()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let basis = crate::decode_versioned(&basis, 1)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        if costs.insert(event_id, basis).is_some() {
+            return Err(ProviderBackupSourceError::InvalidData);
+        }
+    }
+    let overlaps = jobs.inference.iter().fold(
+        std::collections::BTreeMap::<_, Vec<_>>::new(),
+        |mut values, dispatch| {
+            values
+                .entry(dispatch.evidence.logical_attempt_id)
+                .or_default()
+                .push(dispatch.evidence.id);
+            values
+        },
+    );
+    let events = usage
+        .into_iter()
+        .map(|event| BackupConversationUsage {
+            cost_basis: costs.remove(&event.id),
+            overlapping_job_inference_ids: overlaps
+                .get(&event.record.attempt_id)
+                .cloned()
+                .unwrap_or_default(),
+            event,
+        })
+        .collect();
+    if !costs.is_empty() {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    Ok(ConversationUsageBackup {
+        version: CONVERSATION_USAGE_BACKUP_VERSION,
+        events,
+    })
 }
 
 fn read_job_backup(

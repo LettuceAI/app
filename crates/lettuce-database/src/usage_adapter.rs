@@ -439,6 +439,18 @@ const SELECT_EVENT: &str = "SELECT id, turn_id, attempt_id, outcome, counters_ki
     input_tokens, output_tokens, unavailable_reason, model_profile_id, model_revision,
     provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost FROM usage_events";
 
+pub(crate) fn load_all_usage_in(
+    transaction: &rusqlite::Transaction<'_>,
+) -> Result<Vec<UsageEvent>, UsageLedgerError> {
+    transaction
+        .prepare(&format!("{SELECT_EVENT} ORDER BY recorded_at,id"))
+        .map_err(|_| UsageLedgerError::Storage)?
+        .query_map([], hydrate)
+        .map_err(|_| UsageLedgerError::Storage)?
+        .map(|row| row.map_err(|_| UsageLedgerError::Storage)?.decode())
+        .collect()
+}
+
 impl UsageLedger for Database {
     fn record(&self, record: UsageRecord) -> Result<UsageEvent, UsageLedgerError> {
         record.validate().map_err(|_| UsageLedgerError::Invalid)?;

@@ -91,6 +91,8 @@ pub struct ProviderBackupGraph {
     pub conversation_runtime: crate::ConversationRuntimeBackup,
     #[serde(skip)]
     pub job_backup: crate::JobBackup,
+    #[serde(skip)]
+    pub conversation_usage: crate::ConversationUsageBackup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -199,6 +201,8 @@ pub fn provider_backup_sections(
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let jobs = serde_json::to_vec(&graph.job_backup)
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
+    let conversation_usage = serde_json::to_vec(&graph.conversation_usage)
+        .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let ordered_secrets = expected
         .keys()
         .map(|reference| supplied[reference])
@@ -229,6 +233,11 @@ pub fn provider_backup_sections(
             conversation_runtime,
         ),
         BackupSection::new("data/jobs.json", "jobs.v1", jobs),
+        BackupSection::new(
+            "data/conversation-usage.json",
+            "conversation-usage.v1",
+            conversation_usage,
+        ),
     ];
     sections.extend(media_sections);
     sections.extend(artifact_sections);
@@ -588,7 +597,18 @@ fn canonicalize_and_validate(
             crate::JobBackupError::LimitExceeded => ProviderBackupGraphError::LimitExceeded,
             crate::JobBackupError::InvalidData => ProviderBackupGraphError::InvalidGraph,
         })?;
-    validate_job_links(graph)
+    validate_job_links(graph)?;
+    graph
+        .conversation_usage
+        .canonicalize_and_validate(&graph.conversation_runtime, &graph.job_backup)
+        .map_err(|error| match error {
+            crate::ConversationUsageBackupError::LimitExceeded => {
+                ProviderBackupGraphError::LimitExceeded
+            }
+            crate::ConversationUsageBackupError::InvalidData => {
+                ProviderBackupGraphError::InvalidGraph
+            }
+        })
 }
 
 fn validate_job_links(graph: &ProviderBackupGraph) -> Result<(), ProviderBackupGraphError> {
@@ -1026,6 +1046,10 @@ mod tests {
                 jobs: Vec::new(),
                 inference: Vec::new(),
             },
+            conversation_usage: crate::ConversationUsageBackup {
+                version: crate::CONVERSATION_USAGE_BACKUP_VERSION,
+                events: Vec::new(),
+            },
         }
     }
 
@@ -1049,7 +1073,7 @@ mod tests {
         assert!(!format!("{secret:?}").contains("backup-secret-canary"));
         let sections = provider_backup_sections(source_graph, vec![secret], Vec::new(), Vec::new())
             .expect("sections");
-        assert_eq!(sections.len(), 6);
+        assert_eq!(sections.len(), 7);
         assert!(
             sections[1]
                 .bytes
@@ -1185,7 +1209,7 @@ mod tests {
             Vec::new(),
         )
         .expect("media sections");
-        assert_eq!(sections.len(), 7);
-        assert_eq!(&*sections[6].bytes, &bytes);
+        assert_eq!(sections.len(), 8);
+        assert_eq!(&*sections[7].bytes, &bytes);
     }
 }

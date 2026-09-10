@@ -181,3 +181,11 @@ snapshot and contiguous event history. Immutable inference dispatch evidence
 and any attached cost basis retain their job identity independently so evidence
 survives normal scheduler retention. Validation reuses the job-store restore
 contract and never aggregates these records with conversation UsageLedger events.
+
+The conversation-usage document retains every terminal attempt's immutable
+UsageLedger event, exact reported or unavailable counters, and optional captured
+cost basis. It records matching job-inference evidence IDs as overlap metadata,
+so restore and reporting can preserve both audit trails without treating them as
+independent charges. Validation requires every terminal runtime usage reference
+to resolve and rejects changed ownership, invalid pricing inputs, orphan costs,
+or incomplete overlap metadata.

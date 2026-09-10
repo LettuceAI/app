@@ -678,3 +678,9 @@ strict job-store loader, then reads ordered immutable inference evidence and
 optional job cost bases independently because that evidence survives job
 retention. Scalar identity columns must agree with their typed documents, and
 global job, event and dispatch limits are checked before the graph leaves SQLite.
+
+Conversation UsageLedger events and their optional captured cost bases join that
+same deferred backup snapshot through the existing strict usage decoder. Historic
+events remain valid when their provider account or model profile has since been
+deleted. The adapter derives exact overlap IDs from retained job inference
+evidence, rejects orphan cost rows, and does not calculate or combine charges.

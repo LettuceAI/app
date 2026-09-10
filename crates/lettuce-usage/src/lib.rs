@@ -14,7 +14,8 @@ pub use job_usage::*;
 use lettuce_conversations::UsageRecord;
 use lettuce_types::{GenerationAttemptId, GenerationTurnId, UsageEventId};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UsageEvent {
     pub id: UsageEventId,
     pub record: UsageRecord,

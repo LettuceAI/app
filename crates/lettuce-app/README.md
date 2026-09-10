@@ -1105,3 +1105,8 @@ events, and immutable job inference evidence with provider response identity,
 reported counters and any existing cost basis. A file-backed scenario preserves
 a claimed, progressed and retry-scheduled job plus its settled inference record
 across reopen and rejects a corrupt event sequence.
+
+The same file-backed export preserves conversation UsageLedger evidence for both
+known provider counters with its captured pricing basis and unavailable counters
+with their exact reason. Matching job inference is identified as overlapping
+audit evidence rather than an additional charge, including after database reopen.

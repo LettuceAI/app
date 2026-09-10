@@ -2035,7 +2035,8 @@ pub struct CompanionEffectProposal {
     pub effect_id: lettuce_types::CompanionEffectId,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UsageRecord {
     pub turn_id: GenerationTurnId,
     pub attempt_id: GenerationAttemptId,
@@ -2081,13 +2082,15 @@ impl UsageRecord {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
 pub enum UsageCounters {
     Known(InferenceUsage),
     Unavailable(UsageUnavailableReason),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UsageUnavailableReason {
     NotAdmitted,
     CancelledBeforeResponse,
@@ -2095,7 +2098,8 @@ pub enum UsageUnavailableReason {
     TransportFailed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UsageOutcome {
     Succeeded,
     Failed,
