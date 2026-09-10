@@ -1097,5 +1097,11 @@ The same export includes the conversation-owned generation runtime: turns,
 attempts, checkpoint timestamps, speaker and initial inference dispatches,
 preparation attribution and tool executions. Its file-backed scenario advances a
 turn through three durable stages, settles a tool result, fails the attempt, then
-reopens and verifies the exact terminal state. Job/event bodies and usage/cost
-bodies remain later full-backup sections while their IDs stay intact.
+reopens and verifies the exact terminal state. Conversation UsageLedger and cost
+bodies remain a later full-backup section while their IDs stay intact.
+
+The export now also includes every generic scheduler job, its ordered lifecycle
+events, and immutable job inference evidence with provider response identity,
+reported counters and any existing cost basis. A file-backed scenario preserves
+a claimed, progressed and retry-scheduled job plus its settled inference record
+across reopen and rejects a corrupt event sequence.

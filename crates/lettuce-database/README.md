@@ -672,3 +672,9 @@ and initial dispatch checkpoints, and exact tool execution state in the same
 deferred transaction. Preparation model, prompt, lorebook and memory attribution
 is already part of each hydrated turn. No SQL or raw database document crosses
 the transfer boundary.
+
+The same deferred snapshot reconstructs every durable job through the existing
+strict job-store loader, then reads ordered immutable inference evidence and
+optional job cost bases independently because that evidence survives job
+retention. Scalar identity columns must agree with their typed documents, and
+global job, event and dispatch limits are checked before the graph leaves SQLite.

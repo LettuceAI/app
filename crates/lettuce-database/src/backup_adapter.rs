@@ -2,13 +2,15 @@ use lettuce_transfer::{
     ASR_LEARNING_DOCUMENT_VERSION, AsrLearningAudioAsset, AsrLearningDocument,
     AuthoredProfileBackup, BackupConversation, BackupConversationRuntime,
     BackupGenerationAttemptRuntime, BackupGenerationCheckpoint, BackupGenerationTurn,
-    BackupGlobalSettings, BackupLorebookBindings, BackupMessage,
+    BackupGlobalSettings, BackupJobInference, BackupLorebookBindings, BackupMessage,
     CONVERSATION_HISTORY_BACKUP_VERSION, CONVERSATION_RUNTIME_BACKUP_VERSION,
-    ConversationHistoryBackup, ConversationRuntimeBackup, MAX_BACKUP_AUTHORED_ROOTS,
-    MAX_BACKUP_CONVERSATIONS, MAX_BACKUP_GENERATION_CHECKPOINTS, MAX_BACKUP_GENERATION_TURNS,
-    MAX_BACKUP_MEDIA_RECORDS, MAX_BACKUP_MESSAGE_CANDIDATES, MAX_BACKUP_MESSAGE_REVISIONS,
-    MAX_BACKUP_MESSAGES, MAX_BACKUP_TOOL_EXECUTIONS, PROVIDER_BACKUP_GRAPH_VERSION,
-    ProviderBackupGraph, ProviderBackupSelections, ProviderBackupSource, ProviderBackupSourceError,
+    ConversationHistoryBackup, ConversationRuntimeBackup, JOB_BACKUP_VERSION, JobBackup,
+    MAX_BACKUP_AUTHORED_ROOTS, MAX_BACKUP_CONVERSATIONS, MAX_BACKUP_GENERATION_CHECKPOINTS,
+    MAX_BACKUP_GENERATION_TURNS, MAX_BACKUP_JOB_EVENTS, MAX_BACKUP_JOB_INFERENCE_EVENTS,
+    MAX_BACKUP_JOBS, MAX_BACKUP_MEDIA_RECORDS, MAX_BACKUP_MESSAGE_CANDIDATES,
+    MAX_BACKUP_MESSAGE_REVISIONS, MAX_BACKUP_MESSAGES, MAX_BACKUP_TOOL_EXECUTIONS,
+    PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph, ProviderBackupSelections,
+    ProviderBackupSource, ProviderBackupSourceError,
 };
 use lettuce_types::{
     AssetId, CharacterId, ConversationId, GenerationAttemptId, GroupId, LorebookId, ModelProfileId,
@@ -300,6 +302,7 @@ impl ProviderBackupSource for Database {
             .map_err(|_| ProviderBackupSourceError::InvalidData)?;
         let conversation_history = read_conversation_history(&transaction)?;
         let conversation_runtime = read_conversation_runtime(&transaction, &conversation_history)?;
+        let job_backup = read_job_backup(&transaction)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             version: PROVIDER_BACKUP_GRAPH_VERSION,
@@ -325,8 +328,81 @@ impl ProviderBackupSource for Database {
             asr_learning,
             conversation_history,
             conversation_runtime,
+            job_backup,
         })
     }
+}
+
+fn read_job_backup(
+    transaction: &rusqlite::Transaction<'_>,
+) -> Result<JobBackup, ProviderBackupSourceError> {
+    for (table, limit) in [
+        ("jobs", MAX_BACKUP_JOBS),
+        ("job_events", MAX_BACKUP_JOB_EVENTS),
+        ("job_inference_usage", MAX_BACKUP_JOB_INFERENCE_EVENTS),
+    ] {
+        let count: i64 = transaction
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .map_err(backup_error)?;
+        if usize::try_from(count).map_err(|_| ProviderBackupSourceError::InvalidData)? > limit {
+            return Err(ProviderBackupSourceError::InvalidData);
+        }
+    }
+    let records = crate::job_adapter::load_store(transaction)
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?
+        .stored_records();
+    let mut inference = Vec::new();
+    let mut statement = transaction
+        .prepare(
+            "SELECT u.id,u.job_id,u.admitted_at,u.record_json,u.result_json,c.basis_json \
+             FROM job_inference_usage u LEFT JOIN job_usage_costs c ON c.event_id=u.id \
+             ORDER BY u.job_id,u.admitted_at,u.id",
+        )
+        .map_err(backup_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+            ))
+        })
+        .map_err(backup_error)?;
+    for row in rows {
+        let (id, job_id, admitted_at, record, result, cost_basis) = row.map_err(backup_error)?;
+        let mut evidence: lettuce_usage::JobInferenceUsage = crate::decode_versioned(&record, 1)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        evidence.result = result
+            .as_deref()
+            .map(|value| crate::decode_versioned(value, 1))
+            .transpose()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        if id != evidence.id.to_string()
+            || job_id != evidence.job_id.to_string()
+            || admitted_at != evidence.admitted_at.get()
+        {
+            return Err(ProviderBackupSourceError::InvalidData);
+        }
+        let cost_basis = cost_basis
+            .as_deref()
+            .map(|value| crate::decode_versioned(value, 1))
+            .transpose()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        inference.push(BackupJobInference {
+            evidence,
+            cost_basis,
+        });
+    }
+    Ok(JobBackup {
+        version: JOB_BACKUP_VERSION,
+        jobs: records,
+        inference,
+    })
 }
 
 fn read_conversation_runtime(

@@ -159,7 +159,8 @@ struct JobRecord {
 
 /// Persistence-neutral aggregate used by durable [`JobStore`] adapters.
 /// Lifecycle mutations must still be applied through [`InMemoryJobStore`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StoredJobRecord {
     pub spec: JobSpec,
     pub snapshot: JobSnapshot,

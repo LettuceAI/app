@@ -114,7 +114,7 @@ pub(crate) fn cancel_creation_project_jobs(
     persist_changes(transaction, &before, &records_by_id(store.stored_records()))
 }
 
-fn load_store(transaction: &Transaction<'_>) -> Result<InMemoryJobStore, StoreError> {
+pub(crate) fn load_store(transaction: &Transaction<'_>) -> Result<InMemoryJobStore, StoreError> {
     let mut records = BTreeMap::new();
     {
         let mut statement = transaction

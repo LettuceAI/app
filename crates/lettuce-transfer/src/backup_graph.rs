@@ -89,6 +89,8 @@ pub struct ProviderBackupGraph {
     pub conversation_history: crate::ConversationHistoryBackup,
     #[serde(skip)]
     pub conversation_runtime: crate::ConversationRuntimeBackup,
+    #[serde(skip)]
+    pub job_backup: crate::JobBackup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -195,6 +197,8 @@ pub fn provider_backup_sections(
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let conversation_runtime = serde_json::to_vec(&graph.conversation_runtime)
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
+    let jobs = serde_json::to_vec(&graph.job_backup)
+        .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let ordered_secrets = expected
         .keys()
         .map(|reference| supplied[reference])
@@ -224,6 +228,7 @@ pub fn provider_backup_sections(
             "conversation-runtime.v1",
             conversation_runtime,
         ),
+        BackupSection::new("data/jobs.json", "jobs.v1", jobs),
     ];
     sections.extend(media_sections);
     sections.extend(artifact_sections);
@@ -575,7 +580,43 @@ fn canonicalize_and_validate(
             crate::ConversationRuntimeBackupError::InvalidData => {
                 ProviderBackupGraphError::InvalidGraph
             }
-        })
+        })?;
+    graph
+        .job_backup
+        .canonicalize_and_validate()
+        .map_err(|error| match error {
+            crate::JobBackupError::LimitExceeded => ProviderBackupGraphError::LimitExceeded,
+            crate::JobBackupError::InvalidData => ProviderBackupGraphError::InvalidGraph,
+        })?;
+    validate_job_links(graph)
+}
+
+fn validate_job_links(graph: &ProviderBackupGraph) -> Result<(), ProviderBackupGraphError> {
+    let inference_owners = graph.job_backup.inference_owners();
+    for conversation in &graph.conversation_runtime.conversations {
+        for turn in &conversation.turns {
+            for attempt in &turn.attempts {
+                for dispatch in [
+                    attempt
+                        .speaker_inference
+                        .as_ref()
+                        .map(|record| (record.usage_event_id, record.binding.job_id)),
+                    attempt
+                        .initial_inference
+                        .as_ref()
+                        .map(|record| (record.usage_event_id, record.binding.job_id)),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    if inference_owners.get(&dispatch.0) != Some(&dispatch.1) {
+                        return Err(ProviderBackupGraphError::InvalidGraph);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_asr_learning(graph: &ProviderBackupGraph) -> Result<(), ProviderBackupGraphError> {
@@ -980,6 +1021,11 @@ mod tests {
                 version: crate::CONVERSATION_RUNTIME_BACKUP_VERSION,
                 conversations: Vec::new(),
             },
+            job_backup: crate::JobBackup {
+                version: crate::JOB_BACKUP_VERSION,
+                jobs: Vec::new(),
+                inference: Vec::new(),
+            },
         }
     }
 
@@ -1003,7 +1049,7 @@ mod tests {
         assert!(!format!("{secret:?}").contains("backup-secret-canary"));
         let sections = provider_backup_sections(source_graph, vec![secret], Vec::new(), Vec::new())
             .expect("sections");
-        assert_eq!(sections.len(), 5);
+        assert_eq!(sections.len(), 6);
         assert!(
             sections[1]
                 .bytes
@@ -1139,7 +1185,7 @@ mod tests {
             Vec::new(),
         )
         .expect("media sections");
-        assert_eq!(sections.len(), 6);
-        assert_eq!(&*sections[5].bytes, &bytes);
+        assert_eq!(sections.len(), 7);
+        assert_eq!(&*sections[6].bytes, &bytes);
     }
 }

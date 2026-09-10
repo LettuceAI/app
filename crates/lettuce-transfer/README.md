@@ -175,3 +175,9 @@ oversized sources are typed failures.
 Persona-and-lorebook imports now have durable admission and execution contracts. One run binds the supported source schema, an inventory fingerprint, the complete persona/lorebook/media plan fingerprint, and stable destination IDs for every persona, lorebook, entry, and logical media asset. Exact retries replay those assignments; changed source IDs or plan content conflict. Media completion receipts retain the assigned asset, ready blob, byte length, hash, and original completion time. Materialization accepts only the sealed plan and returns an immutable receipt for the atomically created graph.
 
 The legacy database and storage tree are read-only migration sources. A completed import must retain them until migration verification succeeds and the user explicitly approves deletion; cleanup is never part of admission or automatic import execution.
+
+The jobs backup document retains each durable scheduler spec, current lifecycle
+snapshot and contiguous event history. Immutable inference dispatch evidence
+and any attached cost basis retain their job identity independently so evidence
+survives normal scheduler retention. Validation reuses the job-store restore
+contract and never aggregates these records with conversation UsageLedger events.

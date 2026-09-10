@@ -280,6 +280,7 @@ mod tests {
             Arc,
             atomic::{AtomicUsize, Ordering},
         },
+        time::Duration,
     };
 
     use lettuce_characters::{
@@ -298,6 +299,10 @@ mod tests {
         ToolExecution, ToolExecutionRepository, ToolExecutionStatus, ToolOutput,
     };
     use lettuce_database::Database;
+    use lettuce_jobs::{
+        JobKind, JobMutation, JobSpec, JobStore, JobSubject, OutcomeRef, ProgressSnapshot,
+        ResourceAvailability, ResourceClass, SubjectKind, UnitsProgress, WorkerId,
+    };
     use lettuce_media::{
         AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, LocalMediaBlobStore,
         LocalSyncMediaStore, RetentionClass,
@@ -316,13 +321,14 @@ mod tests {
     };
     use lettuce_transfer::{
         AsrLearningDocument, BackupEnvelopeError, ConversationHistoryBackup,
-        ConversationHistoryBackupError, open_backup,
+        ConversationHistoryBackupError, JobBackup, open_backup,
     };
     use lettuce_types::{
-        AudioProviderId, CharacterId, GroupId, MessageId, OperationId, PersonaId,
-        ProviderAccountId, Revision, StarterMessageId, ToolExecutionId, UsageEventId,
-        VoiceProfileId,
+        AudioProviderId, CharacterId, GenerationAttemptId, GroupId, MessageId, ModelProfileId,
+        OperationId, PersonaId, ProviderAccountId, Revision, StarterMessageId, ToolExecutionId,
+        UsageEventId, VoiceProfileId,
     };
+    use lettuce_usage::{JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger};
 
     use super::*;
     use crate::{
@@ -392,11 +398,12 @@ mod tests {
         let reference = SecretRef::new();
         let owner = SecretOwnerId::new();
         let purpose = SecretPurpose::ProviderApiKey { owner };
+        let provider_account_id = ProviderAccountId::new();
         let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("open backend");
         ProviderAccountRepository::upsert(
             backend.database(),
             ProviderAccount {
-                id: ProviderAccountId::new(),
+                id: provider_account_id,
                 secret_owner_id: owner,
                 provider_kind: "openai".into(),
                 protocol: ProviderProtocol::OpenAiCompatible,
@@ -923,6 +930,90 @@ mod tests {
             .database()
             .save_voice_example(voice_example.clone())
             .expect("store voice example");
+        let backup_job = JobStore::create_or_get(
+            backend.database(),
+            JobSpec::new(
+                JobKind::ArtifactInstall,
+                JobSubject::new(SubjectKind::ArtifactInstall, avatar.asset.id.to_string())
+                    .expect("job subject"),
+                OutcomeRef::ArtifactInstallation(avatar.asset.id),
+            )
+            .with_resources(vec![ResourceClass::Network, ResourceClass::DiskWrite]),
+        )
+        .expect("create backup job")
+        .job;
+        let claimed_at = TimestampMillis::new(backup_job.updated_at.get() + 1);
+        let claim = JobStore::claim(
+            backend.database(),
+            backup_job.id,
+            WorkerId::new(),
+            claimed_at,
+            Duration::from_secs(10),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim backup job")
+        .expect("eligible backup job");
+        JobStore::append_and_transition(
+            backend.database(),
+            JobMutation::Start {
+                claim: claim.claim.clone(),
+                at: TimestampMillis::new(claimed_at.get() + 1),
+            },
+        )
+        .expect("start backup job");
+        JobStore::append_and_transition(
+            backend.database(),
+            JobMutation::Progress {
+                claim: claim.claim.clone(),
+                progress: ProgressSnapshot {
+                    units: Some(UnitsProgress::new(2, Some(4)).expect("job progress")),
+                    ..ProgressSnapshot::default()
+                },
+                at: TimestampMillis::new(claimed_at.get() + 2),
+            },
+        )
+        .expect("progress backup job");
+        JobStore::append_and_transition(
+            backend.database(),
+            JobMutation::RetryScheduled {
+                claim: claim.claim,
+                at: TimestampMillis::new(claimed_at.get() + 3),
+            },
+        )
+        .expect("retry backup job");
+        let usage_id = UsageEventId::new();
+        backend
+            .database()
+            .admit_job_usage(JobInferenceUsage {
+                id: usage_id,
+                job_id: backup_job.id,
+                logical_attempt_id: GenerationAttemptId::new(),
+                model_profile_id: ModelProfileId::new(),
+                model_revision: Revision::INITIAL,
+                provider_account_id,
+                provider_account_revision: Revision::INITIAL,
+                admitted_at: TimestampMillis::new(claimed_at.get() + 4),
+                result: None,
+            })
+            .expect("admit job inference evidence");
+        backend
+            .database()
+            .settle_job_usage(
+                usage_id,
+                JobInferenceUsageResult::Response {
+                    usage: Some(lettuce_conversations::InferenceUsage {
+                        provider_reported_cost: None,
+                        cache_write_tokens: Some(3),
+                        web_search_requests: Some(0),
+                        cached_input_tokens: Some(5),
+                        reasoning_tokens: Some(2),
+                        input_tokens: 21,
+                        output_tokens: 8,
+                    }),
+                    provider_response_id: Some("backup-provider-response".into()),
+                },
+            )
+            .expect("settle job inference evidence");
         drop(backend);
 
         let reopened = AppBackend::open(&path, TimestampMillis::new(3)).expect("reopen backend");
@@ -946,7 +1037,7 @@ mod tests {
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 14);
+        assert_eq!(sections.len(), 15);
         assert!(
             sections[1]
                 .bytes
@@ -1050,6 +1141,36 @@ mod tests {
         assert!(group.messages.is_empty());
         let runtime: lettuce_transfer::ConversationRuntimeBackup =
             serde_json::from_slice(&sections[4].bytes).expect("conversation runtime JSON");
+        let jobs: JobBackup = serde_json::from_slice(&sections[5].bytes).expect("jobs JSON");
+        let backed_up_job = jobs
+            .jobs
+            .iter()
+            .find(|job| job.snapshot.id == backup_job.id)
+            .expect("backed up job");
+        assert_eq!(backed_up_job.snapshot.state, lettuce_jobs::JobState::Queued);
+        assert_eq!(backed_up_job.snapshot.attempt.get(), 1);
+        assert_eq!(backed_up_job.events.len(), 6);
+        assert_eq!(jobs.inference.len(), 1);
+        assert_eq!(jobs.inference[0].evidence.id, usage_id);
+        assert!(matches!(
+            &jobs.inference[0].evidence.result,
+            Some(JobInferenceUsageResult::Response {
+                provider_response_id: Some(id),
+                ..
+            }) if id == "backup-provider-response"
+        ));
+        let mut corrupt_jobs = jobs.clone();
+        corrupt_jobs
+            .jobs
+            .iter_mut()
+            .find(|job| job.snapshot.id == backup_job.id)
+            .expect("backed up job")
+            .events[0]
+            .seq = lettuce_jobs::EventSeq::new(2);
+        assert_eq!(
+            corrupt_jobs.canonicalize_and_validate(),
+            Err(lettuce_transfer::JobBackupError::InvalidData)
+        );
         let direct_runtime = runtime
             .conversations
             .iter()
