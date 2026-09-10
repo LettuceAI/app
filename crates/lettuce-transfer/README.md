@@ -82,6 +82,15 @@ section. Descriptor, size and BLAKE3 must match the visible graph exactly.
 Generation attempts, checkpoints, tool executions, jobs, usage, companion
 runtime state and memories remain separate later sections of the full backup.
 
+The conversation-runtime document now retains every turn, ordered attempt,
+durable stage/progress checkpoint with its original timestamp, speaker and
+initial inference dispatch checkpoint, preparation attribution embedded in the
+turn, and every tool execution with exact request and terminal result. It is
+bounded independently and validates ownership against the visible history,
+including candidate, message, job, replay-artifact and contiguous checkpoint
+links. Generic job records and usage event/cost bodies remain separate later
+sections; their typed IDs are retained here.
+
 The legacy version-2 ASR JSON schema remains a separate camelCase compatibility
 document. Its nullable IDs, counters, timestamps and native audio locators are
 parsed without making that external format part of the speech domain.

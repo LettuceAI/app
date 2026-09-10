@@ -86,7 +86,7 @@ where
         if media_requirements
             .len()
             .checked_add(artifact_requirements.len())
-            .and_then(|count| count.checked_add(4))
+            .and_then(|count| count.checked_add(5))
             .is_none_or(|count| count > MAX_BACKUP_ENTRIES)
         {
             return Err(ProviderBackupGraphError::LimitExceeded.into());
@@ -291,7 +291,12 @@ mod tests {
     use lettuce_context::{
         DetectionPolicy, LorebookBehaviorVersion, LorebookMetadataDraft, LorebookRepository,
     };
-    use lettuce_conversations::{ConversationKind, MessagePart};
+    use lettuce_conversations::{
+        ConversationKind, ConversationReader, ConversationRepository, GenerationCheckpointEnvelope,
+        GenerationCheckpointEvent, GenerationFailureCode, GenerationTurnStatus, MessageDraft,
+        MessagePart, MessageRole, MessageVisibility, OperationToken, SendConversation,
+        ToolExecution, ToolExecutionRepository, ToolExecutionStatus, ToolOutput,
+    };
     use lettuce_database::Database;
     use lettuce_media::{
         AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, LocalMediaBlobStore,
@@ -315,7 +320,8 @@ mod tests {
     };
     use lettuce_types::{
         AudioProviderId, CharacterId, GroupId, MessageId, OperationId, PersonaId,
-        ProviderAccountId, Revision, StarterMessageId, VoiceProfileId,
+        ProviderAccountId, Revision, StarterMessageId, ToolExecutionId, UsageEventId,
+        VoiceProfileId,
     };
 
     use super::*;
@@ -607,6 +613,166 @@ mod tests {
             .expect("launch direct conversation")
             .value
             .conversation;
+        let user_participant_id = direct_conversation
+            .participants
+            .iter()
+            .find(|participant| participant.role == lettuce_conversations::ParticipantRole::User)
+            .expect("user participant")
+            .id;
+        let pending_send = ConversationRepository::begin_send(
+            backend.database(),
+            &SendConversation {
+                conversation_id: direct_conversation.id,
+                branch_id: direct_conversation.active_branch_id,
+                expected_revision: direct_conversation.revision,
+                operation: OperationToken {
+                    key: lettuce_jobs::IdempotencyKey::new("backup-pending-send")
+                        .expect("operation key"),
+                    request_digest: ContentHash::parse(
+                        blake3::hash(b"backup pending send").to_hex().to_string(),
+                    )
+                    .expect("request digest"),
+                },
+                message: MessageDraft {
+                    role: MessageRole::User,
+                    author_participant_id: Some(user_participant_id),
+                    parts: vec![MessagePart::Text {
+                        text: "Persist this pending turn.".into(),
+                    }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+                swap_roles: false,
+            },
+            TimestampMillis::new(4),
+        )
+        .expect("begin pending generation")
+        .value;
+        let attempt_id = pending_send.turn.attempts[0].id;
+        let mut turn_revision = pending_send.turn.revision;
+        for (sequence, status) in [
+            GenerationTurnStatus::Preparing,
+            GenerationTurnStatus::ContextPrepared,
+            GenerationTurnStatus::Running,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let sequence = u64::try_from(sequence + 1).expect("checkpoint sequence");
+            turn_revision = ConversationRepository::append_event(
+                backend.database(),
+                pending_send.turn.id,
+                turn_revision,
+                &OperationToken {
+                    key: lettuce_jobs::IdempotencyKey::new(format!("backup-stage-{sequence}"))
+                        .expect("stage key"),
+                    request_digest: ContentHash::parse(
+                        blake3::hash(format!("backup stage {sequence}").as_bytes())
+                            .to_hex()
+                            .to_string(),
+                    )
+                    .expect("stage digest"),
+                },
+                GenerationCheckpointEnvelope {
+                    turn_id: pending_send.turn.id,
+                    attempt_id,
+                    job_id: None,
+                    correlation_id: None,
+                    sequence,
+                    event: GenerationCheckpointEvent::Stage { status },
+                },
+                TimestampMillis::new(4 + i64::try_from(sequence).expect("checkpoint time")),
+            )
+            .expect("append generation stage")
+            .value
+            .revision;
+        }
+        let tool = ToolExecution {
+            id: ToolExecutionId::new(),
+            conversation_id: direct_conversation.id,
+            turn_id: pending_send.turn.id,
+            attempt_id,
+            ordinal: 0,
+            definition_name: "create_memory".into(),
+            definition_version: 1,
+            provider_call_id: Some("backup-call".into()),
+            arguments: serde_json::json!({"content": "remember this"}),
+            raw_arguments: Some(r#"{"content":"remember this"}"#.into()),
+            provider_replay: None,
+            status: ToolExecutionStatus::Requested,
+            output: None,
+            failure: None,
+            revision: Revision::INITIAL,
+            requested_at: TimestampMillis::new(8),
+            started_at: None,
+            finished_at: None,
+            updated_at: TimestampMillis::new(8),
+        };
+        let tool = ToolExecutionRepository::append_tool_executions(
+            backend.database(),
+            0,
+            std::slice::from_ref(&tool),
+        )
+        .expect("append tool")[0]
+            .clone();
+        let tool = ToolExecutionRepository::transition_tool_execution(
+            backend.database(),
+            tool.id,
+            tool.revision,
+            ToolExecutionStatus::Validated,
+            None,
+            None,
+            TimestampMillis::new(9),
+        )
+        .expect("validate tool");
+        let tool = ToolExecutionRepository::transition_tool_execution(
+            backend.database(),
+            tool.id,
+            tool.revision,
+            ToolExecutionStatus::Running,
+            None,
+            None,
+            TimestampMillis::new(10),
+        )
+        .expect("run tool");
+        ToolExecutionRepository::transition_tool_execution(
+            backend.database(),
+            tool.id,
+            tool.revision,
+            ToolExecutionStatus::Succeeded,
+            Some(ToolOutput {
+                value: serde_json::json!({"memory_id": "backup-memory"}),
+                is_error: false,
+            }),
+            None,
+            TimestampMillis::new(11),
+        )
+        .expect("settle tool");
+        let conversation_revision =
+            ConversationReader::get(backend.database(), direct_conversation.id)
+                .expect("conversation after send")
+                .conversation
+                .revision;
+        ConversationRepository::fail_generation(
+            backend.database(),
+            pending_send.turn.id,
+            attempt_id,
+            conversation_revision,
+            turn_revision,
+            &OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("backup-fail-generation")
+                    .expect("failure key"),
+                request_digest: ContentHash::parse(
+                    blake3::hash(b"backup fail generation").to_hex().to_string(),
+                )
+                .expect("failure digest"),
+            },
+            GenerationFailureCode::Internal,
+            UsageEventId::new(),
+            TimestampMillis::new(12),
+        )
+        .expect("fail generation after settled tool");
         let group_conversation = backend
             .launch_group_conversation(
                 &GroupConversationLaunchRequest {
@@ -780,7 +946,7 @@ mod tests {
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 13);
+        assert_eq!(sections.len(), 14);
         assert!(
             sections[1]
                 .bytes
@@ -831,7 +997,7 @@ mod tests {
             &direct.aggregate.conversation.kind,
             ConversationKind::Direct(_)
         ));
-        assert_eq!(direct.messages.len(), 2);
+        assert_eq!(direct.messages.len(), 3);
         assert_eq!(
             direct.messages[0].revisions[0].parts,
             vec![MessagePart::Text {
@@ -882,6 +1048,36 @@ mod tests {
             ConversationKind::Group(_)
         ));
         assert!(group.messages.is_empty());
+        let runtime: lettuce_transfer::ConversationRuntimeBackup =
+            serde_json::from_slice(&sections[4].bytes).expect("conversation runtime JSON");
+        let direct_runtime = runtime
+            .conversations
+            .iter()
+            .find(|value| value.conversation_id == direct_conversation.id)
+            .expect("direct runtime");
+        assert_eq!(direct_runtime.turns.len(), 1);
+        assert_eq!(direct_runtime.turns[0].turn.id, pending_send.turn.id);
+        assert_eq!(direct_runtime.turns[0].turn.attempts.len(), 1);
+        assert_eq!(direct_runtime.turns[0].attempts.len(), 1);
+        assert_eq!(direct_runtime.turns[0].attempts[0].checkpoints.len(), 3);
+        assert_eq!(direct_runtime.turns[0].attempts[0].tools.len(), 1);
+        assert_eq!(
+            direct_runtime.turns[0].attempts[0].tools[0].status,
+            ToolExecutionStatus::Succeeded
+        );
+        let mut corrupt_runtime = runtime.clone();
+        corrupt_runtime
+            .conversations
+            .iter_mut()
+            .find(|value| value.conversation_id == direct_conversation.id)
+            .expect("direct runtime")
+            .turns[0]
+            .attempts[0]
+            .attempt_id = lettuce_types::GenerationAttemptId::new();
+        assert_eq!(
+            corrupt_runtime.canonicalize_and_validate(&history),
+            Err(lettuce_transfer::ConversationRuntimeBackupError::InvalidData)
+        );
         let mut corrupt_history = history.clone();
         corrupt_history
             .conversations

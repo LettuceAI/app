@@ -166,7 +166,7 @@ impl ConversationHistoryBackup {
     }
 }
 
-fn insert_snapshot(
+pub(crate) fn insert_snapshot(
     values: &mut BTreeMap<SnapshotArtifactId, lettuce_conversations::ProtectedSnapshotRef>,
     reference: &lettuce_conversations::ProtectedSnapshotRef,
 ) -> Result<(), ConversationHistoryBackupError> {
@@ -180,7 +180,7 @@ fn insert_snapshot(
     Ok(())
 }
 
-fn insert_replay(
+pub(crate) fn insert_replay(
     values: &mut BTreeMap<ReplayArtifactId, lettuce_conversations::ReplayArtifactRef>,
     reference: &lettuce_conversations::ReplayArtifactRef,
 ) -> Result<(), ConversationHistoryBackupError> {

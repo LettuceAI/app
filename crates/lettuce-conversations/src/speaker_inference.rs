@@ -1,12 +1,14 @@
 use lettuce_types::{
     ConversationId, GenerationAttemptId, GenerationTurnId, JobId, TimestampMillis, UsageEventId,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{
     ConversationRepositoryError, InferenceRequest, SelectedSpeakerDecision, ValidationError,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpeakerInferenceBinding {
     pub conversation_id: ConversationId,
     pub turn_id: GenerationTurnId,
@@ -65,7 +67,8 @@ impl SpeakerInferenceBinding {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpeakerInferenceRecord {
     pub binding: SpeakerInferenceBinding,
     pub usage_event_id: UsageEventId,

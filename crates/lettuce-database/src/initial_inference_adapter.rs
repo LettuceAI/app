@@ -178,6 +178,33 @@ fn load(
     Ok(Some(record))
 }
 
+pub(crate) fn load_for_attempt_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+    job_id: JobId,
+) -> Result<Option<InitialInferenceRecord>, ConversationRepositoryError> {
+    let request = transaction
+        .query_row(
+            "SELECT request_json FROM generation_initial_dispatches WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3 AND job_id = ?4",
+            params![conversation_id.to_string(), turn_id.to_string(), attempt_id.to_string(), job_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(slice::db)?;
+    let Some(request) = request else {
+        return Ok(None);
+    };
+    let request: InferenceRequest = slice::decode(&request)?;
+    let binding = InitialInferenceBinding::from_request(conversation_id, &request)
+        .map_err(ConversationRepositoryError::Invalid)?;
+    if binding.turn_id != turn_id || binding.attempt_id != attempt_id || binding.job_id != job_id {
+        return Err(ConversationRepositoryError::Storage);
+    }
+    load(transaction, &binding)
+}
+
 impl InitialInferenceRepository for Database {
     fn initial_inference(
         &self,
@@ -203,33 +230,8 @@ impl InitialInferenceRepository for Database {
             .connection()
             .map_err(|_| ConversationRepositoryError::Storage)?;
         let transaction = connection.transaction().map_err(slice::db)?;
-        let request = transaction
-            .query_row(
-                "SELECT request_json FROM generation_initial_dispatches WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3 AND job_id = ?4",
-                params![
-                    conversation_id.to_string(),
-                    turn_id.to_string(),
-                    attempt_id.to_string(),
-                    job_id.to_string()
-                ],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(slice::db)?;
-        let Some(request) = request else {
-            transaction.commit().map_err(slice::db)?;
-            return Ok(None);
-        };
-        let request: InferenceRequest = slice::decode(&request)?;
-        let binding = InitialInferenceBinding::from_request(conversation_id, &request)
-            .map_err(ConversationRepositoryError::Invalid)?;
-        if binding.turn_id != turn_id
-            || binding.attempt_id != attempt_id
-            || binding.job_id != job_id
-        {
-            return Err(ConversationRepositoryError::Storage);
-        }
-        let record = load(&transaction, &binding)?;
+        let record =
+            load_for_attempt_in(&transaction, conversation_id, turn_id, attempt_id, job_id)?;
         transaction.commit().map_err(slice::db)?;
         Ok(record)
     }

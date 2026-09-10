@@ -87,6 +87,8 @@ pub struct ProviderBackupGraph {
     pub asr_learning: crate::AsrLearningDocument,
     #[serde(skip)]
     pub conversation_history: crate::ConversationHistoryBackup,
+    #[serde(skip)]
+    pub conversation_runtime: crate::ConversationRuntimeBackup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -191,6 +193,8 @@ pub fn provider_backup_sections(
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let conversation_history = serde_json::to_vec(&graph.conversation_history)
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
+    let conversation_runtime = serde_json::to_vec(&graph.conversation_runtime)
+        .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let ordered_secrets = expected
         .keys()
         .map(|reference| supplied[reference])
@@ -214,6 +218,11 @@ pub fn provider_backup_sections(
             "data/conversation-history.json",
             "conversation-history.v1",
             conversation_history,
+        ),
+        BackupSection::new(
+            "data/conversation-runtime.json",
+            "conversation-runtime.v1",
+            conversation_runtime,
         ),
     ];
     sections.extend(media_sections);
@@ -248,20 +257,57 @@ pub fn provider_backup_artifact_requirements(
 ) -> Result<Vec<TrustedArtifactDescriptor>, ProviderBackupGraphError> {
     let mut graph = graph.clone();
     canonicalize_and_validate(&mut graph)?;
-    graph
+    all_conversation_artifact_descriptors(&graph)
+}
+
+fn all_conversation_artifact_descriptors(
+    graph: &ProviderBackupGraph,
+) -> Result<Vec<TrustedArtifactDescriptor>, ProviderBackupGraphError> {
+    let mut snapshots = BTreeMap::new();
+    let mut replays = BTreeMap::new();
+    let descriptors = graph
         .conversation_history
         .artifact_descriptors()
-        .map_err(|_| ProviderBackupGraphError::InvalidGraph)
+        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?
+        .into_iter()
+        .chain(
+            graph
+                .conversation_runtime
+                .artifact_descriptors()
+                .map_err(|_| ProviderBackupGraphError::InvalidGraph)?,
+        );
+    for descriptor in descriptors {
+        match descriptor {
+            TrustedArtifactDescriptor::Snapshot(reference) => {
+                if snapshots
+                    .insert(reference.artifact_id, reference.clone())
+                    .is_some_and(|existing| existing != reference)
+                {
+                    return Err(ProviderBackupGraphError::InvalidGraph);
+                }
+            }
+            TrustedArtifactDescriptor::Replay(reference) => {
+                if replays
+                    .insert(reference.artifact_id, reference.clone())
+                    .is_some_and(|existing| existing != reference)
+                {
+                    return Err(ProviderBackupGraphError::InvalidGraph);
+                }
+            }
+        }
+    }
+    Ok(snapshots
+        .into_values()
+        .map(TrustedArtifactDescriptor::Snapshot)
+        .chain(replays.into_values().map(TrustedArtifactDescriptor::Replay))
+        .collect())
 }
 
 fn conversation_artifact_sections(
     graph: &ProviderBackupGraph,
     artifacts: Vec<BackupConversationArtifact>,
 ) -> Result<Vec<BackupSection>, ProviderBackupGraphError> {
-    let expected = graph
-        .conversation_history
-        .artifact_descriptors()
-        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+    let expected = all_conversation_artifact_descriptors(graph)?;
     if expected.len() != artifacts.len() {
         return Err(ProviderBackupGraphError::InvalidGraph);
     }
@@ -516,6 +562,17 @@ fn canonicalize_and_validate(
                 ProviderBackupGraphError::LimitExceeded
             }
             crate::ConversationHistoryBackupError::InvalidData => {
+                ProviderBackupGraphError::InvalidGraph
+            }
+        })?;
+    graph
+        .conversation_runtime
+        .canonicalize_and_validate(&graph.conversation_history)
+        .map_err(|error| match error {
+            crate::ConversationRuntimeBackupError::LimitExceeded => {
+                ProviderBackupGraphError::LimitExceeded
+            }
+            crate::ConversationRuntimeBackupError::InvalidData => {
                 ProviderBackupGraphError::InvalidGraph
             }
         })
@@ -919,6 +976,10 @@ mod tests {
                 version: crate::CONVERSATION_HISTORY_BACKUP_VERSION,
                 conversations: Vec::new(),
             },
+            conversation_runtime: crate::ConversationRuntimeBackup {
+                version: crate::CONVERSATION_RUNTIME_BACKUP_VERSION,
+                conversations: Vec::new(),
+            },
         }
     }
 
@@ -942,7 +1003,7 @@ mod tests {
         assert!(!format!("{secret:?}").contains("backup-secret-canary"));
         let sections = provider_backup_sections(source_graph, vec![secret], Vec::new(), Vec::new())
             .expect("sections");
-        assert_eq!(sections.len(), 4);
+        assert_eq!(sections.len(), 5);
         assert!(
             sections[1]
                 .bytes
@@ -1078,7 +1139,7 @@ mod tests {
             Vec::new(),
         )
         .expect("media sections");
-        assert_eq!(sections.len(), 5);
-        assert_eq!(&*sections[4].bytes, &bytes);
+        assert_eq!(sections.len(), 6);
+        assert_eq!(&*sections[5].bytes, &bytes);
     }
 }

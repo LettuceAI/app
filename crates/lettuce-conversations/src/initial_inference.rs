@@ -7,7 +7,8 @@ use crate::{
     ConversationRepositoryError, InferenceOutcome, InferenceRequest, PortError, ValidationError,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InitialInferenceBinding {
     pub conversation_id: ConversationId,
     pub turn_id: GenerationTurnId,
@@ -106,7 +107,8 @@ impl InitialInferenceResult {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InitialInferenceRecord {
     pub binding: InitialInferenceBinding,
     pub request: InferenceRequest,

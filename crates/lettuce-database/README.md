@@ -665,3 +665,10 @@ message in exact timeline order, every immutable revision and candidate, and
 initial-origin and media references. Global bounds apply while rows are read;
 runtime generation, tool, job, usage, memory and protected artifact payloads are
 reserved for their own backup sections.
+
+Conversation backup also hydrates all generation turns and attempts through the
+normal strict turn reader, then reads contiguous checkpoint timestamps, speaker
+and initial dispatch checkpoints, and exact tool execution state in the same
+deferred transaction. Preparation model, prompt, lorebook and memory attribution
+is already part of each hydrated turn. No SQL or raw database document crosses
+the transfer boundary.

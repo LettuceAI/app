@@ -72,7 +72,7 @@ fn sql_u64(value: u64) -> Result<i64, ConversationRepositoryError> {
     i64::try_from(value).map_err(storage)
 }
 
-const SELECT_EXECUTION: &str = "
+pub(crate) const SELECT_EXECUTION: &str = "
     SELECT e.id, e.conversation_id, e.turn_id, e.attempt_id, e.ordinal,
            e.definition_name, e.definition_version, e.provider_call_id,
            e.arguments_json, e.raw_arguments, e.status, e.output_json,
@@ -82,7 +82,7 @@ const SELECT_EXECUTION: &str = "
       FROM tool_executions e
     ";
 
-fn hydrate(
+pub(crate) fn hydrate(
     transaction: &Transaction<'_>,
     row: &Row<'_>,
 ) -> Result<ToolExecution, ConversationRepositoryError> {

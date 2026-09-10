@@ -1,15 +1,18 @@
 use lettuce_transfer::{
     ASR_LEARNING_DOCUMENT_VERSION, AsrLearningAudioAsset, AsrLearningDocument,
-    AuthoredProfileBackup, BackupConversation, BackupGlobalSettings, BackupLorebookBindings,
-    BackupMessage, CONVERSATION_HISTORY_BACKUP_VERSION, ConversationHistoryBackup,
-    MAX_BACKUP_AUTHORED_ROOTS, MAX_BACKUP_CONVERSATIONS, MAX_BACKUP_MEDIA_RECORDS,
-    MAX_BACKUP_MESSAGE_CANDIDATES, MAX_BACKUP_MESSAGE_REVISIONS, MAX_BACKUP_MESSAGES,
-    PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph, ProviderBackupSelections,
-    ProviderBackupSource, ProviderBackupSourceError,
+    AuthoredProfileBackup, BackupConversation, BackupConversationRuntime,
+    BackupGenerationAttemptRuntime, BackupGenerationCheckpoint, BackupGenerationTurn,
+    BackupGlobalSettings, BackupLorebookBindings, BackupMessage,
+    CONVERSATION_HISTORY_BACKUP_VERSION, CONVERSATION_RUNTIME_BACKUP_VERSION,
+    ConversationHistoryBackup, ConversationRuntimeBackup, MAX_BACKUP_AUTHORED_ROOTS,
+    MAX_BACKUP_CONVERSATIONS, MAX_BACKUP_GENERATION_CHECKPOINTS, MAX_BACKUP_GENERATION_TURNS,
+    MAX_BACKUP_MEDIA_RECORDS, MAX_BACKUP_MESSAGE_CANDIDATES, MAX_BACKUP_MESSAGE_REVISIONS,
+    MAX_BACKUP_MESSAGES, MAX_BACKUP_TOOL_EXECUTIONS, PROVIDER_BACKUP_GRAPH_VERSION,
+    ProviderBackupGraph, ProviderBackupSelections, ProviderBackupSource, ProviderBackupSourceError,
 };
 use lettuce_types::{
-    AssetId, CharacterId, ConversationId, GroupId, LorebookId, ModelProfileId, PersonaId,
-    PromptDocumentId, Revision, TimestampMillis,
+    AssetId, CharacterId, ConversationId, GenerationAttemptId, GroupId, LorebookId, ModelProfileId,
+    PersonaId, PromptDocumentId, Revision, TimestampMillis,
 };
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
@@ -296,6 +299,7 @@ impl ProviderBackupSource for Database {
             .validate()
             .map_err(|_| ProviderBackupSourceError::InvalidData)?;
         let conversation_history = read_conversation_history(&transaction)?;
+        let conversation_runtime = read_conversation_runtime(&transaction, &conversation_history)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             version: PROVIDER_BACKUP_GRAPH_VERSION,
@@ -320,8 +324,233 @@ impl ProviderBackupSource for Database {
             },
             asr_learning,
             conversation_history,
+            conversation_runtime,
         })
     }
+}
+
+fn read_conversation_runtime(
+    transaction: &rusqlite::Transaction<'_>,
+    history: &ConversationHistoryBackup,
+) -> Result<ConversationRuntimeBackup, ProviderBackupSourceError> {
+    let mut turn_count = 0_usize;
+    let mut checkpoint_count = 0_usize;
+    let mut tool_count = 0_usize;
+    let conversations = history
+        .conversations
+        .iter()
+        .map(|history| {
+            let conversation_id = history.aggregate.conversation.id;
+            let remaining = MAX_BACKUP_GENERATION_TURNS.saturating_sub(turn_count);
+            let limit = remaining.saturating_add(1);
+            let sql = format!(
+                "{} WHERE conversation_id = ?1 ORDER BY created_at, id LIMIT ?2",
+                crate::conversation_query::turn_select_sql()
+            );
+            let mut statement = transaction.prepare(&sql).map_err(backup_error)?;
+            let turns = statement
+                .query_map(
+                    params![
+                        conversation_id.to_string(),
+                        i64::try_from(limit).map_err(|_| ProviderBackupSourceError::InvalidData)?
+                    ],
+                    |row| {
+                        crate::conversation_query::hydrate_turn_row(transaction, row)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)
+                    },
+                )
+                .map_err(backup_error)?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(backup_error)?;
+            if turns.len() > remaining {
+                return Err(ProviderBackupSourceError::InvalidData);
+            }
+            turn_count += turns.len();
+            let turns = turns
+                .into_iter()
+                .map(|turn| {
+                    let attempts = turn
+                        .attempts
+                        .iter()
+                        .map(|attempt| {
+                            read_attempt_runtime(
+                                transaction,
+                                &turn,
+                                attempt.id,
+                                attempt.job_id,
+                                &mut checkpoint_count,
+                                &mut tool_count,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(BackupGenerationTurn { turn, attempts })
+                })
+                .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
+            Ok(BackupConversationRuntime {
+                conversation_id,
+                turns,
+            })
+        })
+        .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
+    Ok(ConversationRuntimeBackup {
+        version: CONVERSATION_RUNTIME_BACKUP_VERSION,
+        conversations,
+    })
+}
+
+fn read_attempt_runtime(
+    transaction: &rusqlite::Transaction<'_>,
+    turn: &lettuce_conversations::GenerationTurn,
+    attempt_id: GenerationAttemptId,
+    job_id: Option<lettuce_types::JobId>,
+    checkpoint_count: &mut usize,
+    tool_count: &mut usize,
+) -> Result<BackupGenerationAttemptRuntime, ProviderBackupSourceError> {
+    let remaining = MAX_BACKUP_GENERATION_CHECKPOINTS.saturating_sub(*checkpoint_count);
+    let mut statement = transaction
+        .prepare("SELECT sequence, job_id, correlation_id, event_json, created_at FROM generation_checkpoints WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3 ORDER BY sequence LIMIT ?4")
+        .map_err(backup_error)?;
+    let checkpoints = statement
+        .query_map(
+            params![
+                turn.conversation_id.to_string(),
+                turn.id.to_string(),
+                attempt_id.to_string(),
+                i64::try_from(remaining.saturating_add(1))
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?
+            ],
+            |row| {
+                Ok(BackupGenerationCheckpoint {
+                    envelope: lettuce_conversations::GenerationCheckpointEnvelope {
+                        turn_id: turn.id,
+                        attempt_id,
+                        job_id: row
+                            .get::<_, Option<String>>(1)?
+                            .map(|value| value.parse().map_err(|_| rusqlite::Error::InvalidQuery))
+                            .transpose()?,
+                        correlation_id: row
+                            .get::<_, Option<String>>(2)?
+                            .map(|value| value.parse().map_err(|_| rusqlite::Error::InvalidQuery))
+                            .transpose()?,
+                        sequence: u64::try_from(row.get::<_, i64>(0)?)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        event: crate::decode_versioned(&row.get::<_, String>(3)?, 1)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    },
+                    created_at: TimestampMillis::new(row.get(4)?),
+                })
+            },
+        )
+        .map_err(backup_error)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(backup_error)?;
+    if checkpoints.len() > remaining {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    *checkpoint_count += checkpoints.len();
+    let remaining = MAX_BACKUP_TOOL_EXECUTIONS.saturating_sub(*tool_count);
+    let sql = format!(
+        "{} WHERE e.conversation_id = ?1 AND e.turn_id = ?2 AND e.attempt_id = ?3 ORDER BY e.ordinal, e.id LIMIT ?4",
+        crate::tool_adapter::SELECT_EXECUTION
+    );
+    let mut statement = transaction.prepare(&sql).map_err(backup_error)?;
+    let tools = statement
+        .query_map(
+            params![
+                turn.conversation_id.to_string(),
+                turn.id.to_string(),
+                attempt_id.to_string(),
+                i64::try_from(remaining.saturating_add(1))
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?
+            ],
+            |row| {
+                crate::tool_adapter::hydrate(transaction, row)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)
+            },
+        )
+        .map_err(backup_error)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(backup_error)?;
+    if tools.len() > remaining {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    *tool_count += tools.len();
+    let initial_inference = job_id
+        .map(|job_id| {
+            crate::initial_inference_adapter::load_for_attempt_in(
+                transaction,
+                turn.conversation_id,
+                turn.id,
+                attempt_id,
+                job_id,
+            )
+        })
+        .transpose()
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?
+        .flatten();
+    let speaker_inference = read_speaker_inference(
+        transaction,
+        turn.conversation_id,
+        turn.id,
+        attempt_id,
+        job_id,
+    )?;
+    Ok(BackupGenerationAttemptRuntime {
+        attempt_id,
+        checkpoints,
+        speaker_inference,
+        initial_inference,
+        tools,
+    })
+}
+
+fn read_speaker_inference(
+    transaction: &rusqlite::Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: lettuce_types::GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+    expected_job_id: Option<lettuce_types::JobId>,
+) -> Result<Option<lettuce_conversations::SpeakerInferenceRecord>, ProviderBackupSourceError> {
+    let row = transaction
+        .query_row(
+            "SELECT job_id, request_fingerprint, admitted_at, decision_json, settled_at, usage_event_id FROM generation_speaker_dispatches WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3",
+            params![conversation_id.to_string(), turn_id.to_string(), attempt_id.to_string()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?, row.get::<_, i64>(2)?, row.get::<_, Option<String>>(3)?, row.get::<_, Option<i64>>(4)?, row.get::<_, String>(5)?)),
+        )
+        .optional()
+        .map_err(backup_error)?;
+    let Some((job_id, fingerprint, admitted_at, decision, settled_at, usage_event_id)) = row else {
+        return Ok(None);
+    };
+    let job_id = job_id
+        .parse()
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+    let request_fingerprint: [u8; 32] = fingerprint
+        .try_into()
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+    let decision = decision
+        .as_deref()
+        .map(crate::conversation_vertical_slice::decode)
+        .transpose()
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+    if expected_job_id != Some(job_id) || decision.is_some() != settled_at.is_some() {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    Ok(Some(lettuce_conversations::SpeakerInferenceRecord {
+        binding: lettuce_conversations::SpeakerInferenceBinding {
+            conversation_id,
+            turn_id,
+            attempt_id,
+            job_id,
+            request_fingerprint,
+        },
+        usage_event_id: usage_event_id
+            .parse()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+        admitted_at: TimestampMillis::new(admitted_at),
+        decision,
+        settled_at: settled_at.map(TimestampMillis::new),
+    }))
 }
 
 fn read_conversation_history(
