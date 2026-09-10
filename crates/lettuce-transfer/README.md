@@ -333,6 +333,29 @@ are reported absent instead of fabricated. Group sessions and attachment bytes
 remain attached for their following slices; no conversation or media store is
 changed.
 
+Legacy group sessions now extend that compatibility graph with the frozen
+member and mute order, optional reusable-group link, persona, chat, memory and
+speaker policies, per-member model overrides, prompt selections, starting
+scene, branch topology, participation state and the complete message/variant
+history. Speaker attribution, selection reasoning, Gemini content, usage JSON,
+attachments and dynamic-memory documents remain exact retained evidence.
+Director and Director Action still require no persisted selected speaker: the
+legacy send path selected explicit mentions and the continue path accepted an
+explicit member per request, including muted members, while automatic selection
+excluded muted members. Session snapshots may therefore retain an all-muted
+cast even though newly authored reusable groups require an active member. The
+planner rejects duplicate identities, orphaned group/member/model/prompt/
+lorebook/branch links, message cycles, invalid selected variants and malformed
+nested scene, usage, MTP or attachment JSON. Participation and variant queries
+had no stable database order, and messages with equal timestamp and turn-number
+keys cannot recover their relative order; those losses are reported while
+archive array order remains as an ordinal. Finite historical API costs remain
+exact even when legacy pricing produced a negative value; no current pricing
+formula is run. The legacy document has no current generation attempts,
+protected snapshots or selected branch head, so none are fabricated.
+Conversion remains read-only and does not ingest attachment or background
+bytes.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established
