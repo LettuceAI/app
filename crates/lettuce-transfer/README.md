@@ -272,3 +272,17 @@ bad base64 parameters, wrong passwords and oversized archives reject before
 conversion or writes. The decoder accepts bytes so desktop files and Android
 `content://` provider streams share the same format path without treating a URI
 as a native path or deleting its source.
+
+The first version-1 conversion slice turns legacy settings, provider accounts,
+models, prompt templates, audio providers, user voices, portable credentials
+and chat templates into one bounded read-only plan. It preserves the established
+provider-routing order, model scope fallbacks, supported generation parameters,
+prompt content fallback and TTS provider defaults. Provider headers, inline or
+legacy-table API keys and audio API keys become scoped zeroizing secret values;
+machine-specific Kokoro asset roots never become canonical configuration.
+Defaults and every absent, unsupported or lossy field are reported explicitly.
+All model, prompt, audio-voice, chat-character, scene and lorebook links are
+checked when their owning legacy document is present. The complete decrypted
+source inventory remains attached to the plan, including converted documents,
+so later slices can recover fields that do not yet have a canonical owner without
+reopening, deleting or rewriting the backup.
