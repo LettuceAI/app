@@ -25,6 +25,7 @@ unwrap_used = "warn"
 async-trait = "0.1"
 android-native-keyring-store = "=0.5.0"
 argon2 = "0.5"
+base64 = "0.22"
 bincode = "1.3"
 blake3 = "1"
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["std"] }
@@ -70,6 +71,7 @@ whisper-rs = { git = "https://codeberg.org/MegalithOfficial/whisper-rs.git", rev
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
 unicode-normalization = "0.1"
 zeroize = "1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 keyring = { version = "=3.6.3", default-features = false }
 keyring-core = "=0.7.4"
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "backup"] }

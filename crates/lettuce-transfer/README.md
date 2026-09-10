@@ -261,3 +261,14 @@ A versioned receipt binds the staged inventory to the encrypted source archive;
 exact retries replay while divergent bytes or receipts fail closed. Secret
 values never enter the workspace or receipt. This remains pre-cutover staging:
 live database, secret and media roots are not opened or changed.
+
+Unversioned legacy ZIP backups are now opened by a separate read-only
+compatibility inventory decoder. It reproduces the legacy BLAKE3 password KDF
+and shared XChaCha nonce only to authenticate existing encrypted archives, then
+returns bounded zeroizing bytes for the known optional JSON documents and known
+media roots. New output never uses that cryptography. Duplicate or unsafe names,
+plaintext payloads, unknown entries, unsupported internal manifest versions,
+bad base64 parameters, wrong passwords and oversized archives reject before
+conversion or writes. The decoder accepts bytes so desktop files and Android
+`content://` provider streams share the same format path without treating a URI
+as a native path or deleting its source.
