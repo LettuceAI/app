@@ -1,10 +1,16 @@
 use std::fmt;
 
+use lettuce_conversations::{
+    ArtifactTransferError, ConversationArtifactTransferPort, TrustedArtifactDescriptor,
+    TrustedArtifactSink,
+};
 use lettuce_settings::{SecretState, SecretStore};
 use lettuce_transfer::{
-    BackupEnvelopeError, BackupMediaObject, ProviderBackupGraphError, ProviderBackupSecret,
-    ProviderBackupSource, ProviderBackupSourceError, provider_backup_media_requirements,
-    provider_backup_secret_requirements, provider_backup_sections, seal_backup,
+    BackupConversationArtifact, BackupEnvelopeError, BackupMediaObject, MAX_BACKUP_ENTRIES,
+    MAX_BACKUP_TOTAL_BYTES, ProviderBackupGraphError, ProviderBackupSecret, ProviderBackupSource,
+    ProviderBackupSourceError, provider_backup_artifact_requirements,
+    provider_backup_media_requirements, provider_backup_secret_requirements,
+    provider_backup_sections, seal_backup,
 };
 use lettuce_types::{ContentHash, TimestampMillis};
 use zeroize::Zeroizing;
@@ -33,13 +39,16 @@ where
     }
 }
 
-pub struct ProviderBackupCoordinator<'a, R: ?Sized, S: ?Sized, M: ?Sized> {
+pub struct ProviderBackupCoordinator<'a, R: ?Sized, S: ?Sized, M: ?Sized, A: ?Sized> {
     source: &'a R,
     secrets: &'a S,
     media: &'a M,
+    artifacts: &'a A,
 }
 
-impl<R: ?Sized, S: ?Sized, M: ?Sized> fmt::Debug for ProviderBackupCoordinator<'_, R, S, M> {
+impl<R: ?Sized, S: ?Sized, M: ?Sized, A: ?Sized> fmt::Debug
+    for ProviderBackupCoordinator<'_, R, S, M, A>
+{
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("ProviderBackupCoordinator")
@@ -47,18 +56,20 @@ impl<R: ?Sized, S: ?Sized, M: ?Sized> fmt::Debug for ProviderBackupCoordinator<'
     }
 }
 
-impl<'a, R, S, M> ProviderBackupCoordinator<'a, R, S, M>
+impl<'a, R, S, M, A> ProviderBackupCoordinator<'a, R, S, M, A>
 where
     R: ProviderBackupSource + ?Sized,
     S: SecretStore + ?Sized,
     M: BackupMediaReader + ?Sized,
+    A: ConversationArtifactTransferPort + ?Sized,
 {
     #[must_use]
-    pub const fn new(source: &'a R, secrets: &'a S, media: &'a M) -> Self {
+    pub const fn new(source: &'a R, secrets: &'a S, media: &'a M, artifacts: &'a A) -> Self {
         Self {
             source,
             secrets,
             media,
+            artifacts,
         }
     }
 
@@ -71,6 +82,15 @@ where
         let graph = self.source.read_provider_backup_graph()?;
         let requirements = provider_backup_secret_requirements(&graph)?;
         let media_requirements = provider_backup_media_requirements(&graph)?;
+        let artifact_requirements = provider_backup_artifact_requirements(&graph)?;
+        if media_requirements
+            .len()
+            .checked_add(artifact_requirements.len())
+            .and_then(|count| count.checked_add(4))
+            .is_none_or(|count| count > MAX_BACKUP_ENTRIES)
+        {
+            return Err(ProviderBackupGraphError::LimitExceeded.into());
+        }
         let mut values = Vec::with_capacity(requirements.len());
         for (reference, purpose) in requirements {
             let before = self.secrets.status(&reference, &purpose).await?;
@@ -94,9 +114,14 @@ where
             });
         }
         let mut media = Vec::with_capacity(media_requirements.len());
+        let mut binary_bytes = 0_usize;
         for (content_hash, byte_size) in media_requirements {
             let capacity = usize::try_from(byte_size)
                 .map_err(|_| ProviderBackupError::Graph(ProviderBackupGraphError::LimitExceeded))?;
+            binary_bytes = binary_bytes
+                .checked_add(capacity)
+                .filter(|total| *total <= MAX_BACKUP_TOTAL_BYTES)
+                .ok_or(ProviderBackupGraphError::LimitExceeded)?;
             let mut bytes = Zeroizing::new(Vec::with_capacity(capacity));
             while bytes.len() < capacity {
                 let chunk = self.media.read_backup_chunk(
@@ -116,8 +141,114 @@ where
                 bytes,
             });
         }
-        let sections = provider_backup_sections(graph, values, media)?;
+        let mut artifacts = Vec::with_capacity(artifact_requirements.len());
+        for descriptor in artifact_requirements {
+            let byte_size = match &descriptor {
+                TrustedArtifactDescriptor::Snapshot(reference) => reference.byte_size,
+                TrustedArtifactDescriptor::Replay(reference) => reference.byte_size,
+            };
+            binary_bytes = binary_bytes
+                .checked_add(
+                    usize::try_from(byte_size)
+                        .map_err(|_| ProviderBackupGraphError::LimitExceeded)?,
+                )
+                .filter(|total| *total <= MAX_BACKUP_TOTAL_BYTES)
+                .ok_or(ProviderBackupGraphError::LimitExceeded)?;
+            let mut sink = BackupArtifactSink::new(descriptor.clone());
+            match descriptor {
+                TrustedArtifactDescriptor::Snapshot(reference) => self
+                    .artifacts
+                    .export_snapshot(reference.artifact_id, &mut sink)?,
+                TrustedArtifactDescriptor::Replay(reference) => self
+                    .artifacts
+                    .export_replay(reference.artifact_id, &mut sink)?,
+            }
+            artifacts.push(sink.complete()?);
+        }
+        let sections = provider_backup_sections(graph, values, media, artifacts)?;
         seal_backup(app_version, created_at, password, sections).map_err(Into::into)
+    }
+}
+
+struct BackupArtifactSink {
+    expected: TrustedArtifactDescriptor,
+    began: bool,
+    finished: bool,
+    bytes: Zeroizing<Vec<u8>>,
+}
+
+impl BackupArtifactSink {
+    fn new(expected: TrustedArtifactDescriptor) -> Self {
+        Self {
+            expected,
+            began: false,
+            finished: false,
+            bytes: Zeroizing::new(Vec::new()),
+        }
+    }
+
+    fn complete(self) -> Result<BackupConversationArtifact, ArtifactTransferError> {
+        if !self.finished {
+            return Err(ArtifactTransferError::SinkRejected);
+        }
+        Ok(BackupConversationArtifact {
+            descriptor: self.expected,
+            bytes: self.bytes,
+        })
+    }
+
+    fn expected_size(&self) -> Result<usize, ArtifactTransferError> {
+        let size = match &self.expected {
+            TrustedArtifactDescriptor::Snapshot(reference) => reference.byte_size,
+            TrustedArtifactDescriptor::Replay(reference) => reference.byte_size,
+        };
+        usize::try_from(size).map_err(|_| ArtifactTransferError::SinkRejected)
+    }
+}
+
+impl TrustedArtifactSink for BackupArtifactSink {
+    fn begin(
+        &mut self,
+        descriptor: &TrustedArtifactDescriptor,
+    ) -> Result<(), ArtifactTransferError> {
+        if self.began || descriptor != &self.expected {
+            return Err(ArtifactTransferError::SinkRejected);
+        }
+        self.began = true;
+        Ok(())
+    }
+
+    fn chunk(&mut self, bytes: &[u8]) -> Result<(), ArtifactTransferError> {
+        let expected_size = self.expected_size()?;
+        if !self.began
+            || self.finished
+            || self
+                .bytes
+                .len()
+                .checked_add(bytes.len())
+                .is_none_or(|size| size > expected_size)
+        {
+            return Err(ArtifactTransferError::SinkRejected);
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<(), ArtifactTransferError> {
+        let expected_digest = match &self.expected {
+            TrustedArtifactDescriptor::Snapshot(reference) => &reference.digest,
+            TrustedArtifactDescriptor::Replay(reference) => &reference.digest,
+        };
+        if !self.began
+            || self.finished
+            || self.bytes.len() != self.expected_size()?
+            || ContentHash::parse(blake3::hash(&self.bytes).to_hex().to_string()).as_ref()
+                != Ok(expected_digest)
+        {
+            return Err(ArtifactTransferError::SinkRejected);
+        }
+        self.finished = true;
+        Ok(())
     }
 }
 
@@ -137,6 +268,8 @@ pub enum ProviderBackupError {
     Media(#[from] lettuce_media::MediaStoreError),
     #[error("backup media ended before its declared size")]
     MediaIncomplete,
+    #[error("protected conversation artifact export failed: {0}")]
+    Artifact(#[from] ArtifactTransferError),
 }
 
 #[cfg(test)]
@@ -633,17 +766,21 @@ mod tests {
             Database::open(&path).expect("asset database"),
         )
         .expect("backup media reader");
-        let envelope =
-            ProviderBackupCoordinator::new(reopened.database(), secret_store.as_ref(), &media)
-                .export("1.0.0", TimestampMillis::new(4), "backup password")
-                .await
-                .expect("export backup");
+        let envelope = ProviderBackupCoordinator::new(
+            reopened.database(),
+            secret_store.as_ref(),
+            &media,
+            reopened.database(),
+        )
+        .export("1.0.0", TimestampMillis::new(4), "backup password")
+        .await
+        .expect("export backup");
         assert_eq!(
             open_backup(&envelope, "wrong password"),
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 6);
+        assert_eq!(sections.len(), 13);
         assert!(
             sections[1]
                 .bytes
@@ -702,6 +839,39 @@ mod tests {
             }]
         );
         assert_eq!(direct.messages[1].timeline_ordinal, 2);
+        let starter_snapshot = match direct.messages[0]
+            .initial_origin
+            .as_ref()
+            .expect("starter origin")
+        {
+            lettuce_conversations::InitialMessageOrigin::StarterMessage {
+                snapshot_ref, ..
+            } => snapshot_ref,
+            lettuce_conversations::InitialMessageOrigin::SelectedScene { .. } => {
+                panic!("starter origin")
+            }
+        };
+        let starter_section = sections
+            .iter()
+            .find(|section| {
+                section.name == format!("conversation/snapshots/{}", starter_snapshot.artifact_id)
+            })
+            .expect("starter snapshot section");
+        assert_eq!(
+            starter_section.bytes.len(),
+            usize::try_from(starter_snapshot.byte_size).expect("snapshot size")
+        );
+        assert_eq!(
+            ContentHash::parse(blake3::hash(&starter_section.bytes).to_hex().to_string())
+                .expect("snapshot hash"),
+            starter_snapshot.digest
+        );
+        assert!(
+            starter_section
+                .bytes
+                .windows("Welcome back.".len())
+                .any(|window| window == b"Welcome back.")
+        );
         let group = history
             .conversations
             .iter()

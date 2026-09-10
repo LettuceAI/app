@@ -9,6 +9,7 @@ use lettuce_characters::{
 use lettuce_context::{
     LorebookBinding, LorebookDetails, PromptDocument, PromptProvenance, validate_bindings,
 };
+use lettuce_conversations::TrustedArtifactDescriptor;
 use lettuce_media::{BlobState, MAX_MEDIA_BLOB_BYTES, MediaAsset, MediaBlob};
 use lettuce_models::{ModelProfile, ProviderAccount, validate_provider_connection};
 use lettuce_settings::{GlobalSettings, SecretPurpose, SecretRef, SecretValue};
@@ -112,11 +113,26 @@ pub struct BackupMediaObject {
     pub bytes: zeroize::Zeroizing<Vec<u8>>,
 }
 
+pub struct BackupConversationArtifact {
+    pub descriptor: TrustedArtifactDescriptor,
+    pub bytes: zeroize::Zeroizing<Vec<u8>>,
+}
+
 impl fmt::Debug for BackupMediaObject {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("BackupMediaObject")
             .field("content_hash", &self.content_hash)
+            .field("bytes", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl fmt::Debug for BackupConversationArtifact {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BackupConversationArtifact")
+            .field("descriptor", &self.descriptor)
             .field("bytes", &"[REDACTED]")
             .finish()
     }
@@ -150,6 +166,7 @@ pub fn provider_backup_sections(
     mut graph: ProviderBackupGraph,
     secrets: Vec<ProviderBackupSecret>,
     media: Vec<BackupMediaObject>,
+    artifacts: Vec<BackupConversationArtifact>,
 ) -> Result<Vec<BackupSection>, ProviderBackupGraphError> {
     canonicalize_and_validate(&mut graph)?;
     let expected = expected_secrets(&graph)?;
@@ -184,6 +201,7 @@ pub fn provider_backup_sections(
     })
     .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let media_sections = media_sections(&graph, media)?;
+    let artifact_sections = conversation_artifact_sections(&graph, artifacts)?;
     let mut sections = vec![
         BackupSection::new("data/provider-graph.json", "provider-graph.v2", metadata),
         BackupSection::new(
@@ -199,6 +217,7 @@ pub fn provider_backup_sections(
         ),
     ];
     sections.extend(media_sections);
+    sections.extend(artifact_sections);
     Ok(sections)
 }
 
@@ -222,6 +241,65 @@ pub fn provider_backup_media_requirements(
         .filter(|blob| blob.state == BlobState::Ready)
         .map(|blob| (blob.content_hash, blob.byte_size))
         .collect())
+}
+
+pub fn provider_backup_artifact_requirements(
+    graph: &ProviderBackupGraph,
+) -> Result<Vec<TrustedArtifactDescriptor>, ProviderBackupGraphError> {
+    let mut graph = graph.clone();
+    canonicalize_and_validate(&mut graph)?;
+    graph
+        .conversation_history
+        .artifact_descriptors()
+        .map_err(|_| ProviderBackupGraphError::InvalidGraph)
+}
+
+fn conversation_artifact_sections(
+    graph: &ProviderBackupGraph,
+    artifacts: Vec<BackupConversationArtifact>,
+) -> Result<Vec<BackupSection>, ProviderBackupGraphError> {
+    let expected = graph
+        .conversation_history
+        .artifact_descriptors()
+        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+    if expected.len() != artifacts.len() {
+        return Err(ProviderBackupGraphError::InvalidGraph);
+    }
+    expected
+        .into_iter()
+        .zip(artifacts)
+        .map(|(expected, artifact)| {
+            if artifact.descriptor != expected {
+                return Err(ProviderBackupGraphError::InvalidGraph);
+            }
+            let (name, schema, digest, byte_size) = match &expected {
+                TrustedArtifactDescriptor::Snapshot(reference) => (
+                    format!("conversation/snapshots/{}", reference.artifact_id),
+                    format!("conversation-snapshot.v{}", reference.schema_version),
+                    &reference.digest,
+                    reference.byte_size,
+                ),
+                TrustedArtifactDescriptor::Replay(reference) => (
+                    format!("conversation/replays/{}", reference.artifact_id),
+                    format!("conversation-replay.v{}", reference.schema_version),
+                    &reference.digest,
+                    reference.byte_size,
+                ),
+            };
+            if artifact.bytes.len()
+                != usize::try_from(byte_size)
+                    .map_err(|_| ProviderBackupGraphError::LimitExceeded)?
+                || lettuce_types::ContentHash::parse(
+                    blake3::hash(&artifact.bytes).to_hex().to_string(),
+                )
+                .as_ref()
+                    != Ok(digest)
+            {
+                return Err(ProviderBackupGraphError::InvalidGraph);
+            }
+            Ok(BackupSection::new(name, schema, artifact.bytes.to_vec()))
+        })
+        .collect()
 }
 
 fn media_sections(
@@ -852,7 +930,7 @@ mod tests {
             owner: source_graph.accounts[0].secret_owner_id,
         };
         assert_eq!(
-            provider_backup_sections(source_graph.clone(), Vec::new(), Vec::new()),
+            provider_backup_sections(source_graph.clone(), Vec::new(), Vec::new(), Vec::new()),
             Err(ProviderBackupGraphError::InvalidSecrets)
         );
         let secret = ProviderBackupSecret {
@@ -862,8 +940,8 @@ mod tests {
             value: SecretValue::new("backup-secret-canary").expect("secret"),
         };
         assert!(!format!("{secret:?}").contains("backup-secret-canary"));
-        let sections =
-            provider_backup_sections(source_graph, vec![secret], Vec::new()).expect("sections");
+        let sections = provider_backup_sections(source_graph, vec![secret], Vec::new(), Vec::new())
+            .expect("sections");
         assert_eq!(sections.len(), 4);
         assert!(
             sections[1]
@@ -887,7 +965,7 @@ mod tests {
             value: SecretValue::new("orphan-secret").expect("secret"),
         };
         assert_eq!(
-            provider_backup_sections(graph(reference), vec![orphan], Vec::new()),
+            provider_backup_sections(graph(reference), vec![orphan], Vec::new(), Vec::new()),
             Err(ProviderBackupGraphError::InvalidSecrets)
         );
 
@@ -981,6 +1059,7 @@ mod tests {
                     content_hash: content_hash.clone(),
                     bytes: zeroize::Zeroizing::new(b"changed bytes".to_vec()),
                 }],
+                Vec::new(),
             ),
             Err(ProviderBackupGraphError::InvalidGraph)
         );
@@ -996,6 +1075,7 @@ mod tests {
                 content_hash,
                 bytes: zeroize::Zeroizing::new(bytes.clone()),
             }],
+            Vec::new(),
         )
         .expect("media sections");
         assert_eq!(sections.len(), 5);

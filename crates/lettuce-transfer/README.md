@@ -75,9 +75,12 @@ roots, participants, policy and settings, every branch and selected head, every
 message with its timeline ordinal, all revisions and generated candidates,
 initial origins and media references. Validation rejects duplicate identities,
 broken ownership, parent, fork, head, author, render-source and media links.
+Every protected launch, current-setting and candidate-model snapshot referenced
+by that graph, plus every conversation-retained provider replay artifact on a
+revision or candidate, is included once in an authenticated identity-addressed
+section. Descriptor, size and BLAKE3 must match the visible graph exactly.
 Generation attempts, checkpoints, tool executions, jobs, usage, companion
-runtime state, memories and protected artifact payloads remain separate later
-sections of the full backup.
+runtime state and memories remain separate later sections of the full backup.
 
 The legacy version-2 ASR JSON schema remains a separate camelCase compatibility
 document. Its nullable IDs, counters, timestamps and native audio locators are

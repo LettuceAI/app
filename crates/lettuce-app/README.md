@@ -1085,4 +1085,10 @@ conversation history shared by direct and group chats, including archived
 roots, policy and settings, branches, exact message order, all revisions and
 candidates, initial origins and media references. A file-backed reopen scenario
 preserves an empty starter message, ordinary starter content and a Director-mode
-group that requires no selected speaker, and rejects a broken parent link.
+group that requires no selected speaker, and rejects a broken parent link. The
+coordinator derives the complete unique protected snapshot and replay inventory
+from that graph and streams each payload through
+`ConversationArtifactTransferPort`. It enforces the envelope entry and aggregate
+byte budgets before retaining the bytes, then requires the port descriptor,
+size and BLAKE3 to match the graph reference. The file-backed scenario decrypts
+and verifies the exact starter snapshot payload.

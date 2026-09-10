@@ -1,10 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lettuce_conversations::{
-    ConversationAggregate, InitialMessageOrigin, Message, MessageCandidate, MessagePart,
-    MessageRenderSource, MessageRevision, MessageRole, SnapshotSource,
+    ConversationAggregate, ConversationKind, InitialMessageOrigin, Message, MessageCandidate,
+    MessagePart, MessageRenderSource, MessageRevision, MessageRole, SnapshotSelection,
+    SnapshotSource, TrustedArtifactDescriptor, conversation_settings_snapshot_references,
+    conversation_snapshot_references,
 };
-use lettuce_types::MessageId;
+use lettuce_types::{MessageId, ReplayArtifactId, SnapshotArtifactId};
 use serde::{Deserialize, Serialize};
 
 pub const CONVERSATION_HISTORY_BACKUP_VERSION: u32 = 1;
@@ -103,6 +105,93 @@ impl ConversationHistoryBackup {
         }
         Ok(())
     }
+
+    pub(crate) fn artifact_descriptors(
+        &self,
+    ) -> Result<Vec<TrustedArtifactDescriptor>, ConversationHistoryBackupError> {
+        let mut snapshots = BTreeMap::<SnapshotArtifactId, _>::new();
+        let mut replays = BTreeMap::<ReplayArtifactId, _>::new();
+        for backup in &self.conversations {
+            let conversation = &backup.aggregate.conversation;
+            for reference in conversation_snapshot_references(&conversation.kind) {
+                insert_snapshot(&mut snapshots, reference)?;
+            }
+            for participant in &conversation.participants {
+                if let SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) =
+                    &participant.model_selection
+                {
+                    insert_snapshot(&mut snapshots, &model.snapshot_ref)?;
+                }
+            }
+            if let ConversationKind::Group(details) = &conversation.kind {
+                for policy in &details.initial_participant_policy.members {
+                    if let SnapshotSelection::Inherited(model)
+                    | SnapshotSelection::Explicit(model) = &policy.model_override
+                    {
+                        insert_snapshot(&mut snapshots, &model.snapshot_ref)?;
+                    }
+                }
+            }
+            if let Some(settings) = &conversation.current_settings {
+                for reference in conversation_settings_snapshot_references(settings) {
+                    insert_snapshot(&mut snapshots, reference)?;
+                }
+            }
+            for message in &backup.messages {
+                if let Some(origin) = &message.initial_origin {
+                    let reference = match origin {
+                        InitialMessageOrigin::SelectedScene { snapshot_ref }
+                        | InitialMessageOrigin::StarterMessage { snapshot_ref, .. } => snapshot_ref,
+                    };
+                    insert_snapshot(&mut snapshots, reference)?;
+                }
+                for revision in &message.revisions {
+                    if let Some(reference) = &revision.provider_replay {
+                        insert_replay(&mut replays, reference)?;
+                    }
+                }
+                for candidate in &message.candidates {
+                    insert_snapshot(&mut snapshots, &candidate.model.snapshot_ref)?;
+                    if let Some(reference) = &candidate.provider_replay {
+                        insert_replay(&mut replays, reference)?;
+                    }
+                }
+            }
+        }
+        Ok(snapshots
+            .into_values()
+            .map(TrustedArtifactDescriptor::Snapshot)
+            .chain(replays.into_values().map(TrustedArtifactDescriptor::Replay))
+            .collect())
+    }
+}
+
+fn insert_snapshot(
+    values: &mut BTreeMap<SnapshotArtifactId, lettuce_conversations::ProtectedSnapshotRef>,
+    reference: &lettuce_conversations::ProtectedSnapshotRef,
+) -> Result<(), ConversationHistoryBackupError> {
+    if reference.validate().is_err()
+        || values
+            .insert(reference.artifact_id, reference.clone())
+            .is_some_and(|existing| existing != *reference)
+    {
+        return Err(ConversationHistoryBackupError::InvalidData);
+    }
+    Ok(())
+}
+
+fn insert_replay(
+    values: &mut BTreeMap<ReplayArtifactId, lettuce_conversations::ReplayArtifactRef>,
+    reference: &lettuce_conversations::ReplayArtifactRef,
+) -> Result<(), ConversationHistoryBackupError> {
+    if reference.validate().is_err()
+        || values
+            .insert(reference.artifact_id, reference.clone())
+            .is_some_and(|existing| existing != *reference)
+    {
+        return Err(ConversationHistoryBackupError::InvalidData);
+    }
+    Ok(())
 }
 
 fn validate_conversation(

@@ -654,13 +654,24 @@ impl AppBackend {
         &'a self,
         secret_store: &'a S,
         media: &'a lettuce_media::LocalSyncMediaStore<BR, AR>,
-    ) -> crate::ProviderBackupCoordinator<'a, Database, S, lettuce_media::LocalSyncMediaStore<BR, AR>>
+    ) -> crate::ProviderBackupCoordinator<
+        'a,
+        Database,
+        S,
+        lettuce_media::LocalSyncMediaStore<BR, AR>,
+        Database,
+    >
     where
         S: lettuce_settings::SecretStore + ?Sized,
         BR: lettuce_media::MediaBlobRepository,
         AR: lettuce_media::MediaAssetRepository,
     {
-        crate::ProviderBackupCoordinator::new(self.database.as_ref(), secret_store, media)
+        crate::ProviderBackupCoordinator::new(
+            self.database.as_ref(),
+            secret_store,
+            media,
+            self.database.as_ref(),
+        )
     }
 }
 
