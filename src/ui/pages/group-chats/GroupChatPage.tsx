@@ -2522,6 +2522,7 @@ export function GroupChatPage() {
         onBranchToCharacter={(charId) => void handleBranchToCharacter(charId)}
         onOpenChatAppearance={handleOpenAppearance}
         characters={groupCharacters}
+        sessionId={groupSessionId}
       />
 
       {!isMobilePlatform && group && (

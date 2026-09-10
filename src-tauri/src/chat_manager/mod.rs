@@ -58,7 +58,7 @@ pub use commands::{
     chat_add_message_attachment, chat_completion, chat_continue, chat_generate_companion_soul,
     chat_generate_design_reference_description, chat_generate_lorebook_entry_draft,
     chat_generate_lorebook_keyword_draft, chat_generate_scene_image, chat_generate_scene_prompt,
-    chat_generate_user_reply, chat_message_debug_snapshot, chat_regenerate,
+    chat_generate_user_reply, chat_message_debug_snapshot, chat_regenerate, ChatMessageDebugSnapshot,
     chat_template_export_as_usc, companion_clear_soul_growth, companion_remove_soul_growth,
     companion_set_soul_growth_lock,
     create_prompt_template, delete_prompt_template, dynamic_memory_cycle_status,

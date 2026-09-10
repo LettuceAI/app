@@ -15,8 +15,8 @@ use crate::utils::{log_error, log_info, log_warn, now_millis};
 use super::repository::ChatRepository;
 use super::storage::{build_system_prompt, choose_persona, select_model_with_credential};
 use super::types::{
-    Character, Model, Persona, ProviderCredential, Session, Settings, SystemPromptEntry,
-    UsageSummary,
+    Character, MemoryEmbedding, Model, Persona, ProviderCredential, Session, Settings,
+    SystemPromptEntry, UsageSummary,
 };
 
 pub struct ChatContext {
@@ -87,6 +87,7 @@ impl ChatContext {
         model: &Model,
         persona: Option<&Persona>,
         session: &Session,
+        retrieved_memories: &[MemoryEmbedding],
     ) -> Vec<SystemPromptEntry> {
         build_system_prompt(
             self.app(),
@@ -95,6 +96,7 @@ impl ChatContext {
             persona,
             session,
             &self.settings,
+            retrieved_memories,
         )
     }
 
