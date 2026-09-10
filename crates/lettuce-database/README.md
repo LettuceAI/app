@@ -717,3 +717,11 @@ retain their exact BLOB bytes; repair-needed rows retain their null-vector
 state. Space/item IDs, source revision and text, dimensions and update time are
 preserved without regenerating embeddings. Dynamic-memory run tables remain for
 their own bounded document.
+
+Dynamic-memory backup now reads pending approvals, every immutable visible-turn
+preparation document, and the complete background run graph in the same deferred
+transaction. Existing strict hydrators validate frozen run sources, retry
+attempts, ordered inference rounds and calls, background settlements and summary
+checkpoints before they leave SQLite. Storage-only preparation and settlement
+digests remain explicit, including exact preparation JSON, so restart evidence
+is not reconstructed during export.

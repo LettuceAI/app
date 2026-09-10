@@ -157,7 +157,7 @@ fn verify_durable_identity(
     Ok(())
 }
 
-fn hydrate_verified(
+pub(crate) fn hydrate_verified(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     turn_id: GenerationTurnId,

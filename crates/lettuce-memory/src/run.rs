@@ -187,7 +187,8 @@ pub struct DynamicMemoryAttemptRecovery {
     pub child: DynamicMemoryAttempt,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DynamicMemoryAttempt {
     pub id: DynamicMemoryAttemptId,
     pub run_id: DynamicMemoryRunId,
@@ -286,7 +287,8 @@ pub struct NewDynamicMemoryToolCall {
     pub call: ProposedToolCall,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DynamicMemoryRoundFinishReason {
     Stop,
     Length,
@@ -366,7 +368,8 @@ impl NewDynamicMemoryInferenceRound {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DynamicMemoryInferenceRound {
     pub run_id: DynamicMemoryRunId,
     pub attempt_id: DynamicMemoryAttemptId,
@@ -430,7 +433,8 @@ impl DynamicMemoryInferenceRound {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DynamicMemoryToolCallEvidence {
     pub id: ToolExecutionId,
     pub run_id: DynamicMemoryRunId,

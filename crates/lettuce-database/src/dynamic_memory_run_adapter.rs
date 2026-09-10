@@ -173,7 +173,7 @@ pub(crate) fn load_run_in(
     Ok(run)
 }
 
-fn load_attempt_in(
+pub(crate) fn load_attempt_in(
     connection: &Connection,
     id: DynamicMemoryAttemptId,
 ) -> Result<DynamicMemoryAttempt, DynamicMemoryRunRepositoryError> {
@@ -382,7 +382,7 @@ fn list_calls_in(
     Ok(calls)
 }
 
-fn list_rounds_in(
+pub(crate) fn list_rounds_in(
     transaction: &Transaction<'_>,
     run_id: DynamicMemoryRunId,
     attempt_id: DynamicMemoryAttemptId,
@@ -494,7 +494,7 @@ fn background_change_digest(
     Ok(blake3::hash(encoded.as_bytes()).to_hex().to_string())
 }
 
-fn load_background_settlement_in(
+pub(crate) fn load_background_settlement_in(
     connection: &Connection,
     run_id: DynamicMemoryRunId,
     attempt_id: DynamicMemoryAttemptId,

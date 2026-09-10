@@ -316,7 +316,8 @@ pub struct DynamicMemorySummaryCommit {
     pub provider_request_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DynamicMemorySummaryCheckpoint {
     pub run_id: lettuce_types::DynamicMemoryRunId,
     pub attempt_id: lettuce_types::DynamicMemoryAttemptId,

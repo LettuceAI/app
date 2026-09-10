@@ -123,4 +123,7 @@ suffix from tombstoned message IDs remains application-owned.
 The authoritative space, item, summary and retrieval-access types also form the
 versioned full-profile backup document. Backup validation reuses their existing
 invariants and preserves the exact access metadata that affects later retrieval;
-it does not recalculate scores or include rebuildable embedding vectors.
+it does not recalculate scores. Separate versioned backup documents preserve
+the exact embedding projection cache and the durable approval, preparation,
+background run, retry, round, result and summary-checkpoint graph without
+executing any workflow during export.

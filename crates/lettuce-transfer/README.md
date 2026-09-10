@@ -234,3 +234,11 @@ source revision, dimensions, source text and update time. Validation requires a
 backed-up owning space, a unique storage identity and the same finite-vector
 shape accepted by the runtime. It does not require a live matching memory item,
 because retrieval already excludes stale rows through its item/text join.
+
+`data/dynamic-memory.json` preserves the restart graph for both visible-turn
+preparation and background extraction. It contains ask-first approval state,
+exact immutable preparation documents and digests, frozen runs and message
+sources, retry attempts, ordered inference rounds and calls, background results,
+summary checkpoints, usage details, replay references and timestamps. Validation
+binds these records to backed-up conversations, attempts, jobs and memory spaces;
+export performs no provider, tool, embedding or memory work.

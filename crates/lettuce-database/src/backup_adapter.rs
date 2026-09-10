@@ -1,18 +1,22 @@
 use lettuce_transfer::{
     ASR_LEARNING_DOCUMENT_VERSION, AsrLearningAudioAsset, AsrLearningDocument,
     AuthoredProfileBackup, BackupConversation, BackupConversationOutbox, BackupConversationRuntime,
-    BackupConversationUsage, BackupGenerationAttemptRuntime, BackupGenerationCheckpoint,
-    BackupGenerationTurn, BackupGlobalSettings, BackupJobInference, BackupLorebookBindings,
-    BackupMemoryProjection, BackupMemoryProjectionState, BackupMemorySpace, BackupMessage,
-    COMPANION_EFFECT_BACKUP_VERSION, COMPANION_STATE_BACKUP_VERSION,
+    BackupConversationUsage, BackupDynamicMemoryAttempt, BackupDynamicMemoryPreparation,
+    BackupDynamicMemoryRound, BackupDynamicMemoryRun, BackupGenerationAttemptRuntime,
+    BackupGenerationCheckpoint, BackupGenerationTurn, BackupGlobalSettings, BackupJobInference,
+    BackupLorebookBindings, BackupMemoryProjection, BackupMemoryProjectionState, BackupMemorySpace,
+    BackupMessage, COMPANION_EFFECT_BACKUP_VERSION, COMPANION_STATE_BACKUP_VERSION,
     CONVERSATION_HISTORY_BACKUP_VERSION, CONVERSATION_OUTBOX_BACKUP_VERSION,
     CONVERSATION_RUNTIME_BACKUP_VERSION, CONVERSATION_USAGE_BACKUP_VERSION, CompanionEffectBackup,
     CompanionStateBackup, ConversationHistoryBackup, ConversationOutboxBackup,
-    ConversationRuntimeBackup, ConversationUsageBackup, JOB_BACKUP_VERSION, JobBackup,
-    MAX_BACKUP_AUTHORED_ROOTS, MAX_BACKUP_COMPANION_EFFECTS, MAX_BACKUP_COMPANION_RECEIPTS,
+    ConversationRuntimeBackup, ConversationUsageBackup, DYNAMIC_MEMORY_BACKUP_VERSION,
+    DynamicMemoryBackup, JOB_BACKUP_VERSION, JobBackup, MAX_BACKUP_AUTHORED_ROOTS,
+    MAX_BACKUP_COMPANION_EFFECTS, MAX_BACKUP_COMPANION_RECEIPTS,
     MAX_BACKUP_COMPANION_RELATIONSHIPS, MAX_BACKUP_COMPANION_SESSIONS,
     MAX_BACKUP_CONVERSATION_OPERATIONS, MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS,
     MAX_BACKUP_CONVERSATION_USAGE_EVENTS, MAX_BACKUP_CONVERSATIONS,
+    MAX_BACKUP_DYNAMIC_MEMORY_APPROVALS, MAX_BACKUP_DYNAMIC_MEMORY_ATTEMPTS,
+    MAX_BACKUP_DYNAMIC_MEMORY_PREPARATIONS, MAX_BACKUP_DYNAMIC_MEMORY_RUNS,
     MAX_BACKUP_GENERATION_CHECKPOINTS, MAX_BACKUP_GENERATION_TURNS, MAX_BACKUP_JOB_EVENTS,
     MAX_BACKUP_JOB_INFERENCE_EVENTS, MAX_BACKUP_JOBS, MAX_BACKUP_MEDIA_RECORDS,
     MAX_BACKUP_MEMORY_ACCESSES, MAX_BACKUP_MEMORY_PROJECTIONS, MAX_BACKUP_MEMORY_REWINDS,
@@ -334,6 +338,188 @@ fn read_memory_projections(
     Ok(MemoryProjectionBackup {
         version: MEMORY_PROJECTION_BACKUP_VERSION,
         projections,
+    })
+}
+
+fn read_dynamic_memory(
+    transaction: &rusqlite::Transaction<'_>,
+) -> Result<DynamicMemoryBackup, ProviderBackupSourceError> {
+    let pending_rows = transaction
+        .prepare(&format!(
+            "SELECT conversation_id,prompted_message_count,pending,skipped,updated_at FROM dynamic_memory_pending_approvals ORDER BY conversation_id LIMIT {}",
+            MAX_BACKUP_DYNAMIC_MEMORY_APPROVALS + 1
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, bool>(2)?,
+                        row.get::<_, bool>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    if pending_rows.len() > MAX_BACKUP_DYNAMIC_MEMORY_APPROVALS {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    let pending_approvals = pending_rows
+        .into_iter()
+        .map(|row| {
+            Ok(lettuce_memory::DynamicMemoryPendingApproval {
+                conversation_id: row
+                    .0
+                    .parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                prompted_message_count: u64::try_from(row.1)
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                pending: row.2,
+                skipped: row.3,
+                updated_at: TimestampMillis::new(row.4),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let preparation_rows = transaction
+        .prepare(&format!(
+            "SELECT conversation_id,turn_id,attempt_id,first_execution_ordinal,plan_json,plan_digest FROM dynamic_memory_preparation_plans ORDER BY conversation_id,turn_id,attempt_id,first_execution_ordinal LIMIT {}",
+            MAX_BACKUP_DYNAMIC_MEMORY_PREPARATIONS + 1
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    if preparation_rows.len() > MAX_BACKUP_DYNAMIC_MEMORY_PREPARATIONS {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    let preparation_plans = preparation_rows
+        .into_iter()
+        .map(|row| {
+            let conversation_id = row
+                .0
+                .parse()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            let turn_id = row
+                .1
+                .parse()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            let attempt_id = row
+                .2
+                .parse()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            let ordinal =
+                u16::try_from(row.3).map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            let plan = crate::memory_preparation_adapter::hydrate_verified(
+                transaction,
+                conversation_id,
+                turn_id,
+                attempt_id,
+                Some(ordinal),
+                false,
+            )
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?
+            .ok_or(ProviderBackupSourceError::InvalidData)?;
+            Ok(BackupDynamicMemoryPreparation {
+                plan,
+                document: row.4,
+                document_digest: row.5,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let run_ids = transaction
+        .prepare(&format!(
+            "SELECT id FROM dynamic_memory_runs ORDER BY id LIMIT {}",
+            MAX_BACKUP_DYNAMIC_MEMORY_RUNS + 1
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    if run_ids.len() > MAX_BACKUP_DYNAMIC_MEMORY_RUNS {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    let mut total_attempts = 0usize;
+    let mut runs = Vec::with_capacity(run_ids.len());
+    for run_id in run_ids {
+        let run_id = run_id
+            .parse()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let run = crate::dynamic_memory_run_adapter::load_run_in(transaction, run_id)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let attempt_ids = transaction
+            .prepare("SELECT id FROM dynamic_memory_run_attempts WHERE run_id=?1 ORDER BY ordinal")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([run_id.to_string()], |row| row.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(backup_error)?;
+        total_attempts = total_attempts
+            .checked_add(attempt_ids.len())
+            .ok_or(ProviderBackupSourceError::InvalidData)?;
+        if total_attempts > MAX_BACKUP_DYNAMIC_MEMORY_ATTEMPTS {
+            return Err(ProviderBackupSourceError::InvalidData);
+        }
+        let mut attempts = Vec::with_capacity(attempt_ids.len());
+        for attempt_id in attempt_ids {
+            let attempt_id = attempt_id
+                .parse()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            let attempt =
+                crate::dynamic_memory_run_adapter::load_attempt_in(transaction, attempt_id)
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            let round_values =
+                crate::dynamic_memory_run_adapter::list_rounds_in(transaction, run_id, attempt_id)
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            let rounds = round_values
+                .into_iter()
+                .map(|round| {
+                    let settlement =
+                        crate::dynamic_memory_run_adapter::load_background_settlement_in(
+                            transaction,
+                            run_id,
+                            attempt_id,
+                            round.ordinal,
+                        )
+                        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+                    Ok(BackupDynamicMemoryRound {
+                        round,
+                        settlement: settlement.as_ref().map(|value| value.0.clone()),
+                        settlement_change_digest: settlement.map(|value| value.1),
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            attempts.push(BackupDynamicMemoryAttempt { attempt, rounds });
+        }
+        let summary_checkpoint =
+            crate::dynamic_memory_run_adapter::load_summary_checkpoint_in(transaction, run_id)
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        runs.push(BackupDynamicMemoryRun {
+            run,
+            attempts,
+            summary_checkpoint,
+        });
+    }
+    Ok(DynamicMemoryBackup {
+        version: DYNAMIC_MEMORY_BACKUP_VERSION,
+        pending_approvals,
+        preparation_plans,
+        runs,
     })
 }
 
@@ -946,6 +1132,7 @@ impl ProviderBackupSource for Database {
         let companion_effects = read_companion_effects(&transaction)?;
         let memory = read_memory(&transaction)?;
         let memory_projections = read_memory_projections(&transaction)?;
+        let dynamic_memory = read_dynamic_memory(&transaction)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             version: PROVIDER_BACKUP_GRAPH_VERSION,
@@ -978,6 +1165,7 @@ impl ProviderBackupSource for Database {
             companion_effects,
             memory,
             memory_projections,
+            dynamic_memory,
         })
     }
 }

@@ -302,9 +302,10 @@ mod tests {
         ConversationKind, ConversationOutboxEvent, ConversationReader, ConversationRepository,
         FinalizationDraft, GenerationCheckpointEnvelope, GenerationCheckpointEvent,
         GenerationFailureCode, GenerationInput, GenerationTurnStatus, MessageDraft, MessagePart,
-        MessageRole, MessageVisibility, OperationToken, SendConversation, SnapshotSelection,
-        ToolExecution, ToolExecutionRepository, ToolExecutionStatus, ToolOutput, UsageCounters,
-        UsageOutcome, UsageRecord, UsageUnavailableReason,
+        MessageRole, MessageVisibility, OperationToken, OutputPolicy, ResolvedInferenceProfile,
+        SafetyContext, SendConversation, SnapshotSelection, ToolExecution, ToolExecutionRepository,
+        ToolExecutionStatus, ToolOutput, ToolPolicy, UsageCounters, UsageOutcome, UsageRecord,
+        UsageUnavailableReason,
     };
     use lettuce_database::Database;
     use lettuce_embeddings::{
@@ -320,10 +321,12 @@ mod tests {
         LocalSyncMediaStore, RetentionClass,
     };
     use lettuce_memory::{
-        DynamicMemorySuffixRewind, DynamicMemorySuffixRewindRepository, MemoryCategory,
-        MemoryChangeSet, MemoryItem, MemoryRepository, MemoryRetrievalAccess,
+        DynamicMemoryApprovalRepository, DynamicMemoryAttemptStatus, DynamicMemoryRunRepository,
+        DynamicMemorySourceMessage, DynamicMemoryStructuredFallbackFormat,
+        DynamicMemorySuffixRewind, DynamicMemorySuffixRewindRepository, DynamicMemorySummaryWindow,
+        MemoryCategory, MemoryChangeSet, MemoryItem, MemoryRepository, MemoryRetrievalAccess,
         MemoryRetrievalRepository, MemorySummary, MemorySummaryChange, MemorySummaryRepository,
-        Score,
+        NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt, Score,
     };
     use lettuce_models::{
         ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository, ProviderAccount,
@@ -343,9 +346,9 @@ mod tests {
         ConversationHistoryBackupError, JobBackup, open_backup,
     };
     use lettuce_types::{
-        AudioProviderId, CharacterId, GroupId, MemoryId, MessageId, ModelProfileId, OperationId,
-        PersonaId, ProviderAccountId, Revision, StarterMessageId, ToolExecutionId, UsageEventId,
-        VoiceProfileId,
+        AudioProviderId, CharacterId, DynamicMemoryAttemptId, DynamicMemoryRunId, GroupId,
+        MemoryId, MessageId, ModelProfileId, OperationId, PersonaId, ProviderAccountId, Revision,
+        StarterMessageId, ToolExecutionId, UsageEventId, VoiceProfileId,
     };
     use lettuce_usage::{
         JobInferenceUsage, JobInferenceUsageResult, JobUsageLedger, ModelPricing,
@@ -1336,6 +1339,180 @@ mod tests {
             },
         )
         .expect("make backup projections stale");
+        let source = ConversationReader::timeline_page(
+            backend.database(),
+            direct_conversation.id,
+            direct_conversation.active_branch_id,
+            &lettuce_types::PageRequest::default(),
+        )
+        .expect("read dynamic memory source")
+        .items
+        .into_iter()
+        .find(|message| message.message.id == effect_user_message_id)
+        .expect("dynamic memory source");
+        let model_snapshot = direct_conversation
+            .participants
+            .iter()
+            .find(|participant| {
+                participant.role == lettuce_conversations::ParticipantRole::Character
+            })
+            .and_then(|participant| match &participant.model_selection {
+                SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => {
+                    Some(model)
+                }
+                SnapshotSelection::Disabled => None,
+            })
+            .expect("dynamic memory model snapshot");
+        let provider_account =
+            ProviderAccountRepository::get(backend.database(), provider_account_id)
+                .expect("read provider account")
+                .expect("provider account");
+        let dynamic_profile = ResolvedInferenceProfile {
+            chat_profile: lettuce_models::resolve_chat_profile(
+                &model_snapshot.expected_chat_identity(),
+                &backup_model,
+                &provider_account,
+                &lettuce_models::ChatParameterResolutionInput::default(),
+                &lettuce_models::ChatRequirements::default(),
+            )
+            .expect("resolve dynamic memory profile"),
+            tool_policy: ToolPolicy::Required,
+            output_policy: OutputPolicy::Plain,
+            safety_policy: SafetyContext::Standard,
+            correlation_id: None,
+        };
+        let source_messages = vec![DynamicMemorySourceMessage {
+            message_id: source.message.id,
+            role: source.message.role,
+            render_source: source.message.active_render_source,
+            effective_time: source.message.effective_time,
+        }];
+        let terminal_run_id = DynamicMemoryRunId::new();
+        let terminal_attempt_id = DynamicMemoryAttemptId::new();
+        let terminal_job = JobStore::create_or_get(
+            backend.database(),
+            JobSpec::new(
+                JobKind::MemoryExtraction,
+                JobSubject::new(SubjectKind::MemorySpace, memory_space.id.to_string())
+                    .expect("memory job subject"),
+                OutcomeRef::MemoryRun(memory_id),
+            )
+            .with_resources(vec![ResourceClass::Cpu]),
+        )
+        .expect("terminal memory job")
+        .job;
+        let terminal_admission = DynamicMemoryRunRepository::admit_dynamic_memory_run_attempt(
+            backend.database(),
+            NewDynamicMemoryRunAttempt {
+                run_id: terminal_run_id,
+                attempt_id: terminal_attempt_id,
+                conversation_id: direct_conversation.id,
+                space_id: memory_space.id,
+                starting_memory: memory_after_projection_edit.clone(),
+                source_messages: source_messages.clone(),
+                profile: dynamic_profile.clone(),
+                time_awareness_enabled: true,
+                supersession_enabled: true,
+                structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Json,
+                summary_window: DynamicMemorySummaryWindow {
+                    message_interval: 1,
+                    start: 0,
+                    end: 1,
+                },
+                job_id: terminal_job.id,
+                now: TimestampMillis::new(33),
+            },
+        )
+        .expect("admit terminal dynamic memory run");
+        let terminal_processing = DynamicMemoryRunRepository::transition_dynamic_memory_attempt(
+            backend.database(),
+            terminal_attempt_id,
+            terminal_admission.attempt.revision,
+            DynamicMemoryAttemptStatus::Processing,
+            None,
+            TimestampMillis::new(34),
+        )
+        .expect("start terminal dynamic memory run");
+        DynamicMemoryRunRepository::admit_dynamic_memory_inference_round(
+            backend.database(),
+            terminal_run_id,
+            terminal_attempt_id,
+            0,
+            0,
+            NewDynamicMemoryInferenceRound {
+                ordinal: 0,
+                request_context: lettuce_conversations::ProviderNeutralContext {
+                    messages: Vec::new(),
+                    attributions: Default::default(),
+                    budget: Default::default(),
+                },
+                parts: vec![MessagePart::ReasoningSummary {
+                    text: "No additional memory changes were required.".into(),
+                }],
+                provider_replay: None,
+                usage: None,
+                finish_reason: lettuce_memory::DynamicMemoryRoundFinishReason::Stop,
+                provider_request_id: Some("backup-memory-request".into()),
+                calls: Vec::new(),
+                admitted_at: TimestampMillis::new(35),
+            },
+        )
+        .expect("admit terminal dynamic memory round");
+        DynamicMemoryRunRepository::transition_dynamic_memory_attempt(
+            backend.database(),
+            terminal_attempt_id,
+            terminal_processing.revision,
+            DynamicMemoryAttemptStatus::Succeeded,
+            None,
+            TimestampMillis::new(36),
+        )
+        .expect("finish terminal dynamic memory run");
+        let pending_run_id = DynamicMemoryRunId::new();
+        let pending_attempt_id = DynamicMemoryAttemptId::new();
+        let pending_job = JobStore::create_or_get(
+            backend.database(),
+            JobSpec::new(
+                JobKind::MemoryExtraction,
+                JobSubject::new(SubjectKind::MemorySpace, memory_space.id.to_string())
+                    .expect("pending memory job subject"),
+                OutcomeRef::MemoryRun(memory_id),
+            )
+            .with_resources(vec![ResourceClass::Cpu]),
+        )
+        .expect("pending memory job")
+        .job;
+        DynamicMemoryRunRepository::admit_dynamic_memory_run_attempt(
+            backend.database(),
+            NewDynamicMemoryRunAttempt {
+                run_id: pending_run_id,
+                attempt_id: pending_attempt_id,
+                conversation_id: direct_conversation.id,
+                space_id: memory_space.id,
+                starting_memory: memory_after_projection_edit.clone(),
+                source_messages,
+                profile: dynamic_profile,
+                time_awareness_enabled: false,
+                supersession_enabled: false,
+                structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: DynamicMemorySummaryWindow {
+                    message_interval: 1,
+                    start: 0,
+                    end: 1,
+                },
+                job_id: pending_job.id,
+                now: TimestampMillis::new(37),
+            },
+        )
+        .expect("admit pending dynamic memory run");
+        DynamicMemoryApprovalRepository::prompt_dynamic_memory_if_due(
+            backend.database(),
+            direct_conversation.id,
+            1,
+            1,
+            TimestampMillis::new(38),
+        )
+        .expect("admit pending dynamic memory approval")
+        .expect("pending dynamic memory approval");
         let group_conversation = backend
             .launch_group_conversation(
                 &GroupConversationLaunchRequest {
@@ -1593,7 +1770,7 @@ mod tests {
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 23);
+        assert_eq!(sections.len(), 24);
         assert!(
             sections[1]
                 .bytes
@@ -1710,6 +1887,8 @@ mod tests {
             serde_json::from_slice(&sections[10].bytes).expect("memory JSON");
         let memory_projections: lettuce_transfer::MemoryProjectionBackup =
             serde_json::from_slice(&sections[11].bytes).expect("memory projections JSON");
+        let dynamic_memory: lettuce_transfer::DynamicMemoryBackup =
+            serde_json::from_slice(&sections[12].bytes).expect("dynamic memory JSON");
         assert_eq!(usage.events.len(), 3);
         let known = usage
             .events
@@ -1875,6 +2054,41 @@ mod tests {
         assert_eq!(
             corrupt_projections.canonicalize_and_validate(&memory),
             Err(lettuce_transfer::MemoryProjectionBackupError::InvalidData)
+        );
+        assert_eq!(dynamic_memory.runs.len(), 2);
+        assert_eq!(dynamic_memory.pending_approvals.len(), 1);
+        let terminal_run = dynamic_memory
+            .runs
+            .iter()
+            .find(|entry| entry.run.id == terminal_run_id)
+            .expect("terminal dynamic memory run");
+        assert_eq!(terminal_run.attempts.len(), 1);
+        assert_eq!(
+            terminal_run.attempts[0].attempt.status,
+            DynamicMemoryAttemptStatus::Succeeded
+        );
+        assert_eq!(terminal_run.attempts[0].rounds.len(), 1);
+        assert_eq!(
+            terminal_run.attempts[0].rounds[0]
+                .round
+                .provider_request_id
+                .as_deref(),
+            Some("backup-memory-request")
+        );
+        let pending_run = dynamic_memory
+            .runs
+            .iter()
+            .find(|entry| entry.run.id == pending_run_id)
+            .expect("pending dynamic memory run");
+        assert_eq!(
+            pending_run.attempts[0].attempt.status,
+            DynamicMemoryAttemptStatus::Created
+        );
+        let mut corrupt_dynamic_memory = dynamic_memory.clone();
+        corrupt_dynamic_memory.runs[0].run.space_id = lettuce_types::MemorySpaceId::new();
+        assert_eq!(
+            corrupt_dynamic_memory.canonicalize_and_validate(&history, &runtime, &jobs, &memory,),
+            Err(lettuce_transfer::DynamicMemoryBackupError::InvalidData)
         );
         let backed_up_job = jobs
             .jobs
