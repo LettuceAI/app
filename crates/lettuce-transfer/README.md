@@ -252,3 +252,12 @@ plan before any database, secret store or filesystem mutation. A legacy ZIP is
 routed to the version-1 compatibility decoder. The source backup and existing
 database remain untouched; a later staged materialization and verified cutover
 must retain them until the user explicitly approves deletion.
+
+Decoded version-2 binary payloads can now be materialized under a caller-owned
+isolated restore workspace. The workspace resumes only an exact partial prefix,
+uses confined no-follow paths and no-replace commits, then rereads and verifies
+the size and BLAKE3 hash of every media blob and protected conversation artifact.
+A versioned receipt binds the staged inventory to the encrypted source archive;
+exact retries replay while divergent bytes or receipts fail closed. Secret
+values never enter the workspace or receipt. This remains pre-cutover staging:
+live database, secret and media roots are not opened or changed.

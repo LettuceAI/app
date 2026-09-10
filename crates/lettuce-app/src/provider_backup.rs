@@ -1792,6 +1792,35 @@ mod tests {
             .iter()
             .any(|object| object.content_hash == voice_audio.blob.content_hash));
         assert!(!restore_plan.artifacts.is_empty());
+        let restore_workspace =
+            lettuce_transfer::BackupRestoreWorkspace::open(root.join("restore-workspace"))
+                .expect("restore workspace");
+        let restore_receipt = restore_workspace
+            .stage(&restore_plan)
+            .expect("stage restore plan");
+        assert_eq!(restore_receipt.media.len(), restore_plan.media.len());
+        assert_eq!(
+            restore_receipt.artifacts.len(),
+            restore_plan.artifacts.len()
+        );
+        assert_eq!(
+            restore_workspace
+                .stage(&restore_plan)
+                .expect("replay restore staging"),
+            restore_receipt
+        );
+        let receipt_bytes = std::fs::read(
+            root.join("restore-workspace")
+                .join("restore")
+                .join("receipt.json"),
+        )
+        .expect("restore receipt bytes");
+        assert!(!receipt_bytes
+            .windows("provider-backup-canary".len())
+            .any(|window| window == b"provider-backup-canary"));
+        assert!(!receipt_bytes
+            .windows("audio-backup-canary".len())
+            .any(|window| window == b"audio-backup-canary"));
         let sections = open_backup(&envelope, "backup password").expect("open backup");
         assert_eq!(sections.len(), 24);
         assert!(

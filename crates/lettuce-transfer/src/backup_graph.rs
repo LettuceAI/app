@@ -1068,7 +1068,9 @@ mod tests {
     use super::*;
     use lettuce_models::{ProviderConfig, ProviderProtocol};
     use lettuce_settings::SecretOwnerId;
-    use lettuce_types::{ContentHash, MediaBlobId, ProviderAccountId, Revision, TimestampMillis};
+    use lettuce_types::{
+        ContentHash, MediaBlobId, OperationId, ProviderAccountId, Revision, TimestampMillis,
+    };
 
     fn graph(reference: SecretRef) -> ProviderBackupGraph {
         ProviderBackupGraph {
@@ -1437,7 +1439,7 @@ mod tests {
                 value: SecretValue::new("secret").expect("secret"),
             }],
             vec![BackupMediaObject {
-                content_hash,
+                content_hash: content_hash.clone(),
                 bytes: zeroize::Zeroizing::new(bytes.clone()),
             }],
             Vec::new(),
@@ -1445,5 +1447,65 @@ mod tests {
         .expect("media sections");
         assert_eq!(sections.len(), 14);
         assert_eq!(&*sections[13].bytes, &bytes);
+
+        let envelope = crate::seal_backup(
+            "restore-test",
+            TimestampMillis::new(10),
+            "backup password",
+            sections,
+        )
+        .expect("sealed backup");
+        let plan = crate::decode_provider_backup_restore_plan(&envelope, "backup password")
+            .expect("restore plan");
+        let root =
+            std::env::temp_dir().join(format!("lettuce-restore-workspace-{}", OperationId::new()));
+        let partial = root
+            .join("partial")
+            .join("media")
+            .join(format!("{content_hash}.partial"));
+        std::fs::create_dir_all(partial.parent().expect("partial parent"))
+            .expect("partial directory");
+        std::fs::write(&partial, &bytes[..5]).expect("partial bytes");
+        let workspace = crate::BackupRestoreWorkspace::open(&root).expect("restore workspace");
+        let receipt = workspace.stage(&plan).expect("stage restore plan");
+        assert_eq!(receipt.source_hash, plan.source_hash);
+        assert_eq!(receipt.media, vec![content_hash.clone()]);
+        assert!(receipt.artifacts.is_empty());
+        assert_eq!(
+            std::fs::read(root.join("media").join("blobs").join(content_hash.as_str()))
+                .expect("staged media"),
+            bytes
+        );
+        assert_eq!(workspace.stage(&plan).expect("replay staging"), receipt);
+
+        std::fs::write(
+            root.join("media").join("blobs").join(content_hash.as_str()),
+            b"conflicting bytes",
+        )
+        .expect("corrupt staged media");
+        assert_eq!(
+            workspace.stage(&plan),
+            Err(crate::BackupRestoreWorkspaceError::Conflict)
+        );
+        std::fs::remove_dir_all(root).expect("remove restore workspace");
+
+        let conflict_root = std::env::temp_dir().join(format!(
+            "lettuce-restore-workspace-conflict-{}",
+            OperationId::new()
+        ));
+        let conflict_partial = conflict_root
+            .join("partial")
+            .join("media")
+            .join(format!("{content_hash}.partial"));
+        std::fs::create_dir_all(conflict_partial.parent().expect("partial parent"))
+            .expect("partial directory");
+        std::fs::write(&conflict_partial, b"wrong").expect("conflicting partial bytes");
+        let conflict_workspace =
+            crate::BackupRestoreWorkspace::open(&conflict_root).expect("conflict workspace");
+        assert_eq!(
+            conflict_workspace.stage(&plan),
+            Err(crate::BackupRestoreWorkspaceError::Conflict)
+        );
+        std::fs::remove_dir_all(conflict_root).expect("remove conflict workspace");
     }
 }

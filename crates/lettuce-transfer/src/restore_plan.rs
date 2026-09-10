@@ -18,6 +18,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct ProviderBackupRestorePlan {
+    pub source_hash: lettuce_types::ContentHash,
     pub graph: ProviderBackupGraph,
     pub secrets: Vec<ProviderBackupSecret>,
     pub media: Vec<BackupMediaObject>,
@@ -235,11 +236,17 @@ pub fn decode_provider_backup_restore_plan(
         return Err(ProviderBackupRestorePlanError::InvalidInventory);
     }
     Ok(ProviderBackupRestorePlan {
+        source_hash: content_hash(bytes),
         graph,
         secrets,
         media,
         artifacts,
     })
+}
+
+fn content_hash(bytes: &[u8]) -> lettuce_types::ContentHash {
+    lettuce_types::ContentHash::parse(blake3::hash(bytes).to_hex().to_string())
+        .expect("BLAKE3 produces a valid content hash")
 }
 
 fn take_json<T: for<'de> Deserialize<'de>>(

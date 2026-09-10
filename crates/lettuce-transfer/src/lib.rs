@@ -18,6 +18,7 @@ mod job_backup;
 mod memory_backup;
 mod memory_projection_backup;
 mod restore_plan;
+mod restore_workspace;
 mod usage_backup;
 
 pub use backup::*;
@@ -32,6 +33,7 @@ pub use job_backup::*;
 pub use memory_backup::*;
 pub use memory_projection_backup::*;
 pub use restore_plan::*;
+pub use restore_workspace::*;
 pub use usage_backup::*;
 
 use std::fmt;
