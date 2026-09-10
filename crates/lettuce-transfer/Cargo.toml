@@ -14,10 +14,18 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+argon2.workspace = true
+blake3.workspace = true
+chacha20poly1305.workspace = true
 lettuce-context.workspace = true
 lettuce-media.workspace = true
 lettuce-models.workspace = true
+lettuce-platform.workspace = true
 lettuce-settings.workspace = true
 lettuce-speech.workspace = true
 lettuce-types.workspace = true
+rand.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true

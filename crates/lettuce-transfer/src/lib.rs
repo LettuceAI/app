@@ -6,6 +6,10 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod backup;
+
+pub use backup::*;
+
 use std::fmt;
 
 use lettuce_context::{PromptEntryDraft, PromptPurpose};
