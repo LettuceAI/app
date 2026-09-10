@@ -60,3 +60,4 @@ blake3.workspace = true
 chrono.workspace = true
 rand.workspace = true
 uuid.workspace = true
+zeroize.workspace = true

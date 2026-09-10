@@ -53,8 +53,12 @@ references must all resolve inside the snapshot before sealing.
 
 All logical media assets and physical blob metadata are included once by typed
 identity, including records shared by several authored roots. The metadata binds
-kind, content hash, byte size and lifecycle state. Reading and sealing the actual
-content-addressed media bytes is the next backup slice.
+kind, content hash, byte size and lifecycle state. Every ready content-addressed
+blob is read and hash-checked against that snapshot, then stored once in its own
+authenticated, content-hash-addressed section. Assets that share a blob do not
+duplicate its bytes. Missing, shortened, changed or oversized ready content
+rejects the complete export; non-ready metadata remains represented without
+invented content.
 
 The versioned ASR learning document is a bounded JSON-ready interchange format
 for vocabulary, corrections, ignored suggestions and managed voice examples.

@@ -2,18 +2,44 @@ use std::fmt;
 
 use lettuce_settings::{SecretState, SecretStore};
 use lettuce_transfer::{
-    BackupEnvelopeError, ProviderBackupGraphError, ProviderBackupSecret, ProviderBackupSource,
-    ProviderBackupSourceError, provider_backup_secret_requirements, provider_backup_sections,
-    seal_backup,
+    BackupEnvelopeError, BackupMediaObject, ProviderBackupGraphError, ProviderBackupSecret,
+    ProviderBackupSource, ProviderBackupSourceError, provider_backup_media_requirements,
+    provider_backup_secret_requirements, provider_backup_sections, seal_backup,
 };
-use lettuce_types::TimestampMillis;
+use lettuce_types::{ContentHash, TimestampMillis};
+use zeroize::Zeroizing;
 
-pub struct ProviderBackupCoordinator<'a, R: ?Sized, S: ?Sized> {
-    source: &'a R,
-    secrets: &'a S,
+pub trait BackupMediaReader: Send + Sync {
+    fn read_backup_chunk(
+        &self,
+        hash: &ContentHash,
+        offset: u64,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, lettuce_media::MediaStoreError>;
 }
 
-impl<R: ?Sized, S: ?Sized> fmt::Debug for ProviderBackupCoordinator<'_, R, S> {
+impl<BR, AR> BackupMediaReader for lettuce_media::LocalSyncMediaStore<BR, AR>
+where
+    BR: lettuce_media::MediaBlobRepository,
+    AR: lettuce_media::MediaAssetRepository,
+{
+    fn read_backup_chunk(
+        &self,
+        hash: &ContentHash,
+        offset: u64,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, lettuce_media::MediaStoreError> {
+        self.read_sync_chunk(hash, offset, max_bytes)
+    }
+}
+
+pub struct ProviderBackupCoordinator<'a, R: ?Sized, S: ?Sized, M: ?Sized> {
+    source: &'a R,
+    secrets: &'a S,
+    media: &'a M,
+}
+
+impl<R: ?Sized, S: ?Sized, M: ?Sized> fmt::Debug for ProviderBackupCoordinator<'_, R, S, M> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("ProviderBackupCoordinator")
@@ -21,14 +47,19 @@ impl<R: ?Sized, S: ?Sized> fmt::Debug for ProviderBackupCoordinator<'_, R, S> {
     }
 }
 
-impl<'a, R, S> ProviderBackupCoordinator<'a, R, S>
+impl<'a, R, S, M> ProviderBackupCoordinator<'a, R, S, M>
 where
     R: ProviderBackupSource + ?Sized,
     S: SecretStore + ?Sized,
+    M: BackupMediaReader + ?Sized,
 {
     #[must_use]
-    pub const fn new(source: &'a R, secrets: &'a S) -> Self {
-        Self { source, secrets }
+    pub const fn new(source: &'a R, secrets: &'a S, media: &'a M) -> Self {
+        Self {
+            source,
+            secrets,
+            media,
+        }
     }
 
     pub async fn export(
@@ -39,6 +70,7 @@ where
     ) -> Result<Vec<u8>, ProviderBackupError> {
         let graph = self.source.read_provider_backup_graph()?;
         let requirements = provider_backup_secret_requirements(&graph)?;
+        let media_requirements = provider_backup_media_requirements(&graph)?;
         let mut values = Vec::with_capacity(requirements.len());
         for (reference, purpose) in requirements {
             let before = self.secrets.status(&reference, &purpose).await?;
@@ -61,7 +93,30 @@ where
                 value,
             });
         }
-        let sections = provider_backup_sections(graph, values)?;
+        let mut media = Vec::with_capacity(media_requirements.len());
+        for (content_hash, byte_size) in media_requirements {
+            let capacity = usize::try_from(byte_size)
+                .map_err(|_| ProviderBackupError::Graph(ProviderBackupGraphError::LimitExceeded))?;
+            let mut bytes = Zeroizing::new(Vec::with_capacity(capacity));
+            while bytes.len() < capacity {
+                let chunk = self.media.read_backup_chunk(
+                    &content_hash,
+                    u64::try_from(bytes.len()).map_err(|_| {
+                        ProviderBackupError::Graph(ProviderBackupGraphError::LimitExceeded)
+                    })?,
+                    lettuce_media::MAX_SYNC_MEDIA_CHUNK_BYTES.min(capacity - bytes.len()),
+                )?;
+                if chunk.is_empty() {
+                    return Err(ProviderBackupError::MediaIncomplete);
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            media.push(BackupMediaObject {
+                content_hash,
+                bytes,
+            });
+        }
+        let sections = provider_backup_sections(graph, values, media)?;
         seal_backup(app_version, created_at, password, sections).map_err(Into::into)
     }
 }
@@ -78,6 +133,10 @@ pub enum ProviderBackupError {
     SecretChanged,
     #[error("provider backup encryption failed: {0}")]
     Envelope(#[from] BackupEnvelopeError),
+    #[error("backup media could not be read: {0}")]
+    Media(#[from] lettuce_media::MediaStoreError),
+    #[error("backup media ended before its declared size")]
+    MediaIncomplete,
 }
 
 #[cfg(test)]
@@ -95,9 +154,15 @@ mod tests {
     use lettuce_context::{
         DetectionPolicy, LorebookBehaviorVersion, LorebookMetadataDraft, LorebookRepository,
     };
+    use lettuce_database::Database;
+    use lettuce_media::{
+        AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, LocalMediaBlobStore,
+        LocalSyncMediaStore, RetentionClass,
+    };
     use lettuce_models::{
         ProviderAccount, ProviderAccountRepository, ProviderConfig, ProviderProtocol,
     };
+    use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
     use lettuce_settings::{
         InMemorySecretStore, SecretBackendError, SecretOwnerId, SecretPurpose, SecretRecord,
         SecretRef, SecretStatus, SecretStore, SecretStoreError, SecretValue,
@@ -167,9 +232,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn file_backed_provider_backup_reopens_and_seals_only_referenced_secrets() {
-        let path =
-            std::env::temp_dir().join(format!("provider-backup-{}.sqlite3", OperationId::new()));
+    async fn file_backed_full_profile_backup_seals_secrets_and_shared_media() {
+        let root = std::env::temp_dir().join(format!("provider-backup-{}", OperationId::new()));
+        std::fs::create_dir_all(&root).expect("backup fixture root");
+        let path = root.join("state.sqlite3");
         let secret_store = Arc::new(InMemorySecretStore::new());
         let reference = SecretRef::new();
         let owner = SecretOwnerId::new();
@@ -339,19 +405,69 @@ mod tests {
             },
         )
         .expect("store group");
+        let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+            .expect("filesystem authority");
+        let ingest = LocalMediaBlobStore::new(
+            authority.managed_files(),
+            authority
+                .read_capability(ManagedRoot::MediaBlobs)
+                .expect("read capability"),
+            authority
+                .write_capability(ManagedRoot::MediaBlobs)
+                .expect("write capability"),
+            Database::open(&path).expect("blob database"),
+            Database::open(&path).expect("asset database"),
+        );
+        let mut image_bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        image_bytes.extend_from_slice(&13_u32.to_be_bytes());
+        image_bytes.extend_from_slice(b"IHDR");
+        image_bytes.extend_from_slice(&2_u32.to_be_bytes());
+        image_bytes.extend_from_slice(&3_u32.to_be_bytes());
+        image_bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+        image_bytes.extend_from_slice(b"backup image bytes");
+        let avatar = ingest
+            .ingest(
+                image_bytes.as_slice(),
+                IngestRequest::new(
+                    AssetKind::AvatarOriginal,
+                    AssetOrigin::Upload,
+                    RetentionClass::Persistent,
+                    AssetProvenanceV1::default(),
+                ),
+            )
+            .expect("ingest avatar");
+        let illustration = ingest
+            .ingest(
+                image_bytes.as_slice(),
+                IngestRequest::new(
+                    AssetKind::Illustration,
+                    AssetOrigin::Upload,
+                    RetentionClass::Persistent,
+                    AssetProvenanceV1::default(),
+                ),
+            )
+            .expect("ingest shared illustration");
+        assert_eq!(avatar.blob.id, illustration.blob.id);
         drop(backend);
 
         let reopened = AppBackend::open(&path, TimestampMillis::new(3)).expect("reopen backend");
-        let envelope = ProviderBackupCoordinator::new(reopened.database(), secret_store.as_ref())
-            .export("1.0.0", TimestampMillis::new(4), "backup password")
-            .await
-            .expect("export backup");
+        let media = LocalSyncMediaStore::open(
+            root.join("platform-v2/media-blobs"),
+            Database::open(&path).expect("blob database"),
+            Database::open(&path).expect("asset database"),
+        )
+        .expect("backup media reader");
+        let envelope =
+            ProviderBackupCoordinator::new(reopened.database(), secret_store.as_ref(), &media)
+                .export("1.0.0", TimestampMillis::new(4), "backup password")
+                .await
+                .expect("export backup");
         assert_eq!(
             open_backup(&envelope, "wrong password"),
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 2);
+        assert_eq!(sections.len(), 3);
         assert!(
             sections[1]
                 .bytes
@@ -407,14 +523,47 @@ mod tests {
             metadata["authored"]["groups"][0]["group"]["name"],
             "Backup cast"
         );
+        assert_eq!(&*sections[2].bytes, &image_bytes);
+        assert_eq!(
+            metadata["authored"]["media_assets"]
+                .as_array()
+                .expect("assets")
+                .len(),
+            2
+        );
+        assert_eq!(
+            metadata["authored"]["media_blobs"]
+                .as_array()
+                .expect("blobs")
+                .len(),
+            1
+        );
+
+        let hash = avatar.blob.content_hash.as_str();
+        std::fs::remove_file(
+            root.join("platform-v2/media-blobs/objects")
+                .join(&hash[..2])
+                .join(&hash[2..4])
+                .join(hash),
+        )
+        .expect("remove media fixture");
+        assert!(matches!(
+            reopened
+                .provider_backup(secret_store.as_ref(), &media)
+                .export("1.0.0", TimestampMillis::new(5), "backup password")
+                .await,
+            Err(ProviderBackupError::Media(
+                lettuce_media::MediaStoreError::ObjectMissing
+            ))
+        ));
 
         let changing = ChangingSecretStore {
             status_calls: AtomicUsize::new(0),
         };
         assert_eq!(
             reopened
-                .provider_backup(&changing)
-                .export("1.0.0", TimestampMillis::new(5), "backup password")
+                .provider_backup(&changing, &media)
+                .export("1.0.0", TimestampMillis::new(6), "backup password")
                 .await,
             Err(ProviderBackupError::SecretChanged)
         );

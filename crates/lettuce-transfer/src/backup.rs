@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 pub const BACKUP_ENVELOPE_VERSION: u32 = 2;
-pub const MAX_BACKUP_ENTRIES: usize = 256;
+pub const MAX_BACKUP_ENTRIES: usize = 65_792;
 pub const MAX_BACKUP_ENTRY_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_BACKUP_TOTAL_BYTES: usize = 512 * 1024 * 1024;
 pub const MAX_BACKUP_WRITE_CHUNK_BYTES: usize = 1024 * 1024;

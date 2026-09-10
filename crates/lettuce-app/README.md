@@ -1074,5 +1074,8 @@ complete and stable before encryption begins.
 The same export now carries the complete authored persona, lorebook, character
 and group graph plus all logical media and blob metadata. A file-backed scenario
 reopens that graph before export and verifies its default persona, roots and
-ordered ownership documents. Media byte collection and restore remain the next
-separate application slices.
+ordered ownership documents. It also reads every unique ready blob through the
+confined media store in bounded chunks and lets the transfer layer verify size
+and BLAKE3 before encryption. Shared image assets produce one media section;
+missing ready content fails the export. Restore remains a separate application
+slice.

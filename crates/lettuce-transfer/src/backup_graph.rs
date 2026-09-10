@@ -9,7 +9,7 @@ use lettuce_characters::{
 use lettuce_context::{
     LorebookBinding, LorebookDetails, PromptDocument, PromptProvenance, validate_bindings,
 };
-use lettuce_media::{MediaAsset, MediaBlob};
+use lettuce_media::{BlobState, MAX_MEDIA_BLOB_BYTES, MediaAsset, MediaBlob};
 use lettuce_models::{ModelProfile, ProviderAccount, validate_provider_connection};
 use lettuce_settings::{GlobalSettings, SecretPurpose, SecretRef, SecretValue};
 use lettuce_speech::{AudioProvider, UserVoice};
@@ -103,6 +103,21 @@ pub struct ProviderBackupSecret {
     pub value: SecretValue,
 }
 
+pub struct BackupMediaObject {
+    pub content_hash: lettuce_types::ContentHash,
+    pub bytes: zeroize::Zeroizing<Vec<u8>>,
+}
+
+impl fmt::Debug for BackupMediaObject {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BackupMediaObject")
+            .field("content_hash", &self.content_hash)
+            .field("bytes", &"[REDACTED]")
+            .finish()
+    }
+}
+
 impl fmt::Debug for ProviderBackupSecret {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -130,6 +145,7 @@ pub enum ProviderBackupGraphError {
 pub fn provider_backup_sections(
     mut graph: ProviderBackupGraph,
     secrets: Vec<ProviderBackupSecret>,
+    media: Vec<BackupMediaObject>,
 ) -> Result<Vec<BackupSection>, ProviderBackupGraphError> {
     canonicalize_and_validate(&mut graph)?;
     let expected = expected_secrets(&graph)?;
@@ -159,14 +175,17 @@ pub fn provider_backup_sections(
         secrets: ordered_secrets,
     })
     .map_err(|_| ProviderBackupGraphError::Serialization)?;
-    Ok(vec![
+    let media_sections = media_sections(&graph, media)?;
+    let mut sections = vec![
         BackupSection::new("data/provider-graph.json", "provider-graph.v2", metadata),
         BackupSection::new(
             "secrets/provider-secrets.json",
             "provider-secrets.v2",
             secret_bytes,
         ),
-    ])
+    ];
+    sections.extend(media_sections);
+    Ok(sections)
 }
 
 pub fn provider_backup_secret_requirements(
@@ -175,6 +194,67 @@ pub fn provider_backup_secret_requirements(
     let mut graph = graph.clone();
     canonicalize_and_validate(&mut graph)?;
     Ok(expected_secrets(&graph)?.into_iter().collect())
+}
+
+pub fn provider_backup_media_requirements(
+    graph: &ProviderBackupGraph,
+) -> Result<Vec<(lettuce_types::ContentHash, u64)>, ProviderBackupGraphError> {
+    let mut graph = graph.clone();
+    canonicalize_and_validate(&mut graph)?;
+    Ok(graph
+        .authored
+        .media_blobs
+        .into_iter()
+        .filter(|blob| blob.state == BlobState::Ready)
+        .map(|blob| (blob.content_hash, blob.byte_size))
+        .collect())
+}
+
+fn media_sections(
+    graph: &ProviderBackupGraph,
+    media: Vec<BackupMediaObject>,
+) -> Result<Vec<BackupSection>, ProviderBackupGraphError> {
+    let expected = graph
+        .authored
+        .media_blobs
+        .iter()
+        .filter(|blob| blob.state == BlobState::Ready)
+        .map(|blob| (&blob.content_hash, blob.byte_size))
+        .collect::<Vec<_>>();
+    if expected.len() != media.len() {
+        return Err(ProviderBackupGraphError::InvalidGraph);
+    }
+    let total = expected.iter().try_fold(0_usize, |total, (_, size)| {
+        if *size > MAX_MEDIA_BLOB_BYTES {
+            return Err(ProviderBackupGraphError::LimitExceeded);
+        }
+        let size = usize::try_from(*size).map_err(|_| ProviderBackupGraphError::LimitExceeded)?;
+        total
+            .checked_add(size)
+            .ok_or(ProviderBackupGraphError::LimitExceeded)
+    })?;
+    if total > crate::MAX_BACKUP_TOTAL_BYTES {
+        return Err(ProviderBackupGraphError::LimitExceeded);
+    }
+    let mut sections = Vec::with_capacity(expected.len());
+    for ((expected_hash, expected_size), object) in expected.into_iter().zip(media) {
+        if &object.content_hash != expected_hash
+            || object.bytes.len()
+                != usize::try_from(expected_size)
+                    .map_err(|_| ProviderBackupGraphError::LimitExceeded)?
+            || lettuce_types::ContentHash::parse(blake3::hash(&object.bytes).to_hex().to_string())
+                .as_ref()
+                != Ok(expected_hash)
+        {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+        sections.push(BackupSection::new(
+            format!("media/blobs/{expected_hash}"),
+            "media-blob.v2",
+            object.bytes.to_vec(),
+        ));
+    }
+    Ok(sections)
 }
 
 fn canonicalize_and_validate(
@@ -438,8 +518,12 @@ fn validate_authored(
     validate_owner_bindings(&authored.group_lorebooks, &group_ids, &lorebook_ids)?;
 
     let mut blob_kinds = BTreeMap::new();
+    let mut blob_hashes = BTreeSet::new();
     for blob in &authored.media_blobs {
-        if blob.validate().is_err() || blob_kinds.insert(blob.id, blob.kind).is_some() {
+        if blob.validate().is_err()
+            || blob_kinds.insert(blob.id, blob.kind).is_some()
+            || !blob_hashes.insert(blob.content_hash.clone())
+        {
             return Err(ProviderBackupGraphError::InvalidGraph);
         }
     }
@@ -605,7 +689,7 @@ mod tests {
     use super::*;
     use lettuce_models::{ProviderConfig, ProviderProtocol};
     use lettuce_settings::SecretOwnerId;
-    use lettuce_types::{ProviderAccountId, Revision, TimestampMillis};
+    use lettuce_types::{ContentHash, MediaBlobId, ProviderAccountId, Revision, TimestampMillis};
 
     fn graph(reference: SecretRef) -> ProviderBackupGraph {
         ProviderBackupGraph {
@@ -671,7 +755,7 @@ mod tests {
             owner: source_graph.accounts[0].secret_owner_id,
         };
         assert_eq!(
-            provider_backup_sections(source_graph.clone(), Vec::new()),
+            provider_backup_sections(source_graph.clone(), Vec::new(), Vec::new()),
             Err(ProviderBackupGraphError::InvalidSecrets)
         );
         let secret = ProviderBackupSecret {
@@ -681,7 +765,8 @@ mod tests {
             value: SecretValue::new("backup-secret-canary").expect("secret"),
         };
         assert!(!format!("{secret:?}").contains("backup-secret-canary"));
-        let sections = provider_backup_sections(source_graph, vec![secret]).expect("sections");
+        let sections =
+            provider_backup_sections(source_graph, vec![secret], Vec::new()).expect("sections");
         assert_eq!(sections.len(), 2);
         assert!(
             sections[1]
@@ -705,7 +790,7 @@ mod tests {
             value: SecretValue::new("orphan-secret").expect("secret"),
         };
         assert_eq!(
-            provider_backup_sections(graph(reference), vec![orphan]),
+            provider_backup_sections(graph(reference), vec![orphan], Vec::new()),
             Err(ProviderBackupGraphError::InvalidSecrets)
         );
 
@@ -760,5 +845,63 @@ mod tests {
             provider_backup_secret_requirements(&source_graph),
             Err(ProviderBackupGraphError::InvalidGraph)
         );
+    }
+
+    #[test]
+    fn ready_media_is_stored_once_and_must_match_its_snapshot() {
+        let reference = SecretRef::new();
+        let mut source_graph = graph(reference);
+        let bytes = b"verified image bytes".to_vec();
+        let content_hash =
+            ContentHash::parse(blake3::hash(&bytes).to_hex().to_string()).expect("content hash");
+        source_graph.authored.media_blobs.push(MediaBlob {
+            id: MediaBlobId::new(),
+            content_hash: content_hash.clone(),
+            kind: lettuce_media::MediaKind::Image,
+            mime_type: "image/png".into(),
+            byte_size: u64::try_from(bytes.len()).expect("byte size"),
+            width: Some(1),
+            height: Some(1),
+            duration_ms: None,
+            validation_version: 1,
+            state: BlobState::Ready,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        });
+        let purpose = SecretPurpose::ProviderApiKey {
+            owner: source_graph.accounts[0].secret_owner_id,
+        };
+        assert_eq!(
+            provider_backup_sections(
+                source_graph.clone(),
+                vec![ProviderBackupSecret {
+                    reference,
+                    purpose: purpose.clone(),
+                    generation: 1,
+                    value: SecretValue::new("secret").expect("secret"),
+                }],
+                vec![BackupMediaObject {
+                    content_hash: content_hash.clone(),
+                    bytes: zeroize::Zeroizing::new(b"changed bytes".to_vec()),
+                }],
+            ),
+            Err(ProviderBackupGraphError::InvalidGraph)
+        );
+        let sections = provider_backup_sections(
+            source_graph,
+            vec![ProviderBackupSecret {
+                reference,
+                purpose,
+                generation: 1,
+                value: SecretValue::new("secret").expect("secret"),
+            }],
+            vec![BackupMediaObject {
+                content_hash,
+                bytes: zeroize::Zeroizing::new(bytes.clone()),
+            }],
+        )
+        .expect("media sections");
+        assert_eq!(sections.len(), 3);
+        assert_eq!(&*sections[2].bytes, &bytes);
     }
 }
