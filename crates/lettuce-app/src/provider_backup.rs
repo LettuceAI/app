@@ -1769,6 +1769,29 @@ mod tests {
             open_backup(&envelope, "wrong password"),
             Err(BackupEnvelopeError::Authentication)
         );
+        let restore_plan = lettuce_transfer::decode_provider_backup_restore_plan(
+            &envelope,
+            "backup password",
+        )
+        .expect("restore plan");
+        assert_eq!(restore_plan.secrets.len(), 2);
+        assert!(restore_plan.secrets.iter().any(|secret| {
+            secret
+                .value
+                .with(|value| value == "provider-backup-canary")
+        }));
+        assert!(restore_plan.secrets.iter().any(|secret| {
+            secret.value.with(|value| value == "audio-backup-canary")
+        }));
+        assert!(restore_plan
+            .media
+            .iter()
+            .any(|object| object.content_hash == avatar.blob.content_hash));
+        assert!(restore_plan
+            .media
+            .iter()
+            .any(|object| object.content_hash == voice_audio.blob.content_hash));
+        assert!(!restore_plan.artifacts.is_empty());
         let sections = open_backup(&envelope, "backup password").expect("open backup");
         assert_eq!(sections.len(), 24);
         assert!(

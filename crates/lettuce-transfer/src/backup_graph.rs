@@ -18,7 +18,7 @@ use lettuce_types::{
     CharacterId, GroupId, LorebookId, ModelProfileId, PersonaId, PromptDocumentId, Revision,
     TimestampMillis,
 };
-use serde::{Serialize, Serializer, ser::SerializeStruct};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
 
 use crate::BackupSection;
 
@@ -32,7 +32,7 @@ pub const MAX_BACKUP_USER_VOICES: usize = 4_096;
 pub const MAX_BACKUP_AUTHORED_ROOTS: usize = 4_096;
 pub const MAX_BACKUP_MEDIA_RECORDS: usize = 65_536;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderBackupSelections {
     pub default_model_profile_id: Option<ModelProfileId>,
@@ -41,7 +41,7 @@ pub struct ProviderBackupSelections {
     pub default_prompt_document_id: Option<PromptDocumentId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BackupGlobalSettings {
     pub value: GlobalSettings,
@@ -50,14 +50,14 @@ pub struct BackupGlobalSettings {
     pub updated_at: TimestampMillis,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BackupLorebookBindings<Owner> {
     pub owner_id: Owner,
     pub bindings: Vec<LorebookBinding>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthoredProfileBackup {
     pub personas: Vec<Persona>,
@@ -328,7 +328,7 @@ pub fn provider_backup_artifact_requirements(
     all_conversation_artifact_descriptors(&graph)
 }
 
-fn all_conversation_artifact_descriptors(
+pub(crate) fn all_conversation_artifact_descriptors(
     graph: &ProviderBackupGraph,
 ) -> Result<Vec<TrustedArtifactDescriptor>, ProviderBackupGraphError> {
     let mut snapshots = BTreeMap::new();
@@ -463,7 +463,7 @@ fn media_sections(
     Ok(sections)
 }
 
-fn canonicalize_and_validate(
+pub(crate) fn canonicalize_and_validate(
     graph: &mut ProviderBackupGraph,
 ) -> Result<(), ProviderBackupGraphError> {
     if graph.version != PROVIDER_BACKUP_GRAPH_VERSION {
@@ -991,7 +991,7 @@ fn validate_owner_bindings<Owner: Ord>(
     Ok(())
 }
 
-fn expected_secrets(
+pub(crate) fn expected_secrets(
     graph: &ProviderBackupGraph,
 ) -> Result<BTreeMap<SecretRef, SecretPurpose>, ProviderBackupGraphError> {
     let mut expected = BTreeMap::new();
@@ -1238,6 +1238,111 @@ mod tests {
             provider_backup_secret_requirements(&duplicate_graph),
             Err(ProviderBackupGraphError::InvalidGraph)
         );
+    }
+
+    #[test]
+    fn restore_plan_decodes_the_complete_validated_inventory() {
+        let reference = SecretRef::new();
+        let source_graph = graph(reference);
+        let purpose = SecretPurpose::ProviderApiKey {
+            owner: source_graph.accounts[0].secret_owner_id,
+        };
+        let sections = provider_backup_sections(
+            source_graph.clone(),
+            vec![ProviderBackupSecret {
+                reference,
+                purpose: purpose.clone(),
+                generation: 7,
+                value: SecretValue::new("restore-secret-canary").expect("secret"),
+            }],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("sections");
+        let envelope = crate::seal_backup(
+            "restore-test",
+            TimestampMillis::new(10),
+            "backup password",
+            sections,
+        )
+        .expect("sealed backup");
+
+        let plan = crate::decode_provider_backup_restore_plan(&envelope, "backup password")
+            .expect("restore plan");
+        assert_eq!(plan.graph, source_graph);
+        assert_eq!(plan.secrets.len(), 1);
+        assert_eq!(plan.secrets[0].reference, reference);
+        assert_eq!(plan.secrets[0].purpose, purpose);
+        assert_eq!(plan.secrets[0].generation, 7);
+        assert!(
+            plan.secrets[0]
+                .value
+                .with(|value| value == "restore-secret-canary")
+        );
+        assert!(plan.media.is_empty());
+        assert!(plan.artifacts.is_empty());
+    }
+
+    #[test]
+    fn restore_plan_rejects_missing_and_unknown_sections() {
+        let reference = SecretRef::new();
+        let source_graph = graph(reference);
+        let purpose = SecretPurpose::ProviderApiKey {
+            owner: source_graph.accounts[0].secret_owner_id,
+        };
+        let make_sections = || {
+            provider_backup_sections(
+                source_graph.clone(),
+                vec![ProviderBackupSecret {
+                    reference,
+                    purpose: purpose.clone(),
+                    generation: 1,
+                    value: SecretValue::new("secret").expect("secret"),
+                }],
+                Vec::new(),
+                Vec::new(),
+            )
+            .expect("sections")
+        };
+        let mut missing = make_sections();
+        missing.retain(|section| section.name != "data/memory.json");
+        let missing_envelope = crate::seal_backup(
+            "restore-test",
+            TimestampMillis::new(10),
+            "backup password",
+            missing,
+        )
+        .expect("sealed backup");
+        assert!(matches!(
+            crate::decode_provider_backup_restore_plan(&missing_envelope, "backup password"),
+            Err(crate::ProviderBackupRestorePlanError::InvalidInventory)
+        ));
+
+        let mut unknown = make_sections();
+        unknown.push(BackupSection::new(
+            "data/unknown.json",
+            "unknown.v1",
+            b"{}".to_vec(),
+        ));
+        let unknown_envelope = crate::seal_backup(
+            "restore-test",
+            TimestampMillis::new(10),
+            "backup password",
+            unknown,
+        )
+        .expect("sealed backup");
+        assert!(matches!(
+            crate::decode_provider_backup_restore_plan(&unknown_envelope, "backup password"),
+            Err(crate::ProviderBackupRestorePlanError::InvalidInventory)
+        ));
+    }
+
+    #[test]
+    fn restore_plan_routes_unversioned_zip_backups_to_legacy_compatibility() {
+        assert!(matches!(
+            crate::decode_provider_backup_restore_plan(b"PK\x03\x04legacy", "backup password"),
+            Err(crate::ProviderBackupRestorePlanError::LegacyRequiresCompatibility)
+        ));
     }
 
     #[test]

@@ -242,3 +242,13 @@ sources, retry attempts, ordered inference rounds and calls, background results,
 summary checkpoints, usage details, replay references and timestamps. Validation
 binds these records to backed-up conversations, attempts, jobs and memory spaces;
 export performs no provider, tool, embedding or memory work.
+
+The version-2 restore decoder is read-only. It authenticates the complete
+envelope, requires the exact fixed section names and schemas, decodes every
+current document, validates the complete cross-domain graph, and inventories
+every expected secret, ready media blob and protected conversation artifact.
+Missing, duplicate, unknown, malformed or mismatched content rejects the entire
+plan before any database, secret store or filesystem mutation. A legacy ZIP is
+routed to the version-1 compatibility decoder. The source backup and existing
+database remain untouched; a later staged materialization and verified cutover
+must retain them until the user explicitly approves deletion.
