@@ -14,6 +14,7 @@ mod conversation_backup;
 mod conversation_outbox_backup;
 mod conversation_runtime_backup;
 mod job_backup;
+mod memory_backup;
 mod usage_backup;
 
 pub use backup::*;
@@ -24,6 +25,7 @@ pub use conversation_backup::*;
 pub use conversation_outbox_backup::*;
 pub use conversation_runtime_backup::*;
 pub use job_backup::*;
+pub use memory_backup::*;
 pub use usage_backup::*;
 
 use std::fmt;

@@ -215,3 +215,14 @@ user/assistant messages, checks the stored effect shape, and requires every
 invalidated effect to resolve through exactly one rewind. Memory IDs, memory-space
 ownership and dynamic-memory run identities remain cross-document dependencies
 for the following backup sections; they are not discarded or fabricated here.
+
+The memory document preserves every conversation-owned memory-space revision,
+its ordered authoritative typed items, optional cumulative summary and immutable
+retrieval-access receipts. Item access counters, cold/pinned state, importance,
+temporal source attribution and supersession metadata remain exact. Validation
+binds spaces and summary/item sources to conversation history, accesses to their
+generation attempts and revision transitions, and rewind/effect references to
+the matching conversation space when the referenced memory still exists.
+Historical memory IDs may be absent after an authorized hard delete; the backup
+does not fabricate tombstones. Rebuildable embedding projections and durable
+dynamic-memory execution records remain separate later documents.

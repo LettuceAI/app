@@ -316,7 +316,10 @@ mod tests {
         LocalSyncMediaStore, RetentionClass,
     };
     use lettuce_memory::{
-        DynamicMemorySuffixRewind, DynamicMemorySuffixRewindRepository, MemoryRepository,
+        DynamicMemorySuffixRewind, DynamicMemorySuffixRewindRepository, MemoryCategory,
+        MemoryChangeSet, MemoryItem, MemoryRepository, MemoryRetrievalAccess,
+        MemoryRetrievalRepository, MemorySummary, MemorySummaryChange, MemorySummaryRepository,
+        Score,
     };
     use lettuce_models::{
         ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository, ProviderAccount,
@@ -336,8 +339,8 @@ mod tests {
         ConversationHistoryBackupError, JobBackup, open_backup,
     };
     use lettuce_types::{
-        AudioProviderId, CharacterId, GroupId, MessageId, ModelProfileId, OperationId, PersonaId,
-        ProviderAccountId, Revision, StarterMessageId, ToolExecutionId, UsageEventId,
+        AudioProviderId, CharacterId, GroupId, MemoryId, MessageId, ModelProfileId, OperationId,
+        PersonaId, ProviderAccountId, Revision, StarterMessageId, ToolExecutionId, UsageEventId,
         VoiceProfileId,
     };
     use lettuce_usage::{
@@ -1228,6 +1231,67 @@ mod tests {
         )
         .expect("rewind companion effect");
         assert_eq!(rewind.invalidated_effect_ids, vec![effect.id]);
+        let memory_id = MemoryId::new();
+        let memory_after_item = MemoryRepository::compare_and_apply(
+            backend.database(),
+            MemoryChangeSet {
+                space_id: memory_space.id,
+                expected_revision: rewind.memory.revision,
+                items: vec![MemoryItem {
+                    id: memory_id,
+                    text: "The user asked to preserve full backup state.".into(),
+                    category: MemoryCategory::Preference,
+                    source_message_id: Some(effect_user_message_id),
+                    source_role: Some(MessageRole::User),
+                    observed_at: Some(TimestampMillis::new(20)),
+                    observed_time_precision: Some("turn".into()),
+                    superseded_by: None,
+                    superseded_at: None,
+                    supersedes: Vec::new(),
+                    token_count: 9,
+                    is_cold: true,
+                    is_pinned: false,
+                    importance: Score::from_basis_points(4_000).expect("importance"),
+                    persistence_importance: Score::from_basis_points(8_000)
+                        .expect("persistence importance"),
+                    prompt_importance: Score::from_basis_points(6_000).expect("prompt importance"),
+                    volatility: Score::LEGACY_VOLATILITY,
+                    access_count: 0,
+                    created_at: TimestampMillis::new(28),
+                    last_accessed_at: TimestampMillis::new(28),
+                }],
+            },
+        )
+        .expect("store backup memory");
+        let memory_summary = MemorySummaryRepository::compare_and_apply_summary(
+            backend.database(),
+            MemorySummaryChange {
+                expected_revision: memory_after_item.revision,
+                summary: MemorySummary {
+                    space_id: memory_space.id,
+                    text: "The conversation established a backup preference.".into(),
+                    token_count: 7,
+                    window_start: 0,
+                    window_end: 2,
+                    source_message_ids: vec![effect_user_message_id, effect.assistant_message_id],
+                    updated_at: TimestampMillis::new(29),
+                },
+            },
+        )
+        .expect("store backup memory summary");
+        let memory_access = MemoryRetrievalRepository::apply_retrieval_access(
+            backend.database(),
+            MemoryRetrievalAccess {
+                conversation_id: direct_conversation.id,
+                turn_id: effect_send.turn.id,
+                attempt_id: effect_attempt_id,
+                space_id: memory_space.id,
+                expected_revision: memory_summary.memory.revision,
+                selected_memory_ids: vec![memory_id],
+                accessed_at: TimestampMillis::new(30),
+            },
+        )
+        .expect("record backup memory access");
         let group_conversation = backend
             .launch_group_conversation(
                 &GroupConversationLaunchRequest {
@@ -1485,7 +1549,7 @@ mod tests {
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 21);
+        assert_eq!(sections.len(), 22);
         assert!(
             sections[1]
                 .bytes
@@ -1598,6 +1662,8 @@ mod tests {
             serde_json::from_slice(&sections[8].bytes).expect("companion state JSON");
         let companion_effects: lettuce_transfer::CompanionEffectBackup =
             serde_json::from_slice(&sections[9].bytes).expect("companion effects JSON");
+        let memory: lettuce_transfer::MemoryBackup =
+            serde_json::from_slice(&sections[10].bytes).expect("memory JSON");
         assert_eq!(usage.events.len(), 3);
         let known = usage
             .events
@@ -1693,6 +1759,31 @@ mod tests {
         assert_eq!(
             corrupt_effects.canonicalize_and_validate(&history, &runtime),
             Err(lettuce_transfer::CompanionEffectBackupError::InvalidData)
+        );
+        assert_eq!(memory.spaces.len(), 2);
+        let direct_memory = memory
+            .spaces
+            .iter()
+            .find(|space| space.conversation_id == direct_conversation.id)
+            .expect("direct memory");
+        assert_eq!(
+            direct_memory.snapshot.revision,
+            memory_access.resulting_revision
+        );
+        assert_eq!(direct_memory.snapshot.items.len(), 1);
+        assert_eq!(direct_memory.snapshot.items[0].id, memory_id);
+        assert_eq!(direct_memory.snapshot.items[0].access_count, 2);
+        assert!(!direct_memory.snapshot.items[0].is_cold);
+        assert_eq!(
+            direct_memory.summary.as_ref().expect("memory summary"),
+            &memory_summary.summary
+        );
+        assert_eq!(memory.retrieval_accesses, vec![memory_access.clone()]);
+        let mut corrupt_memory = memory.clone();
+        corrupt_memory.retrieval_accesses[0].access.space_id = lettuce_types::MemorySpaceId::new();
+        assert_eq!(
+            corrupt_memory.canonicalize_and_validate(&history, &runtime, &companion_effects),
+            Err(lettuce_transfer::MemoryBackupError::InvalidData)
         );
         let backed_up_job = jobs
             .jobs

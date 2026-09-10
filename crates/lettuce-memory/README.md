@@ -119,3 +119,8 @@ the earliest invalid run's immutable starting memory snapshot, restores the
 latest earlier summary checkpoint (or clears the summary), and retires the
 named companion effects in the same storage transaction. Selecting the invalid
 suffix from tombstoned message IDs remains application-owned.
+
+The authoritative space, item, summary and retrieval-access types also form the
+versioned full-profile backup document. Backup validation reuses their existing
+invariants and preserves the exact access metadata that affects later retrieval;
+it does not recalculate scores or include rebuildable embedding vectors.

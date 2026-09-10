@@ -705,3 +705,10 @@ memory and summary snapshots are decoded as versioned domain values, and ordered
 effect invalidations remain attached to their rewind operation. The database
 does not interpret these rows as current memory state or recalculate companion
 effects during export.
+
+Authoritative conversation memory spaces now leave the same snapshot through
+the existing strict memory and summary hydrators. The adapter includes every
+ordered item and summary source cursor, then decodes immutable retrieval-access
+rows with their exact attempt owner and before/after revisions. Embedding
+projection BLOBs and dynamic-memory run tables are intentionally left for their
+own bounded documents.
