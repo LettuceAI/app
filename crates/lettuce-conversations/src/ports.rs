@@ -644,7 +644,8 @@ pub enum ConversationOutboxEvent {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConversationOutboxRecord {
     pub format_version: u32,
     pub id: lettuce_types::OutboxEventId,
@@ -870,7 +871,8 @@ pub enum OperationResultRef {
     Branch(ConversationBranchId),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OperationRecord {
     pub id: OperationRecordId,
     pub conversation_id: ConversationId,

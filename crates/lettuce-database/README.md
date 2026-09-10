@@ -684,3 +684,10 @@ same deferred backup snapshot through the existing strict usage decoder. Histori
 events remain valid when their provider account or model profile has since been
 deleted. The adapter derives exact overlap IDs from retained job inference
 evidence, rejects orphan cost rows, and does not calculate or combine charges.
+
+The same transaction reads all conversation operation records and immutable
+outbox events through their existing typed documents and relational validators.
+It preserves operations that emit no event, verifies scalar result projections,
+event timestamps, ownership and current foreign-key targets, and applies bounded
+global limits before the journal leaves SQLite. Consumer delivery state is not
+fabricated because migration 8 stores no lease or acknowledgement table.

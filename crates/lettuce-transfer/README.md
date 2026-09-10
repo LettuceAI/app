@@ -189,3 +189,11 @@ so restore and reporting can preserve both audit trails without treating them as
 independent charges. Validation requires every terminal runtime usage reference
 to resolve and rejects changed ownership, invalid pricing inputs, orphan costs,
 or incomplete overlap metadata.
+
+The conversation-outbox document retains every idempotency operation record and
+the complete immutable per-conversation event journal. Operations without an
+outbox event remain included because checkpoint and preparation replay also
+depend on them. Validation requires contiguous event sequences, exact operation
+links and timestamps, and valid history, runtime and usage references. The
+legacy UI emitted transient Tauri events; the current schema has no durable
+consumer lease or delivery state to export.

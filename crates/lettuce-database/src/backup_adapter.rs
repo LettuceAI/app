@@ -1,11 +1,13 @@
 use lettuce_transfer::{
     ASR_LEARNING_DOCUMENT_VERSION, AsrLearningAudioAsset, AsrLearningDocument,
-    AuthoredProfileBackup, BackupConversation, BackupConversationRuntime, BackupConversationUsage,
-    BackupGenerationAttemptRuntime, BackupGenerationCheckpoint, BackupGenerationTurn,
-    BackupGlobalSettings, BackupJobInference, BackupLorebookBindings, BackupMessage,
-    CONVERSATION_HISTORY_BACKUP_VERSION, CONVERSATION_RUNTIME_BACKUP_VERSION,
-    CONVERSATION_USAGE_BACKUP_VERSION, ConversationHistoryBackup, ConversationRuntimeBackup,
+    AuthoredProfileBackup, BackupConversation, BackupConversationOutbox, BackupConversationRuntime,
+    BackupConversationUsage, BackupGenerationAttemptRuntime, BackupGenerationCheckpoint,
+    BackupGenerationTurn, BackupGlobalSettings, BackupJobInference, BackupLorebookBindings,
+    BackupMessage, CONVERSATION_HISTORY_BACKUP_VERSION, CONVERSATION_OUTBOX_BACKUP_VERSION,
+    CONVERSATION_RUNTIME_BACKUP_VERSION, CONVERSATION_USAGE_BACKUP_VERSION,
+    ConversationHistoryBackup, ConversationOutboxBackup, ConversationRuntimeBackup,
     ConversationUsageBackup, JOB_BACKUP_VERSION, JobBackup, MAX_BACKUP_AUTHORED_ROOTS,
+    MAX_BACKUP_CONVERSATION_OPERATIONS, MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS,
     MAX_BACKUP_CONVERSATION_USAGE_EVENTS, MAX_BACKUP_CONVERSATIONS,
     MAX_BACKUP_GENERATION_CHECKPOINTS, MAX_BACKUP_GENERATION_TURNS, MAX_BACKUP_JOB_EVENTS,
     MAX_BACKUP_JOB_INFERENCE_EVENTS, MAX_BACKUP_JOBS, MAX_BACKUP_MEDIA_RECORDS,
@@ -305,6 +307,7 @@ impl ProviderBackupSource for Database {
         let conversation_runtime = read_conversation_runtime(&transaction, &conversation_history)?;
         let job_backup = read_job_backup(&transaction)?;
         let conversation_usage = read_conversation_usage(&transaction, &job_backup)?;
+        let conversation_outbox = read_conversation_outbox(&transaction, &conversation_history)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             version: PROVIDER_BACKUP_GRAPH_VERSION,
@@ -332,8 +335,182 @@ impl ProviderBackupSource for Database {
             conversation_runtime,
             job_backup,
             conversation_usage,
+            conversation_outbox,
         })
     }
+}
+
+fn read_conversation_outbox(
+    transaction: &rusqlite::Transaction<'_>,
+    history: &ConversationHistoryBackup,
+) -> Result<ConversationOutboxBackup, ProviderBackupSourceError> {
+    let mut conversations = history
+        .conversations
+        .iter()
+        .map(|conversation| {
+            (
+                conversation.aggregate.conversation.id,
+                BackupConversationOutbox {
+                    conversation_id: conversation.aggregate.conversation.id,
+                    operations: Vec::new(),
+                    events: Vec::new(),
+                },
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut statement = transaction
+        .prepare(&format!(
+            "SELECT id,conversation_id,kind,operation_key,request_digest,result_kind,result_id,result_json,created_at FROM conversation_operations ORDER BY conversation_id,created_at,id LIMIT {}",
+            MAX_BACKUP_CONVERSATION_OPERATIONS + 1
+        ))
+        .map_err(backup_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, i64>(8)?,
+            ))
+        })
+        .map_err(backup_error)?;
+    let mut operation_count = 0_usize;
+    for row in rows {
+        let (
+            id,
+            conversation_id,
+            kind,
+            key,
+            digest,
+            result_kind,
+            result_id,
+            result_json,
+            created_at,
+        ) = row.map_err(backup_error)?;
+        operation_count += 1;
+        if operation_count > MAX_BACKUP_CONVERSATION_OPERATIONS {
+            return Err(ProviderBackupSourceError::InvalidData);
+        }
+        let conversation_id: ConversationId = conversation_id
+            .parse()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let kind = crate::conversation_query::operation_kind(&kind)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let result: lettuce_conversations::OperationResultRef =
+            crate::conversation_vertical_slice::decode(&result_json)
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let (expected_kind, expected_id) = match &result {
+            lettuce_conversations::OperationResultRef::Conversation(id) => {
+                ("conversation", id.to_string())
+            }
+            lettuce_conversations::OperationResultRef::Turn(id) => ("turn", id.to_string()),
+            lettuce_conversations::OperationResultRef::Message(id) => ("message", id.to_string()),
+            lettuce_conversations::OperationResultRef::Candidate(id) => {
+                ("candidate", id.to_string())
+            }
+            lettuce_conversations::OperationResultRef::Branch(id) => ("branch", id.to_string()),
+        };
+        if result_kind != expected_kind || result_id != expected_id {
+            return Err(ProviderBackupSourceError::InvalidData);
+        }
+        crate::conversation_query::validate_operation_result_ownership(
+            transaction,
+            conversation_id,
+            &result,
+        )
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        conversations
+            .get_mut(&conversation_id)
+            .ok_or(ProviderBackupSourceError::InvalidData)?
+            .operations
+            .push(lettuce_conversations::OperationRecord {
+                id: id
+                    .parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                conversation_id,
+                kind,
+                operation: lettuce_conversations::OperationToken {
+                    key: key
+                        .parse()
+                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    request_digest: digest
+                        .parse()
+                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                },
+                result,
+                created_at: TimestampMillis::new(created_at),
+            });
+    }
+    drop(statement);
+    let mut statement = transaction
+        .prepare(&format!(
+            "SELECT conversation_id,id,sequence,conversation_revision,operation_record_id,at,event_json FROM conversation_outbox ORDER BY conversation_id,sequence,id LIMIT {}",
+            MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS + 1
+        ))
+        .map_err(backup_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, String>(6)?,
+            ))
+        })
+        .map_err(backup_error)?;
+    let mut event_count = 0_usize;
+    for row in rows {
+        let (conversation_id, id, sequence, revision, operation_id, at, event_json) =
+            row.map_err(backup_error)?;
+        event_count += 1;
+        if event_count > MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS {
+            return Err(ProviderBackupSourceError::InvalidData);
+        }
+        let conversation_id: ConversationId = conversation_id
+            .parse()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let record = lettuce_conversations::ConversationOutboxRecord {
+            format_version: 1,
+            id: id
+                .parse()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            conversation_id,
+            conversation_revision: Revision::new(
+                u64::try_from(revision).map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            ),
+            sequence: u64::try_from(sequence)
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            operation_record_id: operation_id
+                .parse()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            at: TimestampMillis::new(at),
+            event: crate::conversation_vertical_slice::decode(&event_json)
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+        };
+        record
+            .validate()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        crate::conversation_query::validate_outbox_event_timestamp(&record)
+            .and_then(|()| crate::conversation_query::validate_outbox_event(transaction, &record))
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        conversations
+            .get_mut(&conversation_id)
+            .ok_or(ProviderBackupSourceError::InvalidData)?
+            .events
+            .push(record);
+    }
+    Ok(ConversationOutboxBackup {
+        version: CONVERSATION_OUTBOX_BACKUP_VERSION,
+        conversations: conversations.into_values().collect(),
+    })
 }
 
 fn read_conversation_usage(

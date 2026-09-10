@@ -293,11 +293,12 @@ mod tests {
         DetectionPolicy, LorebookBehaviorVersion, LorebookMetadataDraft, LorebookRepository,
     };
     use lettuce_conversations::{
-        ConversationKind, ConversationReader, ConversationRepository, GenerationCheckpointEnvelope,
-        GenerationCheckpointEvent, GenerationFailureCode, GenerationTurnStatus, MessageDraft,
-        MessagePart, MessageRole, MessageVisibility, OperationToken, SendConversation,
-        ToolExecution, ToolExecutionRepository, ToolExecutionStatus, ToolOutput, UsageCounters,
-        UsageOutcome, UsageRecord, UsageUnavailableReason,
+        ConversationKind, ConversationOutboxEvent, ConversationReader, ConversationRepository,
+        GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationFailureCode,
+        GenerationTurnStatus, MessageDraft, MessagePart, MessageRole, MessageVisibility,
+        OperationToken, SendConversation, ToolExecution, ToolExecutionRepository,
+        ToolExecutionStatus, ToolOutput, UsageCounters, UsageOutcome, UsageRecord,
+        UsageUnavailableReason,
     };
     use lettuce_database::Database;
     use lettuce_jobs::{
@@ -1214,7 +1215,7 @@ mod tests {
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 16);
+        assert_eq!(sections.len(), 17);
         assert!(
             sections[1]
                 .bytes
@@ -1321,6 +1322,8 @@ mod tests {
         let jobs: JobBackup = serde_json::from_slice(&sections[5].bytes).expect("jobs JSON");
         let usage: lettuce_transfer::ConversationUsageBackup =
             serde_json::from_slice(&sections[6].bytes).expect("conversation usage JSON");
+        let outbox: lettuce_transfer::ConversationOutboxBackup =
+            serde_json::from_slice(&sections[7].bytes).expect("conversation outbox JSON");
         assert_eq!(usage.events.len(), 2);
         let known = usage
             .events
@@ -1340,6 +1343,41 @@ mod tests {
         ));
         assert!(unavailable.cost_basis.is_none());
         assert!(unavailable.overlapping_job_inference_ids.is_empty());
+        assert_eq!(outbox.conversations.len(), 2);
+        let direct_outbox = outbox
+            .conversations
+            .iter()
+            .find(|journal| journal.conversation_id == direct_conversation.id)
+            .expect("direct conversation outbox");
+        assert!(direct_outbox.operations.len() > direct_outbox.events.len());
+        assert_eq!(
+            direct_outbox
+                .events
+                .iter()
+                .map(|event| event.sequence)
+                .collect::<Vec<_>>(),
+            (1..=u64::try_from(direct_outbox.events.len()).expect("outbox length"))
+                .collect::<Vec<_>>()
+        );
+        assert!(direct_outbox.events.iter().any(|event| {
+            matches!(
+                event.event,
+                ConversationOutboxEvent::TurnFailed { usage_event_id, .. }
+                    if usage_event_id == unavailable_usage.id
+            )
+        }));
+        let mut corrupt_outbox = outbox.clone();
+        corrupt_outbox
+            .conversations
+            .iter_mut()
+            .find(|journal| journal.conversation_id == direct_conversation.id)
+            .expect("direct conversation outbox")
+            .events[1]
+            .sequence = 1;
+        assert_eq!(
+            corrupt_outbox.canonicalize_and_validate(&history, &runtime, &usage),
+            Err(lettuce_transfer::ConversationOutboxBackupError::InvalidData)
+        );
         let backed_up_job = jobs
             .jobs
             .iter()

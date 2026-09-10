@@ -1110,3 +1110,8 @@ The same file-backed export preserves conversation UsageLedger evidence for both
 known provider counters with its captured pricing basis and unavailable counters
 with their exact reason. Matching job inference is identified as overlapping
 audit evidence rather than an additional charge, including after database reopen.
+
+Conversation operation replay records and the complete immutable outbox journal
+are exported from the same reopened snapshot. The scenario verifies contiguous
+event order, terminal usage linkage, retained operations that emitted no event,
+and rejection of a duplicated sequence.

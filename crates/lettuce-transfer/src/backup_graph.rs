@@ -93,6 +93,8 @@ pub struct ProviderBackupGraph {
     pub job_backup: crate::JobBackup,
     #[serde(skip)]
     pub conversation_usage: crate::ConversationUsageBackup,
+    #[serde(skip)]
+    pub conversation_outbox: crate::ConversationOutboxBackup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -203,6 +205,8 @@ pub fn provider_backup_sections(
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let conversation_usage = serde_json::to_vec(&graph.conversation_usage)
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
+    let conversation_outbox = serde_json::to_vec(&graph.conversation_outbox)
+        .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let ordered_secrets = expected
         .keys()
         .map(|reference| supplied[reference])
@@ -237,6 +241,11 @@ pub fn provider_backup_sections(
             "data/conversation-usage.json",
             "conversation-usage.v1",
             conversation_usage,
+        ),
+        BackupSection::new(
+            "data/conversation-outbox.json",
+            "conversation-outbox.v1",
+            conversation_outbox,
         ),
     ];
     sections.extend(media_sections);
@@ -606,6 +615,21 @@ fn canonicalize_and_validate(
                 ProviderBackupGraphError::LimitExceeded
             }
             crate::ConversationUsageBackupError::InvalidData => {
+                ProviderBackupGraphError::InvalidGraph
+            }
+        })?;
+    graph
+        .conversation_outbox
+        .canonicalize_and_validate(
+            &graph.conversation_history,
+            &graph.conversation_runtime,
+            &graph.conversation_usage,
+        )
+        .map_err(|error| match error {
+            crate::ConversationOutboxBackupError::LimitExceeded => {
+                ProviderBackupGraphError::LimitExceeded
+            }
+            crate::ConversationOutboxBackupError::InvalidData => {
                 ProviderBackupGraphError::InvalidGraph
             }
         })
@@ -1050,6 +1074,10 @@ mod tests {
                 version: crate::CONVERSATION_USAGE_BACKUP_VERSION,
                 events: Vec::new(),
             },
+            conversation_outbox: crate::ConversationOutboxBackup {
+                version: crate::CONVERSATION_OUTBOX_BACKUP_VERSION,
+                conversations: Vec::new(),
+            },
         }
     }
 
@@ -1073,7 +1101,7 @@ mod tests {
         assert!(!format!("{secret:?}").contains("backup-secret-canary"));
         let sections = provider_backup_sections(source_graph, vec![secret], Vec::new(), Vec::new())
             .expect("sections");
-        assert_eq!(sections.len(), 7);
+        assert_eq!(sections.len(), 8);
         assert!(
             sections[1]
                 .bytes
@@ -1209,7 +1237,7 @@ mod tests {
             Vec::new(),
         )
         .expect("media sections");
-        assert_eq!(sections.len(), 8);
-        assert_eq!(&*sections[7].bytes, &bytes);
+        assert_eq!(sections.len(), 9);
+        assert_eq!(&*sections[8].bytes, &bytes);
     }
 }
