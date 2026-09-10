@@ -1464,6 +1464,8 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "प्रतिक्रिया के लिए आरक्षित",
       tokenBreakdownReservedSplit: "(प्रतिक्रिया: {{response}} / reasoning: {{reasoning}})",
       tokenBreakdownOccupied: "उपयोग में",
+      tokenBreakdownOverReserved:
+        "अति-आरक्षण: प्रॉम्प्ट + आरक्षित उत्तर संदर्भ विंडो को {{overflow}} टोकन से पार कर जाते हैं। मॉडल प्रॉम्प्ट को छोटा कर देगा या उत्तर को बीच में काट देगा — अधिकतम टोकन या संदर्भ सामग्री कम करें।",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "टोकन गिने जा रहे हैं…",
       tokenBreakdownCompanionSuffix: "(आंतरिक जीवन / शेड्यूल्ड नोट्स)",

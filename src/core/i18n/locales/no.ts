@@ -1464,6 +1464,8 @@ export const noMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "Reservert for svar",
       tokenBreakdownReservedSplit: "(svar: {{response}} / resonnering: {{reasoning}})",
       tokenBreakdownOccupied: "Opptatt",
+      tokenBreakdownOverReserved:
+        "Overreservering: prompt + reservert svar overskrider kontekstvinduet med {{overflow}} tokens. Modellen vil forkorte prompten eller avbryte svaret — reduser maks tokens eller kontekstinnhold.",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "Teller tokens…",
       tokenBreakdownCompanionSuffix: "(indre liv / planlagte notater)",

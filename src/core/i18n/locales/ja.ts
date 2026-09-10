@@ -1464,6 +1464,8 @@ export const jaMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "応答用に予約",
       tokenBreakdownReservedSplit: "(応答: {{response}} / 推論: {{reasoning}})",
       tokenBreakdownOccupied: "使用中",
+      tokenBreakdownOverReserved:
+        "過剰予約: プロンプトと予約済みの応答がコンテキストウィンドウを {{overflow}} トークン超過しています。モデルはプロンプトを切り詰めるか、応答を途中で打ち切ります。最大トークン数またはコンテキストの内容を減らしてください。",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "トークンを計算中…",
       tokenBreakdownCompanionSuffix: "(内面 / 予約ノート)",

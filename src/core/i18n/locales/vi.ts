@@ -1464,6 +1464,8 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "Dành cho phản hồi",
       tokenBreakdownReservedSplit: "(phản hồi: {{response}} / suy luận: {{reasoning}})",
       tokenBreakdownOccupied: "Đã dùng",
+      tokenBreakdownOverReserved:
+        "Đặt trước quá mức: prompt + phản hồi được dành riêng vượt quá cửa sổ ngữ cảnh {{overflow}} token. Mô hình sẽ cắt bớt prompt hoặc kết thúc phản hồi sớm — hãy giảm token tối đa hoặc nội dung ngữ cảnh.",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "Đang đếm token…",
       tokenBreakdownCompanionSuffix: "(đời sống nội tâm / ghi chú theo lịch)",

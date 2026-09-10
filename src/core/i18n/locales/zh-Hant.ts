@@ -1464,6 +1464,8 @@ export const zhHantMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "為回覆保留 (Reserved for Response)",
       tokenBreakdownReservedSplit: "(回覆 Response: {{response}} / 推理 Reasoning: {{reasoning}})",
       tokenBreakdownOccupied: "已佔用 (Occupied)",
+      tokenBreakdownOverReserved:
+        "超額預留：提示詞 + 預留的回覆超出上下文視窗 {{overflow}} 個 token。模型將截斷提示詞或提前結束回覆——請減少最大 token 數或上下文內容。",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "正在計算 token…",
       tokenBreakdownCompanionSuffix: "(內心 / 排程筆記 (inner life / scheduled notes))",

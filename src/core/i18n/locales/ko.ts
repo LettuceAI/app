@@ -1464,6 +1464,8 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "응답용 예약",
       tokenBreakdownReservedSplit: "(응답: {{response}} / 추론: {{reasoning}})",
       tokenBreakdownOccupied: "사용 중",
+      tokenBreakdownOverReserved:
+        "과잉 예약: 프롬프트 + 예약된 응답이 컨텍스트 창을 {{overflow}} 토큰만큼 초과합니다. 모델이 프롬프트를 잘라내거나 응답을 도중에 끊습니다 — 최대 토큰 수나 컨텍스트 내용을 줄이세요.",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "토큰 계산 중…",
       tokenBreakdownCompanionSuffix: "(내면 / 예약된 노트)",

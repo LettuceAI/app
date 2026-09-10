@@ -1464,6 +1464,8 @@ export const idMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "Dicadangkan untuk respons",
       tokenBreakdownReservedSplit: "(respons: {{response}} / penalaran: {{reasoning}})",
       tokenBreakdownOccupied: "Terpakai",
+      tokenBreakdownOverReserved:
+        "Kelebihan reservasi: prompt + respons yang dicadangkan melebihi jendela konteks sebesar {{overflow}} token. Model akan memotong prompt atau mempersingkat respons — kurangi token maksimum atau konten konteks.",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "Menghitung token…",
       tokenBreakdownCompanionSuffix: "(kehidupan batin / catatan terjadwal)",

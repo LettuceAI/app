@@ -1464,6 +1464,8 @@ export const trMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "Yanıt için ayrılan",
       tokenBreakdownReservedSplit: "(yanıt: {{response}} / akıl yürütme: {{reasoning}})",
       tokenBreakdownOccupied: "Dolu",
+      tokenBreakdownOverReserved:
+        "Aşırı rezervasyon: istem + ayrılan yanıt bağlam penceresini {{overflow}} token aşıyor. Model istemi kısaltır veya yanıtı yarıda keser — maksimum token sayısını ya da bağlam içeriğini azaltın.",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "Tokenlar sayılıyor…",
       tokenBreakdownCompanionSuffix: "(iç dünya / planlanmış notlar)",

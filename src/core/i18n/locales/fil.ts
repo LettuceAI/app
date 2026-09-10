@@ -1464,6 +1464,8 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "Nakalaan para sa tugon",
       tokenBreakdownReservedSplit: "(tugon: {{response}} / reasoning: {{reasoning}})",
       tokenBreakdownOccupied: "Gamit na",
+      tokenBreakdownOverReserved:
+        "Sobrang reserba: ang prompt + nakareserbang tugon ay lumalampas sa context window nang {{overflow}} na token. Puputulin ng modelo ang prompt o paiikliin ang tugon — bawasan ang max tokens o nilalaman ng konteksto.",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "Binibilang ang mga token…",
       tokenBreakdownCompanionSuffix: "(panloob na buhay / mga naka-iskedyul na tala)",

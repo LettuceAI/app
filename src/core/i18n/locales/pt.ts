@@ -1464,6 +1464,8 @@ export const ptMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "Reservado para a resposta",
       tokenBreakdownReservedSplit: "(resposta: {{response}} / raciocínio: {{reasoning}})",
       tokenBreakdownOccupied: "Ocupado",
+      tokenBreakdownOverReserved:
+        "Sobrerreserva: o prompt + a resposta reservada excedem a janela de contexto em {{overflow}} tokens. O modelo truncará o prompt ou encurtará a resposta — reduza o máximo de tokens ou o conteúdo do contexto.",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "Contando tokens…",
       tokenBreakdownCompanionSuffix: "(vida interior / notas agendadas)",

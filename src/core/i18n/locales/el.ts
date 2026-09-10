@@ -1464,6 +1464,8 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "Δεσμευμένο για την απάντηση",
       tokenBreakdownReservedSplit: "(απάντηση: {{response}} / συλλογισμός: {{reasoning}})",
       tokenBreakdownOccupied: "Κατειλημμένο",
+      tokenBreakdownOverReserved:
+        "Υπερδέσμευση: το prompt + η δεσμευμένη απάντηση υπερβαίνουν το παράθυρο περιβάλλοντος κατά {{overflow}} token. Το μοντέλο θα περικόψει το prompt ή θα κόψει απότομα την απάντηση — μειώστε τα μέγιστα token ή το περιεχόμενο περιβάλλοντος.",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "Καταμέτρηση token…",
       tokenBreakdownCompanionSuffix: "(εσωτερική ζωή / προγραμματισμένες σημειώσεις)",

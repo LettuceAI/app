@@ -1464,6 +1464,8 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "Зарезервировано для ответа",
       tokenBreakdownReservedSplit: "(ответ: {{response}} / рассуждение: {{reasoning}})",
       tokenBreakdownOccupied: "Занято",
+      tokenBreakdownOverReserved:
+        "Избыточное резервирование: промпт + зарезервированный ответ превышают контекстное окно на {{overflow}} токенов. Модель обрежет промпт или оборвёт ответ — уменьшите максимум токенов или содержимое контекста.",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "Подсчёт токенов…",
       tokenBreakdownCompanionSuffix: "(внутренняя жизнь / запланированные заметки)",

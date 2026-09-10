@@ -569,6 +569,21 @@ export function PromptTokenBreakdownBars({ data }: { data: TokenBreakdownData })
               </span>
             </div>
           </div>
+          {occupiedTotal > contextLength ? (
+            <div
+              className="flex items-start gap-2 rounded border border-red-500/40 bg-red-500/10 px-2.5 py-2 text-red-400"
+              role="alert"
+            >
+              <span aria-hidden className="shrink-0 leading-tight">
+                ⚠
+              </span>
+              <span className="leading-snug">
+                {t("chats.debugPage.tokenBreakdownOverReserved", {
+                  overflow: String(occupiedTotal - contextLength),
+                })}
+              </span>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <div className={contextLength ? "space-y-3 border-t border-fg/10 pt-3" : "space-y-3"}>

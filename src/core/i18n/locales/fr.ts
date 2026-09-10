@@ -1464,6 +1464,8 @@ export const frMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "Réservé pour la réponse",
       tokenBreakdownReservedSplit: "(réponse: {{response}} / raisonnement: {{reasoning}})",
       tokenBreakdownOccupied: "Occupé",
+      tokenBreakdownOverReserved:
+        "Sur-réservation : le prompt + la réponse réservée dépassent la fenêtre de contexte de {{overflow}} tokens. Le modèle tronquera le prompt ou écourtera la réponse — réduisez le nombre max de tokens ou le contenu du contexte.",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "Comptage des tokens…",
       tokenBreakdownCompanionSuffix: "(vie intérieure / notes programmées)",

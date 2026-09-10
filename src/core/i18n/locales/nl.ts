@@ -1464,6 +1464,8 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
       tokenBreakdownReserved: "Gereserveerd voor antwoord",
       tokenBreakdownReservedSplit: "(antwoord: {{response}} / redenering: {{reasoning}})",
       tokenBreakdownOccupied: "Bezet",
+      tokenBreakdownOverReserved:
+        "Overreservering: prompt + gereserveerd antwoord overschrijden het contextvenster met {{overflow}} tokens. Het model kapt de prompt af of breekt het antwoord voortijdig af — verlaag het maximale aantal tokens of de contextinhoud.",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "Tokens tellen…",
       tokenBreakdownCompanionSuffix: "(innerlijk leven / geplande notities)",

@@ -1571,6 +1571,8 @@ export const enMessages = {
       tokenBreakdownReserved: "Reserved for response",
       tokenBreakdownReservedSplit: "(response: {{response}} / reasoning: {{reasoning}})",
       tokenBreakdownOccupied: "Occupied",
+      tokenBreakdownOverReserved:
+        "Over-reservation: prompt + reserved response exceed the context window by {{overflow}} tokens. The model will truncate the prompt or cut the response short — reduce max tokens or context content.",
       tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
       tokenBreakdownComputing: "Counting tokens…",
       tokenBreakdownCompanionSuffix: "(inner life / scheduled notes)",
