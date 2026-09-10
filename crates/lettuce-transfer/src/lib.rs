@@ -9,6 +9,7 @@
 mod backup;
 mod backup_graph;
 mod companion_state_backup;
+mod companion_effect_backup;
 mod conversation_backup;
 mod conversation_outbox_backup;
 mod conversation_runtime_backup;
@@ -18,6 +19,7 @@ mod usage_backup;
 pub use backup::*;
 pub use backup_graph::*;
 pub use companion_state_backup::*;
+pub use companion_effect_backup::*;
 pub use conversation_backup::*;
 pub use conversation_outbox_backup::*;
 pub use conversation_runtime_backup::*;

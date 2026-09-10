@@ -7,10 +7,10 @@ use lettuce_conversations::{
 use lettuce_settings::{SecretState, SecretStore};
 use lettuce_transfer::{
     BackupConversationArtifact, BackupEnvelopeError, BackupMediaObject, MAX_BACKUP_ENTRIES,
-    MAX_BACKUP_TOTAL_BYTES, ProviderBackupGraphError, ProviderBackupSecret, ProviderBackupSource,
-    ProviderBackupSourceError, provider_backup_artifact_requirements,
-    provider_backup_media_requirements, provider_backup_secret_requirements,
-    provider_backup_sections, seal_backup,
+    MAX_BACKUP_TOTAL_BYTES, PROVIDER_BACKUP_FIXED_SECTIONS, ProviderBackupGraphError,
+    ProviderBackupSecret, ProviderBackupSource, ProviderBackupSourceError,
+    provider_backup_artifact_requirements, provider_backup_media_requirements,
+    provider_backup_secret_requirements, provider_backup_sections, seal_backup,
 };
 use lettuce_types::{ContentHash, TimestampMillis};
 use zeroize::Zeroizing;
@@ -86,7 +86,7 @@ where
         if media_requirements
             .len()
             .checked_add(artifact_requirements.len())
-            .and_then(|count| count.checked_add(5))
+            .and_then(|count| count.checked_add(PROVIDER_BACKUP_FIXED_SECTIONS))
             .is_none_or(|count| count > MAX_BACKUP_ENTRIES)
         {
             return Err(ProviderBackupGraphError::LimitExceeded.into());
@@ -290,18 +290,21 @@ mod tests {
         PersonaRepository, SpeakerSelection, StarterMessage, StarterRole,
     };
     use lettuce_companions::{
+        CompanionConversationSender, CompanionEffectSourceWindow, CompanionMemoryChanges,
         CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
+        CompanionTurnEffectOutcome, CompanionTurnEffectRepository, CompanionTurnEffectSeed,
+        CompanionTurnEffectStatus, PreparedCompanionSend,
     };
     use lettuce_context::{
         DetectionPolicy, LorebookBehaviorVersion, LorebookMetadataDraft, LorebookRepository,
     };
     use lettuce_conversations::{
         ConversationKind, ConversationOutboxEvent, ConversationReader, ConversationRepository,
-        GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationFailureCode,
-        GenerationTurnStatus, MessageDraft, MessagePart, MessageRole, MessageVisibility,
-        OperationToken, SendConversation, ToolExecution, ToolExecutionRepository,
-        ToolExecutionStatus, ToolOutput, UsageCounters, UsageOutcome, UsageRecord,
-        UsageUnavailableReason,
+        FinalizationDraft, GenerationCheckpointEnvelope, GenerationCheckpointEvent,
+        GenerationFailureCode, GenerationInput, GenerationTurnStatus, MessageDraft, MessagePart,
+        MessageRole, MessageVisibility, OperationToken, SendConversation, SnapshotSelection,
+        ToolExecution, ToolExecutionRepository, ToolExecutionStatus, ToolOutput, UsageCounters,
+        UsageOutcome, UsageRecord, UsageUnavailableReason,
     };
     use lettuce_database::Database;
     use lettuce_jobs::{
@@ -312,8 +315,12 @@ mod tests {
         AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, LocalMediaBlobStore,
         LocalSyncMediaStore, RetentionClass,
     };
+    use lettuce_memory::{
+        DynamicMemorySuffixRewind, DynamicMemorySuffixRewindRepository, MemoryRepository,
+    };
     use lettuce_models::{
-        ProviderAccount, ProviderAccountRepository, ProviderConfig, ProviderProtocol,
+        ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository, ProviderAccount,
+        ProviderAccountRepository, ProviderConfig, ProviderProtocol,
     };
     use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
     use lettuce_settings::{
@@ -430,6 +437,36 @@ mod tests {
             None,
         )
         .expect("store provider");
+        let backup_model = ModelProfileRepository::upsert(
+            backend.database(),
+            ModelProfile {
+                id: ModelProfileId::new(),
+                provider_account_id,
+                external_model_id: "backup/chat-model".into(),
+                display_name: "Backup chat model".into(),
+                kind: ModelKind::Chat,
+                config: ModelProfileConfig {
+                    chat_parameters: Default::default(),
+                    lorebook_generator_parameters: Default::default(),
+                    capabilities: lettuce_models::ModelCapabilities {
+                        input_modalities: lettuce_models::ModalityCapabilities {
+                            text: lettuce_models::CapabilityStatus::Supported,
+                            ..Default::default()
+                        },
+                        output_modalities: lettuce_models::ModalityCapabilities {
+                            text: lettuce_models::CapabilityStatus::Supported,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                },
+                revision: Revision::INITIAL,
+                created_at: TimestampMillis::new(2),
+                updated_at: TimestampMillis::new(2),
+            },
+            None,
+        )
+        .expect("store backup model");
         secret_store
             .put(
                 SecretRecord::new(reference, purpose),
@@ -553,6 +590,8 @@ mod tests {
             let mut defaults = CharacterDefaults::default();
             if name == "Cora" {
                 defaults.interaction_mode = InteractionMode::Companion;
+                defaults.memory_policy = lettuce_characters::MemoryPolicy::Dynamic;
+                defaults.model_profile_id = Some(backup_model.id);
                 defaults.companion_soul = Some(Default::default());
             }
             CharacterRepository::create(
@@ -992,6 +1031,203 @@ mod tests {
             TimestampMillis::new(19),
         )
         .expect("fail unavailable generation");
+        let direct_after_failures =
+            ConversationReader::get(backend.database(), direct_conversation.id)
+                .expect("conversation after failures")
+                .conversation;
+        let current_companion = CompanionStateRepository::get(backend.database(), companion_owner)
+            .expect("current companion state")
+            .expect("companion state");
+        let mut next_companion_state = current_companion.state;
+        next_companion_state.updated_at = TimestampMillis::new(20);
+        let effect_send = CompanionConversationSender::begin_companion_send(
+            backend.database(),
+            PreparedCompanionSend::new(
+                SendConversation {
+                    conversation_id: direct_after_failures.id,
+                    branch_id: direct_after_failures.active_branch_id,
+                    expected_revision: direct_after_failures.revision,
+                    operation: OperationToken {
+                        key: lettuce_jobs::IdempotencyKey::new("backup-effect-send")
+                            .expect("effect send key"),
+                        request_digest: ContentHash::parse(
+                            blake3::hash(b"backup effect send").to_hex().to_string(),
+                        )
+                        .expect("effect send digest"),
+                    },
+                    message: MessageDraft {
+                        role: MessageRole::User,
+                        author_participant_id: Some(user_participant_id),
+                        parts: vec![MessagePart::Text {
+                            text: "Preserve this companion effect.".into(),
+                        }],
+                        visibility: MessageVisibility::Visible,
+                        pinned: false,
+                        scene_edited: false,
+                    },
+                    swap_roles: false,
+                },
+                companion_owner,
+                CompanionStateReplacement {
+                    expected_session_revision: current_companion.session_revision,
+                    expected_relationship_revision: current_companion.relationship_revision,
+                    state: next_companion_state,
+                    applied_at: TimestampMillis::new(20),
+                },
+                Some(CompanionTurnEffectSeed::default()),
+            )
+            .expect("prepare effect send"),
+            TimestampMillis::new(20),
+        )
+        .expect("begin effect send")
+        .value;
+        let effect_attempt_id = effect_send.attempt.id;
+        let effect_user_message_id = match effect_send.turn.input {
+            GenerationInput::UserMessage { message_id } => message_id,
+            _ => panic!("expected effect user message"),
+        };
+        let mut effect_turn_revision = effect_send.turn.revision;
+        for (sequence, status) in [
+            GenerationTurnStatus::Preparing,
+            GenerationTurnStatus::ContextPrepared,
+            GenerationTurnStatus::Running,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let sequence = u64::try_from(sequence + 1).expect("effect checkpoint sequence");
+            effect_turn_revision = ConversationRepository::append_event(
+                backend.database(),
+                effect_send.turn.id,
+                effect_turn_revision,
+                &OperationToken {
+                    key: lettuce_jobs::IdempotencyKey::new(format!(
+                        "backup-effect-stage-{sequence}"
+                    ))
+                    .expect("effect stage key"),
+                    request_digest: ContentHash::parse(
+                        blake3::hash(format!("backup effect stage {sequence}").as_bytes())
+                            .to_hex()
+                            .to_string(),
+                    )
+                    .expect("effect stage digest"),
+                },
+                GenerationCheckpointEnvelope {
+                    turn_id: effect_send.turn.id,
+                    attempt_id: effect_attempt_id,
+                    job_id: None,
+                    correlation_id: None,
+                    sequence,
+                    event: GenerationCheckpointEvent::Stage { status },
+                },
+                TimestampMillis::new(20 + i64::try_from(sequence).expect("effect stage time")),
+            )
+            .expect("append effect stage")
+            .value
+            .revision;
+        }
+        let effect_usage = UsageLedger::record(
+            backend.database(),
+            UsageRecord {
+                turn_id: effect_send.turn.id,
+                attempt_id: effect_attempt_id,
+                outcome: UsageOutcome::Succeeded,
+                usage: UsageCounters::Known(lettuce_conversations::InferenceUsage {
+                    provider_reported_cost: None,
+                    cache_write_tokens: None,
+                    web_search_requests: None,
+                    cached_input_tokens: None,
+                    reasoning_tokens: None,
+                    input_tokens: 7,
+                    output_tokens: 4,
+                }),
+                model_profile_id: Some(backup_model.id),
+                model_revision: Some(backup_model.revision),
+                provider_account_id: Some(provider_account_id),
+                provider_account_revision: Some(Revision::INITIAL),
+                recorded_at: TimestampMillis::new(24),
+            },
+        )
+        .expect("record effect usage");
+        let direct_before_effect =
+            ConversationReader::get(backend.database(), direct_conversation.id)
+                .expect("conversation before effect finalization")
+                .conversation;
+        let ConversationKind::Direct(details) = &direct_before_effect.kind else {
+            panic!("expected direct conversation");
+        };
+        let effect_model = match &details.model {
+            SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => {
+                model.clone()
+            }
+            SnapshotSelection::Disabled => panic!("expected effect model"),
+        };
+        let effect_finalized = ConversationRepository::finalize_generation(
+            backend.database(),
+            effect_send.turn.id,
+            effect_attempt_id,
+            direct_before_effect.revision,
+            effect_turn_revision,
+            &OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("backup-effect-finalize")
+                    .expect("effect finalize key"),
+                request_digest: ContentHash::parse(
+                    blake3::hash(b"backup effect finalize").to_hex().to_string(),
+                )
+                .expect("effect finalize digest"),
+            },
+            FinalizationDraft {
+                parts: vec![MessagePart::Text {
+                    text: "This effect will survive the backup.".into(),
+                }],
+                ordinal: 0,
+                model: effect_model,
+                replay: None,
+                outcome: GenerationCheckpointEvent::Completed,
+            },
+            effect_usage.id,
+            TimestampMillis::new(25),
+        )
+        .expect("finalize effect message")
+        .value;
+        let effect = CompanionTurnEffectRepository::get_for_message(
+            backend.database(),
+            direct_conversation.id,
+            effect_finalized.assistant_message.id,
+        )
+        .expect("load processing effect")
+        .expect("processing effect");
+        let effect = CompanionTurnEffectRepository::settle(
+            backend.database(),
+            effect.id,
+            CompanionTurnEffectOutcome::Ready {
+                summary: Some("Backup effect summary".into()),
+                memory_changes: CompanionMemoryChanges::default(),
+                source_window: CompanionEffectSourceWindow {
+                    message_ids: vec![effect_user_message_id, effect.assistant_message_id],
+                    enqueued_at: TimestampMillis::new(25),
+                },
+            },
+            TimestampMillis::new(26),
+        )
+        .expect("settle companion effect");
+        let memory_space =
+            MemoryRepository::get_for_conversation(backend.database(), direct_conversation.id)
+                .expect("read conversation memory")
+                .expect("dynamic memory space");
+        let rewind = DynamicMemorySuffixRewindRepository::rewind_dynamic_memory_suffix(
+            backend.database(),
+            DynamicMemorySuffixRewind {
+                operation_id: OperationId::new(),
+                conversation_id: direct_conversation.id,
+                invalid_run_id: None,
+                expected_memory_revision: memory_space.revision,
+                invalidated_effect_ids: vec![effect.id],
+                at: TimestampMillis::new(27),
+            },
+        )
+        .expect("rewind companion effect");
+        assert_eq!(rewind.invalidated_effect_ids, vec![effect.id]);
         let group_conversation = backend
             .launch_group_conversation(
                 &GroupConversationLaunchRequest {
@@ -1249,7 +1485,7 @@ mod tests {
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 19);
+        assert_eq!(sections.len(), 21);
         assert!(
             sections[1]
                 .bytes
@@ -1300,7 +1536,7 @@ mod tests {
             &direct.aggregate.conversation.kind,
             ConversationKind::Direct(_)
         ));
-        assert_eq!(direct.messages.len(), 4);
+        assert_eq!(direct.messages.len(), 6);
         assert_eq!(
             direct.messages[0].revisions[0].parts,
             vec![MessagePart::Text {
@@ -1360,7 +1596,9 @@ mod tests {
             serde_json::from_slice(&sections[7].bytes).expect("conversation outbox JSON");
         let companion: lettuce_transfer::CompanionStateBackup =
             serde_json::from_slice(&sections[8].bytes).expect("companion state JSON");
-        assert_eq!(usage.events.len(), 2);
+        let companion_effects: lettuce_transfer::CompanionEffectBackup =
+            serde_json::from_slice(&sections[9].bytes).expect("companion effects JSON");
+        assert_eq!(usage.events.len(), 3);
         let known = usage
             .events
             .iter()
@@ -1434,6 +1672,28 @@ mod tests {
             corrupt_companion.canonicalize_and_validate(&current_graph.authored, &history),
             Err(lettuce_transfer::CompanionStateBackupError::InvalidData)
         );
+        assert_eq!(companion_effects.effects.len(), 1);
+        assert_eq!(companion_effects.rewinds.len(), 1);
+        assert_eq!(companion_effects.effects[0].id, effect.id);
+        assert_eq!(
+            companion_effects.effects[0].status,
+            CompanionTurnEffectStatus::Invalidated
+        );
+        assert_eq!(
+            companion_effects.effects[0].summary.as_deref(),
+            Some("Backup effect summary")
+        );
+        assert_eq!(
+            companion_effects.rewinds[0].invalidated_effect_ids,
+            vec![effect.id]
+        );
+        assert_eq!(companion_effects.rewinds[0].resulting_memory, rewind.memory);
+        let mut corrupt_effects = companion_effects.clone();
+        corrupt_effects.rewinds[0].invalidated_effect_ids.clear();
+        assert_eq!(
+            corrupt_effects.canonicalize_and_validate(&history, &runtime),
+            Err(lettuce_transfer::CompanionEffectBackupError::InvalidData)
+        );
         let backed_up_job = jobs
             .jobs
             .iter()
@@ -1468,7 +1728,7 @@ mod tests {
             .iter()
             .find(|value| value.conversation_id == direct_conversation.id)
             .expect("direct runtime");
-        assert_eq!(direct_runtime.turns.len(), 2);
+        assert_eq!(direct_runtime.turns.len(), 3);
         assert_eq!(direct_runtime.turns[0].turn.id, pending_send.turn.id);
         assert_eq!(direct_runtime.turns[0].turn.attempts.len(), 1);
         assert_eq!(direct_runtime.turns[0].attempts.len(), 1);

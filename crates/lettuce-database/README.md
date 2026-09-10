@@ -697,3 +697,11 @@ active signals, continuity episodes and immutable state-apply receipts are read
 in the same deferred backup transaction. The adapter preserves initial-state and
 replacement hashes, persona-key projections, revisions and row timestamps while
 reusing the state adapter's strict vector and signal readers.
+
+That transaction also reads all companion turn effects through the existing
+strict effect hydrator and preserves the immutable dynamic-memory suffix-rewind
+rows with their storage-only request digest and revision projections. Resulting
+memory and summary snapshots are decoded as versioned domain values, and ordered
+effect invalidations remain attached to their rewind operation. The database
+does not interpret these rows as current memory state or recalculate companion
+effects during export.

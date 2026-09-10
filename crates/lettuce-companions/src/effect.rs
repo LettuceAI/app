@@ -9,20 +9,23 @@ const MAX_SIGNAL_BYTES: usize = 256;
 const MAX_SIGNAL_CHANGES: usize = 64;
 const MAX_MEMORY_CHANGES: usize = 512;
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompanionEmotionDelta {
     pub felt: EmotionVector,
     pub expressed: EmotionVector,
     pub blocked: EmotionVector,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompanionSignalChanges {
     pub added: Vec<String>,
     pub removed: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompanionTurnEffectSeed {
     pub relationship_delta: RelationshipDelta,
     pub emotion_delta: CompanionEmotionDelta,
@@ -123,7 +126,8 @@ impl CompanionTurnEffectSeed {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CompanionTurnEffectStatus {
     Processing,
     Ready,
@@ -131,20 +135,23 @@ pub enum CompanionTurnEffectStatus {
     Invalidated,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompanionMemoryChanges {
     pub added: Vec<MemoryId>,
     pub updated: Vec<MemoryId>,
     pub superseded: Vec<MemoryId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompanionEffectSourceWindow {
     pub message_ids: Vec<MessageId>,
     pub enqueued_at: TimestampMillis,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompanionTurnEffect {
     pub id: CompanionEffectId,
     pub conversation_id: ConversationId,

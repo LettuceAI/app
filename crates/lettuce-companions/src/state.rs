@@ -300,7 +300,8 @@ pub struct CompanionRuntimeState {
     pub updated_at: TimestampMillis,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RelationshipDelta {
     pub closeness: f64,
     pub trust: f64,

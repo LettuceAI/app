@@ -1081,7 +1081,7 @@ fn load_source_messages(
         .map_err(effect_corrupt)
 }
 
-fn load_effect(
+pub(crate) fn load_effect(
     connection: &Connection,
     conversation_id: ConversationId,
     assistant_message_id: MessageId,

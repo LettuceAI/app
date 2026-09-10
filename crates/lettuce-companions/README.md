@@ -194,6 +194,11 @@ overlay. Their original processing/ready/failed evidence remains unchanged for
 audit, while invalidated processing effects no longer appear in the worker
 queue and cannot be settled later.
 
+The effect, seed, relationship delta, memory-change and source-window values are
+strictly serializable for the versioned full-profile backup boundary. Serialization
+does not add a second effect model or change transition calculations; the same
+validated values used by the repository are exported and checked on backup open.
+
 Soul-writer model fallback stops on run persistence, dispatch evidence and replay
 cleanup failures. Only provider/content failures continue through the existing
 alternate-model policy. Admission/settlement fault injection verifies no extra

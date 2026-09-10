@@ -3,19 +3,20 @@ use lettuce_transfer::{
     AuthoredProfileBackup, BackupConversation, BackupConversationOutbox, BackupConversationRuntime,
     BackupConversationUsage, BackupGenerationAttemptRuntime, BackupGenerationCheckpoint,
     BackupGenerationTurn, BackupGlobalSettings, BackupJobInference, BackupLorebookBindings,
-    BackupMessage, COMPANION_STATE_BACKUP_VERSION, CONVERSATION_HISTORY_BACKUP_VERSION,
-    CONVERSATION_OUTBOX_BACKUP_VERSION, CONVERSATION_RUNTIME_BACKUP_VERSION,
-    CONVERSATION_USAGE_BACKUP_VERSION, CompanionStateBackup, ConversationHistoryBackup,
-    ConversationOutboxBackup, ConversationRuntimeBackup, ConversationUsageBackup,
-    JOB_BACKUP_VERSION, JobBackup, MAX_BACKUP_AUTHORED_ROOTS, MAX_BACKUP_COMPANION_RECEIPTS,
+    BackupMessage, COMPANION_EFFECT_BACKUP_VERSION, COMPANION_STATE_BACKUP_VERSION,
+    CONVERSATION_HISTORY_BACKUP_VERSION, CONVERSATION_OUTBOX_BACKUP_VERSION,
+    CONVERSATION_RUNTIME_BACKUP_VERSION, CONVERSATION_USAGE_BACKUP_VERSION, CompanionEffectBackup,
+    CompanionStateBackup, ConversationHistoryBackup, ConversationOutboxBackup,
+    ConversationRuntimeBackup, ConversationUsageBackup, JOB_BACKUP_VERSION, JobBackup,
+    MAX_BACKUP_AUTHORED_ROOTS, MAX_BACKUP_COMPANION_EFFECTS, MAX_BACKUP_COMPANION_RECEIPTS,
     MAX_BACKUP_COMPANION_RELATIONSHIPS, MAX_BACKUP_COMPANION_SESSIONS,
     MAX_BACKUP_CONVERSATION_OPERATIONS, MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS,
     MAX_BACKUP_CONVERSATION_USAGE_EVENTS, MAX_BACKUP_CONVERSATIONS,
     MAX_BACKUP_GENERATION_CHECKPOINTS, MAX_BACKUP_GENERATION_TURNS, MAX_BACKUP_JOB_EVENTS,
     MAX_BACKUP_JOB_INFERENCE_EVENTS, MAX_BACKUP_JOBS, MAX_BACKUP_MEDIA_RECORDS,
-    MAX_BACKUP_MESSAGE_CANDIDATES, MAX_BACKUP_MESSAGE_REVISIONS, MAX_BACKUP_MESSAGES,
-    MAX_BACKUP_TOOL_EXECUTIONS, PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph,
-    ProviderBackupSelections, ProviderBackupSource, ProviderBackupSourceError,
+    MAX_BACKUP_MEMORY_REWINDS, MAX_BACKUP_MESSAGE_CANDIDATES, MAX_BACKUP_MESSAGE_REVISIONS,
+    MAX_BACKUP_MESSAGES, MAX_BACKUP_TOOL_EXECUTIONS, PROVIDER_BACKUP_GRAPH_VERSION,
+    ProviderBackupGraph, ProviderBackupSelections, ProviderBackupSource, ProviderBackupSourceError,
 };
 use lettuce_types::{
     AssetId, CharacterId, ContentHash, ConversationId, GenerationAttemptId, GroupId, LorebookId,
@@ -31,6 +32,137 @@ fn backup_error(error: rusqlite::Error) -> ProviderBackupSourceError {
     } else {
         ProviderBackupSourceError::Storage
     }
+}
+
+fn read_companion_effects(
+    transaction: &rusqlite::Transaction<'_>,
+) -> Result<CompanionEffectBackup, ProviderBackupSourceError> {
+    let identities = transaction
+        .prepare(&format!(
+            "SELECT conversation_id,assistant_message_id FROM companion_turn_effects ORDER BY conversation_id,created_at,id LIMIT {}",
+            MAX_BACKUP_COMPANION_EFFECTS + 1
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    if identities.len() > MAX_BACKUP_COMPANION_EFFECTS {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    let effects = identities
+        .into_iter()
+        .map(|(conversation_id, message_id)| {
+            let conversation_id = conversation_id
+                .parse()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            let message_id = message_id
+                .parse()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            crate::state_adapter::load_effect(transaction, conversation_id, message_id)
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?
+                .ok_or(ProviderBackupSourceError::InvalidData)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let rows = transaction
+        .prepare(&format!(
+            "SELECT operation_id,request_digest,conversation_id,invalid_run_id,space_id,source_memory_revision,resulting_memory_revision,restored_summary_run_id,resulting_memory_json,resulting_summary_json,applied_at FROM dynamic_memory_suffix_rewinds ORDER BY applied_at,operation_id LIMIT {}",
+            MAX_BACKUP_MEMORY_REWINDS + 1
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, i64>(5)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, Option<String>>(7)?,
+                        row.get::<_, String>(8)?,
+                        row.get::<_, Option<String>>(9)?,
+                        row.get::<_, i64>(10)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    if rows.len() > MAX_BACKUP_MEMORY_REWINDS {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    let mut rewinds = Vec::with_capacity(rows.len());
+    for row in rows {
+        let operation_id: lettuce_types::OperationId = row
+            .0
+            .parse()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let resulting_memory: lettuce_memory::MemorySpaceSnapshot =
+            crate::decode_versioned(&row.8, 1)
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let resulting_summary = row
+            .9
+            .map(|value| crate::decode_versioned(&value, 1))
+            .transpose()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let invalidated_effect_ids = transaction
+            .prepare(
+                "SELECT effect_id FROM companion_turn_effect_invalidations WHERE operation_id=?1 ORDER BY ordinal",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([operation_id.to_string()], |row| row.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(backup_error)?
+            .into_iter()
+            .map(|value| {
+                value
+                    .parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        rewinds.push(lettuce_transfer::BackupDynamicMemoryRewind {
+            operation_id,
+            request_digest: row
+                .1
+                .parse()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            conversation_id: row
+                .2
+                .parse()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            invalid_run_id: row
+                .3
+                .map(|value| value.parse())
+                .transpose()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            space_id: row
+                .4
+                .parse()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            source_memory_revision: backup_revision(row.5)?,
+            resulting_memory_revision: backup_revision(row.6)?,
+            restored_summary_run_id: row
+                .7
+                .map(|value| value.parse())
+                .transpose()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            resulting_memory,
+            resulting_summary,
+            invalidated_effect_ids,
+            applied_at: TimestampMillis::new(row.10),
+        });
+    }
+    Ok(CompanionEffectBackup {
+        version: COMPANION_EFFECT_BACKUP_VERSION,
+        effects,
+        rewinds,
+    })
 }
 
 fn read_companion_state(
@@ -639,6 +771,7 @@ impl ProviderBackupSource for Database {
         let conversation_usage = read_conversation_usage(&transaction, &job_backup)?;
         let conversation_outbox = read_conversation_outbox(&transaction, &conversation_history)?;
         let companion_state = read_companion_state(&transaction)?;
+        let companion_effects = read_companion_effects(&transaction)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             version: PROVIDER_BACKUP_GRAPH_VERSION,
@@ -668,6 +801,7 @@ impl ProviderBackupSource for Database {
             conversation_usage,
             conversation_outbox,
             companion_state,
+            companion_effects,
         })
     }
 }

@@ -23,6 +23,7 @@ use serde::{Serialize, Serializer, ser::SerializeStruct};
 use crate::BackupSection;
 
 pub const PROVIDER_BACKUP_GRAPH_VERSION: u32 = 2;
+pub const PROVIDER_BACKUP_FIXED_SECTIONS: usize = 10;
 pub const MAX_BACKUP_PROVIDER_ACCOUNTS: usize = 128;
 pub const MAX_BACKUP_MODEL_PROFILES: usize = 2_048;
 pub const MAX_BACKUP_PROMPT_DOCUMENTS: usize = 2_048;
@@ -97,6 +98,8 @@ pub struct ProviderBackupGraph {
     pub conversation_outbox: crate::ConversationOutboxBackup,
     #[serde(skip)]
     pub companion_state: crate::CompanionStateBackup,
+    #[serde(skip)]
+    pub companion_effects: crate::CompanionEffectBackup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -211,6 +214,8 @@ pub fn provider_backup_sections(
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let companion_state = serde_json::to_vec(&graph.companion_state)
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
+    let companion_effects = serde_json::to_vec(&graph.companion_effects)
+        .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let ordered_secrets = expected
         .keys()
         .map(|reference| supplied[reference])
@@ -222,7 +227,10 @@ pub fn provider_backup_sections(
     .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let media_sections = media_sections(&graph, media)?;
     let artifact_sections = conversation_artifact_sections(&graph, artifacts)?;
-    let mut sections = vec![
+    let mut sections = Vec::with_capacity(
+        PROVIDER_BACKUP_FIXED_SECTIONS + media_sections.len() + artifact_sections.len(),
+    );
+    sections.extend([
         BackupSection::new("data/provider-graph.json", "provider-graph.v2", metadata),
         BackupSection::new(
             "secrets/provider-secrets.json",
@@ -256,7 +264,12 @@ pub fn provider_backup_sections(
             "companion-state.v1",
             companion_state,
         ),
-    ];
+        BackupSection::new(
+            "data/companion-effects.json",
+            "companion-effects.v1",
+            companion_effects,
+        ),
+    ]);
     sections.extend(media_sections);
     sections.extend(artifact_sections);
     Ok(sections)
@@ -645,6 +658,10 @@ fn canonicalize_and_validate(
     graph
         .companion_state
         .canonicalize_and_validate(&graph.authored, &graph.conversation_history)
+        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+    graph
+        .companion_effects
+        .canonicalize_and_validate(&graph.conversation_history, &graph.conversation_runtime)
         .map_err(|_| ProviderBackupGraphError::InvalidGraph)
 }
 
@@ -1098,6 +1115,11 @@ mod tests {
                 episodes: Vec::new(),
                 receipts: Vec::new(),
             },
+            companion_effects: crate::CompanionEffectBackup {
+                version: crate::COMPANION_EFFECT_BACKUP_VERSION,
+                effects: Vec::new(),
+                rewinds: Vec::new(),
+            },
         }
     }
 
@@ -1121,7 +1143,7 @@ mod tests {
         assert!(!format!("{secret:?}").contains("backup-secret-canary"));
         let sections = provider_backup_sections(source_graph, vec![secret], Vec::new(), Vec::new())
             .expect("sections");
-        assert_eq!(sections.len(), 9);
+        assert_eq!(sections.len(), 10);
         assert!(
             sections[1]
                 .bytes
@@ -1257,7 +1279,7 @@ mod tests {
             Vec::new(),
         )
         .expect("media sections");
-        assert_eq!(sections.len(), 10);
-        assert_eq!(&*sections[9].bytes, &bytes);
+        assert_eq!(sections.len(), 11);
+        assert_eq!(&*sections[10].bytes, &bytes);
     }
 }

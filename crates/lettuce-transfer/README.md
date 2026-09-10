@@ -205,3 +205,13 @@ hashes plus row revisions and timestamps remain explicit, so restore can retain
 launch and update idempotency. Validation binds each session and episode to its
 authored character, optional persona and direct conversation without changing
 any companion-state formula.
+
+The companion-effect document preserves every processing, ready, failed and
+invalidated turn effect with its exact transition seed, terminal result, source
+window and referenced memory IDs. Immutable suffix-rewind receipts retain their
+request digest, memory revision boundary, resulting memory and summary snapshots,
+and ordered effect invalidations. Validation binds effects to their turn and
+user/assistant messages, checks the stored effect shape, and requires every
+invalidated effect to resolve through exactly one rewind. Memory IDs, memory-space
+ownership and dynamic-memory run identities remain cross-document dependencies
+for the following backup sections; they are not discarded or fabricated here.
