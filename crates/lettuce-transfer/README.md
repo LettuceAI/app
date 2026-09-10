@@ -224,5 +224,13 @@ binds spaces and summary/item sources to conversation history, accesses to their
 generation attempts and revision transitions, and rewind/effect references to
 the matching conversation space when the referenced memory still exists.
 Historical memory IDs may be absent after an authorized hard delete; the backup
-does not fabricate tombstones. Rebuildable embedding projections and durable
-dynamic-memory execution records remain separate later documents.
+does not fabricate tombstones. Durable dynamic-memory execution records remain a
+separate later document.
+
+`data/memory-projections.json` preserves every stored ready and repair-needed
+embedding projection, including stale rows retained after memory edits or
+deletion. Ready vectors encode their exact little-endian SQLite bytes as hex alongside the
+source revision, dimensions, source text and update time. Validation requires a
+backed-up owning space, a unique storage identity and the same finite-vector
+shape accepted by the runtime. It does not require a live matching memory item,
+because retrieval already excludes stale rows through its item/text join.

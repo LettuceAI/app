@@ -709,6 +709,11 @@ effects during export.
 Authoritative conversation memory spaces now leave the same snapshot through
 the existing strict memory and summary hydrators. The adapter includes every
 ordered item and summary source cursor, then decodes immutable retrieval-access
-rows with their exact attempt owner and before/after revisions. Embedding
-projection BLOBs and dynamic-memory run tables are intentionally left for their
-own bounded documents.
+rows with their exact attempt owner and before/after revisions.
+
+The same snapshot exports every memory embedding projection row, including
+stale derived rows that current retrieval deliberately ignores. Ready vectors
+retain their exact BLOB bytes; repair-needed rows retain their null-vector
+state. Space/item IDs, source revision and text, dimensions and update time are
+preserved without regenerating embeddings. Dynamic-memory run tables remain for
+their own bounded document.

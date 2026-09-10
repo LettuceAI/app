@@ -307,6 +307,10 @@ mod tests {
         UsageOutcome, UsageRecord, UsageUnavailableReason,
     };
     use lettuce_database::Database;
+    use lettuce_embeddings::{
+        EmbeddingDimensions, EmbeddingVector, MemoryEmbeddingProjection, MemoryEmbeddingRepair,
+        MemoryEmbeddingRepository,
+    };
     use lettuce_jobs::{
         JobKind, JobMutation, JobSpec, JobStore, JobSubject, OutcomeRef, ProgressSnapshot,
         ResourceAvailability, ResourceClass, SubjectKind, UnitsProgress, WorkerId,
@@ -1292,6 +1296,46 @@ mod tests {
             },
         )
         .expect("record backup memory access");
+        let ready_projection = MemoryEmbeddingProjection {
+            space_id: memory_space.id,
+            memory_id,
+            source_text: "The user asked to preserve full backup state.".into(),
+            vector: EmbeddingVector {
+                source_revision: "backup-embedding-v4".into(),
+                values: vec![0.25; 64],
+            },
+            dimensions: EmbeddingDimensions::D64,
+            updated_at: TimestampMillis::new(31),
+        };
+        MemoryEmbeddingRepository::put_ready(backend.database(), ready_projection.clone())
+            .expect("store ready backup projection");
+        let repair_projection = MemoryEmbeddingRepair {
+            space_id: memory_space.id,
+            memory_id,
+            source_text: "The user asked to preserve full backup state.".into(),
+            source_revision: "backup-embedding-v5".into(),
+            dimensions: EmbeddingDimensions::D128,
+            updated_at: TimestampMillis::new(32),
+        };
+        MemoryEmbeddingRepository::mark_repair_needed(
+            backend.database(),
+            repair_projection.clone(),
+        )
+        .expect("store repair-needed backup projection");
+        let mut edited_memory = MemoryRepository::get(backend.database(), memory_space.id)
+            .expect("read memory before projection staleness")
+            .expect("memory before projection staleness");
+        edited_memory.items[0].text =
+            "The user requires a complete backup without data loss.".into();
+        let memory_after_projection_edit = MemoryRepository::compare_and_apply(
+            backend.database(),
+            MemoryChangeSet {
+                space_id: memory_space.id,
+                expected_revision: edited_memory.revision,
+                items: edited_memory.items,
+            },
+        )
+        .expect("make backup projections stale");
         let group_conversation = backend
             .launch_group_conversation(
                 &GroupConversationLaunchRequest {
@@ -1549,7 +1593,7 @@ mod tests {
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 22);
+        assert_eq!(sections.len(), 23);
         assert!(
             sections[1]
                 .bytes
@@ -1664,6 +1708,8 @@ mod tests {
             serde_json::from_slice(&sections[9].bytes).expect("companion effects JSON");
         let memory: lettuce_transfer::MemoryBackup =
             serde_json::from_slice(&sections[10].bytes).expect("memory JSON");
+        let memory_projections: lettuce_transfer::MemoryProjectionBackup =
+            serde_json::from_slice(&sections[11].bytes).expect("memory projections JSON");
         assert_eq!(usage.events.len(), 3);
         let known = usage
             .events
@@ -1768,11 +1814,15 @@ mod tests {
             .expect("direct memory");
         assert_eq!(
             direct_memory.snapshot.revision,
-            memory_access.resulting_revision
+            memory_after_projection_edit.revision
         );
         assert_eq!(direct_memory.snapshot.items.len(), 1);
         assert_eq!(direct_memory.snapshot.items[0].id, memory_id);
         assert_eq!(direct_memory.snapshot.items[0].access_count, 2);
+        assert_ne!(
+            direct_memory.snapshot.items[0].text,
+            ready_projection.source_text
+        );
         assert!(!direct_memory.snapshot.items[0].is_cold);
         assert_eq!(
             direct_memory.summary.as_ref().expect("memory summary"),
@@ -1784,6 +1834,47 @@ mod tests {
         assert_eq!(
             corrupt_memory.canonicalize_and_validate(&history, &runtime, &companion_effects),
             Err(lettuce_transfer::MemoryBackupError::InvalidData)
+        );
+        assert_eq!(memory_projections.projections.len(), 2);
+        let ready = memory_projections
+            .projections
+            .iter()
+            .find(|projection| {
+                projection.source_revision == ready_projection.vector.source_revision
+            })
+            .expect("ready projection");
+        assert_eq!(ready.space_id, memory_space.id);
+        assert_eq!(ready.memory_id, memory_id);
+        assert_eq!(ready.dimensions, 64);
+        let lettuce_transfer::BackupMemoryProjectionState::Ready { vector_le_hex } = &ready.state
+        else {
+            panic!("ready projection state");
+        };
+        assert_eq!(
+            vector_le_hex,
+            &ready_projection
+                .vector
+                .values
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        );
+        let repair = memory_projections
+            .projections
+            .iter()
+            .find(|projection| projection.source_revision == repair_projection.source_revision)
+            .expect("repair projection");
+        assert_eq!(repair.dimensions, 128);
+        assert_eq!(
+            repair.state,
+            lettuce_transfer::BackupMemoryProjectionState::RepairNeeded
+        );
+        let mut corrupt_projections = memory_projections.clone();
+        corrupt_projections.projections[0].space_id = lettuce_types::MemorySpaceId::new();
+        assert_eq!(
+            corrupt_projections.canonicalize_and_validate(&memory),
+            Err(lettuce_transfer::MemoryProjectionBackupError::InvalidData)
         );
         let backed_up_job = jobs
             .jobs

@@ -3,22 +3,24 @@ use lettuce_transfer::{
     AuthoredProfileBackup, BackupConversation, BackupConversationOutbox, BackupConversationRuntime,
     BackupConversationUsage, BackupGenerationAttemptRuntime, BackupGenerationCheckpoint,
     BackupGenerationTurn, BackupGlobalSettings, BackupJobInference, BackupLorebookBindings,
-    BackupMemorySpace, BackupMessage, COMPANION_EFFECT_BACKUP_VERSION,
-    COMPANION_STATE_BACKUP_VERSION, CONVERSATION_HISTORY_BACKUP_VERSION,
-    CONVERSATION_OUTBOX_BACKUP_VERSION, CONVERSATION_RUNTIME_BACKUP_VERSION,
-    CONVERSATION_USAGE_BACKUP_VERSION, CompanionEffectBackup, CompanionStateBackup,
-    ConversationHistoryBackup, ConversationOutboxBackup, ConversationRuntimeBackup,
-    ConversationUsageBackup, JOB_BACKUP_VERSION, JobBackup, MAX_BACKUP_AUTHORED_ROOTS,
-    MAX_BACKUP_COMPANION_EFFECTS, MAX_BACKUP_COMPANION_RECEIPTS,
+    BackupMemoryProjection, BackupMemoryProjectionState, BackupMemorySpace, BackupMessage,
+    COMPANION_EFFECT_BACKUP_VERSION, COMPANION_STATE_BACKUP_VERSION,
+    CONVERSATION_HISTORY_BACKUP_VERSION, CONVERSATION_OUTBOX_BACKUP_VERSION,
+    CONVERSATION_RUNTIME_BACKUP_VERSION, CONVERSATION_USAGE_BACKUP_VERSION, CompanionEffectBackup,
+    CompanionStateBackup, ConversationHistoryBackup, ConversationOutboxBackup,
+    ConversationRuntimeBackup, ConversationUsageBackup, JOB_BACKUP_VERSION, JobBackup,
+    MAX_BACKUP_AUTHORED_ROOTS, MAX_BACKUP_COMPANION_EFFECTS, MAX_BACKUP_COMPANION_RECEIPTS,
     MAX_BACKUP_COMPANION_RELATIONSHIPS, MAX_BACKUP_COMPANION_SESSIONS,
     MAX_BACKUP_CONVERSATION_OPERATIONS, MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS,
     MAX_BACKUP_CONVERSATION_USAGE_EVENTS, MAX_BACKUP_CONVERSATIONS,
     MAX_BACKUP_GENERATION_CHECKPOINTS, MAX_BACKUP_GENERATION_TURNS, MAX_BACKUP_JOB_EVENTS,
     MAX_BACKUP_JOB_INFERENCE_EVENTS, MAX_BACKUP_JOBS, MAX_BACKUP_MEDIA_RECORDS,
-    MAX_BACKUP_MEMORY_ACCESSES, MAX_BACKUP_MEMORY_REWINDS, MAX_BACKUP_MEMORY_SPACES,
-    MAX_BACKUP_MESSAGE_CANDIDATES, MAX_BACKUP_MESSAGE_REVISIONS, MAX_BACKUP_MESSAGES,
-    MAX_BACKUP_TOOL_EXECUTIONS, MEMORY_BACKUP_VERSION, MemoryBackup, PROVIDER_BACKUP_GRAPH_VERSION,
-    ProviderBackupGraph, ProviderBackupSelections, ProviderBackupSource, ProviderBackupSourceError,
+    MAX_BACKUP_MEMORY_ACCESSES, MAX_BACKUP_MEMORY_PROJECTIONS, MAX_BACKUP_MEMORY_REWINDS,
+    MAX_BACKUP_MEMORY_SPACES, MAX_BACKUP_MESSAGE_CANDIDATES, MAX_BACKUP_MESSAGE_REVISIONS,
+    MAX_BACKUP_MESSAGES, MAX_BACKUP_TOOL_EXECUTIONS, MEMORY_BACKUP_VERSION,
+    MEMORY_PROJECTION_BACKUP_VERSION, MemoryBackup, MemoryProjectionBackup,
+    PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph, ProviderBackupSelections,
+    ProviderBackupSource, ProviderBackupSourceError,
 };
 use lettuce_types::{
     AssetId, CharacterId, ContentHash, ConversationId, GenerationAttemptId, GroupId, LorebookId,
@@ -266,6 +268,72 @@ fn read_memory(
         version: MEMORY_BACKUP_VERSION,
         spaces,
         retrieval_accesses,
+    })
+}
+
+fn read_memory_projections(
+    transaction: &rusqlite::Transaction<'_>,
+) -> Result<MemoryProjectionBackup, ProviderBackupSourceError> {
+    let rows = transaction
+        .prepare(&format!(
+            "SELECT space_id,memory_id,source_revision,dimensions,source_text,status,vector,updated_at FROM memory_embedding_projections ORDER BY space_id,memory_id,source_revision,dimensions LIMIT {}",
+            MAX_BACKUP_MEMORY_PROJECTIONS + 1
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, Option<Vec<u8>>>(6)?,
+                        row.get::<_, i64>(7)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    if rows.len() > MAX_BACKUP_MEMORY_PROJECTIONS {
+        return Err(ProviderBackupSourceError::InvalidData);
+    }
+    let projections = rows
+        .into_iter()
+        .map(|row| {
+            let state = match (row.5.as_str(), row.6) {
+                ("ready", Some(vector_le_bytes)) => {
+                    let vector_le_hex = vector_le_bytes
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect();
+                    BackupMemoryProjectionState::Ready { vector_le_hex }
+                }
+                ("repair_needed", None) => BackupMemoryProjectionState::RepairNeeded,
+                _ => return Err(ProviderBackupSourceError::InvalidData),
+            };
+            Ok(BackupMemoryProjection {
+                space_id: row
+                    .0
+                    .parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                memory_id: row
+                    .1
+                    .parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                source_revision: row.2,
+                dimensions: u16::try_from(row.3)
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                source_text: row.4,
+                state,
+                updated_at: TimestampMillis::new(row.7),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(MemoryProjectionBackup {
+        version: MEMORY_PROJECTION_BACKUP_VERSION,
+        projections,
     })
 }
 
@@ -877,6 +945,7 @@ impl ProviderBackupSource for Database {
         let companion_state = read_companion_state(&transaction)?;
         let companion_effects = read_companion_effects(&transaction)?;
         let memory = read_memory(&transaction)?;
+        let memory_projections = read_memory_projections(&transaction)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             version: PROVIDER_BACKUP_GRAPH_VERSION,
@@ -908,6 +977,7 @@ impl ProviderBackupSource for Database {
             companion_state,
             companion_effects,
             memory,
+            memory_projections,
         })
     }
 }

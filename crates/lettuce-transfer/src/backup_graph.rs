@@ -23,7 +23,7 @@ use serde::{Serialize, Serializer, ser::SerializeStruct};
 use crate::BackupSection;
 
 pub const PROVIDER_BACKUP_GRAPH_VERSION: u32 = 2;
-pub const PROVIDER_BACKUP_FIXED_SECTIONS: usize = 11;
+pub const PROVIDER_BACKUP_FIXED_SECTIONS: usize = 12;
 pub const MAX_BACKUP_PROVIDER_ACCOUNTS: usize = 128;
 pub const MAX_BACKUP_MODEL_PROFILES: usize = 2_048;
 pub const MAX_BACKUP_PROMPT_DOCUMENTS: usize = 2_048;
@@ -102,6 +102,8 @@ pub struct ProviderBackupGraph {
     pub companion_effects: crate::CompanionEffectBackup,
     #[serde(skip)]
     pub memory: crate::MemoryBackup,
+    #[serde(skip)]
+    pub memory_projections: crate::MemoryProjectionBackup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -220,6 +222,8 @@ pub fn provider_backup_sections(
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let memory =
         serde_json::to_vec(&graph.memory).map_err(|_| ProviderBackupGraphError::Serialization)?;
+    let memory_projections = serde_json::to_vec(&graph.memory_projections)
+        .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let ordered_secrets = expected
         .keys()
         .map(|reference| supplied[reference])
@@ -274,6 +278,11 @@ pub fn provider_backup_sections(
             companion_effects,
         ),
         BackupSection::new("data/memory.json", "memory.v1", memory),
+        BackupSection::new(
+            "data/memory-projections.json",
+            "memory-projections.v1",
+            memory_projections,
+        ),
     ]);
     sections.extend(media_sections);
     sections.extend(artifact_sections);
@@ -675,6 +684,10 @@ fn canonicalize_and_validate(
             &graph.conversation_runtime,
             &graph.companion_effects,
         )
+        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+    graph
+        .memory_projections
+        .canonicalize_and_validate(&graph.memory)
         .map_err(|_| ProviderBackupGraphError::InvalidGraph)
 }
 
@@ -1138,6 +1151,10 @@ mod tests {
                 spaces: Vec::new(),
                 retrieval_accesses: Vec::new(),
             },
+            memory_projections: crate::MemoryProjectionBackup {
+                version: crate::MEMORY_PROJECTION_BACKUP_VERSION,
+                projections: Vec::new(),
+            },
         }
     }
 
@@ -1161,7 +1178,7 @@ mod tests {
         assert!(!format!("{secret:?}").contains("backup-secret-canary"));
         let sections = provider_backup_sections(source_graph, vec![secret], Vec::new(), Vec::new())
             .expect("sections");
-        assert_eq!(sections.len(), 11);
+        assert_eq!(sections.len(), 12);
         assert!(
             sections[1]
                 .bytes
@@ -1297,7 +1314,7 @@ mod tests {
             Vec::new(),
         )
         .expect("media sections");
-        assert_eq!(sections.len(), 12);
-        assert_eq!(&*sections[11].bytes, &bytes);
+        assert_eq!(sections.len(), 13);
+        assert_eq!(&*sections[12].bytes, &bytes);
     }
 }

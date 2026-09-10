@@ -42,3 +42,7 @@ Memory projections are rebuildable derived data behind the domain-owned
 model revision, declared dimensions, finite vectors, and update time; failed
 generation is represented as typed repair-needed state rather than making an
 authoritative memory write depend on ONNX availability.
+
+Full backup preserves the projection cache byte-for-byte, including ready
+vectors, repair-needed state and stale rows retained after memory changes. Export
+does not invoke the embedding runtime or alter similarity and selection math.
