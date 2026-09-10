@@ -1077,5 +1077,7 @@ reopens that graph before export and verifies its default persona, roots and
 ordered ownership documents. It also reads every unique ready blob through the
 confined media store in bounded chunks and lets the transfer layer verify size
 and BLAKE3 before encryption. Shared image assets produce one media section;
-missing ready content fails the export. Restore remains a separate application
-slice.
+missing ready content fails the export. The same snapshot includes the complete
+canonical ASR learning library across every language and scope, including voice
+examples and their links to the already deduplicated audio sections. Restore
+remains a separate application slice.

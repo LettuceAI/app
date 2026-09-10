@@ -81,7 +81,7 @@ impl<R: AsrLearningRepository + MediaAssetRepository + MediaBlobRepository + ?Si
             voice_examples,
             audio_assets,
         };
-        validate_document(&document)?;
+        document.validate()?;
         Ok(document)
     }
 
@@ -89,7 +89,7 @@ impl<R: AsrLearningRepository + MediaAssetRepository + MediaBlobRepository + ?Si
         &self,
         document: AsrLearningDocument,
     ) -> Result<AsrLearningImportReceipt, AsrLearningError> {
-        validate_document(&document)?;
+        document.validate()?;
         for expected in &document.audio_assets {
             self.validate_audio_asset(expected)?;
         }
@@ -185,89 +185,6 @@ impl<R: AsrLearningRepository + MediaAssetRepository + MediaBlobRepository + ?Si
         }
         Ok(())
     }
-}
-
-fn validate_document(document: &AsrLearningDocument) -> Result<(), AsrLearningError> {
-    if !document.within_bounds() {
-        return Err(AsrLearningError::InvalidData);
-    }
-    let vocabulary_ids = document
-        .vocabulary
-        .iter()
-        .map(|term| term.id)
-        .collect::<BTreeSet<_>>();
-    let correction_ids = document
-        .corrections
-        .iter()
-        .map(|rule| rule.id)
-        .collect::<BTreeSet<_>>();
-    let ignored_ids = document
-        .ignored_suggestions
-        .iter()
-        .map(|ignored| ignored.id)
-        .collect::<BTreeSet<_>>();
-    let voice_ids = document
-        .voice_examples
-        .iter()
-        .map(|example| example.id)
-        .collect::<BTreeSet<_>>();
-    let audio_asset_ids = document
-        .audio_assets
-        .iter()
-        .map(|asset| asset.asset_id)
-        .collect::<BTreeSet<_>>();
-    if vocabulary_ids.len() != document.vocabulary.len()
-        || correction_ids.len() != document.corrections.len()
-        || ignored_ids.len() != document.ignored_suggestions.len()
-        || voice_ids.len() != document.voice_examples.len()
-        || audio_asset_ids.len() != document.audio_assets.len()
-    {
-        return Err(AsrLearningError::InvalidData);
-    }
-    for term in &document.vocabulary {
-        term.validate()?;
-    }
-    for correction in &document.corrections {
-        correction.validate()?;
-    }
-    for ignored in &document.ignored_suggestions {
-        ignored.validate()?;
-    }
-    for example in &document.voice_examples {
-        example.validate()?;
-        if example
-            .vocabulary_term_id
-            .is_some_and(|id| !vocabulary_ids.contains(&id))
-            || example
-                .correction_id
-                .is_some_and(|id| !correction_ids.contains(&id))
-        {
-            return Err(AsrLearningError::InvalidData);
-        }
-    }
-    let referenced_audio_ids = document
-        .voice_examples
-        .iter()
-        .map(|example| example.audio_asset_id)
-        .collect::<BTreeSet<_>>();
-    if referenced_audio_ids != audio_asset_ids
-        || document.audio_assets.iter().any(|asset| {
-            asset.kind.blob_kind() != MediaKind::Audio
-                || asset.mime_type.trim().is_empty()
-                || asset.mime_type.trim() != asset.mime_type
-                || asset.mime_type.chars().count() > 256
-                || asset.mime_type.chars().any(char::is_control)
-                || !asset.mime_type.is_ascii()
-                || i64::try_from(asset.byte_size).is_err()
-                || asset
-                    .duration_ms
-                    .is_some_and(|duration| i64::try_from(duration).is_err())
-                || asset.provenance.validate().is_err()
-        })
-    {
-        return Err(AsrLearningError::InvalidData);
-    }
-    Ok(())
 }
 
 #[cfg(test)]

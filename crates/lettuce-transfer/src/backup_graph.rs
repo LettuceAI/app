@@ -82,6 +82,8 @@ pub struct ProviderBackupGraph {
     pub audio_providers: Vec<AudioProvider>,
     pub user_voices: Vec<UserVoice>,
     pub authored: AuthoredProfileBackup,
+    #[serde(skip)]
+    pub asr_learning: crate::AsrLearningDocument,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -166,6 +168,8 @@ pub fn provider_backup_sections(
     }
     let metadata =
         serde_json::to_vec(&graph).map_err(|_| ProviderBackupGraphError::Serialization)?;
+    let asr_learning = serde_json::to_vec(&graph.asr_learning)
+        .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let ordered_secrets = expected
         .keys()
         .map(|reference| supplied[reference])
@@ -183,6 +187,7 @@ pub fn provider_backup_sections(
             "provider-secrets.v2",
             secret_bytes,
         ),
+        BackupSection::new("data/asr-learning.json", "asr-learning.v3", asr_learning),
     ];
     sections.extend(media_sections);
     Ok(sections)
@@ -285,6 +290,20 @@ fn canonicalize_and_validate(
         .sort_by_key(|provider| provider.id.to_string());
     graph.user_voices.sort_by_key(|voice| voice.id.to_string());
     canonicalize_authored(&mut graph.authored);
+    graph.asr_learning.vocabulary.sort_by_key(|term| term.id);
+    graph.asr_learning.corrections.sort_by_key(|rule| rule.id);
+    graph
+        .asr_learning
+        .ignored_suggestions
+        .sort_by_key(|ignored| ignored.id);
+    graph
+        .asr_learning
+        .voice_examples
+        .sort_by_key(|example| example.id);
+    graph
+        .asr_learning
+        .audio_assets
+        .sort_by_key(|asset| asset.asset_id);
 
     if graph.settings.revision.get() == 0 || graph.settings.created_at > graph.settings.updated_at {
         return Err(ProviderBackupGraphError::InvalidGraph);
@@ -395,6 +414,46 @@ fn canonicalize_and_validate(
         }
     }
     validate_authored(graph, &profile_ids, &prompt_ids, &voice_ids)?;
+    validate_asr_learning(graph)
+}
+
+fn validate_asr_learning(graph: &ProviderBackupGraph) -> Result<(), ProviderBackupGraphError> {
+    graph
+        .asr_learning
+        .validate()
+        .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+    let assets = graph
+        .authored
+        .media_assets
+        .iter()
+        .map(|asset| (asset.id, asset))
+        .collect::<BTreeMap<_, _>>();
+    let blobs = graph
+        .authored
+        .media_blobs
+        .iter()
+        .map(|blob| (blob.id, blob))
+        .collect::<BTreeMap<_, _>>();
+    for expected in &graph.asr_learning.audio_assets {
+        let asset = assets
+            .get(&expected.asset_id)
+            .ok_or(ProviderBackupGraphError::InvalidGraph)?;
+        let blob = blobs
+            .get(&asset.blob_id)
+            .ok_or(ProviderBackupGraphError::InvalidGraph)?;
+        if asset.kind != expected.kind
+            || asset.origin != expected.origin
+            || asset.provenance != expected.provenance
+            || blob.state != BlobState::Ready
+            || blob.kind != lettuce_media::MediaKind::Audio
+            || blob.content_hash != expected.content_hash
+            || blob.byte_size != expected.byte_size
+            || blob.mime_type != expected.mime_type
+            || blob.duration_ms != expected.duration_ms
+        {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+    }
     Ok(())
 }
 
@@ -744,6 +803,14 @@ mod tests {
                 media_assets: Vec::new(),
                 media_blobs: Vec::new(),
             },
+            asr_learning: crate::AsrLearningDocument {
+                version: crate::ASR_LEARNING_DOCUMENT_VERSION,
+                vocabulary: Vec::new(),
+                corrections: Vec::new(),
+                ignored_suggestions: Vec::new(),
+                voice_examples: Vec::new(),
+                audio_assets: Vec::new(),
+            },
         }
     }
 
@@ -767,7 +834,7 @@ mod tests {
         assert!(!format!("{secret:?}").contains("backup-secret-canary"));
         let sections =
             provider_backup_sections(source_graph, vec![secret], Vec::new()).expect("sections");
-        assert_eq!(sections.len(), 2);
+        assert_eq!(sections.len(), 3);
         assert!(
             sections[1]
                 .bytes
@@ -901,7 +968,7 @@ mod tests {
             }],
         )
         .expect("media sections");
-        assert_eq!(sections.len(), 3);
-        assert_eq!(&*sections[2].bytes, &bytes);
+        assert_eq!(sections.len(), 4);
+        assert_eq!(&*sections[3].bytes, &bytes);
     }
 }

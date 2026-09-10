@@ -65,7 +65,9 @@ for vocabulary, corrections, ignored suggestions and managed voice examples.
 It preserves metrics and relationships without exporting native audio paths;
 version 3 carries each audio asset's logical kind, origin, redacted provenance,
 content hash, byte size, MIME type and duration. The application validates and
-remaps the complete graph before atomic import.
+remaps the complete graph before atomic import. Full backup version 2 now writes
+the canonical version-3 document as its own authenticated section and verifies
+each voice audio reference against the complete media snapshot.
 
 The legacy version-2 ASR JSON schema remains a separate camelCase compatibility
 document. Its nullable IDs, counters, timestamps and native audio locators are

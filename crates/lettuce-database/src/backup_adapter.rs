@@ -1,4 +1,5 @@
 use lettuce_transfer::{
+    ASR_LEARNING_DOCUMENT_VERSION, AsrLearningAudioAsset, AsrLearningDocument,
     AuthoredProfileBackup, BackupGlobalSettings, BackupLorebookBindings, MAX_BACKUP_AUTHORED_ROOTS,
     MAX_BACKUP_MEDIA_RECORDS, PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph,
     ProviderBackupSelections, ProviderBackupSource, ProviderBackupSourceError,
@@ -233,6 +234,64 @@ impl ProviderBackupSource for Database {
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(backup_error)?;
+        let learning =
+            crate::speech_learning_adapter::read_all_learning(&transaction).map_err(|error| {
+                match error {
+                    lettuce_speech::AsrLearningRepositoryError::InvalidData => {
+                        ProviderBackupSourceError::InvalidData
+                    }
+                    _ => ProviderBackupSourceError::Storage,
+                }
+            })?;
+        let media_assets_by_id = media_assets
+            .iter()
+            .map(|asset| (asset.id, asset))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let media_blobs_by_id = media_blobs
+            .iter()
+            .map(|blob| (blob.id, blob))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let audio_assets = learning
+            .voice_examples
+            .iter()
+            .map(|example| example.audio_asset_id)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .map(|asset_id| {
+                let asset = media_assets_by_id
+                    .get(&asset_id)
+                    .ok_or(ProviderBackupSourceError::InvalidData)?;
+                let blob = media_blobs_by_id
+                    .get(&asset.blob_id)
+                    .ok_or(ProviderBackupSourceError::InvalidData)?;
+                if blob.state != lettuce_media::BlobState::Ready
+                    || blob.kind != lettuce_media::MediaKind::Audio
+                {
+                    return Err(ProviderBackupSourceError::InvalidData);
+                }
+                Ok(AsrLearningAudioAsset {
+                    asset_id,
+                    kind: asset.kind,
+                    origin: asset.origin,
+                    provenance: asset.provenance.clone(),
+                    content_hash: blob.content_hash.clone(),
+                    byte_size: blob.byte_size,
+                    mime_type: blob.mime_type.clone(),
+                    duration_ms: blob.duration_ms,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let asr_learning = AsrLearningDocument {
+            version: ASR_LEARNING_DOCUMENT_VERSION,
+            vocabulary: learning.vocabulary,
+            corrections: learning.corrections,
+            ignored_suggestions: learning.ignored_suggestions,
+            voice_examples: learning.voice_examples,
+            audio_assets,
+        };
+        asr_learning
+            .validate()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             version: PROVIDER_BACKUP_GRAPH_VERSION,
@@ -255,6 +314,7 @@ impl ProviderBackupSource for Database {
                 media_assets,
                 media_blobs,
             },
+            asr_learning,
         })
     }
 }

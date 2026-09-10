@@ -168,9 +168,10 @@ mod tests {
         SecretRef, SecretStatus, SecretStore, SecretStoreError, SecretValue,
     };
     use lettuce_speech::{
-        AudioProvider, AudioProviderConfig, TtsConfigurationRepository, UserVoice,
+        AsrCorrectionRule, AsrIgnoredSuggestion, AsrLearningRepository, AsrVocabularyTerm,
+        AsrVoiceExample, AudioProvider, AudioProviderConfig, TtsConfigurationRepository, UserVoice,
     };
-    use lettuce_transfer::{BackupEnvelopeError, open_backup};
+    use lettuce_transfer::{AsrLearningDocument, BackupEnvelopeError, open_backup};
     use lettuce_types::{
         AudioProviderId, CharacterId, GroupId, OperationId, PersonaId, ProviderAccountId, Revision,
         VoiceProfileId,
@@ -448,6 +449,94 @@ mod tests {
             )
             .expect("ingest shared illustration");
         assert_eq!(avatar.blob.id, illustration.blob.id);
+        let samples = [0_i16, 1, -1, 0];
+        let data_size = u32::try_from(samples.len() * 2).expect("WAV data size");
+        let mut voice_bytes = Vec::new();
+        voice_bytes.extend_from_slice(b"RIFF");
+        voice_bytes.extend_from_slice(&(36 + data_size).to_le_bytes());
+        voice_bytes.extend_from_slice(b"WAVEfmt ");
+        voice_bytes.extend_from_slice(&16_u32.to_le_bytes());
+        voice_bytes.extend_from_slice(&1_u16.to_le_bytes());
+        voice_bytes.extend_from_slice(&1_u16.to_le_bytes());
+        voice_bytes.extend_from_slice(&16_000_u32.to_le_bytes());
+        voice_bytes.extend_from_slice(&32_000_u32.to_le_bytes());
+        voice_bytes.extend_from_slice(&2_u16.to_le_bytes());
+        voice_bytes.extend_from_slice(&16_u16.to_le_bytes());
+        voice_bytes.extend_from_slice(b"data");
+        voice_bytes.extend_from_slice(&data_size.to_le_bytes());
+        for sample in samples {
+            voice_bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        let voice_audio = ingest
+            .ingest(
+                voice_bytes.as_slice(),
+                IngestRequest::new(
+                    AssetKind::OtherAudio,
+                    AssetOrigin::Upload,
+                    RetentionClass::Library,
+                    AssetProvenanceV1::default(),
+                ),
+            )
+            .expect("ingest voice example");
+        let term = backend
+            .database()
+            .save_vocabulary(
+                AsrVocabularyTerm::new(
+                    "Lettuce AI",
+                    Some("en"),
+                    Some("product"),
+                    Some("workspace"),
+                    80,
+                    TimestampMillis::new(2),
+                )
+                .expect("vocabulary term"),
+            )
+            .expect("store vocabulary");
+        let correction = backend
+            .database()
+            .save_correction(
+                AsrCorrectionRule::new(
+                    "lettuce a eye",
+                    "Lettuce AI",
+                    Some("en"),
+                    Some("group-chat"),
+                    true,
+                    TimestampMillis::new(2),
+                )
+                .expect("correction"),
+            )
+            .expect("store correction");
+        backend
+            .database()
+            .save_ignored_suggestion(AsrIgnoredSuggestion {
+                id: lettuce_types::AsrIgnoredSuggestionId::new(),
+                wrong: "green salad".into(),
+                normalized_wrong: "green salad".into(),
+                correct: "green solid".into(),
+                normalized_correct: "green solid".into(),
+                language: Some("en".into()),
+                scope: "direct-chat".into(),
+                ignored_count: 2,
+                last_ignored_at: TimestampMillis::new(2),
+                created_at: TimestampMillis::new(2),
+                updated_at: TimestampMillis::new(2),
+            })
+            .expect("store ignored suggestion");
+        let mut voice_example = AsrVoiceExample::new(
+            voice_audio.asset.id,
+            "Lettuce AI",
+            Some("lettuce a eye".into()),
+            Some("en"),
+            Some("voice-profile"),
+            TimestampMillis::new(2),
+        )
+        .expect("voice example");
+        voice_example.vocabulary_term_id = Some(term.id);
+        voice_example.correction_id = Some(correction.id);
+        backend
+            .database()
+            .save_voice_example(voice_example.clone())
+            .expect("store voice example");
         drop(backend);
 
         let reopened = AppBackend::open(&path, TimestampMillis::new(3)).expect("reopen backend");
@@ -467,7 +556,7 @@ mod tests {
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 3);
+        assert_eq!(sections.len(), 5);
         assert!(
             sections[1]
                 .bytes
@@ -494,6 +583,18 @@ mod tests {
         );
         let metadata: serde_json::Value =
             serde_json::from_slice(&sections[0].bytes).expect("metadata JSON");
+        let learning: AsrLearningDocument =
+            serde_json::from_slice(&sections[2].bytes).expect("ASR learning JSON");
+        assert_eq!(learning.vocabulary, vec![term]);
+        assert_eq!(learning.corrections, vec![correction]);
+        assert_eq!(learning.ignored_suggestions.len(), 1);
+        assert_eq!(learning.voice_examples, vec![voice_example]);
+        assert_eq!(learning.audio_assets.len(), 1);
+        assert_eq!(learning.audio_assets[0].asset_id, voice_audio.asset.id);
+        assert_eq!(
+            learning.audio_assets[0].content_hash,
+            voice_audio.blob.content_hash
+        );
         assert_eq!(metadata["settings"]["value"]["analytics_enabled"], true);
         assert_eq!(metadata["audio_providers"][0]["label"], "Speech provider");
         assert_eq!(metadata["user_voices"][0]["name"], "Narrator");
@@ -523,20 +624,31 @@ mod tests {
             metadata["authored"]["groups"][0]["group"]["name"],
             "Backup cast"
         );
-        assert_eq!(&*sections[2].bytes, &image_bytes);
+        let image_section = sections
+            .iter()
+            .find(|section| section.name == format!("media/blobs/{}", avatar.blob.content_hash))
+            .expect("image section");
+        assert_eq!(&*image_section.bytes, &image_bytes);
+        let voice_section = sections
+            .iter()
+            .find(|section| {
+                section.name == format!("media/blobs/{}", voice_audio.blob.content_hash)
+            })
+            .expect("voice section");
+        assert_eq!(&*voice_section.bytes, &voice_bytes);
         assert_eq!(
             metadata["authored"]["media_assets"]
                 .as_array()
                 .expect("assets")
                 .len(),
-            2
+            3
         );
         assert_eq!(
             metadata["authored"]["media_blobs"]
                 .as_array()
                 .expect("blobs")
                 .len(),
-            1
+            2
         );
 
         let hash = avatar.blob.content_hash.as_str();

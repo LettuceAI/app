@@ -652,3 +652,8 @@ roots, ordered children and every owner-lorebook binding. It includes all media
 asset and blob metadata in stable ID order. The transfer graph rejects dangling
 model, prompt, voice, lorebook and media references before encryption; SQLite
 does not read media files or secret values.
+
+The same snapshot reads every ASR vocabulary term, correction, ignored
+suggestion and managed voice example without language or scope filtering. Voice
+examples keep their term, correction and audio asset links. Per-table and total
+transfer limits are enforced before the graph leaves the database boundary.

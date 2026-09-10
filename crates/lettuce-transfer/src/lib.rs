@@ -173,6 +173,89 @@ impl AsrLearningDocument {
                 .and_then(|count| count.checked_add(self.voice_examples.len()))
                 .is_some_and(|count| count <= ASR_LEARNING_RECORD_LIMIT)
     }
+
+    pub fn validate(&self) -> Result<(), lettuce_speech::AsrLearningError> {
+        if !self.within_bounds() {
+            return Err(lettuce_speech::AsrLearningError::InvalidData);
+        }
+        let vocabulary_ids = self
+            .vocabulary
+            .iter()
+            .map(|term| term.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        let correction_ids = self
+            .corrections
+            .iter()
+            .map(|rule| rule.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        let ignored_ids = self
+            .ignored_suggestions
+            .iter()
+            .map(|ignored| ignored.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        let voice_ids = self
+            .voice_examples
+            .iter()
+            .map(|example| example.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        let audio_asset_ids = self
+            .audio_assets
+            .iter()
+            .map(|asset| asset.asset_id)
+            .collect::<std::collections::BTreeSet<_>>();
+        if vocabulary_ids.len() != self.vocabulary.len()
+            || correction_ids.len() != self.corrections.len()
+            || ignored_ids.len() != self.ignored_suggestions.len()
+            || voice_ids.len() != self.voice_examples.len()
+            || audio_asset_ids.len() != self.audio_assets.len()
+        {
+            return Err(lettuce_speech::AsrLearningError::InvalidData);
+        }
+        for term in &self.vocabulary {
+            term.validate()?;
+        }
+        for correction in &self.corrections {
+            correction.validate()?;
+        }
+        for ignored in &self.ignored_suggestions {
+            ignored.validate()?;
+        }
+        for example in &self.voice_examples {
+            example.validate()?;
+            if example
+                .vocabulary_term_id
+                .is_some_and(|id| !vocabulary_ids.contains(&id))
+                || example
+                    .correction_id
+                    .is_some_and(|id| !correction_ids.contains(&id))
+            {
+                return Err(lettuce_speech::AsrLearningError::InvalidData);
+            }
+        }
+        let referenced_audio_ids = self
+            .voice_examples
+            .iter()
+            .map(|example| example.audio_asset_id)
+            .collect::<std::collections::BTreeSet<_>>();
+        if referenced_audio_ids != audio_asset_ids
+            || self.audio_assets.iter().any(|asset| {
+                asset.kind.blob_kind() != lettuce_media::MediaKind::Audio
+                    || asset.mime_type.trim().is_empty()
+                    || asset.mime_type.trim() != asset.mime_type
+                    || asset.mime_type.chars().count() > 256
+                    || asset.mime_type.chars().any(char::is_control)
+                    || !asset.mime_type.is_ascii()
+                    || i64::try_from(asset.byte_size).is_err()
+                    || asset
+                        .duration_ms
+                        .is_some_and(|duration| i64::try_from(duration).is_err())
+                    || asset.provenance.validate().is_err()
+            })
+        {
+            return Err(lettuce_speech::AsrLearningError::InvalidData);
+        }
+        Ok(())
+    }
 }
 pub const LEGACY_PERSONA_PLAN_LIMIT: u32 = 10_000;
 pub const LEGACY_LOREBOOK_PLAN_LIMIT: u32 = 10_000;
