@@ -317,6 +317,22 @@ the immutable cost basis, so they are historical-only and never populate the
 live provider cache. No cost is recalculated and the version-1 pricing formula,
 runtime calculator and smart-offloader outputs remain unchanged.
 
+Direct legacy sessions now have a bounded read-only compatibility graph. It
+retains each root and derived session, archived state, character/persona/scene
+and prompt selections, author and generation overrides, voice policy, raw
+companion and dynamic-memory documents, and every message and variant in the
+order present in the decrypted backup. Message visibility, parent links,
+selected variants, usage metrics, MTP statistics, reasoning, memory and
+lorebook references, attachments and effective timestamps remain explicit.
+The planner validates authored references, root/parent topology, message
+ancestry, selected-variant ownership, JSON shapes, counters and finite sampling
+values before any write. Equal message timestamps and unordered legacy variant
+queries are reported as ordering loss. Legacy rows contain no current
+generation attempts or protected model/provider snapshots, so those identities
+are reported absent instead of fabricated. Group sessions and attachment bytes
+remain attached for their following slices; no conversation or media store is
+changed.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established
