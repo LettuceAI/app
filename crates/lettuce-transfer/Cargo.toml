@@ -18,6 +18,7 @@ argon2.workspace = true
 blake3.workspace = true
 chacha20poly1305.workspace = true
 lettuce-characters.workspace = true
+lettuce-conversations.workspace = true
 lettuce-context.workspace = true
 lettuce-media.workspace = true
 lettuce-models.workspace = true

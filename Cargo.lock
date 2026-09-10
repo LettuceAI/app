@@ -1578,6 +1578,7 @@ dependencies = [
  "chacha20poly1305",
  "lettuce-characters",
  "lettuce-context",
+ "lettuce-conversations",
  "lettuce-media",
  "lettuce-models",
  "lettuce-platform",

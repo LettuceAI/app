@@ -8,9 +8,11 @@
 
 mod backup;
 mod backup_graph;
+mod conversation_backup;
 
 pub use backup::*;
 pub use backup_graph::*;
+pub use conversation_backup::*;
 
 use std::fmt;
 

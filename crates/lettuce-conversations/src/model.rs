@@ -556,7 +556,8 @@ impl ConversationBranch {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConversationAggregate {
     pub conversation: Conversation,
     pub branches: Vec<ConversationBranch>,

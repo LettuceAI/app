@@ -69,6 +69,16 @@ remaps the complete graph before atomic import. Full backup version 2 now writes
 the canonical version-3 document as its own authenticated section and verifies
 each voice audio reference against the complete media snapshot.
 
+The conversation-history section stores the complete visible durable graph for
+direct and group chats in one bounded versioned document. It retains archived
+roots, participants, policy and settings, every branch and selected head, every
+message with its timeline ordinal, all revisions and generated candidates,
+initial origins and media references. Validation rejects duplicate identities,
+broken ownership, parent, fork, head, author, render-source and media links.
+Generation attempts, checkpoints, tool executions, jobs, usage, companion
+runtime state, memories and protected artifact payloads remain separate later
+sections of the full backup.
+
 The legacy version-2 ASR JSON schema remains a separate camelCase compatibility
 document. Its nullable IDs, counters, timestamps and native audio locators are
 parsed without making that external format part of the speech domain.

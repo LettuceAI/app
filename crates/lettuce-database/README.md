@@ -657,3 +657,11 @@ The same snapshot reads every ASR vocabulary term, correction, ignored
 suggestion and managed voice example without language or scope filtering. Voice
 examples keep their term, correction and audio asset links. Per-table and total
 transfer limits are enforced before the graph leaves the database boundary.
+
+The deferred backup transaction also reads the unified direct and group
+conversation graph through the existing validated aggregate and message row
+decoders. It includes archived roots, all branches and selected heads, every
+message in exact timeline order, every immutable revision and candidate, and
+initial-origin and media references. Global bounds apply while rows are read;
+runtime generation, tool, job, usage, memory and protected artifact payloads are
+reserved for their own backup sections.

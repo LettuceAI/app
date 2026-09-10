@@ -30,6 +30,12 @@ the type, so usage records retain their equality contract.
 
 Unified direct and group conversations, messages, revisions, branches, and generation turns.
 
+`ConversationAggregate` is also the typed root of the encrypted
+conversation-history transfer document. Serialization remains a domain shape;
+the transfer crate adds global limits, exact timeline ordering and cross-record
+validation while protected snapshot and provider replay bytes stay behind the
+artifact transfer port.
+
 ## Boundary
 
 Provider execution and concrete persistence are injected ports.

@@ -84,6 +84,8 @@ pub struct ProviderBackupGraph {
     pub authored: AuthoredProfileBackup,
     #[serde(skip)]
     pub asr_learning: crate::AsrLearningDocument,
+    #[serde(skip)]
+    pub conversation_history: crate::ConversationHistoryBackup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -170,6 +172,8 @@ pub fn provider_backup_sections(
         serde_json::to_vec(&graph).map_err(|_| ProviderBackupGraphError::Serialization)?;
     let asr_learning = serde_json::to_vec(&graph.asr_learning)
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
+    let conversation_history = serde_json::to_vec(&graph.conversation_history)
+        .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let ordered_secrets = expected
         .keys()
         .map(|reference| supplied[reference])
@@ -188,6 +192,11 @@ pub fn provider_backup_sections(
             secret_bytes,
         ),
         BackupSection::new("data/asr-learning.json", "asr-learning.v3", asr_learning),
+        BackupSection::new(
+            "data/conversation-history.json",
+            "conversation-history.v1",
+            conversation_history,
+        ),
     ];
     sections.extend(media_sections);
     Ok(sections)
@@ -414,7 +423,24 @@ fn canonicalize_and_validate(
         }
     }
     validate_authored(graph, &profile_ids, &prompt_ids, &voice_ids)?;
-    validate_asr_learning(graph)
+    validate_asr_learning(graph)?;
+    let media_asset_ids = graph
+        .authored
+        .media_assets
+        .iter()
+        .map(|asset| asset.id)
+        .collect();
+    graph
+        .conversation_history
+        .canonicalize_and_validate(&media_asset_ids)
+        .map_err(|error| match error {
+            crate::ConversationHistoryBackupError::LimitExceeded => {
+                ProviderBackupGraphError::LimitExceeded
+            }
+            crate::ConversationHistoryBackupError::InvalidData => {
+                ProviderBackupGraphError::InvalidGraph
+            }
+        })
 }
 
 fn validate_asr_learning(graph: &ProviderBackupGraph) -> Result<(), ProviderBackupGraphError> {
@@ -811,6 +837,10 @@ mod tests {
                 voice_examples: Vec::new(),
                 audio_assets: Vec::new(),
             },
+            conversation_history: crate::ConversationHistoryBackup {
+                version: crate::CONVERSATION_HISTORY_BACKUP_VERSION,
+                conversations: Vec::new(),
+            },
         }
     }
 
@@ -834,7 +864,7 @@ mod tests {
         assert!(!format!("{secret:?}").contains("backup-secret-canary"));
         let sections =
             provider_backup_sections(source_graph, vec![secret], Vec::new()).expect("sections");
-        assert_eq!(sections.len(), 3);
+        assert_eq!(sections.len(), 4);
         assert!(
             sections[1]
                 .bytes
@@ -968,7 +998,7 @@ mod tests {
             }],
         )
         .expect("media sections");
-        assert_eq!(sections.len(), 4);
-        assert_eq!(&*sections[3].bytes, &bytes);
+        assert_eq!(sections.len(), 5);
+        assert_eq!(&*sections[4].bytes, &bytes);
     }
 }

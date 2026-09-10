@@ -1080,4 +1080,9 @@ and BLAKE3 before encryption. Shared image assets produce one media section;
 missing ready content fails the export. The same snapshot includes the complete
 canonical ASR learning library across every language and scope, including voice
 examples and their links to the already deduplicated audio sections. Restore
-remains a separate application slice.
+remains a separate application slice. The export also seals the complete visible
+conversation history shared by direct and group chats, including archived
+roots, policy and settings, branches, exact message order, all revisions and
+candidates, initial origins and media references. A file-backed reopen scenario
+preserves an empty starter message, ordinary starter content and a Director-mode
+group that requires no selected speaker, and rejects a broken parent link.

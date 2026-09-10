@@ -141,19 +141,24 @@ pub enum ProviderBackupError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
+    use std::{
+        collections::BTreeSet,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
     };
 
     use lettuce_characters::{
         Character, CharacterDefaults, CharacterMedia, CharacterPresentationV1, CharacterProfile,
-        CharacterProvenance, CharacterRepository, CreateCharacterPlan, CreateGroupPlan,
-        GroupMember, GroupProfile, GroupRepository, Persona, PersonaRepository,
+        CharacterProvenance, CharacterRepository, ConversationStarter, CreateCharacterPlan,
+        CreateGroupPlan, GroupMember, GroupProfile, GroupRepository, Persona, PersonaRepository,
+        SpeakerSelection, StarterMessage, StarterRole,
     };
     use lettuce_context::{
         DetectionPolicy, LorebookBehaviorVersion, LorebookMetadataDraft, LorebookRepository,
     };
+    use lettuce_conversations::{ConversationKind, MessagePart};
     use lettuce_database::Database;
     use lettuce_media::{
         AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, LocalMediaBlobStore,
@@ -171,14 +176,21 @@ mod tests {
         AsrCorrectionRule, AsrIgnoredSuggestion, AsrLearningRepository, AsrVocabularyTerm,
         AsrVoiceExample, AudioProvider, AudioProviderConfig, TtsConfigurationRepository, UserVoice,
     };
-    use lettuce_transfer::{AsrLearningDocument, BackupEnvelopeError, open_backup};
+    use lettuce_transfer::{
+        AsrLearningDocument, BackupEnvelopeError, ConversationHistoryBackup,
+        ConversationHistoryBackupError, open_backup,
+    };
     use lettuce_types::{
-        AudioProviderId, CharacterId, GroupId, OperationId, PersonaId, ProviderAccountId, Revision,
-        VoiceProfileId,
+        AudioProviderId, CharacterId, GroupId, MessageId, OperationId, PersonaId,
+        ProviderAccountId, Revision, StarterMessageId, VoiceProfileId,
     };
 
     use super::*;
-    use crate::AppBackend;
+    use crate::{
+        AppBackend, DIRECT_LAUNCH_REQUEST_FORMAT_V1, DirectConversationLaunchRequest,
+        DirectUserParticipant, GROUP_LAUNCH_REQUEST_FORMAT_V1, GroupConversationLaunchRequest,
+        LaunchSelection,
+    };
 
     struct ChangingSecretStore {
         status_calls: AtomicUsize,
@@ -353,8 +365,37 @@ mod tests {
             TimestampMillis::new(2),
         )
         .expect("store lorebook");
+        let mut direct_starter_id = None;
         let character_ids = ["Ada", "Bea"].map(|name| {
             let id = CharacterId::new();
+            let starters = if name == "Ada" {
+                let starter_id = lettuce_types::ConversationStarterId::new();
+                direct_starter_id = Some(starter_id);
+                vec![
+                    ConversationStarter::new(
+                        starter_id,
+                        id,
+                        "Backup opening".into(),
+                        0,
+                        vec![
+                            StarterMessage {
+                                id: StarterMessageId::new(),
+                                role: StarterRole::User,
+                                content: String::new(),
+                            },
+                            StarterMessage {
+                                id: StarterMessageId::new(),
+                                role: StarterRole::Assistant,
+                                content: "Welcome back.".into(),
+                            },
+                        ],
+                        TimestampMillis::new(2),
+                    )
+                    .expect("conversation starter"),
+                ]
+            } else {
+                Vec::new()
+            };
             CharacterRepository::create(
                 backend.database(),
                 CreateCharacterPlan {
@@ -377,35 +418,81 @@ mod tests {
                     .expect("character"),
                     scenes: Vec::new(),
                     variants: Vec::new(),
-                    starters: Vec::new(),
+                    starters,
                 },
             )
             .expect("store character");
             id
         });
+        let group_id = GroupId::new();
+        let mut group = GroupProfile::new(
+            group_id,
+            "Backup cast".into(),
+            character_ids
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(ordinal, character_id)| GroupMember {
+                    character_id,
+                    ordinal: u32::try_from(ordinal).expect("ordinal"),
+                    muted: false,
+                    model_profile_override: None,
+                })
+                .collect(),
+            TimestampMillis::new(2),
+        )
+        .expect("group");
+        group.speaker_selection = SpeakerSelection::Director;
         GroupRepository::create(
             backend.database(),
             CreateGroupPlan {
-                group: GroupProfile::new(
-                    GroupId::new(),
-                    "Backup cast".into(),
-                    character_ids
-                        .into_iter()
-                        .enumerate()
-                        .map(|(ordinal, character_id)| GroupMember {
-                            character_id,
-                            ordinal: u32::try_from(ordinal).expect("ordinal"),
-                            muted: false,
-                            model_profile_override: None,
-                        })
-                        .collect(),
-                    TimestampMillis::new(2),
-                )
-                .expect("group"),
+                group,
                 starting_scene: None,
             },
         )
         .expect("store group");
+        let direct_conversation = backend
+            .launch_direct_conversation(
+                &DirectConversationLaunchRequest {
+                    format_version: DIRECT_LAUNCH_REQUEST_FORMAT_V1,
+                    title: "Backup direct chat".into(),
+                    user: DirectUserParticipant {
+                        display_name: "User".into(),
+                        authored_description: None,
+                    },
+                    character_id: character_ids[0],
+                    scene: LaunchSelection::Disabled,
+                    starter: LaunchSelection::Explicit(
+                        direct_starter_id.expect("direct starter id"),
+                    ),
+                    persona: LaunchSelection::Explicit(persona.id),
+                    operation_key: lettuce_jobs::IdempotencyKey::new("backup-direct-chat")
+                        .expect("operation key"),
+                },
+                TimestampMillis::new(3),
+            )
+            .expect("launch direct conversation")
+            .value
+            .conversation;
+        let group_conversation = backend
+            .launch_group_conversation(
+                &GroupConversationLaunchRequest {
+                    format_version: GROUP_LAUNCH_REQUEST_FORMAT_V1,
+                    title: "Backup group chat".into(),
+                    user: DirectUserParticipant {
+                        display_name: "User".into(),
+                        authored_description: None,
+                    },
+                    group_id,
+                    persona: LaunchSelection::Disabled,
+                    operation_key: lettuce_jobs::IdempotencyKey::new("backup-group-chat")
+                        .expect("operation key"),
+                },
+                TimestampMillis::new(3),
+            )
+            .expect("launch group conversation")
+            .value
+            .conversation;
         let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
             .expect("filesystem authority");
         let ingest = LocalMediaBlobStore::new(
@@ -556,7 +643,7 @@ mod tests {
             Err(BackupEnvelopeError::Authentication)
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 5);
+        assert_eq!(sections.len(), 6);
         assert!(
             sections[1]
                 .bytes
@@ -594,6 +681,49 @@ mod tests {
         assert_eq!(
             learning.audio_assets[0].content_hash,
             voice_audio.blob.content_hash
+        );
+        let history: ConversationHistoryBackup =
+            serde_json::from_slice(&sections[3].bytes).expect("conversation history JSON");
+        assert_eq!(history.conversations.len(), 2);
+        let direct = history
+            .conversations
+            .iter()
+            .find(|backup| backup.aggregate.conversation.id == direct_conversation.id)
+            .expect("direct conversation backup");
+        assert!(matches!(
+            &direct.aggregate.conversation.kind,
+            ConversationKind::Direct(_)
+        ));
+        assert_eq!(direct.messages.len(), 2);
+        assert_eq!(
+            direct.messages[0].revisions[0].parts,
+            vec![MessagePart::Text {
+                text: String::new()
+            }]
+        );
+        assert_eq!(direct.messages[1].timeline_ordinal, 2);
+        let group = history
+            .conversations
+            .iter()
+            .find(|backup| backup.aggregate.conversation.id == group_conversation.id)
+            .expect("group conversation backup");
+        assert!(matches!(
+            &group.aggregate.conversation.kind,
+            ConversationKind::Group(_)
+        ));
+        assert!(group.messages.is_empty());
+        let mut corrupt_history = history.clone();
+        corrupt_history
+            .conversations
+            .iter_mut()
+            .find(|backup| backup.aggregate.conversation.id == direct_conversation.id)
+            .expect("direct conversation backup")
+            .messages[1]
+            .message
+            .parent_message_id = Some(MessageId::new());
+        assert_eq!(
+            corrupt_history.canonicalize_and_validate(&BTreeSet::new()),
+            Err(ConversationHistoryBackupError::InvalidData)
         );
         assert_eq!(metadata["settings"]["value"]["analytics_enabled"], true);
         assert_eq!(metadata["audio_providers"][0]["label"], "Speech provider");
