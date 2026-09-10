@@ -26,6 +26,45 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "2.2.5 / 2.2.5",
+    date: "2026-09-10",
+    title: "2.2.5 — Context Usage Breakdown & Leaner Dynamic Memory",
+    description:
+      "Every assistant message now shows how much of the context window its prompt used and what filled it, in 1-on-1 and group chats alike. Dynamic memory in 1-on-1 chats stops sending the whole memory bank on every turn, and embeddings start again on macOS.",
+    changes: [
+      {
+        type: "feature",
+        description:
+          "A Context Usage panel in the message actions of assistant replies shows the context window split into occupied, reserved for the response, and free, plus a breakdown of what fills the prompt: system, character, persona, memories, lorebook, author's note, companion state, and chat history. Shares are estimated with tiktoken and scaled onto the prompt tokens the provider actually reported.",
+      },
+      {
+        type: "feature",
+        description:
+          "Group chat messages get the same panel, rebuilt from the stored message without re-running retrieval, with a Group cast category that counts the other participants' profiles.",
+      },
+      {
+        type: "improvement",
+        description:
+          "On llama.cpp and Ollama, the reserved response budget (response plus reasoning) is read from the real request, and a warning appears when the prompt and that reservation together exceed the context window, so you can lower max tokens or trim context before the prompt gets truncated or the reply is cut short.",
+      },
+      {
+        type: "improvement",
+        description:
+          "The developer message debug page includes the same per-category token breakdown, with totals and context-window usage.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "Dynamic memory in 1-on-1 chats no longer fills {{key_memories}} with the entire hot memory bank on every prompt on top of the retrieved memories. Only the memories retrieved for that turn are sent, for roleplay characters and companions alike, across new replies, regenerations, and continuations.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "Embeddings no longer fail to start on macOS with a \"different Team IDs\" error. The ONNX Runtime downloaded at runtime is signed by Microsoft, which macOS refused to load into the app, and it is now re-signed locally before it is loaded.",
+      },
+    ],
+  },
+  {
     version: "2.2.4 / 2.2.4",
     date: "2026-09-06",
     title: "2.2.4 — Hotfix for Companion-Relationships",
@@ -70,11 +109,6 @@ export const changelog: ChangelogEntry[] = [
         type: "bugfix",
         description:
           "The adaptive-p sampler on llama.cpp now receives its target and decay values. They were dropped from every request, so the sampler ran without its controls.",
-      },
-      {
-        type: "bugfix",
-        description:
-          "Embeddings no longer fail to start on macOS with a \"different Team IDs\" error. The ONNX Runtime downloaded at runtime is signed by Microsoft, which macOS refused to load into the app, and it is now re-signed locally before it is loaded.",
       },
       {
         type: "bugfix",
