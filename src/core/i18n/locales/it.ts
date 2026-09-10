@@ -6993,6 +6993,13 @@ export const itMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "Crea una nuova chiave se non ne vedi una.",
           s4: "Copia la chiave e incollala in LettuceAI.",
         },
+        modelrunner: {
+          title: "Come trovare la tua chiave API ModelRunner",
+          s1: "Visita modelrunner.ai e accedi.",
+          s2: "Apri Settings e poi API Keys.",
+          s3: "Crea una nuova chiave se non ne vedi una.",
+          s4: "Copia la chiave e incollala in LettuceAI.",
+        },
         anannas: {
           title: "Come trovare la tua chiave API Anannas",
           s1: "Vai su dashboard.anannas.ai e accedi.",

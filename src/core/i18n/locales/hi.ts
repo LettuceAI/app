@@ -6993,6 +6993,13 @@ export const hiMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "यदि आपको कोई नहीं दिखे तो एक नई key बनाएँ।",
           s4: "Key कॉपी करें और LettuceAI में पेस्ट करें।",
         },
+        modelrunner: {
+          title: "अपनी ModelRunner API key कैसे खोजें",
+          s1: "modelrunner.ai पर जाएँ और साइन इन करें।",
+          s2: "Settings खोलें, फिर API Keys।",
+          s3: "यदि आपको कोई नहीं दिखे तो एक नई key बनाएँ।",
+          s4: "Key कॉपी करें और LettuceAI में पेस्ट करें।",
+        },
         anannas: {
           title: "अपनी Anannas API key कैसे खोजें",
           s1: "dashboard.anannas.ai पर जाएँ और लॉग इन करें।",

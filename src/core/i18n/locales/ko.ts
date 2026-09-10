@@ -7809,6 +7809,13 @@ export const koMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "없으면 새 키를 만드세요.",
           s4: "키를 복사하여 LettuceAI에 붙여넣으세요.",
         },
+        modelrunner: {
+          title: "ModelRunner API 키를 찾는 방법",
+          s1: "modelrunner.ai를 방문하여 로그인하세요.",
+          s2: "Settings를 연 다음 API Keys로 이동하세요.",
+          s3: "없으면 새 키를 만드세요.",
+          s4: "키를 복사하여 LettuceAI에 붙여넣으세요.",
+        },
         anannas: {
           title: "Anannas API 키를 찾는 방법",
           s1: "dashboard.anannas.ai로 이동하여 로그인하세요.",

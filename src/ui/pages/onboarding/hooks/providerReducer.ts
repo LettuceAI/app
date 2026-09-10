@@ -70,6 +70,8 @@ export function getDefaultBaseUrl(providerId: string): string {
       return "https://llm.chutes.ai";
     case "featherless":
       return "https://api.featherless.ai/v1";
+    case "modelrunner":
+      return "https://queue.modelrunner.run/v1";
     case "openrouter":
       return "https://openrouter.ai/api";
     case "openai":

@@ -99,6 +99,11 @@ function buildGuides(t: TFunction): Record<string, Guide> {
       steps: guideSteps("featherless"),
       url: "https://featherless.ai/",
     },
+    modelrunner: {
+      title: guideTitle("modelrunner"),
+      steps: guideSteps("modelrunner"),
+      url: "https://modelrunner.ai/settings/api-keys",
+    },
     anannas: {
       title: guideTitle("anannas"),
       steps: guideSteps("anannas"),

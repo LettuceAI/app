@@ -8731,6 +8731,13 @@ export const enMessages = {
           s3: "Create a new key if you do not see one.",
           s4: "Copy the key and paste it into LettuceAI.",
         },
+        modelrunner: {
+          title: "How to find your ModelRunner API key",
+          s1: "Visit modelrunner.ai and sign in.",
+          s2: "Open Settings, then API Keys.",
+          s3: "Create a new key if you do not see one.",
+          s4: "Copy the key and paste it into LettuceAI.",
+        },
         anannas: {
           title: "How to find your Anannas API key",
           s1: "Go to dashboard.anannas.ai and log in.",

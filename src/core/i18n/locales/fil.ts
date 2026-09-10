@@ -7809,6 +7809,13 @@ export const filMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "Gumawa ng bagong key kung wala kang nakita.",
           s4: "Kopyahin ang key at i-paste ito sa LettuceAI.",
         },
+        modelrunner: {
+          title: "Paano mahanap ang iyong ModelRunner API key",
+          s1: "Bisitahin ang modelrunner.ai at mag-sign in.",
+          s2: "Buksan ang Settings, tapos ang API Keys.",
+          s3: "Gumawa ng bagong key kung wala kang nakita.",
+          s4: "Kopyahin ang key at i-paste ito sa LettuceAI.",
+        },
         anannas: {
           title: "Paano mahanap ang iyong Anannas API key",
           s1: "Pumunta sa dashboard.anannas.ai at mag-log in.",

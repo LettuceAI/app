@@ -7809,6 +7809,13 @@ export const ruMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "Создайте новый ключ, если вы его не видите.",
           s4: "Скопируйте ключ и вставьте его в LettuceAI.",
         },
+        modelrunner: {
+          title: "Как найти ключ API ModelRunner",
+          s1: "Посетите сайт modelrunner.ai и войдите в систему.",
+          s2: "Откройте Settings, затем API Keys.",
+          s3: "Создайте новый ключ, если вы его не видите.",
+          s4: "Скопируйте ключ и вставьте его в LettuceAI.",
+        },
         anannas: {
           title: "Как найти ключ API Anannas",
           s1: "Перейдите на Dashboard.anannas.ai и войдите в систему.",

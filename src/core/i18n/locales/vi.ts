@@ -6993,6 +6993,13 @@ export const viMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "Create a new key if you do not see one.",
           s4: "Copy the key and paste it into LettuceAI.",
         },
+        modelrunner: {
+          title: "Cách tìm khóa API ModelRunner của bạn",
+          s1: "Truy cập modelrunner.ai và đăng nhập.",
+          s2: "Mở Settings, rồi API Keys.",
+          s3: "Tạo khóa mới nếu bạn không thấy khóa nào.",
+          s4: "Sao chép khóa và dán vào LettuceAI.",
+        },
         anannas: {
           title: "How to find your Anannas API key",
           s1: "Go to dashboard.anannas.ai and log in.",

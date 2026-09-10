@@ -7809,6 +7809,13 @@ export const esMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "Crea una nueva key si no ves ninguna.",
           s4: "Copia la key y pégala en LettuceAI.",
         },
+        modelrunner: {
+          title: "Cómo encontrar tu API key de ModelRunner",
+          s1: "Visita modelrunner.ai e inicia sesión.",
+          s2: "Abre Settings y luego API Keys.",
+          s3: "Crea una nueva key si no ves ninguna.",
+          s4: "Copia la key y pégala en LettuceAI.",
+        },
         anannas: {
           title: "Cómo encontrar tu API key de Anannas",
           s1: "Ve a dashboard.anannas.ai e inicia sesión.",

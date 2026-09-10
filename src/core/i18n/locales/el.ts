@@ -7809,6 +7809,13 @@ export const elMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "Δημιουργήστε νέο κλειδί αν δεν βλέπετε κανένα.",
           s4: "Αντιγράψτε το κλειδί και επικολλήστε το στο LettuceAI.",
         },
+        modelrunner: {
+          title: "Πώς να βρείτε το κλειδί API ModelRunner",
+          s1: "Επισκεφτείτε το modelrunner.ai και συνδεθείτε.",
+          s2: "Ανοίξτε το Settings και μετά το API Keys.",
+          s3: "Δημιουργήστε νέο κλειδί αν δεν βλέπετε κανένα.",
+          s4: "Αντιγράψτε το κλειδί και επικολλήστε το στο LettuceAI.",
+        },
         anannas: {
           title: "Πώς να βρείτε το κλειδί API Anannas",
           s1: "Μεταβείτε στο dashboard.anannas.ai και συνδεθείτε.",

@@ -7809,6 +7809,13 @@ export const nlMessages: DeepPartialMessageTree<LocaleMessages> = {
           s3: "Maak een nieuwe sleutel aan als je er geen ziet.",
           s4: "Kopieer de sleutel en plak hem in LettuceAI.",
         },
+        modelrunner: {
+          title: "Hoe vind je je ModelRunner API-sleutel",
+          s1: "Bezoek modelrunner.ai en meld je aan.",
+          s2: "Open Settings en daarna API Keys.",
+          s3: "Maak een nieuwe sleutel aan als je er geen ziet.",
+          s4: "Kopieer de sleutel en plak hem in LettuceAI.",
+        },
         anannas: {
           title: "Hoe vind je je Anannas API-sleutel",
           s1: "Ga naar dashboard.anannas.ai en log in.",
