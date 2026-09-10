@@ -294,6 +294,19 @@ their audio or learning relationships, so the plan reports that absence and
 does not fabricate them. All decrypted documents and archive media remain
 attached; this slice neither writes learning rows nor ingests audio.
 
+Legacy usage history is also decoded as a bounded read-only compatibility
+plan. It retains request, session, character, model and provider labels, the
+operation and finish reason, every exported token counter, success/error state,
+the three stored monetary totals and all metadata. Known metadata counters and
+cost fields are validated from their string representation without running a
+pricing formula. These rows predate current turn, attempt, job and immutable
+dispatch identities, so they are marked historical-only and cannot enter the
+current aggregate ledger as new charges. Duplicate IDs or metadata keys,
+negative counters, invalid timestamps and non-finite costs reject the plan.
+Finite historical values remain exact, including values produced by old
+calculator behavior, while current pricing and offloader formulas remain
+unchanged. The source inventory stays attached and no usage row is written.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established
