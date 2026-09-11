@@ -1917,3 +1917,69 @@ fn aggregate_usage(
         },
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use lettuce_conversations::{
+        InferenceUsage, ProviderReportedCost, UsageCounters, UsageUnavailableReason,
+    };
+
+    use super::aggregate_usage;
+
+    #[test]
+    fn usage_aggregation_never_invents_missing_provider_counters() {
+        assert_eq!(
+            aggregate_usage(&[
+                Some(InferenceUsage {
+                    provider_reported_cost: ProviderReportedCost::new(0.125),
+                    cache_write_tokens: Some(3),
+                    web_search_requests: Some(0),
+                    cached_input_tokens: Some(2),
+                    reasoning_tokens: Some(1),
+                    input_tokens: 10,
+                    output_tokens: 2,
+                }),
+                Some(InferenceUsage {
+                    provider_reported_cost: ProviderReportedCost::new(0.25),
+                    cache_write_tokens: Some(2),
+                    web_search_requests: None,
+                    cached_input_tokens: Some(0),
+                    reasoning_tokens: None,
+                    input_tokens: 7,
+                    output_tokens: 3,
+                }),
+            ]),
+            Some(UsageCounters::Known(InferenceUsage {
+                provider_reported_cost: ProviderReportedCost::new(0.375),
+                cache_write_tokens: Some(5),
+                web_search_requests: None,
+                cached_input_tokens: Some(2),
+                reasoning_tokens: None,
+                input_tokens: 17,
+                output_tokens: 5,
+            }))
+        );
+        assert_eq!(
+            aggregate_usage(&[None]),
+            Some(UsageCounters::Unavailable(
+                UsageUnavailableReason::ProviderOmitted
+            ))
+        );
+        assert_eq!(
+            aggregate_usage(&[]),
+            Some(UsageCounters::Unavailable(
+                UsageUnavailableReason::NotAdmitted
+            ))
+        );
+        let huge = InferenceUsage {
+            provider_reported_cost: None,
+            cache_write_tokens: None,
+            web_search_requests: None,
+            cached_input_tokens: None,
+            reasoning_tokens: None,
+            input_tokens: u64::MAX,
+            output_tokens: 0,
+        };
+        assert_eq!(aggregate_usage(&[Some(huge.clone()), Some(huge)]), None);
+    }
+}
