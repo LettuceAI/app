@@ -243,7 +243,7 @@ fn validate_job(
     handle: &JobHandle,
 ) -> Result<(), CompanionPostTurnMemoryRunError> {
     let conversation_id = admission.batch.conversation_id;
-    if admission.batch.effects.is_empty()
+    if admission.batch.effects().is_empty()
         || (admission.batch.update_dynamic_memory_model_on_success
             && admission.batch.selected_model_profile_id.is_none())
         || admission.job.id != handle.id()
@@ -252,10 +252,10 @@ fn validate_job(
         || admission.job.subject.id.as_str() != conversation_id.to_string()
         || admission.job.idempotency_key.as_ref() != Some(&admission.batch.idempotency_key)
         || admission.job.state.is_terminal()
-        || admission.batch.effects.iter().any(|effect| {
+        || admission.batch.effects().iter().any(|effect| {
             effect.conversation_id != conversation_id
                 || effect.status == CompanionTurnEffectStatus::Invalidated
-                || (admission.batch.settle_effects
+                || (admission.batch.settle_effects()
                     && (effect.status != CompanionTurnEffectStatus::Processing
                         || effect.source_window.is_some()
                         || effect.summary.is_some()))
@@ -269,32 +269,10 @@ fn validate_job(
 fn expected_effect_messages(
     admission: &CompanionPostTurnMemoryAdmission,
 ) -> Result<Vec<(MessageId, MessageRole)>, CompanionPostTurnMemoryRunError> {
-    let source_effects = admission
+    admission
         .batch
-        .effects
-        .get(admission.batch.source_effect_offset..)
-        .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?;
-    if source_effects.is_empty() {
-        return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
-    }
-    let mut expected = Vec::with_capacity(source_effects.len() * 2);
-    let mut unique = HashSet::new();
-    for effect in source_effects {
-        if let Some(id) = effect.user_message_id {
-            if !unique.insert(id) {
-                return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
-            }
-            expected.push((id, MessageRole::User));
-        }
-        if !unique.insert(effect.assistant_message_id) {
-            return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
-        }
-        expected.push((effect.assistant_message_id, MessageRole::Assistant));
-    }
-    if expected.len() > lettuce_memory::MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES {
-        return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
-    }
-    Ok(expected)
+        .source_messages()
+        .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)
 }
 
 fn resolve_source_messages<C: ConversationReader + ?Sized>(
@@ -926,9 +904,11 @@ mod tests {
                 summary_message_interval: 20,
                 window_selection: crate::CompanionMemoryWindowSelection::Automatic,
                 unsummarized_message_count,
-                source_effect_offset: 0,
-                effects,
-                settle_effects: true,
+                source: crate::PostTurnMemorySource::CompanionEffects {
+                    effects,
+                    source_effect_offset: 0,
+                    settle_effects: true,
+                },
                 selected_model_profile_id: None,
                 update_dynamic_memory_model_on_success: false,
             },

@@ -2648,9 +2648,11 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         } else {
             1
         },
-        source_effect_offset: 0,
-        effects: vec![continued_effect],
-        settle_effects: true,
+        source: crate::PostTurnMemorySource::CompanionEffects {
+            effects: vec![continued_effect],
+            source_effect_offset: 0,
+            settle_effects: true,
+        },
         selected_model_profile_id: Some(failed_model_id),
         update_dynamic_memory_model_on_success: true,
     };

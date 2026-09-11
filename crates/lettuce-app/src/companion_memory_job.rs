@@ -4,7 +4,9 @@ use lettuce_companions::{
     CompanionTurnEffect, CompanionTurnEffectRepository, CompanionTurnEffectRepositoryError,
     CompanionTurnEffectStatus,
 };
-use lettuce_conversations::{ConversationKind, ConversationReader, ConversationRepositoryError};
+use lettuce_conversations::{
+    ConversationKind, ConversationReader, ConversationRepositoryError, MessageRole,
+};
 use lettuce_jobs::{
     CancellationPolicy, IdempotencyKey, JobKind, JobPriority, JobQuery, JobSnapshot, JobSpec,
     JobStore, JobSubject, OutcomeRef, RecoveryPolicy, ResourceClass, StoreError, SubjectKind,
@@ -13,7 +15,7 @@ use lettuce_memory::{
     DynamicMemoryApprovalRepository, DynamicMemoryRunMode, MemoryRepositoryError,
 };
 use lettuce_types::{
-    ConversationId, ModelProfileId, OperationId, PageLimit, PageRequest, TimestampMillis,
+    ConversationId, MessageId, ModelProfileId, OperationId, PageLimit, PageRequest, TimestampMillis,
 };
 
 use crate::CompanionPostTurnEffect;
@@ -27,23 +29,69 @@ pub enum CompanionMemoryWindowSelection {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum PostTurnMemorySource {
+    CompanionEffects {
+        effects: Vec<CompanionTurnEffect>,
+        source_effect_offset: usize,
+        settle_effects: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct CompanionPostTurnMemoryBatch {
     pub conversation_id: ConversationId,
     pub idempotency_key: IdempotencyKey,
     pub summary_message_interval: u32,
     pub window_selection: CompanionMemoryWindowSelection,
     pub unsummarized_message_count: u64,
-    pub source_effect_offset: usize,
-    pub effects: Vec<CompanionTurnEffect>,
-    pub settle_effects: bool,
+    pub source: PostTurnMemorySource,
     pub selected_model_profile_id: Option<ModelProfileId>,
     pub update_dynamic_memory_model_on_success: bool,
 }
 
 impl CompanionPostTurnMemoryBatch {
     #[must_use]
+    pub fn effects(&self) -> &[CompanionTurnEffect] {
+        match &self.source {
+            PostTurnMemorySource::CompanionEffects { effects, .. } => effects,
+        }
+    }
+
+    #[must_use]
+    pub const fn settle_effects(&self) -> bool {
+        match &self.source {
+            PostTurnMemorySource::CompanionEffects { settle_effects, .. } => *settle_effects,
+        }
+    }
+
+    #[must_use]
+    pub fn source_messages(&self) -> Option<Vec<(MessageId, MessageRole)>> {
+        let PostTurnMemorySource::CompanionEffects {
+            effects,
+            source_effect_offset,
+            ..
+        } = &self.source;
+        let source_effects = effects.get(*source_effect_offset..)?;
+        let mut messages = Vec::with_capacity(source_effects.len() * 2);
+        for effect in source_effects {
+            if let Some(id) = effect.user_message_id {
+                messages.push((id, MessageRole::User));
+            }
+            messages.push((effect.assistant_message_id, MessageRole::Assistant));
+        }
+        let unique = messages
+            .iter()
+            .map(|(id, _)| *id)
+            .collect::<std::collections::HashSet<_>>();
+        (!messages.is_empty()
+            && unique.len() == messages.len()
+            && messages.len() <= lettuce_memory::MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES)
+            .then_some(messages)
+    }
+
+    #[must_use]
     pub fn terminal_effects(&self) -> Vec<CompanionPostTurnEffect<'_>> {
-        self.effects
+        self.effects()
             .iter()
             .map(|effect| CompanionPostTurnEffect {
                 effect,
@@ -430,9 +478,11 @@ impl<
                 summary_message_interval,
                 window_selection,
                 unsummarized_message_count,
-                source_effect_offset,
-                effects,
-                settle_effects,
+                source: PostTurnMemorySource::CompanionEffects {
+                    effects,
+                    source_effect_offset,
+                    settle_effects,
+                },
                 selected_model_profile_id,
                 update_dynamic_memory_model_on_success,
             },
@@ -601,6 +651,14 @@ mod tests {
 
     use super::*;
 
+    fn source_effect_offset(batch: &CompanionPostTurnMemoryBatch) -> usize {
+        let PostTurnMemorySource::CompanionEffects {
+            source_effect_offset,
+            ..
+        } = &batch.source;
+        *source_effect_offset
+    }
+
     #[derive(Debug, Default)]
     struct Effects(
         Mutex<Vec<CompanionTurnEffect>>,
@@ -766,6 +824,38 @@ mod tests {
     }
 
     #[test]
+    fn source_messages_start_at_the_recent_window_offset() {
+        let conversation_id = ConversationId::new();
+        let older = effect(conversation_id, 10);
+        let recent = effect(conversation_id, 20);
+        let batch = CompanionPostTurnMemoryBatch {
+            conversation_id,
+            idempotency_key: IdempotencyKey::new("recent-window").expect("key"),
+            summary_message_interval: 2,
+            window_selection: CompanionMemoryWindowSelection::Recent,
+            unsummarized_message_count: 4,
+            source: PostTurnMemorySource::CompanionEffects {
+                effects: vec![older, recent.clone()],
+                source_effect_offset: 1,
+                settle_effects: true,
+            },
+            selected_model_profile_id: None,
+            update_dynamic_memory_model_on_success: false,
+        };
+        assert_eq!(
+            batch.source_messages(),
+            Some(vec![
+                (
+                    recent.user_message_id.expect("user message"),
+                    MessageRole::User
+                ),
+                (recent.assistant_message_id, MessageRole::Assistant),
+            ])
+        );
+        assert_eq!(batch.effects().len(), 2);
+    }
+
+    #[test]
     fn discovery_admits_the_oldest_ready_prefix_exactly_once() {
         let effects = Effects::default();
         let jobs = InMemoryJobStore::new();
@@ -794,8 +884,8 @@ mod tests {
         assert_eq!(first.job.kind, JobKind::MemoryExtraction);
         assert_eq!(first.job.state, JobState::Queued);
         assert_eq!(first.batch.summary_message_interval, 1);
-        assert_eq!(first.batch.effects[0].id, earlier.id);
-        assert_eq!(first.batch.effects.len(), 1);
+        assert_eq!(first.batch.effects()[0].id, earlier.id);
+        assert_eq!(first.batch.effects().len(), 1);
         assert_eq!(
             first.batch.terminal_effects()[0].enqueued_at,
             earlier.created_at
@@ -915,7 +1005,7 @@ mod tests {
                 .expect("first conversation")
                 .admission
                 .batch
-                .effects
+                .effects()
                 .len(),
             1
         );
@@ -998,8 +1088,8 @@ mod tests {
             .expect("direct trigger")
             .expect("direct admission");
         assert!(first.created);
-        assert_eq!(first.batch.effects, [direct_effect]);
-        assert_eq!(first.batch.source_effect_offset, 0);
+        assert_eq!(first.batch.effects(), [direct_effect]);
+        assert_eq!(source_effect_offset(&first.batch), 0);
         let replay = direct
             .trigger_and_admit(
                 direct_conversation,
@@ -1034,8 +1124,8 @@ mod tests {
             .expect("group trigger")
             .expect("group admission");
         assert_eq!(admitted.batch.unsummarized_message_count, 8);
-        assert_eq!(admitted.batch.source_effect_offset, 0);
-        assert_eq!(admitted.batch.effects, [first_group, second_group]);
+        assert_eq!(source_effect_offset(&admitted.batch), 0);
+        assert_eq!(admitted.batch.effects(), [first_group, second_group]);
     }
 
     #[test]
@@ -1056,8 +1146,8 @@ mod tests {
             .expect("rebuild")
             .expect("admission");
         assert!(first.created);
-        assert!(!first.batch.settle_effects);
-        assert_eq!(first.batch.effects, [retained.clone()]);
+        assert!(!first.batch.settle_effects());
+        assert_eq!(first.batch.effects(), [retained.clone()]);
 
         let replay = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &first_jobs)
             .rebuild_and_admit(
@@ -1212,14 +1302,14 @@ mod tests {
             CompanionMemoryWindowSelection::Recent
         );
         assert_eq!(admitted.batch.unsummarized_message_count, 8);
-        assert_eq!(admitted.batch.effects.len(), 4);
-        assert_eq!(admitted.batch.source_effect_offset, 2);
+        assert_eq!(admitted.batch.effects().len(), 4);
+        assert_eq!(source_effect_offset(&admitted.batch), 2);
         assert_eq!(
             admitted
                 .batch
-                .effects
+                .effects()
                 .iter()
-                .skip(admitted.batch.source_effect_offset)
+                .skip(source_effect_offset(&admitted.batch))
                 .map(|effect| effect.id)
                 .collect::<Vec<_>>(),
             [third.id, fourth.id]

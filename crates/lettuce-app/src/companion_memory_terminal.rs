@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use lettuce_companions::{CompanionTurnEffect, CompanionTurnEffectRepository, MAX_GROWTH_MEMORIES};
-use lettuce_conversations::{MessageRole, PortError, ProviderFailureKind};
+use lettuce_conversations::{PortError, ProviderFailureKind};
 use lettuce_jobs::handle::JobHandle;
 use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptStatus,
@@ -197,7 +197,7 @@ impl<
             .get(run.space_id)?
             .ok_or(CompanionMemoryTerminalError::InvalidOwnership)?;
         let fresh_memories = fresh_growth_memories(&run.starting_memory, &after);
-        let effects = if batch.settle_effects {
+        let effects = if batch.settle_effects() {
             CompanionPostTurnEffectCoordinator::new(self.repository).settle_ready(
                 &batch.terminal_effects(),
                 &run.starting_memory,
@@ -205,7 +205,7 @@ impl<
                 now,
             )?
         } else {
-            batch.effects.clone()
+            batch.effects().to_vec()
         };
         let first_settlement = attempt.status == DynamicMemoryAttemptStatus::Processing;
         let attempt = if first_settlement {
@@ -264,17 +264,17 @@ impl<
         {
             return Err(CompanionMemoryTerminalError::InvalidOwnership);
         }
-        let effects = if batch.settle_effects {
+        let effects = if batch.settle_effects() {
             let effect_coordinator = CompanionPostTurnEffectCoordinator::new(self.repository);
             batch
-                .effects
+                .effects()
                 .iter()
                 .map(|effect| {
                     effect_coordinator.settle_failed(effect, failure.effect_failure(), now)
                 })
                 .collect::<Result<Vec<_>, _>>()?
         } else {
-            batch.effects.clone()
+            batch.effects().to_vec()
         };
         let attempt = if attempt.status == DynamicMemoryAttemptStatus::Processing {
             self.repository.transition_dynamic_memory_attempt(
@@ -307,25 +307,14 @@ impl<
         let run = self.repository.load_dynamic_memory_run(run_id)?;
         let attempt = self.repository.load_dynamic_memory_attempt(attempt_id)?;
         let expected_sources = batch
-            .effects
-            .iter()
-            .flat_map(|effect| {
-                effect
-                    .user_message_id
-                    .map(|id| (id, MessageRole::User))
-                    .into_iter()
-                    .chain(std::iter::once((
-                        effect.assistant_message_id,
-                        MessageRole::Assistant,
-                    )))
-            })
-            .collect::<Vec<_>>();
+            .source_messages()
+            .ok_or(CompanionMemoryTerminalError::InvalidOwnership)?;
         if attempt.run_id != run.id
             || attempt.job_id != handle.id()
             || run.conversation_id != batch.conversation_id
-            || batch.effects.is_empty()
+            || batch.effects().is_empty()
             || batch
-                .effects
+                .effects()
                 .iter()
                 .any(|effect| effect.conversation_id != run.conversation_id)
             || run
