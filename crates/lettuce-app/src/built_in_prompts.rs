@@ -1,9 +1,11 @@
 use lettuce_context::{
     BuiltInPromptSeed, BuiltInReconcileMode, BuiltInReconcileOutcome, BuiltInReconcileRequest,
-    PromptBehaviorVersion, PromptBootstrapError, PromptBootstrapPort, PromptEntryCondition,
-    PromptEntryPayload, PromptEntryPosition, PromptEntryRole, PromptMetadataDraft, PromptPurpose,
+    LifecycleFilter, PromptBehaviorVersion, PromptBootstrapError, PromptBootstrapPort,
+    PromptDocument, PromptEntryCondition, PromptEntryPayload, PromptEntryPosition, PromptEntryRole,
+    PromptLibraryQuery, PromptMetadataDraft, PromptProvenance, PromptPurpose, PromptRepository,
+    PromptRepositoryError,
 };
-use lettuce_types::{PromptDocumentId, TimestampMillis};
+use lettuce_types::{PageLimit, PageRequest, PromptDocumentId, TimestampMillis};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -36,10 +38,11 @@ pub enum BuiltInPromptId {
     CompanionSoulWriter,
     CompanionGrowthcycle,
     CompanionConsolidation,
+    ChatRuntime,
 }
 
 impl BuiltInPromptId {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::AppDefault,
         Self::LocalRoleplay,
         Self::Companion,
@@ -64,6 +67,7 @@ impl BuiltInPromptId {
         Self::CompanionSoulWriter,
         Self::CompanionGrowthcycle,
         Self::CompanionConsolidation,
+        Self::ChatRuntime,
     ];
 
     #[must_use]
@@ -93,6 +97,7 @@ impl BuiltInPromptId {
             Self::CompanionSoulWriter => "prompt_app_companion_soul_writer",
             Self::CompanionGrowthcycle => "prompt_app_companion_growthcycle",
             Self::CompanionConsolidation => "prompt_app_companion_consolidation",
+            Self::ChatRuntime => "prompt_app_chat_runtime",
         }
     }
 
@@ -129,6 +134,7 @@ impl BuiltInPromptId {
             Self::CompanionSoulWriter => PromptPurpose::CompanionSoulWriter,
             Self::CompanionGrowthcycle => PromptPurpose::CompanionGrowthcycle,
             Self::CompanionConsolidation => PromptPurpose::CompanionConsolidation,
+            Self::ChatRuntime => PromptPurpose::RuntimeText,
         }
     }
 
@@ -137,6 +143,37 @@ impl BuiltInPromptId {
         Self::ALL
             .into_iter()
             .find(|id| id.key() == value || id.aliases().contains(&value))
+    }
+}
+
+/// The active built-in document for `id`, found through its provenance key.
+pub(crate) fn active_built_in_prompt<R: PromptRepository + ?Sized>(
+    repository: &R,
+    id: BuiltInPromptId,
+) -> Result<Option<PromptDocument>, PromptRepositoryError> {
+    let mut cursor = None;
+    loop {
+        let page = repository.page(PromptLibraryQuery {
+            page: PageRequest {
+                cursor,
+                limit: PageLimit::default(),
+            },
+            status: LifecycleFilter::Active,
+            purpose: Some(id.purpose()),
+        })?;
+        if let Some(document) = page.items.into_iter().find(|document| {
+            matches!(
+                &document.provenance,
+                PromptProvenance::BuiltIn { key, .. }
+                    if BuiltInPromptId::from_key_or_alias(key) == Some(id)
+            )
+        }) {
+            return Ok(Some(document));
+        }
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => return Ok(None),
+        }
     }
 }
 
@@ -166,6 +203,7 @@ pub struct BuiltInPromptIds {
     pub companion_soul_writer: PromptDocumentId,
     pub companion_growthcycle: PromptDocumentId,
     pub companion_consolidation: PromptDocumentId,
+    pub chat_runtime: PromptDocumentId,
 }
 
 impl BuiltInPromptIds {
@@ -211,6 +249,7 @@ impl BuiltInPromptIds {
             companion_soul_writer: required(BuiltInPromptId::CompanionSoulWriter),
             companion_growthcycle: required(BuiltInPromptId::CompanionGrowthcycle),
             companion_consolidation: required(BuiltInPromptId::CompanionConsolidation),
+            chat_runtime: required(BuiltInPromptId::ChatRuntime),
         })
     }
 
@@ -241,6 +280,7 @@ impl BuiltInPromptIds {
             BuiltInPromptId::CompanionSoulWriter => self.companion_soul_writer,
             BuiltInPromptId::CompanionGrowthcycle => self.companion_growthcycle,
             BuiltInPromptId::CompanionConsolidation => self.companion_consolidation,
+            BuiltInPromptId::ChatRuntime => self.chat_runtime,
         }
     }
 }
@@ -853,7 +893,7 @@ mod tests {
     #[test]
     fn catalog_is_the_exact_closed_legacy_set() {
         let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
-        assert_eq!(catalog.seeds().len(), 24);
+        assert_eq!(catalog.seeds().len(), 25);
 
         let actual = catalog
             .seeds()
@@ -953,7 +993,7 @@ mod tests {
         assert_eq!(calls[1].mode, BuiltInReconcileMode::ResetToSeed);
         assert_eq!(calls[1].seeds.len(), 1);
         assert_eq!(calls[2].mode, BuiltInReconcileMode::ResetToSeed);
-        assert_eq!(calls[2].seeds.len(), 24);
+        assert_eq!(calls[2].seeds.len(), 25);
     }
 
     #[test]

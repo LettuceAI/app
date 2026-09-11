@@ -2221,6 +2221,8 @@ pub enum ContextAssemblyError {
     UnsupportedPart,
     #[error("context exceeds its size limit")]
     SizeLimit,
+    #[error("built-in runtime prompt text is unavailable")]
+    RuntimeTextUnavailable,
 }
 
 #[async_trait]
@@ -2435,6 +2437,7 @@ mod tests {
             ContextAssemblyError::InvalidTimeline,
             ContextAssemblyError::UnsupportedPart,
             ContextAssemblyError::SizeLimit,
+            ContextAssemblyError::RuntimeTextUnavailable,
         ];
         for error in errors {
             assert!(!format!("{error:?}").contains("secret"));

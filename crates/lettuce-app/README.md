@@ -708,7 +708,29 @@ mode too, as legacy group chats always used it. Manual memories render once
 from the exact space revision enters the context. A rebuild of the same
 attempt after its retrieval access restores the pre-access key set from the
 receipt's `promoted_memory_ids`, so the rebuilt context matches the first
-build. The reply itself carries no memory tools: legacy writes memories in
+build.
+
+Every section the turn injects outside the selected template comes from the
+required built-in `prompt_app_chat_runtime` document (purpose `runtimeText`),
+read live and rendered once per turn: relevant memories, the summary, key
+memory, world information, author note, companion state and scheduled-note
+fallbacks (a group-chat author-note variant as legacy had), swap places, and
+the regenerate, continue, group begin and group continue-same-speaker
+instructions, all with legacy wording. It renders with the turn's swapped
+names, so under swap places `{{char.name}}` is the side the model plays. The group
+`{{key_memories}}` prefix is its `runtime_group_key_memories` entry. Rust
+only decides whether a section applies (placeholder absent, operation, last
+message, group or companion mode); its text, role and depth come from the
+entry, so a user edit or a disabled entry is honored (runtime entries are not
+system-prompt entries, which LegacyV1 would render even when disabled). Direct chats now get the
+legacy swap-places note and companion-state fallback, and groups the legacy
+begin and continue-same-speaker notes instead of a generic continue line. The
+author note and swap note name `{{persona.name}}` (the persona, or the user's
+display name when there is none, where legacy wrote "user" / "the user
+persona"). A missing runtime document
+fails the turn with `RuntimeTextUnavailable`.
+
+The reply itself carries no memory tools: legacy writes memories in
 a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`). Plain direct
 and group conversations now admit that cycle through
 `admit_plain_after_turn_and_claim`: the visible user and assistant messages on

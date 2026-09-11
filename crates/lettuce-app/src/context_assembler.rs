@@ -22,6 +22,7 @@ use lettuce_context::{
     PromptRenderValues, PromptSnapshot, PromptVariable, RenderedPromptMessage,
     render_prompt_snapshot, resolve_lorebook_snapshot_activation,
 };
+use lettuce_context::{PromptDocument, PromptRepository, RenderedPrompt, render_prompt};
 use lettuce_conversations::{
     AnnotationPayload, BranchStatus, ContextAssemblyError, ContextAttributions,
     ContextBudgetReport, ContextRequest, ConversationAggregate, ConversationKind,
@@ -61,7 +62,8 @@ where
         + PersonaRepository
         + SoulRepository
         + CompanionStateRepository
-        + CompanionScheduledNoteRepository,
+        + CompanionScheduledNoteRepository
+        + PromptRepository,
 {
     async fn assemble(
         &self,
@@ -151,38 +153,109 @@ where
             .collect::<Vec<_>>()
             .join("\n\n");
 
+        let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
+        let conditions = prompt_conditions(
+            &aggregate,
+            &request,
+            &snapshot,
+            &settings,
+            &lorebook_text,
+            &scene,
+            &scene_direction,
+            &recent_text,
+            request
+                .prompt_runtime
+                .conversation_message_count
+                .unwrap_or(selected_window.len()),
+            companion_state.is_some(),
+            scheduled_notes.is_some(),
+        );
+        let memory_lines = |lines: &[MemoryPromptLine], render: fn(&MemoryPromptLine) -> String| {
+            lines.iter().map(render).collect::<Vec<_>>().join("\n")
+        };
+        let key_lines = request
+            .memory
+            .as_ref()
+            .map(|memory| memory_lines(&memory.key_memories, MemoryPromptLine::plain))
+            .unwrap_or_default();
+        let observed_key_lines = request
+            .memory
+            .as_ref()
+            .map(|memory| memory_lines(&memory.key_memories, MemoryPromptLine::with_observed))
+            .unwrap_or_default();
+        let relevant_memories = request
+            .memory
+            .as_ref()
+            .filter(|_| !group)
+            .map(|memory| memory_lines(&memory.relevant_memories, MemoryPromptLine::with_observed))
+            .unwrap_or_default();
+        let memory_summary = request
+            .memory
+            .as_ref()
+            .and_then(|memory| memory.summary.as_deref())
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+        let mut runtime_values = prompt_values(
+            &aggregate,
+            &snapshot,
+            &settings,
+            &scene,
+            &scene_direction,
+            lorebook_text.trim(),
+            &request,
+            request.swap_roles,
+            companion_state.as_deref(),
+            scheduled_notes.as_deref(),
+        );
+        runtime_values.author_note = runtime_values.author_note.trim().to_owned();
+        runtime_values.context_summary = memory_summary.clone();
+        runtime_values.key_memories = if group {
+            key_lines.clone()
+        } else {
+            observed_key_lines.clone()
+        };
+        runtime_values
+            .purpose_values
+            .insert(PromptVariable::RetrievedMemories, relevant_memories.clone());
+        let guidance = request
+            .guidance
+            .as_deref()
+            .map(str::trim)
+            .filter(|guidance| !guidance.is_empty());
+        if let Some(guidance) = guidance {
+            runtime_values
+                .purpose_values
+                .insert(PromptVariable::RegenerateGuidance, guidance.to_owned());
+        }
+        let runtime = RuntimeSections::render(
+            self.sources,
+            &PromptRenderContext {
+                conditions: conditions.clone(),
+                values: runtime_values,
+            },
+        )?;
+
         let (prompt, rendered_prompt) = if let Some((reference, body)) = snapshot.prompt.as_ref() {
             let document = body.clone();
-            let render_context = PromptRenderContext {
-                conditions: prompt_conditions(
-                    &aggregate,
-                    &request,
-                    &snapshot,
-                    &settings,
-                    &lorebook_text,
-                    &scene,
-                    &scene_direction,
-                    &recent_text,
-                    request
-                        .prompt_runtime
-                        .conversation_message_count
-                        .unwrap_or(selected_window.len()),
-                    companion_state.is_some(),
-                    scheduled_notes.is_some(),
-                ),
-                values: prompt_values(
-                    &aggregate,
-                    &snapshot,
-                    &settings,
-                    &scene,
-                    &scene_direction,
-                    &lorebook_text,
-                    &request,
-                    request.swap_roles,
-                    companion_state.as_deref(),
-                    scheduled_notes.as_deref(),
-                ),
+            let mut values = prompt_values(
+                &aggregate,
+                &snapshot,
+                &settings,
+                &scene,
+                &scene_direction,
+                &lorebook_text,
+                &request,
+                request.swap_roles,
+                companion_state.as_deref(),
+                scheduled_notes.as_deref(),
+            );
+            values.key_memories = match runtime.section("runtime_group_key_memories") {
+                Some(section) if group && !key_lines.is_empty() => section.text,
+                _ if group => String::new(),
+                _ => key_lines.clone(),
             };
+            let render_context = PromptRenderContext { conditions, values };
             let rendered = render_prompt_snapshot(&document, &render_context).map_err(|error| {
                 tracing::warn!(?error, "prompt snapshot rendering failed");
                 ContextAssemblyError::PromptRender
@@ -193,109 +266,62 @@ where
         };
 
         let (mut messages, mut in_chat_messages) = prompt_messages(&rendered_prompt)?;
-        let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
-        let relevant_memories = request
-            .memory
-            .as_ref()
-            .filter(|_| !group)
-            .map(|memory| {
-                memory
-                    .relevant_memories
-                    .iter()
-                    .map(MemoryPromptLine::with_observed)
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            })
-            .unwrap_or_default();
+        let mut runtime_relative = Vec::new();
+        let mut place = |section: Option<RuntimeSection>, first: bool| {
+            let Some(section) = section else {
+                return;
+            };
+            match (section.depth, first) {
+                (None, true) => runtime_relative.insert(0, section.message),
+                (None, false) => runtime_relative.push(section.message),
+                (Some(depth), true) => in_chat_messages.insert(0, (depth, section.message)),
+                (Some(depth), false) => in_chat_messages.push((depth, section.message)),
+            }
+        };
         if !relevant_memories.is_empty() {
-            in_chat_messages.insert(
-                0,
-                (
-                    0,
-                    text_message(
-                        MessageRole::System,
-                        &format!("Relevant memories:\n{relevant_memories}"),
-                    ),
-                ),
-            );
+            place(runtime.section("runtime_retrieved_memories"), true);
+        }
+        let summary_placeholder = template_has_placeholder(prompt.as_ref(), "{{context_summary}}");
+        let keys_placeholder = template_has_placeholder(prompt.as_ref(), "{{key_memories}}");
+        let memory_used = if group {
+            (!memory_summary.is_empty() && summary_placeholder)
+                || (!key_lines.is_empty() && keys_placeholder)
+        } else {
+            !memory_summary.is_empty() || !key_lines.is_empty() || !relevant_memories.is_empty()
+        };
+        if !group && !memory_summary.is_empty() && !summary_placeholder {
+            place(runtime.section("runtime_context_summary"), false);
+        }
+        if !group && !key_lines.is_empty() && !keys_placeholder {
+            place(runtime.section("runtime_key_memories"), false);
+        }
+        if !lorebook_text.trim().is_empty()
+            && !template_has_placeholder(prompt.as_ref(), "{{lorebook}}")
+        {
+            place(runtime.section("runtime_world_information"), false);
         }
         let author_note = settings.author_note.as_deref().unwrap_or_default();
         if !author_note.trim().is_empty()
             && !template_has_placeholder(prompt.as_ref(), "{{author_note}}")
         {
-            let attribution_name = author_note_attribution_name(&aggregate, &snapshot, &request);
-            in_chat_messages.push((
-                1,
-                text_message(
-                    MessageRole::System,
-                    &format!(
-                        "# Author Note\nThe following is private session-level guidance from {attribution_name}. Treat it as hidden continuity and writing context for this chat. Use its facts naturally when relevant, including answering with those facts when the conversation calls for them, but do not say they came from an author note or hidden instruction.\n\n{}",
-                        author_note.trim()
-                    ),
-                ),
-            ));
+            place(
+                runtime.section(if group {
+                    "runtime_group_author_note"
+                } else {
+                    "runtime_author_note"
+                }),
+                false,
+            );
         }
-        let memory_summary = request
-            .memory
-            .as_ref()
-            .and_then(|memory| memory.summary.as_deref())
-            .unwrap_or_default()
-            .trim();
-        let memory_keys = request
-            .memory
-            .as_ref()
-            .map(|memory| {
-                memory
-                    .key_memories
-                    .iter()
-                    .map(MemoryPromptLine::with_observed)
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            })
-            .unwrap_or_default();
-        let summary_placeholder = template_has_placeholder(prompt.as_ref(), "{{context_summary}}");
-        let keys_placeholder = template_has_placeholder(prompt.as_ref(), "{{key_memories}}");
-        let memory_used = if group {
-            (!memory_summary.is_empty() && summary_placeholder)
-                || (!memory_keys.is_empty() && keys_placeholder)
-        } else {
-            !memory_summary.is_empty() || !memory_keys.is_empty() || !relevant_memories.is_empty()
-        };
-        if !group && !memory_summary.is_empty() && !summary_placeholder {
-            in_chat_messages.push((
-                0,
-                text_message(
-                    MessageRole::System,
-                    &format!("# Context Summary\n{memory_summary}"),
-                ),
-            ));
-        }
-        if !group && !memory_keys.is_empty() && !keys_placeholder {
-            in_chat_messages.push((
-                0,
-                text_message(
-                    MessageRole::System,
-                    &format!(
-                        "# Key Memories\nImportant facts to remember in this conversation:\n{memory_keys}"
-                    ),
-                ),
-            ));
-        }
-        if !lorebook_text.trim().is_empty()
-            && !template_has_placeholder(prompt.as_ref(), "{{lorebook}}")
+        if companion_state.is_some()
+            && !template_has_placeholder(prompt.as_ref(), "{{companion_state}}")
         {
-            in_chat_messages.push((
-                0,
-                text_message(
-                    MessageRole::System,
-                    &format!("# World Information\n{}", lorebook_text.trim()),
-                ),
-            ));
+            place(runtime.section("runtime_companion_state"), false);
         }
-        if let Some(notes) = scheduled_notes.as_deref()
+        if scheduled_notes.is_some()
             && !template_has_placeholder(prompt.as_ref(), "{{scheduled_notes}}")
         {
-            in_chat_messages.push((0, text_message(MessageRole::System, notes)));
+            place(runtime.section("runtime_scheduled_notes"), false);
         }
         if prompt
             .as_ref()
@@ -303,16 +329,48 @@ where
         {
             condense_prompt_messages(&mut messages);
         }
+        if request.swap_roles && !group {
+            place(runtime.section("runtime_swap_places"), false);
+        }
+        let selected_speaker = request
+            .selected_speaker
+            .as_ref()
+            .map(|speaker| speaker.participant_id);
+        let last_message = selected_window
+            .iter()
+            .rev()
+            .map(|item| &item.message)
+            .find(|message| message.role != MessageRole::Scene);
+        if group {
+            if selected_window.is_empty() {
+                place(runtime.section("runtime_group_begin"), false);
+            }
+            if request.operation == GenerationOperation::Continue
+                && last_message.is_some_and(|message| {
+                    message.role == MessageRole::Assistant
+                        && message.author_participant_id == selected_speaker
+                })
+            {
+                place(
+                    runtime.section("runtime_group_continue_same_speaker"),
+                    false,
+                );
+            }
+        } else if request.operation == GenerationOperation::Continue
+            && last_message.is_none_or(|message| message.role != MessageRole::User)
+        {
+            place(runtime.section("runtime_continue_instruction"), false);
+        }
+        if guidance.is_some() {
+            place(runtime.section("runtime_regenerate_instruction"), false);
+        }
+        messages.append(&mut runtime_relative);
 
         let character_names = snapshot
             .characters
             .iter()
             .map(|(participant, body)| (participant.id, body.name.clone()))
             .collect::<HashMap<_, _>>();
-        let selected_speaker = request
-            .selected_speaker
-            .as_ref()
-            .map(|speaker| speaker.participant_id);
         let mut transcript = Vec::new();
         for item in &selected_window {
             if let Some(message) = provider_message(
@@ -325,17 +383,8 @@ where
                 transcript.push(message);
             }
         }
-        let final_transcript_role = transcript.last().map(|message| message.role);
         messages.append(&mut transcript);
         insert_in_chat_messages(&mut messages, in_chat_messages);
-
-        if let Some(instruction) = operation_instruction(
-            request.operation,
-            request.guidance.as_deref(),
-            final_transcript_role,
-        ) {
-            messages.push(text_message(MessageRole::User, &instruction));
-        }
 
         let attributions = ContextAttributions {
             prompt: prompt.map(|(reference, _document)| PromptAttribution {
@@ -480,38 +529,64 @@ fn source_effective_time(
         .ok_or(ContextAssemblyError::InvalidTimeline)
 }
 
-fn author_note_attribution_name(
-    aggregate: &ConversationAggregate,
-    snapshot: &SnapshotBundle,
-    request: &ContextRequest,
-) -> String {
-    if request.swap_roles && !aggregate.conversation.kind.is_group() {
-        return selected_character(snapshot, request)
-            .map(|character| character.name.clone())
-            .unwrap_or_else(|| "character".into());
-    }
-    snapshot
-        .persona
-        .as_ref()
-        .map(|persona| persona.title.clone())
-        .unwrap_or_else(|| "user".into())
+struct RuntimeSection {
+    text: String,
+    message: ProviderNeutralMessage,
+    depth: Option<u32>,
 }
 
-fn operation_instruction(
-    operation: GenerationOperation,
-    guidance: Option<&str>,
-    final_transcript_role: Option<MessageRole>,
-) -> Option<String> {
-    if let Some(guidance) = guidance.filter(|value| !value.trim().is_empty()) {
-        return Some(guidance.to_owned());
+/// The built-in chat runtime prompt, rendered once per turn. Rust decides
+/// which of its sections a turn injects; their text, role and placement come
+/// from the catalog document, so a user edit or disabled entry is honored.
+struct RuntimeSections {
+    document: PromptDocument,
+    rendered: RenderedPrompt,
+}
+
+impl RuntimeSections {
+    fn render<S: PromptRepository + ?Sized>(
+        sources: &S,
+        context: &PromptRenderContext,
+    ) -> Result<Self, ContextAssemblyError> {
+        let document = crate::built_in_prompts::active_built_in_prompt(
+            sources,
+            crate::BuiltInPromptId::ChatRuntime,
+        )
+        .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable)?
+        .ok_or(ContextAssemblyError::RuntimeTextUnavailable)?;
+        let rendered = render_prompt(&document, context).map_err(|error| {
+            tracing::warn!(?error, "chat runtime prompt rendering failed");
+            ContextAssemblyError::PromptRender
+        })?;
+        Ok(Self { document, rendered })
     }
-    match operation {
-        GenerationOperation::Continue if final_transcript_role != Some(MessageRole::User) => {
-            Some("Continue the conversation from the current head.".into())
-        }
-        GenerationOperation::Send
-        | GenerationOperation::Regenerate
-        | GenerationOperation::Continue => None,
+
+    fn section(&self, key: &str) -> Option<RuntimeSection> {
+        let entry_id = self
+            .document
+            .entries
+            .iter()
+            .find(|entry| entry.built_in_entry_key.as_deref() == Some(key))?
+            .id;
+        let relative = self
+            .rendered
+            .relative
+            .iter()
+            .find(|message| message.entry_id == entry_id)
+            .map(|message| (message, None));
+        let (message, depth) = relative.or_else(|| {
+            self.rendered
+                .in_chat
+                .iter()
+                .find(|message| message.entry_id == entry_id)
+                .map(|message| (message, Some(message.depth)))
+        })?;
+        let provider_message = rendered_message(message).ok()?;
+        Some(RuntimeSection {
+            text: message.content.trim().to_owned(),
+            message: provider_message,
+            depth,
+        })
     }
 }
 
@@ -1709,24 +1784,6 @@ fn prompt_values(
             .as_ref()
             .and_then(|memory| memory.summary.clone())
             .unwrap_or_default(),
-        key_memories: request
-            .memory
-            .as_ref()
-            .filter(|memory| !memory.key_memories.is_empty())
-            .map(|memory| {
-                let lines = memory
-                    .key_memories
-                    .iter()
-                    .map(MemoryPromptLine::plain)
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                if matches!(aggregate.conversation.kind, ConversationKind::Group(_)) {
-                    format!("Important facts to remember in this conversation:\n{lines}")
-                } else {
-                    lines
-                }
-            })
-            .unwrap_or_default(),
         user_name,
         user_description,
         ai_description,
@@ -1877,15 +1934,6 @@ fn rendered_message(
             text: entry.content.trim().to_owned(),
         }],
     })
-}
-
-fn text_message(role: MessageRole, text: &str) -> ProviderNeutralMessage {
-    ProviderNeutralMessage {
-        role,
-        parts: vec![ProviderContextPart::Text {
-            text: text.trim().to_owned(),
-        }],
-    }
 }
 
 pub(crate) fn condense_prompt_messages(messages: &mut Vec<ProviderNeutralMessage>) {
@@ -2236,44 +2284,17 @@ mod tests {
 
     #[test]
     fn budget_reports_bounded_estimate_and_window_truncation() {
-        let messages = vec![text_message(MessageRole::User, "12345678")];
+        let messages = vec![ProviderNeutralMessage {
+            role: MessageRole::User,
+            parts: vec![ProviderContextPart::Text {
+                text: "12345678".into(),
+            }],
+        }];
         let report = budget_report(&messages, 3).expect("budget");
         assert_eq!(report.input_bytes, 8);
         assert_eq!(report.estimated_input_tokens, 2);
         assert_eq!(report.omitted_messages, 3);
         assert!(report.truncated);
-    }
-
-    #[test]
-    fn operation_instruction_is_explicit_except_continue_after_non_user_head() {
-        assert_eq!(
-            operation_instruction(
-                GenerationOperation::Regenerate,
-                None,
-                Some(MessageRole::Assistant)
-            ),
-            None
-        );
-        assert_eq!(
-            operation_instruction(
-                GenerationOperation::Regenerate,
-                Some("retry"),
-                Some(MessageRole::Assistant)
-            ),
-            Some("retry".into())
-        );
-        assert_eq!(
-            operation_instruction(GenerationOperation::Continue, None, Some(MessageRole::User)),
-            None
-        );
-        assert_eq!(
-            operation_instruction(
-                GenerationOperation::Continue,
-                None,
-                Some(MessageRole::Assistant)
-            ),
-            Some("Continue the conversation from the current head.".into())
-        );
     }
 
     #[test]

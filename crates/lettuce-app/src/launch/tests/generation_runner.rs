@@ -1012,6 +1012,9 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
         );
         assert!(texts.contains(&"Prepared reply"));
         assert!(!texts.contains(&"Remember tea."));
+        assert!(texts.last().is_some_and(|text| {
+            text.starts_with("[CONTINUE] You were in the middle of a response.")
+        }));
     }
 
     let current = ConversationReader::get(backend.database(), scenario.conversation_id)
@@ -1029,7 +1032,7 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
                 expected_turn_revision: continued_result.turn.revision,
                 operation: operation("prepared-manual-regenerate"),
                 active_candidate_id: continued_result.candidate.id,
-                guidance: None,
+                guidance: Some("Make it shorter.".into()),
                 model_override: None,
                 forced_speaker: None,
                 swap_roles: false,
@@ -1063,16 +1066,23 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
         .await
         .expect("run manual regeneration");
     assert_eq!(regenerated_result.candidate.ordinal, 1);
-    assert!(regenerated_inference
-        .requests
-        .lock()
-        .expect("regeneration requests")[0]
-        .context
-        .messages
-        .iter()
-        .any(|message| message.parts.iter().any(|part| {
+    {
+        let requests = regenerated_inference
+            .requests
+            .lock()
+            .expect("regeneration requests");
+        let messages = &requests[0].context.messages;
+        assert!(messages.iter().any(|message| message.parts.iter().any(|part| {
             matches!(part, ProviderContextPart::Text { text } if text.contains("- Mira keeps a handwritten tea journal."))
         })));
+        let last = messages.last().expect("regeneration instruction");
+        assert_eq!(last.role, MessageRole::User);
+        assert!(matches!(
+            last.parts.as_slice(),
+            [ProviderContextPart::Text { text }]
+                if text.starts_with("[REGENERATE INSTRUCTION]") && text.ends_with("\nMake it shorter.")
+        ));
+    }
 
     let replay = runner
         .run(
@@ -1702,6 +1712,18 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
         speakers[0]
     );
     assert!(continued_result.turn.selected_speaker.is_none());
+    assert!(
+        !continued_inference.requests.lock().expect("requests")[0]
+            .context
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .any(|part| matches!(
+                part,
+                ProviderContextPart::Text { text }
+                    if text.starts_with("[CONTINUE]") || text.starts_with("[Continue speaking as")
+            ))
+    );
 
     let current = ConversationReader::get(backend.database(), scenario.conversation_id)
         .expect("conversation after director continuation")
@@ -2150,6 +2172,104 @@ async fn disabled_global_dynamic_memory_renders_direct_memories_like_manual_mode
         .expect("read retrieval access"),
         None
     );
+}
+
+#[tokio::test]
+async fn chat_runtime_sections_follow_catalog_edits() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let scenario =
+        scenario_with_resolvable_profile(backend.database(), false, "runtime-edit", true);
+    let space =
+        MemoryRepository::get_for_conversation(backend.database(), scenario.conversation_id)
+            .expect("manual memory space")
+            .expect("manual memory exists");
+    MemoryRepository::compare_and_apply(
+        backend.database(),
+        MemoryChangeSet {
+            space_id: space.id,
+            expected_revision: space.revision,
+            items: vec![MemoryItem {
+                id: MemoryId::new(),
+                text: "Mira keeps a brass compass.".into(),
+                category: MemoryCategory::WorldDetail,
+                source_message_id: None,
+                source_role: None,
+                observed_at: None,
+                observed_time_precision: None,
+                superseded_by: None,
+                superseded_at: None,
+                supersedes: vec![],
+                token_count: 6,
+                is_cold: false,
+                is_pinned: false,
+                importance: Score::FULL,
+                persistence_importance: Score::FULL,
+                prompt_importance: Score::FULL,
+                volatility: Score::LEGACY_VOLATILITY,
+                access_count: 0,
+                created_at: TimestampMillis::new(1_012),
+                last_accessed_at: TimestampMillis::new(1_012),
+            }],
+        },
+    )
+    .expect("store manual memory");
+    let runtime_id = backend
+        .built_in_prompt_ids()
+        .get(crate::BuiltInPromptId::ChatRuntime);
+    let runtime = lettuce_context::PromptRepository::get(backend.database(), runtime_id)
+        .expect("runtime prompt")
+        .expect("runtime prompt exists");
+    let key_entry = runtime
+        .entries
+        .iter()
+        .find(|entry| entry.built_in_entry_key.as_deref() == Some("runtime_key_memories"))
+        .expect("key memories entry");
+    lettuce_context::PromptRepository::mutate_entries(
+        backend.database(),
+        runtime.id,
+        runtime.revision,
+        lettuce_context::PromptEntryMutation::Update {
+            entry_id: key_entry.id,
+            draft: lettuce_context::PromptEntryDraft {
+                built_in_entry_key: key_entry.built_in_entry_key.clone(),
+                name: key_entry.name.clone(),
+                role: key_entry.role,
+                content: "Facts {{char.name}} knows:\n{{key_memories}}".into(),
+                enabled: key_entry.enabled,
+                injection_position: key_entry.injection_position,
+                depth: key_entry.depth,
+                conditional_min_messages: key_entry.conditional_min_messages,
+                interval_turns: key_entry.interval_turns,
+                system_prompt: key_entry.system_prompt,
+                conditions: key_entry.conditions.clone(),
+                payload: key_entry.payload.clone(),
+            },
+        },
+        TimestampMillis::new(1_013),
+    )
+    .expect("edit runtime key memories entry");
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![text_outcome("runtime-edit-response", "Noted.", 5, 3)]);
+    let engine = ScenarioEmbeddingEngine;
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("send with an edited runtime prompt");
+    let requests = inference.requests.lock().expect("requests");
+    assert!(requests[0].context.messages.iter().any(|message| {
+        message.parts.iter().any(|part| {
+            matches!(
+                part,
+                ProviderContextPart::Text { text }
+                    if text == "Facts Ada knows:\n- Mira keeps a brass compass."
+            )
+        })
+    }));
 }
 
 #[tokio::test]
@@ -2681,6 +2801,10 @@ async fn pending_dispatch_interrupts_recovers_and_finishes_in_the_child() {
         ConversationId::new()
     ));
     let database = Database::open(&path).expect("database");
+    crate::BuiltInPromptService::new(&database)
+        .expect("built-in prompt catalog")
+        .bootstrap(TimestampMillis::new(1))
+        .expect("bootstrap built-in prompts");
     let scenario = scenario_with_resolvable_profile(&database, false, "pending", true);
     let mut missing_replay = text_outcome("pending-1", "Lost answer", 20, 5);
     missing_replay.candidates[0].provider_replay = Some(lettuce_conversations::ReplayArtifactRef {

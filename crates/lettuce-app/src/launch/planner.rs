@@ -7,10 +7,9 @@ use lettuce_companions::{
     PreparedCompanionLaunch, initial_runtime_state,
 };
 use lettuce_context::{
-    CharacterLorebookBindingRepository, GroupLorebookBindingRepository, LifecycleFilter,
-    LorebookBinding, LorebookDetails, LorebookRepository, PersonaLorebookBindingRepository,
-    PromptDocument, PromptLibraryQuery, PromptLookupResult, PromptProvenance, PromptPurpose,
-    PromptRepository,
+    CharacterLorebookBindingRepository, GroupLorebookBindingRepository, LorebookBinding,
+    LorebookDetails, LorebookRepository, PersonaLorebookBindingRepository, PromptDocument,
+    PromptLookupResult, PromptPurpose, PromptRepository,
 };
 use lettuce_conversations::{
     CharacterLaunchSnapshot, ConversationCreator, ConversationKind, ConversationParticipantDraft,
@@ -29,7 +28,7 @@ use lettuce_models::{
 };
 use lettuce_settings::{DynamicMemorySettings, GlobalSettingsStore, MemoryRetrievalStrategy};
 use lettuce_types::{
-    GroupId, LorebookId, ModelProfileId, PageRequest, PromptDocumentId, Revision, TimestampMillis,
+    GroupId, LorebookId, ModelProfileId, PromptDocumentId, Revision, TimestampMillis,
 };
 use std::collections::HashSet;
 
@@ -743,32 +742,9 @@ where
         built_in: BuiltInPromptId,
         purpose: PromptPurpose,
     ) -> Result<PromptDocument, ConversationLaunchError> {
-        let mut cursor = None;
-        loop {
-            let page = PromptRepository::page(
-                self.sources,
-                PromptLibraryQuery {
-                    page: PageRequest {
-                        cursor,
-                        limit: lettuce_types::PageLimit::default(),
-                    },
-                    status: LifecycleFilter::Active,
-                    purpose: Some(purpose),
-                },
-            )
-            .map_err(LaunchSourceError::Prompt)?;
-            if let Some(document) = page
-                .items
-                .into_iter()
-                .find(|document| is_built_in(document, built_in))
-            {
-                return Ok(document);
-            }
-            match page.next_cursor {
-                Some(next) => cursor = Some(next),
-                None => return Err(ConversationLaunchError::BuiltInPromptMissing { purpose }),
-            }
-        }
+        crate::built_in_prompts::active_built_in_prompt(self.sources, built_in)
+            .map_err(LaunchSourceError::Prompt)?
+            .ok_or(ConversationLaunchError::BuiltInPromptMissing { purpose })
     }
 
     /// Books reached through bindings mirror context resolution and drop out
@@ -1557,14 +1533,6 @@ fn collect_prompt(
         .find(|(candidate, _)| *candidate == id)
         .map(|(_, snapshot)| snapshot.clone())
         .expect("every resolved prompt is registered before its snapshot is used")
-}
-
-fn is_built_in(document: &PromptDocument, built_in: BuiltInPromptId) -> bool {
-    matches!(
-        &document.provenance,
-        PromptProvenance::BuiltIn { key, .. }
-            if BuiltInPromptId::from_key_or_alias(key) == Some(built_in)
-    )
 }
 
 fn character_snapshot(

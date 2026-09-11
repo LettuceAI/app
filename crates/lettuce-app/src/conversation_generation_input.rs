@@ -199,7 +199,8 @@ where
         + MemoryRepository
         + MemoryRetrievalRepository
         + MemorySummaryRepository
-        + lettuce_settings::GlobalSettingsStore,
+        + lettuce_settings::GlobalSettingsStore
+        + lettuce_context::PromptRepository,
     I: InferencePort + ?Sized,
 {
     pub async fn execute_next<C>(
