@@ -646,7 +646,9 @@ context drift; recovery rewrites only the current attempt/job cancellation
 identity and installs the caller's runtime stream sink. Dynamic execution is
 reconstructed from the launch-frozen policy, current conversation-owned memory
 space and immutable settled round plans. When no dispatch exists, the runner
-loads the durable turn and branch ancestry, trims a finalized replay back to the
+loads the durable turn and branch ancestry (timeline pages arrive newest first
+and are reversed into oldest-first order, which speaker selection and memory
+queries rely on), trims a finalized replay back to the
 turn's original source message, resolves the selected participant's effective
 settings and exact snapshotted live model/account, assembles provider-neutral
 context, derives unique media grants from that context, and invokes the

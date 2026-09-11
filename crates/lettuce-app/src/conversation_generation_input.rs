@@ -1185,6 +1185,7 @@ where
             complete.boundary_parent_id = page.boundary_parent_id;
             complete.next_cursor = page.next_cursor;
         }
+        complete.items.reverse();
         Ok(complete)
     }
 }

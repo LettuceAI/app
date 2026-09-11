@@ -1361,6 +1361,139 @@ async fn user_mention_selects_the_current_character(message: &str) {
     assert_eq!(inference.requests.lock().expect("requests").len(), 1);
 }
 
+fn next_group_turn(
+    database: &Database,
+    scenario: &Scenario,
+    key: &str,
+    text: &str,
+    at: i64,
+) -> Scenario {
+    let conversation = ConversationReader::get(database, scenario.conversation_id)
+        .expect("conversation")
+        .conversation;
+    let sent = database
+        .begin_send(
+            &direct_send_command(&conversation, key, text),
+            TimestampMillis::new(at),
+        )
+        .expect("begin next group send")
+        .value;
+    Scenario {
+        conversation_id: scenario.conversation_id,
+        turn_id: sent.turn.id,
+        attempt_id: sent.attempt.id,
+        model: scenario.model.clone(),
+        profile: scenario.profile.clone(),
+        space_id: None,
+    }
+}
+
+#[tokio::test]
+async fn group_selection_reads_the_timeline_oldest_first() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let (first, speakers) = group_scenario(
+        &backend,
+        "chronology",
+        lettuce_characters::SpeakerSelection::RoundRobin,
+        false,
+    );
+    let engine = ScenarioEmbeddingEngine;
+    let mut scenario = first;
+    let mut authors = Vec::new();
+    for turn in 0..3_i64 {
+        if turn > 0 {
+            scenario = next_group_turn(
+                database,
+                &scenario,
+                &format!("chronology-send-{turn}"),
+                &format!("Question {turn}."),
+                1_000 + turn * 100,
+            );
+        }
+        let work = admit_and_claim(database, &scenario, 1_015 + turn * 100);
+        let inference = scripted(vec![text_outcome(
+            &format!("chronology-reply-{turn}"),
+            &format!("Reply {turn}."),
+            5,
+            2,
+        )]);
+        let result = backend
+            .prepared_conversation_generation_runner(&engine, &inference)
+            .run(
+                &work,
+                ConversationGenerationRuntimeInput::default(),
+                TimestampMillis::new(1_020 + turn * 100),
+            )
+            .await
+            .expect("run round-robin turn");
+        authors.push(result.candidate.author_participant_id);
+    }
+    assert_eq!(authors, [speakers[0], speakers[1], speakers[0]]);
+
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let (first, speakers) = group_scenario(
+        &backend,
+        "chronology-llm",
+        lettuce_characters::SpeakerSelection::Llm,
+        false,
+    );
+    let select = |id: &str, speaker| {
+        call_outcome(
+            id,
+            "select_next_speaker",
+            serde_json::json!({"character_id": speaker, "reasoning": "Next in line."}),
+            (10, 2),
+        )
+    };
+    let inference = scripted(vec![
+        select("chronology-select-0", speakers[0]),
+        text_outcome("chronology-llm-reply-0", "First reply.", 5, 2),
+    ]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &admit_and_claim(database, &first, 1_015),
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("run first LLM-selected turn");
+    let second = next_group_turn(
+        database,
+        &first,
+        "chronology-llm-second",
+        "Second question.",
+        1_100,
+    );
+    let inference = scripted(vec![
+        select("chronology-select-1", speakers[1]),
+        text_outcome("chronology-llm-reply-1", "Second reply.", 5, 2),
+    ]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &admit_and_claim(database, &second, 1_115),
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_120),
+        )
+        .await
+        .expect("run second LLM-selected turn");
+    let requests = inference.requests.lock().expect("requests");
+    let ProviderContextPart::Text { text: prompt } = &requests[0].context.messages[0].parts[0]
+    else {
+        panic!("selection prompt is text");
+    };
+    assert!(prompt.contains("## New Message from User\n\nSecond question."));
+    let recent = &prompt[prompt
+        .find("## Recent Conversation")
+        .expect("recent section")..];
+    let hello = recent.find("Hello cast.").expect("first user message");
+    let reply = recent.find("First reply.").expect("first reply");
+    assert!(hello < reply);
+}
+
 #[tokio::test]
 async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
