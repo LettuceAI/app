@@ -215,7 +215,7 @@ fn read_memory(
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
     let rows = transaction
         .prepare(&format!(
-            "SELECT conversation_id,turn_id,attempt_id,space_id,expected_revision,resulting_revision,selected_memory_ids_json,accessed_at FROM memory_retrieval_accesses ORDER BY conversation_id,turn_id,attempt_id LIMIT {}",
+            "SELECT conversation_id,turn_id,attempt_id,space_id,expected_revision,resulting_revision,selected_memory_ids_json,accessed_at,promoted_memory_ids_json FROM memory_retrieval_accesses ORDER BY conversation_id,turn_id,attempt_id LIMIT {}",
             MAX_BACKUP_MEMORY_ACCESSES + 1
         ))
         .and_then(|mut statement| {
@@ -230,6 +230,7 @@ fn read_memory(
                         row.get::<_, i64>(5)?,
                         row.get::<_, String>(6)?,
                         row.get::<_, i64>(7)?,
+                        row.get::<_, String>(8)?,
                     ))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()
@@ -265,6 +266,8 @@ fn read_memory(
                     accessed_at: TimestampMillis::new(row.7),
                 },
                 resulting_revision: backup_revision(row.5)?,
+                promoted_memory_ids: serde_json::from_str(&row.8)
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
             })
         })
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;

@@ -414,7 +414,8 @@ companion-owned repository port. Terminal effects are immutable.
 Migration 9 stores one immutable dynamic-memory retrieval-access receipt per
 generation attempt. Its transaction verifies conversation, attempt, space,
 revision and every selected active memory before applying the legacy cold
-promotion and access-count updates, then advances the memory root once. A
+promotion and access-count updates, records which selected items were cold
+before that promotion, then advances the memory root once. A
 matching retry returns the recorded resulting revision without touching the
 items again; changed input and stale selections roll back as conflicts.
 Migration 13 adds immutable delete-after rewind receipts and companion-effect

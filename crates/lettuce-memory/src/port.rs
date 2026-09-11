@@ -97,6 +97,9 @@ pub struct MemoryRetrievalAccess {
 pub struct MemoryRetrievalAccessReceipt {
     pub access: MemoryRetrievalAccess,
     pub resulting_revision: Revision,
+    /// Selected memories that were cold before this access promoted them.
+    #[serde(default)]
+    pub promoted_memory_ids: Vec<MemoryId>,
 }
 
 pub trait MemoryRetrievalRepository: Send + Sync {

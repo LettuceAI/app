@@ -517,7 +517,7 @@ impl MemoryRetrievalRepository for Database {
         let connection = self.connection().map_err(storage)?;
         connection
             .query_row(
-                "SELECT space_id,expected_revision,resulting_revision,selected_memory_ids_json,accessed_at
+                "SELECT space_id,expected_revision,resulting_revision,selected_memory_ids_json,accessed_at,promoted_memory_ids_json
                    FROM memory_retrieval_accesses
                   WHERE conversation_id=?1 AND turn_id=?2 AND attempt_id=?3",
                 params![
@@ -532,12 +532,13 @@ impl MemoryRetrievalRepository for Database {
                         row.get::<_, i64>(2)?,
                         row.get::<_, String>(3)?,
                         row.get::<_, i64>(4)?,
+                        row.get::<_, String>(5)?,
                     ))
                 },
             )
             .optional()
             .map_err(storage)?
-            .map(|(space_id, expected, resulting, selected_json, accessed_at)| {
+            .map(|(space_id, expected, resulting, selected_json, accessed_at, promoted_json)| {
                 Ok(MemoryRetrievalAccessReceipt {
                     access: MemoryRetrievalAccess {
                         conversation_id,
@@ -549,6 +550,7 @@ impl MemoryRetrievalRepository for Database {
                         accessed_at: TimestampMillis::new(accessed_at),
                     },
                     resulting_revision: parse_revision(resulting)?,
+                    promoted_memory_ids: serde_json::from_str(&promoted_json).map_err(storage)?,
                 })
             })
             .transpose()
@@ -577,7 +579,7 @@ impl MemoryRetrievalRepository for Database {
             .map_err(storage)?;
         let existing = transaction
             .query_row(
-                "SELECT space_id,expected_revision,resulting_revision,selected_memory_ids_json,accessed_at
+                "SELECT space_id,expected_revision,resulting_revision,selected_memory_ids_json,accessed_at,promoted_memory_ids_json
                    FROM memory_retrieval_accesses
                   WHERE conversation_id=?1 AND turn_id=?2 AND attempt_id=?3",
                 params![
@@ -592,12 +594,15 @@ impl MemoryRetrievalRepository for Database {
                         row.get::<_, i64>(2)?,
                         row.get::<_, String>(3)?,
                         row.get::<_, i64>(4)?,
+                        row.get::<_, String>(5)?,
                     ))
                 },
             )
             .optional()
             .map_err(storage)?;
-        if let Some((space_id, expected, resulting, stored_json, accessed_at)) = existing {
+        if let Some((space_id, expected, resulting, stored_json, accessed_at, promoted_json)) =
+            existing
+        {
             if parse_id::<MemorySpaceId>(space_id)? != access.space_id
                 || parse_revision(expected)? != access.expected_revision
                 || stored_json != selected_json
@@ -609,6 +614,7 @@ impl MemoryRetrievalRepository for Database {
             return Ok(MemoryRetrievalAccessReceipt {
                 access,
                 resulting_revision: parse_revision(resulting)?,
+                promoted_memory_ids: serde_json::from_str(&promoted_json).map_err(storage)?,
             });
         }
         let current_revision = transaction
@@ -623,21 +629,22 @@ impl MemoryRetrievalRepository for Database {
         if parse_revision(current_revision)? != access.expected_revision {
             return Err(MemoryRepositoryError::Conflict);
         }
-        let selected_count = access.selected_memory_ids.iter().try_fold(0_usize, |count, id| {
-            let exists = transaction
+        let mut promoted_memory_ids = Vec::new();
+        for id in &access.selected_memory_ids {
+            let is_cold = transaction
                 .query_row(
-                    "SELECT 1 FROM memory_items WHERE space_id=?1 AND id=?2 AND superseded_by IS NULL",
+                    "SELECT is_cold FROM memory_items WHERE space_id=?1 AND id=?2 AND superseded_by IS NULL",
                     params![access.space_id.to_string(), id.to_string()],
-                    |_| Ok(()),
+                    |row| row.get::<_, bool>(0),
                 )
                 .optional()
                 .map_err(storage)?
-                .is_some();
-            Ok::<_, MemoryRepositoryError>(count + usize::from(exists))
-        })?;
-        if selected_count != access.selected_memory_ids.len() {
-            return Err(MemoryRepositoryError::Conflict);
+                .ok_or(MemoryRepositoryError::Conflict)?;
+            if is_cold {
+                promoted_memory_ids.push(*id);
+            }
         }
+        let promoted_json = serde_json::to_string(&promoted_memory_ids).map_err(storage)?;
         for id in &access.selected_memory_ids {
             let updated = transaction
                 .execute(
@@ -675,8 +682,8 @@ impl MemoryRetrievalRepository for Database {
             .execute(
                 "INSERT INTO memory_retrieval_accesses (
                     conversation_id,turn_id,attempt_id,space_id,expected_revision,
-                    resulting_revision,selected_memory_ids_json,accessed_at
-                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                    resulting_revision,selected_memory_ids_json,accessed_at,promoted_memory_ids_json
+                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
                 params![
                     access.conversation_id.to_string(),
                     access.turn_id.to_string(),
@@ -686,6 +693,7 @@ impl MemoryRetrievalRepository for Database {
                     sql_revision(resulting_revision)?,
                     selected_json,
                     access.accessed_at.get(),
+                    promoted_json,
                 ],
             )
             .map_err(storage)?;
@@ -693,6 +701,7 @@ impl MemoryRetrievalRepository for Database {
         Ok(MemoryRetrievalAccessReceipt {
             access,
             resulting_revision,
+            promoted_memory_ids,
         })
     }
 }

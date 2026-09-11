@@ -158,6 +158,17 @@ impl MemoryBackup {
                         .get(id)
                         .is_some_and(|space_id| *space_id != access.space_id)
                 })
+                || receipt
+                    .promoted_memory_ids
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>()
+                    .len()
+                    != receipt.promoted_memory_ids.len()
+                || receipt
+                    .promoted_memory_ids
+                    .iter()
+                    .any(|id| !access.selected_memory_ids.contains(id))
             {
                 return Err(MemoryBackupError::InvalidData);
             }

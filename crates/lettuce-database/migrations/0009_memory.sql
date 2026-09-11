@@ -130,6 +130,12 @@ CREATE TABLE memory_retrieval_accesses (
         AND json_type(selected_memory_ids_json) = 'array'
         AND json_array_length(selected_memory_ids_json) BETWEEN 1 AND 4096
     ),
+    promoted_memory_ids_json TEXT NOT NULL CHECK (
+        json_valid(promoted_memory_ids_json)
+        AND json_type(promoted_memory_ids_json) = 'array'
+        AND json_array_length(promoted_memory_ids_json)
+            <= json_array_length(selected_memory_ids_json)
+    ),
     accessed_at INTEGER NOT NULL,
     PRIMARY KEY (conversation_id, turn_id, attempt_id),
     FOREIGN KEY (conversation_id, turn_id, attempt_id)
