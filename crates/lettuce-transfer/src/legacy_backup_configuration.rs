@@ -15,10 +15,9 @@ use lettuce_models::{
     ProviderProtocol, QueryParameterName, ReasoningEffort, ReasoningMode, WireRole,
 };
 use lettuce_settings::{
-    DynamicMemorySettings, GlobalSettings, HeaderName, LorebookGeneratorSelection,
-    LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode, PureMode, SecretOwnerId,
-    SecretPurpose,
-    SecretRef, SecretValue,
+    DynamicMemorySettings, EmbeddingSettings, GlobalSettings, HeaderName,
+    LorebookGeneratorSelection, LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
+    PureMode, SecretOwnerId, SecretPurpose, SecretRef, SecretValue,
 };
 use lettuce_speech::{AudioProvider, AudioProviderConfig, UserVoice};
 use lettuce_types::{
@@ -570,6 +569,7 @@ fn map_settings(
         "appUpdateChecksEnabled",
         "dynamicMemory",
         "groupDynamicMemory",
+        "embeddingDimensions",
         "summarisationModelId",
         "groupSpeakerSelectionModelId",
         "lorebookGeneratorModelId",
@@ -632,6 +632,10 @@ fn map_settings(
             },
             dynamic_memory,
             group_dynamic_memory,
+            embedding: EmbeddingSettings {
+                dimensions: optional_u32(advanced, "embeddingDimensions")?
+                    .and_then(|value| u16::try_from(value).ok()),
+            },
         },
         default_provider_account_id,
         default_model_profile_id,
@@ -2838,6 +2842,7 @@ mod tests {
                     "migration_version": 92,
                     "advanced_settings": {
                         "appUpdateChecksEnabled": false,
+                        "embeddingDimensions": 512,
                         "summarisationModelId": model_id,
                         "groupSpeakerSelectionModelId": model_id,
                         "lorebookGeneratorModelId": model_id,
@@ -3048,6 +3053,7 @@ mod tests {
         assert!(!debug.contains("provider-secret"));
         assert!(!debug.contains("header-secret"));
         assert!(!debug.contains("audio-secret"));
+        assert_eq!(plan.settings.value.embedding.dimensions, Some(512));
         let memory = &plan.settings.value.dynamic_memory;
         assert!(memory.enabled);
         assert_eq!(memory.summary_message_interval, 12);

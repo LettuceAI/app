@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use lettuce_embeddings::{
-    EmbeddingError, EmbeddingRequest, EmbeddingVector, EmotionClassifierError,
+    EmbeddingDimensions, EmbeddingError, EmbeddingRequest, EmbeddingVector, EmotionClassifierError,
     OnnxEmbeddingRuntime, OnnxEmotionClassifier, OnnxRuntimeLink,
 };
 use lettuce_jobs::handle::CancellationToken;
@@ -15,6 +15,7 @@ use lettuce_companions::EmotionClassification;
 #[derive(Debug)]
 pub struct EmbeddingService {
     source_revision: String,
+    dimensions: EmbeddingDimensions,
     runtime: Mutex<OnnxEmbeddingRuntime>,
 }
 
@@ -22,12 +23,14 @@ impl EmbeddingService {
     pub fn load(
         manifest: &InstalledEmbeddingManifest,
         runtime_link: &OnnxRuntimeLink,
+        dimensions: EmbeddingDimensions,
     ) -> Result<Self, EmbeddingServiceError> {
         let artifacts = manifest.verify()?;
         let source_revision = artifacts.source_revision.clone();
         let runtime = OnnxEmbeddingRuntime::load(artifacts, runtime_link)?;
         Ok(Self {
             source_revision,
+            dimensions,
             runtime: Mutex::new(runtime),
         })
     }
@@ -90,6 +93,8 @@ impl EmbeddingService {
 pub trait MemoryEmbeddingEngine: Send + Sync {
     fn source_revision(&self) -> &str;
 
+    fn dimensions(&self) -> EmbeddingDimensions;
+
     fn count_tokens(&self, text: &str) -> Result<u32, EmbeddingGenerationError>;
 
     fn embed_memory(
@@ -102,6 +107,10 @@ pub trait MemoryEmbeddingEngine: Send + Sync {
 impl MemoryEmbeddingEngine for EmbeddingService {
     fn source_revision(&self) -> &str {
         self.source_revision()
+    }
+
+    fn dimensions(&self) -> EmbeddingDimensions {
+        self.dimensions
     }
 
     fn count_tokens(&self, text: &str) -> Result<u32, EmbeddingGenerationError> {

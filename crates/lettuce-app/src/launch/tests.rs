@@ -80,6 +80,10 @@ impl crate::MemoryEmbeddingEngine for ScenarioEmbeddingEngine {
         "scenario-v1"
     }
 
+    fn dimensions(&self) -> lettuce_embeddings::EmbeddingDimensions {
+        lettuce_embeddings::EmbeddingDimensions::D128
+    }
+
     fn count_tokens(&self, text: &str) -> Result<u32, crate::EmbeddingGenerationError> {
         u32::try_from(text.split_whitespace().count())
             .map_err(|_| crate::EmbeddingGenerationError::Unavailable)

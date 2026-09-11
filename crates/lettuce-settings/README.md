@@ -30,7 +30,8 @@ policy values remain exact. Older settings documents receive these defaults.
 The post-turn cycle settings follow the legacy schema defaults: disabled until
 enabled, a 20-message summary interval, `auto` run mode (`ask_first` and
 `manual` also exist), 0.08 per-cycle decay, and recursive memory loops off with
-a hard cap of 20 rounds.
+a hard cap of 20 rounds. `embedding.dimensions` keeps the legacy
+`embeddingDimensions` preference; unset means the embedding default.
 An optional group-chat policy lives beside the direct policy in global settings,
 matching the legacy settings editor and persistence owner. Group launches use
 that complete override when present and otherwise inherit the direct policy.

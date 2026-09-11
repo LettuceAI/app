@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use lettuce_embeddings::{
-    EmbeddingDimensions, EmbeddingProjectionError, EmbeddingRequest, MemoryEmbeddingProjection,
-    MemoryEmbeddingRepair, MemoryEmbeddingRepository,
+    EmbeddingProjectionError, EmbeddingRequest, MemoryEmbeddingProjection, MemoryEmbeddingRepair,
+    MemoryEmbeddingRepository,
 };
 use lettuce_jobs::{Claim, ResourceClass, handle::JobHandle};
 use lettuce_memory::{
@@ -166,7 +166,7 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
         let source_revision = self.engine.source_revision();
         let existing = self
             .repository
-            .list_ready(space_id, source_revision, EmbeddingDimensions::D128)?
+            .list_ready(space_id, source_revision, self.engine.dimensions())?
             .into_iter()
             .map(|projection| (projection.memory_id, projection.vector))
             .collect::<Vec<_>>();
@@ -202,7 +202,7 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
             let generated = self.engine.embed_memory(
                 &EmbeddingRequest {
                     text: text.clone(),
-                    dimensions: EmbeddingDimensions::D128,
+                    dimensions: self.engine.dimensions(),
                 },
                 &cancellation,
             );
@@ -218,7 +218,7 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                         memory_id: seed.id,
                         source_text: text,
                         vector,
-                        dimensions: EmbeddingDimensions::D128,
+                        dimensions: self.engine.dimensions(),
                         updated_at: seed.created_at,
                     }),
                 ),
@@ -232,7 +232,7 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                         memory_id: seed.id,
                         source_text: text,
                         source_revision: source_revision.to_owned(),
-                        dimensions: EmbeddingDimensions::D128,
+                        dimensions: self.engine.dimensions(),
                         updated_at: seed.created_at,
                     }),
                 ),
@@ -325,6 +325,10 @@ mod tests {
     impl MemoryEmbeddingEngine for FakeEmbeddingEngine {
         fn source_revision(&self) -> &str {
             "v4-test"
+        }
+
+        fn dimensions(&self) -> EmbeddingDimensions {
+            EmbeddingDimensions::D128
         }
 
         fn count_tokens(&self, text: &str) -> Result<u32, EmbeddingGenerationError> {

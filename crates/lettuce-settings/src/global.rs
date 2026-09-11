@@ -15,6 +15,8 @@ pub struct GlobalSettings {
     pub dynamic_memory: DynamicMemorySettings,
     #[serde(default)]
     pub group_dynamic_memory: Option<DynamicMemorySettings>,
+    #[serde(default)]
+    pub embedding: EmbeddingSettings,
 }
 
 impl Default for GlobalSettings {
@@ -26,6 +28,7 @@ impl Default for GlobalSettings {
             lorebook_generator: LorebookGeneratorSettings::default(),
             dynamic_memory: DynamicMemorySettings::default(),
             group_dynamic_memory: None,
+            embedding: EmbeddingSettings::default(),
         }
     }
 }
@@ -44,6 +47,12 @@ impl GlobalSettings {
 pub enum MemoryRetrievalStrategy {
     Smart,
     Cosine,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct EmbeddingSettings {
+    pub dimensions: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -13,7 +13,9 @@ The public surface is intentionally small. Business invariants belong in domain 
 The first ONNX slice loads a model-hub-verified Lettuce embedding v4 model and
 tokenizer, encodes with special tokens, supplies `input_ids`, `attention_mask`,
 and model-declared `token_type_ids`, reads the first float output, and supports
-the audited 64/128/256/512/768 Matryoshka dimensions. Truncated dimensions are
+the audited 64/128/256/512/768 Matryoshka dimensions. `from_preference` keeps
+the legacy v4 rule: one of those values is used as-is, anything else or no
+preference means 768. Truncated dimensions are
 L2-normalized; native 768-dimensional output preserves the model result.
 
 The v4 base config is limited to 2,048 trained positions. Legacy settings

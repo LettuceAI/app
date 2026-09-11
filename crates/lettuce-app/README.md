@@ -409,7 +409,8 @@ responsible for scheduling this synchronous CPU/model-load work on the job
 worker rather than a UI or async-runtime thread.
 
 Dynamic-memory create preparation requires a claimed job carrying model-load,
-disk-read, and CPU resources. It embeds candidates at 128 dimensions, compares
+disk-read, and CPU resources. It embeds candidates at the engine's configured
+dimension (legacy `embeddingDimensions`, default 768), compares
 only live exact-revision projections, supplies qualified duplicate evidence to
 the reducer, and persists a projection only after the memory CAS confirms the
 item survived. ONNX unavailability does not discard authoritative memory: the

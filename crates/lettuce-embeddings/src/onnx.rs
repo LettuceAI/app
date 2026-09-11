@@ -35,6 +35,17 @@ pub enum EmbeddingDimensions {
 
 impl EmbeddingDimensions {
     #[must_use]
+    pub const fn from_preference(preferred: Option<u16>) -> Self {
+        match preferred {
+            Some(64) => Self::D64,
+            Some(128) => Self::D128,
+            Some(256) => Self::D256,
+            Some(512) => Self::D512,
+            _ => Self::D768,
+        }
+    }
+
+    #[must_use]
     pub const fn get(self) -> usize {
         match self {
             Self::D64 => 64,
@@ -377,6 +388,21 @@ mod tests {
         EmbeddingDimensions, EmbeddingRequest, EmbeddingVector, OnnxEmbeddingRuntime,
         OnnxRuntimeLink, l2_normalize,
     };
+
+    #[test]
+    fn preference_follows_the_legacy_v4_dimension_rule() {
+        for (preferred, expected) in [
+            (None, EmbeddingDimensions::D768),
+            (Some(64), EmbeddingDimensions::D64),
+            (Some(128), EmbeddingDimensions::D128),
+            (Some(256), EmbeddingDimensions::D256),
+            (Some(512), EmbeddingDimensions::D512),
+            (Some(768), EmbeddingDimensions::D768),
+            (Some(300), EmbeddingDimensions::D768),
+        ] {
+            assert_eq!(EmbeddingDimensions::from_preference(preferred), expected);
+        }
+    }
 
     #[test]
     fn matryoshka_slice_is_normalized() {

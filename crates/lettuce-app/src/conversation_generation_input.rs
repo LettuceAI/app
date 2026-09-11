@@ -20,7 +20,7 @@ use lettuce_conversations::{
     SpeakerPolicyRequest, ToolChoice, ToolDefinition, ToolPolicy, ToolRequest,
     select_group_speaker,
 };
-use lettuce_embeddings::{EmbeddingDimensions, EmbeddingRequest, MemoryEmbeddingRepository};
+use lettuce_embeddings::{EmbeddingRequest, MemoryEmbeddingRepository};
 use lettuce_inference::{InferenceRuntime, InferenceRuntimeError};
 use lettuce_jobs::{
     CancellationReason, Clock, JobKind, JobQuery, JobState, ResourceAvailability, WorkerId,
@@ -1120,7 +1120,7 @@ where
         let query_embedding = match self.embedding.embed_memory(
             &EmbeddingRequest {
                 text: query.clone(),
-                dimensions: EmbeddingDimensions::D128,
+                dimensions: self.embedding.dimensions(),
             },
             &work.handle.cancellation_token(),
         ) {
@@ -1138,7 +1138,7 @@ where
             .list_ready(
                 memory.id,
                 self.embedding.source_revision(),
-                EmbeddingDimensions::D128,
+                self.embedding.dimensions(),
             )
             .map_err(|_| ConversationGenerationInputError::Embedding)?;
         let limit = usize::from(settings.retrieval_limit);
