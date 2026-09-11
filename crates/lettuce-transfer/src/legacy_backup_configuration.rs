@@ -570,6 +570,7 @@ fn map_settings(
         "dynamicMemory",
         "groupDynamicMemory",
         "embeddingDimensions",
+        "manualModeContextWindow",
         "summarisationModelId",
         "groupSpeakerSelectionModelId",
         "lorebookGeneratorModelId",
@@ -636,6 +637,8 @@ fn map_settings(
                 dimensions: optional_u32(advanced, "embeddingDimensions")?
                     .and_then(|value| u16::try_from(value).ok()),
             },
+            manual_mode_context_window: optional_u32(advanced, "manualModeContextWindow")?
+                .unwrap_or(50),
         },
         default_provider_account_id,
         default_model_profile_id,
@@ -2843,6 +2846,7 @@ mod tests {
                     "advanced_settings": {
                         "appUpdateChecksEnabled": false,
                         "embeddingDimensions": 512,
+                        "manualModeContextWindow": 30,
                         "summarisationModelId": model_id,
                         "groupSpeakerSelectionModelId": model_id,
                         "lorebookGeneratorModelId": model_id,
@@ -3054,6 +3058,7 @@ mod tests {
         assert!(!debug.contains("header-secret"));
         assert!(!debug.contains("audio-secret"));
         assert_eq!(plan.settings.value.embedding.dimensions, Some(512));
+        assert_eq!(plan.settings.value.manual_mode_context_window, 30);
         let memory = &plan.settings.value.dynamic_memory;
         assert!(memory.enabled);
         assert_eq!(memory.summary_message_interval, 12);

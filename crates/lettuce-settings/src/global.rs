@@ -17,6 +17,12 @@ pub struct GlobalSettings {
     pub group_dynamic_memory: Option<DynamicMemorySettings>,
     #[serde(default)]
     pub embedding: EmbeddingSettings,
+    #[serde(default = "default_manual_mode_context_window")]
+    pub manual_mode_context_window: u32,
+}
+
+const fn default_manual_mode_context_window() -> u32 {
+    50
 }
 
 impl Default for GlobalSettings {
@@ -29,6 +35,7 @@ impl Default for GlobalSettings {
             dynamic_memory: DynamicMemorySettings::default(),
             group_dynamic_memory: None,
             embedding: EmbeddingSettings::default(),
+            manual_mode_context_window: default_manual_mode_context_window(),
         }
     }
 }
@@ -254,6 +261,7 @@ mod tests {
             r#"{"pure_mode":"standard","analytics_enabled":true,"update_checks_enabled":true}"#;
         let settings: GlobalSettings = serde_json::from_str(legacy).expect("old settings document");
         assert_eq!(settings.lorebook_generator.target_count(), 12);
+        assert_eq!(settings.manual_mode_context_window, 50);
         assert_eq!(settings.lorebook_generator.output_tokens(), 4096);
         assert_eq!(settings.dynamic_memory, DynamicMemorySettings::default());
         assert_eq!(settings.group_dynamic_memory, None);
