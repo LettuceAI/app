@@ -312,7 +312,6 @@ impl<
         if attempt.run_id != run.id
             || attempt.job_id != handle.id()
             || run.conversation_id != batch.conversation_id
-            || batch.effects().is_empty()
             || batch
                 .effects()
                 .iter()

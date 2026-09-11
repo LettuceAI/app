@@ -673,8 +673,15 @@ query, and selects current projections with the legacy threshold, cold-memory
 penalty, category diversity, and smart recent/accessed fallbacks. Retrieved
 memory text and a stable identity derived from the exact space revision enter
 the context. The reply itself carries no memory tools: legacy writes memories in
-a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`), which is not
-yet wired for plain direct and group conversations. Retrieval embedding unavailability preserves
+a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`). Plain direct
+and group conversations now admit that cycle through
+`admit_plain_after_turn_and_claim`: the visible user and assistant messages on
+the active branch are counted from the summary cursor, `manual` admits nothing,
+`ask_first` records a pending approval, and `auto` admits exactly one
+interval-sized window per run, as legacy did. The run reuses the existing
+background summary, memory-round and terminal pipeline with a message-window
+source instead of companion effects. Host wiring after finalization remains a
+later slice. Retrieval embedding unavailability preserves
 the legacy behavior of continuing without retrieved keys. A nonempty selection
 now atomically promotes selected cold items and records the legacy access count,
 time and importance updates exactly once under the preparation attempt. The

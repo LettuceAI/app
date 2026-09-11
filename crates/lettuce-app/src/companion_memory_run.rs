@@ -243,7 +243,7 @@ fn validate_job(
     handle: &JobHandle,
 ) -> Result<(), CompanionPostTurnMemoryRunError> {
     let conversation_id = admission.batch.conversation_id;
-    if admission.batch.effects().is_empty()
+    if admission.batch.source_messages().is_none()
         || (admission.batch.update_dynamic_memory_model_on_success
             && admission.batch.selected_model_profile_id.is_none())
         || admission.job.id != handle.id()

@@ -1843,6 +1843,184 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
 }
 
 #[tokio::test]
+async fn plain_dynamic_turns_admit_and_run_a_post_turn_memory_cycle() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let scenario = scenario_with_resolvable_profile(database, true, "post-turn", true);
+    let generation = admit_and_claim(database, &scenario, 1_015);
+    let engine = ScenarioEmbeddingEngine;
+    let reply = scripted(vec![text_outcome("post-turn-reply", "Tea it is.", 5, 3)]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &reply)
+        .run(
+            &generation,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("finalize plain dynamic turn");
+    assert!(reply.requests.lock().expect("requests")[0].tools.is_none());
+
+    let dispatch = crate::CompanionMemoryDispatchCoordinator::new(database, database);
+    let claim = |interval, mode| {
+        dispatch.admit_plain_after_turn_and_claim(
+            scenario.conversation_id,
+            interval,
+            mode,
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+    };
+    assert!(
+        claim(3, lettuce_memory::DynamicMemoryRunMode::Auto)
+            .expect("interval not reached")
+            .is_empty()
+    );
+    assert!(
+        claim(2, lettuce_memory::DynamicMemoryRunMode::Manual)
+            .expect("manual mode")
+            .is_empty()
+    );
+    assert!(
+        claim(2, lettuce_memory::DynamicMemoryRunMode::AskFirst)
+            .expect("ask first")
+            .is_empty()
+    );
+    assert_eq!(
+        dispatch
+            .pending_approval_count(scenario.conversation_id)
+            .expect("pending approval"),
+        Some(2)
+    );
+    let work = claim(2, lettuce_memory::DynamicMemoryRunMode::Auto)
+        .expect("auto admission")
+        .into_iter()
+        .next()
+        .expect("claimed plain memory work");
+    let expected_sources = work
+        .admission
+        .batch
+        .source_messages()
+        .expect("plain window");
+    assert_eq!(expected_sources.len(), 2);
+    assert_eq!(expected_sources[0].1, MessageRole::User);
+    assert_eq!(expected_sources[1].1, MessageRole::Assistant);
+    assert!(work.admission.batch.effects().is_empty());
+    assert_eq!(
+        dispatch
+            .pending_approval_count(scenario.conversation_id)
+            .expect("cleared approval"),
+        None
+    );
+
+    let prompt_ids = BuiltInPromptService::new(database)
+        .expect("prompt service")
+        .bootstrap(TimestampMillis::new(1_031))
+        .expect("prompt ids");
+    let memory_prompt =
+        PromptRepository::get(database, prompt_ids.get(BuiltInPromptId::DynamicMemory))
+            .expect("prompt")
+            .expect("dynamic memory prompt");
+    let summary_prompt =
+        PromptRepository::get(database, prompt_ids.get(BuiltInPromptId::DynamicSummary))
+            .expect("prompt")
+            .expect("dynamic summary prompt");
+    let memory = scripted(vec![
+        call_outcome(
+            "post-turn-summary",
+            "write_summary",
+            serde_json::json!({"summary": "The user chose tea."}),
+            (6, 2),
+        ),
+        call_outcome(
+            "post-turn-create",
+            "create_memory",
+            serde_json::json!({"text": "The user prefers tea", "category": "preference"}),
+            (7, 2),
+        ),
+        call_outcome(
+            "post-turn-done",
+            "done",
+            serde_json::json!({"summary": "stored preference"}),
+            (3, 1),
+        ),
+    ]);
+    let memory_id = MemoryId::new();
+    let result = crate::CompanionMemoryJobRunner::new(&engine, database, database, &memory)
+        .run(
+            &work.admission,
+            ResolvedInferenceProfile {
+                chat_profile: scenario.profile.clone(),
+                tool_policy: ToolPolicy::Required,
+                output_policy: OutputPolicy::Plain,
+                safety_policy: SafetyContext::Standard,
+                correlation_id: None,
+            },
+            false,
+            false,
+            lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
+            &summary_prompt,
+            &memory_prompt,
+            &DynamicMemoryPolicy {
+                max_entries: 10,
+                hot_token_budget: 100,
+                cold_threshold: Score::from_basis_points(2_000).expect("score"),
+                delete_confidence_default: Score::from_basis_points(5_000).expect("score"),
+                max_hard_delete_ratio_per_cycle: Score::from_basis_points(5_000).expect("score"),
+            },
+            Score::from_basis_points(9_000).expect("score"),
+            &work.claim,
+            &work.handle,
+            None,
+            TimestampMillis::new(1_032),
+            |round| {
+                if round.ordinal == 0 {
+                    vec![crate::MemoryCreateSeed {
+                        execution_id: round.calls[0].id,
+                        id: memory_id,
+                        token_count: 4,
+                        created_at: TimestampMillis::new(1_032),
+                    }]
+                } else {
+                    Vec::new()
+                }
+            },
+        )
+        .await
+        .expect("run plain post-turn memory cycle");
+    assert_eq!(
+        result.dispatch.attempt.status,
+        lettuce_memory::DynamicMemoryAttemptStatus::Succeeded
+    );
+    assert!(result.effects.is_empty());
+    let space_id = scenario.space_id.expect("dynamic memory space");
+    let summary = MemorySummaryRepository::get_summary(database, space_id)
+        .expect("summary")
+        .expect("stored summary");
+    assert_eq!(summary.text, "The user chose tea.");
+    assert_eq!(summary.window_end, 2);
+    assert_eq!(
+        summary.source_message_ids,
+        expected_sources
+            .iter()
+            .map(|(id, _)| *id)
+            .collect::<Vec<_>>()
+    );
+    let stored = MemoryRepository::get(database, space_id)
+        .expect("memory")
+        .expect("memory space");
+    assert_eq!(stored.items.len(), 1);
+    assert_eq!(stored.items[0].id, memory_id);
+    assert!(
+        claim(2, lettuce_memory::DynamicMemoryRunMode::Auto)
+            .expect("cursor advanced")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn preexisting_progress_checkpoint_advances_runner_stage_sequences() {
     let database = database();
     let scenario = scenario(&database, false, "progress-sequence");
