@@ -385,6 +385,24 @@ receipts or execution history. The old importer's table-wide deletes and silent
 Soul normalization are deliberately not reproduced, and this slice writes no
 companion or memory state.
 
+The standalone legacy memory-embedding document now extends that read-only
+plan. It retains the stable owner order, direct/group/companion-shared owner
+kind, exact canonical JSON and every memory vector, score, counter, timestamp,
+category, temporal attribution, supersession field and entity anchor. Each
+standalone owner must resolve to the already planned conversation or companion,
+and its canonical JSON must agree byte-for-byte with the copy embedded by the
+legacy exporter. Duplicate owners or memory IDs, orphaned supersession links,
+unsupported vector dimensions, mismatched declared dimensions, non-finite or
+out-of-range scores and invalid timestamps reject. Equal creation timestamps
+are reported because the old normalized query supplied no tie breaker. A fully
+compatible item with a supported retained vector can seed an initial memory
+item and projection after its new space is created; compatible items with no
+usable vector require projection rebuild. Other records remain exact evidence
+instead of losing legacy-only entity/fact metadata or inventing a historical
+memory-space revision. The legacy importer's table-wide delete and permissive
+malformed-JSON-to-empty behavior are not reproduced, and no memory row is
+written.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established
