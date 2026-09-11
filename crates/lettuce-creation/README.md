@@ -203,7 +203,10 @@ text: instructions, fallback prompts and tool descriptions are catalog keys
 (`lorebook_entry_final_instruction_key`, `lorebook_entry_fallback_prompt_key`,
 `LOREBOOK_ENTRY_TOOL_TEXT_KEYS` and the keyword equivalents) that the
 application resolves from the built-in `prompt_app_lorebook_runtime` document;
-tool builders take that resolver.
+tool builders take that resolver. The staged planner, writer, refinement and
+coherence final instructions (`STAGED_LOREBOOK_*_FINAL_INSTRUCTION_KEY`) and the
+three staged tool descriptions (`STAGED_LOREBOOK_TOOL_TEXT_KEYS`) follow the same
+rule.
 
 The matching immutable run now freezes the direct conversation, lorebook,
 character/persona, selected message and memory identities, source mode,

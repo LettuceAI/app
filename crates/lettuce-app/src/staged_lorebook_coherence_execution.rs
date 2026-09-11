@@ -9,9 +9,8 @@ use lettuce_conversations::{
     ProviderReplayArtifactPort, ToolPolicy,
 };
 use lettuce_creation::{
-    STAGED_LOREBOOK_COHERENCE_FINAL_INSTRUCTION, StagedLorebookCoherenceAttempt,
-    StagedLorebookCoherenceDecision, StagedLorebookPlannerUsage, StagedLorebookPlanningRun,
-    StagedLorebookRepository, StagedLorebookRepositoryError,
+    StagedLorebookCoherenceAttempt, StagedLorebookCoherenceDecision, StagedLorebookPlannerUsage,
+    StagedLorebookPlanningRun, StagedLorebookRepository, StagedLorebookRepositoryError,
     reduce_staged_lorebook_coherence_calls, staged_lorebook_coherence_tool_request,
 };
 use lettuce_jobs::handle::JobHandle;
@@ -71,6 +70,7 @@ where
     R: StagedLorebookRepository
         + ProviderReplayArtifactPort
         + lettuce_usage::JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     I: InferencePort + ?Sized,
 {
@@ -111,7 +111,17 @@ where
             self.repository,
             self.inference,
             run.job_id,
-            build_request(&run, prompt, handle, stream_sink)?,
+            build_request(
+                &run,
+                prompt,
+                &crate::runtime_text::RuntimeText::load(
+                    self.repository,
+                    crate::BuiltInPromptId::LorebookRuntime,
+                )
+                .map_err(|_| StagedLorebookCoherenceExecutionError::InvalidPrompt)?,
+                handle,
+                stream_sink,
+            )?,
             now,
         )
         .await
@@ -242,6 +252,7 @@ fn validate_ownership(
 fn build_request(
     run: &lettuce_creation::StagedLorebookCoherenceRun,
     prompt: &PromptDocument,
+    text: &crate::runtime_text::RuntimeText,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
 ) -> Result<InferenceRequest, StagedLorebookCoherenceExecutionError> {
@@ -256,11 +267,13 @@ fn build_request(
         attempt_id: GenerationAttemptId::from_uuid(Uuid::new_v5(&run.job_id.as_uuid(), b"native")),
         operation: GenerationOperation::Send,
         profile,
-        context: render_context(run, prompt)?,
+        context: render_context(run, prompt, text)?,
         cancellation: Some(handle.id()),
         stream_sink,
         media_grants: Vec::new(),
-        tools: Some(staged_lorebook_coherence_tool_request()),
+        tools: Some(staged_lorebook_coherence_tool_request(&|key| {
+            text.render_with(key, []).unwrap_or_default()
+        })),
     };
     request
         .validate()
@@ -271,6 +284,7 @@ fn build_request(
 fn render_context(
     run: &lettuce_creation::StagedLorebookCoherenceRun,
     prompt: &PromptDocument,
+    text: &crate::runtime_text::RuntimeText,
 ) -> Result<ProviderNeutralContext, StagedLorebookCoherenceExecutionError> {
     let mut values = PromptRenderValues::default();
     values
@@ -327,7 +341,12 @@ fn render_context(
     messages.push(ProviderNeutralMessage {
         role: MessageRole::User,
         parts: vec![ProviderContextPart::Text {
-            text: STAGED_LOREBOOK_COHERENCE_FINAL_INSTRUCTION.into(),
+            text: text
+                .render_with(
+                    lettuce_creation::STAGED_LOREBOOK_COHERENCE_FINAL_INSTRUCTION_KEY,
+                    [],
+                )
+                .map_err(|_| StagedLorebookCoherenceExecutionError::InvalidPrompt)?,
         }],
     });
     let input_bytes = messages

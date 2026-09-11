@@ -9,10 +9,10 @@ use lettuce_conversations::{
     ProviderReplayArtifactPort, ToolPolicy,
 };
 use lettuce_creation::{
-    STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION, StagedLorebookPlannerAttempt,
-    StagedLorebookPlannerDecision, StagedLorebookPlannerUsage, StagedLorebookPlanningRun,
-    StagedLorebookRepository, StagedLorebookRepositoryError, StagedLorebookStage,
-    reduce_staged_lorebook_planner_calls, staged_lorebook_planner_tool_request,
+    StagedLorebookPlannerAttempt, StagedLorebookPlannerDecision, StagedLorebookPlannerUsage,
+    StagedLorebookPlanningRun, StagedLorebookRepository, StagedLorebookRepositoryError,
+    StagedLorebookStage, reduce_staged_lorebook_planner_calls,
+    staged_lorebook_planner_tool_request,
 };
 use lettuce_jobs::handle::JobHandle;
 use lettuce_types::{GenerationAttemptId, GenerationTurnId, RequestId, TimestampMillis};
@@ -71,6 +71,7 @@ where
     R: StagedLorebookRepository
         + ProviderReplayArtifactPort
         + lettuce_usage::JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     I: InferencePort + ?Sized,
 {
@@ -103,7 +104,17 @@ where
         if handle.cancellation_token().is_cancelled() {
             return Err(StagedLorebookPlannerExecutionError::Cancelled);
         }
-        let request = build_request(&run, prompt, handle, stream_sink)?;
+        let request = build_request(
+            &run,
+            prompt,
+            &crate::runtime_text::RuntimeText::load(
+                self.repository,
+                crate::BuiltInPromptId::LorebookRuntime,
+            )
+            .map_err(|_| StagedLorebookPlannerExecutionError::InvalidPrompt)?,
+            handle,
+            stream_sink,
+        )?;
         let outcome = crate::job_inference_usage::run_job_inference(
             self.repository,
             self.inference,
@@ -230,6 +241,7 @@ fn validate_ownership(
 fn build_request(
     run: &StagedLorebookPlanningRun,
     prompt: &PromptDocument,
+    text: &crate::runtime_text::RuntimeText,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
 ) -> Result<InferenceRequest, StagedLorebookPlannerExecutionError> {
@@ -244,11 +256,13 @@ fn build_request(
         attempt_id: GenerationAttemptId::from_uuid(Uuid::new_v5(&run.job_id.as_uuid(), b"native")),
         operation: GenerationOperation::Send,
         profile,
-        context: render_context(run, prompt)?,
+        context: render_context(run, prompt, text)?,
         cancellation: Some(handle.id()),
         stream_sink,
         media_grants: Vec::new(),
-        tools: Some(staged_lorebook_planner_tool_request()),
+        tools: Some(staged_lorebook_planner_tool_request(&|key| {
+            text.render_with(key, []).unwrap_or_default()
+        })),
     };
     request
         .validate()
@@ -259,6 +273,7 @@ fn build_request(
 fn render_context(
     run: &StagedLorebookPlanningRun,
     prompt: &PromptDocument,
+    text: &crate::runtime_text::RuntimeText,
 ) -> Result<ProviderNeutralContext, StagedLorebookPlannerExecutionError> {
     let mut values = PromptRenderValues::default();
     values
@@ -270,7 +285,8 @@ fn render_context(
     );
     values.purpose_values.insert(
         PromptVariable::SourceExcerpts,
-        format_excerpts(&run.project.excerpts),
+        format_excerpts(&run.project.excerpts, text)
+            .map_err(|_| StagedLorebookPlannerExecutionError::InvalidPrompt)?,
     );
     let rendered = render_prompt(
         prompt,
@@ -330,7 +346,12 @@ fn render_context(
     messages.push(ProviderNeutralMessage {
         role: MessageRole::User,
         parts: vec![ProviderContextPart::Text {
-            text: STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION.to_owned(),
+            text: text
+                .render_with(
+                    lettuce_creation::STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION_KEY,
+                    [],
+                )
+                .map_err(|_| StagedLorebookPlannerExecutionError::InvalidPrompt)?,
         }],
     });
     let input_bytes = text_bytes(&messages)?;
@@ -359,20 +380,33 @@ fn render_context(
     })
 }
 
-fn format_excerpts(excerpts: &[lettuce_creation::StagedLorebookSourceExcerpt]) -> String {
+fn format_excerpts(
+    excerpts: &[lettuce_creation::StagedLorebookSourceExcerpt],
+    text: &crate::runtime_text::RuntimeText,
+) -> Result<String, crate::runtime_text::RuntimeTextError> {
     if excerpts.is_empty() {
-        return "(none)".to_owned();
+        return text.render_with("lorebook_none", []);
     }
-    excerpts
+    Ok(excerpts
         .iter()
-        .map(|excerpt| {
-            format!(
-                "[{}] {}\n{}",
-                excerpt.source_id, excerpt.label, excerpt.content
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n---\n\n")
+        .map(|excerpt| format_staged_excerpt(excerpt, text))
+        .collect::<Result<Vec<_>, _>>()?
+        .join("\n\n---\n\n"))
+}
+
+pub(crate) fn format_staged_excerpt(
+    excerpt: &lettuce_creation::StagedLorebookSourceExcerpt,
+    text: &crate::runtime_text::RuntimeText,
+) -> Result<String, crate::runtime_text::RuntimeTextError> {
+    use lettuce_context::PromptVariable as Variable;
+    text.render_with(
+        "staged_excerpt",
+        [
+            (Variable::ExcerptSourceId, excerpt.source_id.clone()),
+            (Variable::ExcerptLabel, excerpt.label.clone()),
+            (Variable::ExcerptContent, excerpt.content.clone()),
+        ],
+    )
 }
 
 fn strip_replay(mut calls: Vec<ProposedToolCall>) -> Vec<ProposedToolCall> {

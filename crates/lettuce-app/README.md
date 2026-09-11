@@ -541,6 +541,14 @@ into the run at admission together with the filler that marked an absent input
 instructions, fallbacks and tool texts are read when a request is built.
 Selected memory lines are numbered contiguously over non-blank memories, as
 legacy did.
+Staged lorebook final instructions, tool descriptions and fillers (`(none)`,
+`(empty)`, outline lines, source excerpt lines and the coherence drafted-entry
+block) render from the
+same document. Writer/refinement and coherence values are rendered at admission,
+before the job is created, and stored in the run together with the `(none)`
+filler they used (`none_marker`), which the run validator compares against;
+the planner's excerpts, every final instruction and the tool descriptions render
+when a request is built.
 Lorebook entry and keyword native/fallback executions also use job dispatch
 evidence. The shared helper distinguishes evidence persistence failure from
 provider failure. Entry/keyword stop on evidence failure without writing a

@@ -9,7 +9,6 @@ use lettuce_conversations::{
     ProviderReplayArtifactPort, ToolPolicy,
 };
 use lettuce_creation::{
-    STAGED_LOREBOOK_REFINE_FINAL_INSTRUCTION, STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION,
     StagedLorebookDraftRevision, StagedLorebookPlanningRun, StagedLorebookRepository,
     StagedLorebookRepositoryError, StagedLorebookWriterAttempt, StagedLorebookWriterDecision,
     StagedLorebookWriterRun, StagedLorebookWriterRunRepository,
@@ -77,6 +76,7 @@ where
     R: StagedLorebookWriterRunRepository
         + ProviderReplayArtifactPort
         + lettuce_usage::JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     P: StagedLorebookRepository + ?Sized,
     I: InferencePort + ?Sized,
@@ -115,7 +115,17 @@ where
             self.runs,
             self.inference,
             run.job_id,
-            build_request(&run, prompt, handle, stream_sink)?,
+            build_request(
+                &run,
+                prompt,
+                &crate::runtime_text::RuntimeText::load(
+                    self.runs,
+                    crate::BuiltInPromptId::LorebookRuntime,
+                )
+                .map_err(|_| StagedLorebookWriterExecutionError::InvalidPrompt)?,
+                handle,
+                stream_sink,
+            )?,
             now,
         )
         .await
@@ -255,6 +265,7 @@ fn validate_ownership(
 fn build_request(
     run: &StagedLorebookWriterRun,
     prompt: &PromptDocument,
+    text: &crate::runtime_text::RuntimeText,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
 ) -> Result<InferenceRequest, StagedLorebookWriterExecutionError> {
@@ -271,11 +282,13 @@ fn build_request(
         attempt_id: GenerationAttemptId::from_uuid(Uuid::new_v5(&run.job_id.as_uuid(), b"native")),
         operation: GenerationOperation::Send,
         profile,
-        context: render_context(run, prompt)?,
+        context: render_context(run, prompt, text)?,
         cancellation: Some(handle.id()),
         stream_sink,
         media_grants: Vec::new(),
-        tools: Some(staged_lorebook_writer_tool_request()),
+        tools: Some(staged_lorebook_writer_tool_request(&|key| {
+            text.render_with(key, []).unwrap_or_default()
+        })),
     };
     request
         .validate()
@@ -286,6 +299,7 @@ fn build_request(
 fn render_context(
     run: &StagedLorebookWriterRun,
     prompt: &PromptDocument,
+    text: &crate::runtime_text::RuntimeText,
 ) -> Result<ProviderNeutralContext, StagedLorebookWriterExecutionError> {
     let values = &run.prompt_values;
     let mut render_values = PromptRenderValues::default();
@@ -368,11 +382,16 @@ fn render_context(
     messages.push(ProviderNeutralMessage {
         role: MessageRole::User,
         parts: vec![ProviderContextPart::Text {
-            text: if run.refinement.is_some() {
-                STAGED_LOREBOOK_REFINE_FINAL_INSTRUCTION.into()
-            } else {
-                STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION.into()
-            },
+            text: text
+                .render_with(
+                    if run.refinement.is_some() {
+                        lettuce_creation::STAGED_LOREBOOK_REFINE_FINAL_INSTRUCTION_KEY
+                    } else {
+                        lettuce_creation::STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION_KEY
+                    },
+                    [],
+                )
+                .map_err(|_| StagedLorebookWriterExecutionError::InvalidPrompt)?,
         }],
     });
     let input_bytes = messages

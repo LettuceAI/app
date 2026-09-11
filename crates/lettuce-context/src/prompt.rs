@@ -954,6 +954,10 @@ pub enum PromptVariable {
     ItemNumber,
     MessageRole,
     MemoryText,
+    EntryIndex,
+    ExcerptSourceId,
+    ExcerptLabel,
+    ExcerptContent,
 }
 
 impl PromptVariable {
@@ -1053,6 +1057,10 @@ impl PromptVariable {
             Self::ItemNumber => "{{item_number}}",
             Self::MessageRole => "{{message_role}}",
             Self::MemoryText => "{{memory_text}}",
+            Self::EntryIndex => "{{entry_index}}",
+            Self::ExcerptSourceId => "{{excerpt_source_id}}",
+            Self::ExcerptLabel => "{{excerpt_label}}",
+            Self::ExcerptContent => "{{excerpt_content}}",
         }
     }
 
@@ -1151,6 +1159,10 @@ impl PromptVariable {
         Self::ItemNumber,
         Self::MessageRole,
         Self::MemoryText,
+        Self::EntryIndex,
+        Self::ExcerptSourceId,
+        Self::ExcerptLabel,
+        Self::ExcerptContent,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.

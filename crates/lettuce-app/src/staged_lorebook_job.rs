@@ -158,8 +158,10 @@ impl<'a, R: ?Sized, J: ?Sized> StagedLorebookCoordinator<'a, R, J> {
     }
 }
 
-impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
-    StagedLorebookCoordinator<'_, R, J>
+impl<
+    R: StagedLorebookRepository + crate::runtime_text::RuntimeTextSource + ?Sized,
+    J: JobStore + ?Sized,
+> StagedLorebookCoordinator<'_, R, J>
 {
     pub(crate) fn resolve_configured_stage(
         &self,
@@ -609,6 +611,17 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
         if project.project.stage != lettuce_creation::StagedLorebookStage::DraftsReady {
             return Err(StagedLorebookAdmissionError::InvalidInput);
         }
+        let drafted_entries = format_drafted_entries(
+            &project.project.drafts,
+            &crate::runtime_text::RuntimeText::load(
+                self.repository,
+                crate::BuiltInPromptId::LorebookRuntime,
+            )
+            .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
+        )?;
+        if drafted_entries.is_empty() {
+            return Err(StagedLorebookAdmissionError::InvalidInput);
+        }
         let admitted = self.jobs.create_or_get(
             JobSpec::new(
                 JobKind::CreationRun,
@@ -639,7 +652,7 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             profile: request.profile,
             prompt_id: request.prompt.id,
             prompt_revision: request.prompt.revision,
-            drafted_entries: format_drafted_entries(&project.project.drafts),
+            drafted_entries,
             created_at: request.now,
             attempt: None,
         };
@@ -691,30 +704,44 @@ fn same_coherence_request(
         && run.created_at == request.now
 }
 
-fn format_drafted_entries(drafts: &[StagedLorebookEntryDraft]) -> String {
+fn format_drafted_entries(
+    drafts: &[StagedLorebookEntryDraft],
+    text: &crate::runtime_text::RuntimeText,
+) -> Result<String, StagedLorebookAdmissionError> {
+    use lettuce_context::PromptVariable as Variable;
+    let fragment = |key: &str, variables: Vec<(Variable, String)>| {
+        text.render_with(key, variables)
+            .map_err(|_| StagedLorebookAdmissionError::InvalidInput)
+    };
+    let none = fragment("lorebook_none", Vec::new())?;
     if drafts.is_empty() {
-        return "(none)".to_owned();
+        return Ok(none);
     }
-    drafts
+    Ok(drafts
         .iter()
         .enumerate()
         .map(|(index, draft)| {
-            format!(
-                "Entry {} (idx {}): \"{}\"\nKeys: {}\nAlwaysActive: {}\nContent: {}",
-                index + 1,
-                index,
-                draft.title,
-                if draft.keywords.is_empty() {
-                    "(none)".to_owned()
-                } else {
-                    draft.keywords.join(", ")
-                },
-                draft.always_active,
-                draft.content,
+            fragment(
+                "staged_drafted_entry",
+                vec![
+                    (Variable::ItemNumber, (index + 1).to_string()),
+                    (Variable::EntryIndex, index.to_string()),
+                    (Variable::EntryTitle, draft.title.clone()),
+                    (
+                        Variable::EntryKeywords,
+                        if draft.keywords.is_empty() {
+                            none.clone()
+                        } else {
+                            draft.keywords.join(", ")
+                        },
+                    ),
+                    (Variable::EntryAlwaysActive, draft.always_active.to_string()),
+                    (Variable::EntryContent, draft.content.clone()),
+                ],
             )
         })
-        .collect::<Vec<_>>()
-        .join("\n\n---\n\n")
+        .collect::<Result<Vec<_>, _>>()?
+        .join("\n\n---\n\n"))
 }
 
 fn same_admission(

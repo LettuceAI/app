@@ -15,25 +15,25 @@ pub const MAX_STAGED_LOREBOOK_TARGET_COUNT: u32 = 50;
 pub const MAX_STAGED_LOREBOOK_EXCERPT_CHARS: usize = 20_000;
 pub const STAGED_LOREBOOK_DRAFT_BATCH_SIZE: usize = 3;
 pub const STAGED_LOREBOOK_PLANNER_TOOL_NAME: &str = "propose_lorebook_outline";
-pub const STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION: &str =
-    "Call propose_lorebook_outline now with exactly the requested number of entries.";
+/// Runtime catalog keys of the staged generator's model-facing text.
+pub const STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION_KEY: &str = "staged_planner_instruction";
 pub const STAGED_LOREBOOK_WRITER_TOOL_NAME: &str = "write_lorebook_entry";
-pub const STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION: &str =
-    "Call write_lorebook_entry now with the final entry.";
-pub const STAGED_LOREBOOK_REFINE_FINAL_INSTRUCTION: &str =
-    "Call write_lorebook_entry now with the revised entry.";
+pub const STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION_KEY: &str = "staged_writer_instruction";
+pub const STAGED_LOREBOOK_REFINE_FINAL_INSTRUCTION_KEY: &str = "staged_refine_instruction";
 pub const STAGED_LOREBOOK_COHERENCE_TOOL_NAME: &str = "propose_coherence_changes";
-pub const STAGED_LOREBOOK_COHERENCE_FINAL_INSTRUCTION: &str =
-    "Call propose_coherence_changes now with the list of changes.";
+pub const STAGED_LOREBOOK_COHERENCE_FINAL_INSTRUCTION_KEY: &str = "staged_coherence_instruction";
+pub const STAGED_LOREBOOK_TOOL_TEXT_KEYS: [&str; 3] = [
+    "staged_planner_tool",
+    "staged_writer_tool",
+    "staged_coherence_tool",
+];
 
 #[must_use]
-pub fn staged_lorebook_coherence_tool_request() -> ToolRequest {
+pub fn staged_lorebook_coherence_tool_request(text: &dyn Fn(&str) -> String) -> ToolRequest {
     ToolRequest {
         definitions: vec![ToolDefinition {
             name: STAGED_LOREBOOK_COHERENCE_TOOL_NAME.into(),
-            description: Some(
-                "Propose surgical coherence fixes across the drafted entries.".into(),
-            ),
+            description: Some(text("staged_coherence_tool")),
             parameters: json!({
                 "type": "object",
                 "properties": { "changes": { "type": "array", "items": {
@@ -61,11 +61,11 @@ pub fn staged_lorebook_coherence_tool_request() -> ToolRequest {
 }
 
 #[must_use]
-pub fn staged_lorebook_planner_tool_request() -> ToolRequest {
+pub fn staged_lorebook_planner_tool_request(text: &dyn Fn(&str) -> String) -> ToolRequest {
     ToolRequest {
         definitions: vec![ToolDefinition {
             name: STAGED_LOREBOOK_PLANNER_TOOL_NAME.to_owned(),
-            description: Some("Propose the full outline of lorebook entries to draft.".into()),
+            description: Some(text("staged_planner_tool")),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -93,11 +93,11 @@ pub fn staged_lorebook_planner_tool_request() -> ToolRequest {
 }
 
 #[must_use]
-pub fn staged_lorebook_writer_tool_request() -> ToolRequest {
+pub fn staged_lorebook_writer_tool_request(text: &dyn Fn(&str) -> String) -> ToolRequest {
     ToolRequest {
         definitions: vec![ToolDefinition {
             name: STAGED_LOREBOOK_WRITER_TOOL_NAME.to_owned(),
-            description: Some("Write the body of a single lorebook entry.".into()),
+            description: Some(text("staged_writer_tool")),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -768,6 +768,10 @@ pub struct StagedLorebookWriterPromptValues {
     pub entry_content: String,
     #[serde(default)]
     pub user_feedback: String,
+    /// The filler that marked absent keys or excerpts when the run was admitted;
+    /// runs stored before it was recorded have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub none_marker: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1176,6 +1180,7 @@ impl StagedLorebookPlannerAttempt {
 impl StagedLorebookWriterRun {
     pub fn validate(&self) -> Result<(), StagedLorebookWriterRunRepositoryError> {
         let values = &self.prompt_values;
+        let blank_filler = values.none_marker.as_deref() == Some("");
         if self.project_revision.get() == 0
             || invalid_prompt_snapshot(
                 self.prompt_snapshot.as_ref(),
@@ -1197,14 +1202,23 @@ impl StagedLorebookWriterRun {
                     || values.entry_title != values.entry_title.trim()
                     || values.entry_category.trim().is_empty()
                     || values.entry_category != values.entry_category.trim()
-                    || values.entry_proposed_keys.is_empty()))
-            || values.relevant_excerpts.is_empty()
+                    || (values.entry_proposed_keys.is_empty() && !blank_filler)))
+            || (values.relevant_excerpts.is_empty() && !blank_filler)
             || self.refinement.as_ref().is_some_and(|refinement| {
                 refinement.feedback.trim().is_empty()
                     || refinement.feedback != refinement.feedback.trim()
                     || refinement.base_draft.plan_id != self.plan_id
                     || values.entry_title != refinement.base_draft.title
-                    || values.entry_keywords != format_keys(&refinement.base_draft.keywords)
+                    || if refinement.base_draft.keywords.is_empty() {
+                        values
+                            .none_marker
+                            .as_ref()
+                            .map_or(values.entry_keywords.trim().is_empty(), |marker| {
+                                values.entry_keywords != *marker
+                            })
+                    } else {
+                        values.entry_keywords != refinement.base_draft.keywords.join(", ")
+                    }
                     || values.entry_always_active != refinement.base_draft.always_active.to_string()
                     || values.entry_content != refinement.base_draft.content
                     || values.user_feedback != refinement.feedback
@@ -1891,14 +1905,6 @@ fn validate_draft_revisions(
     Ok(())
 }
 
-fn format_keys(keys: &[String]) -> String {
-    if keys.is_empty() {
-        "(none)".to_owned()
-    } else {
-        keys.join(", ")
-    }
-}
-
 fn validate_coherence_changes(
     changes: &[StagedLorebookCoherenceChange],
     drafts: &[StagedLorebookEntryDraft],
@@ -2132,7 +2138,7 @@ mod tests {
 
     #[test]
     fn planner_contract_and_reducer_copy_legacy_shapes_without_an_extra_cap() {
-        let request = staged_lorebook_planner_tool_request();
+        let request = staged_lorebook_planner_tool_request(&|key| key.to_owned());
         assert_eq!(request.choice, ToolChoice::Required);
         assert_eq!(request.definitions.len(), 1);
         assert_eq!(
@@ -2187,7 +2193,7 @@ mod tests {
 
     #[test]
     fn writer_contract_and_reducer_copy_legacy_shape_without_extra_limits() {
-        let request = staged_lorebook_writer_tool_request();
+        let request = staged_lorebook_writer_tool_request(&|key| key.to_owned());
         assert_eq!(request.choice, ToolChoice::Required);
         assert_eq!(request.definitions.len(), 1);
         assert_eq!(

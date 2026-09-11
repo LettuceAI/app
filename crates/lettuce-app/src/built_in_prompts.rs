@@ -746,6 +746,10 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "item_number"
             | "message_role"
             | "memory_text"
+            | "entry_index"
+            | "excerpt_source_id"
+            | "excerpt_label"
+            | "excerpt_content"
     )
 }
 
@@ -1279,7 +1283,16 @@ mod tests {
             "lorebook_no_keywords",
             "lorebook_keyword_list",
             "lorebook_keyword_untitled",
+            lettuce_creation::STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION_KEY,
+            lettuce_creation::STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION_KEY,
+            lettuce_creation::STAGED_LOREBOOK_REFINE_FINAL_INSTRUCTION_KEY,
+            lettuce_creation::STAGED_LOREBOOK_COHERENCE_FINAL_INSTRUCTION_KEY,
+            "staged_empty",
+            "staged_outline_line",
+            "staged_drafted_entry",
+            "staged_excerpt",
         ]);
+        keys.extend(lettuce_creation::STAGED_LOREBOOK_TOOL_TEXT_KEYS);
         let exists = |key: &str| {
             seed.entries
                 .iter()
@@ -1308,6 +1321,13 @@ mod tests {
         lettuce_creation::lorebook_keyword_tool_request(&resolve)
             .validate()
             .expect("keyword tool contract");
+        for request in [
+            lettuce_creation::staged_lorebook_planner_tool_request(&resolve),
+            lettuce_creation::staged_lorebook_writer_tool_request(&resolve),
+            lettuce_creation::staged_lorebook_coherence_tool_request(&resolve),
+        ] {
+            request.validate().expect("staged tool contract");
+        }
     }
 
     #[test]

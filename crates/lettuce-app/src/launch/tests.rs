@@ -5023,7 +5023,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         assert!(!rendered_text.contains("REASONING_CONDITION_true"));
         assert!(rendered_text.contains("[src_01] Notes\nAda keeps the harbour key."));
         assert!(
-            rendered_text.contains(lettuce_creation::STAGED_LOREBOOK_PLANNER_FINAL_INSTRUCTION)
+            rendered_text.contains("Call propose_lorebook_outline now with exactly the requested number of entries.")
         );
     }
     let replayed = executor
@@ -5375,7 +5375,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .join("\n");
         assert!(text.contains("Harbour world"));
         assert!(text.contains("[src_01] Notes\nAda keeps the harbour key."));
-        assert!(text.contains(lettuce_creation::STAGED_LOREBOOK_WRITER_FINAL_INSTRUCTION));
+        assert!(text.contains("Call write_lorebook_entry now with the final entry."));
     }
     let mut changed_writer_prompt = writer_prompt.clone();
     changed_writer_prompt.revision = writer_prompt
@@ -5592,6 +5592,31 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         admitted_refine.run.prompt_values.entry_always_active,
         "false"
     );
+    assert_eq!(
+        admitted_refine.run.prompt_values.none_marker.as_deref(),
+        Some("(none)")
+    );
+    let mut keywordless = admitted_refine.run.clone();
+    keywordless
+        .refinement
+        .as_mut()
+        .expect("refinement")
+        .base_draft
+        .keywords
+        .clear();
+    keywordless.prompt_values.entry_keywords = "(none)".into();
+    keywordless.validate().expect("keywordless refinement");
+    keywordless.prompt_values.entry_keywords = "harbour, key".into();
+    assert!(keywordless.validate().is_err());
+    keywordless.prompt_values.entry_keywords = String::new();
+    keywordless.prompt_values.none_marker = Some(String::new());
+    keywordless.validate().expect("blank filler refinement");
+    keywordless.prompt_values.none_marker = None;
+    assert!(keywordless.validate().is_err());
+    keywordless.prompt_values.entry_keywords = "(none)".into();
+    keywordless
+        .validate()
+        .expect("refinement stored before the filler was recorded");
     assert!(
         !writer
             .prepare_and_admit_refinement(refine_request.clone())
@@ -5722,7 +5747,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .join("\n");
         assert!(refine_text.contains("  Manual title  "));
         assert!(refine_text.contains("Make it more precise."));
-        assert!(refine_text.contains(lettuce_creation::STAGED_LOREBOOK_REFINE_FINAL_INSTRUCTION));
+        assert!(refine_text.contains("Call write_lorebook_entry now with the revised entry."));
     }
     let mut changed_refined_draft = refined.project.project.drafts[0].clone();
     changed_refined_draft.content = "Changed after settlement".into();
@@ -6016,7 +6041,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(text.contains("Entry 1 (idx 0): \"Precise title\""));
-        assert!(text.contains(lettuce_creation::STAGED_LOREBOOK_COHERENCE_FINAL_INSTRUCTION));
+        assert!(text.contains("Call propose_coherence_changes now with the list of changes."));
     }
     assert!(matches!(
         coherence_dispatcher

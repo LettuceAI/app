@@ -105,7 +105,7 @@ impl<'a, P: ?Sized, R: ?Sized, J: ?Sized> StagedLorebookWriterCoordinator<'a, P,
 
 impl<P, R, J> StagedLorebookWriterCoordinator<'_, P, R, J>
 where
-    P: StagedLorebookRepository + ?Sized,
+    P: StagedLorebookRepository + crate::runtime_text::RuntimeTextSource + ?Sized,
     R: StagedLorebookWriterRunRepository + ?Sized,
     J: JobStore + ?Sized,
 {
@@ -155,7 +155,12 @@ where
         let project = self
             .projects
             .load_staged_lorebook(request.project_request_id)?;
-        let values = prepare_values(&project, request.plan_id)?;
+        let text = crate::runtime_text::RuntimeText::load(
+            self.projects,
+            crate::BuiltInPromptId::LorebookRuntime,
+        )
+        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?;
+        let values = prepare_values(&project, request.plan_id, &text)?;
         let admitted = self.jobs.create_or_get(
             JobSpec::new(
                 JobKind::CreationRun,
@@ -450,8 +455,13 @@ where
         let project = self
             .projects
             .load_staged_lorebook(request.project_request_id)?;
+        let text = crate::runtime_text::RuntimeText::load(
+            self.projects,
+            crate::BuiltInPromptId::LorebookRuntime,
+        )
+        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?;
         let (values, refinement) =
-            prepare_refine_values(&project, request.plan_id, &request.feedback)?;
+            prepare_refine_values(&project, request.plan_id, &request.feedback, &text)?;
         let admitted = self.jobs.create_or_get(
             JobSpec::new(
                 JobKind::CreationRun,
@@ -564,6 +574,7 @@ fn validate_refine_request(
 fn prepare_values(
     run: &StagedLorebookPlanningRun,
     plan_id: LorebookEntryId,
+    text: &crate::runtime_text::RuntimeText,
 ) -> Result<StagedLorebookWriterPromptValues, StagedLorebookWriterAdmissionError> {
     if run.project.stage != StagedLorebookStage::Drafting {
         return Err(StagedLorebookWriterAdmissionError::InvalidInput);
@@ -586,25 +597,46 @@ fn prepare_values(
     ) {
         return Err(StagedLorebookWriterAdmissionError::InvalidInput);
     }
+    let none = text
+        .render_with("lorebook_none", [])
+        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?;
     Ok(StagedLorebookWriterPromptValues {
         brief: run.project.brief.clone(),
-        outline: format_outline(&run.project.outline),
+        outline: format_outline(&run.project.outline, text, &none)?,
         entry_title: plan.title.clone(),
         entry_category: plan.category.clone(),
-        entry_proposed_keys: format_keys(&plan.proposed_keys),
+        entry_proposed_keys: format_keys(&plan.proposed_keys, &none),
         entry_rationale: plan.rationale.clone(),
-        relevant_excerpts: relevant_excerpts(plan, &run.project.excerpts),
+        relevant_excerpts: relevant_excerpts(plan, &run.project.excerpts, text, &none)?,
         entry_keywords: String::new(),
         entry_always_active: String::new(),
         entry_content: String::new(),
         user_feedback: String::new(),
+        none_marker: Some(none),
     })
+    .and_then(require_rendered)
+}
+
+fn require_rendered(
+    values: StagedLorebookWriterPromptValues,
+) -> Result<StagedLorebookWriterPromptValues, StagedLorebookWriterAdmissionError> {
+    if values.outline.is_empty()
+        || (values.relevant_excerpts.is_empty()
+            && values
+                .none_marker
+                .as_deref()
+                .is_some_and(|none| !none.is_empty()))
+    {
+        return Err(StagedLorebookWriterAdmissionError::InvalidInput);
+    }
+    Ok(values)
 }
 
 fn prepare_refine_values(
     run: &StagedLorebookPlanningRun,
     plan_id: LorebookEntryId,
     feedback: &str,
+    text: &crate::runtime_text::RuntimeText,
 ) -> Result<
     (StagedLorebookWriterPromptValues, StagedLorebookRefinement),
     StagedLorebookWriterAdmissionError,
@@ -629,19 +661,24 @@ fn prepare_refine_values(
         .cloned()
         .ok_or(StagedLorebookWriterAdmissionError::InvalidInput)?;
     let feedback = feedback.trim().to_owned();
+    let none = text
+        .render_with("lorebook_none", [])
+        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?;
     let values = StagedLorebookWriterPromptValues {
         brief: run.project.brief.clone(),
-        outline: format_outline(&run.project.outline),
+        outline: format_outline(&run.project.outline, text, &none)?,
         entry_title: draft.title.clone(),
         entry_category: String::new(),
         entry_proposed_keys: String::new(),
         entry_rationale: String::new(),
-        relevant_excerpts: relevant_excerpts(plan, &run.project.excerpts),
-        entry_keywords: format_keys(&draft.keywords),
+        relevant_excerpts: relevant_excerpts(plan, &run.project.excerpts, text, &none)?,
+        entry_keywords: format_keys(&draft.keywords, &none),
         entry_always_active: draft.always_active.to_string(),
         entry_content: draft.content.clone(),
         user_feedback: feedback.clone(),
+        none_marker: Some(none),
     };
+    let values = require_rendered(values)?;
     Ok((
         values,
         StagedLorebookRefinement {
@@ -651,28 +688,41 @@ fn prepare_refine_values(
     ))
 }
 
-fn format_outline(outline: &[StagedLorebookEntryPlan]) -> String {
+fn format_outline(
+    outline: &[StagedLorebookEntryPlan],
+    text: &crate::runtime_text::RuntimeText,
+    none: &str,
+) -> Result<String, StagedLorebookWriterAdmissionError> {
+    use lettuce_context::PromptVariable as Variable;
     if outline.is_empty() {
-        return "(empty)".to_owned();
+        return text
+            .render_with("staged_empty", [])
+            .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput);
     }
-    outline
+    Ok(outline
         .iter()
         .map(|plan| {
-            format!(
-                "{}. {} [{}] keys: {}",
-                plan.ordinal + 1,
-                plan.title,
-                plan.category,
-                format_keys(&plan.proposed_keys)
+            text.render_with(
+                "staged_outline_line",
+                [
+                    (Variable::ItemNumber, (plan.ordinal + 1).to_string()),
+                    (Variable::EntryTitle, plan.title.clone()),
+                    (Variable::EntryCategory, plan.category.clone()),
+                    (
+                        Variable::EntryKeywords,
+                        format_keys(&plan.proposed_keys, none),
+                    ),
+                ],
             )
+            .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)
         })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect::<Result<Vec<_>, _>>()?
+        .join("\n"))
 }
 
-fn format_keys(keys: &[String]) -> String {
+fn format_keys(keys: &[String], none: &str) -> String {
     if keys.is_empty() {
-        "(none)".to_owned()
+        none.to_owned()
     } else {
         keys.join(", ")
     }
@@ -681,38 +731,27 @@ fn format_keys(keys: &[String]) -> String {
 fn relevant_excerpts(
     plan: &StagedLorebookEntryPlan,
     excerpts: &[StagedLorebookSourceExcerpt],
-) -> String {
-    if plan.source_refs.is_empty() {
-        return format_excerpts(excerpts);
-    }
+    text: &crate::runtime_text::RuntimeText,
+    none: &str,
+) -> Result<String, StagedLorebookWriterAdmissionError> {
     let selected = excerpts
         .iter()
         .filter(|excerpt| plan.source_refs.iter().any(|id| id == &excerpt.source_id))
-        .map(format_excerpt)
         .collect::<Vec<_>>();
-    if selected.is_empty() {
-        format_excerpts(excerpts)
+    let chosen = if selected.is_empty() {
+        excerpts.iter().collect()
     } else {
-        selected.join("\n\n---\n\n")
+        selected
+    };
+    if chosen.is_empty() {
+        return Ok(none.to_owned());
     }
-}
-
-fn format_excerpts(excerpts: &[StagedLorebookSourceExcerpt]) -> String {
-    if excerpts.is_empty() {
-        return "(none)".to_owned();
-    }
-    excerpts
-        .iter()
-        .map(format_excerpt)
-        .collect::<Vec<_>>()
-        .join("\n\n---\n\n")
-}
-
-fn format_excerpt(excerpt: &StagedLorebookSourceExcerpt) -> String {
-    format!(
-        "[{}] {}\n{}",
-        excerpt.source_id, excerpt.label, excerpt.content
-    )
+    Ok(chosen
+        .into_iter()
+        .map(|excerpt| crate::staged_lorebook_execution::format_staged_excerpt(excerpt, text))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| StagedLorebookWriterAdmissionError::InvalidInput)?
+        .join("\n\n---\n\n"))
 }
 
 fn same_request(run: &StagedLorebookWriterRun, request: &WriterAdmissionInput) -> bool {
