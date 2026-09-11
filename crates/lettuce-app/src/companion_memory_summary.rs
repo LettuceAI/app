@@ -561,7 +561,8 @@ fn summary_from_outcome(
 }
 
 fn validate_summary_text(summary: &str) -> Result<String, ()> {
-    let normalized = collapse_whitespace(&normalize_llm_output_text(summary));
+    let normalized =
+        lettuce_memory::collapse_whitespace(&lettuce_memory::normalize_llm_output_text(summary));
     if normalized.is_empty() || normalized.len() > 6_000 {
         return Err(());
     }
@@ -590,52 +591,6 @@ fn validate_summary_text(summary: &str) -> Result<String, ()> {
         return Err(());
     }
     Ok(normalized)
-}
-
-fn normalize_llm_output_text(raw: &str) -> String {
-    let trimmed = raw.trim();
-    let without_fences = if trimmed.starts_with("```") {
-        let mut lines = trimmed.lines();
-        let _ = lines.next();
-        let mut body = lines.collect::<Vec<_>>();
-        if body.last().is_some_and(|line| line.trim() == "```") {
-            body.pop();
-        }
-        body.join("\n").trim().to_owned()
-    } else {
-        trimmed.to_owned()
-    };
-    strip_thinking_tags(&without_fences).trim().to_owned()
-}
-
-fn strip_thinking_tags(text: &str) -> String {
-    const TAGS: [(&str, &str); 6] = [
-        ("<think>", "</think>"),
-        ("<thinking>", "</thinking>"),
-        ("<reason>", "</reason>"),
-        ("<reasoning>", "</reasoning>"),
-        ("<|channel>thought", "<channel|>"),
-        ("<|channel>", "<channel|>"),
-    ];
-    let mut content = text.to_owned();
-    for (open, close) in TAGS {
-        loop {
-            let lower = content.to_ascii_lowercase();
-            let Some(start) = lower.find(open) else {
-                break;
-            };
-            let tail = start + open.len();
-            let end = lower[tail..]
-                .find(close)
-                .map_or(content.len(), |offset| tail + offset + close.len());
-            content.replace_range(start..end, "");
-        }
-    }
-    content
-}
-
-fn collapse_whitespace(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn aggregate_usage(

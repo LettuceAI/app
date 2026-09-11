@@ -44,11 +44,18 @@ its default, and `confidence` is clamped to 0..1. Group contracts never carry
 source attribution or supersession. A call that cannot be applied (missing
 or invalid text, missing or unknown category, missing target,
 undeclared tool name) settles as `Skipped` with a typed reason instead of
-failing the round, as legacy skipped such calls; a round may repeat `done`. Still missing from legacy:
+failing the round, as legacy skipped such calls; a round may repeat `done`.
+A created memory's text goes through legacy's checks first
+(`normalize_memory_text`): a surrounding code fence and any thinking section
+are stripped, whitespace collapses, and empty, over-280-byte, refusal-marker or
+meta-marker text is skipped with its own reason, including legacy's false
+positives (a memory containing `i cannot` or `user:` is dropped). The summary
+validator shares the same normalization. Interleaved thinking tags of different
+kinds are stripped pair by pair instead of by earliest opening tag, which
+differs from legacy only for malformed output. Still missing from legacy:
 category repair for unknown categories (`retag_memory`, repair fallbacks,
-keyword guess), legacy memory-text quality checks (280-byte limit, refusal and
-meta-output markers) and legacy-shaped tool results (six-digit ids,
-`updatedMemories`). Structured
+keyword guess), the raw-arguments fallback for a missing `text` argument, and
+legacy-shaped tool results (six-digit ids, `updatedMemories`). Structured
 fallback prompts are catalog keys (`memory_operations_fallback_prompt_key`).
 Runs store up to 64 inference rounds and 4096 tool calls per attempt. Companion-required source validation and supersession, provider-driven
 category repair, and UI events remain later slices. ONNX inference runtime

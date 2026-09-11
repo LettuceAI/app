@@ -6,6 +6,7 @@ mod model;
 mod port;
 mod run;
 mod structured_fallback;
+mod text;
 mod tool;
 
 pub use model::{
@@ -35,6 +36,9 @@ pub use run::{
 pub use structured_fallback::{
     StructuredFallbackError, memory_operations_fallback_prompt_key,
     parse_memory_operations_from_text,
+};
+pub use text::{
+    MemoryTextProblem, collapse_whitespace, normalize_llm_output_text, normalize_memory_text,
 };
 pub use tool::{
     CreateMemoryPreparation, DYNAMIC_MEMORY_TOOL_TEXT_KEYS, DynamicMemoryToolOptions,

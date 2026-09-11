@@ -5,7 +5,6 @@ use lettuce_types::{MemoryId, MessageId, TimestampMillis, ToolExecutionId};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::model::validate_memory_text;
 use crate::{
     MemoryCategory, MemoryChangeSet, MemoryItem, MemoryPolicy, MemoryShortId, MemorySpaceSnapshot,
     MemoryValidationError, Score,
@@ -211,6 +210,10 @@ pub enum MemoryToolArguments {
 pub enum MemoryToolSkipReason {
     MissingText,
     InvalidText,
+    EmptyText,
+    TextTooLong,
+    RefusalText,
+    MetaText,
     MissingCategory,
     InvalidCategory,
     MissingTarget,
@@ -265,6 +268,12 @@ impl MemoryToolArguments {
                 MemoryToolError::InvalidCategory => MemoryToolSkipReason::InvalidCategory,
                 MemoryToolError::UnsupportedTool => MemoryToolSkipReason::UnsupportedTool,
                 MemoryToolError::Validation(_) => MemoryToolSkipReason::InvalidText,
+                MemoryToolError::Text(problem) => match problem {
+                    crate::MemoryTextProblem::Empty => MemoryToolSkipReason::EmptyText,
+                    crate::MemoryTextProblem::TooLong => MemoryToolSkipReason::TextTooLong,
+                    crate::MemoryTextProblem::Refusal => MemoryToolSkipReason::RefusalText,
+                    crate::MemoryTextProblem::Meta => MemoryToolSkipReason::MetaText,
+                },
                 _ => MemoryToolSkipReason::MalformedArguments,
             },
         })
@@ -278,8 +287,8 @@ impl MemoryToolArguments {
             .ok_or(MemoryToolError::ArgumentsMustBeObject)?;
         match name {
             "create_memory" => {
-                let text = required_string(object, "text")?;
-                validate_memory_text(&text)?;
+                let text = crate::normalize_memory_text(&required_string(object, "text")?)
+                    .map_err(MemoryToolError::Text)?;
                 let category = match required_string(object, "category")?.as_str() {
                     "character_trait" => MemoryCategory::CharacterTrait,
                     "relationship" => MemoryCategory::Relationship,
@@ -898,6 +907,8 @@ pub enum MemoryToolError {
     InvalidField(&'static str),
     #[error("memory category is invalid")]
     InvalidCategory,
+    #[error("memory text was not kept: {0:?}")]
+    Text(crate::MemoryTextProblem),
     #[error("done summary is too large")]
     SummaryTooLarge,
     #[error("tool is unsupported")]
@@ -1150,6 +1161,22 @@ mod tests {
     }
 
     #[test]
+    fn created_memory_text_is_normalized_like_legacy() {
+        let parsed = MemoryToolArguments::parse(
+            "create_memory",
+            &json!({
+                "text": "```\n<think>plan</think> Mira   likes\n tea \n```",
+                "category": "other"
+            }),
+        )
+        .expect("create");
+        assert!(matches!(
+            parsed,
+            MemoryToolArguments::CreateMemory { ref text, .. } if text == "Mira likes tea"
+        ));
+    }
+
+    #[test]
     fn unusable_calls_settle_as_skipped_instead_of_failing() {
         use super::MemoryToolSkipReason;
         let cases = [
@@ -1166,7 +1193,22 @@ mod tests {
             (
                 "create_memory",
                 json!({ "text": "   ", "category": "other" }),
-                MemoryToolSkipReason::InvalidText,
+                MemoryToolSkipReason::EmptyText,
+            ),
+            (
+                "create_memory",
+                json!({ "text": "a".repeat(281), "category": "other" }),
+                MemoryToolSkipReason::TextTooLong,
+            ),
+            (
+                "create_memory",
+                json!({ "text": "I can't help with that.", "category": "other" }),
+                MemoryToolSkipReason::RefusalText,
+            ),
+            (
+                "create_memory",
+                json!({ "text": "As an AI, Mira likes tea.", "category": "other" }),
+                MemoryToolSkipReason::MetaText,
             ),
             ("pin_memory", json!({}), MemoryToolSkipReason::MissingTarget),
             (
