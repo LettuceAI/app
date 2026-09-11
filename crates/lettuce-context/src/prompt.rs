@@ -513,6 +513,13 @@ pub(crate) fn validate_label(
     if value.trim().is_empty() {
         return Err(PromptValidationError::Blank { field });
     }
+    validate_optional_label(value, field)
+}
+
+pub(crate) fn validate_optional_label(
+    value: &str,
+    field: &'static str,
+) -> Result<(), PromptValidationError> {
     if value.chars().count() > MAX_LABEL_SCALARS {
         return Err(PromptValidationError::LabelTooLong { field });
     }

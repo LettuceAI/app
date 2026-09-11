@@ -77,7 +77,7 @@ CREATE INDEX lorebooks_library_order_idx ON lorebooks(updated_at DESC, id ASC);
 CREATE TABLE lorebook_entries (
     id TEXT PRIMARY KEY,
     lorebook_id TEXT NOT NULL REFERENCES lorebooks(id) ON DELETE CASCADE,
-    title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+    title TEXT NOT NULL,
     enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
     always_active INTEGER NOT NULL CHECK (always_active IN (0, 1)),
     keywords_json TEXT NOT NULL CHECK (length(trim(keywords_json)) > 0),

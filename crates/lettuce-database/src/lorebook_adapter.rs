@@ -1479,6 +1479,21 @@ mod tests {
     }
 
     #[test]
+    fn blank_legacy_entries_round_trip() {
+        let database = Database::open_in_memory().expect("database");
+        let mut blank = draft("", "");
+        blank.keywords = Vec::new();
+        let created =
+            LorebookRepository::create(&database, metadata(), vec![blank], TimestampMillis::new(1))
+                .expect("create blank entry");
+        let stored = LorebookRepository::get(&database, created.book.id)
+            .expect("get")
+            .expect("stored book");
+        assert_eq!(stored.entries[0].title, "");
+        assert_eq!(stored.entries[0].content, "");
+    }
+
+    #[test]
     fn aggregate_round_trip_and_all_entry_mutations_are_atomic() {
         let database = Database::open_in_memory().expect("database");
         let created = LorebookRepository::create(

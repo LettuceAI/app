@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::prompt::{
     LifecycleFilter, LifecycleStatus, MAX_AUTHORED_BYTES, MAX_LABEL_BYTES, validate_label,
-    validate_prose,
+    validate_optional_label, validate_prose,
 };
 
 /// The legacy runtime always inspected this many recent messages.
@@ -266,7 +266,7 @@ fn validate_entry_fields(
     case_sensitive: bool,
     content: &str,
 ) -> Result<(), LorebookValidationError> {
-    validate_label(title, "lorebook entry title")?;
+    validate_optional_label(title, "lorebook entry title")?;
     validate_prose(content, "lorebook entry content")?;
     if keywords.len() > MAX_KEYWORDS_PER_ENTRY {
         return Err(LorebookValidationError::TooManyKeywords);
@@ -1653,6 +1653,18 @@ mod tests {
             .validate(),
             Err(LorebookValidationError::TooManyEntries)
         );
+    }
+
+    #[test]
+    fn blank_legacy_entries_are_valid_but_titles_stay_bounded() {
+        let book = book(DetectionPolicy::LatestUserMessage);
+        let mut blank = entry(&book, 0, "needle");
+        blank.title = String::new();
+        blank.content = String::new();
+        blank.keywords = Vec::new();
+        assert!(blank.validate().is_ok());
+        blank.title = "x".repeat(MAX_LABEL_BYTES + 1);
+        assert!(blank.validate().is_err());
     }
 
     #[test]
