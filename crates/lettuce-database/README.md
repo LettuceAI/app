@@ -100,6 +100,11 @@ The legacy migration boundary can open an old `app.db` read-only, require the
 actual version-92 schema roots, and return a bounded typed import inventory.
 It performs no source migration or destination writes during preflight.
 
+Legacy model rows always carry `model_type = 'chat'` once saved by the modern
+editor, so a model whose output scopes are image-only plans as an image model;
+text-and-image outputs stay chat models with image output retained in their
+capabilities, and the old `imagegeneration` type still maps to image.
+
 Persona planning reads the complete version-92 persona shape in stable creation
 order, enforces the 10,000-record transfer bound, and fails on malformed JSON,
 IDs, crop, LoRA, default or timestamp data rather than dropping fields.

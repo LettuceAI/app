@@ -1060,7 +1060,10 @@ fn plan_legacy_provider_models_with_limits(
             .capabilities
             .validate()
             .map_err(|_| model_malformed("capabilities"))?;
+        let image_only = config.capabilities.output_modalities.image == CapabilityStatus::Supported
+            && config.capabilities.output_modalities.text != CapabilityStatus::Supported;
         let kind = match model_type.as_str() {
+            "chat" | "multimodel" if image_only => ModelKind::Image,
             "chat" | "multimodel" => ModelKind::Chat,
             "imagegeneration" => ModelKind::Image,
             _ => return Err(model_malformed("model_type")),
@@ -2858,6 +2861,61 @@ mod tests {
         );
         assert_eq!(protocol("sdcpp"), Some(ProviderProtocol::StableDiffusion));
         assert_eq!(protocol("openai"), Some(ProviderProtocol::OpenAiCompatible));
+        std::fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn provider_model_plan_classifies_image_models_by_output_scopes() {
+        let path = provider_model_database();
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute("INSERT INTO settings VALUES (1,NULL,NULL,92,10,10)", [])
+            .expect("insert settings");
+        let provider_id = ProviderAccountId::new();
+        connection
+            .execute(
+                "INSERT INTO provider_credentials (id,provider_id,label) VALUES (?1,'sdcpp','Local SD')",
+                [provider_id.to_string()],
+            )
+            .expect("insert provider");
+        let image_only = ModelProfileId::new();
+        let text_and_image = ModelProfileId::new();
+        let legacy_image = ModelProfileId::new();
+        for (id, name, model_type, output_scopes) in [
+            (image_only, "image-only", "chat", Some(r#"["image"]"#)),
+            (
+                text_and_image,
+                "text-image",
+                "chat",
+                Some(r#"["text","image"]"#),
+            ),
+            (legacy_image, "legacy-image", "imagegeneration", None),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO models (id,name,provider_id,provider_credential_id,provider_label,display_name,created_at,model_type,output_scopes) VALUES (?1,?2,'sdcpp',?3,'Local SD',?2,10,?4,?5)",
+                    rusqlite::params![
+                        id.to_string(),
+                        name,
+                        provider_id.to_string(),
+                        model_type,
+                        output_scopes
+                    ],
+                )
+                .expect("insert model");
+        }
+        drop(connection);
+
+        let plan = plan_legacy_provider_models(&path).expect("plan image models");
+        let kind = |id| {
+            plan.model_profiles
+                .iter()
+                .find(|model| model.id == id)
+                .map(|model| model.kind)
+        };
+        assert_eq!(kind(image_only), Some(ModelKind::Image));
+        assert_eq!(kind(text_and_image), Some(ModelKind::Chat));
+        assert_eq!(kind(legacy_image), Some(ModelKind::Image));
         std::fs::remove_file(path).expect("remove legacy database");
     }
 
