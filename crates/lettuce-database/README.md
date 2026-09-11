@@ -225,25 +225,6 @@ stale derived rows cannot affect similarity, while unchanged projections
 survive the complete item-set CAS without rewriting their BLOBs. Repair queries
 also synthesize work for live items with no matching projection, closing the
 crash window between authoritative memory commit and derived-data persistence.
-Round settlement can also require an exact memory revision when the reducer
-produces no memory change, so concurrent memory drift cannot commit terminal
-tool outputs derived from stale prepared evidence.
-Migration 9 also stores one immutable versioned dynamic-memory preparation plan
-per provider round, keyed by generation attempt and first execution ordinal.
-Its digest and relational projections are checked on every read, while the
-adapter verifies the attached job, exact ordered durable round slice and create
-arguments, and unchanged memory revision. Multiple rounds in one attempt retain
-separate evidence; an exact insert retry returns its stored plan, while changed
-bytes or mutable dependencies conflict before recovery can restart the handler.
-Ordered history reads verify every plan digest, relational identity and exact
-execution slice. Settled older plans may name an earlier memory revision, so
-history accepts only revisions at or behind the current root while the latest
-active-plan read continues to require exact equality.
-Interrupted recovery validates the existing conversation child-attempt link and
-attached child job, then clones the exact parent call payloads under new child
-execution IDs, advances them to running, remaps create preparations, and inserts
-the child plan in one immediate transaction. Existing partial child state fails
-closed; an exact committed retry hydrates the same rows.
 Migration 9 also owns background dynamic-memory runs that are intentionally not
 conversation generation turns. The immutable run binds the normalized
 conversation memory space plus its complete starting snapshot, ordered

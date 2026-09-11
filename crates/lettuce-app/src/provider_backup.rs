@@ -2198,7 +2198,7 @@ mod tests {
         let mut corrupt_dynamic_memory = dynamic_memory.clone();
         corrupt_dynamic_memory.runs[0].run.space_id = lettuce_types::MemorySpaceId::new();
         assert_eq!(
-            corrupt_dynamic_memory.canonicalize_and_validate(&history, &runtime, &jobs, &memory,),
+            corrupt_dynamic_memory.canonicalize_and_validate(&history, &jobs, &memory),
             Err(lettuce_transfer::DynamicMemoryBackupError::InvalidData)
         );
         let backed_up_job = jobs

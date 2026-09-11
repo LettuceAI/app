@@ -25,7 +25,6 @@ mod lorebook_keyword_run_adapter;
 mod legacy_database_preflight;
 mod memory_adapter;
 mod memory_embedding_adapter;
-mod memory_preparation_adapter;
 mod persona_adapter;
 mod prompt_adapter;
 mod restore_admission_adapter;
@@ -4243,7 +4242,6 @@ mod tests {
                 "dynamic_memory_background_tool_results",
                 "dynamic_memory_inference_rounds",
                 "dynamic_memory_pending_approvals",
-                "dynamic_memory_preparation_plans",
                 "dynamic_memory_run_attempts",
                 "dynamic_memory_run_source_messages",
                 "dynamic_memory_runs",

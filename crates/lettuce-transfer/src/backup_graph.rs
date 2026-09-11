@@ -702,7 +702,6 @@ pub(crate) fn canonicalize_and_validate(
         .dynamic_memory
         .canonicalize_and_validate(
             &graph.conversation_history,
-            &graph.conversation_runtime,
             &graph.job_backup,
             &graph.memory,
         )
@@ -1178,7 +1177,6 @@ mod tests {
             dynamic_memory: crate::DynamicMemoryBackup {
                 version: crate::DYNAMIC_MEMORY_BACKUP_VERSION,
                 pending_approvals: Vec::new(),
-                preparation_plans: Vec::new(),
                 runs: Vec::new(),
             },
         }

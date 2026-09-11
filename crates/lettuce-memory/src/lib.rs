@@ -15,15 +15,12 @@ pub use model::{
 };
 pub use port::{
     DynamicMemoryApprovalRepository, DynamicMemoryBackgroundRoundCommit,
-    DynamicMemoryBackgroundRoundSettlement, DynamicMemoryPreparationPlan,
-    DynamicMemoryPreparationPlanError, DynamicMemoryPreparationRepository,
-    DynamicMemoryRecoveredChild, DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError,
-    DynamicMemorySuffixRewind, DynamicMemorySuffixRewindError, DynamicMemorySuffixRewindReceipt,
-    DynamicMemorySuffixRewindRepository, DynamicMemorySummaryCheckpoint,
-    DynamicMemorySummaryCommit, MemoryChangeSet, MemoryRepository, MemoryRepositoryError,
-    MemoryRetrievalAccess, MemoryRetrievalAccessReceipt, MemoryRetrievalRepository,
-    MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository,
-    PersistedMemoryCreatePreparation,
+    DynamicMemoryBackgroundRoundSettlement, DynamicMemoryRunRepository,
+    DynamicMemoryRunRepositoryError, DynamicMemorySuffixRewind, DynamicMemorySuffixRewindError,
+    DynamicMemorySuffixRewindReceipt, DynamicMemorySuffixRewindRepository,
+    DynamicMemorySummaryCheckpoint, DynamicMemorySummaryCommit, MemoryChangeSet, MemoryRepository,
+    MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalAccessReceipt,
+    MemoryRetrievalRepository, MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository,
 };
 pub use run::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,

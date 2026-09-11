@@ -43,7 +43,7 @@ use lettuce_jobs::{
     WorkerId, handle::CancellationToken, handle::JobHandle,
 };
 use lettuce_memory::{
-    DynamicMemoryAttemptStatus, DynamicMemoryPreparationRepository, DynamicMemoryRoundFinishReason,
+    DynamicMemoryAttemptStatus, DynamicMemoryRoundFinishReason,
     DynamicMemoryRunRepository, DynamicMemorySourceMessage, MemoryCategory, MemoryChangeSet,
     MemoryItem, MemoryPolicy as DynamicMemoryPolicy, MemoryRepository, MemorySummary, MemorySummaryChange, MemorySummaryRepository, NewDynamicMemoryInferenceRound,
     NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall, Score, dynamic_memory_tool_request,

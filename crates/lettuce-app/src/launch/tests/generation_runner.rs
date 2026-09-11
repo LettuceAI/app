@@ -1743,16 +1743,6 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
             })
         }));
     }
-    assert!(
-        DynamicMemoryPreparationRepository::list_preparation_plans(
-            backend.database(),
-            scenario.conversation_id,
-            scenario.turn_id,
-            scenario.attempt_id,
-        )
-        .expect("preparation plans")
-        .is_empty()
-    );
     let prepared_turn =
         ConversationReader::get_turn(backend.database(), scenario.turn_id).expect("prepared turn");
     let accessed_revision = stored.revision.next().expect("retrieval revision");

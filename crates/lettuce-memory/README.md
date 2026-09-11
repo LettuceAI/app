@@ -45,23 +45,6 @@ Every launched direct/group conversation with resolved manual or dynamic memory
 receives one normalized memory space in the same creation transaction; the
 repository resolves that authoritative space by `ConversationId`, removing the
 previous test-only requirement for callers to invent a space ID.
-The domain-owned cross-aggregate commit port carries one optional memory change
-plus an optional planned-memory revision and a complete terminal
-tool-transition batch. Infrastructure must check that revision even for a
-no-op reduction and commit both sides or neither; orchestration and provider
-continuation remain application-owned.
-The domain also owns an immutable dynamic-memory preparation-plan port. A plan
-captures its attempt/job, first execution ordinal and memory revision, policy
-and duplicate threshold, ordered execution IDs, and every create seed, exact source text, embedding
-source/dimensions, and qualified semantic evidence. Exact retries are
-idempotent per provider round; changed identity conflicts so interrupted
-recovery cannot silently recompute evidence against a different snapshot.
-The repository also returns every plan in execution order so restart logic can
-rebuild all already-settled provider context before it resumes the latest tail.
-The same port exposes one atomic interrupted-parent to immediate-child recovery
-operation. It returns newly identified running child executions plus their
-remapped immutable plan, while preserving exact call arguments and prepared
-semantic evidence from the terminal parent.
 The retrieval-access port owns the narrow mutation applied after assistant
 generation selects dynamic memories. It binds the exact ordered selection,
 source revision and access time to one conversation turn attempt, promotes
@@ -124,6 +107,6 @@ The authoritative space, item, summary and retrieval-access types also form the
 versioned full-profile backup document. Backup validation reuses their existing
 invariants and preserves the exact access metadata that affects later retrieval;
 it does not recalculate scores. Separate versioned backup documents preserve
-the exact embedding projection cache and the durable approval, preparation,
+the exact embedding projection cache and the durable approval,
 background run, retry, round, result and summary-checkpoint graph without
 executing any workflow during export.

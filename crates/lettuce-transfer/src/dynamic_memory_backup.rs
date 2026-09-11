@@ -2,15 +2,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryBackgroundRoundSettlement, DynamicMemoryInferenceRound,
-    DynamicMemoryPendingApproval, DynamicMemoryPreparationPlan, DynamicMemoryRun,
-    DynamicMemorySummaryCheckpoint,
+    DynamicMemoryPendingApproval, DynamicMemoryRun, DynamicMemorySummaryCheckpoint,
 };
 use serde::{Deserialize, Serialize};
 
 pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 1;
 pub const MAX_BACKUP_DYNAMIC_MEMORY_RUNS: usize = 100_000;
 pub const MAX_BACKUP_DYNAMIC_MEMORY_ATTEMPTS: usize = 1_000_000;
-pub const MAX_BACKUP_DYNAMIC_MEMORY_PREPARATIONS: usize = 1_000_000;
 pub const MAX_BACKUP_DYNAMIC_MEMORY_APPROVALS: usize = 100_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -18,16 +16,7 @@ pub const MAX_BACKUP_DYNAMIC_MEMORY_APPROVALS: usize = 100_000;
 pub struct DynamicMemoryBackup {
     pub version: u32,
     pub pending_approvals: Vec<DynamicMemoryPendingApproval>,
-    pub preparation_plans: Vec<BackupDynamicMemoryPreparation>,
     pub runs: Vec<BackupDynamicMemoryRun>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BackupDynamicMemoryPreparation {
-    pub plan: DynamicMemoryPreparationPlan,
-    pub document: String,
-    pub document_digest: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -57,27 +46,17 @@ impl DynamicMemoryBackup {
     pub fn canonicalize_and_validate(
         &mut self,
         history: &crate::ConversationHistoryBackup,
-        runtime: &crate::ConversationRuntimeBackup,
         jobs: &crate::JobBackup,
         memory: &crate::MemoryBackup,
     ) -> Result<(), DynamicMemoryBackupError> {
         if self.version != DYNAMIC_MEMORY_BACKUP_VERSION
             || self.pending_approvals.len() > MAX_BACKUP_DYNAMIC_MEMORY_APPROVALS
-            || self.preparation_plans.len() > MAX_BACKUP_DYNAMIC_MEMORY_PREPARATIONS
             || self.runs.len() > MAX_BACKUP_DYNAMIC_MEMORY_RUNS
         {
             return Err(DynamicMemoryBackupError::InvalidData);
         }
         self.pending_approvals
             .sort_by_key(|approval| approval.conversation_id);
-        self.preparation_plans.sort_by_key(|entry| {
-            (
-                entry.plan.conversation_id,
-                entry.plan.turn_id,
-                entry.plan.attempt_id,
-                entry.plan.first_execution_ordinal,
-            )
-        });
         self.runs.sort_by_key(|entry| entry.run.id);
         let conversations = history
             .conversations
@@ -120,60 +99,12 @@ impl DynamicMemoryBackup {
             .iter()
             .map(|entry| entry.snapshot.id)
             .collect::<BTreeSet<_>>();
-        let generation_attempts = runtime
-            .conversations
-            .iter()
-            .flat_map(|conversation| {
-                conversation.turns.iter().flat_map(move |turn| {
-                    turn.turn.attempts.iter().filter_map(move |attempt| {
-                        let runtime = turn
-                            .attempts
-                            .iter()
-                            .find(|runtime| runtime.attempt_id == attempt.id)?;
-                        Some((
-                            (conversation.conversation_id, turn.turn.id, attempt.id),
-                            (attempt.job_id, &runtime.tools),
-                        ))
-                    })
-                })
-            })
-            .collect::<BTreeMap<_, _>>();
         let mut approval_ids = BTreeSet::new();
         for approval in &self.pending_approvals {
             if !conversations.contains(&approval.conversation_id)
                 || !approval_ids.insert(approval.conversation_id)
                 || approval.prompted_message_count == 0
                 || approval.pending == approval.skipped
-            {
-                return Err(DynamicMemoryBackupError::InvalidData);
-            }
-        }
-        let mut preparation_ids = BTreeSet::new();
-        for entry in &self.preparation_plans {
-            let plan = &entry.plan;
-            let identity = (
-                plan.conversation_id,
-                plan.turn_id,
-                plan.attempt_id,
-                plan.first_execution_ordinal,
-            );
-            let Some((job_id, executions)) =
-                generation_attempts.get(&(plan.conversation_id, plan.turn_id, plan.attempt_id))
-            else {
-                return Err(DynamicMemoryBackupError::InvalidData);
-            };
-            if plan.validate().is_err()
-                || !preparation_ids.insert(identity)
-                || Some(plan.job_id) != *job_id
-                || spaces
-                    .get(&plan.conversation_id)
-                    .is_none_or(|snapshot| snapshot.id != plan.space_id)
-                || !valid_preparation_document(entry)
-                || !valid_digest(&entry.document_digest)
-                || plan
-                    .execution_ids
-                    .iter()
-                    .any(|id| !executions.iter().any(|execution| execution.id == *id))
             {
                 return Err(DynamicMemoryBackupError::InvalidData);
             }
@@ -291,19 +222,6 @@ fn valid_digest(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
-fn valid_preparation_document(entry: &BackupDynamicMemoryPreparation) -> bool {
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct VersionedPlan {
-        format_version: u32,
-        value: DynamicMemoryPreparationPlan,
-    }
-
-    blake3::hash(entry.document.as_bytes()).to_hex().as_str() == entry.document_digest
-        && serde_json::from_str::<VersionedPlan>(&entry.document)
-            .is_ok_and(|document| document.format_version == 1 && document.value == entry.plan)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

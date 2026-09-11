@@ -1,22 +1,18 @@
 use lettuce_types::{
     CompanionEffectId, ConversationId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId,
-    JobId, MemoryId, MemorySpaceId, OperationId, Revision, TimestampMillis, ToolExecutionId,
+    MemoryId, MemorySpaceId, OperationId, Revision, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
-use lettuce_conversations::{InferenceUsage, ProviderNeutralContext, ToolExecution};
+use lettuce_conversations::{InferenceUsage, ProviderNeutralContext};
 
 use crate::{
-    CreateMemoryPreparation, DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode,
-    DynamicMemoryAttemptRecovery, DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound,
-    DynamicMemoryPendingApproval, DynamicMemoryRun, DynamicMemoryRunAttemptAdmission,
-    DynamicMemoryToolCallEvidence, MemoryItem, MemoryPolicy, MemorySpaceSnapshot, MemorySummary,
-    MemoryToolResult, MemoryValidationError, NewDynamicMemoryAttemptRecovery,
-    NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
+    DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
+    DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound, DynamicMemoryPendingApproval,
+    DynamicMemoryRun, DynamicMemoryRunAttemptAdmission, DynamicMemoryToolCallEvidence, MemoryItem,
+    MemorySpaceSnapshot, MemorySummary, MemoryToolResult, MemoryValidationError,
+    NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
 };
-
-const MAX_PREPARATION_SOURCE_REVISION_BYTES: usize = 128;
-const MAX_PREPARATION_SOURCE_TEXT_BYTES: usize = 16 * 1024;
 
 pub trait DynamicMemoryApprovalRepository: Send + Sync {
     fn get_dynamic_memory_pending_approval(
@@ -361,142 +357,6 @@ pub enum DynamicMemoryRunRepositoryError {
     #[error("dynamic-memory run record is invalid")]
     Invalid,
     #[error("dynamic-memory run storage failed")]
-    Storage,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PersistedMemoryCreatePreparation {
-    pub execution_id: ToolExecutionId,
-    pub source_text: String,
-    pub preparation: CreateMemoryPreparation,
-    pub embedding_source_revision: String,
-    pub embedding_dimensions: u16,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DynamicMemoryPreparationPlan {
-    pub conversation_id: ConversationId,
-    pub turn_id: GenerationTurnId,
-    pub attempt_id: GenerationAttemptId,
-    pub job_id: JobId,
-    pub space_id: MemorySpaceId,
-    pub expected_memory_revision: Revision,
-    /// First durable execution ordinal in this provider response's call set.
-    /// Together with attempt ownership it is the immutable round identity.
-    pub first_execution_ordinal: u16,
-    pub policy: MemoryPolicy,
-    pub duplicate_threshold: crate::Score,
-    pub execution_ids: Vec<ToolExecutionId>,
-    pub creates: Vec<PersistedMemoryCreatePreparation>,
-}
-
-impl DynamicMemoryPreparationPlan {
-    pub fn validate(&self) -> Result<(), DynamicMemoryPreparationPlanError> {
-        self.policy
-            .validate()
-            .map_err(DynamicMemoryPreparationPlanError::Memory)?;
-        if self.expected_memory_revision.get() == 0 {
-            return Err(DynamicMemoryPreparationPlanError::Memory(
-                MemoryValidationError::InvalidRevision,
-            ));
-        }
-        if self.execution_ids.is_empty() || self.execution_ids.len() > 64 {
-            return Err(DynamicMemoryPreparationPlanError::InvalidExecutions);
-        }
-        let execution_ids = self
-            .execution_ids
-            .iter()
-            .copied()
-            .collect::<std::collections::HashSet<_>>();
-        if execution_ids.len() != self.execution_ids.len()
-            || self.creates.len() > self.execution_ids.len()
-        {
-            return Err(DynamicMemoryPreparationPlanError::InvalidExecutions);
-        }
-        let mut create_ids = std::collections::HashSet::with_capacity(self.creates.len());
-        let mut memory_ids = std::collections::HashSet::with_capacity(self.creates.len());
-        for create in &self.creates {
-            if !execution_ids.contains(&create.execution_id)
-                || !create_ids.insert(create.execution_id)
-                || !memory_ids.insert(create.preparation.id)
-                || create.source_text.trim().is_empty()
-                || create.source_text.len() > MAX_PREPARATION_SOURCE_TEXT_BYTES
-                || create.embedding_source_revision.trim().is_empty()
-                || create.embedding_source_revision.len() > MAX_PREPARATION_SOURCE_REVISION_BYTES
-                || !matches!(create.embedding_dimensions, 64 | 128 | 256 | 512 | 768)
-                || create
-                    .preparation
-                    .semantic_duplicate
-                    .as_ref()
-                    .is_some_and(|evidence| {
-                        evidence.source_revision != create.embedding_source_revision
-                            || evidence.dimensions != create.embedding_dimensions
-                            || evidence.threshold != self.duplicate_threshold
-                    })
-            {
-                return Err(DynamicMemoryPreparationPlanError::InvalidCreate);
-            }
-        }
-        Ok(())
-    }
-}
-
-pub trait DynamicMemoryPreparationRepository: Send + Sync {
-    /// Inserts an immutable plan. An exact retry returns the stored plan;
-    /// different bytes for the same attempt and first ordinal conflict.
-    fn put_preparation_plan(
-        &self,
-        plan: DynamicMemoryPreparationPlan,
-    ) -> Result<DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError>;
-
-    /// Returns the latest prepared round in the attempt. Settled older plans
-    /// remain immutable recovery evidence but are not returned here.
-    fn get_preparation_plan(
-        &self,
-        conversation_id: ConversationId,
-        turn_id: GenerationTurnId,
-        attempt_id: GenerationAttemptId,
-    ) -> Result<Option<DynamicMemoryPreparationPlan>, DynamicMemoryPreparationPlanError>;
-
-    fn list_preparation_plans(
-        &self,
-        conversation_id: ConversationId,
-        turn_id: GenerationTurnId,
-        attempt_id: GenerationAttemptId,
-    ) -> Result<Vec<DynamicMemoryPreparationPlan>, DynamicMemoryPreparationPlanError>;
-
-    /// Atomically clones an interrupted parent's exact tool calls and
-    /// preparation into its already-running immediate recovery child.
-    fn recover_preparation_into_child(
-        &self,
-        conversation_id: ConversationId,
-        turn_id: GenerationTurnId,
-        parent_attempt_id: GenerationAttemptId,
-        child_attempt_id: GenerationAttemptId,
-        child_job_id: JobId,
-        at: TimestampMillis,
-    ) -> Result<DynamicMemoryRecoveredChild, DynamicMemoryPreparationPlanError>;
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DynamicMemoryRecoveredChild {
-    pub plan: DynamicMemoryPreparationPlan,
-    pub executions: Vec<ToolExecution>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum DynamicMemoryPreparationPlanError {
-    #[error("dynamic-memory preparation executions are invalid")]
-    InvalidExecutions,
-    #[error("dynamic-memory create preparation is invalid")]
-    InvalidCreate,
-    #[error("dynamic-memory preparation memory contract is invalid: {0}")]
-    Memory(MemoryValidationError),
-    #[error("dynamic-memory preparation plan conflicts with its immutable identity")]
-    Conflict,
-    #[error("dynamic-memory preparation plan storage failed")]
     Storage,
 }
 
