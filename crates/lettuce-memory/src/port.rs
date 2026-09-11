@@ -4,10 +4,7 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-use lettuce_conversations::{
-    ConversationRepositoryError, InferenceUsage, ProviderNeutralContext, ToolExecution,
-    ToolExecutionTransition,
-};
+use lettuce_conversations::{InferenceUsage, ProviderNeutralContext, ToolExecution};
 
 use crate::{
     CreateMemoryPreparation, DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode,
@@ -367,32 +364,6 @@ pub enum DynamicMemoryRunRepositoryError {
     Storage,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DynamicMemoryRoundCommit {
-    pub space_id: MemorySpaceId,
-    /// When present, terminal outputs settle only if authoritative memory is
-    /// still at this revision, including rounds whose reduction is a no-op.
-    pub expected_memory_revision: Option<Revision>,
-    pub change: Option<MemoryChangeSet>,
-    pub execution_transitions: Vec<ToolExecutionTransition>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DynamicMemoryRoundCommitResult {
-    pub snapshot: MemorySpaceSnapshot,
-    pub executions: Vec<ToolExecution>,
-}
-
-pub trait DynamicMemoryRoundRepository: MemoryRepository {
-    /// Atomically commits the optional authoritative memory change and every
-    /// terminal execution transition for one admitted handler round.
-    fn commit_dynamic_memory_round(
-        &self,
-        commit: DynamicMemoryRoundCommit,
-        at: lettuce_types::TimestampMillis,
-    ) -> Result<DynamicMemoryRoundCommitResult, DynamicMemoryRoundCommitError>;
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PersistedMemoryCreatePreparation {
@@ -527,14 +498,6 @@ pub enum DynamicMemoryPreparationPlanError {
     Conflict,
     #[error("dynamic-memory preparation plan storage failed")]
     Storage,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum DynamicMemoryRoundCommitError {
-    #[error("dynamic-memory repository failed: {0}")]
-    Memory(#[from] MemoryRepositoryError),
-    #[error("tool execution repository failed: {0}")]
-    Execution(#[from] ConversationRepositoryError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

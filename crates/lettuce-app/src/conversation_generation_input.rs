@@ -27,9 +27,9 @@ use lettuce_jobs::{
     events::JobEvent, handle::CancellationToken,
 };
 use lettuce_memory::{
-    DynamicMemoryPreparationRepository, DynamicMemoryRoundRepository, MemoryRepository,
-    MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalRepository, MemorySpaceSnapshot,
-    MemorySummaryRepository, memory_revision_id,
+    DynamicMemoryPreparationRepository, MemoryRepository, MemoryRepositoryError,
+    MemoryRetrievalAccess, MemoryRetrievalRepository, MemorySpaceSnapshot, MemorySummaryRepository,
+    memory_revision_id,
 };
 use lettuce_models::{
     CapabilityStatus, ChatParameterResolutionInput, ChatProfileResolutionError, ChatRequirements,
@@ -195,7 +195,6 @@ where
         + lettuce_conversations::ProviderReplayArtifactPort
         + JobUsageLedger
         + lettuce_conversations::UsagePort
-        + DynamicMemoryRoundRepository
         + DynamicMemoryPreparationRepository
         + MemoryEmbeddingRepository
         + MemoryRepository
