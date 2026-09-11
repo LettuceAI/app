@@ -54,6 +54,38 @@ pub struct LegacyBackupCompatibilityPlan {
     pub creation_helpers: LegacyBackupCreationHelperPlan,
 }
 
+impl LegacyBackupCompatibilityPlan {
+    pub(crate) fn inventory(&self) -> &LegacyBackupInventory {
+        &self
+            .creation_helpers
+            .source
+            .source
+            .source
+            .source
+            .source
+            .source
+            .source
+            .source
+            .source
+            .authored
+            .configuration
+            .source
+    }
+
+    pub(crate) fn verify_seal(&self) -> Result<(), LegacyBackupCompatibilityError> {
+        let coverage = build_coverage(self.inventory())?;
+        let mut notices = validate_meta(self.inventory())?;
+        notices.extend(self.creation_helpers.notices.iter().cloned());
+        notices.sort();
+        notices.dedup();
+        let fingerprint = fingerprint(&self.creation_helpers, &coverage, &notices)?;
+        if coverage != self.coverage || notices != self.notices || fingerprint != self.fingerprint {
+            return Err(LegacyBackupCompatibilityError::InvalidSeal);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyBackupCompatibilityCoverage {
     pub documents: Vec<LegacyBackupDocumentCoverage>,
@@ -88,6 +120,8 @@ pub enum LegacyBackupCompatibilityError {
     LimitExceeded,
     #[error("legacy backup metadata document is malformed")]
     InvalidMeta,
+    #[error("legacy backup compatibility seal is invalid")]
+    InvalidSeal,
     #[error(transparent)]
     Configuration(#[from] LegacyBackupConfigurationError),
     #[error(transparent)]

@@ -433,6 +433,15 @@ duplicate document or media identities reject before planning. This is a
 reconciliation boundary only. It does not admit an import, ingest bytes, write
 current state or remove the source backup.
 
+Every retained version-1 media object can now be staged through the same
+confined restore workspace used by current backups. Content-addressed blobs use
+exact-prefix resume, no-replace commit and full reread verification. A separate
+versioned legacy receipt binds the source archive hash and compatibility seal to
+each original media root/path, byte count and content hash. Exact staging
+replays; a changed partial prefix, installed blob, seal or source receipt fails
+closed. Secrets, live database rows and the media library remain untouched, and
+the backup source is never removed.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established
