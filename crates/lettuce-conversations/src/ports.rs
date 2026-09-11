@@ -1373,6 +1373,8 @@ pub struct PromptRuntimeFacts {
     pub has_active_scheduled_note: bool,
     pub time_awareness_enabled: bool,
     pub companion_mode_enabled: bool,
+    /// Messages on the branch up to the source, not only the sent window.
+    pub conversation_message_count: Option<usize>,
 }
 
 impl PromptRuntimeFacts {

@@ -677,14 +677,22 @@ persists an automatic-selection rationale. An unresolved group turn fails with
 the stream sink and prompt runtime values remain caller-supplied; the sink stays
 outside the durable initial-dispatch fingerprint, so replay may use a new sink
 without another provider call. Context or model preparation failures map into
-the existing run settlement categories. Every turn reads live global settings
-for its history window: dynamic memory uses `summary_message_interval`, other
-modes `manual_mode_context_window` (legacy only loaded the latest 120 messages;
-the window is now bounded by the 512-message context policy instead). A
+the existing run settlement categories. Every turn reads live global settings.
+A direct conversation launched with dynamic memory runs as manual memory while
+the global `dynamic_memory.enabled` switch is off (legacy
+`is_dynamic_memory_active`); groups follow only their memory mode, as legacy
+groups did. The history window is `summary_message_interval` for dynamic
+memory (the group override for groups) and `manual_mode_context_window`
+otherwise (legacy only loaded the latest 120 messages; the window is now
+bounded by the 512-message context policy instead). The lorebook scan (last
+ten messages plus the latest user message) and the prompt message count use
+the whole branch, not the sent window; the context timeline keeps those scan
+messages. Unreadable settings documents fail the turn instead of retrying. A
 dynamic direct turn resolves the
 persisted global policy, loads its authoritative
-conversation memory space and summary, embeds the latest user message (or the
-enriched last two messages), and selects current projections with the legacy threshold, cold-memory
+conversation memory space and summary, embeds the latest visible user message
+(or the enriched last two visible messages; a group regeneration leaves out the
+reply being replaced, as legacy did), and selects current projections with the legacy threshold, cold-memory
 penalty, category diversity, and smart recent/accessed fallbacks. Memory
 reaches the prompt as in legacy: `{{key_memories}}` and `HasKeyMemories` use
 every hot or pinned active memory (on send taken before retrieval promotes cold

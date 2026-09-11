@@ -837,9 +837,19 @@ where
         if memory_settings.is_some_and(|memory| !memory.selected_revision_ids.is_empty()) {
             return Err(ConversationGenerationInputError::MemoryInputUnavailable);
         }
-        let memory_mode = memory_settings
-            .map(|memory| memory.mode)
-            .unwrap_or(MemoryModeSnapshot::Disabled);
+        let global_settings = lettuce_settings::GlobalSettingsStore::load(self.repository)
+            .map_err(ConversationGenerationInputError::Settings)?
+            .settings;
+        let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
+        let memory_mode = match memory_settings.map(|memory| memory.mode) {
+            Some(MemoryModeSnapshot::Dynamic)
+                if !group && !global_settings.dynamic_memory.enabled =>
+            {
+                MemoryModeSnapshot::Manual
+            }
+            Some(mode) => mode,
+            None => MemoryModeSnapshot::Disabled,
+        };
         let dynamic_memory = memory_mode == MemoryModeSnapshot::Dynamic;
         let model = turn
             .resolved_model
@@ -871,7 +881,6 @@ where
         };
         let mut timeline = self.timeline(work.conversation_id, turn.branch_id)?;
         retain_source_ancestry(&mut timeline.items, source_message_id)?;
-        let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
         let memory_contribution = match memory_mode {
             MemoryModeSnapshot::Dynamic => {
                 let policy = memory_settings
@@ -884,6 +893,7 @@ where
                     MemoryPromptShape {
                         operation: turn.operation,
                         group,
+                        source_message_id,
                     },
                     now,
                 )
@@ -892,30 +902,18 @@ where
             MemoryModeSnapshot::Manual => self.manual_memory_input(work.conversation_id, group)?,
             MemoryModeSnapshot::Disabled => None,
         };
+        let conversation_message_count =
+            conversation_message_count(&timeline.items, turn.operation, source_message_id);
         let prompt_runtime = PromptRuntimeFacts {
             provider_id: Some(account.provider_kind),
             provider_label: Some(account.label),
             input_scopes: modality_scopes(profile.capabilities.input_modalities),
             output_scopes: modality_scopes(profile.capabilities.output_modalities),
             dynamic_memory_enabled: dynamic_memory,
+            conversation_message_count: Some(conversation_message_count),
             ..Default::default()
         };
-        let settings = lettuce_settings::GlobalSettingsStore::load(self.repository)
-            .map_err(ConversationGenerationInputError::Settings)?
-            .settings;
-        let window_messages = if dynamic_memory {
-            settings.dynamic_memory.summary_message_interval
-        } else {
-            settings.manual_mode_context_window
-        };
-        let context_window = lettuce_conversations::ContextWindowPolicy {
-            recent_non_pinned_limit: usize::try_from(window_messages)
-                .unwrap_or(usize::MAX)
-                .clamp(
-                    1,
-                    lettuce_conversations::ContextWindowPolicy::MAX_RECENT_NON_PINNED,
-                ),
-        };
+        let context_window = history_window(&global_settings, dynamic_memory, group);
         let context = ConversationContextAssembler::new(self.repository)
             .assemble(ContextRequest {
                 conversation_id: work.conversation_id,
@@ -1074,7 +1072,7 @@ where
             )
         } else {
             let selected = self
-                .retrieve_memories(work, timeline, &memory, settings)
+                .retrieve_memories(work, timeline, &memory, settings, shape)
                 .await?;
             let revision = if selected.is_empty() {
                 memory.revision
@@ -1187,6 +1185,7 @@ where
         timeline: &[lettuce_conversations::TimelineItem],
         memory: &MemorySpaceSnapshot,
         settings: &DynamicMemoryPolicySnapshot,
+        shape: MemoryPromptShape,
     ) -> Result<Vec<lettuce_memory::MemoryItem>, ConversationGenerationInputError> {
         let active = memory
             .items
@@ -1197,7 +1196,14 @@ where
         if active.is_empty() {
             return Ok(Vec::new());
         }
-        let query = memory_query(timeline, settings.context_enrichment_enabled);
+        let query = memory_query(
+            timeline.iter().filter(|item| {
+                !(shape.group
+                    && shape.operation == lettuce_conversations::GenerationOperation::Regenerate
+                    && item.message.id == shape.source_message_id)
+            }),
+            settings.context_enrichment_enabled,
+        );
         if query.is_empty() {
             return Ok(Vec::new());
         }
@@ -1286,8 +1292,47 @@ fn modality_scopes(capabilities: lettuce_models::ModalityCapabilities) -> Vec<St
 
 #[derive(Debug, Clone, Copy)]
 struct MemoryPromptShape {
+    source_message_id: lettuce_types::MessageId,
     operation: lettuce_conversations::GenerationOperation,
     group: bool,
+}
+
+fn history_window(
+    settings: &lettuce_settings::GlobalSettings,
+    dynamic_memory: bool,
+    group: bool,
+) -> lettuce_conversations::ContextWindowPolicy {
+    let messages = match (dynamic_memory, group) {
+        (true, true) => {
+            settings
+                .effective_group_dynamic_memory()
+                .summary_message_interval
+        }
+        (true, false) => settings.dynamic_memory.summary_message_interval,
+        (false, _) => settings.manual_mode_context_window,
+    };
+    lettuce_conversations::ContextWindowPolicy {
+        recent_non_pinned_limit: usize::try_from(messages).unwrap_or(usize::MAX).clamp(
+            1,
+            lettuce_conversations::ContextWindowPolicy::MAX_RECENT_NON_PINNED,
+        ),
+    }
+}
+
+fn conversation_message_count(
+    items: &[lettuce_conversations::TimelineItem],
+    operation: lettuce_conversations::GenerationOperation,
+    source_message_id: lettuce_types::MessageId,
+) -> usize {
+    items
+        .iter()
+        .filter(|item| {
+            !(operation == lettuce_conversations::GenerationOperation::Regenerate
+                && item.message.id == source_message_id)
+                && item.message.visibility != lettuce_conversations::MessageVisibility::Tombstoned
+                && !timeline_item_text(item).is_empty()
+        })
+        .count()
 }
 
 fn context_timeline(
@@ -1295,12 +1340,17 @@ fn context_timeline(
     window: lettuce_conversations::ContextWindowPolicy,
     source_message_id: lettuce_types::MessageId,
 ) -> Vec<lettuce_conversations::TimelineItem> {
-    let mut remaining = window.recent_non_pinned_limit.saturating_add(1);
+    let mut remaining = window
+        .recent_non_pinned_limit
+        .saturating_add(1)
+        .max(lettuce_context::LEGACY_RECENT_MESSAGE_LIMIT);
+    let mut latest_user_kept = false;
     let mut kept = items
         .into_iter()
         .rev()
         .filter(|item| {
             if item.message.id == source_message_id {
+                latest_user_kept |= item.message.role == MessageRole::User;
                 return true;
             }
             if matches!(
@@ -1313,8 +1363,10 @@ fn context_timeline(
             if item.message.pinned || item.message.role == MessageRole::Scene {
                 return true;
             }
+            let latest_user = !latest_user_kept && item.message.role == MessageRole::User;
+            latest_user_kept |= item.message.role == MessageRole::User;
             if remaining == 0 {
-                return false;
+                return latest_user;
             }
             remaining -= 1;
             true
@@ -1359,9 +1411,14 @@ impl ConversationGenerationInputError {
                     code: lettuce_conversations::GenerationFailureCode::ContextUnavailable,
                 }
             }
+            Self::Settings(lettuce_settings::GlobalSettingsStoreError::Storage) => {
+                ConversationGenerationRunError::Repository(ConversationRepositoryError::Storage)
+            }
             Self::Settings(error) => {
                 tracing::warn!(?error, "conversation settings could not be read");
-                ConversationGenerationRunError::Repository(ConversationRepositoryError::Storage)
+                ConversationGenerationRunError::PreparationFailed {
+                    code: lettuce_conversations::GenerationFailureCode::ContextUnavailable,
+                }
             }
             Self::Memory(error) => {
                 tracing::warn!(?error, "dynamic-memory state preparation failed");
@@ -1402,38 +1459,33 @@ impl ConversationGenerationInputError {
     }
 }
 
-fn memory_query(timeline: &[lettuce_conversations::TimelineItem], enriched: bool) -> String {
-    let count = if enriched { 2 } else { 1 };
-    let mut messages = timeline
-        .iter()
-        .rev()
-        .filter(|item| match item.message.role {
-            MessageRole::User => true,
-            MessageRole::Assistant => enriched,
-            _ => false,
+fn memory_query<'a>(
+    timeline: impl DoubleEndedIterator<Item = &'a lettuce_conversations::TimelineItem>,
+    enriched: bool,
+) -> String {
+    let mut candidates = timeline.rev().filter(|item| {
+        !matches!(
+            item.message.visibility,
+            lettuce_conversations::MessageVisibility::Hidden
+                | lettuce_conversations::MessageVisibility::Tombstoned
+        )
+    });
+    if !enriched {
+        return candidates
+            .find(|item| item.message.role == MessageRole::User)
+            .map(timeline_item_text)
+            .unwrap_or_default();
+    }
+    let mut messages = candidates
+        .filter(|item| {
+            matches!(
+                item.message.role,
+                MessageRole::User | MessageRole::Assistant
+            )
         })
-        .filter_map(|item| {
-            let parts = item
-                .active_revision
-                .as_ref()
-                .map(|revision| revision.parts.as_slice())
-                .or_else(|| {
-                    item.active_candidate
-                        .as_ref()
-                        .map(|candidate| candidate.parts.as_slice())
-                })?;
-            let text = parts
-                .iter()
-                .filter_map(|part| match part {
-                    lettuce_conversations::MessagePart::Text { text } => Some(text.trim()),
-                    _ => None,
-                })
-                .filter(|text| !text.is_empty())
-                .collect::<Vec<_>>()
-                .join("\n");
-            (!text.is_empty()).then_some(text)
-        })
-        .take(count)
+        .map(timeline_item_text)
+        .filter(|text| !text.is_empty())
+        .take(2)
         .collect::<Vec<_>>();
     messages.reverse();
     messages.join("\n")
@@ -1809,7 +1861,7 @@ mod tests {
         Revision, TimestampMillis,
     };
 
-    use super::{context_timeline, memory_query};
+    use super::{context_timeline, conversation_message_count, history_window, memory_query};
 
     fn item(
         index: i64,
@@ -1857,15 +1909,97 @@ mod tests {
 
     #[test]
     fn plain_memory_query_uses_the_latest_user_message() {
+        let mut hidden = text_item(3, MessageRole::User, "Ignore this aside.");
+        hidden.message.visibility = MessageVisibility::Hidden;
         let timeline = [
             text_item(1, MessageRole::User, "Where is the lighthouse?"),
             text_item(2, MessageRole::Assistant, "North of the harbor."),
+            hidden,
         ];
-        assert_eq!(memory_query(&timeline, false), "Where is the lighthouse?");
         assert_eq!(
-            memory_query(&timeline, true),
+            memory_query(timeline.iter(), false),
+            "Where is the lighthouse?"
+        );
+        assert_eq!(
+            memory_query(timeline.iter(), true),
             "Where is the lighthouse?\nNorth of the harbor."
         );
+        let image_only = item(4, MessageRole::User, MessageVisibility::Visible, false);
+        assert_eq!(
+            memory_query(timeline.iter().chain([&image_only]), false),
+            ""
+        );
+    }
+
+    #[test]
+    fn history_windows_follow_memory_mode_and_the_group_override() {
+        let mut settings = lettuce_settings::GlobalSettings::default();
+        settings.dynamic_memory.summary_message_interval = 20;
+        settings.manual_mode_context_window = 50;
+        let mut group = settings.dynamic_memory.clone();
+        group.summary_message_interval = 8;
+        settings.group_dynamic_memory = Some(group);
+        let limit = |settings: &lettuce_settings::GlobalSettings, dynamic, group| {
+            history_window(settings, dynamic, group).recent_non_pinned_limit
+        };
+        assert_eq!(limit(&settings, true, false), 20);
+        assert_eq!(limit(&settings, true, true), 8);
+        assert_eq!(limit(&settings, false, true), 50);
+        settings.manual_mode_context_window = 0;
+        assert_eq!(limit(&settings, false, false), 1);
+        settings.manual_mode_context_window = 4_000;
+        assert_eq!(
+            limit(&settings, false, false),
+            ContextWindowPolicy::MAX_RECENT_NON_PINNED
+        );
+    }
+
+    #[test]
+    fn narrow_windows_keep_the_lorebook_scan_and_count_the_whole_branch() {
+        let mut items = vec![text_item(
+            0,
+            MessageRole::User,
+            "The harbor floods at dusk.",
+        )];
+        items.extend((1..=20).map(|index| text_item(index, MessageRole::Assistant, "Waves.")));
+        items.push(item(
+            21,
+            MessageRole::Assistant,
+            MessageVisibility::Tombstoned,
+            false,
+        ));
+        let source = items[20].message.id;
+        assert_eq!(
+            conversation_message_count(
+                &items,
+                lettuce_conversations::GenerationOperation::Continue,
+                source
+            ),
+            21
+        );
+        assert_eq!(
+            conversation_message_count(
+                &items,
+                lettuce_conversations::GenerationOperation::Regenerate,
+                source
+            ),
+            20
+        );
+        items.pop();
+        let kept = context_timeline(
+            items,
+            ContextWindowPolicy {
+                recent_non_pinned_limit: 1,
+            },
+            source,
+        );
+        let indices = kept
+            .iter()
+            .map(|item| item.message.created_at.get())
+            .collect::<Vec<_>>();
+        let mut expected = vec![0];
+        expected.extend(10..=20);
+        assert_eq!(indices, expected);
     }
 
     #[test]

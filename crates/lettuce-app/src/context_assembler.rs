@@ -106,22 +106,26 @@ where
                 .as_ref()
                 .map(|speaker| speaker.participant_id),
         )?;
-        let (selected_window, omitted_messages, scene_timeline) =
-            select_timeline(&aggregate, &request)?;
+        let TimelineSelection {
+            window: selected_window,
+            omitted_messages,
+            scenes: scene_timeline,
+            history,
+        } = select_timeline(&aggregate, &request)?;
         let (scene, scene_direction) = snapshot.scene_values(&scene_timeline)?;
         let effective_at = source_effective_time(&request)?;
         let companion_state = self.companion_prompt_state(&aggregate, &snapshot, effective_at)?;
         let scheduled_notes =
             self.companion_scheduled_notes(&aggregate, &snapshot, effective_at)?;
 
-        let recent_text = selected_window
+        let recent_text = history
             .iter()
             .filter_map(active_text)
             .rev()
-            .take(10)
+            .take(lettuce_context::LEGACY_RECENT_MESSAGE_LIMIT)
             .collect::<Vec<_>>();
         let recent_text = recent_text.into_iter().rev().collect::<Vec<_>>();
-        let latest_user_message = selected_window
+        let latest_user_message = history
             .iter()
             .rev()
             .filter(|item| item.message.role == MessageRole::User)
@@ -159,7 +163,10 @@ where
                     &scene,
                     &scene_direction,
                     &recent_text,
-                    selected_window.len(),
+                    request
+                        .prompt_runtime
+                        .conversation_message_count
+                        .unwrap_or(selected_window.len()),
                     companion_state.is_some(),
                     scheduled_notes.is_some(),
                 ),
@@ -679,10 +686,17 @@ fn validate_message_ancestry(
     Ok(())
 }
 
+struct TimelineSelection<'a> {
+    window: Vec<&'a TimelineItem>,
+    omitted_messages: usize,
+    scenes: Vec<&'a TimelineItem>,
+    history: Vec<&'a TimelineItem>,
+}
+
 fn select_timeline<'a>(
     aggregate: &ConversationAggregate,
     request: &'a ContextRequest,
-) -> Result<(Vec<&'a TimelineItem>, usize, Vec<&'a TimelineItem>), ContextAssemblyError> {
+) -> Result<TimelineSelection<'a>, ContextAssemblyError> {
     let branch = aggregate
         .branches
         .iter()
@@ -740,10 +754,11 @@ fn select_timeline<'a>(
         .filter(|item| item.message.role == MessageRole::Scene)
         .copied()
         .collect::<Vec<_>>();
-    let visible = visible
+    let history = visible
         .into_iter()
         .filter(|item| item.message.role != MessageRole::Scene)
         .collect::<Vec<_>>();
+    let visible = &history;
     let mut selected = visible
         .iter()
         .filter(|item| item.message.pinned)
@@ -784,7 +799,12 @@ fn select_timeline<'a>(
             selected.sort_by_key(|left| message_order(left));
         }
     }
-    Ok((selected, omitted_messages, scenes))
+    Ok(TimelineSelection {
+        window: selected,
+        omitted_messages,
+        scenes,
+        history,
+    })
 }
 
 fn message_order(

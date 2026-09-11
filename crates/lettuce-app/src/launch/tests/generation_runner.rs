@@ -1799,6 +1799,7 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
     let stored_settings = GlobalSettingsStore::load(backend.database()).expect("settings");
     let mut settings = stored_settings.settings;
+    settings.dynamic_memory.enabled = true;
     settings.dynamic_memory.max_entries = 12;
     settings.dynamic_memory.hot_memory_token_budget = 321;
     settings.dynamic_memory.retrieval_limit = 1;
@@ -2067,6 +2068,87 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
             .expect("memory after replay")
             .expect("memory exists after replay"),
         accessed
+    );
+}
+
+#[tokio::test]
+async fn disabled_global_dynamic_memory_renders_direct_memories_like_manual_mode() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let scenario =
+        scenario_with_resolvable_profile(backend.database(), true, "gated-dynamic", true);
+    let space_id = scenario.space_id.expect("dynamic memory space");
+    let stored = MemoryRepository::get(backend.database(), space_id)
+        .expect("memory")
+        .expect("memory exists");
+    let cold_memory = MemoryItem {
+        id: MemoryId::new(),
+        text: "Mira hides a spare key under the mat.".into(),
+        category: MemoryCategory::WorldDetail,
+        source_message_id: None,
+        source_role: None,
+        observed_at: None,
+        observed_time_precision: None,
+        superseded_by: None,
+        superseded_at: None,
+        supersedes: vec![],
+        token_count: 8,
+        is_cold: true,
+        is_pinned: false,
+        importance: Score::from_basis_points(3_000).expect("score"),
+        persistence_importance: Score::from_basis_points(3_000).expect("score"),
+        prompt_importance: Score::from_basis_points(3_000).expect("score"),
+        volatility: Score::LEGACY_VOLATILITY,
+        access_count: 0,
+        created_at: TimestampMillis::new(900),
+        last_accessed_at: TimestampMillis::new(900),
+    };
+    MemoryRepository::compare_and_apply(
+        backend.database(),
+        MemoryChangeSet {
+            space_id,
+            expected_revision: stored.revision,
+            items: vec![cold_memory],
+        },
+    )
+    .expect("seed memory");
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![text_outcome("gated-dynamic-response", "Noted.", 5, 3)]);
+    let engine = ScenarioEmbeddingEngine;
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("send with global dynamic memory disabled");
+    let requests = inference.requests.lock().expect("requests");
+    let system_texts = requests[0]
+        .context
+        .messages
+        .iter()
+        .filter(|message| message.role == MessageRole::System)
+        .filter_map(|message| match message.parts.as_slice() {
+            [ProviderContextPart::Text { text }] => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        system_texts,
+        [
+            "# Key Memories\nImportant facts to remember in this conversation:\n- Mira hides a spare key under the mat."
+        ]
+    );
+    assert_eq!(
+        MemoryRetrievalRepository::get_retrieval_access(
+            backend.database(),
+            scenario.conversation_id,
+            scenario.turn_id,
+            scenario.attempt_id,
+        )
+        .expect("read retrieval access"),
+        None
     );
 }
 
