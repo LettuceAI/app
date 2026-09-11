@@ -284,8 +284,15 @@ Migration 11 owns creation-helper proposal state. It persists the target and its
 expected authored revision, user turns before inference, and an immutable
 ordered proposal lineage. Workflow stage/current-proposal changes use revision
 CAS and ownership/lineage triggers; exact retries are idempotent, while stale
-base proposals and changed identities conflict. The adapter implements the
-`lettuce-creation` port. Confirmed new-persona apply is the first deliberate
+base proposals and changed identities conflict. A workflow may leave the
+confirmation stage again (the helper keeps editing after a confirmation
+request), but once any apply receipt exists the workflow is closed: triggers
+reject workflow updates and new turns or attempts, and the adapter refuses
+turns, attempts, recoveries, proposals and settlements with Conflict. Apply is
+refused while an attempt on the current proposal is created or running. Tool
+calls must match a declared name and version, except calls to undeclared
+tools, which are admitted at version 1 and answered with `unknown_tool`. The
+adapter implements the `lettuce-creation` port. Confirmed new-persona apply is the first deliberate
 authored-domain write: new and existing persona applies reuse the persona create
 and revise paths and commit the persona plus an immutable
 workflow/proposal/destination receipt in one transaction. Receipt identity is

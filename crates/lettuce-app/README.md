@@ -429,10 +429,18 @@ contract, and resolved provider profile; dispatches through the shared
 immutable creation rounds. Each admitted round preserves usage, provider finish
 metadata, request identity, and replay evidence. Recovery reconstructs the
 cumulative proposal and exact call/result continuation without redispatching
-completed rounds. A text-only response stops without fabricating a proposal;
-tool-driven completion appends exactly one planned proposal; cancellation and
-provider failures settle the attempt; and eight non-terminal rounds fail with
-a durable round-limit code. Host commands and frontend surfaces remain a later
+completed rounds. As in the legacy agent loop, rounds continue until a
+response carries no tool calls (a preview or confirmation request no longer
+ends the turn, so the model's closing message reaches the user), and after
+eight tool rounds the attempt settles with the proposal accumulated so far
+instead of failing (legacy stopped iterating and kept the draft); once the
+attempt reaches the 64-call cap (a round keeps only the calls that fit) it
+settles the same way. A request that cannot be built (missing runtime text,
+unrenderable prompt, invalid profile) fails the attempt instead of leaving it
+running. A text-only
+response stops without fabricating a proposal; tool-driven completion appends
+exactly one planned proposal; cancellation and provider failures settle the
+attempt. Host commands and frontend surfaces remain a later
 slice.
 
 Dispatch is additionally bound to the attempt's unique claimed job and a

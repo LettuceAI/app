@@ -108,9 +108,16 @@ tool_defs.rs`, `verbs.rs`) for every operation the proposal supports:
 character `write_definition`, `write_scene`, `set_name`, `edit_scene`,
 `delete_scene`; persona `write_definition`, `set_name`; lorebook
 `write_lore_entry`, `set_name`, `edit_lore_entry`, `delete_lore_entry`,
-`reorder_lore_entries`; plus `show_preview` in drafting and
-`request_confirmation` in review (both accept the legacy optional `message`).
-Confirmation exposes no tools. Definitions carry no text here: descriptions
+`reorder_lore_entries`; plus `show_preview` and `request_confirmation` (both
+accept the legacy optional `message`). As in legacy the same tools are offered
+at every stage and the user can keep chatting after a confirmation request:
+`show_preview` moves the proposal to review and `request_confirmation` to
+confirmation. Correction: legacy never left its preview status, while here any
+successful change returns the proposal to drafting so confirmation must be
+requested again before it can be applied. Once a proposal is applied the
+workflow is closed (no new turns, attempts, proposals or settlements; enforced
+by the adapter and by triggers), and applying is refused while an attempt of
+the workflow is created or running. Definitions carry no text here: descriptions
 and parameter descriptions are catalog keys (`CREATION_TOOL_TEXT_KEYS`) that
 `describe_creation_tools` fills from the application's
 `prompt_app_creation_runtime` document, so stored attempts keep the shape
@@ -133,7 +140,7 @@ later provider-continuation work.
 
 Creation turns also own durable inference attempts before provider dispatch.
 Each attempt pins its immutable base and planned proposal identities, retry
-parent, target/stage-specific tool request, job identity, exact resolved-profile
+parent, target-specific tool request, job identity, exact resolved-profile
 fingerprint, ordinal, lifecycle, and failure state. Retry children must keep the
 profile binding and use a distinct job. Native calls are admitted atomically in
 provider order before reduction, including their exact definition version,

@@ -166,30 +166,25 @@ impl<
         {
             return Err(CreationContinuationError::InvalidOwnership);
         }
-        let text = CreationPromptText {
-            helper: crate::runtime_text::RuntimeText::load(
-                self.repository,
-                crate::BuiltInPromptId::CreationHelper,
+        let prepared = self.prompt_text(&attempt).and_then(|text| {
+            build_creation_inference_request(
+                &attempt,
+                &turn,
+                &base,
+                &text,
+                profile,
+                handle,
+                stream_sink,
             )
-            .map_err(|_| CreationContinuationError::RuntimeTextUnavailable)?,
-            runtime: crate::runtime_text::RuntimeText::load(
-                self.repository,
-                crate::BuiltInPromptId::CreationRuntime,
-            )
-            .map_err(|_| CreationContinuationError::RuntimeTextUnavailable)?,
-            dialogue: self
-                .repository
-                .list_creation_dialogue(attempt.workflow_id, attempt.turn_id)?,
+        });
+        let mut request = match prepared {
+            Ok(request) => request,
+            Err(error @ CreationContinuationError::Repository(_)) => return Err(error),
+            Err(error) => {
+                self.fail_attempt(&attempt, CreationAttemptFailureCode::Internal, now)?;
+                return Err(error);
+            }
         };
-        let mut request = build_creation_inference_request(
-            &attempt,
-            &turn,
-            &base,
-            &text,
-            profile,
-            handle,
-            stream_sink,
-        )?;
         let mut rounds = self
             .repository
             .list_creation_inference_rounds(owner, attempt.id)?;
@@ -209,12 +204,8 @@ impl<
                 return Err(CreationContinuationError::InvalidRoundHistory);
             }
         }
-        if terminal {
+        if terminal || attempt_limit_reached(&rounds, &calls) {
             return self.commit_success(attempt, workflow, rounds, calls, visible_parts);
-        }
-        if rounds.len() >= usize::from(MAX_CREATION_INFERENCE_ROUNDS) {
-            self.fail_attempt(&attempt, CreationAttemptFailureCode::RoundLimit, now)?;
-            return Err(CreationContinuationError::RoundLimit);
         }
 
         loop {
@@ -275,7 +266,8 @@ impl<
                 u8::try_from(rounds.len()).map_err(|_| CreationContinuationError::RoundLimit)?;
             let next_call_ordinal = u16::try_from(calls.len())
                 .map_err(|_| CreationContinuationError::InvalidRoundHistory)?;
-            let new_round = match plan_round(&attempt, round_ordinal, candidate, &outcome, now) {
+            let mut new_round = match plan_round(&attempt, round_ordinal, candidate, &outcome, now)
+            {
                 Ok(round) => round,
                 Err(CreationContinuationError::Cancelled) => {
                     cleanup_outcome_replays(self.repository, &outcome)?;
@@ -288,6 +280,9 @@ impl<
                     return Err(error);
                 }
             };
+            new_round
+                .calls
+                .truncate(lettuce_creation::MAX_CREATION_OPERATIONS.saturating_sub(calls.len()));
             let round = match self.repository.admit_creation_inference_round(
                 owner,
                 attempt.id,
@@ -307,14 +302,31 @@ impl<
             visible_parts.extend(round.parts.clone());
             terminal = replayed.terminal;
             rounds.push(round);
-            if terminal {
+            if terminal || attempt_limit_reached(&rounds, &calls) {
                 return self.commit_success(attempt, workflow, rounds, calls, visible_parts);
             }
-            if rounds.len() >= usize::from(MAX_CREATION_INFERENCE_ROUNDS) {
-                self.fail_attempt(&attempt, CreationAttemptFailureCode::RoundLimit, now)?;
-                return Err(CreationContinuationError::RoundLimit);
-            }
         }
+    }
+
+    fn prompt_text(
+        &self,
+        attempt: &CreationInferenceAttempt,
+    ) -> Result<CreationPromptText, CreationContinuationError> {
+        Ok(CreationPromptText {
+            helper: crate::runtime_text::RuntimeText::load(
+                self.repository,
+                crate::BuiltInPromptId::CreationHelper,
+            )
+            .map_err(|_| CreationContinuationError::RuntimeTextUnavailable)?,
+            runtime: crate::runtime_text::RuntimeText::load(
+                self.repository,
+                crate::BuiltInPromptId::CreationRuntime,
+            )
+            .map_err(|_| CreationContinuationError::RuntimeTextUnavailable)?,
+            dialogue: self
+                .repository
+                .list_creation_dialogue(attempt.workflow_id, attempt.turn_id)?,
+        })
     }
 
     fn reconstruct_completed(
@@ -437,6 +449,16 @@ pub struct CreationContinuationResult {
     pub rounds: Vec<CreationInferenceRound>,
     pub visible_parts: Vec<MessagePart>,
     pub usage: UsageCounters,
+}
+
+/// Legacy stopped after eight iterations and kept the draft; the attempt also
+/// stops once it holds as many calls as one proposal may apply.
+fn attempt_limit_reached(
+    rounds: &[CreationInferenceRound],
+    calls: &[AdmittedCreationToolCall],
+) -> bool {
+    rounds.len() >= usize::from(MAX_CREATION_INFERENCE_ROUNDS)
+        || calls.len() >= lettuce_creation::MAX_CREATION_OPERATIONS
 }
 
 struct CreationPromptText {
@@ -580,8 +602,8 @@ fn replay_round(
         definition_version: evidence.definition_version,
         call: evidence.call.clone(),
     }));
-    let (outputs, proposal_stage) = if calls.is_empty() {
-        (Vec::new(), base.stage)
+    let outputs = if calls.is_empty() {
+        Vec::new()
     } else {
         let batch = reduce_creation_tool_calls(
             base,
@@ -590,8 +612,7 @@ fn replay_round(
             &calls,
             round.admitted_at,
         )?;
-        let first = usize::from(round.first_call_ordinal);
-        (batch.outputs[first..].to_vec(), batch.proposal.stage)
+        batch.outputs[usize::from(round.first_call_ordinal)..].to_vec()
     };
     let mut assistant_parts = round
         .parts
@@ -642,7 +663,7 @@ fn replay_round(
     Ok(ReplayedRound {
         context: continued,
         calls,
-        terminal: round.calls.is_empty() || proposal_stage != attempt.stage,
+        terminal: round.calls.is_empty(),
     })
 }
 
@@ -1080,6 +1101,14 @@ mod tests {
                     12,
                     3,
                 )),
+                Ok(outcome(
+                    vec![MessagePart::Text {
+                        text: "Take a look.".into(),
+                    }],
+                    Vec::new(),
+                    5,
+                    2,
+                )),
             ])),
             requests: Mutex::new(Vec::new()),
         };
@@ -1095,10 +1124,10 @@ mod tests {
             .expect("continuation");
         assert_eq!(result.attempt.status, CreationAttemptStatus::Succeeded);
         assert_eq!(result.workflow.stage, CreationStage::AwaitingReview);
-        assert_eq!(result.rounds.len(), 2);
+        assert_eq!(result.rounds.len(), 3);
         let evidence = database.job_usage(handle.id()).expect("dispatches");
-        assert_eq!(evidence.len(), 2);
-        for (input, output) in [(10, 4), (12, 3)] {
+        assert_eq!(evidence.len(), 3);
+        for (input, output) in [(10, 4), (12, 3), (5, 2)] {
             assert!(evidence.iter().any(|event| matches!(&event.result,
                 Some(lettuce_usage::JobInferenceUsageResult::Response { usage: Some(usage), provider_response_id: Some(id) })
                     if id == &format!("gen-creation-{input}") && usage.input_tokens == input && usage.output_tokens == output)));
@@ -1112,8 +1141,8 @@ mod tests {
                 web_search_requests: None,
                 cached_input_tokens: None,
                 reasoning_tokens: None,
-                input_tokens: 22,
-                output_tokens: 7,
+                input_tokens: 27,
+                output_tokens: 9,
             })
         );
         let proposal = result.proposal.as_ref().expect("proposal");
@@ -1125,7 +1154,7 @@ mod tests {
         ));
         {
             let requests = inference.requests.lock().expect("requests");
-            assert_eq!(requests.len(), 2);
+            assert_eq!(requests.len(), 3);
             let tools = requests[0].tools.as_ref().expect("tools");
             assert_eq!(
                 tools
@@ -1147,6 +1176,10 @@ mod tests {
                     (
                         "show_preview",
                         Some("Render a preview of the current draft to the user.")
+                    ),
+                    (
+                        "request_confirmation",
+                        Some("Ask the user to confirm saving the draft.")
                     ),
                 ]
             );
@@ -1213,7 +1246,7 @@ mod tests {
                 .expect("replayed dispatches"),
             evidence
         );
-        assert_eq!(inference.requests.lock().expect("requests").len(), 2);
+        assert_eq!(inference.requests.lock().expect("requests").len(), 3);
 
         let next_turn = database
             .record_user_turn(NewCreationTurn {
@@ -1772,7 +1805,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn eight_non_terminal_rounds_fail_with_the_durable_round_limit() {
+    async fn eight_tool_rounds_settle_with_the_accumulated_proposal() {
         let database = with_built_ins(Database::open_in_memory().expect("database"));
         let handle = job_handle(&database);
         let profile = profile();
@@ -1795,24 +1828,23 @@ mod tests {
             outcomes: Mutex::new(outcomes),
             requests: Mutex::new(Vec::new()),
         };
+        let result = CreationContinuationCoordinator::new(&database, &inference)
+            .run(
+                attempt_id,
+                profile.clone(),
+                &handle,
+                None,
+                TimestampMillis::new(4),
+            )
+            .await
+            .expect("legacy keeps the draft at the iteration limit");
         assert!(matches!(
-            CreationContinuationCoordinator::new(&database, &inference)
-                .run(
-                    attempt_id,
-                    profile.clone(),
-                    &handle,
-                    None,
-                    TimestampMillis::new(4),
-                )
-                .await,
-            Err(CreationContinuationError::RoundLimit)
+            result.proposal.as_ref().map(|proposal| &proposal.draft),
+            Some(CreationDraft::Persona { name, .. }) if name.as_deref() == Some("Navigator 7")
         ));
         let attempt = database.load_creation_attempt(attempt_id).expect("attempt");
-        assert_eq!(attempt.status, CreationAttemptStatus::Failed);
-        assert_eq!(
-            attempt.failure,
-            Some(CreationAttemptFailureCode::RoundLimit)
-        );
+        assert_eq!(attempt.status, CreationAttemptStatus::Succeeded);
+        assert_eq!(attempt.failure, None);
         assert_eq!(
             database
                 .list_creation_inference_rounds(
@@ -1830,5 +1862,252 @@ mod tests {
             inference.requests.lock().expect("requests").len(),
             usize::from(MAX_CREATION_INFERENCE_ROUNDS)
         );
+    }
+
+    #[tokio::test]
+    async fn the_attempt_call_cap_settles_the_accumulated_proposal() {
+        let database = with_built_ins(Database::open_in_memory().expect("database"));
+        let handle = job_handle(&database);
+        let profile = profile();
+        let attempt_id = setup(&database, &handle, &profile);
+        let outcomes = (0..4)
+            .map(|round| {
+                Ok(outcome(
+                    Vec::new(),
+                    (0..20)
+                        .map(|index| {
+                            tool_call(
+                                "set_name",
+                                serde_json::json!({"name": format!("Navigator {round}-{index}")}),
+                                &format!("call-{round}-{index}"),
+                            )
+                        })
+                        .collect(),
+                    1,
+                    1,
+                ))
+            })
+            .collect();
+        let inference = ScriptedInference {
+            outcomes: Mutex::new(outcomes),
+            requests: Mutex::new(Vec::new()),
+        };
+        let result = CreationContinuationCoordinator::new(&database, &inference)
+            .run(
+                attempt_id,
+                profile.clone(),
+                &handle,
+                None,
+                TimestampMillis::new(4),
+            )
+            .await
+            .expect("settled at the call cap");
+        assert_eq!(result.attempt.status, CreationAttemptStatus::Succeeded);
+        assert_eq!(result.rounds.len(), 4);
+        assert_eq!(
+            result
+                .rounds
+                .iter()
+                .map(|round| round.calls.len())
+                .collect::<Vec<_>>(),
+            [20, 20, 20, 4]
+        );
+        assert!(matches!(
+            result.proposal.as_ref().map(|proposal| &proposal.draft),
+            Some(CreationDraft::Persona { name, .. }) if name.as_deref() == Some("Navigator 3-3")
+        ));
+    }
+
+    #[tokio::test]
+    async fn confirmation_stays_editable_until_apply_closes_the_workflow() {
+        use lettuce_creation::{ConfirmedPersonaApply, CreationApplyRepository};
+        let database = with_built_ins(Database::open_in_memory().expect("database"));
+        let profile = profile();
+        let first_handle = job_handle(&database);
+        let attempt_id = setup(&database, &first_handle, &profile);
+        let run = |outcomes: Vec<Result<InferenceOutcome, PortError>>, attempt_id, handle, now| {
+            let inference = ScriptedInference {
+                outcomes: Mutex::new(outcomes.into_iter().collect()),
+                requests: Mutex::new(Vec::new()),
+            };
+            let database = &database;
+            let profile = profile.clone();
+            async move {
+                let result = CreationContinuationCoordinator::new(database, &inference)
+                    .run(
+                        attempt_id,
+                        profile,
+                        &handle,
+                        None,
+                        TimestampMillis::new(now),
+                    )
+                    .await
+                    .expect("continuation");
+                (result, inference.requests.into_inner().expect("requests"))
+            }
+        };
+        let (first, requests) = run(
+            vec![
+                Ok(outcome(
+                    Vec::new(),
+                    vec![
+                        tool_call("set_name", serde_json::json!({"name": "Navigator"}), "a"),
+                        tool_call(
+                            "write_definition",
+                            serde_json::json!({"definition": "Charts careful routes."}),
+                            "a2",
+                        ),
+                        tool_call("show_preview", serde_json::json!({}), "b"),
+                        tool_call("request_confirmation", serde_json::json!({}), "c"),
+                        tool_call("generate_image", serde_json::json!({"prompt": "x"}), "d"),
+                    ],
+                    1,
+                    1,
+                )),
+                Ok(outcome(
+                    vec![MessagePart::Text {
+                        text: "Ready to save?".into(),
+                    }],
+                    Vec::new(),
+                    1,
+                    1,
+                )),
+            ],
+            attempt_id,
+            first_handle,
+            4,
+        )
+        .await;
+        assert_eq!(first.workflow.stage, CreationStage::AwaitingConfirmation);
+        assert!(
+            requests[1]
+                .context
+                .messages
+                .iter()
+                .flat_map(|message| &message.parts)
+                .any(
+                    |part| matches!(part, ProviderContextPart::ToolResult(result)
+                if result.name == "generate_image" && result.output.value["code"] == "unknown_tool")
+                )
+        );
+
+        let admit = |workflow: &CreationWorkflow, handle: &JobHandle, now| {
+            admit_creation_turn_dispatch(
+                &database,
+                CreationTurnDispatchRequest {
+                    workflow_id: workflow.id,
+                    expected_workflow_revision: workflow.revision,
+                    base_proposal_id: workflow.current_proposal_id,
+                    turn_id: CreationTurnId::new(),
+                    attempt_id: GenerationAttemptId::new(),
+                    planned_proposal_id: CreationProposalId::new(),
+                    user_message: "One more change".into(),
+                    profile: profile.clone(),
+                    now: TimestampMillis::new(now),
+                },
+                handle,
+            )
+        };
+        let second_handle = job_handle(&database);
+        let second_attempt = admit(&first.workflow, &second_handle, 10)
+            .expect("turn while awaiting confirmation")
+            .attempt
+            .id;
+        let (second, _) = run(
+            vec![
+                Ok(outcome(
+                    Vec::new(),
+                    vec![tool_call(
+                        "set_name",
+                        serde_json::json!({"name": "Warm Navigator"}),
+                        "e",
+                    )],
+                    1,
+                    1,
+                )),
+                Ok(outcome(
+                    vec![MessagePart::Text {
+                        text: "Done.".into(),
+                    }],
+                    Vec::new(),
+                    1,
+                    1,
+                )),
+            ],
+            second_attempt,
+            second_handle,
+            11,
+        )
+        .await;
+        assert_eq!(second.workflow.stage, CreationStage::Drafting);
+
+        let third_handle = job_handle(&database);
+        let third_attempt = admit(&second.workflow, &third_handle, 20)
+            .expect("third turn")
+            .attempt
+            .id;
+        let stale_handle = job_handle(&database);
+        admit(&second.workflow, &stale_handle, 20).expect("concurrent turn on the same base");
+        let (third, _) = run(
+            vec![
+                Ok(outcome(
+                    Vec::new(),
+                    vec![tool_call(
+                        "request_confirmation",
+                        serde_json::json!({}),
+                        "f",
+                    )],
+                    1,
+                    1,
+                )),
+                Ok(outcome(
+                    vec![MessagePart::Text {
+                        text: "Done.".into(),
+                    }],
+                    Vec::new(),
+                    1,
+                    1,
+                )),
+            ],
+            third_attempt,
+            third_handle,
+            21,
+        )
+        .await;
+        assert_eq!(third.workflow.stage, CreationStage::AwaitingConfirmation);
+
+        let apply = |now| {
+            database.apply_new_persona(ConfirmedPersonaApply {
+                workflow_id: third.workflow.id,
+                expected_workflow_revision: third.workflow.revision,
+                proposal_id: third.workflow.current_proposal_id,
+                destination_persona_id: lettuce_types::PersonaId::from_uuid(uuid::Uuid::from_u128(
+                    7,
+                )),
+                now: TimestampMillis::new(now),
+            })
+        };
+        let pending_handle = job_handle(&database);
+        let pending = admit(&third.workflow, &pending_handle, 30)
+            .expect("pending turn")
+            .attempt;
+        assert_eq!(apply(31), Err(CreationRepositoryError::Conflict));
+        database
+            .transition_creation_attempt(
+                pending.id,
+                pending.revision,
+                CreationAttemptStatus::Cancelled,
+                None,
+                TimestampMillis::new(32),
+            )
+            .expect("cancel pending attempt");
+        apply(33).expect("apply after the attempt settled");
+        let closed_handle = job_handle(&database);
+        assert!(matches!(
+            admit(&third.workflow, &closed_handle, 40),
+            Err(CreationContinuationError::Repository(
+                CreationRepositoryError::Conflict
+            ))
+        ));
     }
 }

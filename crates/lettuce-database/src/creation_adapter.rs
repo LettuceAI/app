@@ -377,6 +377,37 @@ fn load_proposal_conn(
     Ok(proposal)
 }
 
+fn workflow_applied(
+    connection: &Connection,
+    workflow_id: CreationWorkflowId,
+) -> Result<bool, CreationRepositoryError> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM creation_apply_receipts WHERE workflow_id=?1) \
+             OR EXISTS(SELECT 1 FROM creation_character_apply_receipts WHERE workflow_id=?1) \
+             OR EXISTS(SELECT 1 FROM creation_lorebook_apply_receipts WHERE workflow_id=?1)",
+            [workflow_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)
+}
+
+fn workflow_has_active_attempt(
+    connection: &Connection,
+    workflow_id: CreationWorkflowId,
+) -> Result<bool, CreationRepositoryError> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM creation_inference_attempts attempt \
+             JOIN creation_workflows workflow ON workflow.id = attempt.workflow_id \
+             WHERE attempt.workflow_id=?1 AND attempt.status IN ('created','running') \
+             AND attempt.base_proposal_id = workflow.current_proposal_id)",
+            [workflow_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)
+}
+
 fn load_turn_conn(
     connection: &Connection,
     id: CreationTurnId,
@@ -696,6 +727,9 @@ impl CreationApplyRepository for Database {
         }
 
         let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+        if workflow_has_active_attempt(&transaction, request.workflow_id)? {
+            return Err(CreationRepositoryError::Conflict);
+        }
         if workflow.target != CreationTarget::NewPersona
             || workflow.stage != CreationStage::AwaitingConfirmation
             || workflow.revision != request.expected_workflow_revision
@@ -764,6 +798,9 @@ impl CreationApplyRepository for Database {
         }
 
         let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+        if workflow_has_active_attempt(&transaction, request.workflow_id)? {
+            return Err(CreationRepositoryError::Conflict);
+        }
         if workflow.target != expected_target
             || workflow.stage != CreationStage::AwaitingConfirmation
             || workflow.revision != request.expected_workflow_revision
@@ -833,6 +870,9 @@ impl CreationApplyRepository for Database {
         }
 
         let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+        if workflow_has_active_attempt(&transaction, request.workflow_id)? {
+            return Err(CreationRepositoryError::Conflict);
+        }
         if workflow.target != CreationTarget::NewCharacter
             || workflow.stage != CreationStage::AwaitingConfirmation
             || workflow.revision != request.expected_workflow_revision
@@ -944,6 +984,9 @@ impl CreationApplyRepository for Database {
             return Err(CreationRepositoryError::Conflict);
         }
         let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+        if workflow_has_active_attempt(&transaction, request.workflow_id)? {
+            return Err(CreationRepositoryError::Conflict);
+        }
         if workflow.target != expected_target
             || workflow.stage != CreationStage::AwaitingConfirmation
             || workflow.revision != request.expected_workflow_revision
@@ -1092,6 +1135,9 @@ impl CreationApplyRepository for Database {
         }
 
         let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+        if workflow_has_active_attempt(&transaction, request.workflow_id)? {
+            return Err(CreationRepositoryError::Conflict);
+        }
         if workflow.target != CreationTarget::NewLorebook
             || workflow.stage != CreationStage::AwaitingConfirmation
             || workflow.revision != request.expected_workflow_revision
@@ -1194,6 +1240,9 @@ impl CreationApplyRepository for Database {
         }
 
         let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
+        if workflow_has_active_attempt(&transaction, request.workflow_id)? {
+            return Err(CreationRepositoryError::Conflict);
+        }
         if workflow.target != expected_target
             || workflow.stage != CreationStage::AwaitingConfirmation
             || workflow.revision != request.expected_workflow_revision
@@ -1415,7 +1464,8 @@ impl CreationWorkflowRepository for Database {
             Err(error) => return Err(error),
         }
         let workflow = load_workflow_conn(&transaction, input.workflow_id)?;
-        if workflow.current_proposal_id != input.base_proposal_id
+        if workflow_applied(&transaction, input.workflow_id)?
+            || workflow.current_proposal_id != input.base_proposal_id
             || input.now.get() < workflow.updated_at.get()
         {
             return Err(CreationRepositoryError::Conflict);
@@ -1463,7 +1513,8 @@ impl CreationWorkflowRepository for Database {
             }
             return Err(CreationRepositoryError::Conflict);
         }
-        if workflow.revision != expected_workflow_revision
+        if workflow_applied(&transaction, workflow_id)?
+            || workflow.revision != expected_workflow_revision
             || proposal.parent_id != Some(workflow.current_proposal_id)
             || proposal.draft.kind() != workflow.target.kind()
             || proposal.created_at.get() < workflow.updated_at.get()
@@ -1486,25 +1537,11 @@ impl CreationWorkflowRepository for Database {
         if expected != proposal {
             return Err(CreationRepositoryError::Conflict);
         }
-        let stage_allowed = matches!(
-            (workflow.stage, proposal.stage),
-            (
-                CreationStage::Drafting,
-                CreationStage::Drafting | CreationStage::AwaitingReview
-            ) | (
-                CreationStage::AwaitingReview,
-                CreationStage::AwaitingReview | CreationStage::AwaitingConfirmation
-            ) | (
-                CreationStage::AwaitingConfirmation,
-                CreationStage::AwaitingConfirmation
-            )
-        );
         if proposal.ordinal
             != base
                 .ordinal
                 .checked_add(1)
                 .ok_or(CreationRepositoryError::Storage)?
-            || !stage_allowed
         {
             return Err(CreationRepositoryError::Conflict);
         }
@@ -1605,7 +1642,8 @@ impl CreationAttemptRepository for Database {
         }
         let workflow = load_workflow_conn(&transaction, input.workflow_id)?;
         let base = load_proposal_conn(&transaction, input.base_proposal_id)?;
-        if workflow.revision != input.expected_workflow_revision
+        if workflow_applied(&transaction, input.workflow_id)?
+            || workflow.revision != input.expected_workflow_revision
             || workflow.current_proposal_id != input.base_proposal_id
             || workflow.stage != base.stage
             || workflow.target.kind() != base.draft.kind()
@@ -1613,8 +1651,7 @@ impl CreationAttemptRepository for Database {
         {
             return Err(CreationRepositoryError::Conflict);
         }
-        let tool_request = creation_tool_request(workflow.target.kind(), workflow.stage)
-            .ok_or(CreationRepositoryError::Conflict)?;
+        let tool_request = creation_tool_request(workflow.target.kind());
         let turn_ordinal = next_ordinal(&transaction, "creation_turns", input.workflow_id)?;
         transaction
             .execute(
@@ -1700,7 +1737,8 @@ impl CreationAttemptRepository for Database {
         let workflow = load_workflow_conn(&transaction, input.owner.workflow_id)?;
         let turn = load_turn_conn(&transaction, input.owner.turn_id)?;
         let base = load_proposal_conn(&transaction, input.base_proposal_id)?;
-        if workflow.current_proposal_id != input.base_proposal_id
+        if workflow_applied(&transaction, input.owner.workflow_id)?
+            || workflow.current_proposal_id != input.base_proposal_id
             || turn.workflow_id != input.owner.workflow_id
             || turn.base_proposal_id != input.base_proposal_id
             || base.stage != workflow.stage
@@ -1709,8 +1747,7 @@ impl CreationAttemptRepository for Database {
         {
             return Err(CreationRepositoryError::Conflict);
         }
-        let tool_request = creation_tool_request(workflow.target.kind(), workflow.stage)
-            .ok_or(CreationRepositoryError::Conflict)?;
+        let tool_request = creation_tool_request(workflow.target.kind());
         tool_request
             .validate()
             .map_err(|_| CreationRepositoryError::Invalid)?;
@@ -1840,7 +1877,8 @@ impl CreationAttemptRepository for Database {
             return Err(CreationRepositoryError::Conflict);
         }
         let workflow = load_workflow_conn(&transaction, parent.workflow_id)?;
-        if workflow.current_proposal_id != parent.base_proposal_id
+        if workflow_applied(&transaction, parent.workflow_id)?
+            || workflow.current_proposal_id != parent.base_proposal_id
             || workflow.stage != parent.stage
             || workflow.revision != parent.workflow_revision
         {
@@ -1993,7 +2031,8 @@ impl CreationAttemptRepository for Database {
         }
         let calls = list_calls_in(&transaction, input.owner, attempt.id)?;
         let workflow = load_workflow_conn(&transaction, attempt.workflow_id)?;
-        if workflow.revision != input.expected_workflow_revision
+        if workflow_applied(&transaction, attempt.workflow_id)?
+            || workflow.revision != input.expected_workflow_revision
             || workflow.current_proposal_id != attempt.base_proposal_id
             || workflow.stage != attempt.stage
         {
@@ -2019,7 +2058,10 @@ impl CreationAttemptRepository for Database {
                 .map_err(|_| CreationRepositoryError::Invalid)?
                 .proposal;
                 if proposal != derived
-                    || (proposal.stage == attempt.stage && !last.calls.is_empty())
+                    || (!last.calls.is_empty()
+                        && rounds.len()
+                            < usize::from(lettuce_creation::MAX_CREATION_INFERENCE_ROUNDS)
+                        && calls.len() < lettuce_creation::MAX_CREATION_OPERATIONS)
                 {
                     return Err(CreationRepositoryError::Conflict);
                 }
@@ -2049,7 +2091,7 @@ impl CreationAttemptRepository for Database {
                 Some(proposal)
             }
             None => {
-                if !calls.is_empty() || !last.calls.is_empty() {
+                if !calls.is_empty() {
                     return Err(CreationRepositoryError::Conflict);
                 }
                 None

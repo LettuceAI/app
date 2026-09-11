@@ -200,7 +200,7 @@ CREATE TABLE creation_inference_attempts (
     base_proposal_id TEXT NOT NULL,
     planned_proposal_id TEXT NOT NULL,
     target TEXT NOT NULL CHECK (target IN ('character', 'persona', 'lorebook')),
-    stage TEXT NOT NULL CHECK (stage IN ('drafting', 'awaiting_review')),
+    stage TEXT NOT NULL CHECK (stage IN ('drafting', 'awaiting_review', 'awaiting_confirmation')),
     tool_request_json TEXT NOT NULL CHECK (
         json_valid(tool_request_json)
         AND json_extract(tool_request_json, '$.format_version') = 1
@@ -485,6 +485,23 @@ WHEN NOT EXISTS (
       AND attempt.id = NEW.attempt_id
       AND json_extract(definition.value, '$.name') = NEW.definition_name
       AND json_extract(definition.value, '$.version') = NEW.definition_version
+) AND (
+    NEW.definition_version != 1
+    OR NOT EXISTS (
+        SELECT 1 FROM creation_inference_attempts attempt
+        WHERE attempt.workflow_id = NEW.workflow_id
+          AND attempt.turn_id = NEW.turn_id
+          AND attempt.id = NEW.attempt_id
+    )
+    OR EXISTS (
+        SELECT 1
+        FROM creation_inference_attempts attempt,
+             json_each(json_extract(attempt.tool_request_json, '$.value.definitions')) definition
+        WHERE attempt.workflow_id = NEW.workflow_id
+          AND attempt.turn_id = NEW.turn_id
+          AND attempt.id = NEW.attempt_id
+          AND json_extract(definition.value, '$.name') = NEW.definition_name
+    )
 )
 BEGIN SELECT RAISE(ABORT, 'creation tool call contract mismatch'); END;
 
@@ -517,9 +534,25 @@ BEFORE UPDATE OF stage, current_proposal_id, revision ON creation_workflows
 WHEN OLD.current_proposal_id IS NOT NULL AND (
   NEW.revision != OLD.revision + 1
   OR NEW.current_proposal_id = OLD.current_proposal_id
-  OR (OLD.stage = 'awaiting_confirmation' AND NEW.stage != 'awaiting_confirmation')
+  OR EXISTS (SELECT 1 FROM creation_apply_receipts WHERE workflow_id = OLD.id)
+  OR EXISTS (SELECT 1 FROM creation_character_apply_receipts WHERE workflow_id = OLD.id)
+  OR EXISTS (SELECT 1 FROM creation_lorebook_apply_receipts WHERE workflow_id = OLD.id)
 )
 BEGIN SELECT RAISE(ABORT, 'invalid creation workflow transition'); END;
+
+CREATE TRIGGER creation_turns_applied_workflow_guard
+BEFORE INSERT ON creation_turns
+WHEN EXISTS (SELECT 1 FROM creation_apply_receipts WHERE workflow_id = NEW.workflow_id)
+  OR EXISTS (SELECT 1 FROM creation_character_apply_receipts WHERE workflow_id = NEW.workflow_id)
+  OR EXISTS (SELECT 1 FROM creation_lorebook_apply_receipts WHERE workflow_id = NEW.workflow_id)
+BEGIN SELECT RAISE(ABORT, 'creation workflow is already applied'); END;
+
+CREATE TRIGGER creation_attempts_applied_workflow_guard
+BEFORE INSERT ON creation_inference_attempts
+WHEN EXISTS (SELECT 1 FROM creation_apply_receipts WHERE workflow_id = NEW.workflow_id)
+  OR EXISTS (SELECT 1 FROM creation_character_apply_receipts WHERE workflow_id = NEW.workflow_id)
+  OR EXISTS (SELECT 1 FROM creation_lorebook_apply_receipts WHERE workflow_id = NEW.workflow_id)
+BEGIN SELECT RAISE(ABORT, 'creation workflow is already applied'); END;
 
 CREATE TRIGGER creation_workflow_proposal_ownership
 BEFORE UPDATE OF stage, current_proposal_id ON creation_workflows

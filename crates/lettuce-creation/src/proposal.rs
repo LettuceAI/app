@@ -63,7 +63,6 @@ pub enum CreationOperationError {
     InvalidText,
     DuplicateIdentity,
     NotFound,
-    InvalidStage,
     LimitExceeded,
 }
 
@@ -184,21 +183,32 @@ impl CreationProposal {
     }
 }
 
+/// Legacy kept every tool available after a preview; here a successful change
+/// also returns the proposal to drafting, so confirmation must be requested
+/// again before the user can apply it.
 fn apply_one(
     draft: &mut CreationDraft,
     stage: &mut CreationStage,
     operation: &CreationOperation,
 ) -> Result<(), CreationOperationError> {
-    if matches!(operation, CreationOperation::UndeclaredTool { .. }) {
-        return Err(CreationOperationError::UnknownTool);
-    }
     let is_mutation = !matches!(
         operation,
-        CreationOperation::ShowPreview | CreationOperation::RequestConfirmation
+        CreationOperation::ShowPreview
+            | CreationOperation::RequestConfirmation
+            | CreationOperation::UndeclaredTool { .. }
     );
-    if is_mutation && *stage != CreationStage::Drafting {
-        return Err(CreationOperationError::InvalidStage);
+    apply_change(draft, stage, operation)?;
+    if is_mutation {
+        *stage = CreationStage::Drafting;
     }
+    Ok(())
+}
+
+fn apply_change(
+    draft: &mut CreationDraft,
+    stage: &mut CreationStage,
+    operation: &CreationOperation,
+) -> Result<(), CreationOperationError> {
     match operation {
         CreationOperation::SetName { value } => {
             validate_text(value)?;
@@ -336,18 +346,8 @@ fn apply_one(
                 .ok_or(CreationOperationError::NotFound)?;
             entries.remove(index);
         }
-        CreationOperation::ShowPreview => {
-            if *stage != CreationStage::Drafting {
-                return Err(CreationOperationError::InvalidStage);
-            }
-            *stage = CreationStage::AwaitingReview;
-        }
-        CreationOperation::RequestConfirmation => {
-            if *stage != CreationStage::AwaitingReview {
-                return Err(CreationOperationError::InvalidStage);
-            }
-            *stage = CreationStage::AwaitingConfirmation;
-        }
+        CreationOperation::ShowPreview => *stage = CreationStage::AwaitingReview,
+        CreationOperation::RequestConfirmation => *stage = CreationStage::AwaitingConfirmation,
         CreationOperation::UndeclaredTool { .. } => {
             return Err(CreationOperationError::UnknownTool);
         }
@@ -449,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn review_and_confirmation_are_explicit_and_block_silent_edits() {
+    fn a_change_after_preview_or_confirmation_returns_to_drafting() {
         let base = CreationProposal::initial(
             CreationProposalId::new(),
             CreationDraft::Persona {
@@ -459,34 +459,57 @@ mod tests {
             TimestampMillis::new(1),
         )
         .expect("base");
-        let review = base
+        let confirmation = base
             .apply(
                 CreationProposalId::new(),
                 CreationTurnId::new(),
                 vec![
                     CreationOperation::ShowPreview,
-                    CreationOperation::SetName {
-                        value: "too late".to_owned(),
-                    },
+                    CreationOperation::RequestConfirmation,
                 ],
                 TimestampMillis::new(2),
             )
-            .expect("review");
-        assert_eq!(review.stage, CreationStage::AwaitingReview);
-        assert_eq!(
-            review.outcomes[1].error,
-            Some(CreationOperationError::InvalidStage)
+            .expect("preview then confirmation");
+        assert_eq!(confirmation.stage, CreationStage::AwaitingConfirmation);
+        assert!(
+            confirmation
+                .outcomes
+                .iter()
+                .all(|outcome| outcome.succeeded())
         );
 
-        let confirmation = review
+        let edited = confirmation
             .apply(
                 CreationProposalId::new(),
                 CreationTurnId::new(),
-                vec![CreationOperation::RequestConfirmation],
+                vec![
+                    CreationOperation::SetName {
+                        value: "Navigator".to_owned(),
+                    },
+                    CreationOperation::UndeclaredTool {
+                        name: "generate_image".to_owned(),
+                    },
+                ],
                 TimestampMillis::new(3),
             )
-            .expect("confirmation");
-        assert_eq!(confirmation.stage, CreationStage::AwaitingConfirmation);
+            .expect("edit after confirmation");
+        assert_eq!(edited.stage, CreationStage::Drafting);
+        assert_eq!(
+            edited.outcomes[1].error,
+            Some(CreationOperationError::UnknownTool)
+        );
+
+        let failed = confirmation
+            .apply(
+                CreationProposalId::new(),
+                CreationTurnId::new(),
+                vec![CreationOperation::SetName {
+                    value: "  ".to_owned(),
+                }],
+                TimestampMillis::new(3),
+            )
+            .expect("failed edit");
+        assert_eq!(failed.stage, CreationStage::AwaitingConfirmation);
     }
 
     #[test]

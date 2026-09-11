@@ -167,7 +167,7 @@ impl CreationInferenceAttempt {
         self.tool_request
             .validate()
             .map_err(|_| CreationAttemptError::InvalidContract)?;
-        if creation_tool_request(self.target, self.stage).as_ref() != Some(&self.tool_request) {
+        if creation_tool_request(self.target) != self.tool_request {
             return Err(CreationAttemptError::InvalidContract);
         }
         if (self.ordinal == 0) != self.retry_parent_id.is_none()
@@ -458,11 +458,7 @@ mod tests {
             planned_proposal_id: CreationProposalId::new(),
             target: CreationTargetKind::Character,
             stage: CreationStage::Drafting,
-            tool_request: creation_tool_request(
-                CreationTargetKind::Character,
-                CreationStage::Drafting,
-            )
-            .expect("tools"),
+            tool_request: creation_tool_request(CreationTargetKind::Character),
             job_id: JobId::new(),
             profile_fingerprint: [7; 32],
             workflow_revision: Revision::INITIAL,
@@ -515,9 +511,7 @@ mod tests {
     #[test]
     fn attempt_rejects_a_tool_contract_from_another_target() {
         let mut attempt = attempt();
-        attempt.tool_request =
-            creation_tool_request(CreationTargetKind::Persona, CreationStage::Drafting)
-                .expect("persona tools");
+        attempt.tool_request = creation_tool_request(CreationTargetKind::Persona);
         assert_eq!(
             attempt.validate(),
             Err(CreationAttemptError::InvalidContract)

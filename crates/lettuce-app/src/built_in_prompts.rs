@@ -1413,22 +1413,17 @@ mod tests {
             lettuce_creation::CreationTargetKind::Persona,
             lettuce_creation::CreationTargetKind::Lorebook,
         ] {
-            for stage in [
-                lettuce_creation::CreationStage::Drafting,
-                lettuce_creation::CreationStage::AwaitingReview,
-            ] {
-                let described = lettuce_creation::describe_creation_tools(
-                    &lettuce_creation::creation_tool_request(target, stage).expect("tools"),
-                    &creation_text,
-                );
-                described.validate().expect("creation tool contract");
-                assert!(
-                    described
-                        .definitions
-                        .iter()
-                        .all(|definition| definition.description.is_some())
-                );
-            }
+            let described = lettuce_creation::describe_creation_tools(
+                &lettuce_creation::creation_tool_request(target),
+                &creation_text,
+            );
+            described.validate().expect("creation tool contract");
+            assert!(
+                described
+                    .definitions
+                    .iter()
+                    .all(|definition| definition.description.is_some())
+            );
         }
         assert_eq!(
             creation.entries.len(),

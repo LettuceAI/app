@@ -12,8 +12,7 @@ use uuid::Uuid;
 
 use crate::{
     CreationOperation, CreationOperationError, CreationProposal, CreationProposalError,
-    CreationRepositoryError, CreationStage, CreationTargetKind, CreationWorkflow,
-    CreationWorkflowRepository,
+    CreationRepositoryError, CreationTargetKind, CreationWorkflow, CreationWorkflowRepository,
 };
 
 const TOOL_VERSION: u32 = 1;
@@ -62,38 +61,38 @@ pub const CREATION_TOOL_TEXT_KEYS: [(&str, Option<&str>, &str); 16] = [
     ),
 ];
 
-/// The legacy creation-agent tools the proposal supports for this target and
-/// stage, without descriptions; `describe_creation_tools` adds the catalog
-/// text before a request is sent.
+/// The legacy creation-agent tools the proposal supports for this target,
+/// without descriptions; `describe_creation_tools` adds the catalog text
+/// before a request is sent. Legacy offered the same tools at every stage.
 #[must_use]
-pub fn creation_tool_request(
-    target: CreationTargetKind,
-    stage: CreationStage,
-) -> Option<ToolRequest> {
-    let names: &[&str] = match stage {
-        CreationStage::Drafting => match target {
-            CreationTargetKind::Character => &[
-                "write_definition",
-                "write_scene",
-                "set_name",
-                "edit_scene",
-                "delete_scene",
-                "show_preview",
-            ],
-            CreationTargetKind::Persona => &["write_definition", "set_name", "show_preview"],
-            CreationTargetKind::Lorebook => &[
-                "write_lore_entry",
-                "set_name",
-                "edit_lore_entry",
-                "delete_lore_entry",
-                "reorder_lore_entries",
-                "show_preview",
-            ],
-        },
-        CreationStage::AwaitingReview => &["request_confirmation"],
-        CreationStage::AwaitingConfirmation => return None,
+pub fn creation_tool_request(target: CreationTargetKind) -> ToolRequest {
+    let names: &[&str] = match target {
+        CreationTargetKind::Character => &[
+            "write_definition",
+            "write_scene",
+            "set_name",
+            "edit_scene",
+            "delete_scene",
+            "show_preview",
+            "request_confirmation",
+        ],
+        CreationTargetKind::Persona => &[
+            "write_definition",
+            "set_name",
+            "show_preview",
+            "request_confirmation",
+        ],
+        CreationTargetKind::Lorebook => &[
+            "write_lore_entry",
+            "set_name",
+            "edit_lore_entry",
+            "delete_lore_entry",
+            "reorder_lore_entries",
+            "show_preview",
+            "request_confirmation",
+        ],
     };
-    Some(ToolRequest {
+    ToolRequest {
         definitions: names
             .iter()
             .map(|name| ToolDefinition {
@@ -104,7 +103,7 @@ pub fn creation_tool_request(
             })
             .collect(),
         choice: ToolChoice::Auto,
-    })
+    }
 }
 
 /// Adds the catalog descriptions to a creation tool request. A blank text
@@ -269,8 +268,7 @@ fn validate_and_parse_creation_tool_calls(
     proposal_id: CreationProposalId,
     calls: &[AdmittedCreationToolCall],
 ) -> Result<Vec<CreationOperation>, CreationToolContractError> {
-    let request = creation_tool_request(base.draft.kind(), base.stage)
-        .ok_or(CreationToolContractError::ToolsUnavailable)?;
+    let request = creation_tool_request(base.draft.kind());
     request
         .validate()
         .map_err(|_| CreationToolContractError::InvalidContract)?;
@@ -497,15 +495,12 @@ fn operation_error_name(error: CreationOperationError) -> &'static str {
         CreationOperationError::InvalidText => "invalid_text",
         CreationOperationError::DuplicateIdentity => "duplicate_identity",
         CreationOperationError::NotFound => "not_found",
-        CreationOperationError::InvalidStage => "invalid_stage",
         CreationOperationError::LimitExceeded => "limit_exceeded",
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CreationToolContractError {
-    #[error("creation tools are unavailable for this stage")]
-    ToolsUnavailable,
     #[error("creation tool contract is invalid")]
     InvalidContract,
     #[error("creation tool call count is invalid")]
@@ -556,64 +551,57 @@ mod tests {
     }
 
     #[test]
-    fn tool_contract_uses_the_legacy_agent_names_per_target_and_stage() {
-        let names = |target, stage| {
-            creation_tool_request(target, stage).map(|request| {
-                request.validate().expect("valid tools");
-                assert!(
-                    request
-                        .definitions
-                        .iter()
-                        .all(|definition| definition.version == 1
-                            && definition.description.is_none())
-                );
+    fn tool_contract_uses_the_legacy_agent_names_per_target() {
+        let names = |target| {
+            let request = creation_tool_request(target);
+            request.validate().expect("valid tools");
+            assert!(
                 request
                     .definitions
-                    .into_iter()
-                    .map(|definition| definition.name)
-                    .collect::<Vec<_>>()
-            })
+                    .iter()
+                    .all(|definition| definition.version == 1 && definition.description.is_none())
+            );
+            request
+                .definitions
+                .into_iter()
+                .map(|definition| definition.name)
+                .collect::<Vec<_>>()
         };
         assert_eq!(
-            names(CreationTargetKind::Character, CreationStage::Drafting).expect("character"),
+            names(CreationTargetKind::Character),
             [
                 "write_definition",
                 "write_scene",
                 "set_name",
                 "edit_scene",
                 "delete_scene",
-                "show_preview"
+                "show_preview",
+                "request_confirmation"
             ]
         );
         assert_eq!(
-            names(CreationTargetKind::Persona, CreationStage::Drafting).expect("persona"),
-            ["write_definition", "set_name", "show_preview"]
+            names(CreationTargetKind::Persona),
+            [
+                "write_definition",
+                "set_name",
+                "show_preview",
+                "request_confirmation"
+            ]
         );
         assert_eq!(
-            names(CreationTargetKind::Lorebook, CreationStage::Drafting).expect("lorebook"),
+            names(CreationTargetKind::Lorebook),
             [
                 "write_lore_entry",
                 "set_name",
                 "edit_lore_entry",
                 "delete_lore_entry",
                 "reorder_lore_entries",
-                "show_preview"
+                "show_preview",
+                "request_confirmation"
             ]
         );
-        assert_eq!(
-            names(CreationTargetKind::Character, CreationStage::AwaitingReview).expect("review"),
-            ["request_confirmation"]
-        );
-        assert!(
-            names(
-                CreationTargetKind::Character,
-                CreationStage::AwaitingConfirmation
-            )
-            .is_none()
-        );
         let described = describe_creation_tools(
-            &creation_tool_request(CreationTargetKind::Character, CreationStage::Drafting)
-                .expect("character"),
+            &creation_tool_request(CreationTargetKind::Character),
             &|key| {
                 if key == "creation_set_name_tool" {
                     String::new()

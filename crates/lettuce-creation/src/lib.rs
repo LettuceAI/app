@@ -37,7 +37,7 @@ pub use port::{
 };
 pub use proposal::{
     CreationOperation, CreationOperationError, CreationOperationOutcome, CreationProposal,
-    CreationProposalError,
+    CreationProposalError, MAX_CREATION_OPERATIONS,
 };
 pub use staged_lorebook::*;
 pub use staged_lorebook_sources::*;
