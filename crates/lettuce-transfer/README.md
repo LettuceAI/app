@@ -130,6 +130,11 @@ later secret-store transfer. Unsupported provider/model configuration field name
 remain explicit deferred inputs whose values stay in the retained source database.
 The legacy built-in llama.cpp credential becomes one deterministic synthetic
 account only when a llama.cpp model needs it; it carries no secret or endpoint.
+Legacy `dynamicMemory`/`groupDynamicMemory` settings map every field the current
+settings hold, including `enabled`, the summary interval (0 becomes 1, as the
+legacy cycle used), run mode (unknown values run as `auto`, like legacy),
+decay, delete confidence, hard-delete ratio and recursive loops; only unknown
+keys remain unsupported notices.
 
 Legacy import admission now seals provider-account and model-profile source IDs
 alongside the existing graph and media plan. Each account receives a stable

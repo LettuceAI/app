@@ -27,6 +27,10 @@ hot budget, 0.35 minimum similarity, five smart results, 0.3 cold threshold,
 0.5 delete confidence and per-cycle hard-delete ratio, 0.78 duplicate threshold,
 and two-message context enrichment. Scores use integer basis points so persisted
 policy values remain exact. Older settings documents receive these defaults.
+The post-turn cycle settings follow the legacy schema defaults: disabled until
+enabled, a 20-message summary interval, `auto` run mode (`ask_first` and
+`manual` also exist), 0.08 per-cycle decay, and recursive memory loops off with
+a hard cap of 20 rounds.
 An optional group-chat policy lives beside the direct policy in global settings,
 matching the legacy settings editor and persistence owner. Group launches use
 that complete override when present and otherwise inherit the direct policy.

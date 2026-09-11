@@ -46,9 +46,20 @@ pub enum MemoryRetrievalStrategy {
     Cosine,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryRunMode {
+    Auto,
+    AskFirst,
+    Manual,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DynamicMemorySettings {
+    pub enabled: bool,
+    pub summary_message_interval: u32,
+    pub run_mode: MemoryRunMode,
     pub max_entries: u32,
     pub min_similarity_basis_points: u16,
     pub retrieval_limit: u16,
@@ -59,11 +70,17 @@ pub struct DynamicMemorySettings {
     pub max_hard_delete_ratio_basis_points: u16,
     pub duplicate_threshold_basis_points: u16,
     pub context_enrichment_enabled: bool,
+    pub decay_rate_basis_points: u16,
+    pub recursive_memory_loops: bool,
+    pub recursive_memory_loop_hard_cap: u32,
 }
 
 impl Default for DynamicMemorySettings {
     fn default() -> Self {
         Self {
+            enabled: false,
+            summary_message_interval: 20,
+            run_mode: MemoryRunMode::Auto,
             max_entries: 50,
             min_similarity_basis_points: 3_500,
             retrieval_limit: 5,
@@ -74,6 +91,9 @@ impl Default for DynamicMemorySettings {
             max_hard_delete_ratio_basis_points: 5_000,
             duplicate_threshold_basis_points: 7_800,
             context_enrichment_enabled: true,
+            decay_rate_basis_points: 800,
+            recursive_memory_loops: false,
+            recursive_memory_loop_hard_cap: 20,
         }
     }
 }
@@ -201,6 +221,23 @@ pub trait GlobalSettingsStore: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dynamic_memory_defaults_match_the_legacy_schema() {
+        let settings = DynamicMemorySettings::default();
+        assert!(!settings.enabled);
+        assert_eq!(settings.summary_message_interval, 20);
+        assert_eq!(settings.run_mode, MemoryRunMode::Auto);
+        assert_eq!(settings.decay_rate_basis_points, 800);
+        assert!(!settings.recursive_memory_loops);
+        assert_eq!(settings.recursive_memory_loop_hard_cap, 20);
+        let stored: DynamicMemorySettings =
+            serde_json::from_str(r#"{"max_entries":12,"run_mode":"ask_first"}"#)
+                .expect("partial settings document");
+        assert_eq!(stored.max_entries, 12);
+        assert_eq!(stored.run_mode, MemoryRunMode::AskFirst);
+        assert_eq!(stored.summary_message_interval, 20);
+    }
 
     #[test]
     fn legacy_generator_defaults_and_selection_precedence() {

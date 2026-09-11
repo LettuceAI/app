@@ -16,7 +16,8 @@ use lettuce_models::{
 };
 use lettuce_settings::{
     DynamicMemorySettings, GlobalSettings, HeaderName, LorebookGeneratorSelection,
-    LorebookGeneratorSettings, MemoryRetrievalStrategy, PureMode, SecretOwnerId, SecretPurpose,
+    LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode, PureMode, SecretOwnerId,
+    SecretPurpose,
     SecretRef, SecretValue,
 };
 use lettuce_speech::{AudioProvider, AudioProviderConfig, UserVoice};
@@ -655,6 +656,53 @@ fn map_dynamic_memory(
     };
     let object = object_or_empty(value, LegacyBackupDocumentKind::Settings, path)?;
     let mut result = DynamicMemorySettings::default();
+    result.enabled = optional_bool_value(
+        object,
+        "enabled",
+        result.enabled,
+        LegacyBackupDocumentKind::Settings,
+    )?;
+    if let Some(interval) = optional_u32(object, "summaryMessageInterval")? {
+        if interval == 0 {
+            notices.push(notice(
+                LegacyBackupConversionNoticeKind::Lossy,
+                LegacyBackupDocumentKind::Settings,
+                format!("{path}.summaryMessageInterval"),
+            ));
+        }
+        result.summary_message_interval = interval.max(1);
+    }
+    result.run_mode = match object.get("runMode").and_then(Value::as_str) {
+        Some("manual") => MemoryRunMode::Manual,
+        Some("askFirst") => MemoryRunMode::AskFirst,
+        _ => MemoryRunMode::Auto,
+    };
+    result.recursive_memory_loops = optional_bool_value(
+        object,
+        "recursiveMemoryLoops",
+        result.recursive_memory_loops,
+        LegacyBackupDocumentKind::Settings,
+    )?;
+    result.recursive_memory_loop_hard_cap = optional_u32(object, "recursiveMemoryLoopHardCap")?
+        .map_or(result.recursive_memory_loop_hard_cap, |cap| cap.max(1));
+    result.decay_rate_basis_points = threshold_basis_points(
+        object.get("decayRate"),
+        &format!("{path}.decayRate"),
+        result.decay_rate_basis_points,
+        notices,
+    )?;
+    result.delete_confidence_basis_points = threshold_basis_points(
+        object.get("deleteConfidenceDefault"),
+        &format!("{path}.deleteConfidenceDefault"),
+        result.delete_confidence_basis_points,
+        notices,
+    )?;
+    result.max_hard_delete_ratio_basis_points = threshold_basis_points(
+        object.get("maxHardDeleteRatioPerCycle"),
+        &format!("{path}.maxHardDeleteRatioPerCycle"),
+        result.max_hard_delete_ratio_basis_points,
+        notices,
+    )?;
     result.max_entries = optional_u32(object, "maxEntries")?.unwrap_or(result.max_entries);
     result.retrieval_limit = optional_u32(object, "retrievalLimit")?
         .map(|value| {
@@ -700,7 +748,15 @@ fn map_dynamic_memory(
     for field in object.keys().filter(|field| {
         !matches!(
             field.as_str(),
-            "maxEntries"
+            "enabled"
+                | "summaryMessageInterval"
+                | "runMode"
+                | "recursiveMemoryLoops"
+                | "recursiveMemoryLoopHardCap"
+                | "decayRate"
+                | "deleteConfidenceDefault"
+                | "maxHardDeleteRatioPerCycle"
+                | "maxEntries"
                 | "retrievalLimit"
                 | "hotMemoryTokenBudget"
                 | "contextEnrichmentEnabled"
@@ -2796,7 +2852,15 @@ mod tests {
                             "hotMemoryTokenBudget": 2400,
                             "coldThreshold": 0.25,
                             "contextEnrichmentEnabled": false,
-                            "decayRate": 0.1
+                            "decayRate": 0.1,
+                            "enabled": true,
+                            "summaryMessageInterval": 12,
+                            "runMode": "askFirst",
+                            "recursiveMemoryLoops": true,
+                            "recursiveMemoryLoopHardCap": 6,
+                            "deleteConfidenceDefault": 0.7,
+                            "maxHardDeleteRatioPerCycle": 0.25,
+                            "unknownKnob": 1
                         }
                     },
                     "created_at": 10,
@@ -2984,9 +3048,20 @@ mod tests {
         assert!(!debug.contains("provider-secret"));
         assert!(!debug.contains("header-secret"));
         assert!(!debug.contains("audio-secret"));
+        let memory = &plan.settings.value.dynamic_memory;
+        assert!(memory.enabled);
+        assert_eq!(memory.summary_message_interval, 12);
+        assert_eq!(memory.run_mode, MemoryRunMode::AskFirst);
+        assert!(memory.recursive_memory_loops);
+        assert_eq!(memory.recursive_memory_loop_hard_cap, 6);
+        assert_eq!(memory.decay_rate_basis_points, 1_000);
+        assert_eq!(memory.delete_confidence_basis_points, 7_000);
+        assert_eq!(memory.max_hard_delete_ratio_basis_points, 2_500);
+        assert!(!plan.notices.iter().any(|notice| notice.field
+            == "advanced_settings.dynamicMemory.decayRate"));
         assert!(plan.notices.iter().any(|notice| notice.kind
             == LegacyBackupConversionNoticeKind::Unsupported
-            && notice.field == "advanced_settings.dynamicMemory.decayRate"));
+            && notice.field == "advanced_settings.dynamicMemory.unknownKnob"));
         assert!(plan.notices.iter().any(|notice| notice.kind
             == LegacyBackupConversionNoticeKind::Lossy
             && notice.document == LegacyBackupDocumentKind::AudioProviders

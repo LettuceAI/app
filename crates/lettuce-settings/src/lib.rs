@@ -20,7 +20,7 @@ mod secrets;
 pub use global::{
     DynamicMemorySettings, GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore,
     GlobalSettingsStoreError, LorebookGeneratorSelection, LorebookGeneratorSettings,
-    MemoryRetrievalStrategy, PureMode, StoredGlobalSettings,
+    MemoryRetrievalStrategy, MemoryRunMode, PureMode, StoredGlobalSettings,
 };
 
 pub use secrets::{
