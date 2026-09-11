@@ -769,6 +769,14 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "soul_value"
             | "active_signals"
             | "note_text"
+            | "soul_label"
+            | "soul_category"
+            | "fact_id"
+            | "fact_policy"
+            | "fact_slot"
+            | "fact_confidence"
+            | "fact_weight"
+            | "fact_locked"
     )
 }
 

@@ -970,6 +970,14 @@ pub enum PromptVariable {
     SoulValue,
     ActiveSignals,
     NoteText,
+    SoulLabel,
+    SoulCategory,
+    FactId,
+    FactPolicy,
+    FactSlot,
+    FactConfidence,
+    FactWeight,
+    FactLocked,
 }
 
 impl PromptVariable {
@@ -1085,6 +1093,14 @@ impl PromptVariable {
             Self::SoulValue => "{{soul_value}}",
             Self::ActiveSignals => "{{active_signals}}",
             Self::NoteText => "{{note_text}}",
+            Self::SoulLabel => "{{soul_label}}",
+            Self::SoulCategory => "{{soul_category}}",
+            Self::FactId => "{{fact_id}}",
+            Self::FactPolicy => "{{fact_policy}}",
+            Self::FactSlot => "{{fact_slot}}",
+            Self::FactConfidence => "{{fact_confidence}}",
+            Self::FactWeight => "{{fact_weight}}",
+            Self::FactLocked => "{{fact_locked}}",
         }
     }
 
@@ -1199,6 +1215,14 @@ impl PromptVariable {
         Self::SoulValue,
         Self::ActiveSignals,
         Self::NoteText,
+        Self::SoulLabel,
+        Self::SoulCategory,
+        Self::FactId,
+        Self::FactPolicy,
+        Self::FactSlot,
+        Self::FactConfidence,
+        Self::FactWeight,
+        Self::FactLocked,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.

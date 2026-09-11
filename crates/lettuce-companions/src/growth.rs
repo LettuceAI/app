@@ -12,8 +12,8 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::{
-    CompanionSoulIdentity, ProposedSoulFact, SoulCategory, SoulFactKind, SoulFactPolicy, SoulState,
-    effective_soul_value,
+    CompanionSoulIdentity, ProposedSoulFact, SoulCategory, SoulFactKind, SoulFactLine,
+    SoulFactPolicy, SoulState, effective_soul_value,
 };
 
 pub const MAX_GROWTH_MEMORIES: usize = 16;
@@ -122,106 +122,69 @@ impl CompanionGrowthProposalCheckpoint {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GrowthPromptValues {
-    pub changeable_categories: String,
-    pub current_growth: String,
-    pub new_memories: String,
+/// Changeable Soul categories in the order the growth prompt lists them.
+pub const GROWTH_PROMPT_CATEGORIES: [SoulCategory; 9] = [
+    SoulCategory::Appearance,
+    SoulCategory::Goals,
+    SoulCategory::Likes,
+    SoulCategory::Voice,
+    SoulCategory::RelationalStyle,
+    SoulCategory::Vulnerabilities,
+    SoulCategory::Fears,
+    SoulCategory::Habits,
+    SoulCategory::Boundaries,
+];
+pub const GROWTH_TOOL_TEXT_KEY: &str = "growth_tool";
+
+/// What the growth prompt lists; the application renders it from the catalog.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GrowthPromptFacts {
+    /// Every changeable category with its trimmed effective value, which is
+    /// empty when the category has none.
+    pub categories: Vec<(SoulCategory, String)>,
+    pub facts: Vec<SoulFactLine>,
+    /// Non-blank fresh memories, trimmed, at most `MAX_GROWTH_MEMORIES`.
+    pub memories: Vec<String>,
 }
 
 #[must_use]
-pub fn growth_prompt_values(
+pub fn growth_prompt_facts(
     soul: &CompanionSoulIdentity,
     state: &SoulState,
     fresh_memories: &[GrowthMemoryEvidence],
     effective_at: TimestampMillis,
-) -> GrowthPromptValues {
-    let categories = [
-        (
-            SoulCategory::Appearance,
-            "Appearance",
-            soul.appearance.as_str(),
-        ),
-        (SoulCategory::Goals, "Goals", soul.goals.as_str()),
-        (SoulCategory::Likes, "Likes", soul.likes.as_str()),
-        (SoulCategory::Voice, "Voice", soul.voice.as_str()),
-        (
-            SoulCategory::RelationalStyle,
-            "Relational style",
-            soul.relational_style.as_str(),
-        ),
-        (
-            SoulCategory::Vulnerabilities,
-            "Vulnerabilities",
-            soul.vulnerabilities.as_str(),
-        ),
-        (SoulCategory::Fears, "Fears", soul.fears.as_str()),
-        (SoulCategory::Habits, "Habits", soul.habits.as_str()),
-        (
-            SoulCategory::Boundaries,
-            "Boundaries",
-            soul.boundaries.as_str(),
-        ),
-    ];
-    let changeable_categories = categories
-        .into_iter()
-        .map(|(category, label, base)| {
-            let current = effective_soul_value(base, category, state, effective_at);
-            format!(
-                "- {label} [{}]: {}\n",
-                category.as_str(),
-                if current.trim().is_empty() {
-                    "(empty)"
-                } else {
-                    current.trim()
-                }
-            )
-        })
-        .collect();
-    let current_growth = {
-        let rendered = state
+) -> GrowthPromptFacts {
+    GrowthPromptFacts {
+        categories: GROWTH_PROMPT_CATEGORIES
+            .into_iter()
+            .map(|category| {
+                let current = effective_soul_value(
+                    crate::prompt::soul_base(soul, category),
+                    category,
+                    state,
+                    effective_at,
+                );
+                (category, current.trim().to_owned())
+            })
+            .collect(),
+        facts: state
             .facts
             .iter()
             .filter(|fact| fact.is_effective_at(effective_at))
-            .map(|fact| {
-                format!(
-                    "- id={} [{} policy={} slot={} confidence={:.2} weight={:.2}{}]: {}\n",
-                    fact.id,
-                    fact.category.as_str(),
-                    policy_name(fact.policy),
-                    if fact.slot.is_empty() {
-                        fact.category.as_str()
-                    } else {
-                        &fact.slot
-                    },
-                    fact.confidence,
-                    fact.weight,
-                    if fact.locked { " locked" } else { "" },
-                    fact.value.trim()
-                )
-            })
-            .collect::<String>();
-        if rendered.is_empty() {
-            "(none yet)".to_owned()
-        } else {
-            rendered
-        }
-    };
-    let new_memories = fresh_memories
-        .iter()
-        .filter(|memory| !memory.text.trim().is_empty())
-        .take(MAX_GROWTH_MEMORIES)
-        .enumerate()
-        .map(|(index, memory)| format!("{index}. {}\n", memory.text.trim()))
-        .collect();
-    GrowthPromptValues {
-        changeable_categories,
-        current_growth,
-        new_memories,
+            .map(SoulFactLine::of)
+            .collect(),
+        memories: fresh_memories
+            .iter()
+            .filter(|memory| !memory.text.trim().is_empty())
+            .take(MAX_GROWTH_MEMORIES)
+            .map(|memory| memory.text.trim().to_owned())
+            .collect(),
     }
 }
 
-const fn policy_name(policy: SoulFactPolicy) -> &'static str {
+/// The policy name the growth prompt and tool use.
+#[must_use]
+pub const fn policy_name(policy: SoulFactPolicy) -> &'static str {
     match policy {
         SoulFactPolicy::Current => "current",
         SoulFactPolicy::Adaptive => "adaptive",
@@ -230,14 +193,11 @@ const fn policy_name(policy: SoulFactPolicy) -> &'static str {
 }
 
 #[must_use]
-pub fn growth_tool_request() -> ToolRequest {
+pub fn growth_tool_request(text: &dyn Fn(&str) -> String) -> ToolRequest {
     ToolRequest {
         definitions: vec![ToolDefinition {
             name: RECORD_GROWTH_TOOL_NAME.to_owned(),
-            description: Some(
-                "Record only well-supported changes to the companion's changeable Soul facts. Use current for replaceable present-state facts and adaptive for patterns that can accumulate. Give each fact a stable semantic slot, confidence, and weight. To revise an existing adaptive fact, set kind to adjust and list its id in supersedes. Never replace a locked fact. Pass an empty adjustments array when evidence is weak or nothing changed."
-                    .to_owned(),
-            ),
+            description: Some(text(GROWTH_TOOL_TEXT_KEY)),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -407,7 +367,7 @@ mod tests {
 
     #[test]
     fn tool_contract_matches_legacy_required_record_growth_call() {
-        let request = growth_tool_request();
+        let request = growth_tool_request(&|key| key.to_owned());
         assert_eq!(request.choice, ToolChoice::Required);
         assert_eq!(request.definitions.len(), 1);
         assert_eq!(request.definitions[0].name, RECORD_GROWTH_TOOL_NAME);
@@ -526,21 +486,35 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let values = growth_prompt_values(&soul, &state, &memories, TimestampMillis::new(2));
+        let facts = growth_prompt_facts(&soul, &state, &memories, TimestampMillis::new(2));
 
-        assert!(values.changeable_categories.starts_with(
-            "- Appearance [appearance]: Tall\n- Goals [goals]: (empty)\n- Likes [likes]: Tea Coffee\n"
-        ));
+        assert_eq!(facts.categories.len(), 9);
         assert_eq!(
-            values.current_growth,
-            "- id=like-coffee [likes policy=adaptive slot=drink confidence=0.75 weight=0.50 locked]: Coffee\n"
+            facts.categories[..3],
+            [
+                (SoulCategory::Appearance, "Tall".to_owned()),
+                (SoulCategory::Goals, String::new()),
+                (SoulCategory::Likes, "Tea Coffee".to_owned()),
+            ]
         );
-        assert!(
-            values
-                .new_memories
-                .starts_with("0. memory 0\n1. memory 2\n")
+        assert_eq!(
+            facts.facts,
+            vec![SoulFactLine {
+                id: "like-coffee".into(),
+                category: SoulCategory::Likes,
+                policy: SoulFactPolicy::Adaptive,
+                slot: "drink".into(),
+                confidence: 0.75,
+                weight: 0.5,
+                locked: true,
+                value: "Coffee".into(),
+            }]
         );
-        assert!(values.new_memories.ends_with("15. memory 16\n"));
-        assert!(!values.new_memories.contains("memory 17"));
+        assert_eq!(facts.memories.len(), 16);
+        assert_eq!(
+            facts.memories[..2],
+            ["memory 0".to_owned(), "memory 2".to_owned()]
+        );
+        assert_eq!(facts.memories[15], "memory 16");
     }
 }

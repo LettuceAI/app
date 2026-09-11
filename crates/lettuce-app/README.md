@@ -352,7 +352,11 @@ the stored run and its interactive restart-policy job, and ordered round
 checkpoints are idempotent; admission does not mutate the character or durable
 Soul. The concrete dispatcher claims and settles that job; its executor renders
 the same editable prompt only at its frozen ID/revision, appends the exact
-legacy authoring instruction, and requires the six-tool contract. It reduces
+legacy authoring instruction, and requires the six-tool contract. Fillers and
+the authoring instruction render from `prompt_app_companion_runtime` at
+admission (before the job exists) and are frozen in the run; fallback
+instructions and tool descriptions render when a request is built, as do the
+growth and consolidation lines, fillers and tool descriptions. It reduces
 and persists every native round
 before provider-neutral continuation, suppresses calls after `done`, resumes
 incomplete checkpoints, and returns completed previews without provider I/O.

@@ -1,7 +1,7 @@
 use lettuce_companions::{
     CompanionSoulWriterRun, CompanionSoulWriterRunRepository,
-    CompanionSoulWriterRunRepositoryError, SoulWriterFallbackFormat, normalize_soul_writer_draft,
-    soul_writer_prompt_values,
+    CompanionSoulWriterRunRepositoryError, SoulWriterFallbackFormat, SoulWriterPromptText,
+    normalize_soul_writer_draft, soul_writer_prompt_values,
 };
 use lettuce_context::{LifecycleStatus, PromptDocument, PromptPurpose};
 use lettuce_conversations::ResolvedInferenceProfile;
@@ -58,8 +58,10 @@ impl<'a, R: ?Sized, J: ?Sized> CompanionSoulWriterAdmissionCoordinator<'a, R, J>
     }
 }
 
-impl<R: CompanionSoulWriterRunRepository + ?Sized, J: JobStore + ?Sized>
-    CompanionSoulWriterAdmissionCoordinator<'_, R, J>
+impl<
+    R: CompanionSoulWriterRunRepository + crate::runtime_text::RuntimeTextSource + ?Sized,
+    J: JobStore + ?Sized,
+> CompanionSoulWriterAdmissionCoordinator<'_, R, J>
 {
     pub fn admit(
         &self,
@@ -92,6 +94,28 @@ impl<R: CompanionSoulWriterRunRepository + ?Sized, J: JobStore + ?Sized>
         {
             return Err(CompanionSoulWriterAdmissionError::InvalidInput);
         }
+        let text = crate::runtime_text::RuntimeText::load(
+            self.repository,
+            crate::BuiltInPromptId::CompanionRuntime,
+        )
+        .map_err(|_| CompanionSoulWriterAdmissionError::InvalidInput)?;
+        let fragment = |key: &str| {
+            text.render_with(key, [])
+                .map_err(|_| CompanionSoulWriterAdmissionError::InvalidInput)
+        };
+        let prompt_values = soul_writer_prompt_values(
+            request.character_name,
+            request.character_definition,
+            request.character_description,
+            request.opening_context,
+            request.current_soul,
+            request.user_notes,
+            &SoulWriterPromptText {
+                not_provided: fragment("soul_writer_not_provided")?,
+                no_direction: fragment("soul_writer_no_direction")?,
+                final_instruction: fragment(lettuce_companions::SOUL_WRITER_FINAL_INSTRUCTION_KEY)?,
+            },
+        );
         let idempotency_key =
             IdempotencyKey::new(format!("companion-soul-writer-{}", request.request_id))
                 .map_err(|_| CompanionSoulWriterAdmissionError::InvalidInput)?;
@@ -131,14 +155,7 @@ impl<R: CompanionSoulWriterRunRepository + ?Sized, J: JobStore + ?Sized>
             fallback_profile: request.fallback_profile,
             prompt_id: request.prompt.id,
             prompt_revision: request.prompt.revision,
-            prompt_values: soul_writer_prompt_values(
-                request.character_name,
-                request.character_definition,
-                request.character_description,
-                request.opening_context,
-                request.current_soul,
-                request.user_notes,
-            ),
+            prompt_values,
             starting_draft: normalize_soul_writer_draft(request.current_soul),
             fallback_format: request.fallback_format,
             created_at: request.now,

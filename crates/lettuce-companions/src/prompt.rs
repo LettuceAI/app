@@ -71,6 +71,40 @@ pub enum ReassuranceCue {
     Avoidant,
 }
 
+/// One durable Soul fact as the growth and consolidation prompts list it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SoulFactLine {
+    pub id: String,
+    pub category: SoulCategory,
+    pub policy: crate::SoulFactPolicy,
+    /// The fact's slot, or its category name when the slot is empty.
+    pub slot: String,
+    pub confidence: f64,
+    pub weight: f64,
+    pub locked: bool,
+    pub value: String,
+}
+
+impl SoulFactLine {
+    #[must_use]
+    pub fn of(fact: &crate::SoulFact) -> Self {
+        Self {
+            id: fact.id.clone(),
+            category: fact.category,
+            policy: fact.policy,
+            slot: if fact.slot.is_empty() {
+                fact.category.as_str().to_owned()
+            } else {
+                fact.slot.clone()
+            },
+            confidence: fact.confidence,
+            weight: fact.weight,
+            locked: fact.locked,
+            value: fact.value.trim().to_owned(),
+        }
+    }
+}
+
 /// Soul lines in the order the prompt lists them.
 pub const SOUL_PROMPT_ORDER: [SoulCategory; 12] = [
     SoulCategory::Essence,
@@ -154,7 +188,7 @@ pub fn prompt_state(input: &CompanionPromptStateInput<'_>) -> CompanionPromptSta
     }
 }
 
-fn soul_base(soul: &CompanionSoulIdentity, category: SoulCategory) -> &str {
+pub(crate) fn soul_base(soul: &CompanionSoulIdentity, category: SoulCategory) -> &str {
     match category {
         SoulCategory::Essence => &soul.essence,
         SoulCategory::Traits => &soul.traits,

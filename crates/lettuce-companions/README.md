@@ -43,9 +43,11 @@ The domain now exposes the same required `record_growth` tool contract and
 reduces the first matching native call or legacy structured-text fallback into
 typed proposals. Source indices preserve the legacy fallback to all supplied
 fresh-memory IDs; the existing Soul reducer remains the only policy path.
-Its growth prompt values also reuse the existing effective-Soul projection and
-copy the legacy category order, labels, fact-line formatting, empty fallbacks,
-and zero-based sixteen-memory list.
+Its growth prompt facts (`growth_prompt_facts`) reuse the existing
+effective-Soul projection and copy the legacy category order, effective facts
+and first sixteen non-blank memories; labels, line formats (zero-based memory
+numbering), empty fallbacks and the tool description are catalog text the
+application renders (`prompt_app_companion_runtime`).
 The domain-owned growth-run port freezes that prompt input, resolved profile,
 successful memory attempt, Soul snapshot/revision, and a stable Soul operation
 ID. Its only checkpoint immutably stores the reduced typed proposals before
@@ -53,7 +55,8 @@ any Soul mutation.
 
 The exact legacy consolidation input is also available without a second policy
 path: the twelve-active-changeable-fact readiness check, authored/core/growth
-prompt values, required `consolidate_soul` schema, first matching native call,
+prompt facts (rendered by the application from the catalog), required
+`consolidate_soul` schema, first matching native call,
 structured-text fallback, core adjustment filtering, and retirement IDs. Its
 typed output is consumed by the existing atomic
 `prepare_consolidation_change_set`; confidence thresholds, locked retirement
@@ -86,9 +89,13 @@ exact input values, normalized starting draft, fallback format, and at most
 eight ordered round checkpoints. Each checkpoint records whether the primary
 or fallback profile authored it, fallback rounds cannot return to primary,
 exact round replay is idempotent, completion forbids later rounds, and this
-preview state has no character-Soul mutation capability. The structured
-fallback instructions are copied byte-for-byte from legacy alongside the
-parser and reducer; application code only chooses when to issue them.
+preview state has no character-Soul mutation capability. The final
+instruction (`SOUL_WRITER_FINAL_INSTRUCTION_KEY`), structured fallback
+instructions (`soul_writer_fallback_prompt_key`,
+`soul_writer_fact_fallback_prompt_key`) and six tool descriptions
+(`SOUL_WRITER_TOOL_TEXT_KEYS`) are catalog keys the application resolves, which
+also supplies the `Not provided.` / `No special direction.` fillers through
+`SoulWriterPromptText`; the parser and reducer stay here.
 
 Character-owned scheduled notes now copy the legacy fields and recurrence
 semantics for one-time, daily, weekly, monthly, and yearly activation. Disabled,

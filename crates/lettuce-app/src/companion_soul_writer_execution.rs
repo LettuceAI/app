@@ -1,8 +1,9 @@
 use lettuce_companions::{
     CompanionSoulWriterRoundCheckpoint, CompanionSoulWriterRun, CompanionSoulWriterRunRepository,
-    CompanionSoulWriterRunRepositoryError, SoulWriterProfileTarget,
-    parse_soul_writer_fallback_calls, reduce_soul_writer_calls, soul_writer_fact_fallback_prompt,
-    soul_writer_fallback_prompt, soul_writer_tool_request,
+    CompanionSoulWriterRunRepositoryError, SoulWriterProfileTarget, is_soul_writer_operation,
+    parse_soul_writer_fallback_calls, reduce_soul_writer_calls,
+    soul_writer_fact_fallback_prompt_key, soul_writer_fallback_prompt_key,
+    soul_writer_tool_request,
 };
 use lettuce_context::{
     LifecycleStatus, PromptDocument, PromptEntryChatMode, PromptEntryInfoSource, PromptPurpose,
@@ -77,6 +78,7 @@ impl<
     R: CompanionSoulWriterRunRepository
         + ProviderReplayArtifactPort
         + lettuce_usage::JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     I: InferencePort + ?Sized,
 > CompanionSoulWriterExecutionCoordinator<'_, R, I>
@@ -160,6 +162,10 @@ impl<
         target: SoulWriterProfileTarget,
         replayed: bool,
     ) -> Result<CompanionSoulWriterExecutionResult, CompanionSoulWriterExecutionError> {
+        if handle.cancellation_token().is_cancelled() {
+            return Err(CompanionSoulWriterExecutionError::Cancelled);
+        }
+        let text = SoulWriterRequestText::load(self.repository, run)?;
         loop {
             if handle.cancellation_token().is_cancelled() {
                 return Err(CompanionSoulWriterExecutionError::Cancelled);
@@ -167,7 +173,7 @@ impl<
             if run.rounds.len() >= MAX_SOUL_WRITER_ROUNDS {
                 return Err(CompanionSoulWriterExecutionError::RoundLimit);
             }
-            let request = build_request(run, prompt, handle, stream_sink, target, false)?;
+            let request = build_request(run, prompt, &text, handle, stream_sink, target, false)?;
             let outcome = match crate::job_inference_usage::run_job_inference(
                 self.repository,
                 self.inference,
@@ -207,7 +213,8 @@ impl<
             };
             if calls.is_empty() {
                 cleanup(self.repository, &outcome)?;
-                let fallback = build_request(run, prompt, handle, stream_sink, target, true)?;
+                let fallback =
+                    build_request(run, prompt, &text, handle, stream_sink, target, true)?;
                 let fallback_outcome = crate::job_inference_usage::run_job_inference(
                     self.repository,
                     self.inference,
@@ -279,15 +286,9 @@ fn usable_calls(
     outcome: &InferenceOutcome,
 ) -> Result<Vec<ProposedToolCall>, CompanionSoulWriterExecutionError> {
     let candidate = valid_candidate(outcome)?;
-    let request = soul_writer_tool_request();
     let mut calls = Vec::new();
     for call in &candidate.tool_calls {
-        if request
-            .definitions
-            .iter()
-            .any(|definition| definition.name == call.name)
-            && call.validate().is_ok()
-        {
+        if is_soul_writer_operation(&call.name) && call.validate().is_ok() {
             calls.push(call.clone());
             if call.name == lettuce_companions::SOUL_WRITER_DONE_TOOL_NAME {
                 break;
@@ -388,9 +389,47 @@ fn completed_result(
     })
 }
 
+/// Catalog text a Soul-writer request needs, rendered once per target before
+/// any provider call so an unusable edit fails before inference.
+struct SoulWriterRequestText {
+    tools: lettuce_conversations::ToolRequest,
+    fallback: String,
+}
+
+impl SoulWriterRequestText {
+    fn load<R: crate::runtime_text::RuntimeTextSource + ?Sized>(
+        repository: &R,
+        run: &CompanionSoulWriterRun,
+    ) -> Result<Self, CompanionSoulWriterExecutionError> {
+        let text = crate::runtime_text::RuntimeText::load(
+            repository,
+            crate::BuiltInPromptId::CompanionRuntime,
+        )
+        .map_err(|_| CompanionSoulWriterExecutionError::InvalidPrompt)?;
+        let fallback = [
+            soul_writer_fallback_prompt_key(run.fallback_format),
+            soul_writer_fact_fallback_prompt_key(run.fallback_format),
+        ]
+        .into_iter()
+        .map(|key| text.render_with(key, []))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| CompanionSoulWriterExecutionError::InvalidPrompt)?
+        .into_iter()
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+        Ok(Self {
+            tools: soul_writer_tool_request(&|key| text.render_with(key, []).unwrap_or_default()),
+            fallback,
+        })
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_request(
     run: &CompanionSoulWriterRun,
     prompt: &PromptDocument,
+    text: &SoulWriterRequestText,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
     target: SoulWriterProfileTarget,
@@ -404,11 +443,7 @@ fn build_request(
         context.messages.push(ProviderNeutralMessage {
             role: MessageRole::User,
             parts: vec![ProviderContextPart::Text {
-                text: format!(
-                    "{}\n\n{}",
-                    soul_writer_fallback_prompt(run.fallback_format),
-                    soul_writer_fact_fallback_prompt(run.fallback_format)
-                ),
+                text: text.fallback.clone(),
             }],
         });
     }
@@ -440,7 +475,7 @@ fn build_request(
         cancellation: Some(handle.id()),
         stream_sink,
         media_grants: Vec::new(),
-        tools: (!structured_fallback).then(soul_writer_tool_request),
+        tools: (!structured_fallback).then(|| text.tools.clone()),
     };
     request
         .validate()
@@ -518,12 +553,14 @@ fn render_context(
         })
         .collect::<Result<Vec<_>, _>>()?;
     insert_in_chat_messages(&mut messages, in_chat);
-    messages.push(ProviderNeutralMessage {
-        role: MessageRole::User,
-        parts: vec![ProviderContextPart::Text {
-            text: values.final_instruction.clone(),
-        }],
-    });
+    if !values.final_instruction.trim().is_empty() {
+        messages.push(ProviderNeutralMessage {
+            role: MessageRole::User,
+            parts: vec![ProviderContextPart::Text {
+                text: values.final_instruction.clone(),
+            }],
+        });
+    }
     let input_bytes = text_bytes(&messages)?;
     Ok(ProviderNeutralContext {
         messages,

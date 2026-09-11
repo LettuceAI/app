@@ -1,7 +1,7 @@
 use lettuce_companions::{
     CompanionGrowthProposalCheckpoint, CompanionGrowthRun, CompanionGrowthRunRepository,
     CompanionGrowthRunRepositoryError, SoulApplyReceipt, SoulOwner, SoulPolicyError,
-    SoulRepository, SoulRepositoryError, growth_prompt_values, growth_tool_request,
+    SoulRepository, SoulRepositoryError, growth_prompt_facts, growth_tool_request,
     parse_growth_proposals, prepare_growth_change_set,
 };
 use lettuce_context::{
@@ -73,6 +73,7 @@ impl<
         + SoulRepository
         + ProviderReplayArtifactPort
         + lettuce_usage::JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     I: InferencePort + ?Sized,
 > CompanionGrowthExecutionCoordinator<'_, R, I>
@@ -97,7 +98,12 @@ impl<
             if handle.cancellation_token().is_cancelled() {
                 return Err(CompanionGrowthExecutionError::Cancelled);
             }
-            let request = build_request(&run, prompt, handle, stream_sink)?;
+            let text = crate::runtime_text::RuntimeText::load(
+                self.repository,
+                crate::BuiltInPromptId::CompanionRuntime,
+            )
+            .map_err(|_| CompanionGrowthExecutionError::InvalidPrompt)?;
+            let request = build_request(&run, prompt, &text, handle, stream_sink)?;
             let outcome = crate::job_inference_usage::run_job_inference(
                 self.repository,
                 self.inference,
@@ -205,6 +211,7 @@ impl<
 fn build_request(
     run: &CompanionGrowthRun,
     prompt: &PromptDocument,
+    text: &crate::runtime_text::RuntimeText,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
 ) -> Result<InferenceRequest, CompanionGrowthExecutionError> {
@@ -213,12 +220,16 @@ fn build_request(
     {
         return Err(CompanionGrowthExecutionError::InvalidPrompt);
     }
-    let growth = growth_prompt_values(
-        &run.authored_soul,
-        &run.soul,
-        &run.fresh_memories,
-        run.created_at,
-    );
+    let growth = crate::companion_prompt_text::render_growth_values(
+        text,
+        &growth_prompt_facts(
+            &run.authored_soul,
+            &run.soul,
+            &run.fresh_memories,
+            run.created_at,
+        ),
+    )
+    .map_err(|_| CompanionGrowthExecutionError::InvalidPrompt)?;
     let mut values = PromptRenderValues {
         character_name: run.companion_name.clone(),
         ..PromptRenderValues::default()
@@ -326,7 +337,9 @@ fn build_request(
         cancellation: Some(handle.id()),
         stream_sink,
         media_grants: Vec::new(),
-        tools: Some(growth_tool_request()),
+        tools: Some(growth_tool_request(&|key| {
+            text.render_with(key, []).unwrap_or_default()
+        })),
     };
     request
         .validate()

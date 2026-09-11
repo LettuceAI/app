@@ -2,7 +2,7 @@ use lettuce_companions::{
     CompanionConsolidationProposalCheckpoint, CompanionConsolidationRun,
     CompanionConsolidationRunRepository, CompanionConsolidationRunRepositoryError,
     SoulApplyReceipt, SoulOwner, SoulPolicyError, SoulRepository, SoulRepositoryError,
-    consolidation_prompt_values, consolidation_tool_request, parse_consolidation_proposal,
+    consolidation_prompt_facts, consolidation_tool_request, parse_consolidation_proposal,
     prepare_consolidation_change_set,
 };
 use lettuce_context::{
@@ -74,6 +74,7 @@ impl<
         + SoulRepository
         + ProviderReplayArtifactPort
         + lettuce_usage::JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     I: InferencePort + ?Sized,
 > CompanionConsolidationExecutionCoordinator<'_, R, I>
@@ -102,7 +103,17 @@ impl<
                 self.repository,
                 self.inference,
                 job_id,
-                build_request(&run, prompt, handle, stream_sink)?,
+                build_request(
+                    &run,
+                    prompt,
+                    &crate::runtime_text::RuntimeText::load(
+                        self.repository,
+                        crate::BuiltInPromptId::CompanionRuntime,
+                    )
+                    .map_err(|_| CompanionConsolidationExecutionError::InvalidPrompt)?,
+                    handle,
+                    stream_sink,
+                )?,
                 now,
             )
             .await
@@ -194,6 +205,7 @@ impl<
 fn build_request(
     run: &CompanionConsolidationRun,
     prompt: &PromptDocument,
+    text: &crate::runtime_text::RuntimeText,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
 ) -> Result<InferenceRequest, CompanionConsolidationExecutionError> {
@@ -202,7 +214,11 @@ fn build_request(
     {
         return Err(CompanionConsolidationExecutionError::InvalidPrompt);
     }
-    let consolidation = consolidation_prompt_values(&run.authored_soul, &run.soul, run.created_at);
+    let consolidation = crate::companion_prompt_text::render_consolidation_values(
+        text,
+        &consolidation_prompt_facts(&run.authored_soul, &run.soul, run.created_at),
+    )
+    .map_err(|_| CompanionConsolidationExecutionError::InvalidPrompt)?;
     let mut values = PromptRenderValues {
         character_name: run.companion_name.clone(),
         ..PromptRenderValues::default()
@@ -304,7 +320,9 @@ fn build_request(
         cancellation: Some(handle.id()),
         stream_sink,
         media_grants: Vec::new(),
-        tools: Some(consolidation_tool_request()),
+        tools: Some(consolidation_tool_request(&|key| {
+            text.render_with(key, []).unwrap_or_default()
+        })),
     };
     request
         .validate()

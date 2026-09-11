@@ -16,11 +16,15 @@ pub const SET_BASELINE_AFFECT_TOOL_NAME: &str = "set_baseline_affect";
 pub const SET_REGULATION_STYLE_TOOL_NAME: &str = "set_regulation_style";
 pub const SET_RELATIONSHIP_DEFAULTS_TOOL_NAME: &str = "set_relationship_defaults";
 pub const SOUL_WRITER_DONE_TOOL_NAME: &str = "done";
-pub const SOUL_WRITER_FINAL_INSTRUCTION: &str = "Author the Companion Soul now. Issue tool calls (set_identity, set_authored_facts, set_baseline_affect, set_regulation_style, set_relationship_defaults) across one or more turns, then call done to finish. Populate every identity text field you can ground from the inputs: essence, traits, backstory, appearance, goals, likes, voice, relationalStyle, vulnerabilities, fears, habits, and boundaries. Also extract atomic facts from the backstory and definition: historical events use policy=historical and locked=true; present-state details use policy=current; inferred traits, fears, goals, habits, and vulnerabilities use policy=adaptive and locked=false. Do not turn uncertain implications into facts.";
-pub const SOUL_WRITER_JSON_FALLBACK_PROMPT: &str = r#"Return only JSON. Format: {"operations":[{"name":"set_identity","arguments":{"essence":"...","traits":"...","backstory":"...","appearance":"...","goals":"...","likes":"...","voice":"...","relationalStyle":"...","vulnerabilities":"...","fears":"...","habits":"...","boundaries":"..."}},{"name":"set_baseline_affect","arguments":{"warmth":0.5,"trust":0.5,"calm":0.5,"vulnerability":0.5,"longing":0.5,"hurt":0.5,"tension":0.5,"irritation":0.5,"affectionIntensity":0.5,"reassuranceNeed":0.5}},{"name":"set_regulation_style","arguments":{"suppression":0.5,"volatility":0.5,"recoverySpeed":0.5,"conflictAvoidance":0.5,"reassuranceSeeking":0.5,"protestBehavior":0.5,"emotionalTransparency":0.5,"attachmentActivation":0.5,"pride":0.5}},{"name":"set_relationship_defaults","arguments":{"closeness":0.2,"trust":0.3,"affection":0.2,"tension":0.05}},{"name":"done","arguments":{"notes":"optional"}}]}. End with done. Numeric fields are optional; baseline and regulation values clamp to [0,1], and relationship closeness/trust/affection clamp to [-1,1] (negative means the character starts disliking/distrusting/distant from the user) while relationship tension clamps to [0,1]. Do not use markdown."#;
-pub const SOUL_WRITER_XML_FALLBACK_PROMPT: &str = r#"Return only XML. Format: <soul_ops><set_identity><essence>...</essence><traits>...</traits><backstory>...</backstory><appearance>...</appearance><goals>...</goals><likes>...</likes><voice>...</voice><relationalStyle>...</relationalStyle><vulnerabilities>...</vulnerabilities><fears>...</fears><habits>...</habits><boundaries>...</boundaries></set_identity><set_baseline_affect warmth="0.5" trust="0.5" calm="0.5" vulnerability="0.5" longing="0.5" hurt="0.5" tension="0.5" irritation="0.5" affectionIntensity="0.5" reassuranceNeed="0.5" /><set_regulation_style suppression="0.5" volatility="0.5" recoverySpeed="0.5" conflictAvoidance="0.5" reassuranceSeeking="0.5" protestBehavior="0.5" emotionalTransparency="0.5" attachmentActivation="0.5" pride="0.5" /><set_relationship_defaults closeness="0.2" trust="0.3" affection="0.2" tension="0.05" /><done summary="optional" /></soul_ops>. End with <done />. Numeric fields are optional; baseline and regulation values clamp to [0,1], and relationship closeness/trust/affection clamp to [-1,1] (negative means the character starts disliking/distrusting/distant from the user) while relationship tension clamps to [0,1]. Do not use markdown."#;
-pub const SOUL_WRITER_JSON_FACT_FALLBACK_PROMPT: &str = r#"Also include a set_authored_facts operation. Its arguments must be {"facts":[{"category":"backstory","value":"one atomic fact","policy":"historical","slot":"stable-semantic-slot","confidence":1.0,"weight":1.0,"locked":true}]}. Extract historical, current, and adaptive facts conservatively."#;
-pub const SOUL_WRITER_XML_FACT_FALLBACK_PROMPT: &str = r#"Also include <set_authored_facts><facts>[{"category":"backstory","value":"one atomic fact","policy":"historical","slot":"stable-semantic-slot","confidence":1.0,"weight":1.0,"locked":true}]</facts></set_authored_facts>. The facts element contains a JSON array escaped as normal XML text. Extract facts conservatively."#;
+pub const SOUL_WRITER_FINAL_INSTRUCTION_KEY: &str = "soul_writer_instruction";
+pub const SOUL_WRITER_TOOL_TEXT_KEYS: [&str; 6] = [
+    "soul_writer_set_identity_tool",
+    "soul_writer_set_authored_facts_tool",
+    "soul_writer_set_baseline_affect_tool",
+    "soul_writer_set_regulation_style_tool",
+    "soul_writer_set_relationship_defaults_tool",
+    "soul_writer_done_tool",
+];
 
 const TEXT_FIELDS: &[&str] = &[
     "essence",
@@ -208,20 +212,30 @@ impl CompanionSoulWriterRun {
     }
 }
 
+/// Catalog key of the structured fallback format prompt.
 #[must_use]
-pub const fn soul_writer_fallback_prompt(format: SoulWriterFallbackFormat) -> &'static str {
+pub const fn soul_writer_fallback_prompt_key(format: SoulWriterFallbackFormat) -> &'static str {
     match format {
-        SoulWriterFallbackFormat::Json => SOUL_WRITER_JSON_FALLBACK_PROMPT,
-        SoulWriterFallbackFormat::Xml => SOUL_WRITER_XML_FALLBACK_PROMPT,
+        SoulWriterFallbackFormat::Json => "soul_writer_fallback_json",
+        SoulWriterFallbackFormat::Xml => "soul_writer_fallback_xml",
     }
 }
 
+/// Catalog key of the authored-facts addendum to the fallback prompt.
 #[must_use]
-pub const fn soul_writer_fact_fallback_prompt(format: SoulWriterFallbackFormat) -> &'static str {
+pub const fn soul_writer_fact_fallback_prompt_key(
+    format: SoulWriterFallbackFormat,
+) -> &'static str {
     match format {
-        SoulWriterFallbackFormat::Json => SOUL_WRITER_JSON_FACT_FALLBACK_PROMPT,
-        SoulWriterFallbackFormat::Xml => SOUL_WRITER_XML_FACT_FALLBACK_PROMPT,
+        SoulWriterFallbackFormat::Json => "soul_writer_fact_fallback_json",
+        SoulWriterFallbackFormat::Xml => "soul_writer_fact_fallback_xml",
     }
+}
+
+/// Whether `name` is one of the Soul-writer operations.
+#[must_use]
+pub fn is_soul_writer_operation(name: &str) -> bool {
+    SOUL_OPERATION_NAMES.contains(&name)
 }
 
 impl CompanionSoulWriterRoundCheckpoint {
@@ -240,6 +254,14 @@ impl CompanionSoulWriterRoundCheckpoint {
     }
 }
 
+/// Catalog text the Soul-writer values are frozen with at admission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoulWriterPromptText {
+    pub not_provided: String,
+    pub no_direction: String,
+    pub final_instruction: String,
+}
+
 #[must_use]
 pub fn soul_writer_prompt_values(
     character_name: &str,
@@ -248,17 +270,18 @@ pub fn soul_writer_prompt_values(
     opening_context: Option<&str>,
     current_soul: Option<&Value>,
     user_notes: Option<&str>,
+    text: &SoulWriterPromptText,
 ) -> SoulWriterPromptValues {
     SoulWriterPromptValues {
         character_name: character_name.trim().to_owned(),
-        character_definition: nonblank_or(character_definition, "Not provided."),
-        character_description: nonblank_or(character_description, "Not provided."),
-        opening_context: nonblank_or(opening_context, "Not provided."),
+        character_definition: nonblank_or(character_definition, &text.not_provided),
+        character_description: nonblank_or(character_description, &text.not_provided),
+        opening_context: nonblank_or(opening_context, &text.not_provided),
         current_soul: current_soul
             .map(|value| serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_owned()))
             .unwrap_or_else(|| "{}".to_owned()),
-        user_notes: nonblank_or(user_notes, "No special direction."),
-        final_instruction: SOUL_WRITER_FINAL_INSTRUCTION.to_owned(),
+        user_notes: nonblank_or(user_notes, &text.no_direction),
+        final_instruction: text.final_instruction.clone(),
     }
 }
 
@@ -587,7 +610,7 @@ fn fallback_call(
 }
 
 #[must_use]
-pub fn soul_writer_tool_request() -> ToolRequest {
+pub fn soul_writer_tool_request(text: &dyn Fn(&str) -> String) -> ToolRequest {
     let identity_properties = json!({
         "essence": { "type": "string" },
         "traits": { "type": "string" },
@@ -606,10 +629,7 @@ pub fn soul_writer_tool_request() -> ToolRequest {
         definitions: vec![
             ToolDefinition {
                 name: SET_IDENTITY_TOOL_NAME.to_owned(),
-                description: Some(
-                    "Set or refine the durable identity text fields. All fields optional; later calls overwrite earlier values for the same field."
-                        .to_owned(),
-                ),
+                description: Some(text(SOUL_WRITER_TOOL_TEXT_KEYS[0])),
                 parameters: json!({
                     "type": "object",
                     "properties": identity_properties
@@ -618,10 +638,7 @@ pub fn soul_writer_tool_request() -> ToolRequest {
             },
             ToolDefinition {
                 name: SET_AUTHORED_FACTS_TOOL_NAME.to_owned(),
-                description: Some(
-                    "Replace the atomic facts extracted from the authored definition and backstory. Historical events are immutable and locked. Current facts can be superseded by a newer value in the same slot. Adaptive facts are evidence about traits, fears, goals, habits, or vulnerabilities and remain unlocked."
-                        .to_owned(),
-                ),
+                description: Some(text(SOUL_WRITER_TOOL_TEXT_KEYS[1])),
                 parameters: json!({
                     "type": "object",
                     "properties": {
@@ -648,37 +665,25 @@ pub fn soul_writer_tool_request() -> ToolRequest {
             },
             ToolDefinition {
                 name: SET_BASELINE_AFFECT_TOOL_NAME.to_owned(),
-                description: Some(
-                    "Set or refine baseline affect floats in [0,1]. All fields optional; values are clamped."
-                        .to_owned(),
-                ),
+                description: Some(text(SOUL_WRITER_TOOL_TEXT_KEYS[2])),
                 parameters: numeric_parameters(BASELINE_AFFECT_FIELDS),
                 version: 1,
             },
             ToolDefinition {
                 name: SET_REGULATION_STYLE_TOOL_NAME.to_owned(),
-                description: Some(
-                    "Set or refine regulation style floats in [0,1]. All fields optional; values are clamped."
-                        .to_owned(),
-                ),
+                description: Some(text(SOUL_WRITER_TOOL_TEXT_KEYS[3])),
                 parameters: numeric_parameters(REGULATION_STYLE_FIELDS),
                 version: 1,
             },
             ToolDefinition {
                 name: SET_RELATIONSHIP_DEFAULTS_TOOL_NAME.to_owned(),
-                description: Some(
-                    "Set the starting relationship-with-user defaults. closeness/trust/affection are bidirectional in [-1,1] (negative = the character starts disliking/distrusting/distant from the user, 0 = neutral, positive = warm); tension is in [0,1]. All fields optional."
-                        .to_owned(),
-                ),
+                description: Some(text(SOUL_WRITER_TOOL_TEXT_KEYS[4])),
                 parameters: numeric_parameters(RELATIONSHIP_DEFAULTS_FIELDS),
                 version: 1,
             },
             ToolDefinition {
                 name: SOUL_WRITER_DONE_TOOL_NAME.to_owned(),
-                description: Some(
-                    "Call once the Companion Soul is finalized. Terminal — no more setters after this."
-                        .to_owned(),
-                ),
+                description: Some(text(SOUL_WRITER_TOOL_TEXT_KEYS[5])),
                 parameters: json!({
                     "type": "object",
                     "properties": { "notes": { "type": "string" } }
@@ -1048,7 +1053,7 @@ mod tests {
 
     #[test]
     fn required_tool_contract_matches_legacy() {
-        let request = soul_writer_tool_request();
+        let request = soul_writer_tool_request(&|key| key.to_owned());
         assert_eq!(request.choice, ToolChoice::Required);
         assert_eq!(
             request
@@ -1184,6 +1189,14 @@ mod tests {
         assert_eq!(reduction.results[0], json!({ "ok": true, "applied": 1 }));
     }
 
+    fn text() -> SoulWriterPromptText {
+        SoulWriterPromptText {
+            not_provided: "Not provided.".into(),
+            no_direction: "No special direction.".into(),
+            final_instruction: "Author".into(),
+        }
+    }
+
     #[test]
     fn prompt_values_copy_legacy_missing_value_and_json_rules() {
         let current = json!({ "soul": { "traits": "Careful" } });
@@ -1194,6 +1207,7 @@ mod tests {
             None,
             Some(&current),
             Some("  Be reserved  "),
+            &text(),
         );
         assert_eq!(values.character_name, "Mira");
         assert_eq!(values.character_definition, "Canon");
@@ -1204,9 +1218,9 @@ mod tests {
             serde_json::to_string_pretty(&current).expect("json")
         );
         assert_eq!(values.user_notes, "Be reserved");
-        assert_eq!(values.final_instruction, SOUL_WRITER_FINAL_INSTRUCTION);
+        assert_eq!(values.final_instruction, "Author");
 
-        let empty = soul_writer_prompt_values("Mira", None, None, None, None, None);
+        let empty = soul_writer_prompt_values("Mira", None, None, None, None, None, &text());
         assert_eq!(empty.current_soul, "{}");
         assert_eq!(empty.user_notes, "No special direction.");
     }

@@ -1,8 +1,9 @@
 use std::cell::Cell;
 
 use lettuce_companions::{
-    CompanionPromptState, CompanionScheduledNote, EmotionDimension, EmotionReading, ReassuranceCue,
-    RegulationCue, RelationshipBand, SoulCategory, scheduled_note_lines,
+    CompanionPromptState, CompanionScheduledNote, ConsolidationPromptFacts, EmotionDimension,
+    EmotionReading, GrowthPromptFacts, ReassuranceCue, RegulationCue, RelationshipBand,
+    SoulCategory, SoulFactLine, policy_name, scheduled_note_lines,
 };
 use lettuce_context::{PromptRenderValues, PromptVariable as Variable};
 
@@ -155,6 +156,171 @@ pub(crate) fn render_scheduled_notes(
         .filter(|block| !block.is_empty()))
 }
 
+/// The growth prompt's `{{changeable_categories}}`, `{{current_growth}}` and
+/// `{{new_memories}}` values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GrowthPromptText {
+    pub(crate) changeable_categories: String,
+    pub(crate) current_growth: String,
+    pub(crate) new_memories: String,
+}
+
+pub(crate) fn render_growth_values(
+    text: &RuntimeText,
+    facts: &GrowthPromptFacts,
+) -> Result<GrowthPromptText, RuntimeTextError> {
+    let empty = text.render_with("soul_empty", [])?;
+    let mut changeable_categories = String::new();
+    for (category, value) in &facts.categories {
+        push_line(
+            &mut changeable_categories,
+            text.render_with(
+                "growth_category_line",
+                [
+                    (
+                        Variable::SoulLabel,
+                        text.render_with(growth_label_key(*category), [])?,
+                    ),
+                    (Variable::SoulCategory, category.as_str().to_owned()),
+                    (
+                        Variable::SoulValue,
+                        if value.is_empty() {
+                            empty.clone()
+                        } else {
+                            value.clone()
+                        },
+                    ),
+                ],
+            )?,
+        );
+    }
+    let mut new_memories = String::new();
+    for (index, memory) in facts.memories.iter().enumerate() {
+        push_line(
+            &mut new_memories,
+            text.render_with(
+                "growth_memory_line",
+                [
+                    (Variable::ItemNumber, index.to_string()),
+                    (Variable::MemoryText, memory.clone()),
+                ],
+            )?,
+        );
+    }
+    Ok(GrowthPromptText {
+        changeable_categories,
+        current_growth: fact_lines(text, "growth_fact_line", "growth_no_facts", &facts.facts)?,
+        new_memories,
+    })
+}
+
+/// The consolidation prompt's `{{authored_core}}`, `{{current_core}}` and
+/// `{{accumulated_growth}}` values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConsolidationPromptText {
+    pub(crate) authored_core: String,
+    pub(crate) current_core: String,
+    pub(crate) accumulated_growth: String,
+}
+
+pub(crate) fn render_consolidation_values(
+    text: &RuntimeText,
+    facts: &ConsolidationPromptFacts,
+) -> Result<ConsolidationPromptText, RuntimeTextError> {
+    let empty = text.render_with("soul_empty", [])?;
+    let mut authored_core = String::new();
+    for (category, value) in &facts.authored_core {
+        push_line(
+            &mut authored_core,
+            text.render_with(
+                "consolidation_core_line",
+                [
+                    (Variable::SoulCategory, category.as_str().to_owned()),
+                    (
+                        Variable::SoulValue,
+                        if value.is_empty() {
+                            empty.clone()
+                        } else {
+                            value.clone()
+                        },
+                    ),
+                ],
+            )?,
+        );
+    }
+    Ok(ConsolidationPromptText {
+        authored_core,
+        current_core: fact_lines(
+            text,
+            "consolidation_fact_line",
+            "consolidation_no_facts",
+            &facts.current_core,
+        )?,
+        accumulated_growth: fact_lines(
+            text,
+            "consolidation_fact_line",
+            "consolidation_no_facts",
+            &facts.accumulated_growth,
+        )?,
+    })
+}
+
+fn fact_lines(
+    text: &RuntimeText,
+    line_key: &str,
+    none_key: &str,
+    lines: &[SoulFactLine],
+) -> Result<String, RuntimeTextError> {
+    let mut rendered = String::new();
+    for line in lines {
+        push_line(
+            &mut rendered,
+            text.render_with(
+                line_key,
+                [
+                    (Variable::FactId, line.id.clone()),
+                    (Variable::SoulCategory, line.category.as_str().to_owned()),
+                    (Variable::FactPolicy, policy_name(line.policy).to_owned()),
+                    (Variable::FactSlot, line.slot.clone()),
+                    (Variable::FactConfidence, format!("{:.2}", line.confidence)),
+                    (Variable::FactWeight, format!("{:.2}", line.weight)),
+                    (
+                        Variable::FactLocked,
+                        if line.locked { "true" } else { "" }.to_owned(),
+                    ),
+                    (Variable::SoulValue, line.value.clone()),
+                ],
+            )?,
+        );
+    }
+    if rendered.is_empty() {
+        return text.render_with(none_key, []);
+    }
+    Ok(rendered)
+}
+
+fn push_line(target: &mut String, line: String) {
+    if !line.is_empty() {
+        target.push_str(&line);
+        target.push('\n');
+    }
+}
+
+const fn growth_label_key(category: SoulCategory) -> &'static str {
+    match category {
+        SoulCategory::Appearance => "growth_label_appearance",
+        SoulCategory::Goals => "growth_label_goals",
+        SoulCategory::Likes => "growth_label_likes",
+        SoulCategory::Voice => "growth_label_voice",
+        SoulCategory::RelationalStyle => "growth_label_relational_style",
+        SoulCategory::Vulnerabilities => "growth_label_vulnerabilities",
+        SoulCategory::Fears => "growth_label_fears",
+        SoulCategory::Habits => "growth_label_habits",
+        SoulCategory::Boundaries => "growth_label_boundaries",
+        SoulCategory::Essence | SoulCategory::Traits | SoulCategory::Backstory => "",
+    }
+}
+
 fn percent(value: f64) -> String {
     format!("{:.0}", value * 100.0)
 }
@@ -230,12 +396,16 @@ const fn soul_key(category: SoulCategory) -> &'static str {
 #[cfg(test)]
 mod tests {
     use lettuce_companions::{
-        CompanionPromptState, CompanionScheduledNote, EmotionDimension, EmotionReading,
-        ReassuranceCue, RegulationCue, RelationshipBand, ScheduledNoteRecurrence, SoulCategory,
+        CompanionPromptState, CompanionScheduledNote, ConsolidationPromptFacts, EmotionDimension,
+        EmotionReading, GrowthPromptFacts, ReassuranceCue, RegulationCue, RelationshipBand,
+        ScheduledNoteRecurrence, SoulCategory, SoulFactLine, SoulFactPolicy,
     };
     use lettuce_types::{CharacterId, TimestampMillis};
 
-    use super::{emotion_key, render_companion_state, render_scheduled_notes, soul_key};
+    use super::{
+        emotion_key, render_companion_state, render_consolidation_values, render_growth_values,
+        render_scheduled_notes, soul_key,
+    };
     use crate::BuiltInPromptId;
     use crate::runtime_text::RuntimeText;
 
@@ -405,10 +575,155 @@ mod tests {
             ]
             .map(|dimension| emotion_key(dimension).to_owned()),
         );
+        keys.extend(
+            lettuce_companions::GROWTH_PROMPT_CATEGORIES
+                .map(|category| super::growth_label_key(category).to_owned()),
+        );
+        keys.extend(lettuce_companions::SOUL_WRITER_TOOL_TEXT_KEYS.map(str::to_owned));
+        for format in [
+            lettuce_companions::SoulWriterFallbackFormat::Json,
+            lettuce_companions::SoulWriterFallbackFormat::Xml,
+        ] {
+            keys.push(lettuce_companions::soul_writer_fallback_prompt_key(format).to_owned());
+            keys.push(lettuce_companions::soul_writer_fact_fallback_prompt_key(format).to_owned());
+        }
+        keys.extend(
+            [
+                lettuce_companions::SOUL_WRITER_FINAL_INSTRUCTION_KEY,
+                "soul_writer_not_provided",
+                "soul_writer_no_direction",
+                lettuce_companions::GROWTH_TOOL_TEXT_KEY,
+                "growth_category_line",
+                "growth_fact_line",
+                "growth_no_facts",
+                "growth_memory_line",
+                "soul_empty",
+                lettuce_companions::CONSOLIDATION_TOOL_TEXT_KEY,
+                "consolidation_core_line",
+                "consolidation_fact_line",
+                "consolidation_no_facts",
+            ]
+            .map(str::to_owned),
+        );
         for key in &keys {
             assert!(seed.contains(key), "{key}");
         }
         assert_eq!(keys.len(), seed.len());
+        let text = RuntimeText::from_seed(BuiltInPromptId::CompanionRuntime);
+        let resolve = |key: &str| text.render_with(key, []).expect("tool text");
+        for request in [
+            lettuce_companions::soul_writer_tool_request(&resolve),
+            lettuce_companions::growth_tool_request(&resolve),
+            lettuce_companions::consolidation_tool_request(&resolve),
+        ] {
+            request.validate().expect("tool contract");
+            assert!(request.definitions.iter().all(|definition| {
+                definition
+                    .description
+                    .as_deref()
+                    .is_some_and(|text| !text.is_empty())
+            }));
+        }
+    }
+
+    fn fact_line(id: &str, category: SoulCategory, locked: bool) -> SoulFactLine {
+        SoulFactLine {
+            id: id.into(),
+            category,
+            policy: SoulFactPolicy::Adaptive,
+            slot: "drink".into(),
+            confidence: 0.75,
+            weight: 0.5,
+            locked,
+            value: "Coffee".into(),
+        }
+    }
+
+    #[test]
+    fn growth_values_are_byte_exact_with_legacy() {
+        let text = RuntimeText::from_seed(BuiltInPromptId::CompanionRuntime);
+        let mut categories = lettuce_companions::GROWTH_PROMPT_CATEGORIES
+            .map(|category| (category, String::new()))
+            .to_vec();
+        categories[0].1 = "Tall".into();
+        categories[2].1 = "Tea Coffee".into();
+        let rendered = render_growth_values(
+            &text,
+            &GrowthPromptFacts {
+                categories,
+                facts: vec![fact_line("like-coffee", SoulCategory::Likes, true)],
+                memories: vec!["memory 0".into(), "memory 2".into()],
+            },
+        )
+        .expect("render");
+        assert_eq!(
+            rendered.changeable_categories,
+            "- Appearance [appearance]: Tall\n- Goals [goals]: (empty)\n- Likes [likes]: Tea Coffee\n- Voice [voice]: (empty)\n- Relational style [relationalStyle]: (empty)\n- Vulnerabilities [vulnerabilities]: (empty)\n- Fears [fears]: (empty)\n- Habits [habits]: (empty)\n- Boundaries [boundaries]: (empty)\n"
+        );
+        assert_eq!(
+            rendered.current_growth,
+            "- id=like-coffee [likes policy=adaptive slot=drink confidence=0.75 weight=0.50 locked]: Coffee\n"
+        );
+        assert_eq!(rendered.new_memories, "0. memory 0\n1. memory 2\n");
+        let empty = render_growth_values(
+            &text,
+            &GrowthPromptFacts {
+                categories: Vec::new(),
+                facts: Vec::new(),
+                memories: Vec::new(),
+            },
+        )
+        .expect("render empty");
+        assert_eq!(empty.current_growth, "(none yet)");
+        assert_eq!(empty.new_memories, "");
+    }
+
+    #[test]
+    fn consolidation_values_are_byte_exact_with_legacy() {
+        let text = RuntimeText::from_seed(BuiltInPromptId::CompanionRuntime);
+        let mut core = fact_line("fact-0", SoulCategory::Traits, true);
+        core.confidence = 0.9;
+        core.weight = 0.8;
+        core.value = "value-0".into();
+        let mut growth = fact_line("fact-1", SoulCategory::Habits, false);
+        growth.confidence = 0.9;
+        growth.weight = 0.8;
+        growth.value = "value-1".into();
+        let rendered = render_consolidation_values(
+            &text,
+            &ConsolidationPromptFacts {
+                authored_core: vec![
+                    (SoulCategory::Essence, "Gentle".into()),
+                    (SoulCategory::Traits, String::new()),
+                ],
+                current_core: vec![core],
+                accumulated_growth: vec![growth],
+            },
+        )
+        .expect("render");
+        assert_eq!(
+            rendered.authored_core,
+            "- essence: Gentle\n- traits: (empty)\n"
+        );
+        assert_eq!(
+            rendered.current_core,
+            "- id=fact-0 [traits confidence=0.90 weight=0.80 locked]: value-0\n"
+        );
+        assert_eq!(
+            rendered.accumulated_growth,
+            "- id=fact-1 [habits confidence=0.90 weight=0.80]: value-1\n"
+        );
+        let empty = render_consolidation_values(
+            &text,
+            &ConsolidationPromptFacts {
+                authored_core: Vec::new(),
+                current_core: Vec::new(),
+                accumulated_growth: Vec::new(),
+            },
+        )
+        .expect("render empty");
+        assert_eq!(empty.current_core, "(none)");
+        assert_eq!(empty.accumulated_growth, "(none)");
     }
 
     #[test]

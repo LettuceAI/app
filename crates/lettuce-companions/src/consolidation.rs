@@ -7,16 +7,21 @@ use uuid::Uuid;
 
 use crate::{
     CONSOLIDATION_THRESHOLD, CompanionSoulIdentity, ProposedSoulFact, SoulCategory, SoulFactKind,
-    SoulFactPolicy, SoulState,
+    SoulFactLine, SoulFactPolicy, SoulState,
 };
 
 pub const CONSOLIDATE_SOUL_TOOL_NAME: &str = "consolidate_soul";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConsolidationPromptValues {
-    pub authored_core: String,
-    pub current_core: String,
-    pub accumulated_growth: String,
+pub const CONSOLIDATION_TOOL_TEXT_KEY: &str = "consolidation_tool";
+
+/// What the consolidation prompt lists; the application renders it from the
+/// catalog.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConsolidationPromptFacts {
+    /// Authored essence and traits, trimmed; empty when not authored.
+    pub authored_core: Vec<(SoulCategory, String)>,
+    pub current_core: Vec<SoulFactLine>,
+    pub accumulated_growth: Vec<SoulFactLine>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -138,82 +143,43 @@ pub fn consolidation_ready(state: &SoulState, effective_at: TimestampMillis) -> 
 }
 
 #[must_use]
-pub fn consolidation_prompt_values(
+pub fn consolidation_prompt_facts(
     soul: &CompanionSoulIdentity,
     state: &SoulState,
     effective_at: TimestampMillis,
-) -> ConsolidationPromptValues {
-    let authored_core = [
-        (SoulCategory::Essence, soul.essence.as_str()),
-        (SoulCategory::Traits, soul.traits.as_str()),
-    ]
-    .into_iter()
-    .map(|(category, value)| {
-        format!(
-            "- {}: {}\n",
-            category.as_str(),
-            if value.trim().is_empty() {
-                "(empty)"
-            } else {
-                value.trim()
-            }
-        )
-    })
-    .collect();
+) -> ConsolidationPromptFacts {
     let active = state
         .facts
         .iter()
         .filter(|fact| fact.is_effective_at(effective_at) && !fact.id.trim().is_empty())
         .collect::<Vec<_>>();
-    let current_core = format_entries(
-        active
+    ConsolidationPromptFacts {
+        authored_core: [
+            (SoulCategory::Essence, soul.essence.trim()),
+            (SoulCategory::Traits, soul.traits.trim()),
+        ]
+        .into_iter()
+        .map(|(category, value)| (category, value.to_owned()))
+        .collect(),
+        current_core: active
             .iter()
-            .copied()
-            .filter(|fact| matches!(fact.category, SoulCategory::Essence | SoulCategory::Traits)),
-    );
-    let accumulated_growth = format_entries(
-        active
+            .filter(|fact| matches!(fact.category, SoulCategory::Essence | SoulCategory::Traits))
+            .map(|fact| SoulFactLine::of(fact))
+            .collect(),
+        accumulated_growth: active
             .iter()
-            .copied()
-            .filter(|fact| fact.category.is_changeable()),
-    );
-    ConsolidationPromptValues {
-        authored_core,
-        current_core,
-        accumulated_growth,
-    }
-}
-
-fn format_entries<'a>(entries: impl Iterator<Item = &'a crate::SoulFact>) -> String {
-    let rendered = entries
-        .map(|entry| {
-            format!(
-                "- id={} [{} confidence={:.2} weight={:.2}{}]: {}\n",
-                entry.id,
-                entry.category.as_str(),
-                entry.confidence,
-                entry.weight,
-                if entry.locked { " locked" } else { "" },
-                entry.value.trim()
-            )
-        })
-        .collect::<String>();
-    if rendered.is_empty() {
-        "(none)".to_owned()
-    } else {
-        rendered
+            .filter(|fact| fact.category.is_changeable())
+            .map(|fact| SoulFactLine::of(fact))
+            .collect(),
     }
 }
 
 #[must_use]
-pub fn consolidation_tool_request() -> ToolRequest {
+pub fn consolidation_tool_request(text: &dyn Fn(&str) -> String) -> ToolRequest {
     ToolRequest {
         definitions: vec![ToolDefinition {
             name: CONSOLIDATE_SOUL_TOOL_NAME.to_owned(),
-            description: Some(
-                "Fold accumulated companion growth only when sustained, high-confidence evidence warrants a very slow core change. Locked facts may inform the result but must never be retired or superseded. Both arrays may be empty."
-                    .to_owned(),
-            ),
+            description: Some(text(CONSOLIDATION_TOOL_TEXT_KEY)),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -360,7 +326,7 @@ mod tests {
 
     #[test]
     fn required_tool_contract_matches_legacy() {
-        let request = consolidation_tool_request();
+        let request = consolidation_tool_request(&|key| key.to_owned());
         assert_eq!(request.choice, ToolChoice::Required);
         assert_eq!(request.definitions.len(), 1);
         assert_eq!(request.definitions[0].name, CONSOLIDATE_SOUL_TOOL_NAME);
@@ -402,18 +368,29 @@ mod tests {
                 fact(1, SoulCategory::Habits, false),
             ],
         };
-        let values = consolidation_prompt_values(&soul, &state, TimestampMillis::new(2));
+        let facts = consolidation_prompt_facts(&soul, &state, TimestampMillis::new(2));
         assert_eq!(
-            values.authored_core,
-            "- essence: Gentle\n- traits: (empty)\n"
+            facts.authored_core,
+            vec![
+                (SoulCategory::Essence, "Gentle".to_owned()),
+                (SoulCategory::Traits, String::new()),
+            ]
         );
         assert_eq!(
-            values.current_core,
-            "- id=fact-0 [traits confidence=0.90 weight=0.80 locked]: value-0\n"
+            facts
+                .current_core
+                .iter()
+                .map(|line| (line.id.as_str(), line.locked))
+                .collect::<Vec<_>>(),
+            vec![("fact-0", true)]
         );
         assert_eq!(
-            values.accumulated_growth,
-            "- id=fact-1 [habits confidence=0.90 weight=0.80]: value-1\n"
+            facts
+                .accumulated_growth
+                .iter()
+                .map(|line| (line.id.as_str(), line.category))
+                .collect::<Vec<_>>(),
+            vec![("fact-1", SoulCategory::Habits)]
         );
     }
 
