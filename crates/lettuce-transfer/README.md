@@ -369,6 +369,22 @@ and prompt limits remain owned by the existing companion and application paths,
 so the legacy scheduling semantics and clock source are unchanged. No note or
 companion state is written.
 
+Legacy companion shared memory now has a bounded read-only compatibility plan.
+It retains each companion-owned manual-memory array, embedded dynamic-memory
+projection document, summary and token count, tool-event history, progress and
+error state, raw Soul growth, persona-keyed relationship state, continuity
+episodes and timestamps exactly as exported. Companion owners, persona keys,
+direct-session episode links, episode chains and nested JSON shapes must resolve
+before any mutation. Fully specified Soul facts can seed one validated initial
+Soul snapshot; incomplete legacy facts remain evidence because the old importer
+generated missing IDs and timestamps. Relationship values can seed initial
+conversation snapshots only for matching continuity episodes. Manual memories,
+embedded projections and tool events remain retained evidence because the
+legacy document cannot supply current memory-space revisions, immutable access
+receipts or execution history. The old importer's table-wide deletes and silent
+Soul normalization are deliberately not reproduced, and this slice writes no
+companion or memory state.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established
