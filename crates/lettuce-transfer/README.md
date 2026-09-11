@@ -422,6 +422,17 @@ lacks turn/attempt identities and inference checkpoints. The old importer’s
 table-wide delete is not reproduced, and this slice writes no creation or media
 state.
 
+The complete version-1 compatibility graph now has one source-bound seal. The
+seal runs the existing configuration, authored, media, ASR, usage, pricing,
+direct/group conversation, companion-memory, projection and creation-session
+planners in their dependency order. Its coverage lists all 23 known document
+kinds as present or absent and inventories every retained media object with its
+root, normalized segments, byte count and BLAKE3 hash. The stable fingerprint
+binds that coverage, the archive identity and every sorted conversion notice;
+duplicate document or media identities reject before planning. This is a
+reconciliation boundary only. It does not admit an import, ingest bytes, write
+current state or remove the source backup.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established
