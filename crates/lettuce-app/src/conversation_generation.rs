@@ -3,18 +3,17 @@ use std::time::Duration;
 use lettuce_conversations::{
     ArtifactError, AttachAttemptJob, BeginGeneration, CancelGeneration, ContextAttributions,
     ConversationManager, ConversationReader, ConversationRepository, ConversationRepositoryError,
-    ConversationServiceError, GenerationAttempt, GenerationAttemptStatus,
+    ConversationServiceError, FinalizationDraft, GenerationAttempt, GenerationAttemptStatus,
     GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationFailureCode,
-    GenerationTarget, GenerationTurn, GenerationTurnStatus, InferenceOutcome, InferencePort,
-    InferenceRequest, InitialInferenceBinding, InitialInferenceRepository, InitialInferenceResult,
-    MessageCandidate, MessagePart, ModelSelectionSnapshot, OperationToken, PortError,
-    ProviderFailureKind, ProviderNeutralContext, ProviderReplayArtifactPort,
-    ResolvedInferenceProfile, SettleCancellation, ToolExecution, ToolExecutionOwner,
-    ToolExecutionRepository, ToolExecutionStatus, ToolExecutionTransition, ToolRequest,
-    UsageCounters, UsageOutcome, UsagePort, UsageRecord, UsageUnavailableReason, ValidationError,
-    attempt_job_idempotency_key, context_with_settled_tool_round,
+    GenerationFinalizationResult, GenerationTarget, GenerationTurn, GenerationTurnStatus,
+    InferenceOutcome, InferencePort, InferenceRequest, InitialInferenceBinding,
+    InitialInferenceRepository, MessageCandidate, MessagePart, ModelSelectionSnapshot,
+    OperationKind, OperationToken, PortError, ProviderFailureKind, ProviderNeutralContext,
+    ProviderReplayArtifactPort, ResolvedInferenceProfile, SettleCancellation,
+    ToolExecutionRepository, ToolExecutionStatus, ToolExecutionTransition, UsageCounters,
+    UsageOutcome, UsagePort, UsageRecord, UsageUnavailableReason, ValidationError,
+    attempt_job_idempotency_key,
 };
-use lettuce_embeddings::MemoryEmbeddingRepository;
 use lettuce_inference::{InferenceRuntime, InferenceRuntimeError};
 use lettuce_jobs::{
     CancellationPolicy, CancellationReason, ChildLink, Claim, FiniteFraction, IdempotencyKey,
@@ -24,28 +23,13 @@ use lettuce_jobs::{
     events::JobEvent,
     handle::{CancellationToken, JobHandle},
 };
-use lettuce_memory::{
-    DynamicMemoryPreparationPlan, DynamicMemoryPreparationPlanError,
-    DynamicMemoryPreparationRepository, DynamicMemoryRoundRepository, MemoryPolicy,
-    MemoryRepository, Score, dynamic_memory_tool_request,
-};
 use lettuce_types::{
-    AssetId, ContentHash, ConversationId, GenerationAttemptId, GenerationTurnId, JobId,
-    MemorySpaceId, RequestId, TimestampMillis, UsageEventId,
+    AssetId, ContentHash, ConversationId, GenerationAttemptId, GenerationTurnId, JobId, RequestId,
+    TimestampMillis, UsageEventId,
 };
 use lettuce_usage::{JobInferenceUsageResult, JobUsageLedger, UsageLedger, UsageLedgerError};
 
-use crate::{
-    ConversationInitialInferenceCoordinator, ConversationInitialInferenceError,
-    DynamicMemoryContinuationCoordinator, DynamicMemoryContinuationError,
-    DynamicMemoryContinuationLoopResult, DynamicMemoryContinuationTerminal,
-    DynamicMemoryCoordinatorError, DynamicMemoryHandler, DynamicMemoryRecovery,
-    DynamicMemoryRoundExecutionError, DynamicMemoryRoundExecutor, DynamicMemoryTerminalCommit,
-    DynamicMemoryTerminalContext, DynamicMemoryTerminalCoordinator, DynamicMemoryTerminalError,
-    MemoryCreateSeed, MemoryEmbeddingEngine,
-};
-
-use crate::dynamic_memory_continuation::aggregate_usage;
+use crate::{ConversationInitialInferenceCoordinator, ConversationInitialInferenceError};
 
 const STAGE_LABEL: &str = "conversation-generation";
 
@@ -341,23 +325,14 @@ impl<'a, C: ?Sized, J: ?Sized> ConversationGenerationCancellationCoordinator<'a,
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConversationGenerationMemoryInput {
-    pub space_id: MemorySpaceId,
-    pub policy: MemoryPolicy,
-    pub duplicate_threshold: Score,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConversationGenerationInput {
     pub model: ModelSelectionSnapshot,
     pub attributions: ContextAttributions,
     pub profile: ResolvedInferenceProfile,
     pub context: ProviderNeutralContext,
-    pub tools: Option<ToolRequest>,
     pub media_grants: Vec<AssetId>,
     pub stream_sink: Option<RequestId>,
-    pub memory: Option<ConversationGenerationMemoryInput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -366,7 +341,6 @@ pub struct ConversationGenerationRunResult {
     pub candidate: MessageCandidate,
     pub usage_event_id: UsageEventId,
     pub outcomes: Vec<InferenceOutcome>,
-    pub rounds: u8,
     pub replayed: bool,
 }
 
@@ -395,28 +369,18 @@ pub enum ConversationGenerationRunError {
         code: GenerationFailureCode,
         evidence: GenerationUsageEvidence,
     },
-    #[error("conversation generation tool rounds cannot be resumed")]
-    ToolRoundsUnrecoverable { evidence: GenerationUsageEvidence },
     #[error("conversation generation provider failed: {error}")]
     Provider {
         error: PortError,
         evidence: GenerationUsageEvidence,
     },
-    #[error("conversation generation tool continuation failed: {error}")]
-    Continuation {
-        error: DynamicMemoryContinuationError,
+    #[error("conversation generation usage settlement failed: {error}")]
+    Usage {
+        error: PortError,
         evidence: GenerationUsageEvidence,
     },
-    #[error("conversation generation tool round failed: {error}")]
-    Round {
-        error: DynamicMemoryRoundExecutionError,
-        evidence: GenerationUsageEvidence,
-    },
-    #[error("conversation generation terminal settlement failed: {error}")]
-    Terminal {
-        error: DynamicMemoryTerminalError,
-        evidence: GenerationUsageEvidence,
-    },
+    #[error("conversation generation usage counters overflowed")]
+    UsageOverflow,
     #[error("conversation generation repository failed: {0}")]
     Repository(#[from] ConversationRepositoryError),
     #[error("conversation generation persistence failed: {0}")]
@@ -434,11 +398,8 @@ impl ConversationGenerationRunError {
             Self::Cancelled { evidence }
             | Self::Pending { evidence }
             | Self::AlreadyFailed { evidence, .. }
-            | Self::ToolRoundsUnrecoverable { evidence }
             | Self::Provider { evidence, .. }
-            | Self::Continuation { evidence, .. }
-            | Self::Round { evidence, .. }
-            | Self::Terminal { evidence, .. } => *evidence,
+            | Self::Usage { evidence, .. } => *evidence,
             _ => GenerationUsageEvidence::None,
         }
     }
@@ -452,24 +413,13 @@ impl ConversationGenerationRunError {
             Self::Cancelled { .. } => Some(Terminal::Cancelled),
             Self::Pending { .. } => Some(Terminal::Interrupted),
             Self::AlreadyFailed { code, .. } => Some(Terminal::Failed(*code)),
-            Self::ToolRoundsUnrecoverable { .. } => {
-                Some(Terminal::Failed(GenerationFailureCode::RecoveryUnavailable))
-            }
             Self::Provider { error, .. } => Some(provider_terminal(error)),
-            Self::Continuation { error, .. } => continuation_terminal(error),
-            Self::Round { error, .. } => round_terminal(error),
-            Self::Terminal { error, .. } => match error {
-                DynamicMemoryTerminalError::Usage(PortError::Cancelled) => {
-                    Some(Terminal::Cancelled)
-                }
-                DynamicMemoryTerminalError::Usage(PortError::Rejected)
-                | DynamicMemoryTerminalError::Validation(_)
-                | DynamicMemoryTerminalError::InvalidIdentity => Some(Terminal::Invalid),
-                DynamicMemoryTerminalError::Continuation(error) => continuation_terminal(error),
-                DynamicMemoryTerminalError::Conversation(error) => service_terminal(error),
-                DynamicMemoryTerminalError::Repository(error) => repository_terminal(error),
-                DynamicMemoryTerminalError::Usage(_) => None,
+            Self::Usage { error, .. } => match error {
+                PortError::Cancelled => Some(Terminal::Cancelled),
+                PortError::Rejected => Some(Terminal::Invalid),
+                _ => None,
             },
+            Self::UsageOverflow => Some(Terminal::Failed(GenerationFailureCode::Internal)),
             Self::Repository(error) => repository_terminal(error),
             Self::Conversation(error) => service_terminal(error),
             Self::Artifact(_) => None,
@@ -524,69 +474,16 @@ fn provider_terminal(error: &PortError) -> ConversationGenerationTerminalFailure
     }
 }
 
-fn continuation_terminal(
-    error: &DynamicMemoryContinuationError,
-) -> Option<ConversationGenerationTerminalFailure> {
-    use ConversationGenerationTerminalFailure as Terminal;
-    match error {
-        DynamicMemoryContinuationError::Cancelled => Some(Terminal::Cancelled),
-        DynamicMemoryContinuationError::Inference(error) => Some(provider_terminal(error)),
-        DynamicMemoryContinuationError::EmptyCompletion => {
-            Some(Terminal::Failed(GenerationFailureCode::EmptyOutput))
-        }
-        DynamicMemoryContinuationError::ProviderFailed
-        | DynamicMemoryContinuationError::MultipleCandidates
-        | DynamicMemoryContinuationError::MixedToolAndContent
-        | DynamicMemoryContinuationError::InvalidSignedReplay
-        | DynamicMemoryContinuationError::ToolBudgetExceeded
-        | DynamicMemoryContinuationError::InvalidDoneResult
-        | DynamicMemoryContinuationError::InvalidRequest
-        | DynamicMemoryContinuationError::Tool(_)
-        | DynamicMemoryContinuationError::Validation(_) => {
-            Some(Terminal::Failed(GenerationFailureCode::ProviderRejected))
-        }
-        DynamicMemoryContinuationError::RoundExecution(error) => round_terminal(error),
-        DynamicMemoryContinuationError::InvalidOwnership
-        | DynamicMemoryContinuationError::InvalidSettledRound
-        | DynamicMemoryContinuationError::InvalidAdmittedRound
-        | DynamicMemoryContinuationError::UsageOverflow => {
-            Some(Terminal::Failed(GenerationFailureCode::Internal))
-        }
-        DynamicMemoryContinuationError::Conversation(_)
-        | DynamicMemoryContinuationError::Repository(_)
-        | DynamicMemoryContinuationError::Artifact(_) => None,
-    }
-}
-
-fn round_terminal(
-    error: &DynamicMemoryRoundExecutionError,
-) -> Option<ConversationGenerationTerminalFailure> {
-    use ConversationGenerationTerminalFailure as Terminal;
-    match error {
-        DynamicMemoryRoundExecutionError::Preparation(
-            crate::DynamicMemoryPreparationError::Cancelled,
-        ) => Some(Terminal::Cancelled),
-        DynamicMemoryRoundExecutionError::Preparation(_)
-        | DynamicMemoryRoundExecutionError::Coordinator(_) => {
-            Some(Terminal::Failed(GenerationFailureCode::Internal))
-        }
-        DynamicMemoryRoundExecutionError::Repository(_)
-        | DynamicMemoryRoundExecutionError::Conversation(_) => None,
-    }
-}
-
 #[derive(Debug)]
-pub struct ConversationGenerationJobRunner<'a, E: ?Sized, R: ?Sized, I: ?Sized> {
-    engine: &'a E,
+pub struct ConversationGenerationJobRunner<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
     inference: &'a I,
 }
 
-impl<'a, E: ?Sized, R: ?Sized, I: ?Sized> ConversationGenerationJobRunner<'a, E, R, I> {
+impl<'a, R: ?Sized, I: ?Sized> ConversationGenerationJobRunner<'a, R, I> {
     #[must_use]
-    pub const fn new(engine: &'a E, repository: &'a R, inference: &'a I) -> Self {
+    pub const fn new(repository: &'a R, inference: &'a I) -> Self {
         Self {
-            engine,
             repository,
             inference,
         }
@@ -594,20 +491,14 @@ impl<'a, E: ?Sized, R: ?Sized, I: ?Sized> ConversationGenerationJobRunner<'a, E,
 }
 
 impl<
-    E: MemoryEmbeddingEngine + ?Sized,
     R: ConversationRepository
         + InitialInferenceRepository
-        + ToolExecutionRepository
         + ProviderReplayArtifactPort
         + JobUsageLedger
         + UsagePort
-        + DynamicMemoryRoundRepository
-        + DynamicMemoryPreparationRepository
-        + MemoryEmbeddingRepository
-        + MemoryRepository
         + ?Sized,
     I: InferencePort + ?Sized,
-> ConversationGenerationJobRunner<'_, E, R, I>
+> ConversationGenerationJobRunner<'_, R, I>
 {
     pub(crate) fn replay_terminal(
         &self,
@@ -658,24 +549,15 @@ impl<
         self.replay_succeeded(turn, attempt)
     }
 
-    pub async fn run<F>(
+    pub async fn run(
         &self,
         work: &ConversationGenerationClaimedWork,
         input: ConversationGenerationInput,
         now: TimestampMillis,
-        mut seeds_for_round: F,
-    ) -> Result<ConversationGenerationRunResult, ConversationGenerationRunError>
-    where
-        F: FnMut(&[ToolExecution]) -> Vec<MemoryCreateSeed>,
-    {
+    ) -> Result<ConversationGenerationRunResult, ConversationGenerationRunError> {
         let job_id = work.handle.id();
         if work.claim.claim.job_id != job_id || work.job.id != job_id {
             return Err(ConversationGenerationRunError::InvalidWork);
-        }
-        match (&input.tools, &input.memory) {
-            (None, None) => {}
-            (Some(tools), Some(_)) if *tools == dynamic_memory_tool_request() => {}
-            _ => return Err(ConversationGenerationRunError::InvalidInput),
         }
         let conversation_id = work.conversation_id;
         let mut turn = self.repository.get_turn(work.turn_id)?;
@@ -796,78 +678,30 @@ impl<
             cancellation: Some(job_id),
             stream_sink: input.stream_sink,
             media_grants: input.media_grants.clone(),
-            tools: input.tools.clone(),
+            tools: None,
         };
-        let parent = attempt
-            .parent_attempt_id
-            .and_then(|parent_id| {
-                turn.attempts
-                    .iter()
-                    .find(|candidate| candidate.id == parent_id)
-            })
-            .cloned();
-        let recovered_parent = match parent {
-            Some(parent)
-                if !self
-                    .repository
-                    .list_tool_executions(conversation_id, parent.turn_id, parent.id)?
-                    .is_empty() =>
-            {
-                Some(parent)
-            }
-            _ => None,
+        let binding = InitialInferenceBinding::from_request(conversation_id, &request)?;
+        if turn.status == GenerationTurnStatus::CancellationRequested {
+            return Err(ConversationGenerationRunError::Cancelled {
+                evidence: self.dispatch_evidence(&binding)?,
+            });
+        }
+        let initial = ConversationInitialInferenceCoordinator::new(self.repository, self.inference)
+            .run(conversation_id, &work.handle, request, now)
+            .await;
+        let record = self.repository.initial_inference(&binding)?;
+        let evidence = record
+            .as_ref()
+            .map_or(GenerationUsageEvidence::None, |record| {
+                GenerationUsageEvidence::Dispatch(record.usage_event_id)
+            });
+        let outcome = match initial {
+            Ok(outcome) => outcome,
+            Err(error) => return Err(initial_error(error, evidence)),
         };
-        let (outcome, settled_at, evidence) = if let Some(parent) = &recovered_parent {
-            let parent_job_id = parent
-                .job_id
-                .ok_or(ConversationGenerationRunError::InvalidWork)?;
-            let mut parent_request = request.clone();
-            parent_request.attempt_id = parent.id;
-            parent_request.cancellation = Some(parent_job_id);
-            let binding = InitialInferenceBinding::from_request(conversation_id, &parent_request)?;
-            let record = self.repository.initial_inference(&binding)?.ok_or(
-                ConversationGenerationRunError::ToolRoundsUnrecoverable {
-                    evidence: GenerationUsageEvidence::None,
-                },
-            )?;
-            let InitialInferenceResult::Response(outcome) =
-                record
-                    .result
-                    .ok_or(ConversationGenerationRunError::ToolRoundsUnrecoverable {
-                        evidence: GenerationUsageEvidence::None,
-                    })?
-            else {
-                return Err(ConversationGenerationRunError::ToolRoundsUnrecoverable {
-                    evidence: GenerationUsageEvidence::None,
-                });
-            };
-            (outcome, work.job.created_at, GenerationUsageEvidence::None)
-        } else {
-            let binding = InitialInferenceBinding::from_request(conversation_id, &request)?;
-            if turn.status == GenerationTurnStatus::CancellationRequested {
-                return Err(ConversationGenerationRunError::Cancelled {
-                    evidence: self.dispatch_evidence(&binding)?,
-                });
-            }
-            let initial =
-                ConversationInitialInferenceCoordinator::new(self.repository, self.inference)
-                    .run(conversation_id, &work.handle, request.clone(), now)
-                    .await;
-            let record = self.repository.initial_inference(&binding)?;
-            let evidence = record
-                .as_ref()
-                .map_or(GenerationUsageEvidence::None, |record| {
-                    GenerationUsageEvidence::Dispatch(record.usage_event_id)
-                });
-            let outcome = match initial {
-                Ok(outcome) => outcome,
-                Err(error) => return Err(initial_error(error, evidence)),
-            };
-            let settled_at = record
-                .and_then(|record| record.settled_at)
-                .ok_or(ConversationRepositoryError::Storage)?;
-            (outcome, settled_at, evidence)
-        };
+        let settled_at = record
+            .and_then(|record| record.settled_at)
+            .ok_or(ConversationRepositoryError::Storage)?;
         if outcome.candidates.len() != 1 {
             return Err(ConversationGenerationRunError::Provider {
                 error: PortError::Rejected,
@@ -887,157 +721,24 @@ impl<
             lettuce_conversations::FinishReason::Stop
             | lettuce_conversations::FinishReason::Length => {}
         }
-        let candidate = outcome.candidates[0].clone();
-        let (mut loop_result, rounds) = if candidate.tool_calls.is_empty() {
-            if !candidate
-                .parts
-                .iter()
-                .any(|part| matches!(part, MessagePart::Text { text } if !text.trim().is_empty()))
-            {
-                return Err(ConversationGenerationRunError::Provider {
-                    error: PortError::Empty,
-                    evidence,
-                });
-            }
-            (
-                DynamicMemoryContinuationLoopResult {
-                    terminal: DynamicMemoryContinuationTerminal::Complete { candidate },
-                    outcomes: vec![outcome],
-                    usage: self.attempt_job_usage(work, &attempt)?,
-                },
-                0,
-            )
-        } else {
-            let tools = request
-                .tools
-                .as_ref()
-                .ok_or(ConversationGenerationRunError::InvalidInput)?;
-            let memory = input
-                .memory
-                .as_ref()
-                .ok_or(ConversationGenerationRunError::InvalidInput)?;
-            if work.handle.cancellation_token().is_cancelled() {
-                return Err(ConversationGenerationRunError::Cancelled { evidence });
-            }
-            let executor = DynamicMemoryRoundExecutor::new(
-                self.engine,
-                self.repository,
-                &work.claim,
-                memory.space_id,
-                &memory.policy,
-                memory.duplicate_threshold,
-            );
-            let durable = self.repository.list_tool_executions(
-                conversation_id,
-                work.turn_id,
-                work.attempt_id,
-            )?;
-            let initial_outcomes = if recovered_parent.is_some() {
-                Vec::new()
-            } else {
-                vec![outcome]
-            };
-            let (
-                continued_request,
-                settled_round,
-                completed_rounds,
-                prior_attempt_tool_calls,
-                total_tool_calls,
-            ) = if let Some(parent) = &recovered_parent {
-                if !durable.is_empty() {
-                    return Err(ConversationGenerationRunError::ToolRoundsUnrecoverable {
-                        evidence,
-                    });
-                }
-                self.resume_interrupted_parent(work, request, parent, &attempt, now, evidence)?
-            } else if durable.is_empty() {
-                let requested = ConversationManager::new(self.repository).request_tool_executions(
-                    ToolExecutionOwner {
-                        conversation_id,
-                        turn_id: work.turn_id,
-                        attempt_id: work.attempt_id,
-                    },
-                    tools,
-                    candidate.tool_calls.clone(),
-                    now,
-                )?;
-                let validated = self.repository.transition_tool_execution_batch(
-                    &requested
-                        .iter()
-                        .map(|execution| ToolExecutionTransition {
-                            id: execution.id,
-                            expected_revision: execution.revision,
-                            next: ToolExecutionStatus::Validated,
-                            output: None,
-                            failure: None,
-                        })
-                        .collect::<Vec<_>>(),
-                    now,
-                )?;
-                let seeds = seeds_for_round(&validated);
-                let first = executor
-                    .execute_admitted_round(&validated, &seeds, &work.handle, now)
-                    .map_err(|error| ConversationGenerationRunError::Round { error, evidence })?;
-                (
-                    request,
-                    first.settled_executions,
-                    1,
-                    0,
-                    u16::try_from(validated.len())
-                        .map_err(|_| ConversationGenerationRunError::InvalidInput)?,
-                )
-            } else {
-                self.resume_tool_rounds(
-                    work,
-                    request,
-                    &attempt,
-                    &executor,
-                    durable,
-                    now,
-                    &mut seeds_for_round,
-                    evidence,
-                )?
-            };
-            let mut result =
-                DynamicMemoryContinuationCoordinator::new(self.repository, self.inference)
-                    .continue_until_terminal(
-                        conversation_id,
-                        &attempt,
-                        &work.handle,
-                        continued_request,
-                        settled_round,
-                        initial_outcomes,
-                        completed_rounds,
-                        prior_attempt_tool_calls,
-                        total_tool_calls,
-                        now,
-                        |executions, handle, at| {
-                            let seeds = seeds_for_round(executions);
-                            executor.execute_admitted_round(executions, &seeds, handle, at)
-                        },
-                    )
-                    .await
-                    .map_err(|error| ConversationGenerationRunError::Continuation {
-                        error,
-                        evidence,
-                    })?;
-            let current_rounds = self
-                .repository
-                .list_preparation_plans(conversation_id, work.turn_id, work.attempt_id)
-                .map_err(|error| ConversationGenerationRunError::Round {
-                    error: DynamicMemoryRoundExecutionError::Coordinator(error.into()),
-                    evidence,
-                })?
-                .len();
-            let prior_rounds = recovered_parent
-                .as_ref()
-                .map_or(0, |_| usize::from(completed_rounds.saturating_sub(1)));
-            let rounds = u8::try_from(current_rounds + prior_rounds)
-                .map_err(|_| ConversationGenerationRunError::InvalidInput)?;
-            result.usage = self.attempt_job_usage(work, &attempt)?;
-            (result, rounds)
-        };
-        let outcomes = loop_result.outcomes.clone();
+        let mut candidate = outcome.candidates[0].clone();
+        if !candidate.tool_calls.is_empty() {
+            return Err(ConversationGenerationRunError::Provider {
+                error: PortError::Rejected,
+                evidence,
+            });
+        }
+        if !candidate
+            .parts
+            .iter()
+            .any(|part| matches!(part, MessagePart::Text { text } if !text.trim().is_empty()))
+        {
+            return Err(ConversationGenerationRunError::Provider {
+                error: PortError::Empty,
+                evidence,
+            });
+        }
+        let usage = self.attempt_job_usage(work, &attempt)?;
         if work.handle.cancellation_token().is_cancelled() {
             return Err(ConversationGenerationRunError::Cancelled { evidence });
         }
@@ -1046,27 +747,25 @@ impl<
         if turn.status == GenerationTurnStatus::CancellationRequested {
             return Err(ConversationGenerationRunError::Cancelled { evidence });
         }
-        if let DynamicMemoryContinuationTerminal::Complete { candidate } = &mut loop_result.terminal
-        {
-            candidate.ordinal = match turn.target {
-                GenerationTarget::NewAssistant { .. } => 0,
-                GenerationTarget::ExistingCandidate {
-                    prior_candidate_id, ..
-                } => self
-                    .repository
-                    .get_candidate(prior_candidate_id)?
-                    .ordinal
-                    .checked_add(1)
-                    .ok_or(ConversationGenerationRunError::InvalidInput)?,
-            };
-        }
+        candidate.ordinal = match turn.target {
+            GenerationTarget::NewAssistant { .. } => 0,
+            GenerationTarget::ExistingCandidate {
+                prior_candidate_id, ..
+            } => self
+                .repository
+                .get_candidate(prior_candidate_id)?
+                .ordinal
+                .checked_add(1)
+                .ok_or(ConversationGenerationRunError::InvalidInput)?,
+        };
         let attempt = attempt_of(&turn, work.attempt_id)?;
-        let commit = DynamicMemoryTerminalCoordinator::new(self.repository, self.repository)
-            .commit(
+        let finalized = self
+            .finalize(
                 &attempt,
                 &input.profile,
-                loop_result,
-                DynamicMemoryTerminalContext {
+                candidate,
+                usage,
+                FinalizationContext {
                     conversation_id,
                     expected_conversation_revision: aggregate.conversation.revision,
                     expected_turn_revision: turn.revision,
@@ -1075,27 +774,89 @@ impl<
                     usage_recorded_at: settled_at,
                     finalized_at: now,
                 },
+                evidence,
             )
-            .await
-            .map_err(|error| ConversationGenerationRunError::Terminal { error, evidence })?;
-        match commit {
-            DynamicMemoryTerminalCommit::ConversationFinalized(finalized) => {
-                Ok(ConversationGenerationRunResult {
-                    turn: finalized.value.turn,
-                    candidate: finalized.value.candidate,
-                    usage_event_id: finalized.value.usage_event_id,
-                    outcomes,
-                    rounds,
-                    replayed: false,
+            .await?;
+        Ok(ConversationGenerationRunResult {
+            turn: finalized.value.turn,
+            candidate: finalized.value.candidate,
+            usage_event_id: finalized.value.usage_event_id,
+            outcomes: vec![outcome],
+            replayed: false,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn finalize(
+        &self,
+        attempt: &GenerationAttempt,
+        profile: &ResolvedInferenceProfile,
+        candidate: lettuce_conversations::InferenceCandidate,
+        usage: UsageCounters,
+        context: FinalizationContext,
+        evidence: GenerationUsageEvidence,
+    ) -> Result<GenerationFinalizationResult, ConversationGenerationRunError> {
+        validate_finalization_identity(attempt, profile, &context.model)?;
+        let replaying = self
+            .repository
+            .operation_record(
+                context.conversation_id,
+                OperationKind::Finalize,
+                &context.operation,
+            )?
+            .is_some();
+        if !replaying {
+            let aggregate = ConversationReader::get(self.repository, context.conversation_id)?;
+            let turn = self.repository.get_turn(attempt.turn_id)?;
+            if aggregate.conversation.revision != context.expected_conversation_revision
+                || turn.revision != context.expected_turn_revision
+                || !aggregate
+                    .branches
+                    .iter()
+                    .any(|branch| branch.id == turn.branch_id)
+                || !turn.attempts.iter().any(|stored| {
+                    stored.id == attempt.id
+                        && stored.job_id == attempt.job_id
+                        && stored.status == attempt.status
                 })
-            }
-            DynamicMemoryTerminalCommit::DerivedMemoryDone { usage_event_id, .. } => {
-                Err(ConversationGenerationRunError::Provider {
-                    error: PortError::Empty,
-                    evidence: GenerationUsageEvidence::Event(usage_event_id),
-                })
+            {
+                return Err(ConversationGenerationRunError::InvalidWork);
             }
         }
+        let usage_event_id = UsagePort::record(
+            self.repository,
+            UsageRecord {
+                turn_id: attempt.turn_id,
+                attempt_id: attempt.id,
+                outcome: UsageOutcome::Succeeded,
+                usage,
+                model_profile_id: Some(profile.chat_profile.model_profile_id),
+                model_revision: Some(profile.chat_profile.model_revision),
+                provider_account_id: Some(profile.chat_profile.provider_account_id),
+                provider_account_revision: Some(profile.chat_profile.provider_account_revision),
+                recorded_at: context.usage_recorded_at,
+            },
+        )
+        .await
+        .map_err(|error| ConversationGenerationRunError::Usage { error, evidence })?;
+        Ok(
+            ConversationManager::new(self.repository).finalize_generation_ref(
+                attempt.turn_id,
+                attempt.id,
+                context.expected_conversation_revision,
+                context.expected_turn_revision,
+                &context.operation,
+                FinalizationDraft {
+                    parts: candidate.parts,
+                    ordinal: candidate.ordinal,
+                    model: context.model,
+                    replay: candidate.provider_replay,
+                    outcome: GenerationCheckpointEvent::Completed,
+                },
+                usage_event_id,
+                context.finalized_at,
+            )?,
+        )
     }
 
     fn dispatch_evidence(
@@ -1108,115 +869,6 @@ impl<
             .map_or(GenerationUsageEvidence::None, |record| {
                 GenerationUsageEvidence::Dispatch(record.usage_event_id)
             }))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn resume_tool_rounds<F>(
-        &self,
-        work: &ConversationGenerationClaimedWork,
-        mut request: InferenceRequest,
-        attempt: &GenerationAttempt,
-        executor: &DynamicMemoryRoundExecutor<'_, E, R>,
-        durable: Vec<ToolExecution>,
-        now: TimestampMillis,
-        seeds_for_round: &mut F,
-        evidence: GenerationUsageEvidence,
-    ) -> Result<(InferenceRequest, Vec<ToolExecution>, u8, u16, u16), ConversationGenerationRunError>
-    where
-        F: FnMut(&[ToolExecution]) -> Vec<MemoryCreateSeed>,
-    {
-        let recovery = DynamicMemoryHandler::new(self.repository)
-            .recover_attempt_round(work.conversation_id, attempt, &work.handle)
-            .map_err(|error| recovery_error(error, evidence))?;
-        let plans = self
-            .repository
-            .list_preparation_plans(work.conversation_id, work.turn_id, work.attempt_id)
-            .map_err(|error| recovery_error(error.into(), evidence))?;
-        let rounds = planned_rounds(&plans, &durable, work.handle.id(), evidence)?;
-        let succeeded = rounds
-            .iter()
-            .take_while(|round| {
-                round
-                    .iter()
-                    .all(|execution| execution.status == ToolExecutionStatus::Succeeded)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        let (settled_round, planned_execution_count, completed_rounds) = match recovery {
-            DynamicMemoryRecovery::TerminalReplay { executions }
-                if executions
-                    .iter()
-                    .all(|execution| execution.status == ToolExecutionStatus::Succeeded)
-                    && succeeded.len() == rounds.len()
-                    && rounds.iter().map(Vec::len).sum::<usize>() == durable.len() =>
-            {
-                let (last, prefix) = succeeded
-                    .split_last()
-                    .ok_or(ConversationGenerationRunError::ToolRoundsUnrecoverable { evidence })?;
-                for round in prefix {
-                    request.context = context_with_settled_tool_round(&request.context, round)?;
-                }
-                (last.clone(), durable.len(), succeeded.len())
-            }
-            DynamicMemoryRecovery::ValidatedStart { executions }
-                if succeeded.iter().map(Vec::len).sum::<usize>() + executions.len()
-                    == durable.len() =>
-            {
-                for round in &succeeded {
-                    request.context = context_with_settled_tool_round(&request.context, round)?;
-                }
-                let seeds = seeds_for_round(&executions);
-                let settled = executor
-                    .execute_admitted_round(&executions, &seeds, &work.handle, now)
-                    .map_err(|error| ConversationGenerationRunError::Round { error, evidence })?;
-                (
-                    settled.settled_executions,
-                    durable.len(),
-                    succeeded.len() + 1,
-                )
-            }
-            DynamicMemoryRecovery::VerifiedRestart { executions, plan }
-                if succeeded.iter().map(Vec::len).sum::<usize>() + executions.len()
-                    == durable.len()
-                    && plans.last() == Some(&plan) =>
-            {
-                for round in &succeeded {
-                    request.context = context_with_settled_tool_round(&request.context, round)?;
-                }
-                let settled = DynamicMemoryHandler::new(self.repository)
-                    .settle_planned_round(
-                        work.conversation_id,
-                        work.turn_id,
-                        work.attempt_id,
-                        &work.handle,
-                        &[],
-                        now,
-                    )
-                    .map_err(|error| ConversationGenerationRunError::Round {
-                        error: DynamicMemoryRoundExecutionError::Coordinator(error),
-                        evidence,
-                    })?;
-                (
-                    settled.settled_executions,
-                    durable.len(),
-                    succeeded.len() + 1,
-                )
-            }
-            _ => {
-                return Err(ConversationGenerationRunError::ToolRoundsUnrecoverable { evidence });
-            }
-        };
-        let completed_rounds = u8::try_from(completed_rounds)
-            .map_err(|_| ConversationGenerationRunError::InvalidInput)?;
-        let total_tool_calls = u16::try_from(planned_execution_count)
-            .map_err(|_| ConversationGenerationRunError::InvalidInput)?;
-        Ok((
-            request,
-            settled_round,
-            completed_rounds,
-            0,
-            total_tool_calls,
-        ))
     }
 
     fn attempt_job_usage(
@@ -1261,92 +913,7 @@ impl<
                 _ => None,
             })
             .collect::<Vec<_>>();
-        aggregate_usage(&usages).map_err(|error| ConversationGenerationRunError::Continuation {
-            error,
-            evidence: GenerationUsageEvidence::None,
-        })
-    }
-
-    fn resume_interrupted_parent(
-        &self,
-        work: &ConversationGenerationClaimedWork,
-        mut request: InferenceRequest,
-        parent: &GenerationAttempt,
-        child: &GenerationAttempt,
-        now: TimestampMillis,
-        evidence: GenerationUsageEvidence,
-    ) -> Result<(InferenceRequest, Vec<ToolExecution>, u8, u16, u16), ConversationGenerationRunError>
-    {
-        let parent_job_id = parent
-            .job_id
-            .ok_or(ConversationGenerationRunError::ToolRoundsUnrecoverable { evidence })?;
-        let parent_handle = JobHandle::new(parent_job_id);
-        let recovery = DynamicMemoryHandler::new(self.repository)
-            .recover_attempt_round(work.conversation_id, parent, &parent_handle)
-            .map_err(|error| recovery_error(error, evidence))?;
-        let DynamicMemoryRecovery::VerifiedRestart { executions, plan } = recovery else {
-            return Err(ConversationGenerationRunError::ToolRoundsUnrecoverable { evidence });
-        };
-        let parent_durable =
-            self.repository
-                .list_tool_executions(work.conversation_id, work.turn_id, parent.id)?;
-        let plans = self
-            .repository
-            .list_preparation_plans(work.conversation_id, work.turn_id, parent.id)
-            .map_err(|error| recovery_error(error.into(), evidence))?;
-        let rounds = planned_rounds(&plans, &parent_durable, parent_job_id, evidence)?;
-        if plans.last() != Some(&plan)
-            || rounds.last() != Some(&executions)
-            || rounds[..rounds.len().saturating_sub(1)]
-                .iter()
-                .flatten()
-                .any(|execution| execution.status != ToolExecutionStatus::Succeeded)
-        {
-            return Err(ConversationGenerationRunError::ToolRoundsUnrecoverable { evidence });
-        }
-        let prefix = &rounds[..rounds.len().saturating_sub(1)];
-        for round in prefix {
-            request.context = context_with_settled_tool_round(&request.context, round)?;
-        }
-        let recovered = DynamicMemoryHandler::new(self.repository)
-            .recover_interrupted_round_into_child(
-                work.conversation_id,
-                parent,
-                child,
-                &work.handle,
-                now,
-            )
-            .map_err(|error| recovery_error(error, evidence))?;
-        let settled = DynamicMemoryHandler::new(self.repository)
-            .settle_planned_round(
-                work.conversation_id,
-                work.turn_id,
-                child.id,
-                &work.handle,
-                &[],
-                now,
-            )
-            .map_err(|error| recovery_error(error, evidence))?;
-        if settled.settled_executions.len() != recovered.executions.len() {
-            return Err(ConversationGenerationRunError::ToolRoundsUnrecoverable { evidence });
-        }
-        let prior_attempt_tool_calls = u16::try_from(prefix.iter().map(Vec::len).sum::<usize>())
-            .map_err(|_| ConversationGenerationRunError::InvalidInput)?;
-        let total_tool_calls = prior_attempt_tool_calls
-            .checked_add(
-                u16::try_from(settled.settled_executions.len())
-                    .map_err(|_| ConversationGenerationRunError::InvalidInput)?,
-            )
-            .ok_or(ConversationGenerationRunError::InvalidInput)?;
-        let completed_rounds =
-            u8::try_from(rounds.len()).map_err(|_| ConversationGenerationRunError::InvalidInput)?;
-        Ok((
-            request,
-            settled.settled_executions,
-            completed_rounds,
-            prior_attempt_tool_calls,
-            total_tool_calls,
-        ))
+        aggregate_usage(&usages).ok_or(ConversationGenerationRunError::UsageOverflow)
     }
 
     fn replay_succeeded(
@@ -1368,7 +935,6 @@ impl<
             turn,
             candidate,
             outcomes: Vec::new(),
-            rounds: 0,
             replayed: true,
         })
     }
@@ -1404,63 +970,6 @@ impl<
                 now,
             )?
             .value)
-    }
-}
-
-fn planned_rounds(
-    plans: &[DynamicMemoryPreparationPlan],
-    durable: &[ToolExecution],
-    job_id: JobId,
-    evidence: GenerationUsageEvidence,
-) -> Result<Vec<Vec<ToolExecution>>, ConversationGenerationRunError> {
-    let mut next = 0usize;
-    let mut rounds = Vec::with_capacity(plans.len());
-    for plan in plans {
-        if plan.job_id != job_id || usize::from(plan.first_execution_ordinal) != next {
-            return Err(ConversationGenerationRunError::ToolRoundsUnrecoverable { evidence });
-        }
-        let end = next
-            .checked_add(plan.execution_ids.len())
-            .ok_or(ConversationGenerationRunError::InvalidInput)?;
-        let round = durable
-            .get(next..end)
-            .ok_or(ConversationGenerationRunError::ToolRoundsUnrecoverable { evidence })?;
-        if round
-            .iter()
-            .map(|execution| execution.id)
-            .collect::<Vec<_>>()
-            != plan.execution_ids
-        {
-            return Err(ConversationGenerationRunError::ToolRoundsUnrecoverable { evidence });
-        }
-        rounds.push(round.to_vec());
-        next = end;
-    }
-    Ok(rounds)
-}
-
-fn recovery_error(
-    error: DynamicMemoryCoordinatorError,
-    evidence: GenerationUsageEvidence,
-) -> ConversationGenerationRunError {
-    match error {
-        DynamicMemoryCoordinatorError::InvalidRound
-        | DynamicMemoryCoordinatorError::RestartPlanUnavailable
-        | DynamicMemoryCoordinatorError::InvalidRestartPlan
-        | DynamicMemoryCoordinatorError::InvalidJobOwnership
-        | DynamicMemoryCoordinatorError::InvalidRecoveryChild
-        | DynamicMemoryCoordinatorError::PreparationPlan(
-            DynamicMemoryPreparationPlanError::InvalidExecutions
-            | DynamicMemoryPreparationPlanError::InvalidCreate
-            | DynamicMemoryPreparationPlanError::Conflict,
-        ) => ConversationGenerationRunError::ToolRoundsUnrecoverable { evidence },
-        DynamicMemoryCoordinatorError::PreparationPlan(
-            DynamicMemoryPreparationPlanError::Memory(_),
-        ) => ConversationGenerationRunError::ToolRoundsUnrecoverable { evidence },
-        error => ConversationGenerationRunError::Round {
-            error: DynamicMemoryRoundExecutionError::Coordinator(error),
-            evidence,
-        },
     }
 }
 
@@ -2023,7 +1532,7 @@ impl<
                         })
                         .collect::<Vec<_>>();
                     aggregate_usage(&usages)
-                        .map_err(|_| ConversationGenerationDispatchError::InvalidWork)?
+                        .ok_or(ConversationGenerationDispatchError::InvalidWork)?
                 };
                 (
                     usage,
@@ -2321,4 +1830,90 @@ fn job_error(code: GenerationFailureCode) -> JobError {
         ),
     };
     JobError::new(job_code, retryable, message).expect("constant job error is valid")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FinalizationContext {
+    conversation_id: ConversationId,
+    expected_conversation_revision: lettuce_types::Revision,
+    expected_turn_revision: lettuce_types::Revision,
+    operation: OperationToken,
+    model: ModelSelectionSnapshot,
+    usage_recorded_at: TimestampMillis,
+    finalized_at: TimestampMillis,
+}
+
+fn validate_finalization_identity(
+    attempt: &GenerationAttempt,
+    profile: &ResolvedInferenceProfile,
+    model: &ModelSelectionSnapshot,
+) -> Result<(), ConversationGenerationRunError> {
+    attempt.validate()?;
+    model.validate()?;
+    let chat = &profile.chat_profile;
+    if !matches!(
+        attempt.status,
+        GenerationAttemptStatus::Running | GenerationAttemptStatus::Succeeded
+    ) || model.source_id != chat.model_profile_id
+        || model.source_revision != chat.model_revision
+        || model.provider_account_id != chat.provider_account_id
+        || model.provider_account_revision != chat.provider_account_revision
+        || model.provider_protocol != chat.provider_protocol
+        || model.external_model_id != chat.external_model_id
+    {
+        return Err(ConversationGenerationRunError::InvalidWork);
+    }
+    Ok(())
+}
+
+fn aggregate_usage(
+    usages: &[Option<lettuce_conversations::InferenceUsage>],
+) -> Option<lettuce_conversations::UsageCounters> {
+    if usages.is_empty() {
+        return Some(lettuce_conversations::UsageCounters::Unavailable(
+            lettuce_conversations::UsageUnavailableReason::NotAdmitted,
+        ));
+    }
+    let mut input_tokens = 0u64;
+    let mut output_tokens = 0u64;
+    let mut cached_input_tokens = Some(0u64);
+    let mut reasoning_tokens = Some(0u64);
+    let mut cache_write_tokens = Some(0u64);
+    let mut web_search_requests = Some(0u64);
+    let mut provider_reported_cost = lettuce_conversations::ProviderReportedCost::new(0.0);
+    for usage in usages {
+        let Some(usage) = usage else {
+            return Some(lettuce_conversations::UsageCounters::Unavailable(
+                lettuce_conversations::UsageUnavailableReason::ProviderOmitted,
+            ));
+        };
+        cached_input_tokens = cached_input_tokens
+            .zip(usage.cached_input_tokens)
+            .and_then(|(a, b)| a.checked_add(b));
+        reasoning_tokens = reasoning_tokens
+            .zip(usage.reasoning_tokens)
+            .and_then(|(a, b)| a.checked_add(b));
+        cache_write_tokens = cache_write_tokens
+            .zip(usage.cache_write_tokens)
+            .and_then(|(a, b)| a.checked_add(b));
+        web_search_requests = web_search_requests
+            .zip(usage.web_search_requests)
+            .and_then(|(a, b)| a.checked_add(b));
+        provider_reported_cost = provider_reported_cost
+            .zip(usage.provider_reported_cost)
+            .and_then(|(a, b)| a.checked_add(b));
+        input_tokens = input_tokens.checked_add(usage.input_tokens)?;
+        output_tokens = output_tokens.checked_add(usage.output_tokens)?;
+    }
+    Some(lettuce_conversations::UsageCounters::Known(
+        lettuce_conversations::InferenceUsage {
+            provider_reported_cost,
+            cache_write_tokens,
+            web_search_requests,
+            cached_input_tokens,
+            reasoning_tokens,
+            input_tokens,
+            output_tokens,
+        },
+    ))
 }

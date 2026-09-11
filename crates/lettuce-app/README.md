@@ -670,9 +670,10 @@ Admission creates or reuses the `ConversationGeneration` job keyed by
 the attempt's job idempotency key and attaches it; claim starts the job and its
 stage; the runner then stages Preparing, prepares the turn from the supplied
 model and attributions, stages Running, dispatches through the initial
-coordinator, admits and executes dynamic-memory tool rounds when the response
-carries tool calls, and commits through the terminal coordinator with the usage
-timestamp frozen to the dispatch checkpoint. Every mutation the runner owns uses
+coordinator, and records usage and finalizes the reply with the usage timestamp
+frozen to the dispatch checkpoint. Chat replies declare no tools, as legacy
+sends them with no tool config, so a reply carrying tool calls is rejected as
+`ProviderRejected` instead of being executed. Every mutation the runner owns uses
 an operation token derived from conversation, turn, attempt, job and step, so a
 re-run replays instead of conflicting; a finalized attempt replays its candidate
 and usage event without touching the provider. Settlement maps the run outcome
@@ -684,13 +685,7 @@ complete ordered dispatch evidence (known counters only when every admitted
 response reported them, otherwise an unavailable reason) so no attempt ever
 references a fabricated usage id or sums the aggregate event as another charge.
 A recovered child on an already prepared turn moves straight to Running and
-never re-prepares. A re-claimed attempt classifies its durable tool tail, reads
-all immutable per-round plans, rebuilds the request with every succeeded round,
-and continues after the last result without applying those memory changes
-again. Validated tails execute normally; running tails settle from their stored
-plan. An interrupted parent's active planned tail is atomically cloned and
-settled in its immediate child before continuation. Rejected, mixed, missing-plan
-or otherwise unverified states still fail with `RecoveryUnavailable`. Turn-side
+never re-prepares. Turn-side
 settlement errors schedule a job retry instead of leaving the claim running.
 Before each Preparing or Running stage append, the runner reads the latest
 durable checkpoint sequence for its attempt and allocates the next value. A
@@ -750,18 +745,18 @@ the stream sink and prompt runtime values remain caller-supplied; the sink stays
 outside the durable initial-dispatch fingerprint, so replay may use a new sink
 without another provider call. Context or model preparation failures map into
 the existing run settlement categories. A dynamic direct turn resolves the
-persisted global policy, requires tool-capable inference, loads its authoritative
+persisted global policy, loads its authoritative
 conversation memory space and summary, embeds the current or enriched two-message
 query, and selects current projections with the legacy threshold, cold-memory
 penalty, category diversity, and smart recent/accessed fallbacks. Retrieved
 memory text and a stable identity derived from the exact space revision enter
-the context; the matching memory tool request, policy, and duplicate threshold
-enter the runner. The first admitted tool round freezes that policy in its
-existing durable preparation plan. Retrieval embedding unavailability preserves
+the context. The reply itself carries no memory tools: legacy writes memories in
+a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`), which is not
+yet wired for plain direct and group conversations. Retrieval embedding unavailability preserves
 the legacy behavior of continuing without retrieved keys. A nonempty selection
 now atomically promotes selected cold items and records the legacy access count,
 time and importance updates exactly once under the preparation attempt. The
-resulting memory revision is the context attribution and tool-round input.
+resulting memory revision is the context attribution.
 Terminal replay bypasses input reconstruction, so it does not repeat embedding
 or access side effects; changed or stale retrieval input fails closed. Manual
 mode now reads every active item from the conversation-owned memory root in

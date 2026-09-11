@@ -27,10 +27,9 @@ use lettuce_jobs::{
     events::JobEvent, handle::CancellationToken,
 };
 use lettuce_memory::{
-    DynamicMemoryPreparationRepository, DynamicMemoryRoundRepository, MemoryPolicy,
-    MemoryRepository, MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalRepository,
-    MemorySpaceSnapshot, MemorySummaryRepository, Score, dynamic_memory_tool_request,
-    memory_revision_id,
+    DynamicMemoryPreparationRepository, DynamicMemoryRoundRepository, MemoryRepository,
+    MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalRepository, MemorySpaceSnapshot,
+    MemorySummaryRepository, memory_revision_id,
 };
 use lettuce_models::{
     CapabilityStatus, ChatParameterResolutionInput, ChatProfileResolutionError, ChatRequirements,
@@ -43,10 +42,10 @@ use crate::{
     ConversationContextAssembler, ConversationGenerationClaimContext,
     ConversationGenerationClaimedWork, ConversationGenerationDispatchCoordinator,
     ConversationGenerationDispatchError, ConversationGenerationInput,
-    ConversationGenerationJobRunner, ConversationGenerationMemoryInput,
-    ConversationGenerationOperation, ConversationGenerationRunError,
-    ConversationGenerationRunResult, ConversationGenerationSettledWork, EmbeddingGenerationError,
-    MemoryCreateSeed, MemoryEmbeddingEngine, operation_token,
+    ConversationGenerationJobRunner, ConversationGenerationOperation,
+    ConversationGenerationRunError, ConversationGenerationRunResult,
+    ConversationGenerationSettledWork, EmbeddingGenerationError, MemoryEmbeddingEngine,
+    operation_token,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -204,14 +203,12 @@ where
         + MemorySummaryRepository,
     I: InferencePort + ?Sized,
 {
-    pub async fn execute_next<F, C>(
+    pub async fn execute_next<C>(
         &self,
         request: ConversationGenerationWorkerRequest,
         clock: &C,
-        seeds_for_round: F,
     ) -> Result<ConversationGenerationWorkerOutcome, ConversationGenerationWorkerError>
     where
-        F: FnMut(&[lettuce_conversations::ToolExecution]) -> Vec<MemoryCreateSeed>,
         C: Clock + ?Sized,
         R: lettuce_jobs::JobStore + lettuce_usage::UsageLedger,
     {
@@ -273,7 +270,6 @@ where
                     cancellation_reason: CancellationReason::Shutdown,
                 },
                 clock,
-                seeds_for_round,
             )
             .await?;
         Ok(ConversationGenerationWorkerOutcome::Executed(Box::new(
@@ -281,14 +277,12 @@ where
         )))
     }
 
-    pub async fn execute<F, C>(
+    pub async fn execute<C>(
         &self,
         request: ConversationGenerationExecutionRequest,
         clock: &C,
-        seeds_for_round: F,
     ) -> Result<ConversationGenerationExecutionOutcome, ConversationGenerationExecutionError>
     where
-        F: FnMut(&[lettuce_conversations::ToolExecution]) -> Vec<MemoryCreateSeed>,
         C: Clock + ?Sized,
         R: lettuce_jobs::JobStore + lettuce_usage::UsageLedger,
     {
@@ -301,17 +295,13 @@ where
             clock.now(),
         )?;
         if admission.job.state == lettuce_jobs::JobState::Succeeded {
-            let result = ConversationGenerationJobRunner::new(
-                self.embedding,
-                self.repository,
-                self.inference,
-            )
-            .replay_succeeded_attempt(
-                request.conversation_id,
-                request.turn_id,
-                request.attempt_id,
-                admission.job.id,
-            )?;
+            let result = ConversationGenerationJobRunner::new(self.repository, self.inference)
+                .replay_succeeded_attempt(
+                    request.conversation_id,
+                    request.turn_id,
+                    request.attempt_id,
+                    admission.job.id,
+                )?;
             return Ok(ConversationGenerationExecutionOutcome::Replayed {
                 result: Box::new(result),
                 job: admission.job,
@@ -335,17 +325,13 @@ where
                 .map_err(ConversationGenerationDispatchError::Jobs)?
                 .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
             if admission.job.state == lettuce_jobs::JobState::Succeeded {
-                let result = ConversationGenerationJobRunner::new(
-                    self.embedding,
-                    self.repository,
-                    self.inference,
-                )
-                .replay_succeeded_attempt(
-                    request.conversation_id,
-                    request.turn_id,
-                    request.attempt_id,
-                    admission.job.id,
-                )?;
+                let result = ConversationGenerationJobRunner::new(self.repository, self.inference)
+                    .replay_succeeded_attempt(
+                        request.conversation_id,
+                        request.turn_id,
+                        request.attempt_id,
+                        admission.job.id,
+                    )?;
                 return Ok(ConversationGenerationExecutionOutcome::Replayed {
                     result: Box::new(result),
                     job: admission.job,
@@ -377,25 +363,18 @@ where
                 admission,
             ));
         };
-        let result = self
-            .run(&work, request.runtime, clock.now(), seeds_for_round)
-            .await;
+        let result = self.run(&work, request.runtime, clock.now()).await;
         let settled = dispatcher.settle(work, result, request.cancellation_reason, clock.now())?;
         Ok(ConversationGenerationExecutionOutcome::Settled(settled))
     }
 
-    pub async fn run<F>(
+    pub async fn run(
         &self,
         work: &ConversationGenerationClaimedWork,
         runtime: ConversationGenerationRuntimeInput,
         now: TimestampMillis,
-        seeds_for_round: F,
-    ) -> Result<ConversationGenerationRunResult, ConversationGenerationRunError>
-    where
-        F: FnMut(&[lettuce_conversations::ToolExecution]) -> Vec<MemoryCreateSeed>,
-    {
-        let runner =
-            ConversationGenerationJobRunner::new(self.embedding, self.repository, self.inference);
+    ) -> Result<ConversationGenerationRunResult, ConversationGenerationRunError> {
+        let runner = ConversationGenerationJobRunner::new(self.repository, self.inference);
         if let Some(replay) = runner.replay_terminal(work)? {
             return Ok(replay);
         }
@@ -403,7 +382,7 @@ where
             .durable_generation_input(work, runtime.stream_sink)
             .map_err(ConversationGenerationInputError::into_run_error)?
         {
-            return runner.run(work, input, now, seeds_for_round).await;
+            return runner.run(work, input, now).await;
         }
         self.resolve_automatic_speaker(work, now)
             .await
@@ -412,7 +391,7 @@ where
             .build_input(work, runtime, now)
             .await
             .map_err(ConversationGenerationInputError::into_run_error)?;
-        runner.run(work, input, now, seeds_for_round).await
+        runner.run(work, input, now).await
     }
 
     fn durable_generation_input(
@@ -467,43 +446,13 @@ where
         request.attempt_id = work.attempt_id;
         request.cancellation = Some(work.handle.id());
         request.stream_sink = stream_sink;
-        let memory = if request.tools.is_some() {
-            let aggregate = ConversationReader::get(self.repository, work.conversation_id)
-                .map_err(ConversationGenerationInputError::Repository)?;
-            let selected_speaker = self.generation_speaker(&aggregate.conversation, &turn)?;
-            let settings = lettuce_conversations::resolve_effective_settings(
-                &aggregate.conversation,
-                selected_speaker.map(|speaker| speaker.participant_id),
-            )
-            .map_err(|_| ConversationGenerationInputError::InvalidTurn)?;
-            let snapshot = settings
-                .memory
-                .filter(|memory| memory.mode == MemoryModeSnapshot::Dynamic)
-                .and_then(|memory| memory.dynamic_policy)
-                .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
-            let (policy, duplicate_threshold) = dynamic_memory_policy(&snapshot)?;
-            let space_id =
-                MemoryRepository::get_for_conversation(self.repository, work.conversation_id)
-                    .map_err(ConversationGenerationInputError::Memory)?
-                    .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?
-                    .id;
-            Some(ConversationGenerationMemoryInput {
-                space_id,
-                policy,
-                duplicate_threshold,
-            })
-        } else {
-            None
-        };
         Ok(Some(ConversationGenerationInput {
             model,
             attributions: request.context.attributions.clone(),
             profile: request.profile,
             context: request.context,
-            tools: request.tools,
             media_grants: request.media_grants,
             stream_sink: request.stream_sink,
-            memory,
         }))
     }
 
@@ -912,7 +861,6 @@ where
             &ChatParameterResolutionInput::default(),
             &ChatRequirements {
                 require_streaming: runtime.stream_sink.is_some(),
-                require_tools: dynamic_memory,
                 ..Default::default()
             },
         )
@@ -924,18 +872,16 @@ where
         };
         let mut timeline = self.timeline(work.conversation_id, turn.branch_id)?;
         retain_source_ancestry(&mut timeline.items, source_message_id)?;
-        let (memory_contribution, memory_input) = match memory_mode {
+        let memory_contribution = match memory_mode {
             MemoryModeSnapshot::Dynamic => {
                 let policy = memory_settings
                     .and_then(|memory| memory.dynamic_policy.as_ref())
                     .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
-                let prepared = self
-                    .dynamic_memory_input(work, &timeline.items, policy, now)
-                    .await?;
-                (prepared.0, Some(prepared.1))
+                self.dynamic_memory_input(work, &timeline.items, policy, now)
+                    .await?
             }
-            MemoryModeSnapshot::Manual => (self.manual_memory_input(work.conversation_id)?, None),
-            MemoryModeSnapshot::Disabled => (None, None),
+            MemoryModeSnapshot::Manual => self.manual_memory_input(work.conversation_id)?,
+            MemoryModeSnapshot::Disabled => None,
         };
         let prompt_runtime = PromptRuntimeFacts {
             provider_id: Some(account.provider_kind),
@@ -989,20 +935,14 @@ where
             attributions,
             profile: ResolvedInferenceProfile {
                 chat_profile: profile,
-                tool_policy: if dynamic_memory {
-                    ToolPolicy::Allowed
-                } else {
-                    ToolPolicy::Disabled
-                },
+                tool_policy: ToolPolicy::Disabled,
                 output_policy: OutputPolicy::Plain,
                 safety_policy: SafetyContext::Standard,
                 correlation_id: turn.correlation_id,
             },
             context,
-            tools: dynamic_memory.then(dynamic_memory_tool_request),
             media_grants,
             stream_sink: runtime.stream_sink,
-            memory: memory_input,
         })
     }
 
@@ -1066,14 +1006,7 @@ where
         timeline: &[lettuce_conversations::TimelineItem],
         settings: &DynamicMemoryPolicySnapshot,
         now: TimestampMillis,
-    ) -> Result<
-        (
-            Option<MemoryContribution>,
-            ConversationGenerationMemoryInput,
-        ),
-        ConversationGenerationInputError,
-    > {
-        let (policy, duplicate_threshold) = dynamic_memory_policy(settings)?;
+    ) -> Result<Option<MemoryContribution>, ConversationGenerationInputError> {
         let memory = MemoryRepository::get_for_conversation(self.repository, work.conversation_id)
             .map_err(ConversationGenerationInputError::Memory)?
             .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
@@ -1142,14 +1075,7 @@ where
                 summary,
                 key_memories,
             });
-        Ok((
-            contribution,
-            ConversationGenerationMemoryInput {
-                space_id: memory.id,
-                policy,
-                duplicate_threshold,
-            },
-        ))
+        Ok(contribution)
     }
 
     fn manual_memory_input(
@@ -1350,30 +1276,6 @@ impl ConversationGenerationInputError {
             }
         }
     }
-}
-
-fn dynamic_memory_policy(
-    settings: &DynamicMemoryPolicySnapshot,
-) -> Result<(MemoryPolicy, Score), ConversationGenerationInputError> {
-    let score = |value| {
-        Score::from_basis_points(value)
-            .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)
-    };
-    if settings.retrieval_limit == 0 || settings.retrieval_limit > 256 {
-        return Err(ConversationGenerationInputError::MemoryInputUnavailable);
-    }
-    let policy = MemoryPolicy {
-        max_entries: usize::try_from(settings.max_entries)
-            .map_err(|_| ConversationGenerationInputError::MemoryInputUnavailable)?,
-        hot_token_budget: settings.hot_memory_token_budget,
-        cold_threshold: score(settings.cold_threshold_basis_points)?,
-        delete_confidence_default: score(settings.delete_confidence_basis_points)?,
-        max_hard_delete_ratio_per_cycle: score(settings.max_hard_delete_ratio_basis_points)?,
-    };
-    policy
-        .validate()
-        .map_err(|_| ConversationGenerationInputError::MemoryInputUnavailable)?;
-    Ok((policy, score(settings.duplicate_threshold_basis_points)?))
 }
 
 fn memory_query(timeline: &[lettuce_conversations::TimelineItem], enriched: bool) -> String {
