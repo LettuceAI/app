@@ -37,7 +37,10 @@ Placeholders are replaced in one pass: a substituted value (lorebook text, an
 author note, a summary) is never scanned again, so tokens inside it reach the
 model verbatim. Name tokens (`{{char}}`, `{{persona}}`, `{{user}}`) inside
 character, persona and user descriptions and scene text are resolved first,
-as legacy did.
+as legacy did. `{{#if name}}…{{else}}…{{/if}}` blocks (non-nested) keep the
+first branch when the named variable is non-empty; legacy only used them for
+`current_draft`, and catalog fragments now use them for optional lines.
+`render_prompt_text` renders one fragment with the same rules.
 
 Built-in prompts use a separate seed/reconcile port. Seeds have stable unique
 prompt keys and stable unique nonblank bounded keys for every entry, explicit

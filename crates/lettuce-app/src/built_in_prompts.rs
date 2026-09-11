@@ -39,10 +39,11 @@ pub enum BuiltInPromptId {
     CompanionGrowthcycle,
     CompanionConsolidation,
     ChatRuntime,
+    GroupSpeakerSelection,
 }
 
 impl BuiltInPromptId {
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 26] = [
         Self::AppDefault,
         Self::LocalRoleplay,
         Self::Companion,
@@ -68,6 +69,7 @@ impl BuiltInPromptId {
         Self::CompanionGrowthcycle,
         Self::CompanionConsolidation,
         Self::ChatRuntime,
+        Self::GroupSpeakerSelection,
     ];
 
     #[must_use]
@@ -98,6 +100,7 @@ impl BuiltInPromptId {
             Self::CompanionGrowthcycle => "prompt_app_companion_growthcycle",
             Self::CompanionConsolidation => "prompt_app_companion_consolidation",
             Self::ChatRuntime => "prompt_app_chat_runtime",
+            Self::GroupSpeakerSelection => "prompt_app_group_speaker_selection",
         }
     }
 
@@ -134,7 +137,7 @@ impl BuiltInPromptId {
             Self::CompanionSoulWriter => PromptPurpose::CompanionSoulWriter,
             Self::CompanionGrowthcycle => PromptPurpose::CompanionGrowthcycle,
             Self::CompanionConsolidation => PromptPurpose::CompanionConsolidation,
-            Self::ChatRuntime => PromptPurpose::RuntimeText,
+            Self::ChatRuntime | Self::GroupSpeakerSelection => PromptPurpose::RuntimeText,
         }
     }
 
@@ -204,6 +207,7 @@ pub struct BuiltInPromptIds {
     pub companion_growthcycle: PromptDocumentId,
     pub companion_consolidation: PromptDocumentId,
     pub chat_runtime: PromptDocumentId,
+    pub group_speaker_selection: PromptDocumentId,
 }
 
 impl BuiltInPromptIds {
@@ -250,6 +254,7 @@ impl BuiltInPromptIds {
             companion_growthcycle: required(BuiltInPromptId::CompanionGrowthcycle),
             companion_consolidation: required(BuiltInPromptId::CompanionConsolidation),
             chat_runtime: required(BuiltInPromptId::ChatRuntime),
+            group_speaker_selection: required(BuiltInPromptId::GroupSpeakerSelection),
         })
     }
 
@@ -281,6 +286,7 @@ impl BuiltInPromptIds {
             BuiltInPromptId::CompanionGrowthcycle => self.companion_growthcycle,
             BuiltInPromptId::CompanionConsolidation => self.companion_consolidation,
             BuiltInPromptId::ChatRuntime => self.chat_runtime,
+            BuiltInPromptId::GroupSpeakerSelection => self.group_speaker_selection,
         }
     }
 }
@@ -393,7 +399,7 @@ fn validate_legacy_template_syntax(
     prompt: BuiltInPromptId,
     content: &str,
 ) -> Result<(), BuiltInPromptCatalogError> {
-    validate_current_draft_conditional(prompt, content)?;
+    validate_conditional_blocks(prompt, content)?;
     let mut cursor = 0;
     while let Some(start) = content[cursor..].find("{{") {
         let start = cursor + start;
@@ -401,67 +407,56 @@ fn validate_legacy_template_syntax(
             return Err(BuiltInPromptCatalogError::UnclosedVariable(prompt));
         };
         let end = start + 2 + relative_end;
-        let variable = &content[start + 2..end];
-        if !is_registered_legacy_variable(variable) {
-            return Err(BuiltInPromptCatalogError::UnknownVariable {
-                prompt,
-                variable: variable.to_owned(),
-            });
-        }
-        if !is_legacy_variable_allowed_for(prompt.purpose(), variable) {
-            return Err(BuiltInPromptCatalogError::IncompatibleVariable {
-                prompt,
-                variable: variable.to_owned(),
-            });
+        let token = &content[start + 2..end];
+        let variable = token.strip_prefix("#if ").map_or(token, str::trim);
+        if !matches!(token, "else" | "/if") {
+            if !is_registered_legacy_variable(variable) {
+                return Err(BuiltInPromptCatalogError::UnknownVariable {
+                    prompt,
+                    variable: variable.to_owned(),
+                });
+            }
+            if !is_legacy_variable_allowed_for(prompt.purpose(), variable) {
+                return Err(BuiltInPromptCatalogError::IncompatibleVariable {
+                    prompt,
+                    variable: variable.to_owned(),
+                });
+            }
         }
         cursor = end + 2;
     }
     Ok(())
 }
 
-fn validate_current_draft_conditional(
+fn validate_conditional_blocks(
     prompt: BuiltInPromptId,
     content: &str,
 ) -> Result<(), BuiltInPromptCatalogError> {
-    const OPEN: &str = "{{#if current_draft}}";
+    const OPEN: &str = "{{#if ";
     const ELSE: &str = "{{else}}";
     const CLOSE: &str = "{{/if}}";
-    let has_directive =
-        content.contains("{{#if") || content.contains(ELSE) || content.contains(CLOSE);
-    if !has_directive {
-        return Ok(());
+    let malformed = || BuiltInPromptCatalogError::MalformedConditional(prompt);
+    let mut rest = content;
+    loop {
+        let next_open = rest.find(OPEN);
+        let before = &rest[..next_open.unwrap_or(rest.len())];
+        if before.contains(ELSE) || before.contains(CLOSE) {
+            return Err(malformed());
+        }
+        let Some(open) = next_open else {
+            return Ok(());
+        };
+        let after_open = &rest[open + OPEN.len()..];
+        let close = after_open.find(CLOSE).ok_or_else(malformed)?;
+        let body = &after_open[..close];
+        if body.contains(OPEN) || body.matches(ELSE).count() > 1 {
+            return Err(malformed());
+        }
+        rest = &after_open[close + CLOSE.len()..];
     }
-    let Some(open) = content.find(OPEN) else {
-        return Err(BuiltInPromptCatalogError::MalformedConditional(prompt));
-    };
-    let Some(alternative) = content.find(ELSE) else {
-        return Err(BuiltInPromptCatalogError::MalformedConditional(prompt));
-    };
-    let Some(close) = content.find(CLOSE) else {
-        return Err(BuiltInPromptCatalogError::MalformedConditional(prompt));
-    };
-    if !(open < alternative && alternative < close)
-        || content.matches(OPEN).count() != 1
-        || content.matches(ELSE).count() != 1
-        || content.matches(CLOSE).count() != 1
-        || content.matches("{{#if").count() != 1
-        || !matches!(
-            prompt.purpose(),
-            PromptPurpose::ReplyHelperRoleplay | PromptPurpose::ReplyHelperConversational
-        )
-    {
-        return Err(BuiltInPromptCatalogError::MalformedConditional(prompt));
-    }
-    Ok(())
 }
 
 fn is_legacy_variable_allowed_for(purpose: PromptPurpose, value: &str) -> bool {
-    if matches!(value, "#if current_draft" | "else" | "/if") {
-        return matches!(
-            purpose,
-            PromptPurpose::ReplyHelperRoleplay | PromptPurpose::ReplyHelperConversational
-        );
-    }
     if matches!(
         value,
         "char.name"
@@ -592,87 +587,99 @@ fn is_legacy_variable_allowed_for(purpose: PromptPurpose, value: &str) -> bool {
 }
 
 fn is_registered_legacy_variable(value: &str) -> bool {
-    matches!(value, "#if current_draft" | "else" | "/if")
-        || matches!(
-            value,
-            "char.name"
-                | "char.desc"
-                | "char.definition"
-                | "char.description"
-                | "persona.name"
-                | "persona.desc"
-                | "scene"
-                | "scene_direction"
-                | "lorebook"
-                | "author_note"
-                | "context_summary"
-                | "key_memories"
-                | "content_rules"
-                | "companion_state"
-                | "scheduled_notes"
-                | "group_characters"
-                | "prev_summary"
-                | "character"
-                | "max_entries"
-                | "current_memory_tokens"
-                | "hot_token_budget"
-                | "current_draft"
-                | "lorebook_name"
-                | "character_name"
-                | "session_title"
-                | "selected_messages"
-                | "memory_summary"
-                | "selected_memories"
-                | "direction_prompt"
-                | "existing_entries"
-                | "entry_title"
-                | "entry_content"
-                | "existing_keywords"
-                | "brief"
-                | "target_count"
-                | "source_excerpts"
-                | "outline"
-                | "entry_category"
-                | "entry_proposed_keys"
-                | "entry_rationale"
-                | "relevant_excerpts"
-                | "entry_keywords"
-                | "entry_always_active"
-                | "user_feedback"
-                | "drafted_entries"
-                | "avatar_subject_name"
-                | "avatar_subject_description"
-                | "avatar_request"
-                | "current_avatar_prompt"
-                | "edit_request"
-                | "recent_messages"
-                | "scene_request"
-                | "subject_name"
-                | "subject_description"
-                | "current_description"
-                | "opening_context"
-                | "current_soul"
-                | "user_notes"
-                | "companion.name"
-                | "changeable_categories"
-                | "current_growth"
-                | "new_memories"
-                | "authored_core"
-                | "current_core"
-                | "accumulated_growth"
-                | "date"
-                | "date_full"
-                | "time_12hour_format"
-                | "time_timezone_name"
-                | "datetime_iso"
-                | "reference[character]"
-                | "reference[persona]"
-                | "lora_keywords[character]"
-                | "lora_keywords[persona]"
-                | "image_model_instructions"
-                | "retrieved_memories"
-                | "regenerate_guidance"
-        )
+    matches!(
+        value,
+        "char.name"
+            | "char.desc"
+            | "char.definition"
+            | "char.description"
+            | "persona.name"
+            | "persona.desc"
+            | "scene"
+            | "scene_direction"
+            | "lorebook"
+            | "author_note"
+            | "context_summary"
+            | "key_memories"
+            | "content_rules"
+            | "companion_state"
+            | "scheduled_notes"
+            | "group_characters"
+            | "prev_summary"
+            | "character"
+            | "max_entries"
+            | "current_memory_tokens"
+            | "hot_token_budget"
+            | "current_draft"
+            | "lorebook_name"
+            | "character_name"
+            | "session_title"
+            | "selected_messages"
+            | "memory_summary"
+            | "selected_memories"
+            | "direction_prompt"
+            | "existing_entries"
+            | "entry_title"
+            | "entry_content"
+            | "existing_keywords"
+            | "brief"
+            | "target_count"
+            | "source_excerpts"
+            | "outline"
+            | "entry_category"
+            | "entry_proposed_keys"
+            | "entry_rationale"
+            | "relevant_excerpts"
+            | "entry_keywords"
+            | "entry_always_active"
+            | "user_feedback"
+            | "drafted_entries"
+            | "avatar_subject_name"
+            | "avatar_subject_description"
+            | "avatar_request"
+            | "current_avatar_prompt"
+            | "edit_request"
+            | "recent_messages"
+            | "scene_request"
+            | "subject_name"
+            | "subject_description"
+            | "current_description"
+            | "opening_context"
+            | "current_soul"
+            | "user_notes"
+            | "companion.name"
+            | "changeable_categories"
+            | "current_growth"
+            | "new_memories"
+            | "authored_core"
+            | "current_core"
+            | "accumulated_growth"
+            | "date"
+            | "date_full"
+            | "time_12hour_format"
+            | "time_timezone_name"
+            | "datetime_iso"
+            | "reference[character]"
+            | "reference[persona]"
+            | "lora_keywords[character]"
+            | "lora_keywords[persona]"
+            | "image_model_instructions"
+            | "retrieved_memories"
+            | "regenerate_guidance"
+            | "selection_participants"
+            | "selection_recent_messages"
+            | "selection_user_message"
+            | "muted_participants"
+            | "participant_name"
+            | "participant_id"
+            | "participant_definition"
+            | "participant_summary"
+            | "participant_messages"
+            | "participant_share"
+            | "participant_turns_ago"
+            | "speaker_name"
+            | "message_text"
+    )
 }
 
 #[derive(Debug)]
@@ -893,7 +900,7 @@ mod tests {
     #[test]
     fn catalog_is_the_exact_closed_legacy_set() {
         let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
-        assert_eq!(catalog.seeds().len(), 25);
+        assert_eq!(catalog.seeds().len(), 26);
 
         let actual = catalog
             .seeds()
@@ -993,7 +1000,7 @@ mod tests {
         assert_eq!(calls[1].mode, BuiltInReconcileMode::ResetToSeed);
         assert_eq!(calls[1].seeds.len(), 1);
         assert_eq!(calls[2].mode, BuiltInReconcileMode::ResetToSeed);
-        assert_eq!(calls[2].seeds.len(), 25);
+        assert_eq!(calls[2].seeds.len(), 26);
     }
 
     #[test]
@@ -1159,6 +1166,33 @@ mod tests {
             assert!(populated_entry.content.contains("I was thinking"));
             assert!(!populated_entry.content.contains("Generate a fresh"));
             assert!(!populated_entry.content.contains("{{#if"));
+        }
+    }
+
+    #[test]
+    fn conditional_blocks_must_be_closed_flat_and_single_else() {
+        let prompt = BuiltInPromptId::ChatRuntime;
+        for valid in [
+            "plain",
+            "{{#if lorebook}}a{{/if}}",
+            "{{#if lorebook}}a{{else}}b{{/if}} then {{#if key_memories}}c{{/if}}",
+        ] {
+            assert!(
+                validate_conditional_blocks(prompt, valid).is_ok(),
+                "{valid}"
+            );
+        }
+        for invalid in [
+            "{{else}}",
+            "text {{/if}}",
+            "{{#if lorebook}}open",
+            "{{#if lorebook}}a{{else}}b{{else}}c{{/if}}",
+            "{{#if lorebook}}{{#if key_memories}}a{{/if}}{{/if}}",
+        ] {
+            assert!(
+                validate_conditional_blocks(prompt, invalid).is_err(),
+                "{invalid}"
+            );
         }
     }
 

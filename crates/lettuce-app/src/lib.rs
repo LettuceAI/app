@@ -68,6 +68,7 @@ mod kokoro_voice_blend;
 mod kokoro_voice_download;
 mod provider_backup;
 mod provider_runtime;
+mod runtime_text;
 mod staged_lorebook_coherence_dispatch;
 mod staged_lorebook_coherence_execution;
 mod staged_lorebook_dispatch;

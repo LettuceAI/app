@@ -1202,8 +1202,19 @@ async fn app_backend_checkpoints_llm_group_selection_and_falls_back_to_heuristic
             else {
                 panic!("selection prompt is text");
             };
+            assert!(selection_prompt.starts_with(
+                "You are a narrator for a group chat. Your task is to select which character should respond next.\n\n## Participants\n\n### Participant\n- Name: \"Ada\"\n"
+            ));
+            assert!(
+                selection_prompt
+                    .contains("- Participation: 0 messages (0%)\n- Last spoke: never\n\n")
+            );
             assert!(selection_prompt.contains("## Recent Conversation"));
-            assert!(selection_prompt.contains("## New Message from User\n\nHello cast."));
+            assert!(selection_prompt.contains("## New Message from User\n\n\"Hello cast.\""));
+            assert!(
+                selection_prompt
+                    .ends_with("Use the select_next_speaker tool to choose a character.")
+            );
             assert_eq!(selection_prompt.matches("Hello cast.").count(), 1);
             assert_eq!(requests[0].stream_sink, None);
             assert_eq!(requests[1].tools, None);
@@ -1521,7 +1532,10 @@ async fn group_selection_reads_the_timeline_oldest_first() {
     else {
         panic!("selection prompt is text");
     };
-    assert!(prompt.contains("## New Message from User\n\nSecond question."));
+    assert!(prompt.contains("## New Message from User\n\n\"Second question.\""));
+    assert!(prompt.contains("- Entry\n- Speaker: \"User\"\n- Message: \"Hello cast.\"\n\n"));
+    assert!(prompt.contains("- Last spoke: 0 turns ago\n\n"));
+    assert!(prompt.contains("- Last spoke: never\n\n"));
     let recent = &prompt[prompt
         .find("## Recent Conversation")
         .expect("recent section")..];
@@ -1650,7 +1664,7 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert!(texts.contains(&"Hello cast."));
+        assert!(texts.contains(&"[Traveller]: Hello cast."), "{texts:?}");
         assert!(texts.contains(&"# Context Summary\nThe cast reached the harbor."));
     }
     let replay = runner

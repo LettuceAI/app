@@ -713,8 +713,26 @@ where
             Ok(profile) => profile,
             Err(_) => return heuristic_fallback(policy, None, None),
         };
-        let prompt = speaker_selection_prompt(profiles, policy, &available);
-        let tools = speaker_selection_tools(&available);
+        let selection_text = crate::runtime_text::RuntimeText::load(
+            self.repository,
+            crate::BuiltInPromptId::GroupSpeakerSelection,
+        )
+        .and_then(|text| {
+            Ok((
+                speaker_selection_prompt(&text, profiles, policy, &available)?,
+                speaker_selection_tools(&text, &available)?,
+            ))
+        });
+        let (prompt, tools) = match selection_text {
+            Ok(selection_text) => selection_text,
+            Err(error) => {
+                tracing::warn!(
+                    ?error,
+                    "speaker selection prompt text failed; using heuristic"
+                );
+                return heuristic_fallback(policy, None, None);
+            }
+        };
         let request = InferenceRequest {
             turn_id: turn.id,
             attempt_id: work.attempt_id,
@@ -1541,77 +1559,157 @@ fn user_message_mention(
 }
 
 fn speaker_selection_prompt(
+    text: &crate::runtime_text::RuntimeText,
     profiles: &HashMap<
         lettuce_types::ConversationParticipantId,
         lettuce_characters::CharacterProfile,
     >,
     policy: &SpeakerPolicyRequest,
     available: &[&lettuce_conversations::ConversationParticipant],
-) -> String {
+) -> Result<String, crate::runtime_text::RuntimeTextError> {
+    use lettuce_context::PromptVariable as Variable;
+    let quote = |value: &str| serde_json::to_string(value).unwrap_or_default();
+    let label = |key: &str| text.render_with(key, []);
     let total = policy
         .participants
         .iter()
         .map(|participant| u64::from(participant.speak_count))
         .sum::<u64>();
-    let mut prompt = String::from(
-        "You are selecting which character should respond next in a group conversation.\n\n## Participants\n",
-    );
-    for participant in available {
-        let count = policy
-            .participants
-            .iter()
-            .find(|state| state.id == participant.id)
-            .map_or(0, |state| state.speak_count);
-        prompt.push_str(&format!(
-            "\n- Name: {}\n  ID: {}\n  Participation: {count} of {total} assistant messages\n",
-            profiles
-                .get(&participant.id)
-                .map_or("", |profile| profile.name.as_str()),
-            participant.id
-        ));
-        if let Some(description) = &participant.authored_description {
-            let excerpt = description.chars().take(1_000).collect::<String>();
-            if !excerpt.trim().is_empty() {
-                prompt.push_str(&format!("  Description: {}\n", excerpt.trim()));
-            }
-        }
-    }
     let new_user_message = (policy.operation == lettuce_conversations::GenerationOperation::Send)
         .then(|| policy.timeline.last())
         .flatten()
         .filter(|item| item.message.role == MessageRole::User);
     let recent_end = policy.timeline.len() - usize::from(new_user_message.is_some());
-    prompt.push_str("\n## Recent Conversation\n");
-    for item in policy.timeline[..recent_end].iter().rev().take(10).rev() {
-        let speaker = if item.message.role == MessageRole::User {
-            "User"
+    let recent = &policy.timeline[..recent_end];
+    let spoken = recent
+        .iter()
+        .filter(|item| item.message.role != MessageRole::Scene)
+        .collect::<Vec<_>>();
+    let mut participants = String::new();
+    for participant in available {
+        let speak_count = policy
+            .participants
+            .iter()
+            .find(|state| state.id == participant.id)
+            .map_or(0, |state| state.speak_count);
+        let share = if total == 0 {
+            0
         } else {
-            match item.message.author_participant_id {
-                Some(id) => profiles
-                    .get(&id)
-                    .map_or("Unknown", |profile| profile.name.as_str()),
-                None => "System",
+            (f64::from(speak_count) / total as f64 * 100.0).round() as u64
+        };
+        let turns_ago = spoken
+            .iter()
+            .rposition(|item| {
+                item.message.role == MessageRole::Assistant
+                    && item.message.author_participant_id == Some(participant.id)
+            })
+            .map(|index| (spoken.len() - 1 - index).to_string())
+            .unwrap_or_default();
+        let profile = profiles.get(&participant.id);
+        let definition = profile
+            .and_then(|profile| {
+                [
+                    profile.definition.as_deref(),
+                    profile.description.as_deref(),
+                ]
+                .into_iter()
+                .flatten()
+                .map(str::trim)
+                .find(|value| !value.is_empty())
+            })
+            .unwrap_or_default();
+        let summary = if definition.len() > 200 {
+            let truncated = definition.chars().take(200).collect::<String>();
+            if truncated.len() < definition.len() {
+                format!("{truncated}{}", label("selection_summary_truncation")?)
+            } else {
+                truncated
+            }
+        } else {
+            String::new()
+        };
+        participants.push_str(&text.render_with(
+            "selection_participant",
+            [
+                (
+                    Variable::ParticipantName,
+                    quote(profile.map_or("", |profile| profile.name.as_str())),
+                ),
+                (Variable::ParticipantId, quote(&participant.id.to_string())),
+                (
+                    Variable::ParticipantDefinition,
+                    if definition.is_empty() {
+                        String::new()
+                    } else {
+                        quote(definition)
+                    },
+                ),
+                (
+                    Variable::ParticipantSummary,
+                    if summary.is_empty() {
+                        summary
+                    } else {
+                        quote(&summary)
+                    },
+                ),
+                (Variable::ParticipantMessages, speak_count.to_string()),
+                (Variable::ParticipantShare, share.to_string()),
+                (Variable::ParticipantTurnsAgo, turns_ago),
+            ],
+        )?);
+    }
+    let mut recent_messages = String::new();
+    for item in recent.iter().rev().take(10).rev() {
+        let speaker = if item.message.role == MessageRole::User {
+            label("selection_user_speaker")?
+        } else {
+            match item
+                .message
+                .author_participant_id
+                .and_then(|id| profiles.get(&id))
+            {
+                Some(profile) => profile.name.clone(),
+                None => label("selection_unknown_speaker")?,
             }
         };
-        let text = timeline_item_text(item);
-        if !text.is_empty() {
-            prompt.push_str(&format!(
-                "\n- {speaker}: {}",
-                text.chars().take(1_000).collect::<String>()
-            ));
-        }
+        let content = timeline_item_text(item);
+        let content = if content.chars().count() > 512 {
+            format!(
+                "{}{}",
+                content.chars().take(512).collect::<String>(),
+                label("selection_preview_truncation")?
+            )
+        } else {
+            content
+        };
+        recent_messages.push_str(&text.render_with(
+            "selection_recent_entry",
+            [
+                (Variable::SpeakerName, quote(&speaker)),
+                (Variable::MessageText, quote(&content)),
+            ],
+        )?);
     }
-    if let Some(item) = new_user_message {
-        let text = timeline_item_text(item);
-        if !text.is_empty() {
-            prompt.push_str("\n\n## New Message from User\n\n");
-            prompt.push_str(&text.chars().take(1_000).collect::<String>());
-        }
-    }
-    prompt.push_str(
-        "\n\nChoose for relevance, expertise, participation balance, and natural flow. Use the select_next_speaker tool.",
-    );
-    prompt
+    let muted = policy
+        .participants
+        .iter()
+        .filter(|participant| participant.muted)
+        .filter_map(|participant| profiles.get(&participant.id))
+        .map(|profile| profile.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    text.render_with(
+        "selection_prompt",
+        [
+            (Variable::SelectionParticipants, participants),
+            (Variable::SelectionRecentMessages, recent_messages),
+            (
+                Variable::SelectionUserMessage,
+                quote(&new_user_message.map(timeline_item_text).unwrap_or_default()),
+            ),
+            (Variable::MutedParticipants, muted),
+        ],
+    )
 }
 
 fn timeline_item_text(item: &lettuce_conversations::TimelineItem) -> String {
@@ -1635,25 +1733,24 @@ fn timeline_item_text(item: &lettuce_conversations::TimelineItem) -> String {
 }
 
 fn speaker_selection_tools(
+    text: &crate::runtime_text::RuntimeText,
     available: &[&lettuce_conversations::ConversationParticipant],
-) -> ToolRequest {
-    ToolRequest {
+) -> Result<ToolRequest, crate::runtime_text::RuntimeTextError> {
+    Ok(ToolRequest {
         definitions: vec![ToolDefinition {
             name: "select_next_speaker".into(),
-            description: Some(
-                "Select which character should respond next in the group conversation.".into(),
-            ),
+            description: Some(text.render_with("selection_tool_description", [])?),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "character_id": {
                         "type": "string",
-                        "description": "ID of the character who should respond",
+                        "description": text.render_with("selection_tool_character_id", [])?,
                         "enum": available.iter().map(|participant| participant.id.to_string()).collect::<Vec<_>>()
                     },
                     "reasoning": {
                         "type": "string",
-                        "description": "Brief explanation of why this character should speak"
+                        "description": text.render_with("selection_tool_reasoning", [])?
                     }
                 },
                 "required": ["character_id"]
@@ -1661,7 +1758,7 @@ fn speaker_selection_tools(
             version: 1,
         }],
         choice: ToolChoice::Required,
-    }
+    })
 }
 
 fn llm_speaker_decision(

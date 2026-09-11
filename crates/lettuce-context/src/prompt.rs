@@ -938,6 +938,19 @@ pub enum PromptVariable {
     ImageModelInstructions,
     RetrievedMemories,
     RegenerateGuidance,
+    SelectionParticipants,
+    SelectionRecentMessages,
+    SelectionUserMessage,
+    MutedParticipants,
+    ParticipantName,
+    ParticipantId,
+    ParticipantDefinition,
+    ParticipantSummary,
+    ParticipantMessages,
+    ParticipantShare,
+    ParticipantTurnsAgo,
+    SpeakerName,
+    MessageText,
 }
 
 impl PromptVariable {
@@ -1021,6 +1034,19 @@ impl PromptVariable {
             Self::ImageModelInstructions => "{{image_model_instructions}}",
             Self::RetrievedMemories => "{{retrieved_memories}}",
             Self::RegenerateGuidance => "{{regenerate_guidance}}",
+            Self::SelectionParticipants => "{{selection_participants}}",
+            Self::SelectionRecentMessages => "{{selection_recent_messages}}",
+            Self::SelectionUserMessage => "{{selection_user_message}}",
+            Self::MutedParticipants => "{{muted_participants}}",
+            Self::ParticipantName => "{{participant_name}}",
+            Self::ParticipantId => "{{participant_id}}",
+            Self::ParticipantDefinition => "{{participant_definition}}",
+            Self::ParticipantSummary => "{{participant_summary}}",
+            Self::ParticipantMessages => "{{participant_messages}}",
+            Self::ParticipantShare => "{{participant_share}}",
+            Self::ParticipantTurnsAgo => "{{participant_turns_ago}}",
+            Self::SpeakerName => "{{speaker_name}}",
+            Self::MessageText => "{{message_text}}",
         }
     }
 
@@ -1103,6 +1129,19 @@ impl PromptVariable {
         Self::ImageModelInstructions,
         Self::RetrievedMemories,
         Self::RegenerateGuidance,
+        Self::SelectionParticipants,
+        Self::SelectionRecentMessages,
+        Self::SelectionUserMessage,
+        Self::MutedParticipants,
+        Self::ParticipantName,
+        Self::ParticipantId,
+        Self::ParticipantDefinition,
+        Self::ParticipantSummary,
+        Self::ParticipantMessages,
+        Self::ParticipantShare,
+        Self::ParticipantTurnsAgo,
+        Self::SpeakerName,
+        Self::MessageText,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.
@@ -1258,11 +1297,6 @@ impl PromptVariable {
 
 impl PromptRenderValues {
     fn render(&self, source: &str) -> Result<String, PromptRenderError> {
-        let current_draft = self
-            .purpose_values
-            .get(&PromptVariable::CurrentDraft)
-            .map_or("", String::as_str);
-        let conditioned = render_legacy_conditionals(source, !current_draft.is_empty())?;
         let names = |value: &str| {
             value
                 .replace("{{char}}", &self.character_name)
@@ -1301,6 +1335,9 @@ impl PromptRenderValues {
                     .map(|variable| self.purpose_values.get(variable).map_or("", String::as_str))?,
             })
         };
+        let conditioned = render_legacy_conditionals(source, |name| {
+            value(&format!("{{{{{name}}}}}")).map(|value| !value.is_empty())
+        })?;
         let mut rendered = String::with_capacity(conditioned.len());
         let mut rest = conditioned.as_str();
         while let Some(start) = rest.find("{{") {
@@ -1325,9 +1362,11 @@ impl PromptRenderValues {
     }
 }
 
+/// `{{#if name}}…{{else}}…{{/if}}` keeps the first branch when the named
+/// render variable is non-empty. Blocks do not nest.
 fn render_legacy_conditionals(
     source: &str,
-    current_draft_present: bool,
+    present: impl Fn(&str) -> Option<bool>,
 ) -> Result<String, PromptRenderError> {
     const OPEN: &str = "{{#if ";
     const ELSE: &str = "{{else}}";
@@ -1342,9 +1381,9 @@ fn render_legacy_conditionals(
             return Err(PromptRenderError::MalformedConditional);
         };
         let condition_end = condition_start + condition_end;
-        if source[condition_start..condition_end].trim() != "current_draft" {
+        let Some(condition_present) = present(source[condition_start..condition_end].trim()) else {
             return Err(PromptRenderError::UnknownConditional);
-        }
+        };
         let body_start = condition_end + 2;
         let Some(close_relative) = source[body_start..].find(CLOSE) else {
             return Err(PromptRenderError::MalformedConditional);
@@ -1363,7 +1402,7 @@ fn render_legacy_conditionals(
         } else {
             (body, "")
         };
-        output.push_str(if current_draft_present {
+        output.push_str(if condition_present {
             if_body
         } else {
             else_body
@@ -1491,6 +1530,17 @@ pub fn render_prompt(
         &document.entries,
         context,
     )
+}
+
+/// Render one catalog fragment with the same placeholder and conditional rules
+/// as a document entry, without entry selection or placement.
+pub fn render_prompt_text(
+    purpose: PromptPurpose,
+    content: &str,
+    values: &PromptRenderValues,
+) -> Result<String, PromptRenderError> {
+    validate_render_values(purpose, values)?;
+    values.render(content)
 }
 
 /// Render a prompt directly from an immutable conversation snapshot input.
@@ -2573,6 +2623,26 @@ mod tests {
                 .relative[0]
                 .content,
             "no"
+        );
+        let mut lore = document(PromptEntry {
+            id: PromptEntryId::new(),
+            name: "lore".into(),
+            content: "Intro{{#if lorebook}}\n# Lore\n{{lorebook}}{{/if}}".into(),
+            ..PromptEntry::default()
+        });
+        lore.purpose = PromptPurpose::GroupChatRoleplay;
+        let mut lore_context = PromptRenderContext::default();
+        assert_eq!(
+            render_prompt(&lore, &lore_context)
+                .expect("empty lore")
+                .relative[0]
+                .content,
+            "Intro"
+        );
+        lore_context.values.lorebook = "Tides".into();
+        assert_eq!(
+            render_prompt(&lore, &lore_context).expect("lore").relative[0].content,
+            "Intro\n# Lore\nTides"
         );
         for malformed in [
             "{{#if current_draft}}nested {{#if current_draft}}x{{/if}}{{/if}}",

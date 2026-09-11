@@ -772,8 +772,15 @@ process reopen without selecting or dispatching again. Group launch freezes the
 dedicated speaker-selection model when configured, otherwise the application
 default, including its exact model/account revisions and protected artifact.
 LLM selection uses that frozen identity when the live revision supports tools,
-a bounded provider-neutral legacy-shaped participant/recent-message prompt, and a required
-`select_next_speaker` tool whose enum contains only enabled unmuted participants.
+the legacy narrator prompt rendered from the built-in
+`prompt_app_group_speaker_selection` catalog document (participant blocks with
+JSON-quoted fields, participation share, turns since the participant last
+spoke, the last ten messages as 512-character previews, the quoted new user
+message, the legacy guidelines and muted note), and a required
+`select_next_speaker` tool whose descriptions come from the same document and
+whose enum contains only enabled unmuted participants. Group transcripts prefix
+the user's and other characters' messages with `[Name]: ` from the chat runtime
+entry `runtime_group_message_prefix`, as legacy did.
 The provider call is admitted under a separate immutable selection checkpoint
 and job-usage record before dispatch. A valid call persists its participant and
 bounded rationale; invalid output or non-cancellation provider failure retains

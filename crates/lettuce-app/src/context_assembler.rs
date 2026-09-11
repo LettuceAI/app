@@ -22,7 +22,7 @@ use lettuce_context::{
     PromptRenderValues, PromptSnapshot, PromptVariable, RenderedPromptMessage,
     render_prompt_snapshot, resolve_lorebook_snapshot_activation,
 };
-use lettuce_context::{PromptDocument, PromptRepository, RenderedPrompt, render_prompt};
+use lettuce_context::{PromptRepository, RenderedPrompt, render_prompt};
 use lettuce_conversations::{
     AnnotationPayload, BranchStatus, ContextAssemblyError, ContextAttributions,
     ContextBudgetReport, ContextRequest, ConversationAggregate, ConversationKind,
@@ -228,6 +228,7 @@ where
                 .purpose_values
                 .insert(PromptVariable::RegenerateGuidance, guidance.to_owned());
         }
+        let group_user_name = runtime_values.persona_name.clone();
         let runtime = RuntimeSections::render(
             self.sources,
             &PromptRenderContext {
@@ -379,6 +380,8 @@ where
                 &character_names,
                 selected_speaker,
                 request.swap_roles,
+                &runtime,
+                &group_user_name,
             )? {
                 transcript.push(message);
             }
@@ -539,7 +542,7 @@ struct RuntimeSection {
 /// which of its sections a turn injects; their text, role and placement come
 /// from the catalog document, so a user edit or disabled entry is honored.
 struct RuntimeSections {
-    document: PromptDocument,
+    text: crate::runtime_text::RuntimeText,
     rendered: RenderedPrompt,
 }
 
@@ -548,22 +551,33 @@ impl RuntimeSections {
         sources: &S,
         context: &PromptRenderContext,
     ) -> Result<Self, ContextAssemblyError> {
-        let document = crate::built_in_prompts::active_built_in_prompt(
-            sources,
-            crate::BuiltInPromptId::ChatRuntime,
-        )
-        .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable)?
-        .ok_or(ContextAssemblyError::RuntimeTextUnavailable)?;
-        let rendered = render_prompt(&document, context).map_err(|error| {
+        let text =
+            crate::runtime_text::RuntimeText::load(sources, crate::BuiltInPromptId::ChatRuntime)
+                .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable)?;
+        let rendered = render_prompt(text.document(), context).map_err(|error| {
             tracing::warn!(?error, "chat runtime prompt rendering failed");
             ContextAssemblyError::PromptRender
         })?;
-        Ok(Self { document, rendered })
+        Ok(Self { text, rendered })
+    }
+
+    /// A rendered fragment, or `None` when its entry was removed or disabled.
+    fn fragment(
+        &self,
+        key: &str,
+        variables: impl IntoIterator<Item = (PromptVariable, String)>,
+    ) -> Result<Option<String>, ContextAssemblyError> {
+        let mut values = PromptRenderValues::default();
+        values.purpose_values.extend(variables);
+        self.text
+            .render(key, &values)
+            .map_err(|_| ContextAssemblyError::PromptRender)
     }
 
     fn section(&self, key: &str) -> Option<RuntimeSection> {
         let entry_id = self
-            .document
+            .text
+            .document()
             .entries
             .iter()
             .find(|entry| entry.built_in_entry_key.as_deref() == Some(key))?
@@ -1971,14 +1985,23 @@ fn template_has_placeholder(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn provider_message(
     item: &TimelineItem,
     aggregate: &ConversationAggregate,
     character_names: &HashMap<ConversationParticipantId, String>,
     selected_speaker: Option<ConversationParticipantId>,
     swap_roles: bool,
+    runtime: &RuntimeSections,
+    group_user_name: &str,
 ) -> Result<Option<ProviderNeutralMessage>, ContextAssemblyError> {
     if item.message.role == MessageRole::Scene {
+        return Ok(None);
+    }
+    if aggregate.conversation.kind.is_group()
+        && item.message.role == MessageRole::Assistant
+        && item.message.author_participant_id.is_none()
+    {
         return Ok(None);
     }
     let role = match (&aggregate.conversation.kind, item.message.role) {
@@ -1996,23 +2019,43 @@ fn provider_message(
     let mut context_parts = provider_context_parts(parts(item))?;
     if matches!(aggregate.conversation.kind, ConversationKind::Group(_))
         && role == MessageRole::User
-        && item
-            .message
-            .author_participant_id
-            .is_some_and(|id| character_names.contains_key(&id))
+        && matches!(
+            item.message.role,
+            MessageRole::User | MessageRole::Assistant
+        )
     {
-        let participant_id = item
-            .message
-            .author_participant_id
-            .ok_or(ContextAssemblyError::InvalidTimeline)?;
-        let character_name = character_names
-            .get(&participant_id)
-            .ok_or(ContextAssemblyError::MissingSpeaker)?;
-        let prefix = format!("{character_name}: ");
-        if let Some(ProviderContextPart::Text { text }) = context_parts.first_mut() {
-            *text = format!("{prefix}{text}");
+        let speaker = if item.message.role == MessageRole::User {
+            group_user_name.to_owned()
         } else {
-            context_parts.insert(0, ProviderContextPart::Text { text: prefix });
+            match item
+                .message
+                .author_participant_id
+                .and_then(|id| character_names.get(&id))
+            {
+                Some(name) => name.clone(),
+                None => runtime
+                    .fragment("runtime_group_unknown_speaker", [])?
+                    .unwrap_or_default(),
+            }
+        };
+        let first_text = context_parts
+            .iter()
+            .position(|part| matches!(part, ProviderContextPart::Text { .. }));
+        let message_text = match first_text.map(|index| &context_parts[index]) {
+            Some(ProviderContextPart::Text { text }) => text.clone(),
+            _ => String::new(),
+        };
+        if let Some(prefixed) = runtime.fragment(
+            "runtime_group_message_prefix",
+            [
+                (PromptVariable::SpeakerName, speaker),
+                (PromptVariable::MessageText, message_text),
+            ],
+        )? {
+            if let Some(index) = first_text {
+                context_parts.remove(index);
+            }
+            context_parts.insert(0, ProviderContextPart::Text { text: prefixed });
         }
     }
     if context_parts.is_empty() {
