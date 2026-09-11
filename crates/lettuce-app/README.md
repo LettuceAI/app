@@ -721,7 +721,13 @@ items, on continue and regenerate after), a send also adds a first depth-0
 `Relevant memories:` message with the retrieved items, and templates without
 the placeholders get depth-0 `# Context Summary` and `# Key Memories` fallbacks
 (with legacy observed-at suffixes) suppressed by any raw template entry that
-names the placeholder. Groups put `Important facts to remember in this
+names the placeholder. Memory bullets, the `observed DATE, RELATIVE` note and
+the relative-time words (`just now`, `yesterday`, `N units ago`, ...) render
+from `prompt_app_memory_runtime`; the legacy buckets are computed as a typed
+`RelativeTime`, and the lorebook entry writer uses the same note through its
+`lorebook_selected_memory_observed` line. Deviation: legacy stripped leading
+`- ` from the whole numbered line, so a memory whose text is only dashes lost
+the space before its note; the rewrite strips the memory text only. Groups put `Important facts to remember in this
 conversation:` plus the retrieved items into `{{key_memories}}` and get no
 fallbacks. A group's `{{context_summary}}` is the stored summary in manual
 mode too, as legacy group chats always used it. Manual memories render once

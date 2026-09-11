@@ -1518,22 +1518,36 @@ impl PromptRuntimeValues {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryPromptLine {
     pub text: String,
-    pub observed: Option<String>,
+    pub observed: Option<MemoryObservation>,
 }
 
-impl MemoryPromptLine {
-    #[must_use]
-    pub fn plain(&self) -> String {
-        format!("- {}", self.text)
-    }
+/// When a memory was observed; the application renders the words from the
+/// prompt catalog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryObservation {
+    /// Local observation time as `YYYY-MM-DD HH:MM`.
+    pub local_time: String,
+    pub relative: RelativeTime,
+}
 
-    #[must_use]
-    pub fn with_observed(&self) -> String {
-        match &self.observed {
-            Some(observed) => format!("- {} ({observed})", self.text),
-            None => self.plain(),
-        }
-    }
+/// The legacy relative-time buckets for an observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelativeTime {
+    JustNow,
+    Yesterday,
+    Tomorrow,
+    Ago { count: u64, unit: ElapsedUnit },
+    In { count: u64, unit: ElapsedUnit },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ElapsedUnit {
+    Minute,
+    Hour,
+    Day,
+    Week,
+    Month,
+    Year,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1576,7 +1590,7 @@ impl MemoryContribution {
                 if let Some(observed) = &line.observed {
                     crate::validation::validate_text(
                         "memory_contribution.observed",
-                        observed,
+                        &observed.local_time,
                         crate::validation::MAX_DISPLAY_CHARS,
                         false,
                     )?;
@@ -2398,7 +2412,13 @@ mod tests {
             summary: Some("summary".into()),
             key_memories: vec![MemoryPromptLine {
                 text: "a durable fact".into(),
-                observed: Some("observed 2026-09-11 10:00, 2 hours ago".into()),
+                observed: Some(MemoryObservation {
+                    local_time: "2026-09-11 10:00".into(),
+                    relative: RelativeTime::Ago {
+                        count: 2,
+                        unit: ElapsedUnit::Hour,
+                    },
+                }),
             }],
             relevant_memories: Vec::new(),
         };

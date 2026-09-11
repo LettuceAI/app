@@ -169,24 +169,55 @@ where
             companion_state.is_some(),
             scheduled_notes.is_some(),
         );
-        let memory_lines = |lines: &[MemoryPromptLine], render: fn(&MemoryPromptLine) -> String| {
-            lines.iter().map(render).collect::<Vec<_>>().join("\n")
+        let memory_text = request
+            .memory
+            .as_ref()
+            .filter(|memory| {
+                !memory.key_memories.is_empty() || !memory.relevant_memories.is_empty()
+            })
+            .map(|_| {
+                crate::runtime_text::RuntimeText::load(
+                    self.sources,
+                    crate::BuiltInPromptId::MemoryRuntime,
+                )
+                .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable)
+            })
+            .transpose()?;
+        let memory_lines = |lines: &[MemoryPromptLine], observed: bool| {
+            let Some(text) = memory_text.as_ref() else {
+                return Ok(String::new());
+            };
+            lines
+                .iter()
+                .map(|line| crate::memory_prompt::render_memory_line(text, line, observed))
+                .collect::<Result<Vec<_>, _>>()
+                .map(|lines| {
+                    lines
+                        .into_iter()
+                        .filter(|line| !line.is_empty())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .map_err(runtime_text_error)
         };
         let key_lines = request
             .memory
             .as_ref()
-            .map(|memory| memory_lines(&memory.key_memories, MemoryPromptLine::plain))
+            .map(|memory| memory_lines(&memory.key_memories, false))
+            .transpose()?
             .unwrap_or_default();
         let observed_key_lines = request
             .memory
             .as_ref()
-            .map(|memory| memory_lines(&memory.key_memories, MemoryPromptLine::with_observed))
+            .map(|memory| memory_lines(&memory.key_memories, true))
+            .transpose()?
             .unwrap_or_default();
         let relevant_memories = request
             .memory
             .as_ref()
             .filter(|_| !group)
-            .map(|memory| memory_lines(&memory.relevant_memories, MemoryPromptLine::with_observed))
+            .map(|memory| memory_lines(&memory.relevant_memories, true))
+            .transpose()?
             .unwrap_or_default();
         let memory_summary = request
             .memory

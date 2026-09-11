@@ -978,6 +978,11 @@ pub enum PromptVariable {
     FactConfidence,
     FactWeight,
     FactLocked,
+    MemoryObserved,
+    ObservedTime,
+    ObservedRelative,
+    ElapsedCount,
+    ElapsedUnit,
 }
 
 impl PromptVariable {
@@ -1101,6 +1106,11 @@ impl PromptVariable {
             Self::FactConfidence => "{{fact_confidence}}",
             Self::FactWeight => "{{fact_weight}}",
             Self::FactLocked => "{{fact_locked}}",
+            Self::MemoryObserved => "{{memory_observed}}",
+            Self::ObservedTime => "{{observed_time}}",
+            Self::ObservedRelative => "{{observed_relative}}",
+            Self::ElapsedCount => "{{elapsed_count}}",
+            Self::ElapsedUnit => "{{elapsed_unit}}",
         }
     }
 
@@ -1223,6 +1233,11 @@ impl PromptVariable {
         Self::FactConfidence,
         Self::FactWeight,
         Self::FactLocked,
+        Self::MemoryObserved,
+        Self::ObservedTime,
+        Self::ObservedRelative,
+        Self::ElapsedCount,
+        Self::ElapsedUnit,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.

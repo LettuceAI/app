@@ -777,6 +777,11 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "fact_confidence"
             | "fact_weight"
             | "fact_locked"
+            | "memory_observed"
+            | "observed_time"
+            | "observed_relative"
+            | "elapsed_count"
+            | "elapsed_unit"
     )
 }
 
@@ -1304,6 +1309,7 @@ mod tests {
             "lorebook_empty_message",
             "lorebook_selected_message",
             "lorebook_selected_memory",
+            "lorebook_selected_memory_observed",
             "lorebook_existing_entry",
             "lorebook_untitled_entry",
             "lorebook_always_active",
@@ -1333,7 +1339,31 @@ mod tests {
             key.to_owned()
         };
         let memory = catalog.seed(BuiltInPromptId::MemoryRuntime);
-        for key in lettuce_memory::DYNAMIC_MEMORY_TOOL_TEXT_KEYS {
+        let line_keys = [
+            "memory_line",
+            "memory_observed",
+            "relative_just_now",
+            "relative_yesterday",
+            "relative_tomorrow",
+            "relative_ago",
+            "relative_in",
+            "elapsed_minute",
+            "elapsed_minutes",
+            "elapsed_hour",
+            "elapsed_hours",
+            "elapsed_day",
+            "elapsed_days",
+            "elapsed_week",
+            "elapsed_weeks",
+            "elapsed_month",
+            "elapsed_months",
+            "elapsed_year",
+            "elapsed_years",
+        ];
+        for key in lettuce_memory::DYNAMIC_MEMORY_TOOL_TEXT_KEYS
+            .into_iter()
+            .chain(line_keys)
+        {
             assert!(
                 memory
                     .entries

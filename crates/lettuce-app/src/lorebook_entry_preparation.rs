@@ -96,6 +96,16 @@ where
                 .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)
         };
         let none = fragment("lorebook_none", Vec::new())?;
+        let memory_text = request
+            .time_awareness_enabled
+            .then(|| {
+                crate::runtime_text::RuntimeText::load(
+                    self.sources,
+                    crate::BuiltInPromptId::MemoryRuntime,
+                )
+                .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)
+            })
+            .transpose()?;
         let aggregate = ConversationReader::get(self.sources, request.conversation_id)
             .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)?;
         let conversation = &aggregate.conversation;
@@ -168,6 +178,7 @@ where
                         request.time_awareness_enabled,
                         &none,
                         &fragment,
+                        memory_text.as_ref(),
                     )?;
                     let summary = if request.include_memory_summary {
                         MemorySummaryRepository::get_summary(self.sources, memory.id)?
@@ -381,6 +392,7 @@ fn format_selected_memories(
     time_awareness_enabled: bool,
     none: &str,
     fragment: &Fragment<'_>,
+    memory_text: Option<&crate::runtime_text::RuntimeText>,
 ) -> Result<String, LorebookEntryPreparationError> {
     if selected_ids.is_empty() {
         return Ok(none.to_owned());
@@ -398,19 +410,36 @@ fn format_selected_memories(
         .filter(|memory| !memory.text.trim().is_empty())
         .enumerate()
         .map(|(index, memory)| {
-            let rendered = if time_awareness_enabled {
-                crate::memory_prompt::memory_prompt_line(memory, effective_now).with_observed()
+            let (text, observed) = if time_awareness_enabled {
+                let line = crate::memory_prompt::memory_prompt_line(memory, effective_now);
+                let observed = line
+                    .observed
+                    .as_ref()
+                    .map(|observation| {
+                        crate::memory_prompt::render_observation(
+                            memory_text.ok_or(LorebookEntryPreparationError::SourceUnavailable)?,
+                            observation,
+                        )
+                        .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)
+                    })
+                    .transpose()?;
+                (line.text, observed.unwrap_or_default())
             } else {
-                format!("- {}", memory.text.trim())
+                (memory.text.trim().to_owned(), String::new())
             };
             fragment(
-                "lorebook_selected_memory",
+                if observed.is_empty() {
+                    "lorebook_selected_memory"
+                } else {
+                    "lorebook_selected_memory_observed"
+                },
                 vec![
                     (PromptVariable::ItemNumber, (index + 1).to_string()),
                     (
                         PromptVariable::MemoryText,
-                        rendered.trim_start_matches("- ").to_owned(),
+                        text.trim_start_matches("- ").to_owned(),
                     ),
+                    (PromptVariable::MemoryObserved, observed),
                 ],
             )
         })
@@ -493,7 +522,91 @@ mod tests {
     use lettuce_context::{KeywordMatchMode, LorebookEntry};
     use lettuce_types::{LorebookEntryId, LorebookId, Revision, TimestampMillis};
 
-    use super::format_existing_entries;
+    use super::{format_existing_entries, format_selected_memories};
+
+    #[test]
+    fn selected_memories_keep_the_legacy_numbered_observed_format() {
+        let catalog = crate::BuiltInPromptCatalog::bundled().expect("catalog");
+        let seed = catalog.seed(crate::BuiltInPromptId::LorebookRuntime);
+        let fragment = |key: &str, variables: Vec<(lettuce_context::PromptVariable, String)>| {
+            let entry = seed
+                .entries
+                .iter()
+                .find(|entry| entry.built_in_entry_key.as_deref() == Some(key))
+                .expect("catalog fragment");
+            let mut values = lettuce_context::PromptRenderValues::default();
+            values.purpose_values.extend(variables);
+            Ok(lettuce_context::render_prompt_text(
+                lettuce_context::PromptPurpose::RuntimeText,
+                &entry.content,
+                &values,
+            )
+            .expect("render fragment"))
+        };
+        let observed_at = TimestampMillis::new(1_700_000_000_000);
+        let memory = |text: &str, observed: bool| lettuce_memory::MemoryItem {
+            id: lettuce_types::MemoryId::new(),
+            short_id: lettuce_memory::MemoryShortId::new(900001).expect("short id"),
+            text: text.into(),
+            category: lettuce_memory::MemoryCategory::Preference,
+            source_message_id: None,
+            source_role: None,
+            observed_at: observed.then_some(observed_at),
+            observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
+            token_count: 3,
+            is_cold: false,
+            is_pinned: false,
+            importance: lettuce_memory::Score::FULL,
+            persistence_importance: lettuce_memory::Score::FULL,
+            prompt_importance: lettuce_memory::Score::FULL,
+            volatility: lettuce_memory::Score::LEGACY_VOLATILITY,
+            access_count: 0,
+            created_at: observed_at,
+            last_accessed_at: observed_at,
+        };
+        let memories = vec![
+            memory("- Mira prefers tea ", true),
+            memory("  ", true),
+            memory(" Harbour at dawn ", false),
+        ];
+        let ids = memories.iter().map(|memory| memory.id).collect::<Vec<_>>();
+        let now = TimestampMillis::new(observed_at.get() + 2 * 3_600_000);
+        let memory_text =
+            crate::runtime_text::RuntimeText::from_seed(crate::BuiltInPromptId::MemoryRuntime);
+        let time_aware = format_selected_memories(
+            &memories,
+            &ids,
+            now,
+            true,
+            "(none)",
+            &fragment,
+            Some(&memory_text),
+        )
+        .expect("time aware");
+        let observed = crate::memory_prompt::memory_prompt_line(&memories[0], now)
+            .observed
+            .expect("observed")
+            .local_time;
+        assert_eq!(
+            time_aware,
+            format!(
+                "1. Mira prefers tea  (observed {observed}, 2 hours ago)\n2.  Harbour at dawn "
+            )
+        );
+        assert_eq!(
+            format_selected_memories(&memories, &ids, now, false, "(none)", &fragment, None)
+                .expect("plain"),
+            "1. Mira prefers tea\n2. Harbour at dawn"
+        );
+        assert_eq!(
+            format_selected_memories(&memories, &[], now, true, "(none)", &fragment, None)
+                .expect("none"),
+            "(none)"
+        );
+    }
 
     #[test]
     fn legacy_existing_entry_format_is_preserved() {
