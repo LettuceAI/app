@@ -402,13 +402,6 @@ and immediately admits retained effects from the rewound run suffix with a
 restart-stable rebuild job key. Tombstone replay first checks the rewind receipt,
 closing the crash gap between the conversation mutation and memory rollback.
 
-The first direct/group dynamic-memory handler path accepts an already admitted
-and running ordered tool round, validates the exact v1 feature contract, joins
-precomputed create metadata, reduces it against one stored memory-space
-snapshot, and compare-and-applies at most one change. It returns ordered typed
-provider-neutral outputs for the conversation coordinator to settle durably;
-provider continuation remains later coordinator work.
-
 The composition layer can also verify an installed embedding manifest through
 `lettuce-model-hub`, load one serialized ONNX embedding runtime, and execute
 request-scoped inference with a `lettuce-jobs` cancellation token. Hosts remain
@@ -422,68 +415,7 @@ the reducer, and persists a projection only after the memory CAS confirms the
 item survived. ONNX unavailability does not discard authoritative memory: the
 create proceeds without semantic evidence and leaves rebuildable repair state.
 Cancellation still stops preparation instead of degrading to an unembedded
-write. The production preparation entry point persists one immutable versioned
-plan before returning: exact execution order, create seeds and semantic
-evidence, source text, embedding source/dimensions, policy, memory revision,
-and attempt/job ownership are all bound together.
-
-The durable coordinator starts every validated execution with one batch CAS.
-Production settlement reloads the immutable plan and exact running executions;
-caller-supplied policies or preparations cannot bypass that boundary. It uses
-the planned memory revision and policy, reconstructs create preparation and
-repair metadata without rerunning ONNX or semantic search, then reduces once.
-A same-process ready projection may be reused only when every identity, source,
-dimension, and preparation field matches the plan; otherwise recovery records
-repair work instead of trusting caller data.
-For a successful handler round, the optional memory-space CAS and every exact
-typed terminal output commit in one SQLite transaction; a stale execution or
-memory revision rolls back both sides. Handler-level failure can likewise fail
-the whole running round atomically without mutating memory. The earlier
-reducer-only application helper is test-private so production callers cannot
-accidentally bypass settlement.
-
-Recovery verifies that the supplied job handle owns the generation attempt,
-then loads the attempt's durable ordered executions. Fully settled rounds are
-returned for exact replay and uniformly validated rounds may enter the atomic
-start path. Running/interrupted rounds become restart-eligible only after the
-database revalidates their immutable plan against the attached job, exact tool
-arguments/order, create source text, and unchanged memory revision. Semantic
-duplicate evidence is replayed from that plan rather than recomputed against
-newer mutable state. Missing, stale, or mixed recovery state fails closed.
-An interrupted attempt is never reopened: after conversation recovery creates
-and starts its immediate child attempt with a distinct job, the dynamic-memory
-coordinator asks storage to atomically remap the verified parent calls and
-preparations into new child execution IDs. Exact retries return the same child
-round; parent evidence and terminal execution rows remain untouched.
-
-The first provider-continuation intake replays one exact settled round into the
-provider-neutral context under the same running attempt and attached job. A
-persisted `done` result stops without another request; otherwise the coordinator
-enforces four rounds and 64 total calls, runs the existing inference port, and
-either returns one usable text candidate or atomically admits the next declared
-dynamic-memory call set with stable ordinals. It rejects stale durable counts,
-mixed content/tool responses, multiple candidates, cancellation at each network
-boundary. Signed provider replay must use one coherent candidate/call artifact
-identity; rejected or cancelled pre-admission outcomes clean staged orphans,
-while successful call admission retains the artifact through durable tool rows.
-The terminal coordinator now aggregates every provider response, records one
-immutable usage event with the exact resolved model/account revisions, and
-finalizes a usable text candidate through the conversation manager. Exact
-retries reuse both usage and finalization identities. A persisted `done` result
-is exposed as a distinct successful derived-memory terminal and never
-fabricates an assistant message.
-
-Continuation rounds now have an explicit executor that validates the admitted
-job before mutation, snapshots the current memory revision, atomically starts
-the exact validated call set, prepares/persists caller-supplied create seeds
-through the configured embedding engine, and settles through the plan-bound
-handler. The continuation coordinator can repeatedly invoke that injected
-boundary after parsing and durably validating each newly admitted call set,
-while carrying exact replay context and preserving every provider outcome for
-terminal usage accounting. Seed IDs and token counts remain explicit inputs
-rather than hidden globals. A full SQLite scenario composes two tool rounds,
-two immutable preparation plans, one authoritative memory mutation, exact
-provider replay ordering, aggregated usage, and idempotent finalization.
+write. The companion background rounds use this preparation.
 
 Native creation inference now has its own bounded application coordinator. It
 builds each request from the durable turn, base proposal, attempt-owned tool
@@ -634,16 +566,6 @@ persisted in the same store as the usage repository. Completed replay adds no
 dispatch. SQLite tests cover these boundaries and separate two-round evidence
 from the existing aggregate. Legacy creation_helper/service.rs also accounted
 for initial/continuation responses before accepting their generated content.
-
-Conversation-owned dynamic-memory continuation also records each actual dispatch
-under the generation attempt's attached durable job before validating the
-response. Provider failures and rejected/cancelled responses survive a failed
-loop. Its terminal UsagePort still records the existing whole-attempt aggregate,
-including the externally supplied initial response; that aggregate overlaps
-with dispatch evidence and must not be added to it as an extra charge. This
-coordinator does not dispatch or fabricate evidence for that initial response.
-The SQLite two-round scenario verifies retained failures, separate successful
-response IDs/counters and unchanged terminal aggregate/replay.
 
 `ConversationInitialInferenceCoordinator` supplies the initial provider
 dispatch boundary for a running conversation generation attempt. It reloads the

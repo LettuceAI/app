@@ -610,11 +610,6 @@ impl AppBackend {
         crate::ConversationContextAssembler::new(self.database.as_ref())
     }
 
-    #[must_use]
-    pub fn dynamic_memory_handler(&self) -> crate::DynamicMemoryHandler<'_, Database> {
-        crate::DynamicMemoryHandler::new(self.database.as_ref())
-    }
-
     pub fn launch_direct_conversation(
         &self,
         request: &DirectConversationLaunchRequest,
