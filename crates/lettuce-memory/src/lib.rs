@@ -32,8 +32,8 @@ pub use run::{
     NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall,
 };
 pub use structured_fallback::{
-    MEMORY_OPERATIONS_JSON_FALLBACK_PROMPT, MEMORY_OPERATIONS_XML_FALLBACK_PROMPT,
-    StructuredFallbackError, memory_operations_fallback_prompt, parse_memory_operations_from_text,
+    StructuredFallbackError, memory_operations_fallback_prompt_key,
+    parse_memory_operations_from_text,
 };
 pub use tool::{
     CreateMemoryPreparation, DYNAMIC_MEMORY_TOOL_TEXT_KEYS, DynamicMemoryToolOptions,

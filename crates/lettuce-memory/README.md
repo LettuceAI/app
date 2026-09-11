@@ -43,7 +43,8 @@ ignored, a non-UUID `source_message_id` or non-boolean `important` falls back to
 its default, and `confidence` is clamped to 0..1. Group contracts never carry
 source attribution or supersession. Invalid text or category still fails the
 call; legacy skipped such calls with a result, which is later work together
-with legacy-shaped tool results (six-digit ids in results). Companion-required source validation and supersession, provider-driven
+with legacy-shaped tool results (six-digit ids in results). Structured
+fallback prompts are catalog keys (`memory_operations_fallback_prompt_key`). Companion-required source validation and supersession, provider-driven
 category repair, and UI events remain later slices. ONNX inference runtime
 ownership belongs in
 `lettuce-embeddings`; this crate consumes typed duplicate evidence through the

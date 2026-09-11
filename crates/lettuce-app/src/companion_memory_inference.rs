@@ -17,7 +17,8 @@ use lettuce_memory::{
     DynamicMemoryRoundFinishReason, DynamicMemoryRun, DynamicMemoryRunRepository,
     DynamicMemoryRunRepositoryError, DynamicMemoryStructuredFallbackFormat, MemoryPolicy,
     MemoryRepository, MemoryRepositoryError, MemorySpaceSnapshot, NewDynamicMemoryInferenceRound,
-    NewDynamicMemoryToolCall, memory_operations_fallback_prompt, parse_memory_operations_from_text,
+    NewDynamicMemoryToolCall, memory_operations_fallback_prompt_key,
+    parse_memory_operations_from_text,
 };
 use lettuce_types::{
     DynamicMemoryAttemptId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId, RequestId,
@@ -80,6 +81,7 @@ impl<
         + MemoryRepository
         + ProviderReplayArtifactPort
         + JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     C: ConversationReader + ?Sized,
     I: InferencePort + ?Sized,
@@ -147,10 +149,16 @@ impl<
             return Err(CompanionMemoryInferenceError::InvalidOwnership);
         }
         let sources = materialize_sources(self.conversations, &run)?;
+        let text = crate::runtime_text::RuntimeText::load(
+            self.repository,
+            crate::BuiltInPromptId::MemoryRuntime,
+        )
+        .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
         let request = build_first_request(
             &run,
             &attempt,
             prompt,
+            &text,
             previous_summary,
             policy,
             &memory,
@@ -159,6 +167,7 @@ impl<
             aggregate.conversation.participants.len(),
             handle,
             stream_sink,
+            now,
         )?;
         let request_context = request.context.clone();
         let outcome = match run_memory_request_with_fallback(
@@ -239,7 +248,10 @@ pub(crate) async fn run_memory_request_with_fallback<R, I>(
 ) -> Result<InferenceOutcome, CompanionMemoryInferenceError>
 where
     I: InferencePort + ?Sized,
-    R: JobUsageLedger + ProviderReplayArtifactPort + ?Sized,
+    R: JobUsageLedger
+        + ProviderReplayArtifactPort
+        + crate::runtime_text::RuntimeTextSource
+        + ?Sized,
 {
     use crate::job_inference_usage::{JobInferenceError, run_job_inference};
 
@@ -267,6 +279,18 @@ where
         }
         return Err(CompanionMemoryInferenceError::Cancelled);
     }
+    let fallback_prompt =
+        crate::runtime_text::RuntimeText::load(repository, crate::BuiltInPromptId::MemoryRuntime)
+            .and_then(|text| text.render_with(memory_operations_fallback_prompt_key(format), []));
+    let fallback_prompt = match fallback_prompt {
+        Ok(prompt) => prompt,
+        Err(_) => {
+            if let Some(primary) = &primary {
+                cleanup_outcome_replays(repository, primary)?;
+            }
+            return Err(CompanionMemoryInferenceError::InvalidPrompt);
+        }
+    };
     let mut fallback = request;
     fallback.profile.tool_policy = ToolPolicy::Disabled;
     fallback.profile.output_policy = lettuce_conversations::OutputPolicy::Plain;
@@ -274,7 +298,7 @@ where
     fallback.context.messages.push(ProviderNeutralMessage {
         role: MessageRole::User,
         parts: vec![ProviderContextPart::Text {
-            text: memory_operations_fallback_prompt(format).to_owned(),
+            text: fallback_prompt,
         }],
     });
     if fallback.validate().is_err() {
@@ -468,6 +492,7 @@ fn build_first_request(
     run: &DynamicMemoryRun,
     attempt: &DynamicMemoryAttempt,
     prompt: &PromptDocument,
+    text: &crate::runtime_text::RuntimeText,
     previous_summary: &str,
     policy: &MemoryPolicy,
     memory: &MemorySpaceSnapshot,
@@ -476,6 +501,7 @@ fn build_first_request(
     participant_count: usize,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
+    now: TimestampMillis,
 ) -> Result<InferenceRequest, CompanionMemoryInferenceError> {
     if prompt.status != LifecycleStatus::Active
         || prompt.purpose != PromptPurpose::DynamicMemoryManager
@@ -541,6 +567,9 @@ fn build_first_request(
         PromptVariable::HotTokenBudget,
         policy.hot_token_budget.to_string(),
     );
+    if run.time_awareness_enabled {
+        crate::companion_memory_summary::insert_time_values(&mut values, now);
+    }
     let rendered = render_prompt(
         prompt,
         &PromptRenderContext {
@@ -572,22 +601,32 @@ fn build_first_request(
                         .reasoning_budget_tokens
                         .is_some(),
                 companion_mode_enabled: !is_group,
+                time_awareness_enabled: !is_group && run.time_awareness_enabled,
                 ..Default::default()
             },
             values,
         },
     )
     .map_err(CompanionMemoryInferenceError::Prompt)?;
-    let runtime_input = format!(
-        "Conversation transcript summary:\n{}\n\nRecent transcript lines:\n{}\n\nCurrent memories (with IDs):\n{}",
-        previous_summary,
-        transcript,
-        if memory_lines.is_empty() {
-            "none".to_owned()
-        } else {
-            memory_lines.join("\n")
-        }
-    );
+    let fragment = |key: &str, variables: Vec<(PromptVariable, String)>| {
+        text.render_with(key, variables)
+            .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)
+    };
+    let runtime_input = fragment(
+        "memory_runtime_input",
+        vec![
+            (PromptVariable::PreviousSummary, previous_summary.to_owned()),
+            (PromptVariable::SelectedMessages, transcript),
+            (
+                PromptVariable::SelectedMemories,
+                if memory_lines.is_empty() {
+                    fragment("memory_none", Vec::new())?
+                } else {
+                    memory_lines.join("\n")
+                },
+            ),
+        ],
+    )?;
     let mut messages = rendered
         .relative
         .iter()
@@ -967,6 +1006,10 @@ mod tests {
     fn usage_fixture() -> (lettuce_database::Database, JobId) {
         use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, SubjectKind};
         let database = lettuce_database::Database::open_in_memory().expect("usage database");
+        crate::BuiltInPromptService::new(&database)
+            .expect("built-in prompt catalog")
+            .bootstrap(TimestampMillis::new(1))
+            .expect("bootstrap built-in prompts");
         let job = database
             .create_or_get(
                 JobSpec::new(
@@ -1054,7 +1097,7 @@ mod tests {
         assert!(matches!(
             requests[1].context.messages.last().map(|message| &message.parts[..]),
             Some([ProviderContextPart::Text { text }])
-                if text == lettuce_memory::MEMORY_OPERATIONS_XML_FALLBACK_PROMPT
+                if text == r#"Return only XML. Format: <memory_ops><create_memory important="false"><text>...</text><category>plot_event</category></create_memory><delete_memory confidence="0.9"><text>123456</text></delete_memory><pin_memory><id>123456</id></pin_memory><unpin_memory><id>123456</id></unpin_memory><done><summary>optional note</summary></done></memory_ops>. Use an empty <memory_ops /> when no changes are needed. Do not use markdown."#
         ));
     }
 
@@ -1090,7 +1133,7 @@ mod tests {
         assert!(matches!(
             requests[1].context.messages.last().map(|message| &message.parts[..]),
             Some([ProviderContextPart::Text { text }])
-                if text == lettuce_memory::MEMORY_OPERATIONS_JSON_FALLBACK_PROMPT
+                if text == r#"Return only JSON. Format: {"operations":[{"name":"create_memory","arguments":{"text":"...","category":"plot_event","important":false}},{"name":"delete_memory","arguments":{"text":"123456","confidence":0.9}},{"name":"pin_memory","arguments":{"id":"123456"}},{"name":"unpin_memory","arguments":{"id":"123456"}},{"name":"done","arguments":{"summary":"optional note"}}]}. Use {"operations":[]} when no changes are needed. Do not use markdown."#
         ));
     }
 
@@ -1309,6 +1352,7 @@ mod tests {
             &run,
             &attempt,
             &prompt,
+            &crate::runtime_text::RuntimeText::from_seed(crate::BuiltInPromptId::MemoryRuntime),
             "Prior summary.",
             &policy,
             &memory,
@@ -1317,6 +1361,7 @@ mod tests {
             2,
             &handle,
             None,
+            TimestampMillis::new(1),
         )
         .expect("request");
         let text_messages = request
@@ -1364,6 +1409,7 @@ mod tests {
             &run,
             &attempt,
             &prompt,
+            &crate::runtime_text::RuntimeText::from_seed(crate::BuiltInPromptId::MemoryRuntime),
             "Prior summary.",
             &policy,
             &memory,
@@ -1372,6 +1418,7 @@ mod tests {
             2,
             &handle,
             None,
+            TimestampMillis::new(1),
         )
         .expect("group request");
         let group_runtime = match &group_request
@@ -1410,6 +1457,7 @@ mod tests {
             &time_aware_run,
             &attempt,
             &prompt,
+            &crate::runtime_text::RuntimeText::from_seed(crate::BuiltInPromptId::MemoryRuntime),
             "Prior summary.",
             &policy,
             &memory,
@@ -1418,6 +1466,7 @@ mod tests {
             2,
             &handle,
             None,
+            TimestampMillis::new(1),
         )
         .expect("time-aware request");
         let runtime_input = match &request
@@ -1448,6 +1497,18 @@ mod tests {
             };
             assert!(runtime_input.contains(&expected));
         }
+        let system_text = request
+            .context
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                ProviderContextPart::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .find(|text| text.contains("Current local time context:"))
+            .expect("companion time awareness entry");
+        assert!(!system_text.contains("Current local time context: , , ."));
         assert_eq!(
             request.tools,
             Some(crate::companion_memory_run::test_memory_tool_request(

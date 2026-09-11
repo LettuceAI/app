@@ -36,7 +36,11 @@ pub struct CompanionMemoryContinuationCoordinator<'a, R: ?Sized, I: ?Sized> {
 
 impl<
     'a,
-    R: DynamicMemoryRunRepository + ProviderReplayArtifactPort + JobUsageLedger + ?Sized,
+    R: DynamicMemoryRunRepository
+        + ProviderReplayArtifactPort
+        + JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource
+        + ?Sized,
     I: InferencePort + ?Sized,
 > CompanionMemoryContinuationCoordinator<'a, R, I>
 {

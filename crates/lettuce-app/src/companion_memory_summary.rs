@@ -28,9 +28,6 @@ use crate::{
     format_message_timestamp, insert_in_chat_messages, materialize_sources, rendered_message,
 };
 
-const SUMMARY_OUTPUT_REQUEST: &str = "Return only the concise summary for the above conversation window. Use the write_summary tool.";
-const SUMMARY_FALLBACK_REQUEST: &str = "Return only the final merged summary as plain text. No tools, no JSON, no markdown, no commentary.";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompanionMemorySummaryResult {
     pub checkpoint: DynamicMemorySummaryCheckpoint,
@@ -71,6 +68,7 @@ impl<
         + MemorySummaryRepository
         + ProviderReplayArtifactPort
         + JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     C: ConversationReader + ?Sized,
     I: InferencePort + ?Sized,
@@ -133,10 +131,19 @@ impl<
             return Err(CompanionMemoryInferenceError::InvalidOwnership);
         }
         let sources = materialize_sources(self.conversations, &run)?;
+        let runtime_text = crate::runtime_text::RuntimeText::load(
+            self.repository,
+            crate::BuiltInPromptId::MemoryRuntime,
+        )
+        .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
+        let fallback_request = runtime_text
+            .render_with("summary_fallback_request", [])
+            .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
         let request = build_summary_request(
             &run,
             &attempt,
             prompt,
+            &runtime_text,
             previous.as_ref().map(|summary| summary.text.as_str()),
             &sources,
             aggregate.conversation.kind.is_group(),
@@ -145,8 +152,9 @@ impl<
             stream_sink,
             now,
         )?;
-        let (text, request_context, usage, provider_request_id) =
-            self.infer_summary(request, handle, now).await?;
+        let (text, request_context, usage, provider_request_id) = self
+            .infer_summary(request, fallback_request, handle, now)
+            .await?;
         if handle.cancellation_token().is_cancelled() {
             return Err(CompanionMemoryInferenceError::Cancelled);
         }
@@ -176,6 +184,7 @@ impl<
     async fn infer_summary(
         &self,
         request: InferenceRequest,
+        fallback_request: String,
         handle: &JobHandle,
         now: TimestampMillis,
     ) -> Result<
@@ -239,7 +248,7 @@ impl<
         fallback.context.messages.push(ProviderNeutralMessage {
             role: MessageRole::User,
             parts: vec![ProviderContextPart::Text {
-                text: SUMMARY_FALLBACK_REQUEST.to_owned(),
+                text: fallback_request,
             }],
         });
         fallback
@@ -274,17 +283,15 @@ impl<
     }
 }
 
-fn summary_tool_request() -> ToolRequest {
+fn summary_tool_request(description: String, parameter: String) -> ToolRequest {
     ToolRequest {
         definitions: vec![ToolDefinition {
             name: "write_summary".to_owned(),
-            description: Some(
-                "Return a concise summary of the provided conversation window.".to_owned(),
-            ),
+            description: Some(description),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "summary": { "type": "string", "description": "Concise summary text" }
+                    "summary": { "type": "string", "description": parameter }
                 },
                 "required": ["summary"]
             }),
@@ -299,6 +306,7 @@ fn build_summary_request(
     run: &lettuce_memory::DynamicMemoryRun,
     attempt: &lettuce_memory::DynamicMemoryAttempt,
     prompt: &PromptDocument,
+    text: &crate::runtime_text::RuntimeText,
     previous_summary: Option<&str>,
     sources: &[crate::companion_memory_inference::MaterializedSource],
     is_group: bool,
@@ -313,9 +321,17 @@ fn build_summary_request(
     {
         return Err(CompanionMemoryInferenceError::InvalidPrompt);
     }
+    let fragment = |key: &str, variables: Vec<(PromptVariable, String)>| {
+        text.render_with(key, variables)
+            .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)
+    };
+    let group_variant = |direct: &'static str, group: &'static str| {
+        if is_group { group } else { direct }
+    };
+    let no_previous = fragment("summary_no_previous", Vec::new())?;
     let previous = previous_summary
         .filter(|summary| !summary.trim().is_empty())
-        .unwrap_or("No previous summary provided.");
+        .unwrap_or(&no_previous);
     let transcript = sources
         .iter()
         .map(|source| {
@@ -373,6 +389,7 @@ fn build_summary_request(
                         .reasoning_budget_tokens
                         .is_some(),
                 companion_mode_enabled: !is_group,
+                time_awareness_enabled: !is_group && run.time_awareness_enabled,
                 ..Default::default()
             },
             values,
@@ -384,21 +401,39 @@ fn build_summary_request(
         .iter()
         .map(rendered_message)
         .collect::<Result<Vec<_>, _>>()?;
-    messages.extend(sources.iter().map(|source| ProviderNeutralMessage {
-        role: source.role,
-        parts: vec![ProviderContextPart::Text {
-            text: if run.time_awareness_enabled {
-                let timestamp = format_message_timestamp(source.effective_time);
-                if source.text.is_empty() {
-                    timestamp
-                } else {
-                    format!("{timestamp} {}", source.text)
-                }
+    let user_label = fragment("summary_group_user_label", Vec::new())?;
+    let character_label = fragment("summary_group_character_label", Vec::new())?;
+    for source in sources {
+        let content = if is_group {
+            fragment(
+                "summary_group_line",
+                vec![
+                    (
+                        PromptVariable::SpeakerName,
+                        if source.role == MessageRole::User {
+                            user_label.clone()
+                        } else {
+                            character_label.clone()
+                        },
+                    ),
+                    (PromptVariable::MessageText, source.text.clone()),
+                ],
+            )?
+        } else if run.time_awareness_enabled {
+            let timestamp = format_message_timestamp(source.effective_time);
+            if source.text.is_empty() {
+                timestamp
             } else {
-                source.text.clone()
-            },
-        }],
-    }));
+                format!("{timestamp} {}", source.text)
+            }
+        } else {
+            source.text.clone()
+        };
+        messages.push(ProviderNeutralMessage {
+            role: source.role,
+            parts: vec![ProviderContextPart::Text { text: content }],
+        });
+    }
     let mut in_chat = rendered
         .in_chat
         .iter()
@@ -409,7 +444,10 @@ fn build_summary_request(
         ProviderNeutralMessage {
             role: MessageRole::User,
             parts: vec![ProviderContextPart::Text {
-                text: SUMMARY_OUTPUT_REQUEST.to_owned(),
+                text: fragment(
+                    group_variant("summary_output_request", "summary_output_request_group"),
+                    Vec::new(),
+                )?,
             }],
         },
     ));
@@ -458,7 +496,16 @@ fn build_summary_request(
         cancellation: Some(handle.id()),
         stream_sink,
         media_grants: Vec::new(),
-        tools: Some(summary_tool_request()),
+        tools: Some(summary_tool_request(
+            fragment(
+                group_variant("summary_tool", "summary_tool_group"),
+                Vec::new(),
+            )?,
+            fragment(
+                group_variant("summary_parameter", "summary_parameter_group"),
+                Vec::new(),
+            )?,
+        )),
     };
     request
         .validate()
@@ -625,7 +672,7 @@ fn aggregate_usage(
     }
 }
 
-fn insert_time_values(values: &mut PromptRenderValues, now: TimestampMillis) {
+pub(crate) fn insert_time_values(values: &mut PromptRenderValues, now: TimestampMillis) {
     let datetime = match Local.timestamp_millis_opt(now.get()) {
         LocalResult::Single(datetime) | LocalResult::Ambiguous(datetime, _) => datetime,
         LocalResult::None => Local::now(),

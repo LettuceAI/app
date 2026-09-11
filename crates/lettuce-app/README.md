@@ -742,7 +742,18 @@ fails the turn with `RuntimeTextUnavailable`.
 Post-turn memory runs freeze the legacy memory tool contract with the
 descriptions of the built-in `prompt_app_memory_runtime` document (group runs
 use the legacy group wording and no `source_message_id`), and the memory
-manager input lists memories as `[six-digit id] text`.
+manager input lists memories as `[six-digit id] text`. The memory manager
+runtime input, `none`, the JSON/XML fallbacks (legacy `123456` examples) and the
+summarizer's final instruction, plain-text fallback, `write_summary` texts and
+`No previous summary provided.` also come from that document, with the legacy
+group variants (group summaries label transcript lines `[User transcript
+line]:` / `[Character transcript line]:`). Protocol formats (`<time>…</time>`,
+`[message:ID]`, `[id] text`, `role: text`) are data formats and stay in code.
+The memory manager's and summarizer's prompt conditions see companion time
+awareness (never for groups), and time-aware memory runs fill the date/time
+values their entries use, as legacy did. A runtime-text key missing from a
+stored document (a user-edited copy kept across a catalog update) renders the
+bundled catalog text; a disabled entry stays off.
 The reply itself carries no memory tools: legacy writes memories in
 a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`). Plain direct
 and group conversations now admit that cycle through

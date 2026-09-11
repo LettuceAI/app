@@ -48,6 +48,7 @@ impl<
         + MemoryEmbeddingRepository
         + ProviderReplayArtifactPort
         + JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     I: InferencePort + ?Sized,
 > CompanionMemoryLoopCoordinator<'_, E, R, I>

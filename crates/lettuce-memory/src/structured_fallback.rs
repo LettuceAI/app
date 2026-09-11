@@ -17,17 +17,14 @@ const OPERATION_TAGS: &[&str] = &[
     "done",
 ];
 
-pub const MEMORY_OPERATIONS_XML_FALLBACK_PROMPT: &str = r#"Return only XML. Format: <memory_ops><create_memory important="false"><text>...</text><category>plot_event</category></create_memory><delete_memory confidence="0.9"><text>memory ID</text></delete_memory><pin_memory><id>memory ID</id></pin_memory><unpin_memory><id>memory ID</id></unpin_memory><done><summary>optional note</summary></done></memory_ops>. Use an empty <memory_ops /> when no changes are needed. Do not use markdown."#;
-
-pub const MEMORY_OPERATIONS_JSON_FALLBACK_PROMPT: &str = r#"Return only JSON. Format: {"operations":[{"name":"create_memory","arguments":{"text":"...","category":"plot_event","important":false}},{"name":"delete_memory","arguments":{"text":"memory ID","confidence":0.9}},{"name":"pin_memory","arguments":{"id":"memory ID"}},{"name":"unpin_memory","arguments":{"id":"memory ID"}},{"name":"done","arguments":{"summary":"optional note"}}]}. Use {"operations":[]} when no changes are needed. Do not use markdown."#;
-
+/// Runtime catalog key of the structured-output fallback instruction.
 #[must_use]
-pub const fn memory_operations_fallback_prompt(
+pub const fn memory_operations_fallback_prompt_key(
     format: DynamicMemoryStructuredFallbackFormat,
 ) -> &'static str {
     match format {
-        DynamicMemoryStructuredFallbackFormat::Json => MEMORY_OPERATIONS_JSON_FALLBACK_PROMPT,
-        DynamicMemoryStructuredFallbackFormat::Xml => MEMORY_OPERATIONS_XML_FALLBACK_PROMPT,
+        DynamicMemoryStructuredFallbackFormat::Json => "memory_fallback_json",
+        DynamicMemoryStructuredFallbackFormat::Xml => "memory_fallback_xml",
     }
 }
 
