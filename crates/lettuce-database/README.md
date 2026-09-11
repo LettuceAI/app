@@ -725,3 +725,14 @@ attempts, ordered inference rounds and calls, background settlements and summary
 checkpoints before they leave SQLite. Storage-only preparation and settlement
 digests remain explicit, including exact preparation JSON, so restart evidence
 is not reconstructed during export.
+
+Migration 20 stores immutable backup-restore admissions for both current
+version-2 and legacy version-1 sources. One row binds the source hash, plan
+fingerprint, staging-receipt fingerprint and exact inventory counts before any
+live restore work. Identical retry and reopen replay the stored row and its
+original admission time;
+changed input under the same admission, invalid counts and failed inserts write
+nothing. The same backup source can be admitted again under a new operation, so
+an immutable admission never blocks a later restore of that file. The table
+contains no secret values, media bytes or domain snapshots and cannot perform
+materialization, cutover or cleanup.

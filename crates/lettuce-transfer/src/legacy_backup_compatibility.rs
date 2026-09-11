@@ -56,6 +56,14 @@ pub struct LegacyBackupCompatibilityPlan {
 
 impl LegacyBackupCompatibilityPlan {
     pub(crate) fn inventory(&self) -> &LegacyBackupInventory {
+        &self.configuration().source
+    }
+
+    pub(crate) fn secret_count(&self) -> usize {
+        self.configuration().secrets.len()
+    }
+
+    fn configuration(&self) -> &crate::LegacyBackupConfigurationPlan {
         &self
             .creation_helpers
             .source
@@ -69,7 +77,6 @@ impl LegacyBackupCompatibilityPlan {
             .source
             .authored
             .configuration
-            .source
     }
 
     pub(crate) fn verify_seal(&self) -> Result<(), LegacyBackupCompatibilityError> {

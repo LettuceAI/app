@@ -442,6 +442,17 @@ replays; a changed partial prefix, installed blob, seal or source receipt fails
 closed. Secrets, live database rows and the media library remain untouched, and
 the backup source is never removed.
 
+Current version-2 and legacy version-1 staging receipts can now produce the same
+validated restore-admission request. It binds the source version/hash, plan
+fingerprint, exact staging-receipt fingerprint and document, media, secret and
+protected-artifact counts. A current plan is a pure decode of its source, so its
+fingerprint is derived from the source hash; a legacy plan uses its compatibility
+seal. Current receipts must exactly match their decoded plan; legacy receipts
+must match the revalidated compatibility seal and complete media coverage.
+Admission does not reread the workspace, so cutover must verify staged bytes
+itself. The transfer-owned repository port records admission only and
+carries no secret value or live-domain payload.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established

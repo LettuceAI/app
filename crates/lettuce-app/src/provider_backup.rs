@@ -1769,28 +1769,34 @@ mod tests {
             open_backup(&envelope, "wrong password"),
             Err(BackupEnvelopeError::Authentication)
         );
-        let restore_plan = lettuce_transfer::decode_provider_backup_restore_plan(
-            &envelope,
-            "backup password",
-        )
-        .expect("restore plan");
+        let restore_plan =
+            lettuce_transfer::decode_provider_backup_restore_plan(&envelope, "backup password")
+                .expect("restore plan");
         assert_eq!(restore_plan.secrets.len(), 2);
-        assert!(restore_plan.secrets.iter().any(|secret| {
-            secret
-                .value
-                .with(|value| value == "provider-backup-canary")
-        }));
-        assert!(restore_plan.secrets.iter().any(|secret| {
-            secret.value.with(|value| value == "audio-backup-canary")
-        }));
-        assert!(restore_plan
-            .media
-            .iter()
-            .any(|object| object.content_hash == avatar.blob.content_hash));
-        assert!(restore_plan
-            .media
-            .iter()
-            .any(|object| object.content_hash == voice_audio.blob.content_hash));
+        assert!(
+            restore_plan
+                .secrets
+                .iter()
+                .any(|secret| { secret.value.with(|value| value == "provider-backup-canary") })
+        );
+        assert!(
+            restore_plan
+                .secrets
+                .iter()
+                .any(|secret| { secret.value.with(|value| value == "audio-backup-canary") })
+        );
+        assert!(
+            restore_plan
+                .media
+                .iter()
+                .any(|object| object.content_hash == avatar.blob.content_hash)
+        );
+        assert!(
+            restore_plan
+                .media
+                .iter()
+                .any(|object| object.content_hash == voice_audio.blob.content_hash)
+        );
         assert!(!restore_plan.artifacts.is_empty());
         let restore_workspace =
             lettuce_transfer::BackupRestoreWorkspace::open(root.join("restore-workspace"))
@@ -1809,18 +1815,71 @@ mod tests {
                 .expect("replay restore staging"),
             restore_receipt
         );
+        let restore_admission_request = lettuce_transfer::current_backup_restore_admission(
+            OperationId::new(),
+            &restore_plan,
+            &restore_receipt,
+            TimestampMillis::new(1_700_000_000_100),
+        )
+        .expect("restore admission request");
+        let mut changed_receipt = restore_receipt.clone();
+        changed_receipt.version += 1;
+        assert_eq!(
+            lettuce_transfer::current_backup_restore_admission(
+                OperationId::new(),
+                &restore_plan,
+                &changed_receipt,
+                TimestampMillis::new(1_700_000_000_100),
+            ),
+            Err(lettuce_transfer::BackupRestoreAdmissionError::InvalidInput)
+        );
+        assert_eq!(
+            restore_admission_request.counts.document_count,
+            PROVIDER_BACKUP_FIXED_SECTIONS as u64
+        );
+        assert_eq!(
+            restore_admission_request.source_version,
+            lettuce_transfer::BackupRestoreSourceVersion::CurrentV2
+        );
+        assert_eq!(
+            restore_admission_request.counts.media_count,
+            restore_plan.media.len() as u64
+        );
+        assert_eq!(
+            restore_admission_request.counts.secret_count,
+            restore_plan.secrets.len() as u64
+        );
+        let restore_admission =
+            lettuce_transfer::BackupRestoreAdmissionRepository::admit_backup_restore(
+                reopened.database(),
+                restore_admission_request.clone(),
+            )
+            .expect("admit restore");
+        assert!(!restore_admission.replayed);
+        assert!(
+            lettuce_transfer::BackupRestoreAdmissionRepository::admit_backup_restore(
+                reopened.database(),
+                restore_admission_request,
+            )
+            .expect("replay restore admission")
+            .replayed
+        );
         let receipt_bytes = std::fs::read(
             root.join("restore-workspace")
                 .join("restore")
                 .join("receipt.json"),
         )
         .expect("restore receipt bytes");
-        assert!(!receipt_bytes
-            .windows("provider-backup-canary".len())
-            .any(|window| window == b"provider-backup-canary"));
-        assert!(!receipt_bytes
-            .windows("audio-backup-canary".len())
-            .any(|window| window == b"audio-backup-canary"));
+        assert!(
+            !receipt_bytes
+                .windows("provider-backup-canary".len())
+                .any(|window| window == b"provider-backup-canary")
+        );
+        assert!(
+            !receipt_bytes
+                .windows("audio-backup-canary".len())
+                .any(|window| window == b"audio-backup-canary")
+        );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
         assert_eq!(sections.len(), 24);
         assert!(

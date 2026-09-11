@@ -314,7 +314,7 @@ impl BackupRestoreWorkspace {
     }
 }
 
-fn staging_receipt(plan: &ProviderBackupRestorePlan) -> BackupRestoreStagingReceipt {
+pub(crate) fn staging_receipt(plan: &ProviderBackupRestorePlan) -> BackupRestoreStagingReceipt {
     BackupRestoreStagingReceipt {
         version: BACKUP_RESTORE_STAGING_VERSION,
         source_hash: plan.source_hash.clone(),
@@ -425,6 +425,34 @@ mod tests {
             .expect("staged media"),
             b"legacy attachment"
         );
+        let admission = crate::legacy_backup_restore_admission(
+            OperationId::new(),
+            &sealed_plan,
+            &receipt,
+            lettuce_types::TimestampMillis::new(1_700_000_000_001),
+        )
+        .expect("legacy admission request");
+        assert_eq!(
+            admission.source_version,
+            crate::BackupRestoreSourceVersion::LegacyV1
+        );
+        assert_eq!(admission.counts.document_count, 0);
+        assert_eq!(admission.counts.media_count, 1);
+        assert_eq!(admission.counts.artifact_count, 0);
+        let other = plan("22", b"legacy attachment");
+        let mut changed_media = receipt.clone();
+        changed_media.media[0].byte_count += 1;
+        for (plan, receipt) in [(&other, &receipt), (&sealed_plan, &changed_media)] {
+            assert_eq!(
+                crate::legacy_backup_restore_admission(
+                    OperationId::new(),
+                    plan,
+                    receipt,
+                    lettuce_types::TimestampMillis::new(1_700_000_000_001),
+                ),
+                Err(crate::BackupRestoreAdmissionError::InvalidInput)
+            );
+        }
         assert_eq!(
             workspace
                 .stage_legacy(&sealed_plan)
@@ -432,7 +460,6 @@ mod tests {
             receipt
         );
 
-        let other = plan("22", b"legacy attachment");
         assert_eq!(
             workspace.stage_legacy(&other),
             Err(BackupRestoreWorkspaceError::Conflict)
