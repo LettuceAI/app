@@ -39,6 +39,7 @@ mod composition;
 mod context_assembler;
 mod creation_apply;
 mod creation_continuation;
+mod creation_prompt;
 mod dynamic_memory;
 mod dynamic_memory_delete_after;
 mod embeddings;

@@ -48,11 +48,17 @@ pub enum CreationOperation {
     },
     ShowPreview,
     RequestConfirmation,
+    /// A call to a tool the attempt did not declare; it changes nothing and
+    /// reports an error back to the model, as legacy did.
+    UndeclaredTool {
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CreationOperationError {
+    UnknownTool,
     WrongTarget,
     InvalidText,
     DuplicateIdentity,
@@ -183,6 +189,9 @@ fn apply_one(
     stage: &mut CreationStage,
     operation: &CreationOperation,
 ) -> Result<(), CreationOperationError> {
+    if matches!(operation, CreationOperation::UndeclaredTool { .. }) {
+        return Err(CreationOperationError::UnknownTool);
+    }
     let is_mutation = !matches!(
         operation,
         CreationOperation::ShowPreview | CreationOperation::RequestConfirmation
@@ -338,6 +347,9 @@ fn apply_one(
                 return Err(CreationOperationError::InvalidStage);
             }
             *stage = CreationStage::AwaitingConfirmation;
+        }
+        CreationOperation::UndeclaredTool { .. } => {
+            return Err(CreationOperationError::UnknownTool);
         }
     }
     Ok(())

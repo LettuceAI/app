@@ -15,10 +15,10 @@ use lettuce_creation::{
     ConfirmedPersonaRevisionApply, CreationApplyReceipt, CreationApplyRepository,
     CreationAttemptFailureCode, CreationAttemptOwner, CreationAttemptRecovery,
     CreationAttemptRepository, CreationAttemptStatus, CreationAttemptSuccess,
-    CreationAttemptSuccessSettlement, CreationCharacterApplyReceipt, CreationInferenceAttempt,
-    CreationInferenceRound, CreationLorebookApplyReceipt, CreationOperationOutcome,
-    CreationProposal, CreationRepositoryError, CreationRoundFinishReason, CreationStage,
-    CreationTarget, CreationTargetKind, CreationToolCallEvidence, CreationTurn,
+    CreationAttemptSuccessSettlement, CreationCharacterApplyReceipt, CreationDialogueTurn,
+    CreationInferenceAttempt, CreationInferenceRound, CreationLorebookApplyReceipt,
+    CreationOperationOutcome, CreationProposal, CreationRepositoryError, CreationRoundFinishReason,
+    CreationStage, CreationTarget, CreationTargetKind, CreationToolCallEvidence, CreationTurn,
     CreationTurnAttemptAdmission, CreationWorkflow, CreationWorkflowRepository, NewCreationAttempt,
     NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationTurn, NewCreationTurnAttempt,
     NewCreationWorkflow, creation_tool_request, reduce_creation_tool_calls,
@@ -2387,6 +2387,80 @@ impl CreationAttemptRepository for Database {
         let calls = list_calls_in(&transaction, owner, attempt_id)?;
         transaction.commit().map_err(storage)?;
         Ok(calls)
+    }
+
+    fn list_creation_dialogue(
+        &self,
+        workflow_id: CreationWorkflowId,
+        before: CreationTurnId,
+    ) -> Result<Vec<CreationDialogueTurn>, CreationRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
+        let current = load_turn_conn(&transaction, before)?;
+        if current.workflow_id != workflow_id {
+            return Err(CreationRepositoryError::Conflict);
+        }
+        let turn_ids = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT id FROM creation_turns WHERE workflow_id=?1 AND ordinal<?2 \
+                     ORDER BY ordinal",
+                )
+                .map_err(storage)?;
+            statement
+                .query_map(
+                    params![workflow_id.to_string(), i64::from(current.ordinal)],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(storage)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(storage)?
+        };
+        let mut dialogue = Vec::with_capacity(turn_ids.len());
+        for turn_id in turn_ids {
+            let turn_id: CreationTurnId = turn_id
+                .parse()
+                .map_err(|_| CreationRepositoryError::Storage)?;
+            let turn = load_turn_conn(&transaction, turn_id)?;
+            let attempt_id = transaction
+                .query_row(
+                    "SELECT id FROM creation_inference_attempts \
+                     WHERE workflow_id=?1 AND turn_id=?2 AND status='succeeded' \
+                     ORDER BY ordinal DESC LIMIT 1",
+                    params![workflow_id.to_string(), turn_id.to_string()],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(storage)?
+                .map(|id| {
+                    id.parse::<GenerationAttemptId>()
+                        .map_err(|_| CreationRepositoryError::Storage)
+                })
+                .transpose()?;
+            let Some(attempt_id) = attempt_id else {
+                continue;
+            };
+            let assistant_parts = list_rounds_in(
+                &transaction,
+                CreationAttemptOwner {
+                    workflow_id,
+                    turn_id,
+                },
+                attempt_id,
+            )?
+            .into_iter()
+            .flat_map(|round| round.parts)
+            .collect();
+            dialogue.push(CreationDialogueTurn {
+                turn_id,
+                user_message: turn.user_message,
+                assistant_parts,
+            });
+        }
+        transaction.commit().map_err(storage)?;
+        Ok(dialogue)
     }
 }
 

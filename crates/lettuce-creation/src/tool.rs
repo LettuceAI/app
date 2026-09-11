@@ -17,6 +17,9 @@ use crate::{
 };
 
 const TOOL_VERSION: u32 = 1;
+/// The version every creation tool definition carries; calls to undeclared
+/// tools are recorded with it too.
+pub const CREATION_TOOL_VERSION: u32 = TOOL_VERSION;
 
 /// Catalog keys of the model-facing tool texts: `(tool, parameter, key)`,
 /// where a `None` parameter names the tool description itself.
@@ -286,11 +289,19 @@ fn validate_and_parse_creation_tool_calls(
         {
             return Err(CreationToolContractError::DuplicateProviderCallId);
         }
-        let definition = request
+        let Some(definition) = request
             .definitions
             .iter()
             .find(|definition| definition.name == admitted.call.name)
-            .ok_or(CreationToolContractError::UnsupportedTool)?;
+        else {
+            if admitted.definition_version != TOOL_VERSION {
+                return Err(CreationToolContractError::DefinitionVersionMismatch);
+            }
+            operations.push(CreationOperation::UndeclaredTool {
+                name: admitted.call.name.clone(),
+            });
+            continue;
+        };
         if admitted.definition_version != definition.version {
             return Err(CreationToolContractError::DefinitionVersionMismatch);
         }
@@ -466,7 +477,8 @@ fn output_for_outcome(
         }
         CreationOperation::SetName { .. }
         | CreationOperation::SetDescription { .. }
-        | CreationOperation::ReorderLorebookEntries { .. } => {}
+        | CreationOperation::ReorderLorebookEntries { .. }
+        | CreationOperation::UndeclaredTool { .. } => {}
     }
     let output = ToolOutput {
         value,
@@ -480,6 +492,7 @@ fn output_for_outcome(
 
 fn operation_error_name(error: CreationOperationError) -> &'static str {
     match error {
+        CreationOperationError::UnknownTool => "unknown_tool",
         CreationOperationError::WrongTarget => "wrong_target",
         CreationOperationError::InvalidText => "invalid_text",
         CreationOperationError::DuplicateIdentity => "duplicate_identity",
@@ -821,10 +834,12 @@ mod tests {
                 TimestampMillis::new(2),
             )
         };
-        assert_eq!(
-            reduce(&[call("write_scene", json!({"content": "wrong target"}))]),
-            Err(CreationToolContractError::UnsupportedTool)
-        );
+        let undeclared =
+            reduce(&[call("write_scene", json!({"content": "wrong target"}))]).expect("undeclared");
+        assert_eq!(undeclared.outputs[0].value["code"], "unknown_tool");
+        assert_eq!(undeclared.outputs[0].value["tool"], "write_scene");
+        assert!(undeclared.outputs[0].is_error);
+        assert_eq!(undeclared.proposal.draft, base.draft);
         let mut stale = call("set_name", json!({"name": "Aster"}));
         stale.definition_version = 2;
         assert_eq!(

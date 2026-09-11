@@ -166,11 +166,21 @@ impl<
         {
             return Err(CreationContinuationError::InvalidOwnership);
         }
-        let text = crate::runtime_text::RuntimeText::load(
-            self.repository,
-            crate::BuiltInPromptId::CreationRuntime,
-        )
-        .map_err(|_| CreationContinuationError::RuntimeTextUnavailable)?;
+        let text = CreationPromptText {
+            helper: crate::runtime_text::RuntimeText::load(
+                self.repository,
+                crate::BuiltInPromptId::CreationHelper,
+            )
+            .map_err(|_| CreationContinuationError::RuntimeTextUnavailable)?,
+            runtime: crate::runtime_text::RuntimeText::load(
+                self.repository,
+                crate::BuiltInPromptId::CreationRuntime,
+            )
+            .map_err(|_| CreationContinuationError::RuntimeTextUnavailable)?,
+            dialogue: self
+                .repository
+                .list_creation_dialogue(attempt.workflow_id, attempt.turn_id)?,
+        };
         let mut request = build_creation_inference_request(
             &attempt,
             &turn,
@@ -429,11 +439,17 @@ pub struct CreationContinuationResult {
     pub usage: UsageCounters,
 }
 
+struct CreationPromptText {
+    helper: crate::runtime_text::RuntimeText,
+    runtime: crate::runtime_text::RuntimeText,
+    dialogue: Vec<lettuce_creation::CreationDialogueTurn>,
+}
+
 fn build_creation_inference_request(
     attempt: &CreationInferenceAttempt,
     turn: &lettuce_creation::CreationTurn,
     base: &CreationProposal,
-    text: &crate::runtime_text::RuntimeText,
+    text: &CreationPromptText,
     profile: ResolvedInferenceProfile,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
@@ -441,37 +457,36 @@ fn build_creation_inference_request(
     if profile.tool_policy != ToolPolicy::Allowed || base.id != attempt.base_proposal_id {
         return Err(CreationContinuationError::InvalidProfile);
     }
-    let draft = serde_json::to_string(&base.draft)
-        .map_err(|_| CreationContinuationError::InvalidOwnership)?;
-    let target = match attempt.target {
-        lettuce_creation::CreationTargetKind::Character => "character",
-        lettuce_creation::CreationTargetKind::Persona => "persona",
-        lettuce_creation::CreationTargetKind::Lorebook => "lorebook",
-    };
-    let system = format!(
-        "You collaborate with the user on a roleplay {target}. Every draft change must use one of the declared tools. Ask concise plain-text questions when details are missing. Stop calling tools when user input is needed. Use show_preview when a drafting proposal is ready and request_confirmation only during review. Current durable draft JSON: {draft}"
-    );
-    let input_bytes = system
-        .len()
-        .checked_add(turn.user_message.len())
+    let messages = crate::creation_prompt::creation_context_messages(
+        &text.helper,
+        &text.runtime,
+        &base.draft,
+        &text.dialogue,
+        &turn.user_message,
+    )
+    .map_err(|error| match error {
+        crate::runtime_text::RuntimeTextError::Unavailable => {
+            CreationContinuationError::RuntimeTextUnavailable
+        }
+        crate::runtime_text::RuntimeTextError::Render => CreationContinuationError::PromptRender,
+    })?;
+    let input_bytes = messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .map(|part| match part {
+            ProviderContextPart::Text { text } => text.len(),
+            _ => 0,
+        })
+        .try_fold(0_usize, usize::checked_add)
         .and_then(|size| u32::try_from(size).ok())
         .ok_or(CreationContinuationError::ContextTooLarge)?;
+    let selected_messages =
+        u32::try_from(messages.len()).map_err(|_| CreationContinuationError::ContextTooLarge)?;
     let context = ProviderNeutralContext {
-        messages: vec![
-            ProviderNeutralMessage {
-                role: MessageRole::System,
-                parts: vec![ProviderContextPart::Text { text: system }],
-            },
-            ProviderNeutralMessage {
-                role: MessageRole::User,
-                parts: vec![ProviderContextPart::Text {
-                    text: turn.user_message.clone(),
-                }],
-            },
-        ],
+        messages,
         attributions: ContextAttributions::default(),
         budget: ContextBudgetReport {
-            selected_messages: 2,
+            selected_messages,
             omitted_messages: 0,
             input_bytes,
             estimated_input_tokens: input_bytes.saturating_add(3) / 4,
@@ -489,7 +504,7 @@ fn build_creation_inference_request(
         media_grants: Vec::new(),
         tools: Some(lettuce_creation::describe_creation_tools(
             &attempt.tool_request,
-            &|key| text.render_with(key, []).unwrap_or_default(),
+            &|key| text.runtime.render_with(key, []).unwrap_or_default(),
         )),
     };
     request.validate()?;
@@ -507,15 +522,17 @@ fn plan_round(
         .tool_calls
         .iter()
         .map(|call| {
-            let definition = attempt
+            let definition_version = attempt
                 .tool_request
                 .definitions
                 .iter()
                 .find(|definition| definition.name == call.name)
-                .ok_or(CreationContinuationError::UndeclaredTool)?;
+                .map_or(lettuce_creation::CREATION_TOOL_VERSION, |definition| {
+                    definition.version
+                });
             Ok::<_, CreationContinuationError>(NewCreationToolCall {
                 id: lettuce_types::ToolExecutionId::new(),
-                definition_version: definition.version,
+                definition_version,
                 call: call.clone(),
             })
         })
@@ -733,9 +750,7 @@ fn aggregate_round_usage(
 impl CreationContinuationError {
     const fn failure_code(&self) -> CreationAttemptFailureCode {
         match self {
-            Self::ProviderFailed | Self::UndeclaredTool => {
-                CreationAttemptFailureCode::ProviderRejected
-            }
+            Self::ProviderFailed => CreationAttemptFailureCode::ProviderRejected,
             Self::MultipleCandidates | Self::InvalidCandidate => {
                 CreationAttemptFailureCode::ProviderRejected
             }
@@ -772,12 +787,12 @@ pub enum CreationContinuationError {
     MultipleCandidates,
     #[error("provider returned an invalid creation candidate")]
     InvalidCandidate,
-    #[error("provider returned an undeclared creation tool")]
-    UndeclaredTool,
     #[error("provider failed the creation request")]
     ProviderFailed,
     #[error("creation runtime text is unavailable")]
     RuntimeTextUnavailable,
+    #[error("creation prompt could not be rendered")]
+    PromptRender,
     #[error("creation request was cancelled")]
     Cancelled,
     #[error("creation inference reached its round limit")]
@@ -1199,6 +1214,36 @@ mod tests {
             evidence
         );
         assert_eq!(inference.requests.lock().expect("requests").len(), 2);
+
+        let next_turn = database
+            .record_user_turn(NewCreationTurn {
+                id: CreationTurnId::new(),
+                workflow_id: result.attempt.workflow_id,
+                base_proposal_id: result.workflow.current_proposal_id,
+                user_message: "Make it warmer".into(),
+                now: TimestampMillis::new(30),
+            })
+            .expect("next turn");
+        let dialogue = database
+            .list_creation_dialogue(result.attempt.workflow_id, next_turn.id)
+            .expect("dialogue");
+        assert_eq!(dialogue.len(), 1);
+        assert_eq!(dialogue[0].turn_id, result.attempt.turn_id);
+        assert_eq!(dialogue[0].user_message, "Create a patient navigator");
+        assert_eq!(
+            dialogue[0].assistant_parts,
+            result
+                .rounds
+                .iter()
+                .flat_map(|round| round.parts.clone())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            database
+                .list_creation_dialogue(result.attempt.workflow_id, result.attempt.turn_id)
+                .expect("first turn dialogue")
+                .is_empty()
+        );
     }
 
     #[test]

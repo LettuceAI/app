@@ -983,6 +983,13 @@ pub enum PromptVariable {
     ObservedRelative,
     ElapsedCount,
     ElapsedUnit,
+    TargetLabel,
+    DraftState,
+    DraftName,
+    TextChars,
+    TextQuote,
+    TextPreview,
+    DraftItemId,
 }
 
 impl PromptVariable {
@@ -1111,6 +1118,13 @@ impl PromptVariable {
             Self::ObservedRelative => "{{observed_relative}}",
             Self::ElapsedCount => "{{elapsed_count}}",
             Self::ElapsedUnit => "{{elapsed_unit}}",
+            Self::TargetLabel => "{{target_label}}",
+            Self::DraftState => "{{draft_state}}",
+            Self::DraftName => "{{draft_name}}",
+            Self::TextChars => "{{text_chars}}",
+            Self::TextQuote => "{{text_quote}}",
+            Self::TextPreview => "{{text_preview}}",
+            Self::DraftItemId => "{{draft_item_id}}",
         }
     }
 
@@ -1238,6 +1252,13 @@ impl PromptVariable {
         Self::ObservedRelative,
         Self::ElapsedCount,
         Self::ElapsedUnit,
+        Self::TargetLabel,
+        Self::DraftState,
+        Self::DraftName,
+        Self::TextChars,
+        Self::TextQuote,
+        Self::TextPreview,
+        Self::DraftItemId,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.

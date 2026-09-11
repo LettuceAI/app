@@ -15,7 +15,7 @@ mod tool;
 pub use attempt::{
     CreationAttemptError, CreationAttemptFailureCode, CreationAttemptOwner,
     CreationAttemptRecovery, CreationAttemptStatus, CreationAttemptSuccess,
-    CreationAttemptSuccessSettlement, CreationInferenceAttempt,
+    CreationAttemptSuccessSettlement, CreationDialogueTurn, CreationInferenceAttempt,
     CreationInferenceProfileFingerprint, CreationInferenceRound, CreationRoundFinishReason,
     CreationToolCallEvidence, CreationTurnAttemptAdmission, MAX_CREATION_INFERENCE_ROUNDS,
     NewCreationAttempt, NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationToolCall,
@@ -42,8 +42,8 @@ pub use proposal::{
 pub use staged_lorebook::*;
 pub use staged_lorebook_sources::*;
 pub use tool::{
-    AdmittedCreationToolCall, CREATION_TOOL_TEXT_KEYS, CreationToolApply, CreationToolBatch,
-    CreationToolCommit, CreationToolContractError, apply_creation_tool_calls,
+    AdmittedCreationToolCall, CREATION_TOOL_TEXT_KEYS, CREATION_TOOL_VERSION, CreationToolApply,
+    CreationToolBatch, CreationToolCommit, CreationToolContractError, apply_creation_tool_calls,
     creation_tool_request, describe_creation_tools, reduce_creation_tool_calls,
     validate_creation_tool_calls,
 };

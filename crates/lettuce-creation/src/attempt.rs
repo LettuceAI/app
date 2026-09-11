@@ -328,6 +328,16 @@ impl NewCreationInferenceRound {
     }
 }
 
+/// One earlier turn of a workflow that has a succeeded attempt, as the
+/// helper's dialogue history: the user message and the parts that attempt
+/// produced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreationDialogueTurn {
+    pub turn_id: CreationTurnId,
+    pub user_message: String,
+    pub assistant_parts: Vec<MessagePart>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreationInferenceRound {
     pub workflow_id: CreationWorkflowId,

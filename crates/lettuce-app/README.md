@@ -593,6 +593,27 @@ persisted in the same store as the usage repository. Completed replay adds no
 dispatch. SQLite tests cover these boundaries and separate two-round evidence
 from the existing aggregate. Legacy creation_helper/service.rs also accounted
 for initial/continuation responses before accepting their generated content.
+Each creation request follows the legacy agent path
+(`creation_helper/agent/run.rs`): the seven `prompt_app_creation_helper`
+system entries (role, intake, creative principles, output contract, tool use,
+examples, `<current_draft>`) with `{{target_label}}` and the legacy `DRAFT (...)`
+view rendered from `prompt_app_creation_runtime` fragments, then every earlier
+turn that succeeded (its user message and the trimmed visible text segments of
+its attempt joined with blank lines; reasoning is not replayed), then the
+current message; in-chat entries of an edited document go in at their depth.
+Lorebook drafts also list their entries with ids, which legacy never showed
+because its entries were written straight to the database, and a lorebook
+description is never shown (legacy showed `<unset>`). Not yet shown: the
+avatar, background, model, prompt, gradient and image-gallery lines, whose
+fields do not exist yet, and the non-native fallback-protocol entry (the legacy
+UI never enabled it). Deviation: legacy had no history cap; the oldest turns
+are dropped so the request stays under the 512-message provider-context limit
+with room for eight rounds. Corrected: legacy flattened tool arguments and
+turned every `"` into `'`, which broke the dialogue block the output contract
+asks for; arguments are kept verbatim. Tool descriptions come from the
+same runtime document. A call to an undeclared tool is recorded as an
+`UndeclaredTool` operation and answered with an `unknown_tool` error result, as
+legacy answered `unknown tool: {name}`, instead of failing the attempt.
 
 `ConversationInitialInferenceCoordinator` supplies the initial provider
 dispatch boundary for a running conversation generation attempt. It reloads the

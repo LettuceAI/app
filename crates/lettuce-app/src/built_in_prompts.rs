@@ -44,10 +44,11 @@ pub enum BuiltInPromptId {
     MemoryRuntime,
     CompanionRuntime,
     CreationRuntime,
+    CreationHelper,
 }
 
 impl BuiltInPromptId {
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 31] = [
         Self::AppDefault,
         Self::LocalRoleplay,
         Self::Companion,
@@ -78,6 +79,7 @@ impl BuiltInPromptId {
         Self::MemoryRuntime,
         Self::CompanionRuntime,
         Self::CreationRuntime,
+        Self::CreationHelper,
     ];
 
     #[must_use]
@@ -113,6 +115,7 @@ impl BuiltInPromptId {
             Self::MemoryRuntime => "prompt_app_memory_runtime",
             Self::CompanionRuntime => "prompt_app_companion_runtime",
             Self::CreationRuntime => "prompt_app_creation_runtime",
+            Self::CreationHelper => "prompt_app_creation_helper",
         }
     }
 
@@ -154,7 +157,8 @@ impl BuiltInPromptId {
             | Self::LorebookRuntime
             | Self::MemoryRuntime
             | Self::CompanionRuntime
-            | Self::CreationRuntime => PromptPurpose::RuntimeText,
+            | Self::CreationRuntime
+            | Self::CreationHelper => PromptPurpose::RuntimeText,
         }
     }
 
@@ -278,6 +282,7 @@ pub struct BuiltInPromptIds {
     pub memory_runtime: PromptDocumentId,
     pub companion_runtime: PromptDocumentId,
     pub creation_runtime: PromptDocumentId,
+    pub creation_helper: PromptDocumentId,
 }
 
 impl BuiltInPromptIds {
@@ -329,6 +334,7 @@ impl BuiltInPromptIds {
             memory_runtime: required(BuiltInPromptId::MemoryRuntime),
             companion_runtime: required(BuiltInPromptId::CompanionRuntime),
             creation_runtime: required(BuiltInPromptId::CreationRuntime),
+            creation_helper: required(BuiltInPromptId::CreationHelper),
         })
     }
 
@@ -365,6 +371,7 @@ impl BuiltInPromptIds {
             BuiltInPromptId::MemoryRuntime => self.memory_runtime,
             BuiltInPromptId::CompanionRuntime => self.companion_runtime,
             BuiltInPromptId::CreationRuntime => self.creation_runtime,
+            BuiltInPromptId::CreationHelper => self.creation_helper,
         }
     }
 }
@@ -789,6 +796,13 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "observed_relative"
             | "elapsed_count"
             | "elapsed_unit"
+            | "target_label"
+            | "draft_state"
+            | "draft_name"
+            | "text_chars"
+            | "text_quote"
+            | "text_preview"
+            | "draft_item_id"
     )
 }
 
@@ -1010,7 +1024,7 @@ mod tests {
     #[test]
     fn catalog_is_the_exact_closed_legacy_set() {
         let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
-        assert_eq!(catalog.seeds().len(), 30);
+        assert_eq!(catalog.seeds().len(), 31);
 
         let actual = catalog
             .seeds()
@@ -1110,7 +1124,7 @@ mod tests {
         assert_eq!(calls[1].mode, BuiltInReconcileMode::ResetToSeed);
         assert_eq!(calls[1].seeds.len(), 1);
         assert_eq!(calls[2].mode, BuiltInReconcileMode::ResetToSeed);
-        assert_eq!(calls[2].seeds.len(), 30);
+        assert_eq!(calls[2].seeds.len(), 31);
     }
 
     #[test]
@@ -1419,7 +1433,11 @@ mod tests {
         assert_eq!(
             creation.entries.len(),
             lettuce_creation::CREATION_TOOL_TEXT_KEYS.len()
+                + crate::creation_prompt::DRAFT_VIEW_KEYS.len()
         );
+        for key in crate::creation_prompt::DRAFT_VIEW_KEYS {
+            creation_text(key);
+        }
         for request in [
             lettuce_creation::staged_lorebook_planner_tool_request(&resolve),
             lettuce_creation::staged_lorebook_writer_tool_request(&resolve),

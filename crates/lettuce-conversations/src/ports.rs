@@ -1654,12 +1654,15 @@ pub struct ProviderNeutralContext {
     pub budget: ContextBudgetReport,
 }
 
+/// The most messages one provider-neutral context may carry.
+pub const MAX_PROVIDER_CONTEXT_MESSAGES: usize = 512;
+
 impl ProviderNeutralContext {
     pub fn validate(&self) -> Result<(), crate::ValidationError> {
-        if self.messages.len() > 512 {
+        if self.messages.len() > MAX_PROVIDER_CONTEXT_MESSAGES {
             return Err(crate::ValidationError::TooMany {
                 field: "provider_context.messages",
-                max: 512,
+                max: MAX_PROVIDER_CONTEXT_MESSAGES,
             });
         }
         if self.attributions.lorebooks.len() > crate::validation::MAX_LOREBOOKS {

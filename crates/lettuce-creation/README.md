@@ -114,10 +114,14 @@ Confirmation exposes no tools. Definitions carry no text here: descriptions
 and parameter descriptions are catalog keys (`CREATION_TOOL_TEXT_KEYS`) that
 `describe_creation_tools` fills from the application's
 `prompt_app_creation_runtime` document, so stored attempts keep the shape
-only. Unknown arguments are ignored as legacy did; undeclared tools, version
-mismatches and missing or malformed required arguments are rejected before
-reduction. Valid calls reduce in provider order into one proposal and one typed
+only. Unknown arguments are ignored as legacy did; version mismatches and
+missing or malformed required arguments are rejected before reduction. Valid calls reduce in provider order into one proposal and one typed
 result per call, including operation errors without stopping later calls.
+Calls to undeclared tools reduce to an `UndeclaredTool` operation whose
+`unknown_tool` error result goes back to the model; the attempt continues.
+`CreationAttemptRepository::list_creation_dialogue` returns a workflow's earlier
+turns that have a succeeded attempt, with that attempt's parts, for the
+helper's history (legacy never persisted a turn whose reply failed).
 Legacy tools that need draft fields or services the proposal does not have yet
 (model, prompt, gradient, lorebook attachment, list reads, images, persona and
 lorebook deletion) are later slices; the lorebook description tool was
@@ -135,8 +139,9 @@ profile binding and use a distinct job. Native calls are admitted atomically in
 provider order before reduction, including their exact definition version,
 provider identity, arguments, raw arguments, and protected replay reference.
 Exact retries return the stored evidence; stale bases, changed retries,
-cross-turn owners, undeclared tools, version drift, reused jobs, profile drift,
-and duplicate identities fail closed.
+cross-turn owners, version drift, reused jobs, profile drift, and duplicate
+identities fail closed; undeclared tools are admitted and answered with
+`unknown_tool`.
 
 Each attempt additionally checkpoints up to eight immutable provider-response
 rounds. Round evidence preserves mixed visible text/reasoning, candidate replay,

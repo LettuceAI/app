@@ -7,11 +7,11 @@ use crate::{
     ConfirmedLorebookRevisionApply, ConfirmedPersonaApply, ConfirmedPersonaRevisionApply,
     CreationApplyReceipt, CreationAttemptFailureCode, CreationAttemptOwner,
     CreationAttemptRecovery, CreationAttemptStatus, CreationAttemptSuccess,
-    CreationAttemptSuccessSettlement, CreationCharacterApplyReceipt, CreationInferenceAttempt,
-    CreationInferenceRound, CreationLorebookApplyReceipt, CreationProposal,
-    CreationToolCallEvidence, CreationTurn, CreationTurnAttemptAdmission, CreationWorkflow,
-    NewCreationAttempt, NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationTurn,
-    NewCreationTurnAttempt, NewCreationWorkflow,
+    CreationAttemptSuccessSettlement, CreationCharacterApplyReceipt, CreationDialogueTurn,
+    CreationInferenceAttempt, CreationInferenceRound, CreationLorebookApplyReceipt,
+    CreationProposal, CreationToolCallEvidence, CreationTurn, CreationTurnAttemptAdmission,
+    CreationWorkflow, NewCreationAttempt, NewCreationAttemptRecovery, NewCreationInferenceRound,
+    NewCreationTurn, NewCreationTurnAttempt, NewCreationWorkflow,
 };
 
 pub trait CreationApplyRepository: Send + Sync {
@@ -101,6 +101,15 @@ pub trait CreationAttemptRepository: Send + Sync {
         owner: CreationAttemptOwner,
         attempt_id: GenerationAttemptId,
     ) -> Result<Vec<CreationToolCallEvidence>, CreationRepositoryError>;
+
+    /// The workflow's turns before `before` that have a succeeded attempt,
+    /// oldest first, with the parts of that attempt. Legacy never persisted a
+    /// turn whose reply failed.
+    fn list_creation_dialogue(
+        &self,
+        workflow_id: CreationWorkflowId,
+        before: lettuce_types::CreationTurnId,
+    ) -> Result<Vec<CreationDialogueTurn>, CreationRepositoryError>;
 }
 
 pub trait CreationWorkflowRepository: Send + Sync {
