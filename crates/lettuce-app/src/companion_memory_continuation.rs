@@ -28,6 +28,31 @@ pub enum CompanionMemoryContinuationResult {
     },
 }
 
+/// Legacy recursive-loop settings: without recursion a cycle makes one memory
+/// request; with it, rounds continue until `done` or the hard cap, which ends
+/// the cycle normally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompanionMemoryLoopPolicy {
+    pub recursive: bool,
+    pub hard_cap: u32,
+}
+
+impl CompanionMemoryLoopPolicy {
+    #[must_use]
+    pub fn from_settings(settings: &lettuce_settings::DynamicMemorySettings) -> Self {
+        Self {
+            recursive: settings.recursive_memory_loops,
+            hard_cap: settings.recursive_memory_loop_hard_cap,
+        }
+    }
+
+    fn round_cap(self) -> u8 {
+        u8::try_from(self.hard_cap.max(1))
+            .unwrap_or(u8::MAX)
+            .min(lettuce_memory::MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS)
+    }
+}
+
 #[derive(Debug)]
 pub struct CompanionMemoryContinuationCoordinator<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
@@ -58,6 +83,7 @@ impl<
         run_id: DynamicMemoryRunId,
         attempt_id: DynamicMemoryAttemptId,
         settled_round_ordinal: u8,
+        loop_policy: CompanionMemoryLoopPolicy,
         handle: &JobHandle,
         stream_sink: Option<RequestId>,
         now: TimestampMillis,
@@ -93,7 +119,6 @@ impl<
         if let Some(summary) = done_summary(settled_round, &settlement.results)? {
             return Ok(CompanionMemoryContinuationResult::Done { summary });
         }
-        let context = context_after_settlement(settled_round, &settlement.results)?;
         let next_ordinal = settled_round_ordinal
             .checked_add(1)
             .ok_or(CompanionMemoryContinuationError::RoundLimit)?;
@@ -103,9 +128,19 @@ impl<
                 replayed: true,
             });
         }
-        if next_ordinal >= lettuce_memory::MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS {
-            return Err(CompanionMemoryContinuationError::RoundLimit);
+        if !loop_policy.recursive {
+            return Ok(CompanionMemoryContinuationResult::Done { summary: None });
         }
+        if next_ordinal >= loop_policy.round_cap() {
+            tracing::warn!(
+                run_id = %run.id,
+                rounds = next_ordinal,
+                hard_cap = loop_policy.hard_cap,
+                "recursive memory loop reached its hard cap (bounded by the storage limit)"
+            );
+            return Ok(CompanionMemoryContinuationResult::Done { summary: None });
+        }
+        let context = context_after_settlement(settled_round, &settlement.results)?;
         if handle.cancellation_token().is_cancelled() {
             self.cancel(&attempt, now)?;
             return Err(CompanionMemoryContinuationError::Cancelled);
@@ -157,6 +192,16 @@ impl<
                     .map_err(|_| CompanionMemoryContinuationError::ReplayCleanup)?;
                 self.cancel(&attempt, now)?;
                 return Err(CompanionMemoryContinuationError::Cancelled);
+            }
+            Err(crate::CompanionMemoryInferenceError::NoToolCalls) => {
+                cleanup_outcome_replays(self.repository, &outcome)
+                    .map_err(|_| CompanionMemoryContinuationError::ReplayCleanup)?;
+                tracing::warn!(
+                    run_id = %run.id,
+                    round = next_ordinal,
+                    "recursive memory round returned no tool calls; ending the cycle"
+                );
+                return Ok(CompanionMemoryContinuationResult::Done { summary: None });
             }
             Err(error) => {
                 cleanup_outcome_replays(self.repository, &outcome)
@@ -418,6 +463,23 @@ mod tests {
                     && !result.output.is_error
                     && result.output.value == json!({"status":"target_not_found","reference":target.to_string()})
         ));
+    }
+
+    #[test]
+    fn loop_policy_caps_rounds_inside_the_storage_bound() {
+        let cap = |hard_cap| {
+            super::CompanionMemoryLoopPolicy {
+                recursive: true,
+                hard_cap,
+            }
+            .round_cap()
+        };
+        assert_eq!(cap(0), 1);
+        assert_eq!(cap(20), 20);
+        assert_eq!(
+            cap(10_000),
+            lettuce_memory::MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS
+        );
     }
 
     #[test]

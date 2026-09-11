@@ -1962,6 +1962,16 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         summary.checkpoint.summary
     );
     let memory_id = MemoryId::new();
+    let stored_settings = GlobalSettingsStore::load(&database).expect("settings");
+    let mut recursive_settings = stored_settings.settings;
+    recursive_settings.dynamic_memory.recursive_memory_loops = true;
+    GlobalSettingsStore::save(
+        &database,
+        recursive_settings,
+        stored_settings.default_model_profile_id,
+        stored_settings.revision,
+    )
+    .expect("enable recursive memory loops");
     let runner = crate::CompanionMemoryJobRunner::new(
         &ScenarioEmbeddingEngine,
         &database,
@@ -8182,6 +8192,10 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
             run_id,
             attempt_id,
             &policy,
+            crate::CompanionMemoryLoopPolicy {
+                recursive: true,
+                hard_cap: 20,
+            },
             Score::from_basis_points(9_000).expect("score"),
             &claim,
             &handle,
@@ -8213,6 +8227,10 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
             run_id,
             attempt_id,
             &policy,
+            crate::CompanionMemoryLoopPolicy {
+                recursive: true,
+                hard_cap: 20,
+            },
             Score::from_basis_points(9_000).expect("score"),
             &claim,
             &handle,

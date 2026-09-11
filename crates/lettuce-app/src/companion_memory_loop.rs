@@ -59,6 +59,7 @@ impl<
         run_id: DynamicMemoryRunId,
         attempt_id: DynamicMemoryAttemptId,
         policy: &MemoryPolicy,
+        loop_policy: crate::CompanionMemoryLoopPolicy,
         duplicate_threshold: lettuce_memory::Score,
         claim: &Claim,
         handle: &JobHandle,
@@ -104,7 +105,15 @@ impl<
             }
 
             match continuation
-                .continue_after_round(run_id, attempt_id, round.ordinal, handle, stream_sink, now)
+                .continue_after_round(
+                    run_id,
+                    attempt_id,
+                    round.ordinal,
+                    loop_policy,
+                    handle,
+                    stream_sink,
+                    now,
+                )
                 .await?
             {
                 CompanionMemoryContinuationResult::Done { summary } => {

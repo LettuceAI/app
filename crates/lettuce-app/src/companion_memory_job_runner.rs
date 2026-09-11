@@ -94,6 +94,21 @@ impl<
     where
         F: FnMut(&DynamicMemoryInferenceRound) -> Vec<MemoryCreateSeed>,
     {
+        let group = self
+            .conversations
+            .get(admission.batch.conversation_id)
+            .map_err(CompanionMemoryJobRunError::Conversation)?
+            .conversation
+            .kind
+            .is_group();
+        let settings = GlobalSettingsStore::load(self.repository)
+            .map_err(CompanionMemoryJobRunError::Settings)?
+            .settings;
+        let loop_policy = crate::CompanionMemoryLoopPolicy::from_settings(if group {
+            settings.effective_group_dynamic_memory()
+        } else {
+            &settings.dynamic_memory
+        });
         let mut dispatch =
             CompanionPostTurnMemoryRunCoordinator::new(self.repository, self.conversations)
                 .admit_or_recover(
@@ -170,6 +185,7 @@ impl<
                     dispatch.run.id,
                     dispatch.attempt.id,
                     policy,
+                    loop_policy,
                     duplicate_threshold,
                     claim,
                     handle,
@@ -221,6 +237,10 @@ pub enum CompanionMemoryJobRunError {
     Loop(CompanionMemoryLoopError),
     #[error("background memory terminal settlement failed: {0}")]
     Terminal(#[from] CompanionMemoryTerminalError),
+    #[error("background memory conversation lookup failed: {0}")]
+    Conversation(lettuce_conversations::ConversationRepositoryError),
+    #[error("background memory settings are unavailable: {0}")]
+    Settings(lettuce_settings::GlobalSettingsStoreError),
 }
 
 impl CompanionMemoryJobRunError {
@@ -231,7 +251,9 @@ impl CompanionMemoryJobRunError {
                 Some(CompanionMemoryTerminalFailure::from_inference_error(error))
             }
             Self::Loop(error) => Some(CompanionMemoryTerminalFailure::from_loop_error(error)),
-            Self::Admission(_) | Self::Terminal(_) => None,
+            Self::Admission(_) | Self::Terminal(_) | Self::Conversation(_) | Self::Settings(_) => {
+                None
+            }
         }
     }
 }

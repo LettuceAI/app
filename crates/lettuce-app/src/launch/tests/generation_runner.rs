@@ -2389,12 +2389,6 @@ async fn plain_dynamic_turns_admit_and_run_a_post_turn_memory_cycle() {
             serde_json::json!({"text": "The user prefers tea", "category": "preference"}),
             (7, 2),
         ),
-        call_outcome(
-            "post-turn-done",
-            "done",
-            serde_json::json!({"summary": "stored preference"}),
-            (3, 1),
-        ),
     ]);
     let memory_id = MemoryId::new();
     let result = crate::CompanionMemoryJobRunner::new(&engine, database, database, &memory)
@@ -2442,6 +2436,11 @@ async fn plain_dynamic_turns_admit_and_run_a_post_turn_memory_cycle() {
     assert_eq!(
         result.dispatch.attempt.status,
         lettuce_memory::DynamicMemoryAttemptStatus::Succeeded
+    );
+    assert_eq!(
+        memory.requests.lock().expect("memory requests").len(),
+        2,
+        "without recursive loops a cycle makes one summary and one memory request"
     );
     assert!(result.effects.is_empty());
     let space_id = scenario.space_id.expect("dynamic memory space");

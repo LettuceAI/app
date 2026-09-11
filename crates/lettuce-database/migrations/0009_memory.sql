@@ -298,8 +298,8 @@ CREATE TABLE dynamic_memory_inference_rounds (
     provider_reported_cost REAL CHECK (provider_reported_cost IS NULL OR (provider_reported_cost >= 0 AND provider_reported_cost <= 1.7976931348623157e308)),
     run_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
-    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 7),
-    first_call_ordinal INTEGER NOT NULL CHECK (first_call_ordinal BETWEEN 0 AND 64),
+    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 63),
+    first_call_ordinal INTEGER NOT NULL CHECK (first_call_ordinal BETWEEN 0 AND 4096),
     call_count INTEGER NOT NULL CHECK (call_count BETWEEN 0 AND 64),
     request_context_json TEXT NOT NULL CHECK (
         json_valid(request_context_json)
@@ -329,7 +329,7 @@ CREATE TABLE dynamic_memory_inference_rounds (
     FOREIGN KEY (provider_replay_artifact_id, provider_replay_retention)
         REFERENCES conversation_replay_artifacts(artifact_id, retention) ON DELETE RESTRICT,
     CHECK (call_count > 0 OR json_array_length(json_extract(parts_json, '$.value')) > 0),
-    CHECK (first_call_ordinal + call_count <= 64),
+    CHECK (first_call_ordinal + call_count <= 4096),
     CHECK ((input_tokens IS NULL) = (output_tokens IS NULL)),
     CHECK ((provider_replay_artifact_id IS NULL) = (provider_replay_retention IS NULL))
 ) STRICT;
@@ -337,9 +337,9 @@ CREATE TABLE dynamic_memory_inference_rounds (
 CREATE TABLE dynamic_memory_admitted_tool_calls (
     run_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
-    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 7),
+    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 63),
     id TEXT NOT NULL,
-    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 63),
+    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 4095),
     definition_name TEXT NOT NULL CHECK (
         length(definition_name) BETWEEN 1 AND 64
         AND definition_name NOT GLOB '*[^A-Za-z0-9_-]*'
@@ -384,7 +384,7 @@ CREATE UNIQUE INDEX dynamic_memory_admitted_tool_calls_provider_id_uq
 CREATE TABLE dynamic_memory_background_round_settlements (
     run_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
-    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 7),
+    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 63),
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     expected_memory_revision INTEGER NOT NULL CHECK (expected_memory_revision >= 1),
     resulting_memory_revision INTEGER NOT NULL CHECK (resulting_memory_revision >= expected_memory_revision),
@@ -403,9 +403,9 @@ CREATE TABLE dynamic_memory_background_round_settlements (
 CREATE TABLE dynamic_memory_background_tool_results (
     run_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
-    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 7),
+    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 63),
     call_id TEXT NOT NULL,
-    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 63),
+    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 4095),
     outcome_json TEXT NOT NULL CHECK (
         json_valid(outcome_json)
         AND json_extract(outcome_json, '$.format_version') = 1

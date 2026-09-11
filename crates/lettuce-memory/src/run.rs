@@ -15,7 +15,9 @@ use crate::{
 };
 
 pub const MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES: usize = 1024;
-pub const MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS: u8 = 8;
+/// Storage bound for recursive memory rounds; the user's hard cap applies below it.
+pub const MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS: u8 = 64;
+pub const MAX_DYNAMIC_MEMORY_ATTEMPT_TOOL_CALLS: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -423,7 +425,7 @@ impl DynamicMemoryInferenceRound {
         .validate()?;
         if usize::from(self.first_call_ordinal)
             .checked_add(self.calls.len())
-            .is_none_or(|count| count > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE)
+            .is_none_or(|count| count > MAX_DYNAMIC_MEMORY_ATTEMPT_TOOL_CALLS)
         {
             return Err(DynamicMemoryRunError::InvalidRound);
         }

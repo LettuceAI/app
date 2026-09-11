@@ -753,7 +753,13 @@ The memory manager's and summarizer's prompt conditions see companion time
 awareness (never for groups), and time-aware memory runs fill the date/time
 values their entries use, as legacy did. A runtime-text key missing from a
 stored document (a user-edited copy kept across a catalog update) renders the
-bundled catalog text; a disabled entry stays off.
+bundled catalog text; a disabled entry stays off. Memory cycles follow the
+legacy recursive-loop settings read live when the job runs (the group override
+for groups): without `recursive_memory_loops` a cycle makes one memory request;
+with it, rounds continue until `done` or `recursive_memory_loop_hard_cap`
+(bounded by the 64-round storage limit), and reaching the cap ends the cycle
+normally instead of failing it. A recursive round that returns no tool calls (even after the
+structured fallback) also ends the cycle normally, as legacy did.
 The reply itself carries no memory tools: legacy writes memories in
 a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`). Plain direct
 and group conversations now admit that cycle through
