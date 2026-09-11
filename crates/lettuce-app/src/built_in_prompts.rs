@@ -40,10 +40,11 @@ pub enum BuiltInPromptId {
     CompanionConsolidation,
     ChatRuntime,
     GroupSpeakerSelection,
+    LorebookRuntime,
 }
 
 impl BuiltInPromptId {
-    pub const ALL: [Self; 26] = [
+    pub const ALL: [Self; 27] = [
         Self::AppDefault,
         Self::LocalRoleplay,
         Self::Companion,
@@ -70,6 +71,7 @@ impl BuiltInPromptId {
         Self::CompanionConsolidation,
         Self::ChatRuntime,
         Self::GroupSpeakerSelection,
+        Self::LorebookRuntime,
     ];
 
     #[must_use]
@@ -101,6 +103,7 @@ impl BuiltInPromptId {
             Self::CompanionConsolidation => "prompt_app_companion_consolidation",
             Self::ChatRuntime => "prompt_app_chat_runtime",
             Self::GroupSpeakerSelection => "prompt_app_group_speaker_selection",
+            Self::LorebookRuntime => "prompt_app_lorebook_runtime",
         }
     }
 
@@ -137,7 +140,9 @@ impl BuiltInPromptId {
             Self::CompanionSoulWriter => PromptPurpose::CompanionSoulWriter,
             Self::CompanionGrowthcycle => PromptPurpose::CompanionGrowthcycle,
             Self::CompanionConsolidation => PromptPurpose::CompanionConsolidation,
-            Self::ChatRuntime | Self::GroupSpeakerSelection => PromptPurpose::RuntimeText,
+            Self::ChatRuntime | Self::GroupSpeakerSelection | Self::LorebookRuntime => {
+                PromptPurpose::RuntimeText
+            }
         }
     }
 
@@ -208,6 +213,7 @@ pub struct BuiltInPromptIds {
     pub companion_consolidation: PromptDocumentId,
     pub chat_runtime: PromptDocumentId,
     pub group_speaker_selection: PromptDocumentId,
+    pub lorebook_runtime: PromptDocumentId,
 }
 
 impl BuiltInPromptIds {
@@ -255,6 +261,7 @@ impl BuiltInPromptIds {
             companion_consolidation: required(BuiltInPromptId::CompanionConsolidation),
             chat_runtime: required(BuiltInPromptId::ChatRuntime),
             group_speaker_selection: required(BuiltInPromptId::GroupSpeakerSelection),
+            lorebook_runtime: required(BuiltInPromptId::LorebookRuntime),
         })
     }
 
@@ -287,6 +294,7 @@ impl BuiltInPromptIds {
             BuiltInPromptId::CompanionConsolidation => self.companion_consolidation,
             BuiltInPromptId::ChatRuntime => self.chat_runtime,
             BuiltInPromptId::GroupSpeakerSelection => self.group_speaker_selection,
+            BuiltInPromptId::LorebookRuntime => self.lorebook_runtime,
         }
     }
 }
@@ -679,6 +687,9 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "participant_turns_ago"
             | "speaker_name"
             | "message_text"
+            | "item_number"
+            | "message_role"
+            | "memory_text"
     )
 }
 
@@ -900,7 +911,7 @@ mod tests {
     #[test]
     fn catalog_is_the_exact_closed_legacy_set() {
         let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
-        assert_eq!(catalog.seeds().len(), 26);
+        assert_eq!(catalog.seeds().len(), 27);
 
         let actual = catalog
             .seeds()
@@ -1000,7 +1011,7 @@ mod tests {
         assert_eq!(calls[1].mode, BuiltInReconcileMode::ResetToSeed);
         assert_eq!(calls[1].seeds.len(), 1);
         assert_eq!(calls[2].mode, BuiltInReconcileMode::ResetToSeed);
-        assert_eq!(calls[2].seeds.len(), 26);
+        assert_eq!(calls[2].seeds.len(), 27);
     }
 
     #[test]
@@ -1167,6 +1178,70 @@ mod tests {
             assert!(!populated_entry.content.contains("Generate a fresh"));
             assert!(!populated_entry.content.contains("{{#if"));
         }
+    }
+
+    #[test]
+    fn runtime_keys_used_by_domain_crates_exist_in_the_catalog() {
+        use lettuce_creation::{LorebookEntryFallbackFormat, LorebookEntrySource};
+        let catalog = BuiltInPromptCatalog::bundled().expect("catalog");
+        let seed = catalog.seed(BuiltInPromptId::LorebookRuntime);
+        let mut keys = lettuce_creation::LOREBOOK_ENTRY_TOOL_TEXT_KEYS.to_vec();
+        keys.extend(lettuce_creation::LOREBOOK_KEYWORD_TOOL_TEXT_KEYS);
+        keys.push(lettuce_creation::LOREBOOK_KEYWORD_FINAL_INSTRUCTION_KEY);
+        for format in [
+            LorebookEntryFallbackFormat::Json,
+            LorebookEntryFallbackFormat::Xml,
+        ] {
+            keys.push(lettuce_creation::lorebook_keyword_fallback_prompt_key(
+                format,
+            ));
+            for force in [false, true] {
+                keys.push(lettuce_creation::lorebook_entry_fallback_prompt_key(
+                    format, force,
+                ));
+            }
+        }
+        for source in [
+            LorebookEntrySource::Messages,
+            LorebookEntrySource::Memory,
+            LorebookEntrySource::Mixed,
+        ] {
+            for force in [false, true] {
+                keys.push(lettuce_creation::lorebook_entry_final_instruction_key(
+                    source, force,
+                ));
+            }
+        }
+        keys.extend([
+            "lorebook_none",
+            "lorebook_empty_message",
+            "lorebook_selected_message",
+            "lorebook_selected_memory",
+            "lorebook_existing_entry",
+            "lorebook_untitled_entry",
+            "lorebook_always_active",
+            "lorebook_no_keywords",
+            "lorebook_keyword_list",
+            "lorebook_keyword_untitled",
+        ]);
+        let exists = |key: &str| {
+            seed.entries
+                .iter()
+                .any(|entry| entry.built_in_entry_key.as_deref() == Some(key))
+        };
+        for key in keys {
+            assert!(exists(key), "{key}");
+        }
+        let resolve = |key: &str| {
+            assert!(exists(key), "{key}");
+            key.to_owned()
+        };
+        lettuce_creation::lorebook_entry_tool_request(false, &resolve)
+            .validate()
+            .expect("entry tool contract");
+        lettuce_creation::lorebook_keyword_tool_request(&resolve)
+            .validate()
+            .expect("keyword tool contract");
     }
 
     #[test]

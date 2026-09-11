@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use lettuce_characters::{CharacterRepository, PersonaRepository};
-use lettuce_context::{LorebookEntry, LorebookRepository, PromptDocument};
+use lettuce_context::{LorebookEntry, LorebookRepository, PromptDocument, PromptVariable};
 use lettuce_conversations::{
     ConversationKind, ConversationReader, MessagePart, MessageRenderSource, MessageRole,
     ResolvedInferenceProfile, SnapshotSelection, TimelineItem,
@@ -77,6 +77,7 @@ where
         + MemoryRepository
         + MemorySummaryRepository
         + LorebookEntryRunRepository
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     J: JobStore + ?Sized,
 {
@@ -85,6 +86,16 @@ where
         request: LorebookEntryPreparationRequest<'_>,
     ) -> Result<LorebookEntryAdmission, LorebookEntryPreparationError> {
         validate_profile(&request.profile)?;
+        let text = crate::runtime_text::RuntimeText::load(
+            self.sources,
+            crate::BuiltInPromptId::LorebookRuntime,
+        )
+        .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)?;
+        let fragment = |key: &str, variables: Vec<(PromptVariable, String)>| {
+            text.render_with(key, variables)
+                .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)
+        };
+        let none = fragment("lorebook_none", Vec::new())?;
         let aggregate = ConversationReader::get(self.sources, request.conversation_id)
             .map_err(|_| LorebookEntryPreparationError::SourceUnavailable)?;
         let conversation = &aggregate.conversation;
@@ -130,7 +141,7 @@ where
         };
 
         let selected_messages = if selected_message_ids.is_empty() {
-            "(none)".to_owned()
+            none.clone()
         } else {
             let timeline = load_timeline(
                 self.sources,
@@ -141,6 +152,7 @@ where
                 &timeline,
                 &selected_message_ids,
                 request.time_awareness_enabled,
+                &fragment,
             )?
         };
 
@@ -154,24 +166,24 @@ where
                         &selected_memory_ids,
                         request.now,
                         request.time_awareness_enabled,
+                        &none,
+                        &fragment,
                     )?;
                     let summary = if request.include_memory_summary {
                         MemorySummaryRepository::get_summary(self.sources, memory.id)?
                             .map(|summary| summary.text.trim().to_owned())
                             .filter(|summary| !summary.is_empty())
-                            .unwrap_or_else(|| "(none)".to_owned())
+                            .unwrap_or_else(|| none.clone())
                     } else {
-                        "(none)".to_owned()
+                        none.clone()
                     };
                     (selected, summary)
                 }
-                None if selected_memory_ids.is_empty() => {
-                    ("(none)".to_owned(), "(none)".to_owned())
-                }
+                None if selected_memory_ids.is_empty() => (none.clone(), none.clone()),
                 None => return Err(LorebookEntryPreparationError::InvalidInput),
             }
         } else {
-            ("(none)".to_owned(), "(none)".to_owned())
+            (none.clone(), none.clone())
         };
 
         validate_source_inputs(
@@ -180,23 +192,24 @@ where
             &selected_messages,
             &selected_memories,
             &memory_summary,
+            &none,
         )?;
 
         let prompt_values = LorebookEntryPromptValues {
             lorebook_name: lorebook.book.name,
             character_name: character.character.profile.name,
             session_title: conversation.title.clone(),
-            existing_entries: format_existing_entries(&lorebook.entries),
+            existing_entries: format_existing_entries(&lorebook.entries, &none, &fragment)?,
             direction_prompt: request
                 .direction_prompt
                 .as_deref()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
-                .unwrap_or("(none)")
-                .to_owned(),
+                .map_or_else(|| none.clone(), str::to_owned),
             selected_messages,
             memory_summary,
             selected_memories,
+            none_marker: none.clone(),
         };
         LorebookEntryAdmissionCoordinator::new(self.sources, self.jobs)
             .admit(LorebookEntryAdmissionRequest {
@@ -280,10 +293,14 @@ fn load_timeline<R: ConversationReader + ?Sized>(
     Ok(items)
 }
 
+type Fragment<'a> = dyn Fn(&str, Vec<(PromptVariable, String)>) -> Result<String, LorebookEntryPreparationError>
+    + 'a;
+
 fn format_selected_messages(
     timeline: &[TimelineItem],
     selected_ids: &[MessageId],
     time_awareness_enabled: bool,
+    fragment: &Fragment<'_>,
 ) -> Result<String, LorebookEntryPreparationError> {
     let selected: HashSet<_> = selected_ids.iter().copied().collect();
     let messages: Vec<_> = timeline
@@ -299,7 +316,7 @@ fn format_selected_messages(
         .map(|(index, item)| {
             let content = active_text(item);
             let content = if content.trim().is_empty() {
-                "[empty message]".to_owned()
+                fragment("lorebook_empty_message", Vec::new())?
             } else {
                 content.trim().to_owned()
             };
@@ -314,14 +331,19 @@ fn format_selected_messages(
             } else {
                 content
             };
-            format!(
-                "{}. {}: {}",
-                index + 1,
-                role_label(item.message.role),
-                content
+            fragment(
+                "lorebook_selected_message",
+                vec![
+                    (PromptVariable::ItemNumber, (index + 1).to_string()),
+                    (
+                        PromptVariable::MessageRole,
+                        role_label(item.message.role).to_owned(),
+                    ),
+                    (PromptVariable::MessageText, content),
+                ],
             )
         })
-        .collect::<Vec<_>>()
+        .collect::<Result<Vec<_>, _>>()?
         .join("\n"))
 }
 
@@ -357,9 +379,11 @@ fn format_selected_memories(
     selected_ids: &[MemoryId],
     effective_now: TimestampMillis,
     time_awareness_enabled: bool,
+    none: &str,
+    fragment: &Fragment<'_>,
 ) -> Result<String, LorebookEntryPreparationError> {
     if selected_ids.is_empty() {
-        return Ok("(none)".to_owned());
+        return Ok(none.to_owned());
     }
     let selected: HashSet<_> = selected_ids.iter().copied().collect();
     let matches: Vec<_> = memories
@@ -371,63 +395,76 @@ fn format_selected_memories(
     }
     let lines = matches
         .iter()
+        .filter(|memory| !memory.text.trim().is_empty())
         .enumerate()
-        .filter_map(|(index, memory)| {
-            let text = memory.text.trim();
-            if text.is_empty() {
-                return None;
-            }
+        .map(|(index, memory)| {
             let rendered = if time_awareness_enabled {
                 crate::memory_prompt::memory_prompt_line(memory, effective_now).with_observed()
             } else {
-                format!("- {text}")
+                format!("- {}", memory.text.trim())
             };
-            Some(format!(
-                "{}. {}",
-                index + 1,
-                rendered.trim_start_matches("- ")
-            ))
+            fragment(
+                "lorebook_selected_memory",
+                vec![
+                    (PromptVariable::ItemNumber, (index + 1).to_string()),
+                    (
+                        PromptVariable::MemoryText,
+                        rendered.trim_start_matches("- ").to_owned(),
+                    ),
+                ],
+            )
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(if lines.is_empty() {
-        "(none)".to_owned()
+        none.to_owned()
     } else {
         lines.join("\n")
     })
 }
 
-fn format_existing_entries(entries: &[LorebookEntry]) -> String {
+fn format_existing_entries(
+    entries: &[LorebookEntry],
+    none: &str,
+    fragment: &Fragment<'_>,
+) -> Result<String, LorebookEntryPreparationError> {
     if entries.is_empty() {
-        return "(none)".to_owned();
+        return Ok(none.to_owned());
     }
-    entries
+    Ok(entries
         .iter()
         .map(|entry| {
             let title = if entry.title.trim().is_empty() {
-                entry
-                    .keywords
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| "Untitled entry".to_owned())
+                match entry.keywords.first() {
+                    Some(keyword) => keyword.clone(),
+                    None => fragment("lorebook_untitled_entry", Vec::new())?,
+                }
             } else {
                 entry.title.trim().to_owned()
             };
             let keywords = if entry.always_active {
-                "always active".to_owned()
+                fragment("lorebook_always_active", Vec::new())?
             } else if entry.keywords.is_empty() {
-                "no keywords".to_owned()
+                fragment("lorebook_no_keywords", Vec::new())?
             } else {
-                format!("keywords: {}", entry.keywords.join(", "))
+                fragment(
+                    "lorebook_keyword_list",
+                    vec![(PromptVariable::EntryKeywords, entry.keywords.join(", "))],
+                )?
             };
-            let content = entry.content.trim();
-            if content.is_empty() {
-                format!("- {title} ({keywords})")
-            } else {
-                format!("- {title} ({keywords}): {content}")
-            }
+            fragment(
+                "lorebook_existing_entry",
+                vec![
+                    (PromptVariable::EntryTitle, title),
+                    (PromptVariable::EntryKeywords, keywords),
+                    (
+                        PromptVariable::EntryContent,
+                        entry.content.trim().to_owned(),
+                    ),
+                ],
+            )
         })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect::<Result<Vec<_>, _>>()?
+        .join("\n"))
 }
 
 fn validate_source_inputs(
@@ -436,14 +473,13 @@ fn validate_source_inputs(
     selected_messages: &str,
     selected_memories: &str,
     memory_summary: &str,
+    none: &str,
 ) -> Result<(), LorebookEntryPreparationError> {
     let invalid = match source {
         LorebookEntrySource::Messages => selected_message_ids.is_empty(),
-        LorebookEntrySource::Memory => selected_memories == "(none)" && memory_summary == "(none)",
+        LorebookEntrySource::Memory => selected_memories == none && memory_summary == none,
         LorebookEntrySource::Mixed => {
-            selected_messages == "(none)"
-                && selected_memories == "(none)"
-                && memory_summary == "(none)"
+            selected_messages == none && selected_memories == none && memory_summary == none
         }
     };
     if invalid {
@@ -481,12 +517,34 @@ mod tests {
                     updated_at: TimestampMillis::new(1),
                 }
             };
+        let catalog = crate::BuiltInPromptCatalog::bundled().expect("catalog");
+        let seed = catalog.seed(crate::BuiltInPromptId::LorebookRuntime);
+        let fragment = |key: &str, variables: Vec<(lettuce_context::PromptVariable, String)>| {
+            let entry = seed
+                .entries
+                .iter()
+                .find(|entry| entry.built_in_entry_key.as_deref() == Some(key))
+                .expect("catalog fragment");
+            let mut values = lettuce_context::PromptRenderValues::default();
+            values.purpose_values.extend(variables);
+            Ok(lettuce_context::render_prompt_text(
+                lettuce_context::PromptPurpose::RuntimeText,
+                &entry.content,
+                &values,
+            )
+            .expect("render fragment"))
+        };
         assert_eq!(
-            format_existing_entries(&[
-                entry("", false, vec!["Harbour".into()], "", 0),
-                entry("  Brass key  ", true, Vec::new(), "  Opens the gate.  ", 1),
-                entry("Fog", false, Vec::new(), "Dense at dawn.", 2),
-            ]),
+            format_existing_entries(
+                &[
+                    entry("", false, vec!["Harbour".into()], "", 0),
+                    entry("  Brass key  ", true, Vec::new(), "  Opens the gate.  ", 1),
+                    entry("Fog", false, Vec::new(), "Dense at dawn.", 2),
+                ],
+                "(none)",
+                &fragment,
+            )
+            .expect("format entries"),
             "- Harbour (keywords: Harbour)\n- Brass key (always active): Opens the gate.\n- Fog (no keywords): Dense at dawn."
         );
     }

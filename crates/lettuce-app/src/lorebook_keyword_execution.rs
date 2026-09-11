@@ -9,10 +9,10 @@ use lettuce_conversations::{
     ProviderNeutralMessage, ProviderReplayArtifactPort, ToolPolicy,
 };
 use lettuce_creation::{
-    LOREBOOK_KEYWORD_FINAL_INSTRUCTION, LorebookKeywordAttemptCheckpoint,
+    LOREBOOK_KEYWORD_FINAL_INSTRUCTION_KEY, LorebookKeywordAttemptCheckpoint,
     LorebookKeywordAttemptDecision, LorebookKeywordAttemptKind, LorebookKeywordAttemptUsage,
     LorebookKeywordDraft, LorebookKeywordGenerationRun, LorebookKeywordRunRepository,
-    LorebookKeywordRunRepositoryError, lorebook_keyword_fallback_prompt,
+    LorebookKeywordRunRepositoryError, lorebook_keyword_fallback_prompt_key,
     lorebook_keyword_tool_request, parse_lorebook_keyword_fallback, reduce_lorebook_keyword_calls,
 };
 use lettuce_jobs::handle::JobHandle;
@@ -73,6 +73,7 @@ where
     R: LorebookKeywordRunRepository
         + ProviderReplayArtifactPort
         + lettuce_usage::JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     I: InferencePort + ?Sized,
 {
@@ -89,6 +90,13 @@ where
             .load_lorebook_keyword_run(request_id)
             .map_err(LorebookKeywordExecutionError::Run)?;
         validate_ownership(&run, prompt, handle)?;
+        let text = || {
+            crate::runtime_text::RuntimeText::load(
+                self.repository,
+                crate::BuiltInPromptId::LorebookRuntime,
+            )
+            .map_err(|_| LorebookKeywordExecutionError::InvalidPrompt)
+        };
         let mut attempts = self
             .repository
             .load_lorebook_keyword_attempts(request_id)
@@ -101,7 +109,7 @@ where
             if handle.cancellation_token().is_cancelled() {
                 return Err(LorebookKeywordExecutionError::Cancelled);
             }
-            let request = build_request(&run, prompt, handle, stream_sink, false)?;
+            let request = build_request(&run, prompt, &text()?, handle, stream_sink, false)?;
             match crate::job_inference_usage::run_job_inference(
                 self.repository,
                 self.inference,
@@ -169,7 +177,7 @@ where
         if handle.cancellation_token().is_cancelled() {
             return Err(LorebookKeywordExecutionError::Cancelled);
         }
-        let request = build_request(&run, prompt, handle, stream_sink, true)?;
+        let request = build_request(&run, prompt, &text()?, handle, stream_sink, true)?;
         let outcome = crate::job_inference_usage::run_job_inference(
             self.repository,
             self.inference,
@@ -366,16 +374,29 @@ fn completed_result(
 fn build_request(
     run: &LorebookKeywordGenerationRun,
     prompt: &PromptDocument,
+    text: &crate::runtime_text::RuntimeText,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
     structured_fallback: bool,
 ) -> Result<InferenceRequest, LorebookKeywordExecutionError> {
-    let mut context = render_context(run, prompt)?;
+    let fragment = |key: &str| {
+        text.render_with(key, [])
+            .map_err(|_| LorebookKeywordExecutionError::InvalidPrompt)
+    };
+    let tool_texts = lettuce_creation::LOREBOOK_KEYWORD_TOOL_TEXT_KEYS
+        .iter()
+        .map(|key| Ok((*key, fragment(key)?)))
+        .collect::<Result<std::collections::HashMap<_, _>, LorebookKeywordExecutionError>>()?;
+    let mut context = render_context(
+        run,
+        prompt,
+        fragment(LOREBOOK_KEYWORD_FINAL_INSTRUCTION_KEY)?,
+    )?;
     if structured_fallback {
         context.messages.push(ProviderNeutralMessage {
             role: MessageRole::User,
             parts: vec![ProviderContextPart::Text {
-                text: lorebook_keyword_fallback_prompt(run.fallback_format).to_owned(),
+                text: fragment(lorebook_keyword_fallback_prompt_key(run.fallback_format))?,
             }],
         });
     }
@@ -405,7 +426,9 @@ fn build_request(
         cancellation: Some(handle.id()),
         stream_sink,
         media_grants: Vec::new(),
-        tools: (!structured_fallback).then(lorebook_keyword_tool_request),
+        tools: (!structured_fallback).then(|| {
+            lorebook_keyword_tool_request(&|key| tool_texts.get(key).cloned().unwrap_or_default())
+        }),
     };
     request
         .validate()
@@ -416,6 +439,7 @@ fn build_request(
 fn render_context(
     run: &LorebookKeywordGenerationRun,
     prompt: &PromptDocument,
+    final_instruction: String,
 ) -> Result<ProviderNeutralContext, LorebookKeywordExecutionError> {
     let values = &run.prompt_values;
     let mut render_values = PromptRenderValues::default();
@@ -491,7 +515,7 @@ fn render_context(
     messages.push(ProviderNeutralMessage {
         role: MessageRole::User,
         parts: vec![ProviderContextPart::Text {
-            text: LOREBOOK_KEYWORD_FINAL_INSTRUCTION.to_owned(),
+            text: final_instruction,
         }],
     });
     let input_bytes = text_bytes(&messages)?;

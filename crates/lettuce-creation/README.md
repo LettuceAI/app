@@ -198,7 +198,12 @@ keywords use the same normalization and 24-keyword legacy cap. Its exact JSON
 and XML fallback prompts and parsers are also present, with force-mode
 `no_entry` rejected as undeclared. The six source/force final instructions and
 two-attempt native/structured-fallback checkpoint decisions are typed here as
-well; none of these contracts mutate a lorebook.
+well; none of these contracts mutate a lorebook. The crate holds no model-facing
+text: instructions, fallback prompts and tool descriptions are catalog keys
+(`lorebook_entry_final_instruction_key`, `lorebook_entry_fallback_prompt_key`,
+`LOREBOOK_ENTRY_TOOL_TEXT_KEYS` and the keyword equivalents) that the
+application resolves from the built-in `prompt_app_lorebook_runtime` document;
+tool builders take that resolver.
 
 The matching immutable run now freezes the direct conversation, lorebook,
 character/persona, selected message and memory identities, source mode,

@@ -532,6 +532,15 @@ and fallback requests recorded usage before checking response success; their
 dispatch-ledger integration is described below. No new schema,
 worker, pricing formula or host scheduling was introduced.
 
+Lorebook entry and keyword final instructions, JSON/XML fallbacks, tool
+descriptions and the preparation fillers (`(none)`, `[empty message]`, numbered
+message/memory lines, existing-entry lines) render from the built-in
+`prompt_app_lorebook_runtime` document with legacy wording. Fillers are frozen
+into the run at admission together with the filler that marked an absent input
+(`none_marker`), so later catalog edits cannot change a run's source gates;
+instructions, fallbacks and tool texts are read when a request is built.
+Selected memory lines are numbered contiguously over non-blank memories, as
+legacy did.
 Lorebook entry and keyword native/fallback executions also use job dispatch
 evidence. The shared helper distinguishes evidence persistence failure from
 provider failure. Entry/keyword stop on evidence failure without writing a

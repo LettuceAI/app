@@ -1,6 +1,6 @@
 use lettuce_context::{
-    PromptDocument, PromptPurpose, PromptRenderValues, PromptRepository, PromptVariable,
-    render_prompt_text,
+    PromptDocument, PromptPurpose, PromptRenderValues, PromptRepository, PromptRepositoryError,
+    PromptVariable, render_prompt_text,
 };
 
 use crate::BuiltInPromptId;
@@ -13,6 +13,23 @@ pub(crate) enum RuntimeTextError {
     Render,
 }
 
+/// Where runtime text documents are read from; every prompt repository is one.
+pub trait RuntimeTextSource {
+    fn runtime_text_document(
+        &self,
+        id: BuiltInPromptId,
+    ) -> Result<Option<PromptDocument>, PromptRepositoryError>;
+}
+
+impl<T: PromptRepository + ?Sized> RuntimeTextSource for T {
+    fn runtime_text_document(
+        &self,
+        id: BuiltInPromptId,
+    ) -> Result<Option<PromptDocument>, PromptRepositoryError> {
+        crate::built_in_prompts::active_built_in_prompt(self, id)
+    }
+}
+
 /// A built-in `runtimeText` document whose entries are fragments the runtime
 /// renders by stable entry key.
 #[derive(Debug, Clone)]
@@ -21,11 +38,12 @@ pub(crate) struct RuntimeText {
 }
 
 impl RuntimeText {
-    pub(crate) fn load<R: PromptRepository + ?Sized>(
+    pub(crate) fn load<R: RuntimeTextSource + ?Sized>(
         repository: &R,
         id: BuiltInPromptId,
     ) -> Result<Self, RuntimeTextError> {
-        crate::built_in_prompts::active_built_in_prompt(repository, id)
+        repository
+            .runtime_text_document(id)
             .map_err(|_| RuntimeTextError::Unavailable)?
             .map(|document| Self { document })
             .ok_or(RuntimeTextError::Unavailable)

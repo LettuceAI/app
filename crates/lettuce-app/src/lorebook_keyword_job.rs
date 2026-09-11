@@ -54,19 +54,31 @@ impl<'a, R: ?Sized, J: ?Sized> LorebookKeywordCoordinator<'a, R, J> {
     }
 }
 
-impl<R: LorebookKeywordRunRepository + ?Sized, J: JobStore + ?Sized>
-    LorebookKeywordCoordinator<'_, R, J>
+impl<
+    R: LorebookKeywordRunRepository + crate::runtime_text::RuntimeTextSource + ?Sized,
+    J: JobStore + ?Sized,
+> LorebookKeywordCoordinator<'_, R, J>
 {
     pub fn prepare_and_admit(
         &self,
         request: LorebookKeywordRequest<'_>,
     ) -> Result<LorebookKeywordAdmission, LorebookKeywordAdmissionError> {
         validate_request(&request)?;
+        let text = crate::runtime_text::RuntimeText::load(
+            self.repository,
+            crate::BuiltInPromptId::LorebookRuntime,
+        )
+        .map_err(|_| LorebookKeywordAdmissionError::InvalidInput)?;
+        let fragment = |key: &str| {
+            text.render_with(key, [])
+                .map_err(|_| LorebookKeywordAdmissionError::InvalidInput)
+        };
+        let none = fragment("lorebook_none")?;
         let prompt_values = LorebookKeywordPromptValues {
-            entry_title: normalized_or(&request.title, "(untitled)"),
+            entry_title: normalized_or(&request.title, &fragment("lorebook_keyword_untitled")?),
             entry_content: request.content.trim().to_owned(),
-            existing_keywords: format_existing_keywords(&request.existing_keywords),
-            direction_prompt: normalized_or(&request.direction_prompt, "(none)"),
+            existing_keywords: format_existing_keywords(&request.existing_keywords, &none),
+            direction_prompt: normalized_or(&request.direction_prompt, &none),
         };
         match self
             .repository
@@ -160,14 +172,14 @@ fn normalized_or(value: &Option<String>, fallback: &str) -> String {
         .to_owned()
 }
 
-fn format_existing_keywords(keywords: &[String]) -> String {
+fn format_existing_keywords(keywords: &[String], none: &str) -> String {
     let keywords = keywords
         .iter()
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
         .collect::<Vec<_>>();
     if keywords.is_empty() {
-        "(none)".to_owned()
+        none.to_owned()
     } else {
         keywords.join(", ")
     }

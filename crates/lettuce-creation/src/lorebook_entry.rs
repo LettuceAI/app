@@ -21,18 +21,6 @@ pub const LOREBOOK_ENTRY_NONE_TOOL_NAME: &str = "no_entry";
 pub const MAX_GENERATED_LOREBOOK_KEYWORDS: usize = 24;
 pub const DEFAULT_NO_LOREBOOK_ENTRY_REASON: &str =
     "The selected messages do not establish durable lore.";
-pub const LOREBOOK_ENTRY_MESSAGES_INSTRUCTION: &str = "Analyze the selected transcript and return exactly one result now. Use the write_lorebook_entry tool when there is a durable lorebook entry to create. Use no_entry when there is not.";
-pub const LOREBOOK_ENTRY_MESSAGES_FORCE_INSTRUCTION: &str = "Analyze the selected transcript and return exactly one result now. You MUST call write_lorebook_entry. The no_entry option is disabled — produce the best possible durable lorebook entry even if facts seem weak or already covered.";
-pub const LOREBOOK_ENTRY_MEMORY_INSTRUCTION: &str = "Analyze the dynamic memory context summary and the selected memories, then return exactly one result now. Use the write_lorebook_entry tool when there is a durable lorebook entry to create. Use no_entry when there is not.";
-pub const LOREBOOK_ENTRY_MEMORY_FORCE_INSTRUCTION: &str = "Analyze the dynamic memory context summary and the selected memories, then return exactly one result now. You MUST call write_lorebook_entry. The no_entry option is disabled — produce the best possible durable lorebook entry even if the memories seem weak or already covered.";
-pub const LOREBOOK_ENTRY_MIXED_INSTRUCTION: &str = "Analyze every provided input section that is not marked (none) — selected messages, dynamic memory context summary, and selected memories — and return exactly one result now. Use the write_lorebook_entry tool when there is a durable lorebook entry to create. Use no_entry when there is not.";
-pub const LOREBOOK_ENTRY_MIXED_FORCE_INSTRUCTION: &str = "Analyze every provided input section that is not marked (none) — selected messages, dynamic memory context summary, and selected memories — and return exactly one result now. You MUST call write_lorebook_entry. The no_entry option is disabled — produce the best possible durable lorebook entry even if facts seem weak or already covered.";
-
-pub const LOREBOOK_ENTRY_JSON_FALLBACK_PROMPT: &str = r#"Return only JSON. Format: {"result":{"name":"write_lorebook_entry","arguments":{"title":"...","keywords":["..."],"content":"...","alwaysActive":false}}}. If no durable entry should be created, return {"result":{"name":"no_entry","arguments":{"reason":"..."}}}. Do not use markdown."#;
-pub const LOREBOOK_ENTRY_XML_FALLBACK_PROMPT: &str = r#"Return only XML. Format: <lorebook_result><write_lorebook_entry alwaysActive="false"><title>...</title><keywords><keyword>...</keyword></keywords><content>...</content></write_lorebook_entry></lorebook_result>. If no durable entry should be created, return <lorebook_result><no_entry><reason>...</reason></no_entry></lorebook_result>. Do not use markdown."#;
-pub const LOREBOOK_ENTRY_JSON_FORCE_FALLBACK_PROMPT: &str = r#"Return only JSON. Format: {"result":{"name":"write_lorebook_entry","arguments":{"title":"...","keywords":["..."],"content":"...","alwaysActive":false}}}. You MUST return write_lorebook_entry. The no_entry option is disabled. Do not use markdown."#;
-pub const LOREBOOK_ENTRY_XML_FORCE_FALLBACK_PROMPT: &str = r#"Return only XML. Format: <lorebook_result><write_lorebook_entry alwaysActive="false"><title>...</title><keywords><keyword>...</keyword></keywords><content>...</content></write_lorebook_entry></lorebook_result>. You MUST return write_lorebook_entry. The no_entry option is disabled. Do not use markdown."#;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LorebookEntryFallbackFormat {
@@ -59,6 +47,8 @@ pub struct LorebookEntryPromptValues {
     pub selected_messages: String,
     pub memory_summary: String,
     pub selected_memories: String,
+    /// The catalog filler that marked an absent input when the run was prepared.
+    pub none_marker: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -151,7 +141,7 @@ impl LorebookEntryGenerationRun {
                 if self.selected_memory_ids.is_empty()
                     && (!self.include_memory_summary
                         || values.memory_summary.trim().is_empty()
-                        || values.memory_summary.trim() == "(none)") =>
+                        || values.memory_summary.trim() == values.none_marker.trim()) =>
             {
                 Err(LorebookEntryRunRepositoryError::Invalid)
             }
@@ -160,7 +150,7 @@ impl LorebookEntryGenerationRun {
                     && self.selected_memory_ids.is_empty()
                     && (!self.include_memory_summary
                         || values.memory_summary.trim().is_empty()
-                        || values.memory_summary.trim() == "(none)") =>
+                        || values.memory_summary.trim() == values.none_marker.trim()) =>
             {
                 Err(LorebookEntryRunRepositoryError::Invalid)
             }
@@ -320,22 +310,34 @@ pub enum LorebookEntryGenerationError {
     UndeclaredFallbackOperation,
 }
 
+/// Runtime catalog keys for the text this tool contract sends to a model.
+pub const LOREBOOK_ENTRY_TOOL_TEXT_KEYS: [&str; 7] = [
+    "lorebook_entry_write_tool",
+    "lorebook_entry_title_parameter",
+    "lorebook_entry_keywords_parameter",
+    "lorebook_entry_content_parameter",
+    "lorebook_entry_always_active_parameter",
+    "lorebook_entry_none_tool",
+    "lorebook_entry_reason_parameter",
+];
+
+/// Builds the tool contract; `text` resolves a runtime catalog key.
 #[must_use]
-pub fn lorebook_entry_tool_request(force: bool) -> ToolRequest {
+pub fn lorebook_entry_tool_request(force: bool, text: &dyn Fn(&str) -> String) -> ToolRequest {
     let mut definitions = vec![ToolDefinition {
         name: LOREBOOK_ENTRY_WRITE_TOOL_NAME.to_owned(),
-        description: Some("Create one lorebook entry draft from the selected transcript.".into()),
+        description: Some(text("lorebook_entry_write_tool")),
         parameters: json!({
             "type": "object",
             "properties": {
-                "title": { "type": "string", "description": "Short entry title" },
+                "title": { "type": "string", "description": text("lorebook_entry_title_parameter") },
                 "keywords": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "description": "Trigger keywords for this entry"
+                    "description": text("lorebook_entry_keywords_parameter")
                 },
-                "content": { "type": "string", "description": "Final lorebook entry content" },
-                "alwaysActive": { "type": "boolean", "description": "If true, entry should not require keywords" }
+                "content": { "type": "string", "description": text("lorebook_entry_content_parameter") },
+                "alwaysActive": { "type": "boolean", "description": text("lorebook_entry_always_active_parameter") }
             },
             "required": ["title", "content"]
         }),
@@ -344,14 +346,11 @@ pub fn lorebook_entry_tool_request(force: bool) -> ToolRequest {
     if !force {
         definitions.push(ToolDefinition {
             name: LOREBOOK_ENTRY_NONE_TOOL_NAME.to_owned(),
-            description: Some(
-                "Use this when the selected messages do not justify a durable lorebook entry."
-                    .into(),
-            ),
+            description: Some(text("lorebook_entry_none_tool")),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "reason": { "type": "string", "description": "Short explanation for why no entry should be created" }
+                    "reason": { "type": "string", "description": text("lorebook_entry_reason_parameter") }
                 },
                 "required": ["reason"]
             }),
@@ -364,31 +363,33 @@ pub fn lorebook_entry_tool_request(force: bool) -> ToolRequest {
     }
 }
 
+/// Runtime catalog key of the structured-output fallback instruction.
 #[must_use]
-pub const fn lorebook_entry_fallback_prompt(
+pub const fn lorebook_entry_fallback_prompt_key(
     format: LorebookEntryFallbackFormat,
     force: bool,
 ) -> &'static str {
     match (format, force) {
-        (LorebookEntryFallbackFormat::Json, false) => LOREBOOK_ENTRY_JSON_FALLBACK_PROMPT,
-        (LorebookEntryFallbackFormat::Xml, false) => LOREBOOK_ENTRY_XML_FALLBACK_PROMPT,
-        (LorebookEntryFallbackFormat::Json, true) => LOREBOOK_ENTRY_JSON_FORCE_FALLBACK_PROMPT,
-        (LorebookEntryFallbackFormat::Xml, true) => LOREBOOK_ENTRY_XML_FORCE_FALLBACK_PROMPT,
+        (LorebookEntryFallbackFormat::Json, false) => "lorebook_entry_fallback_json",
+        (LorebookEntryFallbackFormat::Xml, false) => "lorebook_entry_fallback_xml",
+        (LorebookEntryFallbackFormat::Json, true) => "lorebook_entry_fallback_json_force",
+        (LorebookEntryFallbackFormat::Xml, true) => "lorebook_entry_fallback_xml_force",
     }
 }
 
+/// Runtime catalog key of the final user instruction.
 #[must_use]
-pub const fn lorebook_entry_final_instruction(
+pub const fn lorebook_entry_final_instruction_key(
     source: LorebookEntrySource,
     force: bool,
 ) -> &'static str {
     match (source, force) {
-        (LorebookEntrySource::Messages, false) => LOREBOOK_ENTRY_MESSAGES_INSTRUCTION,
-        (LorebookEntrySource::Messages, true) => LOREBOOK_ENTRY_MESSAGES_FORCE_INSTRUCTION,
-        (LorebookEntrySource::Memory, false) => LOREBOOK_ENTRY_MEMORY_INSTRUCTION,
-        (LorebookEntrySource::Memory, true) => LOREBOOK_ENTRY_MEMORY_FORCE_INSTRUCTION,
-        (LorebookEntrySource::Mixed, false) => LOREBOOK_ENTRY_MIXED_INSTRUCTION,
-        (LorebookEntrySource::Mixed, true) => LOREBOOK_ENTRY_MIXED_FORCE_INSTRUCTION,
+        (LorebookEntrySource::Messages, false) => "lorebook_entry_instruction_messages",
+        (LorebookEntrySource::Messages, true) => "lorebook_entry_instruction_messages_force",
+        (LorebookEntrySource::Memory, false) => "lorebook_entry_instruction_memory",
+        (LorebookEntrySource::Memory, true) => "lorebook_entry_instruction_memory_force",
+        (LorebookEntrySource::Mixed, false) => "lorebook_entry_instruction_mixed",
+        (LorebookEntrySource::Mixed, true) => "lorebook_entry_instruction_mixed_force",
     }
 }
 
@@ -750,7 +751,7 @@ fn append_xml_field(
 }
 
 pub fn validate_lorebook_entry_tool_request(force: bool) -> Result<(), ValidationError> {
-    lorebook_entry_tool_request(force).validate()
+    lorebook_entry_tool_request(force, &|key| key.to_owned()).validate()
 }
 
 #[cfg(test)]
@@ -769,7 +770,7 @@ mod tests {
 
     #[test]
     fn tool_contract_copies_force_and_optional_none_modes() {
-        let ordinary = lorebook_entry_tool_request(false);
+        let ordinary = lorebook_entry_tool_request(false, &|key| key.to_owned());
         ordinary.validate().expect("ordinary request");
         assert_eq!(ordinary.choice, ToolChoice::Required);
         assert_eq!(
@@ -783,7 +784,7 @@ mod tests {
                 LOREBOOK_ENTRY_NONE_TOOL_NAME
             ]
         );
-        let forced = lorebook_entry_tool_request(true);
+        let forced = lorebook_entry_tool_request(true, &|key| key.to_owned());
         forced.validate().expect("forced request");
         assert_eq!(forced.definitions.len(), 1);
         assert_eq!(forced.definitions[0].name, LOREBOOK_ENTRY_WRITE_TOOL_NAME);

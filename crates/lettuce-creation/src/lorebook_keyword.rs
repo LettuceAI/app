@@ -14,9 +14,13 @@ use serde_json::{Map, Value, json};
 use crate::{LorebookEntryFallbackFormat, MAX_GENERATED_LOREBOOK_KEYWORDS};
 
 pub const LOREBOOK_KEYWORD_WRITE_TOOL_NAME: &str = "write_lorebook_keywords";
-pub const LOREBOOK_KEYWORD_FINAL_INSTRUCTION: &str = "Analyze the lorebook entry content and return exactly one result now. You MUST call write_lorebook_keywords with a concise, deduplicated keyword list.";
-pub const LOREBOOK_KEYWORD_JSON_FALLBACK_PROMPT: &str = r#"Return only JSON. Format: {"result":{"name":"write_lorebook_keywords","arguments":{"keywords":["..."]}}}. You MUST return write_lorebook_keywords. Do not use markdown."#;
-pub const LOREBOOK_KEYWORD_XML_FALLBACK_PROMPT: &str = r#"Return only XML. Format: <lorebook_result><write_lorebook_keywords><keywords><keyword>...</keyword></keywords></write_lorebook_keywords></lorebook_result>. You MUST return write_lorebook_keywords. Do not use markdown."#;
+/// Runtime catalog key of the final user instruction.
+pub const LOREBOOK_KEYWORD_FINAL_INSTRUCTION_KEY: &str = "lorebook_keyword_instruction";
+/// Runtime catalog keys for the text this tool contract sends to a model.
+pub const LOREBOOK_KEYWORD_TOOL_TEXT_KEYS: [&str; 2] = [
+    "lorebook_keyword_write_tool",
+    "lorebook_keyword_keywords_parameter",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -220,20 +224,18 @@ pub enum LorebookKeywordGenerationError {
 }
 
 #[must_use]
-pub fn lorebook_keyword_tool_request() -> ToolRequest {
+pub fn lorebook_keyword_tool_request(text: &dyn Fn(&str) -> String) -> ToolRequest {
     ToolRequest {
         definitions: vec![ToolDefinition {
             name: LOREBOOK_KEYWORD_WRITE_TOOL_NAME.to_owned(),
-            description: Some(
-                "Generate one deduplicated keyword list for the lorebook entry draft.".into(),
-            ),
+            description: Some(text("lorebook_keyword_write_tool")),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "keywords": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "Trigger keywords, aliases, names, locations, and other durable lookup terms"
+                        "description": text("lorebook_keyword_keywords_parameter")
                     }
                 },
                 "required": ["keywords"]
@@ -245,10 +247,12 @@ pub fn lorebook_keyword_tool_request() -> ToolRequest {
 }
 
 #[must_use]
-pub const fn lorebook_keyword_fallback_prompt(format: LorebookEntryFallbackFormat) -> &'static str {
+pub const fn lorebook_keyword_fallback_prompt_key(
+    format: LorebookEntryFallbackFormat,
+) -> &'static str {
     match format {
-        LorebookEntryFallbackFormat::Json => LOREBOOK_KEYWORD_JSON_FALLBACK_PROMPT,
-        LorebookEntryFallbackFormat::Xml => LOREBOOK_KEYWORD_XML_FALLBACK_PROMPT,
+        LorebookEntryFallbackFormat::Json => "lorebook_keyword_fallback_json",
+        LorebookEntryFallbackFormat::Xml => "lorebook_keyword_fallback_xml",
     }
 }
 
@@ -472,7 +476,7 @@ mod tests {
 
     #[test]
     fn required_tool_contract_matches_legacy() {
-        let request = lorebook_keyword_tool_request();
+        let request = lorebook_keyword_tool_request(&|key| key.to_owned());
         assert_eq!(request.choice, ToolChoice::Required);
         assert_eq!(request.definitions.len(), 1);
         assert_eq!(

@@ -12,8 +12,8 @@ use lettuce_creation::{
     LorebookEntryAttemptCheckpoint, LorebookEntryAttemptDecision, LorebookEntryAttemptKind,
     LorebookEntryAttemptUsage, LorebookEntryGenerationResult, LorebookEntryGenerationRun,
     LorebookEntryRunRepository, LorebookEntryRunRepositoryError, LorebookEntrySource,
-    lorebook_entry_fallback_prompt, lorebook_entry_final_instruction, lorebook_entry_tool_request,
-    parse_lorebook_entry_fallback, reduce_lorebook_entry_calls,
+    lorebook_entry_fallback_prompt_key, lorebook_entry_final_instruction_key,
+    lorebook_entry_tool_request, parse_lorebook_entry_fallback, reduce_lorebook_entry_calls,
 };
 use lettuce_jobs::handle::JobHandle;
 use lettuce_types::{GenerationAttemptId, GenerationTurnId, RequestId, TimestampMillis};
@@ -73,6 +73,7 @@ where
     R: LorebookEntryRunRepository
         + ProviderReplayArtifactPort
         + lettuce_usage::JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     I: InferencePort + ?Sized,
 {
@@ -89,6 +90,13 @@ where
             .load_lorebook_entry_run(request_id)
             .map_err(LorebookEntryExecutionError::Run)?;
         validate_ownership(&run, prompt, handle)?;
+        let text = || {
+            crate::runtime_text::RuntimeText::load(
+                self.repository,
+                crate::BuiltInPromptId::LorebookRuntime,
+            )
+            .map_err(|_| LorebookEntryExecutionError::InvalidPrompt)
+        };
         let mut attempts = self
             .repository
             .load_lorebook_entry_attempts(request_id)
@@ -101,7 +109,7 @@ where
             if handle.cancellation_token().is_cancelled() {
                 return Err(LorebookEntryExecutionError::Cancelled);
             }
-            let request = build_request(&run, prompt, handle, stream_sink, false)?;
+            let request = build_request(&run, prompt, &text()?, handle, stream_sink, false)?;
             match crate::job_inference_usage::run_job_inference(
                 self.repository,
                 self.inference,
@@ -169,7 +177,7 @@ where
         if handle.cancellation_token().is_cancelled() {
             return Err(LorebookEntryExecutionError::Cancelled);
         }
-        let request = build_request(&run, prompt, handle, stream_sink, true)?;
+        let request = build_request(&run, prompt, &text()?, handle, stream_sink, true)?;
         let outcome = crate::job_inference_usage::run_job_inference(
             self.repository,
             self.inference,
@@ -363,16 +371,32 @@ fn completed_result(
 fn build_request(
     run: &LorebookEntryGenerationRun,
     prompt: &PromptDocument,
+    text: &crate::runtime_text::RuntimeText,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
     structured_fallback: bool,
 ) -> Result<InferenceRequest, LorebookEntryExecutionError> {
-    let mut context = render_context(run, prompt)?;
+    let fragment = |key: &str| {
+        text.render_with(key, [])
+            .map_err(|_| LorebookEntryExecutionError::InvalidPrompt)
+    };
+    let tool_texts = lettuce_creation::LOREBOOK_ENTRY_TOOL_TEXT_KEYS
+        .iter()
+        .map(|key| Ok((*key, fragment(key)?)))
+        .collect::<Result<std::collections::HashMap<_, _>, LorebookEntryExecutionError>>()?;
+    let mut context = render_context(
+        run,
+        prompt,
+        fragment(lorebook_entry_final_instruction_key(run.source, run.force))?,
+    )?;
     if structured_fallback {
         context.messages.push(ProviderNeutralMessage {
             role: MessageRole::User,
             parts: vec![ProviderContextPart::Text {
-                text: lorebook_entry_fallback_prompt(run.fallback_format, run.force).to_owned(),
+                text: fragment(lorebook_entry_fallback_prompt_key(
+                    run.fallback_format,
+                    run.force,
+                ))?,
             }],
         });
     }
@@ -402,7 +426,11 @@ fn build_request(
         cancellation: Some(handle.id()),
         stream_sink,
         media_grants: Vec::new(),
-        tools: (!structured_fallback).then(|| lorebook_entry_tool_request(run.force)),
+        tools: (!structured_fallback).then(|| {
+            lorebook_entry_tool_request(run.force, &|key| {
+                tool_texts.get(key).cloned().unwrap_or_default()
+            })
+        }),
     };
     request
         .validate()
@@ -413,6 +441,7 @@ fn build_request(
 fn render_context(
     run: &LorebookEntryGenerationRun,
     prompt: &PromptDocument,
+    final_instruction: String,
 ) -> Result<ProviderNeutralContext, LorebookEntryExecutionError> {
     let values = &run.prompt_values;
     let mut render_values = PromptRenderValues {
@@ -452,8 +481,8 @@ fn render_context(
                     values.selected_memories.as_str(),
                 ]
                 .join("\n"),
-                has_memory_summary: values.memory_summary.trim() != "(none)",
-                has_key_memories: values.selected_memories.trim() != "(none)",
+                has_memory_summary: values.memory_summary.trim() != values.none_marker.trim(),
+                has_key_memories: values.selected_memories.trim() != values.none_marker.trim(),
                 has_lorebook_content: !values.existing_entries.trim().is_empty(),
                 input_scopes: vec!["text".to_owned()],
                 output_scopes: vec!["text".to_owned()],
@@ -500,7 +529,7 @@ fn render_context(
     messages.push(ProviderNeutralMessage {
         role: MessageRole::User,
         parts: vec![ProviderContextPart::Text {
-            text: lorebook_entry_final_instruction(run.source, run.force).to_owned(),
+            text: final_instruction,
         }],
     });
     let input_bytes = text_bytes(&messages)?;

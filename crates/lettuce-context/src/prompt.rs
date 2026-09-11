@@ -951,6 +951,9 @@ pub enum PromptVariable {
     ParticipantTurnsAgo,
     SpeakerName,
     MessageText,
+    ItemNumber,
+    MessageRole,
+    MemoryText,
 }
 
 impl PromptVariable {
@@ -1047,6 +1050,9 @@ impl PromptVariable {
             Self::ParticipantTurnsAgo => "{{participant_turns_ago}}",
             Self::SpeakerName => "{{speaker_name}}",
             Self::MessageText => "{{message_text}}",
+            Self::ItemNumber => "{{item_number}}",
+            Self::MessageRole => "{{message_role}}",
+            Self::MemoryText => "{{memory_text}}",
         }
     }
 
@@ -1142,6 +1148,9 @@ impl PromptVariable {
         Self::ParticipantTurnsAgo,
         Self::SpeakerName,
         Self::MessageText,
+        Self::ItemNumber,
+        Self::MessageRole,
+        Self::MemoryText,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.

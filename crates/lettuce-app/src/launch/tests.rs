@@ -668,6 +668,12 @@ impl lettuce_creation::LorebookEntryRunRepository for FailingUsageRepository<'_>
     }
 }
 
+impl crate::runtime_text::RuntimeTextSource for FailingUsageRepository<'_> {
+    fn runtime_text_document(&self, id: crate::BuiltInPromptId) -> Result<Option<lettuce_context::PromptDocument>, lettuce_context::PromptRepositoryError> {
+        crate::runtime_text::RuntimeTextSource::runtime_text_document(self.database, id)
+    }
+}
+
 impl CompanionSoulWriterRunRepository for FailingUsageRepository<'_> {
     fn admit_companion_soul_writer_run(&self, run: lettuce_companions::CompanionSoulWriterRun) -> Result<lettuce_companions::CompanionSoulWriterRun, lettuce_companions::CompanionSoulWriterRunRepositoryError> {
         self.database.admit_companion_soul_writer_run(run)
@@ -3954,6 +3960,7 @@ fn lorebook_entry_admission_binds_one_restart_safe_creation_job() {
         selected_messages: "1. user: We met by the harbour.".into(),
         memory_summary: "(none)".into(),
         selected_memories: "(none)".into(),
+        none_marker: "(none)".into(),
     };
     let make_request = || crate::LorebookEntryAdmissionRequest {
         request_id,
@@ -4205,7 +4212,7 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
                 .is_some_and(|message| matches!(
                     message.parts.as_slice(),
                     [ProviderContextPart::Text { text }]
-                        if text == lettuce_creation::LOREBOOK_KEYWORD_FINAL_INSTRUCTION
+                        if text == "Analyze the lorebook entry content and return exactly one result now. You MUST call write_lorebook_keywords with a concise, deduplicated keyword list."
                 ))
         );
     }
@@ -7384,7 +7391,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                 .is_some_and(|message| matches!(
                     message.parts.as_slice(),
                     [ProviderContextPart::Text { text }]
-                        if text == lettuce_creation::LOREBOOK_ENTRY_MESSAGES_INSTRUCTION
+                        if text == "Analyze the selected transcript and return exactly one result now. Use the write_lorebook_entry tool when there is a durable lorebook entry to create. Use no_entry when there is not."
                 ))
         );
     }
@@ -7536,7 +7543,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                 .is_some_and(|message| matches!(
                     message.parts.as_slice(),
                     [ProviderContextPart::Text { text }]
-                        if text == lettuce_creation::LOREBOOK_ENTRY_JSON_FALLBACK_PROMPT
+                        if text == r#"Return only JSON. Format: {"result":{"name":"write_lorebook_entry","arguments":{"title":"...","keywords":["..."],"content":"...","alwaysActive":false}}}. If no durable entry should be created, return {"result":{"name":"no_entry","arguments":{"reason":"..."}}}. Do not use markdown."#
                 ))
         );
     }
