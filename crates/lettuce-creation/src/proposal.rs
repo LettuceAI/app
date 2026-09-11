@@ -53,12 +53,26 @@ pub enum CreationOperation {
     UndeclaredTool {
         name: String,
     },
+    /// A declared tool called without usable arguments; like legacy, the call
+    /// is answered with an error and later calls still run.
+    Rejected {
+        tool: String,
+        reason: CreationRejection,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CreationRejection {
+    MissingArgument { argument: String },
+    UnknownId { id: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CreationOperationError {
     UnknownTool,
+    InvalidArguments,
     WrongTarget,
     InvalidText,
     DuplicateIdentity,
@@ -196,6 +210,7 @@ fn apply_one(
         CreationOperation::ShowPreview
             | CreationOperation::RequestConfirmation
             | CreationOperation::UndeclaredTool { .. }
+            | CreationOperation::Rejected { .. }
     );
     apply_change(draft, stage, operation)?;
     if is_mutation {
@@ -350,6 +365,14 @@ fn apply_change(
         CreationOperation::RequestConfirmation => *stage = CreationStage::AwaitingConfirmation,
         CreationOperation::UndeclaredTool { .. } => {
             return Err(CreationOperationError::UnknownTool);
+        }
+        CreationOperation::Rejected { reason, .. } => {
+            return Err(match reason {
+                CreationRejection::MissingArgument { .. } => {
+                    CreationOperationError::InvalidArguments
+                }
+                CreationRejection::UnknownId { .. } => CreationOperationError::NotFound,
+            });
         }
     }
     Ok(())

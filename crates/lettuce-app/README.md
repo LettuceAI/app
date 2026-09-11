@@ -620,8 +620,22 @@ with room for eight rounds. Corrected: legacy flattened tool arguments and
 turned every `"` into `'`, which broke the dialogue block the output contract
 asks for; arguments are kept verbatim. Tool descriptions come from the
 same runtime document. A call to an undeclared tool is recorded as an
-`UndeclaredTool` operation and answered with an `unknown_tool` error result, as
-legacy answered `unknown tool: {name}`, instead of failing the attempt.
+`UndeclaredTool` operation and answered `{success: false, error: "unknown tool:
+NAME"}` as legacy did, instead of failing the attempt.
+Tool results follow the legacy agent shape `{success, message, error?, ...}`
+rendered from `prompt_app_creation_runtime` (`Name set to 'X'`, `Scene added`
+with `scene_id`, `entry written`/`entry updated` with the entry's id, title and
+content, legacy argument errors such as `SET_NAME requires args: name=<text>`
+with `message` `error: ...`, preview and confirmation with `action` and the
+draft as it stood at that call). Differences: the `entry` and `draft` values
+use the rewrite's draft shape, not legacy's stored rows, and the draft is left
+out when the result would pass the 1 MiB tool-result limit. Corrected: legacy
+always sent an empty preview/confirmation message (it read `note`), which is
+now the model's message or the legacy default text, and it reported "scene
+updated" on a failed scene edit. Rewrite-only failures (blank text, limits,
+unknown or duplicate ids, a missing lore-entry title, a tool unavailable for
+the draft) have their own texts. An error while replaying a stored round other
+than a storage failure fails the attempt.
 
 `ConversationInitialInferenceCoordinator` supplies the initial provider
 dispatch boundary for a running conversation generation attempt. It reloads the

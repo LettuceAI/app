@@ -291,7 +291,7 @@ reject workflow updates and new turns or attempts, and the adapter refuses
 turns, attempts, recoveries, proposals and settlements with Conflict. Apply is
 refused while an attempt on the current proposal is created or running. Tool
 calls must match a declared name and version, except calls to undeclared
-tools, which are admitted at version 1 and answered with `unknown_tool`. The
+tools, which are admitted at version 1 and answered as unknown tools. The
 adapter implements the `lettuce-creation` port. Confirmed new-persona apply is the first deliberate
 authored-domain write: new and existing persona applies reuse the persona create
 and revise paths and commit the persona plus an immutable

@@ -5019,9 +5019,14 @@ mod tests {
         )
         .expect("tool commit");
         assert_eq!(committed.workflow.stage, CreationStage::AwaitingReview);
-        assert_eq!(committed.outputs.len(), calls.len());
-        assert!(committed.outputs.iter().all(|output| !output.is_error));
-        assert_eq!(committed.outputs[0].value["tool"], "set_name");
+        assert_eq!(committed.proposal.outcomes.len(), calls.len());
+        assert!(
+            committed
+                .proposal
+                .outcomes
+                .iter()
+                .all(|outcome| outcome.succeeded())
+        );
         let retry = apply_creation_tool_calls(
             &database,
             CreationToolApply {

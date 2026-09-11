@@ -37,13 +37,13 @@ pub use port::{
 };
 pub use proposal::{
     CreationOperation, CreationOperationError, CreationOperationOutcome, CreationProposal,
-    CreationProposalError, MAX_CREATION_OPERATIONS,
+    CreationProposalError, CreationRejection, MAX_CREATION_OPERATIONS,
 };
 pub use staged_lorebook::*;
 pub use staged_lorebook_sources::*;
 pub use tool::{
     AdmittedCreationToolCall, CREATION_TOOL_TEXT_KEYS, CREATION_TOOL_VERSION, CreationToolApply,
     CreationToolBatch, CreationToolCommit, CreationToolContractError, apply_creation_tool_calls,
-    creation_tool_request, describe_creation_tools, reduce_creation_tool_calls,
-    validate_creation_tool_calls,
+    canonical_tool_name, creation_tool_request, describe_creation_tools,
+    reduce_creation_tool_calls, validate_creation_tool_calls,
 };

@@ -176,15 +176,9 @@ impl<
                 handle,
                 stream_sink,
             )
+            .map(|request| (text, request))
         });
-        let mut request = match prepared {
-            Ok(request) => request,
-            Err(error @ CreationContinuationError::Repository(_)) => return Err(error),
-            Err(error) => {
-                self.fail_attempt(&attempt, CreationAttemptFailureCode::Internal, now)?;
-                return Err(error);
-            }
-        };
+        let (text, mut request) = self.fail_unless_storage(&attempt, now, prepared)?;
         let mut rounds = self
             .repository
             .list_creation_inference_rounds(owner, attempt.id)?;
@@ -195,7 +189,18 @@ impl<
             if terminal {
                 return Err(CreationContinuationError::InvalidRoundHistory);
             }
-            let replayed = replay_round(&base, &attempt, &request.context, &calls, round)?;
+            let replayed = self.fail_unless_storage(
+                &attempt,
+                now,
+                replay_round(
+                    &text.runtime,
+                    &base,
+                    &attempt,
+                    &request.context,
+                    &calls,
+                    round,
+                ),
+            )?;
             request.context = replayed.context;
             calls = replayed.calls;
             visible_parts.extend(round.parts.clone());
@@ -296,7 +301,18 @@ impl<
                     return Err(error.into());
                 }
             };
-            let replayed = replay_round(&base, &attempt, &request.context, &calls, &round)?;
+            let replayed = self.fail_unless_storage(
+                &attempt,
+                now,
+                replay_round(
+                    &text.runtime,
+                    &base,
+                    &attempt,
+                    &request.context,
+                    &calls,
+                    &round,
+                ),
+            )?;
             request.context = replayed.context;
             calls = replayed.calls;
             visible_parts.extend(round.parts.clone());
@@ -304,6 +320,24 @@ impl<
             rounds.push(round);
             if terminal || attempt_limit_reached(&rounds, &calls) {
                 return self.commit_success(attempt, workflow, rounds, calls, visible_parts);
+            }
+        }
+    }
+
+    /// Fails the attempt on a non-storage error so it does not stay running;
+    /// storage errors are left for a retry.
+    fn fail_unless_storage<T>(
+        &self,
+        attempt: &CreationInferenceAttempt,
+        now: TimestampMillis,
+        result: Result<T, CreationContinuationError>,
+    ) -> Result<T, CreationContinuationError> {
+        match result {
+            Ok(value) => Ok(value),
+            Err(error @ CreationContinuationError::Repository(_)) => Err(error),
+            Err(error) => {
+                self.fail_attempt(attempt, CreationAttemptFailureCode::Internal, now)?;
+                Err(error)
             }
         }
     }
@@ -544,11 +578,12 @@ fn plan_round(
         .tool_calls
         .iter()
         .map(|call| {
+            let name = lettuce_creation::canonical_tool_name(&call.name);
             let definition_version = attempt
                 .tool_request
                 .definitions
                 .iter()
-                .find(|definition| definition.name == call.name)
+                .find(|definition| definition.name == name)
                 .map_or(lettuce_creation::CREATION_TOOL_VERSION, |definition| {
                     definition.version
                 });
@@ -588,6 +623,7 @@ struct ReplayedRound {
 }
 
 fn replay_round(
+    text: &crate::runtime_text::RuntimeText,
     base: &CreationProposal,
     attempt: &CreationInferenceAttempt,
     context: &ProviderNeutralContext,
@@ -612,7 +648,38 @@ fn replay_round(
             &calls,
             round.admitted_at,
         )?;
-        batch.outputs[usize::from(round.first_call_ordinal)..].to_vec()
+        let first = usize::from(round.first_call_ordinal);
+        let mut outputs = Vec::with_capacity(calls.len() - first);
+        for (index, (call, outcome)) in calls
+            .iter()
+            .zip(&batch.proposal.outcomes)
+            .enumerate()
+            .skip(first)
+        {
+            let draft = if matches!(
+                outcome.operation,
+                lettuce_creation::CreationOperation::ShowPreview
+                    | lettuce_creation::CreationOperation::RequestConfirmation
+            ) && index + 1 < calls.len()
+            {
+                reduce_creation_tool_calls(
+                    base,
+                    attempt.planned_proposal_id,
+                    attempt.turn_id,
+                    &calls[..=index],
+                    round.admitted_at,
+                )?
+                .proposal
+                .draft
+            } else {
+                batch.proposal.draft.clone()
+            };
+            outputs.push(
+                crate::creation_prompt::render_tool_output(text, &call.call, outcome, &draft)
+                    .map_err(|_| CreationContinuationError::PromptRender)?,
+            );
+        }
+        outputs
     };
     let mut assistant_parts = round
         .parts
@@ -1987,7 +2054,8 @@ mod tests {
                 .flat_map(|message| &message.parts)
                 .any(
                     |part| matches!(part, ProviderContextPart::ToolResult(result)
-                if result.name == "generate_image" && result.output.value["code"] == "unknown_tool")
+                if result.name == "generate_image"
+                    && result.output.value["error"] == "unknown tool: generate_image")
                 )
         );
 

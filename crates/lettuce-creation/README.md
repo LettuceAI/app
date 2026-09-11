@@ -121,11 +121,22 @@ the workflow is created or running. Definitions carry no text here: descriptions
 and parameter descriptions are catalog keys (`CREATION_TOOL_TEXT_KEYS`) that
 `describe_creation_tools` fills from the application's
 `prompt_app_creation_runtime` document, so stored attempts keep the shape
-only. Unknown arguments are ignored as legacy did; version mismatches and
-missing or malformed required arguments are rejected before reduction. Valid calls reduce in provider order into one proposal and one typed
-result per call, including operation errors without stopping later calls.
-Calls to undeclared tools reduce to an `UndeclaredTool` operation whose
-`unknown_tool` error result goes back to the model; the attempt continues.
+only. As legacy, tool names are matched case-insensitively (`preview` and
+`confirm` are accepted; names with spaces never pass provider validation),
+unknown arguments are ignored, nulls and empty strings count as absent,
+numbers and booleans are read as text, `set_name` also reads `note`,
+`write_definition`/`write_scene`/`write_lore_entry` read `text`, `edit_scene`
+reads `scene_id`, a blank `direction` is dropped and `reorder_lore_entries`
+also takes a comma-separated string. A call without a usable required
+argument, or with an id that is not one of ours, becomes a `Rejected`
+operation answered with an error while later calls still run; only version
+mismatches, duplicate provider ids, malformed calls and bad call counts are
+rejected before reduction. Deviation: legacy gave `write_lore_entry` a default
+`New entry` title; a missing title is now rejected. Valid calls reduce in
+provider order into one proposal with one typed outcome per call, including
+operation errors without stopping later calls; the application renders the
+tool results. Calls to undeclared tools reduce to an `UndeclaredTool`
+operation answered with legacy's `unknown tool: NAME`; the attempt continues.
 `CreationAttemptRepository::list_creation_dialogue` returns a workflow's earlier
 turns that have a succeeded attempt, with that attempt's parts, for the
 helper's history (legacy never persisted a turn whose reply failed).
@@ -148,7 +159,7 @@ provider identity, arguments, raw arguments, and protected replay reference.
 Exact retries return the stored evidence; stale bases, changed retries,
 cross-turn owners, version drift, reused jobs, profile drift, and duplicate
 identities fail closed; undeclared tools are admitted and answered with
-`unknown_tool`.
+`unknown tool: NAME`.
 
 Each attempt additionally checkpoints up to eight immutable provider-response
 rounds. Round evidence preserves mixed visible text/reasoning, candidate replay,

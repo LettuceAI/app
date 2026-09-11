@@ -990,6 +990,8 @@ pub enum PromptVariable {
     TextQuote,
     TextPreview,
     DraftItemId,
+    ToolName,
+    ToolError,
 }
 
 impl PromptVariable {
@@ -1125,6 +1127,8 @@ impl PromptVariable {
             Self::TextQuote => "{{text_quote}}",
             Self::TextPreview => "{{text_preview}}",
             Self::DraftItemId => "{{draft_item_id}}",
+            Self::ToolName => "{{tool_name}}",
+            Self::ToolError => "{{tool_error}}",
         }
     }
 
@@ -1259,6 +1263,8 @@ impl PromptVariable {
         Self::TextQuote,
         Self::TextPreview,
         Self::DraftItemId,
+        Self::ToolName,
+        Self::ToolError,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.
