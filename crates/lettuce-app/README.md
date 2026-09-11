@@ -734,8 +734,16 @@ turn's original source message, resolves the selected participant's effective
 settings and exact snapshotted live model/account, assembles provider-neutral
 context, derives unique media grants from that context, and invokes the
 claimed-job runner. Stored explicit decisions, including muted mention targets,
-run directly. A director continuation uses its forced participant, and group
-regeneration retains the original candidate author; neither path fabricates or
+run directly. For a user-message send in a non-director group, a mention of an
+enabled character in that message becomes the explicit speaker before any
+heuristic, round-robin or LLM selection, so no speaker-selection call is made
+and mute is bypassed as in legacy. Mentions resolve against each character's
+current record: its display name (nickname, or name) first, then its real
+name. Display names are cosmetic otherwise; the LLM speaker-selection prompt
+and group transcript labels use real character names. A participant whose
+character record no longer exists is ineligible for every selection path and
+is labelled "Unknown". A director continuation uses its forced participant, and
+group regeneration retains the original candidate author; neither path fabricates or
 persists an automatic-selection rationale. An unresolved group turn fails with
 `SpeakerUnavailable` before provider dispatch. Only
 the stream sink and prompt runtime values remain caller-supplied; the sink stays

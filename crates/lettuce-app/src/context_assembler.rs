@@ -272,7 +272,7 @@ where
         let character_names = snapshot
             .characters
             .iter()
-            .map(|(participant, _body)| (participant.id, participant.display_name.clone()))
+            .map(|(participant, body)| (participant.id, body.name.clone()))
             .collect::<HashMap<_, _>>();
         let selected_speaker = request
             .selected_speaker

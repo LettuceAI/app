@@ -18,7 +18,11 @@ checks attached attempt/job ownership and revisions, and advances ContextPrepare
 atomically. Operation replay is idempotent; different preparation conflicts.
 Existing group speaker resolution remains separate. Explicit director targets and
 original regeneration authors can prepare without another selection step; mention
-decisions need no automatic selection. The database verifies attached model
+decisions need no automatic selection. `mentioned_participant` preserves the
+legacy `@"Full Name"` then `@Word` parsing: quoted names match exactly,
+unquoted names match exactly and then by prefix, case-insensitively, with
+trailing punctuation trimmed. Candidate order is priority: the first
+candidate matching within each step wins. The database verifies attached model
 artifact provenance. Preparation stores provenance,
 while the initial-dispatch checkpoint stores the resolved provider-neutral
 request needed to replay or recover after mutable model and context state drifts.

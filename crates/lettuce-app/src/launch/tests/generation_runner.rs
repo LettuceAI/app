@@ -298,6 +298,22 @@ fn group_scenario(
     speaker_selection: lettuce_characters::SpeakerSelection,
     mute_second: bool,
 ) -> (Scenario, Vec<lettuce_types::ConversationParticipantId>) {
+    group_scenario_with_message(
+        backend,
+        prefix,
+        speaker_selection,
+        mute_second,
+        "Hello cast.",
+    )
+}
+
+fn group_scenario_with_message(
+    backend: &AppBackend,
+    prefix: &str,
+    speaker_selection: lettuce_characters::SpeakerSelection,
+    mute_second: bool,
+    message: &str,
+) -> (Scenario, Vec<lettuce_types::ConversationParticipantId>) {
     let database = backend.database();
     let model_id = seed_model(database, ProviderProtocol::Ollama, "ollama");
     set_application_default_model(database, model_id);
@@ -377,7 +393,7 @@ fn group_scenario(
     .expect("resolve group profile");
     let sent = database
         .begin_send(
-            &direct_send_command(&conversation, &format!("{prefix}-send"), "Hello cast."),
+            &direct_send_command(&conversation, &format!("{prefix}-send"), message),
             TimestampMillis::new(1_010),
         )
         .expect("begin group send")
@@ -1330,6 +1346,74 @@ async fn app_backend_selects_deterministic_group_speakers_before_generation() {
         drop(reopened);
         std::fs::remove_file(path).expect("remove test database");
     }
+}
+
+#[tokio::test]
+async fn user_mention_selects_a_muted_group_speaker_without_llm_selection() {
+    for message in ["@beatrice, are you there?", "@\"Bee\" are you there?"] {
+        user_mention_selects_the_current_character(message).await;
+    }
+}
+
+async fn user_mention_selects_the_current_character(message: &str) {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let (scenario, speakers) = group_scenario_with_message(
+        &backend,
+        "mention",
+        lettuce_characters::SpeakerSelection::Llm,
+        true,
+        message,
+    );
+    let conversation = ConversationReader::get(backend.database(), scenario.conversation_id)
+        .expect("conversation")
+        .conversation;
+    let lettuce_conversations::ParticipantSource::Character(bea) = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.id == speakers[1])
+        .expect("second speaker")
+        .source
+    else {
+        panic!("second speaker is a character");
+    };
+    let details = CharacterRepository::get(backend.database(), bea)
+        .expect("character")
+        .expect("character exists");
+    let mut profile = details.character.profile.clone();
+    profile.name = "Beatrice".into();
+    profile.nickname = Some("Bee".into());
+    CharacterRepository::revise_profile(
+        backend.database(),
+        bea,
+        details.character.revision,
+        profile,
+        TimestampMillis::new(1_012),
+    )
+    .expect("rename mentioned character");
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![text_outcome(
+        "mention-response",
+        "Bea answers.",
+        10,
+        3,
+    )]);
+    let engine = ScenarioEmbeddingEngine;
+    let result = backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+            |_| vec![],
+        )
+        .await
+        .expect("run mentioned group speaker");
+    assert_eq!(result.candidate.author_participant_id, speakers[1]);
+    let decision = result.turn.selected_speaker.expect("selected speaker");
+    assert_eq!(decision.participant_id, speakers[1]);
+    assert_eq!(decision.method, SpeakerDecisionMethod::Explicit);
+    assert!(decision.usage_event_id.is_none());
+    assert_eq!(inference.requests.lock().expect("requests").len(), 1);
 }
 
 #[tokio::test]

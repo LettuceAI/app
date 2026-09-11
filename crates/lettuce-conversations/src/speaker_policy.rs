@@ -125,6 +125,59 @@ fn automatic_decision(
     })
 }
 
+pub fn mentioned_participant(
+    text: &str,
+    candidates: &[(ConversationParticipantId, &str)],
+) -> Option<ConversationParticipantId> {
+    let chars: Vec<char> = text.chars().collect();
+    for (index, pair) in chars.windows(2).enumerate() {
+        if pair != ['@', '"'] {
+            continue;
+        }
+        let start = index + 2;
+        let Some(length) = chars[start..].iter().position(|&c| c == '"') else {
+            continue;
+        };
+        if length == 0 {
+            continue;
+        }
+        let mentioned = chars[start..start + length]
+            .iter()
+            .collect::<String>()
+            .to_lowercase();
+        if let Some((id, _)) = candidates
+            .iter()
+            .find(|(_, name)| name.to_lowercase() == mentioned)
+        {
+            return Some(*id);
+        }
+    }
+
+    for word in text.split_whitespace() {
+        let Some(mentioned) = word.strip_prefix('@') else {
+            continue;
+        };
+        let mentioned = mentioned
+            .trim_end_matches([',', '.', '!', '?', ':', ';', ')', ']', '}'])
+            .to_lowercase();
+        if mentioned.is_empty() {
+            continue;
+        }
+        let exact = candidates
+            .iter()
+            .find(|(_, name)| name.to_lowercase() == mentioned);
+        let prefix = || {
+            candidates
+                .iter()
+                .find(|(_, name)| name.to_lowercase().starts_with(&mentioned))
+        };
+        if let Some((id, _)) = exact.or_else(prefix) {
+            return Some(*id);
+        }
+    }
+    None
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AutomaticPolicy {
     Heuristic,
@@ -299,6 +352,65 @@ mod tests {
         assert!(decision.reference.is_none());
         assert!(decision.decision_model.is_none());
         assert!(decision.usage_event_id.is_none());
+    }
+
+    #[test]
+    fn mentions_follow_legacy_quoted_exact_then_prefix_order() {
+        let alice = ConversationParticipantId::new();
+        let alicia = ConversationParticipantId::new();
+        let mary = ConversationParticipantId::new();
+        let candidates = [(alice, "Alice"), (alicia, "Alicia"), (mary, "Mary Jane")];
+
+        assert_eq!(
+            mentioned_participant("hey @\"mary jane\" and @Alice", &candidates),
+            Some(mary)
+        );
+        assert_eq!(
+            mentioned_participant("@alicia, what now?", &candidates),
+            Some(alicia)
+        );
+        assert_eq!(mentioned_participant("@ali!", &candidates), Some(alice));
+        assert_eq!(mentioned_participant("@Mary)", &candidates), Some(mary));
+        assert_eq!(
+            mentioned_participant("@\"Nobody\" @Bob @ @\"\" mail@alice.com", &candidates),
+            None
+        );
+        assert_eq!(
+            mentioned_participant("@\"unclosed @Alicia", &candidates),
+            Some(alicia)
+        );
+        assert_eq!(mentioned_participant("🙂 @Ali", &candidates), Some(alice));
+    }
+
+    #[test]
+    fn earlier_candidates_win_within_each_match_step() {
+        let nicknamed = ConversationParticipantId::new();
+        let named = ConversationParticipantId::new();
+        let candidates = [(nicknamed, "Bea"), (named, "Beatrix"), (named, "Bea")];
+
+        assert_eq!(mentioned_participant("@bea", &candidates), Some(nicknamed));
+        assert_eq!(mentioned_participant("@beatrix", &candidates), Some(named));
+        assert_eq!(mentioned_participant("@beat", &candidates), Some(named));
+    }
+
+    #[test]
+    fn mention_selects_a_muted_speaker_before_automatic_policy() {
+        let muted = ConversationParticipantId::new();
+        let other = ConversationParticipantId::new();
+        let mut request = request(vec![
+            participant(other, 0, true, false),
+            participant(muted, 5, true, true),
+        ]);
+        request.mention_source = Some(muted);
+        for policy in [
+            GroupSpeakerSelectionSnapshot::Llm,
+            GroupSpeakerSelectionSnapshot::Heuristic,
+            GroupSpeakerSelectionSnapshot::RoundRobin,
+        ] {
+            let decision = select_group_speaker(&request, policy).expect("mentioned speaker");
+            assert_eq!(decision.participant_id, muted);
+            assert_eq!(decision.method, SpeakerDecisionMethod::Explicit);
+        }
     }
 
     #[test]

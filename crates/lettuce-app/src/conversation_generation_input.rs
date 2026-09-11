@@ -595,6 +595,7 @@ where
                 .then_some(item.message.author_participant_id)
                 .flatten()
         });
+        let profiles = self.current_character_profiles(&aggregate.conversation)?;
         let participants = aggregate
             .conversation
             .participants
@@ -604,7 +605,7 @@ where
             })
             .map(|participant| SpeakerParticipantState {
                 id: participant.id,
-                eligible: participant.enabled,
+                eligible: participant.enabled && profiles.contains_key(&participant.id),
                 muted: participant.muted,
                 speak_count: u32::try_from(
                     timeline
@@ -621,25 +622,37 @@ where
                 last_spoke_at: None,
             })
             .collect();
+        let mention_source = match turn.input {
+            GenerationInput::UserMessage { message_id } => user_message_mention(
+                &aggregate.conversation,
+                &timeline.items,
+                message_id,
+                &profiles,
+            ),
+            GenerationInput::ExistingHead { .. } | GenerationInput::ExistingCandidate { .. } => {
+                None
+            }
+        };
         let policy_request = SpeakerPolicyRequest {
             conversation_id: work.conversation_id,
             branch_id: turn.branch_id,
             operation: turn.operation,
             forced_speaker: None,
-            mention_source: None,
+            mention_source,
             participants,
             prior_speaker,
             timeline: timeline.items,
         };
-        let selected_speaker = if details.group.speaker_selection
-            == lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm
+        let selected_speaker = if mention_source.is_none()
+            && details.group.speaker_selection
+                == lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm
         {
             self.select_speaker_via_llm(
                 work,
                 &aggregate.conversation,
+                &profiles,
                 &turn,
                 &policy_request,
-                details.group.speaker_selection_model.as_ref(),
                 now,
             )
             .await?
@@ -668,15 +681,49 @@ where
         Ok(())
     }
 
+    fn current_character_profiles(
+        &self,
+        conversation: &lettuce_conversations::Conversation,
+    ) -> Result<
+        HashMap<lettuce_types::ConversationParticipantId, lettuce_characters::CharacterProfile>,
+        ConversationGenerationInputError,
+    > {
+        let mut profiles = HashMap::new();
+        for participant in &conversation.participants {
+            let lettuce_conversations::ParticipantSource::Character(character_id) =
+                participant.source
+            else {
+                continue;
+            };
+            let character =
+                CharacterRepository::get(self.repository, character_id).map_err(|_| {
+                    ConversationGenerationInputError::Repository(
+                        ConversationRepositoryError::Storage,
+                    )
+                })?;
+            if let Some(details) = character {
+                profiles.insert(participant.id, details.character.profile);
+            }
+        }
+        Ok(profiles)
+    }
+
     async fn select_speaker_via_llm(
         &self,
         work: &ConversationGenerationClaimedWork,
         conversation: &lettuce_conversations::Conversation,
+        profiles: &HashMap<
+            lettuce_types::ConversationParticipantId,
+            lettuce_characters::CharacterProfile,
+        >,
         turn: &lettuce_conversations::GenerationTurn,
         policy: &SpeakerPolicyRequest,
-        selection_model: Option<&lettuce_conversations::ModelSelectionSnapshot>,
         now: TimestampMillis,
     ) -> Result<SelectedSpeakerDecision, ConversationGenerationInputError> {
+        let ConversationKind::Group(details) = &conversation.kind else {
+            return Err(ConversationGenerationInputError::SpeakerUnavailable);
+        };
+        let selection_model = details.group.speaker_selection_model.as_ref();
         let available = conversation
             .participants
             .iter()
@@ -684,6 +731,7 @@ where
                 participant.role == lettuce_conversations::ParticipantRole::Character
                     && participant.enabled
                     && !participant.muted
+                    && profiles.contains_key(&participant.id)
             })
             .collect::<Vec<_>>();
         if available.is_empty() {
@@ -716,7 +764,7 @@ where
             Ok(profile) => profile,
             Err(_) => return heuristic_fallback(policy, None, None),
         };
-        let prompt = speaker_selection_prompt(conversation, policy, &available);
+        let prompt = speaker_selection_prompt(profiles, policy, &available);
         let tools = speaker_selection_tools(&available);
         let request = InferenceRequest {
             turn_id: turn.id,
@@ -1366,8 +1414,59 @@ fn memory_query(timeline: &[lettuce_conversations::TimelineItem], enriched: bool
     messages.join("\n")
 }
 
-fn speaker_selection_prompt(
+fn user_message_mention(
     conversation: &lettuce_conversations::Conversation,
+    timeline: &[lettuce_conversations::TimelineItem],
+    message_id: lettuce_types::MessageId,
+    profiles: &HashMap<
+        lettuce_types::ConversationParticipantId,
+        lettuce_characters::CharacterProfile,
+    >,
+) -> Option<lettuce_types::ConversationParticipantId> {
+    let text = timeline
+        .iter()
+        .find(|item| item.message.id == message_id)?
+        .active_revision
+        .as_ref()?
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            lettuce_conversations::MessagePart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mentionable = conversation
+        .participants
+        .iter()
+        .filter(|participant| {
+            participant.role == lettuce_conversations::ParticipantRole::Character
+                && participant.enabled
+        })
+        .filter_map(|participant| {
+            profiles
+                .get(&participant.id)
+                .map(|profile| (participant.id, profile))
+        })
+        .collect::<Vec<_>>();
+    let display_names = mentionable.iter().map(|(id, profile)| {
+        (
+            *id,
+            profile.nickname.as_deref().unwrap_or(profile.name.as_str()),
+        )
+    });
+    let names = mentionable
+        .iter()
+        .map(|(id, profile)| (*id, profile.name.as_str()));
+    let candidates = display_names.chain(names).collect::<Vec<_>>();
+    lettuce_conversations::mentioned_participant(&text, &candidates)
+}
+
+fn speaker_selection_prompt(
+    profiles: &HashMap<
+        lettuce_types::ConversationParticipantId,
+        lettuce_characters::CharacterProfile,
+    >,
     policy: &SpeakerPolicyRequest,
     available: &[&lettuce_conversations::ConversationParticipant],
 ) -> String {
@@ -1387,7 +1486,10 @@ fn speaker_selection_prompt(
             .map_or(0, |state| state.speak_count);
         prompt.push_str(&format!(
             "\n- Name: {}\n  ID: {}\n  Participation: {count} of {total} assistant messages\n",
-            participant.display_name, participant.id
+            profiles
+                .get(&participant.id)
+                .map_or("", |profile| profile.name.as_str()),
+            participant.id
         ));
         if let Some(description) = &participant.authored_description {
             let excerpt = description.chars().take(1_000).collect::<String>();
@@ -1406,16 +1508,12 @@ fn speaker_selection_prompt(
         let speaker = if item.message.role == MessageRole::User {
             "User"
         } else {
-            item.message
-                .author_participant_id
-                .and_then(|id| {
-                    conversation
-                        .participants
-                        .iter()
-                        .find(|participant| participant.id == id)
-                        .map(|participant| participant.display_name.as_str())
-                })
-                .unwrap_or("System")
+            match item.message.author_participant_id {
+                Some(id) => profiles
+                    .get(&id)
+                    .map_or("Unknown", |profile| profile.name.as_str()),
+                None => "System",
+            }
         };
         let text = timeline_item_text(item);
         if !text.is_empty() {
