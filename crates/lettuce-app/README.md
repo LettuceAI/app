@@ -494,6 +494,11 @@ The adjacent `v1.snap` pins a canonical digest for every individual entry,
 including its stable key, role, content, scheduling, conditions, payload, and
 system-prompt flag. A change to one legacy field therefore identifies the
 specific prompt entry instead of appearing only as a catalog-wide checksum.
+Legacy removed empty sections by string replacement in Rust. The catalog
+expresses the same rule as entry conditions instead: the app default's
+`entry_world_info` requires `hasLorebookContent` and `entry_context_summary`
+requires `hasMemorySummary`, so an empty lorebook or a non-dynamic chat no
+longer sends a bare heading. Prompt text never lives in Rust.
 
 `AppBackend::usage_costs` exposes `UsageCostCoordinator::capture_job` for
 caller-triggered OpenRouter cost capture by job and dispatch ID. It reads
@@ -685,8 +690,9 @@ the placeholders get depth-0 `# Context Summary` and `# Key Memories` fallbacks
 (with legacy observed-at suffixes) suppressed by any raw template entry that
 names the placeholder. Groups put `Important facts to remember in this
 conversation:` plus the retrieved items into `{{key_memories}}` and get no
-fallbacks. Manual memories render once (legacy duplicated them in a relevant
-block); pinned history messages stay chronological. A stable identity derived
+fallbacks. A group's `{{context_summary}}` is the stored summary in manual
+mode too, as legacy group chats always used it. Manual memories render once
+(legacy duplicated them in a relevant block); pinned history messages stay chronological. A stable identity derived
 from the exact space revision enters the context. A rebuild of the same
 attempt after its retrieval access restores the pre-access key set from the
 receipt's `promoted_memory_ids`, so the rebuilt context matches the first

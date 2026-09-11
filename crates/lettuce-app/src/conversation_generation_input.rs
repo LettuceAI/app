@@ -869,6 +869,7 @@ where
         };
         let mut timeline = self.timeline(work.conversation_id, turn.branch_id)?;
         retain_source_ancestry(&mut timeline.items, source_message_id)?;
+        let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
         let memory_contribution = match memory_mode {
             MemoryModeSnapshot::Dynamic => {
                 let policy = memory_settings
@@ -880,13 +881,13 @@ where
                     policy,
                     MemoryPromptShape {
                         operation: turn.operation,
-                        group: matches!(aggregate.conversation.kind, ConversationKind::Group(_)),
+                        group,
                     },
                     now,
                 )
                 .await?
             }
-            MemoryModeSnapshot::Manual => self.manual_memory_input(work.conversation_id)?,
+            MemoryModeSnapshot::Manual => self.manual_memory_input(work.conversation_id, group)?,
             MemoryModeSnapshot::Disabled => None,
         };
         let prompt_runtime = PromptRuntimeFacts {
@@ -1130,10 +1131,18 @@ where
     fn manual_memory_input(
         &self,
         conversation_id: lettuce_types::ConversationId,
+        group: bool,
     ) -> Result<Option<MemoryContribution>, ConversationGenerationInputError> {
         let memory = MemoryRepository::get_for_conversation(self.repository, conversation_id)
             .map_err(ConversationGenerationInputError::Memory)?
             .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
+        let summary = if group {
+            MemorySummaryRepository::get_summary(self.repository, memory.id)
+                .map_err(ConversationGenerationInputError::Memory)?
+                .map(|summary| summary.text)
+        } else {
+            None
+        };
         let key_memories = memory
             .items
             .iter()
@@ -1143,14 +1152,16 @@ where
                 observed: None,
             })
             .collect::<Vec<_>>();
-        Ok((!key_memories.is_empty()).then(|| MemoryContribution {
-            attribution: MemoryAttribution {
-                revision_id: memory_revision_id(memory.id, memory.revision),
-            },
-            summary: None,
-            key_memories,
-            relevant_memories: Vec::new(),
-        }))
+        Ok(
+            (summary.is_some() || !key_memories.is_empty()).then(|| MemoryContribution {
+                attribution: MemoryAttribution {
+                    revision_id: memory_revision_id(memory.id, memory.revision),
+                },
+                summary,
+                key_memories,
+                relevant_memories: Vec::new(),
+            }),
+        )
     }
 
     async fn retrieve_memories(

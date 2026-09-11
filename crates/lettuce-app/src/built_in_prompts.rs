@@ -1119,6 +1119,44 @@ mod tests {
         }
     }
 
+    #[test]
+    fn app_default_skips_empty_world_information_and_summary_sections() {
+        let catalog = BuiltInPromptCatalog::bundled().expect("catalog");
+        let document = outcome(
+            catalog.seed(BuiltInPromptId::AppDefault),
+            TimestampMillis::new(1),
+        )
+        .document;
+        let entry_id = |key: &str| {
+            document
+                .entries
+                .iter()
+                .find(|entry| entry.built_in_entry_key.as_deref() == Some(key))
+                .expect("catalog entry")
+                .id
+        };
+        let sections = [
+            entry_id("entry_world_info"),
+            entry_id("entry_context_summary"),
+        ];
+        let rendered_sections = |context: &PromptRenderContext| {
+            render_prompt(&document, context)
+                .expect("render app default")
+                .in_chat
+                .iter()
+                .filter(|message| sections.contains(&message.entry_id))
+                .count()
+        };
+
+        assert_eq!(rendered_sections(&PromptRenderContext::default()), 0);
+        let mut populated = PromptRenderContext::default();
+        populated.conditions.has_lorebook_content = true;
+        populated.conditions.has_memory_summary = true;
+        populated.values.lorebook = "The harbor floods at dusk.".into();
+        populated.values.context_summary = "Mira reached the harbor.".into();
+        assert_eq!(rendered_sections(&populated), 2);
+    }
+
     #[derive(Default)]
     struct FakeBootstrap {
         calls: Mutex<Vec<BuiltInReconcileRequest>>,

@@ -1568,6 +1568,32 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
         12,
         3,
     )]);
+    let manual_space =
+        MemoryRepository::get_for_conversation(backend.database(), scenario.conversation_id)
+            .expect("group memory space")
+            .expect("manual group memory space exists");
+    let lettuce_conversations::GenerationInput::UserMessage {
+        message_id: user_message_id,
+    } = turn.input
+    else {
+        panic!("group send starts from a user message");
+    };
+    MemorySummaryRepository::compare_and_apply_summary(
+        backend.database(),
+        MemorySummaryChange {
+            expected_revision: manual_space.revision,
+            summary: MemorySummary {
+                space_id: manual_space.id,
+                text: "The cast reached the harbor.".into(),
+                token_count: 5,
+                window_start: 0,
+                window_end: 1,
+                source_message_ids: vec![user_message_id],
+                updated_at: TimestampMillis::new(1_019),
+            },
+        },
+    )
+    .expect("store group summary");
     let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
     let result = runner
         .run(
@@ -1579,15 +1605,21 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
         .expect("run mentioned group speaker");
     assert_eq!(result.candidate.author_participant_id, speakers[1]);
     assert_eq!(result.turn.selected_speaker, Some(mentioned));
-    assert!(
-        inference.requests.lock().expect("requests")[0]
+    {
+        let requests = inference.requests.lock().expect("requests");
+        let texts = requests[0]
             .context
             .messages
             .iter()
-            .any(|message| message.parts.iter().any(|part| {
-                matches!(part, ProviderContextPart::Text { text } if text == "Hello cast.")
-            }))
-    );
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                ProviderContextPart::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(texts.contains(&"Hello cast."));
+        assert!(texts.contains(&"# Context Summary\nThe cast reached the harbor."));
+    }
     let replay = runner
         .run(
             &work,

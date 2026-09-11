@@ -77,7 +77,10 @@
           "conditionalMinMessages": null,
           "intervalTurns": null,
           "systemPrompt": false,
-          "conditions": null,
+          "conditions": {
+            "type": "hasLorebookContent",
+            "value": true
+          },
           "promptEntryPayload": null
         },
         {
@@ -91,7 +94,10 @@
           "conditionalMinMessages": null,
           "intervalTurns": null,
           "systemPrompt": false,
-          "conditions": null,
+          "conditions": {
+            "type": "hasMemorySummary",
+            "value": true
+          },
           "promptEntryPayload": null
         },
         {
