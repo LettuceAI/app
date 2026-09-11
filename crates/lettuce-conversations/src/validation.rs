@@ -12,6 +12,7 @@ pub(crate) const MAX_BRANCHES: usize = 10_000;
 pub(crate) const MAX_ATTEMPTS: usize = 128;
 pub(crate) const MAX_LOREBOOKS: usize = 128;
 pub(crate) const MAX_MEMORY_REVISIONS: usize = 256;
+pub(crate) const MAX_MEMORY_PROMPT_LINES: usize = 4096;
 pub(crate) const MAX_DOCUMENT_COLLECTION: usize = 10_000;
 pub(crate) const MAX_DOCUMENT_ENTRIES: usize = 512;
 pub(crate) const MAX_ENTRY_KEYWORDS: usize = 128;

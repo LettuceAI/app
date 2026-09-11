@@ -14,7 +14,10 @@ use lettuce_jobs::{
     CancellationReason, Clock, FakeClock, JobErrorCode, JobSnapshot, JobState, JobStore,
     ResourceAvailability, WorkerId, events::JobEvent, handle::CancellationToken,
 };
-use lettuce_memory::{MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalRepository};
+use lettuce_memory::{
+    MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalAccessReceipt,
+    MemoryRetrievalRepository,
+};
 use lettuce_types::{ConversationId, GenerationAttemptId, GenerationTurnId, JobId};
 use lettuce_usage::{JobInferenceUsageResult, JobUsageLedger, UsageEvent, UsageLedger};
 
@@ -1856,6 +1859,23 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
     )]);
     let engine = ScenarioEmbeddingEngine;
     let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+    let first_build = runner
+        .build_input(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("first dynamic build");
+    let rebuilt = runner
+        .build_input(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_025),
+        )
+        .await
+        .expect("dynamic rebuild after retrieval access");
+    assert_eq!(rebuilt, first_build);
     let result = runner
         .run(
             &work,
@@ -1870,6 +1890,23 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].tools, None);
         assert_eq!(requests[0].profile.tool_policy, ToolPolicy::Disabled);
+        let system_texts = requests[0]
+            .context
+            .messages
+            .iter()
+            .filter(|message| message.role == MessageRole::System)
+            .filter_map(|message| match message.parts.as_slice() {
+                [ProviderContextPart::Text { text }] => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            system_texts,
+            [
+                "Relevant memories:\n- Mira prefers tea by the harbor.",
+                "# Key Memories\nImportant facts to remember in this conversation:\n- Mira catalogued the northern lighthouse.",
+            ]
+        );
         assert!(requests[0].context.messages.iter().any(|message| {
             message.parts.iter().any(|part| {
                 matches!(part, ProviderContextPart::Text { text } if text.contains("- Mira prefers tea by the harbor."))
@@ -1921,9 +1958,12 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
             scenario.attempt_id,
         )
         .expect("read retrieval access")
-        .expect("retrieval access exists")
-        .access,
-        retrieval_access
+        .expect("retrieval access exists"),
+        MemoryRetrievalAccessReceipt {
+            access: retrieval_access.clone(),
+            resulting_revision: accessed_revision,
+            promoted_memory_ids: vec![memory_id],
+        }
     );
     assert_eq!(
         MemoryRetrievalRepository::apply_retrieval_access(

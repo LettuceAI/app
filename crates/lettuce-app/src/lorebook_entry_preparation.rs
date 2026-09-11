@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use chrono::{Local, LocalResult, TimeZone};
 use lettuce_characters::{CharacterRepository, PersonaRepository};
 use lettuce_context::{LorebookEntry, LorebookRepository, PromptDocument};
 use lettuce_conversations::{
@@ -379,7 +378,7 @@ fn format_selected_memories(
                 return None;
             }
             let rendered = if time_awareness_enabled {
-                format_memory_for_prompt(memory, effective_now)
+                crate::memory_prompt::memory_prompt_line(memory, effective_now).with_observed()
             } else {
                 format!("- {text}")
             };
@@ -395,61 +394,6 @@ fn format_selected_memories(
     } else {
         lines.join("\n")
     })
-}
-
-fn format_memory_for_prompt(memory: &MemoryItem, effective_now: TimestampMillis) -> String {
-    let mut line = format!("- {}", memory.text);
-    if let Some(observed_at) = memory.observed_at {
-        let observed = match Local.timestamp_millis_opt(observed_at.get()) {
-            LocalResult::Single(datetime) | LocalResult::Ambiguous(datetime, _) => datetime,
-            LocalResult::None => Local::now(),
-        };
-        let relative = humanize_relative(effective_now.get() - observed_at.get());
-        line.push_str(&format!(
-            " (observed {}, {})",
-            observed.format("%Y-%m-%d %H:%M"),
-            relative
-        ));
-    }
-    line
-}
-
-fn humanize_relative(delta_ms: i64) -> String {
-    let future = delta_ms < 0;
-    let seconds = delta_ms.unsigned_abs() / 1000;
-    const MINUTE: u64 = 60;
-    const HOUR: u64 = 60 * MINUTE;
-    const DAY: u64 = 24 * HOUR;
-    const WEEK: u64 = 7 * DAY;
-    const MONTH: u64 = 30 * DAY;
-    const YEAR: u64 = 365 * DAY;
-
-    if seconds < 45 {
-        return "just now".to_owned();
-    }
-    let (count, unit) = if seconds < HOUR {
-        (seconds / MINUTE, "minute")
-    } else if seconds < DAY {
-        (seconds / HOUR, "hour")
-    } else if seconds < WEEK {
-        (seconds / DAY, "day")
-    } else if seconds < MONTH {
-        (seconds / WEEK, "week")
-    } else if seconds < YEAR {
-        (seconds / MONTH, "month")
-    } else {
-        (seconds / YEAR, "year")
-    };
-    let count = count.max(1);
-    if unit == "day" && count == 1 {
-        return if future { "tomorrow" } else { "yesterday" }.to_owned();
-    }
-    let plural = if count == 1 { "" } else { "s" };
-    if future {
-        format!("in {count} {unit}{plural}")
-    } else {
-        format!("{count} {unit}{plural} ago")
-    }
 }
 
 fn format_existing_entries(entries: &[LorebookEntry]) -> String {
@@ -513,16 +457,7 @@ mod tests {
     use lettuce_context::{KeywordMatchMode, LorebookEntry};
     use lettuce_types::{LorebookEntryId, LorebookId, Revision, TimestampMillis};
 
-    use super::{format_existing_entries, humanize_relative};
-
-    #[test]
-    fn legacy_relative_time_thresholds_are_preserved() {
-        assert_eq!(humanize_relative(44_000), "just now");
-        assert_eq!(humanize_relative(60_000), "1 minute ago");
-        assert_eq!(humanize_relative(86_400_000), "yesterday");
-        assert_eq!(humanize_relative(-86_400_000), "tomorrow");
-        assert_eq!(humanize_relative(14 * 86_400_000), "2 weeks ago");
-    }
+    use super::format_existing_entries;
 
     #[test]
     fn legacy_existing_entry_format_is_preserved() {

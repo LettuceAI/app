@@ -676,9 +676,21 @@ the existing run settlement categories. A dynamic direct turn resolves the
 persisted global policy, loads its authoritative
 conversation memory space and summary, embeds the current or enriched two-message
 query, and selects current projections with the legacy threshold, cold-memory
-penalty, category diversity, and smart recent/accessed fallbacks. Retrieved
-memory text and a stable identity derived from the exact space revision enter
-the context. The reply itself carries no memory tools: legacy writes memories in
+penalty, category diversity, and smart recent/accessed fallbacks. Memory
+reaches the prompt as in legacy: `{{key_memories}}` and `HasKeyMemories` use
+every hot or pinned active memory (on send taken before retrieval promotes cold
+items, on continue and regenerate after), a send also adds a first depth-0
+`Relevant memories:` message with the retrieved items, and templates without
+the placeholders get depth-0 `# Context Summary` and `# Key Memories` fallbacks
+(with legacy observed-at suffixes) suppressed by any raw template entry that
+names the placeholder. Groups put `Important facts to remember in this
+conversation:` plus the retrieved items into `{{key_memories}}` and get no
+fallbacks. Manual memories render once (legacy duplicated them in a relevant
+block); pinned history messages stay chronological. A stable identity derived
+from the exact space revision enters the context. A rebuild of the same
+attempt after its retrieval access restores the pre-access key set from the
+receipt's `promoted_memory_ids`, so the rebuilt context matches the first
+build. The reply itself carries no memory tools: legacy writes memories in
 a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`). Plain direct
 and group conversations now admit that cycle through
 `admit_plain_after_turn_and_claim`: the visible user and assistant messages on

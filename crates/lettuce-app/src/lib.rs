@@ -58,6 +58,7 @@ mod lorebook_entry_preparation;
 mod lorebook_keyword_dispatch;
 mod lorebook_keyword_execution;
 mod lorebook_keyword_job;
+mod memory_prompt;
 mod kokoro_catalog;
 mod kokoro_native_synthesis;
 mod kokoro_tts_runtime;

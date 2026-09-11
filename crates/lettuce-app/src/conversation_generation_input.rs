@@ -134,7 +134,7 @@ impl Drop for ConversationGenerationCancellationRegistration<'_> {
 }
 
 #[derive(Debug)]
-enum ConversationGenerationInputError {
+pub(crate) enum ConversationGenerationInputError {
     Repository(ConversationRepositoryError),
     ModelRepository(ModelRepositoryError),
     MissingModel,
@@ -808,7 +808,7 @@ where
         Ok(decision)
     }
 
-    async fn build_input(
+    pub(crate) async fn build_input(
         &self,
         work: &ConversationGenerationClaimedWork,
         runtime: ConversationGenerationRuntimeInput,
@@ -874,8 +874,17 @@ where
                 let policy = memory_settings
                     .and_then(|memory| memory.dynamic_policy.as_ref())
                     .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
-                self.dynamic_memory_input(work, &timeline.items, policy, now)
-                    .await?
+                self.dynamic_memory_input(
+                    work,
+                    &timeline.items,
+                    policy,
+                    MemoryPromptShape {
+                        operation: turn.operation,
+                        group: matches!(aggregate.conversation.kind, ConversationKind::Group(_)),
+                    },
+                    now,
+                )
+                .await?
             }
             MemoryModeSnapshot::Manual => self.manual_memory_input(work.conversation_id)?,
             MemoryModeSnapshot::Disabled => None,
@@ -1003,6 +1012,7 @@ where
         work: &ConversationGenerationClaimedWork,
         timeline: &[lettuce_conversations::TimelineItem],
         settings: &DynamicMemoryPolicySnapshot,
+        shape: MemoryPromptShape,
         now: TimestampMillis,
     ) -> Result<Option<MemoryContribution>, ConversationGenerationInputError> {
         let memory = MemoryRepository::get_for_conversation(self.repository, work.conversation_id)
@@ -1018,7 +1028,9 @@ where
             work.attempt_id,
         )
         .map_err(ConversationGenerationInputError::Memory)?;
-        let (selected, revision) = if let Some(receipt) = prior_access {
+        let (selected, revision, restored_promotions, effective_now) = if let Some(receipt) =
+            prior_access
+        {
             if receipt.access.space_id != memory.id || receipt.resulting_revision != memory.revision
             {
                 return Err(ConversationGenerationInputError::MemoryInputUnavailable);
@@ -1036,7 +1048,12 @@ where
                         .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            (selected, receipt.resulting_revision)
+            (
+                selected,
+                receipt.resulting_revision,
+                Some(receipt.promoted_memory_ids),
+                receipt.access.accessed_at,
+            )
         } else {
             let selected = self
                 .retrieve_memories(work, timeline, &memory, settings)
@@ -1059,20 +1076,54 @@ where
                 .map_err(ConversationGenerationInputError::Memory)?
                 .resulting_revision
             };
-            (selected, revision)
+            (selected, revision, None, now)
         };
-        let key_memories = selected
-            .into_iter()
-            .map(|item| format!("- {}", item.text.trim()))
+        let retrieved = selected
+            .iter()
+            .map(|item| crate::memory_prompt::memory_prompt_line(item, effective_now))
             .collect::<Vec<_>>();
-        let contribution =
-            (summary.is_some() || !key_memories.is_empty()).then(|| MemoryContribution {
-                attribution: MemoryAttribution {
-                    revision_id: memory_revision_id(memory.id, revision),
-                },
-                summary,
-                key_memories,
-            });
+        let send = shape.operation == lettuce_conversations::GenerationOperation::Send;
+        let (key_memories, relevant_memories) = if shape.group {
+            (retrieved, Vec::new())
+        } else {
+            let reloaded;
+            let (key_source, cold_before_access) = match restored_promotions {
+                Some(promoted) if send => (&memory.items, promoted),
+                Some(_) => (&memory.items, Vec::new()),
+                None if send || revision == memory.revision => (&memory.items, Vec::new()),
+                None => {
+                    reloaded = MemoryRepository::get_for_conversation(
+                        self.repository,
+                        work.conversation_id,
+                    )
+                    .map_err(ConversationGenerationInputError::Memory)?
+                    .filter(|space| space.id == memory.id && space.revision == revision)
+                    .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
+                    (&reloaded.items, Vec::new())
+                }
+            };
+            let key_memories = key_source
+                .iter()
+                .filter(|item| {
+                    ((!item.is_cold && !cold_before_access.contains(&item.id)) || item.is_pinned)
+                        && item.superseded_by.is_none()
+                })
+                .map(|item| crate::memory_prompt::memory_prompt_line(item, effective_now))
+                .collect::<Vec<_>>();
+            let relevant = if send { retrieved } else { Vec::new() };
+            (key_memories, relevant)
+        };
+        let contribution = (summary.is_some()
+            || !key_memories.is_empty()
+            || !relevant_memories.is_empty())
+        .then(|| MemoryContribution {
+            attribution: MemoryAttribution {
+                revision_id: memory_revision_id(memory.id, revision),
+            },
+            summary,
+            key_memories,
+            relevant_memories,
+        });
         Ok(contribution)
     }
 
@@ -1087,7 +1138,10 @@ where
             .items
             .iter()
             .filter(|item| item.superseded_by.is_none())
-            .map(|item| format!("- {}", item.text.trim()))
+            .map(|item| lettuce_conversations::MemoryPromptLine {
+                text: item.text.clone(),
+                observed: None,
+            })
             .collect::<Vec<_>>();
         Ok((!key_memories.is_empty()).then(|| MemoryContribution {
             attribution: MemoryAttribution {
@@ -1095,6 +1149,7 @@ where
             },
             summary: None,
             key_memories,
+            relevant_memories: Vec::new(),
         }))
     }
 
@@ -1199,6 +1254,12 @@ fn modality_scopes(capabilities: lettuce_models::ModalityCapabilities) -> Vec<St
     .filter(|(_, status)| *status == CapabilityStatus::Supported)
     .map(|(name, _)| name.into())
     .collect()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MemoryPromptShape {
+    operation: lettuce_conversations::GenerationOperation,
+    group: bool,
 }
 
 fn context_timeline(

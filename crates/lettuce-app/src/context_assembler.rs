@@ -26,9 +26,10 @@ use lettuce_conversations::{
     AnnotationPayload, BranchStatus, ContextAssemblyError, ContextAttributions,
     ContextBudgetReport, ContextRequest, ConversationAggregate, ConversationKind,
     ConversationReader, ConversationSnapshotMaterializer, EffectiveConversationSettings,
-    GenerationOperation, LorebookAttribution, MessagePart, MessageRenderSource, MessageRole,
-    PromptAttribution, ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage,
-    SnapshotDocumentBody, SnapshotDocumentKind, SnapshotSelection, TimelineItem,
+    GenerationOperation, LorebookAttribution, MemoryPromptLine, MessagePart, MessageRenderSource,
+    MessageRole, PromptAttribution, ProviderContextPart, ProviderNeutralContext,
+    ProviderNeutralMessage, SnapshotDocumentBody, SnapshotDocumentKind, SnapshotSelection,
+    TimelineItem,
 };
 use lettuce_conversations::{
     CharacterSnapshotBodyV1, ConversationParticipant, LorebookLaunchSnapshot,
@@ -185,9 +186,36 @@ where
         };
 
         let (mut messages, mut in_chat_messages) = prompt_messages(&rendered_prompt)?;
+        let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
+        let relevant_memories = request
+            .memory
+            .as_ref()
+            .filter(|_| !group)
+            .map(|memory| {
+                memory
+                    .relevant_memories
+                    .iter()
+                    .map(MemoryPromptLine::with_observed)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default();
+        if !relevant_memories.is_empty() {
+            in_chat_messages.insert(
+                0,
+                (
+                    0,
+                    text_message(
+                        MessageRole::System,
+                        &format!("Relevant memories:\n{relevant_memories}"),
+                    ),
+                ),
+            );
+        }
         let author_note = settings.author_note.as_deref().unwrap_or_default();
-        let author_consumed = author_note_consumed(&rendered_prompt, prompt.as_ref());
-        if !author_note.trim().is_empty() && !author_consumed {
+        if !author_note.trim().is_empty()
+            && !template_has_placeholder(prompt.as_ref(), "{{author_note}}")
+        {
             let attribution_name = author_note_attribution_name(&aggregate, &snapshot, &request);
             in_chat_messages.push((
                 1,
@@ -200,8 +228,55 @@ where
                 ),
             ));
         }
-        let lore_consumed = lorebook_consumed(&rendered_prompt, prompt.as_ref());
-        if !lorebook_text.trim().is_empty() && !lore_consumed {
+        let memory_summary = request
+            .memory
+            .as_ref()
+            .and_then(|memory| memory.summary.as_deref())
+            .unwrap_or_default()
+            .trim();
+        let memory_keys = request
+            .memory
+            .as_ref()
+            .map(|memory| {
+                memory
+                    .key_memories
+                    .iter()
+                    .map(MemoryPromptLine::with_observed)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default();
+        let summary_placeholder = template_has_placeholder(prompt.as_ref(), "{{context_summary}}");
+        let keys_placeholder = template_has_placeholder(prompt.as_ref(), "{{key_memories}}");
+        let memory_used = if group {
+            (!memory_summary.is_empty() && summary_placeholder)
+                || (!memory_keys.is_empty() && keys_placeholder)
+        } else {
+            !memory_summary.is_empty() || !memory_keys.is_empty() || !relevant_memories.is_empty()
+        };
+        if !group && !memory_summary.is_empty() && !summary_placeholder {
+            in_chat_messages.push((
+                0,
+                text_message(
+                    MessageRole::System,
+                    &format!("# Context Summary\n{memory_summary}"),
+                ),
+            ));
+        }
+        if !group && !memory_keys.is_empty() && !keys_placeholder {
+            in_chat_messages.push((
+                0,
+                text_message(
+                    MessageRole::System,
+                    &format!(
+                        "# Key Memories\nImportant facts to remember in this conversation:\n{memory_keys}"
+                    ),
+                ),
+            ));
+        }
+        if !lorebook_text.trim().is_empty()
+            && !template_has_placeholder(prompt.as_ref(), "{{lorebook}}")
+        {
             in_chat_messages.push((
                 0,
                 text_message(
@@ -210,55 +285,8 @@ where
                 ),
             ));
         }
-        let memory_summary = request
-            .memory
-            .as_ref()
-            .and_then(|memory| memory.summary.as_deref())
-            .unwrap_or_default();
-        let memory_keys = request
-            .memory
-            .as_ref()
-            .map(|memory| memory.key_memories.join("\n"))
-            .unwrap_or_default();
-        let memory_summary_consumed = rendered_entry_consumed(
-            &rendered_prompt,
-            prompt.as_ref(),
-            &["{{context_summary}}", "{{memory_summary}}"],
-        );
-        let memory_keys_consumed = rendered_entry_consumed(
-            &rendered_prompt,
-            prompt.as_ref(),
-            &["{{key_memories}}", "{{selected_memories}}"],
-        );
-        let mut memory_used = false;
-        if !memory_summary.trim().is_empty() && !memory_summary_consumed {
-            in_chat_messages.push((
-                1,
-                text_message(
-                    MessageRole::System,
-                    &format!("# Memory Summary\n{}", memory_summary.trim()),
-                ),
-            ));
-            memory_used = true;
-        } else if !memory_summary.trim().is_empty() {
-            memory_used = true;
-        }
-        if !memory_keys.trim().is_empty() && !memory_keys_consumed {
-            in_chat_messages.push((
-                1,
-                text_message(
-                    MessageRole::System,
-                    &format!("# Key Memories\n{}", memory_keys.trim()),
-                ),
-            ));
-            memory_used = true;
-        } else if !memory_keys.trim().is_empty() {
-            memory_used = true;
-        }
-        let scheduled_notes_consumed =
-            rendered_entry_consumed(&rendered_prompt, prompt.as_ref(), &["{{scheduled_notes}}"]);
         if let Some(notes) = scheduled_notes.as_deref()
-            && !scheduled_notes_consumed
+            && !template_has_placeholder(prompt.as_ref(), "{{scheduled_notes}}")
         {
             in_chat_messages.push((0, text_message(MessageRole::System, notes)));
         }
@@ -1663,7 +1691,20 @@ fn prompt_values(
         key_memories: request
             .memory
             .as_ref()
-            .map(|memory| memory.key_memories.join("\n"))
+            .filter(|memory| !memory.key_memories.is_empty())
+            .map(|memory| {
+                let lines = memory
+                    .key_memories
+                    .iter()
+                    .map(MemoryPromptLine::plain)
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if matches!(aggregate.conversation.kind, ConversationKind::Group(_)) {
+                    format!("Important facts to remember in this conversation:\n{lines}")
+                } else {
+                    lines
+                }
+            })
             .unwrap_or_default(),
         user_name,
         user_description,
@@ -1849,42 +1890,16 @@ pub(crate) fn condense_prompt_messages(messages: &mut Vec<ProviderNeutralMessage
     *messages = condensed;
 }
 
-fn author_note_consumed(
-    rendered: &lettuce_context::RenderedPrompt,
+fn template_has_placeholder(
     prompt: Option<&(PromptLaunchSnapshot, PromptSnapshot)>,
+    placeholder: &str,
 ) -> bool {
-    rendered_entry_consumed(rendered, prompt, &["{{author_note}}"])
-}
-
-fn lorebook_consumed(
-    rendered: &lettuce_context::RenderedPrompt,
-    prompt: Option<&(PromptLaunchSnapshot, PromptSnapshot)>,
-) -> bool {
-    rendered_entry_consumed(rendered, prompt, &["{{lorebook}}"])
-}
-
-fn rendered_entry_consumed(
-    rendered: &lettuce_context::RenderedPrompt,
-    prompt: Option<&(PromptLaunchSnapshot, PromptSnapshot)>,
-    needles: &[&str],
-) -> bool {
-    let Some((_, document)) = prompt else {
-        return false;
-    };
-    rendered
-        .relative
-        .iter()
-        .chain(rendered.in_chat.iter())
-        .any(|rendered| {
-            document
-                .entries
-                .iter()
-                .find(|entry| entry.id == rendered.entry_id)
-                .is_some_and(|entry| {
-                    !rendered.content.trim().is_empty()
-                        && needles.iter().any(|needle| entry.content.contains(needle))
-                })
-        })
+    prompt.is_some_and(|(_, document)| {
+        document
+            .entries
+            .iter()
+            .any(|entry| entry.content.contains(placeholder))
+    })
 }
 
 fn provider_message(

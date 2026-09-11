@@ -1512,10 +1512,32 @@ impl PromptRuntimeValues {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryPromptLine {
+    pub text: String,
+    pub observed: Option<String>,
+}
+
+impl MemoryPromptLine {
+    #[must_use]
+    pub fn plain(&self) -> String {
+        format!("- {}", self.text)
+    }
+
+    #[must_use]
+    pub fn with_observed(&self) -> String {
+        match &self.observed {
+            Some(observed) => format!("- {} ({observed})", self.text),
+            None => self.plain(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryContribution {
     pub attribution: MemoryAttribution,
     pub summary: Option<String>,
-    pub key_memories: Vec<String>,
+    pub key_memories: Vec<MemoryPromptLine>,
+    pub relevant_memories: Vec<MemoryPromptLine>,
 }
 
 impl MemoryContribution {
@@ -1528,18 +1550,34 @@ impl MemoryContribution {
                 false,
             )?;
         }
-        crate::validation::validate_collection(
-            "memory_contribution.key_memories",
-            &self.key_memories,
-            crate::validation::MAX_MEMORY_REVISIONS,
-        )?;
-        for memory in &self.key_memories {
-            crate::validation::validate_text(
-                "memory_contribution.key_memory",
-                memory,
-                crate::validation::MAX_REASONING_BYTES,
-                false,
+        for (field, lines) in [
+            ("memory_contribution.key_memories", &self.key_memories),
+            (
+                "memory_contribution.relevant_memories",
+                &self.relevant_memories,
+            ),
+        ] {
+            crate::validation::validate_collection(
+                field,
+                lines,
+                crate::validation::MAX_MEMORY_PROMPT_LINES,
             )?;
+            for line in lines {
+                crate::validation::validate_text(
+                    "memory_contribution.memory",
+                    &line.text,
+                    crate::validation::MAX_REASONING_BYTES,
+                    false,
+                )?;
+                if let Some(observed) = &line.observed {
+                    crate::validation::validate_text(
+                        "memory_contribution.observed",
+                        observed,
+                        crate::validation::MAX_DISPLAY_CHARS,
+                        false,
+                    )?;
+                }
+            }
         }
         Ok(())
     }
@@ -2352,7 +2390,11 @@ mod tests {
                 revision_id: lettuce_types::MemoryRevisionId::new(),
             },
             summary: Some("summary".into()),
-            key_memories: vec!["a durable fact".into()],
+            key_memories: vec![MemoryPromptLine {
+                text: "a durable fact".into(),
+                observed: Some("observed 2026-09-11 10:00, 2 hours ago".into()),
+            }],
+            relevant_memories: Vec::new(),
         };
         assert!(memory.validate().is_ok());
     }
