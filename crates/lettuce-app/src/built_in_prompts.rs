@@ -43,10 +43,11 @@ pub enum BuiltInPromptId {
     LorebookRuntime,
     MemoryRuntime,
     CompanionRuntime,
+    CreationRuntime,
 }
 
 impl BuiltInPromptId {
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 30] = [
         Self::AppDefault,
         Self::LocalRoleplay,
         Self::Companion,
@@ -76,6 +77,7 @@ impl BuiltInPromptId {
         Self::LorebookRuntime,
         Self::MemoryRuntime,
         Self::CompanionRuntime,
+        Self::CreationRuntime,
     ];
 
     #[must_use]
@@ -110,6 +112,7 @@ impl BuiltInPromptId {
             Self::LorebookRuntime => "prompt_app_lorebook_runtime",
             Self::MemoryRuntime => "prompt_app_memory_runtime",
             Self::CompanionRuntime => "prompt_app_companion_runtime",
+            Self::CreationRuntime => "prompt_app_creation_runtime",
         }
     }
 
@@ -150,7 +153,8 @@ impl BuiltInPromptId {
             | Self::GroupSpeakerSelection
             | Self::LorebookRuntime
             | Self::MemoryRuntime
-            | Self::CompanionRuntime => PromptPurpose::RuntimeText,
+            | Self::CompanionRuntime
+            | Self::CreationRuntime => PromptPurpose::RuntimeText,
         }
     }
 
@@ -273,6 +277,7 @@ pub struct BuiltInPromptIds {
     pub lorebook_runtime: PromptDocumentId,
     pub memory_runtime: PromptDocumentId,
     pub companion_runtime: PromptDocumentId,
+    pub creation_runtime: PromptDocumentId,
 }
 
 impl BuiltInPromptIds {
@@ -323,6 +328,7 @@ impl BuiltInPromptIds {
             lorebook_runtime: required(BuiltInPromptId::LorebookRuntime),
             memory_runtime: required(BuiltInPromptId::MemoryRuntime),
             companion_runtime: required(BuiltInPromptId::CompanionRuntime),
+            creation_runtime: required(BuiltInPromptId::CreationRuntime),
         })
     }
 
@@ -358,6 +364,7 @@ impl BuiltInPromptIds {
             BuiltInPromptId::LorebookRuntime => self.lorebook_runtime,
             BuiltInPromptId::MemoryRuntime => self.memory_runtime,
             BuiltInPromptId::CompanionRuntime => self.companion_runtime,
+            BuiltInPromptId::CreationRuntime => self.creation_runtime,
         }
     }
 }
@@ -1003,7 +1010,7 @@ mod tests {
     #[test]
     fn catalog_is_the_exact_closed_legacy_set() {
         let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
-        assert_eq!(catalog.seeds().len(), 29);
+        assert_eq!(catalog.seeds().len(), 30);
 
         let actual = catalog
             .seeds()
@@ -1103,7 +1110,7 @@ mod tests {
         assert_eq!(calls[1].mode, BuiltInReconcileMode::ResetToSeed);
         assert_eq!(calls[1].seeds.len(), 1);
         assert_eq!(calls[2].mode, BuiltInReconcileMode::ResetToSeed);
-        assert_eq!(calls[2].seeds.len(), 29);
+        assert_eq!(calls[2].seeds.len(), 30);
     }
 
     #[test]
@@ -1378,6 +1385,41 @@ mod tests {
         lettuce_creation::lorebook_keyword_tool_request(&resolve)
             .validate()
             .expect("keyword tool contract");
+        let creation = catalog.seed(BuiltInPromptId::CreationRuntime);
+        let creation_text = |key: &str| {
+            creation
+                .entries
+                .iter()
+                .find(|entry| entry.built_in_entry_key.as_deref() == Some(key))
+                .map(|entry| entry.content.clone())
+                .unwrap_or_else(|| panic!("{key}"))
+        };
+        for target in [
+            lettuce_creation::CreationTargetKind::Character,
+            lettuce_creation::CreationTargetKind::Persona,
+            lettuce_creation::CreationTargetKind::Lorebook,
+        ] {
+            for stage in [
+                lettuce_creation::CreationStage::Drafting,
+                lettuce_creation::CreationStage::AwaitingReview,
+            ] {
+                let described = lettuce_creation::describe_creation_tools(
+                    &lettuce_creation::creation_tool_request(target, stage).expect("tools"),
+                    &creation_text,
+                );
+                described.validate().expect("creation tool contract");
+                assert!(
+                    described
+                        .definitions
+                        .iter()
+                        .all(|definition| definition.description.is_some())
+                );
+            }
+        }
+        assert_eq!(
+            creation.entries.len(),
+            lettuce_creation::CREATION_TOOL_TEXT_KEYS.len()
+        );
         for request in [
             lettuce_creation::staged_lorebook_planner_tool_request(&resolve),
             lettuce_creation::staged_lorebook_writer_tool_request(&resolve),

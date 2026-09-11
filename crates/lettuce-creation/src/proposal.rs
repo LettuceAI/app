@@ -27,13 +27,24 @@ pub enum CreationOperation {
         content: String,
         direction: Option<String>,
     },
+    DeleteScene {
+        id: SceneId,
+    },
     UpsertLorebookEntry {
+        id: LorebookEntryId,
+        title: String,
+        content: String,
+    },
+    UpdateLorebookEntry {
         id: LorebookEntryId,
         title: String,
         content: String,
     },
     DeleteLorebookEntry {
         id: LorebookEntryId,
+    },
+    ReorderLorebookEntries {
+        order: Vec<LorebookEntryId>,
     },
     ShowPreview,
     RequestConfirmation,
@@ -256,6 +267,55 @@ fn apply_one(
                     content: content.clone(),
                 });
             }
+        }
+        CreationOperation::DeleteScene { id } => {
+            let CreationDraft::Character { scenes, .. } = draft else {
+                return Err(CreationOperationError::WrongTarget);
+            };
+            let index = scenes
+                .iter()
+                .position(|scene| scene.id == *id)
+                .ok_or(CreationOperationError::NotFound)?;
+            scenes.remove(index);
+        }
+        CreationOperation::UpdateLorebookEntry { id, title, content } => {
+            validate_text(title)?;
+            validate_text(content)?;
+            let CreationDraft::Lorebook { entries, .. } = draft else {
+                return Err(CreationOperationError::WrongTarget);
+            };
+            let entry = entries
+                .iter_mut()
+                .find(|entry| entry.id == *id)
+                .ok_or(CreationOperationError::NotFound)?;
+            entry.title.clone_from(title);
+            entry.content.clone_from(content);
+        }
+        CreationOperation::ReorderLorebookEntries { order } => {
+            let CreationDraft::Lorebook { entries, .. } = draft else {
+                return Err(CreationOperationError::WrongTarget);
+            };
+            let mut seen = std::collections::HashSet::new();
+            if order.iter().any(|id| !seen.insert(*id)) {
+                return Err(CreationOperationError::DuplicateIdentity);
+            }
+            if order
+                .iter()
+                .any(|id| !entries.iter().any(|entry| entry.id == *id))
+            {
+                return Err(CreationOperationError::NotFound);
+            }
+            let mut reordered = order
+                .iter()
+                .filter_map(|id| entries.iter().find(|entry| entry.id == *id).cloned())
+                .collect::<Vec<_>>();
+            reordered.extend(
+                entries
+                    .iter()
+                    .filter(|entry| !seen.contains(&entry.id))
+                    .cloned(),
+            );
+            *entries = reordered;
         }
         CreationOperation::DeleteLorebookEntry { id } => {
             let CreationDraft::Lorebook { entries, .. } = draft else {

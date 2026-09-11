@@ -2581,8 +2581,7 @@ mod tests {
             database,
             MediaBlob {
                 id: blob_id,
-                content_hash: ContentHash::parse(format!("{marker:02x}").repeat(32))
-                    .expect("hash"),
+                content_hash: ContentHash::parse(format!("{marker:02x}").repeat(32)).expect("hash"),
                 kind: MediaKind::Image,
                 mime_type: "image/png".into(),
                 byte_size: 1,
@@ -4883,10 +4882,10 @@ mod tests {
             .expect("turn");
         let proposal_id = CreationProposalId::new();
         let calls = vec![
-            admitted("set_persona_name", serde_json::json!({"name": "Navigator"})),
+            admitted("set_name", serde_json::json!({"name": "Navigator"})),
             admitted(
-                "set_persona_description",
-                serde_json::json!({"description": "Charts careful routes."}),
+                "write_definition",
+                serde_json::json!({"definition": "Charts careful routes."}),
             ),
             admitted("show_preview", serde_json::json!({})),
         ];
@@ -4906,7 +4905,7 @@ mod tests {
         assert_eq!(committed.workflow.stage, CreationStage::AwaitingReview);
         assert_eq!(committed.outputs.len(), calls.len());
         assert!(committed.outputs.iter().all(|output| !output.is_error));
-        assert_eq!(committed.outputs[0].value["tool"], "set_persona_name");
+        assert_eq!(committed.outputs[0].value["tool"], "set_name");
         let retry = apply_creation_tool_calls(
             &database,
             CreationToolApply {
@@ -5004,13 +5003,10 @@ mod tests {
             })
             .expect("replay");
         let mut parent_calls = vec![
+            new_call("set_name", serde_json::json!({"name": "Cartographer"})),
             new_call(
-                "set_persona_name",
-                serde_json::json!({"name": "Cartographer"}),
-            ),
-            new_call(
-                "set_persona_description",
-                serde_json::json!({"description": "Maps difficult paths."}),
+                "write_definition",
+                serde_json::json!({"definition": "Maps difficult paths."}),
             ),
         ];
         parent_calls[0].call.raw_arguments = Some("{\"name\":\"Cartographer\"}".to_owned());
@@ -5034,7 +5030,7 @@ mod tests {
             admitted
         );
         let mut changed_calls = parent_calls.clone();
-        changed_calls[1].call.arguments = serde_json::json!({"description": "Changed retry."});
+        changed_calls[1].call.arguments = serde_json::json!({"definition": "Changed retry."});
         assert_eq!(
             database.admit_creation_inference_round(
                 owner,
@@ -5064,10 +5060,7 @@ mod tests {
             ),
             Err(CreationRepositoryError::Invalid)
         );
-        let mut wrong_version = vec![new_call(
-            "set_persona_name",
-            serde_json::json!({"name": "Other"}),
-        )];
+        let mut wrong_version = vec![new_call("set_name", serde_json::json!({"name": "Other"}))];
         wrong_version[0].definition_version = 2;
         assert_eq!(
             database.admit_creation_inference_round(
@@ -5150,10 +5143,7 @@ mod tests {
             )
             .expect("run child");
         let child_calls = vec![
-            new_call(
-                "set_persona_name",
-                serde_json::json!({"name": "Cartographer"}),
-            ),
+            new_call("set_name", serde_json::json!({"name": "Cartographer"})),
             new_call("show_preview", serde_json::json!({})),
         ];
         let child_round = new_round(

@@ -18,140 +18,190 @@ use crate::{
 
 const TOOL_VERSION: u32 = 1;
 
+/// Catalog keys of the model-facing tool texts: `(tool, parameter, key)`,
+/// where a `None` parameter names the tool description itself.
+pub const CREATION_TOOL_TEXT_KEYS: [(&str, Option<&str>, &str); 16] = [
+    ("write_definition", None, "creation_write_definition_tool"),
+    ("write_scene", None, "creation_write_scene_tool"),
+    ("write_lore_entry", None, "creation_write_lore_entry_tool"),
+    ("set_name", None, "creation_set_name_tool"),
+    ("edit_scene", None, "creation_edit_scene_tool"),
+    ("edit_scene", Some("id"), "creation_edit_scene_id"),
+    ("edit_scene", Some("content"), "creation_edit_scene_content"),
+    ("edit_lore_entry", None, "creation_edit_lore_entry_tool"),
+    ("delete_scene", None, "creation_delete_scene_tool"),
+    ("delete_lore_entry", None, "creation_delete_lore_entry_tool"),
+    (
+        "reorder_lore_entries",
+        None,
+        "creation_reorder_lore_entries_tool",
+    ),
+    (
+        "reorder_lore_entries",
+        Some("order"),
+        "creation_reorder_lore_entries_order",
+    ),
+    ("show_preview", None, "creation_show_preview_tool"),
+    (
+        "show_preview",
+        Some("message"),
+        "creation_show_preview_message",
+    ),
+    (
+        "request_confirmation",
+        None,
+        "creation_request_confirmation_tool",
+    ),
+    (
+        "request_confirmation",
+        Some("message"),
+        "creation_request_confirmation_message",
+    ),
+];
+
+/// The legacy creation-agent tools the proposal supports for this target and
+/// stage, without descriptions; `describe_creation_tools` adds the catalog
+/// text before a request is sent.
 #[must_use]
 pub fn creation_tool_request(
     target: CreationTargetKind,
     stage: CreationStage,
 ) -> Option<ToolRequest> {
-    let mut definitions = match stage {
-        CreationStage::Drafting => drafting_definitions(target),
-        CreationStage::AwaitingReview => vec![definition(
-            "request_confirmation",
-            "Request explicit confirmation without applying the authored target.",
-            empty_parameters(),
-        )],
+    let names: &[&str] = match stage {
+        CreationStage::Drafting => match target {
+            CreationTargetKind::Character => &[
+                "write_definition",
+                "write_scene",
+                "set_name",
+                "edit_scene",
+                "delete_scene",
+                "show_preview",
+            ],
+            CreationTargetKind::Persona => &["write_definition", "set_name", "show_preview"],
+            CreationTargetKind::Lorebook => &[
+                "write_lore_entry",
+                "set_name",
+                "edit_lore_entry",
+                "delete_lore_entry",
+                "reorder_lore_entries",
+                "show_preview",
+            ],
+        },
+        CreationStage::AwaitingReview => &["request_confirmation"],
         CreationStage::AwaitingConfirmation => return None,
     };
-    if stage == CreationStage::Drafting {
-        definitions.push(definition(
-            "show_preview",
-            "Move the current proposal to explicit review.",
-            empty_parameters(),
-        ));
-    }
     Some(ToolRequest {
-        definitions,
+        definitions: names
+            .iter()
+            .map(|name| ToolDefinition {
+                name: (*name).to_owned(),
+                description: None,
+                parameters: tool_parameters(name),
+                version: TOOL_VERSION,
+            })
+            .collect(),
         choice: ToolChoice::Auto,
     })
 }
 
-fn drafting_definitions(target: CreationTargetKind) -> Vec<ToolDefinition> {
-    let mut definitions = vec![definition(
-        match target {
-            CreationTargetKind::Character => "set_character_name",
-            CreationTargetKind::Persona => "set_persona_name",
-            CreationTargetKind::Lorebook => "set_lorebook_name",
-        },
-        "Set the proposal name.",
-        one_string_parameter("name"),
-    )];
-    definitions.push(definition(
-        match target {
-            CreationTargetKind::Character => "set_character_definition",
-            CreationTargetKind::Persona => "set_persona_description",
-            CreationTargetKind::Lorebook => "set_lorebook_description",
-        },
-        "Set the proposal description or character definition.",
-        one_string_parameter(match target {
-            CreationTargetKind::Character => "definition",
-            CreationTargetKind::Persona | CreationTargetKind::Lorebook => "description",
+/// Adds the catalog descriptions to a creation tool request. A blank text
+/// (a disabled entry) leaves that description out.
+#[must_use]
+pub fn describe_creation_tools(
+    request: &ToolRequest,
+    text: &dyn Fn(&str) -> String,
+) -> ToolRequest {
+    let mut request = request.clone();
+    for definition in &mut request.definitions {
+        for (tool, parameter, key) in CREATION_TOOL_TEXT_KEYS {
+            if tool != definition.name {
+                continue;
+            }
+            let description = text(key);
+            if description.trim().is_empty() {
+                continue;
+            }
+            match parameter {
+                None => definition.description = Some(description),
+                Some(parameter) => {
+                    if let Some(property) = definition
+                        .parameters
+                        .get_mut("properties")
+                        .and_then(|properties| properties.get_mut(parameter))
+                        .and_then(Value::as_object_mut)
+                    {
+                        property.insert("description".to_owned(), Value::String(description));
+                    }
+                }
+            }
+        }
+    }
+    request
+}
+
+fn tool_parameters(name: &str) -> Value {
+    match name {
+        "write_definition" => json!({
+            "type": "object",
+            "properties": { "definition": { "type": "string" } },
+            "required": ["definition"]
         }),
-    ));
-    match target {
-        CreationTargetKind::Character => {
-            definitions.push(definition(
-                "add_scene",
-                "Add one starting scene to the proposal.",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "content": { "type": "string" },
-                        "direction": { "type": "string" }
-                    },
-                    "required": ["content"],
-                    "additionalProperties": false
-                }),
-            ));
-            definitions.push(definition(
-                "update_scene",
-                "Replace one existing proposal scene by stable ID.",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "scene_id": { "type": "string", "format": "uuid" },
-                        "content": { "type": "string" },
-                        "direction": { "type": "string" }
-                    },
-                    "required": ["scene_id", "content"],
-                    "additionalProperties": false
-                }),
-            ));
-        }
-        CreationTargetKind::Persona => {}
-        CreationTargetKind::Lorebook => {
-            definitions.push(definition(
-                "upsert_lorebook_entry",
-                "Add or replace one proposal entry. Omit id when adding.",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "id": { "type": "string", "format": "uuid" },
-                        "title": { "type": "string" },
-                        "content": { "type": "string" }
-                    },
-                    "required": ["title", "content"],
-                    "additionalProperties": false
-                }),
-            ));
-            definitions.push(definition(
-                "delete_lorebook_entry",
-                "Remove one entry from proposal state by stable ID.",
-                json!({
-                    "type": "object",
-                    "properties": { "id": { "type": "string", "format": "uuid" } },
-                    "required": ["id"],
-                    "additionalProperties": false
-                }),
-            ));
-        }
+        "write_scene" => json!({
+            "type": "object",
+            "properties": {
+                "content": { "type": "string" },
+                "direction": { "type": "string" }
+            },
+            "required": ["content"]
+        }),
+        "write_lore_entry" => json!({
+            "type": "object",
+            "properties": {
+                "title": { "type": "string" },
+                "content": { "type": "string" }
+            },
+            "required": ["title", "content"]
+        }),
+        "set_name" => json!({
+            "type": "object",
+            "properties": { "name": { "type": "string" } },
+            "required": ["name"]
+        }),
+        "edit_scene" => json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "content": { "type": "string" },
+                "direction": { "type": "string" }
+            },
+            "required": ["id", "content"]
+        }),
+        "edit_lore_entry" => json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "content": { "type": "string" }
+            },
+            "required": ["id", "title", "content"]
+        }),
+        "delete_scene" | "delete_lore_entry" => json!({
+            "type": "object",
+            "properties": { "id": { "type": "string" } },
+            "required": ["id"]
+        }),
+        "reorder_lore_entries" => json!({
+            "type": "object",
+            "properties": {
+                "order": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["order"]
+        }),
+        _ => json!({
+            "type": "object",
+            "properties": { "message": { "type": "string" } }
+        }),
     }
-    definitions
-}
-
-fn definition(name: &str, description: &str, parameters: Value) -> ToolDefinition {
-    ToolDefinition {
-        name: name.to_owned(),
-        description: Some(description.to_owned()),
-        parameters,
-        version: TOOL_VERSION,
-    }
-}
-
-fn one_string_parameter(name: &str) -> Value {
-    json!({
-        "type": "object",
-        "properties": { name: { "type": "string" } },
-        "required": [name],
-        "additionalProperties": false
-    })
-}
-
-fn empty_parameters() -> Value {
-    json!({
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -288,64 +338,53 @@ fn parse_operation(
         .as_object()
         .ok_or(CreationToolContractError::MalformedArguments)?;
     match name {
-        "set_character_name" | "set_persona_name" | "set_lorebook_name" => {
-            ensure_keys(object, &["name"])?;
-            Ok(CreationOperation::SetName {
-                value: required_string(object, "name")?,
-            })
-        }
-        "set_character_definition" => {
-            ensure_keys(object, &["definition"])?;
-            Ok(CreationOperation::SetDescription {
-                value: required_string(object, "definition")?,
-            })
-        }
-        "set_persona_description" | "set_lorebook_description" => {
-            ensure_keys(object, &["description"])?;
-            Ok(CreationOperation::SetDescription {
-                value: required_string(object, "description")?,
-            })
-        }
-        "add_scene" => {
-            ensure_keys(object, &["content", "direction"])?;
-            Ok(CreationOperation::AddScene {
-                id: SceneId::from_uuid(derived_id(proposal_id, ordinal, "scene")),
-                content: required_string(object, "content")?,
-                direction: optional_string(object, "direction")?,
-            })
-        }
-        "update_scene" => {
-            ensure_keys(object, &["scene_id", "content", "direction"])?;
-            Ok(CreationOperation::UpdateScene {
-                id: required_id(object, "scene_id")?,
-                content: required_string(object, "content")?,
-                direction: optional_string(object, "direction")?,
-            })
-        }
-        "upsert_lorebook_entry" => {
-            ensure_keys(object, &["id", "title", "content"])?;
-            Ok(CreationOperation::UpsertLorebookEntry {
-                id: optional_id(object, "id")?.unwrap_or_else(|| {
-                    LorebookEntryId::from_uuid(derived_id(proposal_id, ordinal, "lorebook-entry"))
-                }),
-                title: required_string(object, "title")?,
-                content: required_string(object, "content")?,
-            })
-        }
-        "delete_lorebook_entry" => {
-            ensure_keys(object, &["id"])?;
-            Ok(CreationOperation::DeleteLorebookEntry {
-                id: required_id(object, "id")?,
-            })
-        }
-        "show_preview" => {
-            ensure_keys(object, &[])?;
-            Ok(CreationOperation::ShowPreview)
-        }
-        "request_confirmation" => {
-            ensure_keys(object, &[])?;
-            Ok(CreationOperation::RequestConfirmation)
-        }
+        "set_name" => Ok(CreationOperation::SetName {
+            value: required_string(object, "name")?,
+        }),
+        "write_definition" => Ok(CreationOperation::SetDescription {
+            value: required_string(object, "definition")?,
+        }),
+        "write_scene" => Ok(CreationOperation::AddScene {
+            id: SceneId::from_uuid(derived_id(proposal_id, ordinal, "scene")),
+            content: required_string(object, "content")?,
+            direction: optional_string(object, "direction")?,
+        }),
+        "edit_scene" => Ok(CreationOperation::UpdateScene {
+            id: required_id(object, "id")?,
+            content: required_string(object, "content")?,
+            direction: optional_string(object, "direction")?,
+        }),
+        "delete_scene" => Ok(CreationOperation::DeleteScene {
+            id: required_id(object, "id")?,
+        }),
+        "write_lore_entry" => Ok(CreationOperation::UpsertLorebookEntry {
+            id: LorebookEntryId::from_uuid(derived_id(proposal_id, ordinal, "lorebook-entry")),
+            title: required_string(object, "title")?,
+            content: required_string(object, "content")?,
+        }),
+        "edit_lore_entry" => Ok(CreationOperation::UpdateLorebookEntry {
+            id: required_id(object, "id")?,
+            title: required_string(object, "title")?,
+            content: required_string(object, "content")?,
+        }),
+        "delete_lore_entry" => Ok(CreationOperation::DeleteLorebookEntry {
+            id: required_id(object, "id")?,
+        }),
+        "reorder_lore_entries" => Ok(CreationOperation::ReorderLorebookEntries {
+            order: object
+                .get("order")
+                .and_then(Value::as_array)
+                .ok_or(CreationToolContractError::MissingOrInvalidArgument("order"))?
+                .iter()
+                .map(|id| {
+                    id.as_str()
+                        .and_then(|id| id.parse().ok())
+                        .ok_or(CreationToolContractError::MissingOrInvalidArgument("order"))
+                })
+                .collect::<Result<_, _>>()?,
+        }),
+        "show_preview" => Ok(CreationOperation::ShowPreview),
+        "request_confirmation" => Ok(CreationOperation::RequestConfirmation),
         _ => Err(CreationToolContractError::UnsupportedTool),
     }
 }
@@ -355,17 +394,6 @@ fn derived_id(proposal_id: CreationProposalId, ordinal: usize, kind: &str) -> Uu
         &proposal_id.as_uuid(),
         format!("creation-tool-v{TOOL_VERSION}:{kind}:{ordinal}").as_bytes(),
     )
-}
-
-fn ensure_keys(
-    object: &Map<String, Value>,
-    allowed: &[&str],
-) -> Result<(), CreationToolContractError> {
-    if object.keys().any(|key| !allowed.contains(&key.as_str())) {
-        Err(CreationToolContractError::UnknownArgument)
-    } else {
-        Ok(())
-    }
 }
 
 fn required_string(
@@ -403,16 +431,6 @@ fn required_id<T: std::str::FromStr>(
         .map_err(|_| CreationToolContractError::MissingOrInvalidArgument(name))
 }
 
-fn optional_id<T: std::str::FromStr>(
-    object: &Map<String, Value>,
-    name: &'static str,
-) -> Result<Option<T>, CreationToolContractError> {
-    object
-        .get(name)
-        .map(|_| required_id(object, name))
-        .transpose()
-}
-
 fn output_for_outcome(
     tool_name: &str,
     outcome: &crate::CreationOperationOutcome,
@@ -430,10 +448,13 @@ fn output_for_outcome(
         .as_object_mut()
         .ok_or(CreationToolContractError::InvalidContract)?;
     match &outcome.operation {
-        CreationOperation::AddScene { id, .. } | CreationOperation::UpdateScene { id, .. } => {
+        CreationOperation::AddScene { id, .. }
+        | CreationOperation::UpdateScene { id, .. }
+        | CreationOperation::DeleteScene { id } => {
             object.insert("scene_id".to_owned(), json!(id));
         }
         CreationOperation::UpsertLorebookEntry { id, .. }
+        | CreationOperation::UpdateLorebookEntry { id, .. }
         | CreationOperation::DeleteLorebookEntry { id } => {
             object.insert("entry_id".to_owned(), json!(id));
         }
@@ -443,7 +464,9 @@ fn output_for_outcome(
         CreationOperation::RequestConfirmation => {
             object.insert("stage".to_owned(), json!("awaiting_confirmation"));
         }
-        CreationOperation::SetName { .. } | CreationOperation::SetDescription { .. } => {}
+        CreationOperation::SetName { .. }
+        | CreationOperation::SetDescription { .. }
+        | CreationOperation::ReorderLorebookEntries { .. } => {}
     }
     let output = ToolOutput {
         value,
@@ -482,8 +505,6 @@ pub enum CreationToolContractError {
     UnsupportedTool,
     #[error("creation tool definition version does not match")]
     DefinitionVersionMismatch,
-    #[error("creation tool arguments contain an unknown field")]
-    UnknownArgument,
     #[error("creation tool argument is missing or invalid")]
     MissingOrInvalidArgument(&'static str),
     #[error("creation provider call id is duplicated")]
@@ -497,19 +518,22 @@ pub enum CreationToolContractError {
 #[cfg(test)]
 mod tests {
     use lettuce_conversations::ProposedToolCall;
-    use lettuce_types::{CreationProposalId, CreationTurnId, SceneId, TimestampMillis};
+    use lettuce_types::{
+        CreationProposalId, CreationTurnId, LorebookEntryId, SceneId, TimestampMillis,
+    };
     use serde_json::json;
 
     use crate::{
         AdmittedCreationToolCall, CreationDraft, CreationStage, CreationTargetKind,
-        CreationToolContractError, creation_tool_request, reduce_creation_tool_calls,
+        CreationToolContractError, creation_tool_request, describe_creation_tools,
+        reduce_creation_tool_calls,
     };
 
     fn call(name: &str, arguments: serde_json::Value) -> AdmittedCreationToolCall {
         AdmittedCreationToolCall {
             definition_version: 1,
             call: ProposedToolCall {
-                provider_call_id: Some(format!("call-{name}")),
+                provider_call_id: Some(format!("call-{name}-{}", uuid::Uuid::new_v4())),
                 name: name.to_owned(),
                 arguments,
                 raw_arguments: None,
@@ -519,66 +543,85 @@ mod tests {
     }
 
     #[test]
-    fn tool_contract_is_target_and_stage_specific() {
-        let character =
-            creation_tool_request(CreationTargetKind::Character, CreationStage::Drafting)
-                .expect("character tools");
-        character.validate().expect("valid character tools");
+    fn tool_contract_uses_the_legacy_agent_names_per_target_and_stage() {
+        let names = |target, stage| {
+            creation_tool_request(target, stage).map(|request| {
+                request.validate().expect("valid tools");
+                assert!(
+                    request
+                        .definitions
+                        .iter()
+                        .all(|definition| definition.version == 1
+                            && definition.description.is_none())
+                );
+                request
+                    .definitions
+                    .into_iter()
+                    .map(|definition| definition.name)
+                    .collect::<Vec<_>>()
+            })
+        };
         assert_eq!(
-            character
-                .definitions
-                .iter()
-                .map(|definition| definition.name.as_str())
-                .collect::<Vec<_>>(),
+            names(CreationTargetKind::Character, CreationStage::Drafting).expect("character"),
             [
-                "set_character_name",
-                "set_character_definition",
-                "add_scene",
-                "update_scene",
-                "show_preview",
+                "write_definition",
+                "write_scene",
+                "set_name",
+                "edit_scene",
+                "delete_scene",
+                "show_preview"
             ]
         );
-        assert!(character.definitions.iter().all(|definition| {
-            definition.version == 1 && definition.parameters["additionalProperties"] == json!(false)
-        }));
         assert_eq!(
-            character.definitions[1].parameters["properties"]
-                .as_object()
-                .expect("properties")
-                .keys()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            ["definition"]
+            names(CreationTargetKind::Persona, CreationStage::Drafting).expect("persona"),
+            ["write_definition", "set_name", "show_preview"]
         );
-
-        let persona = creation_tool_request(CreationTargetKind::Persona, CreationStage::Drafting)
-            .expect("persona tools");
-        assert_eq!(persona.definitions.len(), 3);
-        assert!(
-            persona
-                .definitions
-                .iter()
-                .any(|definition| definition.name == "set_persona_description")
+        assert_eq!(
+            names(CreationTargetKind::Lorebook, CreationStage::Drafting).expect("lorebook"),
+            [
+                "write_lore_entry",
+                "set_name",
+                "edit_lore_entry",
+                "delete_lore_entry",
+                "reorder_lore_entries",
+                "show_preview"
+            ]
         );
-        let lorebook = creation_tool_request(CreationTargetKind::Lorebook, CreationStage::Drafting)
-            .expect("lorebook tools");
-        assert!(
-            lorebook
-                .definitions
-                .iter()
-                .any(|definition| definition.name == "upsert_lorebook_entry")
+        assert_eq!(
+            names(CreationTargetKind::Character, CreationStage::AwaitingReview).expect("review"),
+            ["request_confirmation"]
         );
-        let review =
-            creation_tool_request(CreationTargetKind::Character, CreationStage::AwaitingReview)
-                .expect("review tools");
-        assert_eq!(review.definitions.len(), 1);
-        assert_eq!(review.definitions[0].name, "request_confirmation");
         assert!(
-            creation_tool_request(
+            names(
                 CreationTargetKind::Character,
                 CreationStage::AwaitingConfirmation
             )
             .is_none()
+        );
+        let described = describe_creation_tools(
+            &creation_tool_request(CreationTargetKind::Character, CreationStage::Drafting)
+                .expect("character"),
+            &|key| {
+                if key == "creation_set_name_tool" {
+                    String::new()
+                } else {
+                    key.to_owned()
+                }
+            },
+        );
+        described.validate().expect("described tools");
+        assert_eq!(
+            described.definitions[3].description.as_deref(),
+            Some("creation_edit_scene_tool")
+        );
+        assert_eq!(
+            described.definitions[3].parameters["properties"]["id"]["description"],
+            json!("creation_edit_scene_id")
+        );
+        assert_eq!(described.definitions[2].description, None);
+        assert_eq!(
+            described.definitions[5].parameters["properties"]["message"]["description"],
+            json!("creation_show_preview_message")
         );
     }
 
@@ -598,16 +641,17 @@ mod tests {
         let turn_id = CreationTurnId::new();
         let missing = SceneId::new();
         let calls = vec![
+            call("edit_scene", json!({"id": missing, "content": "missing"})),
             call(
-                "update_scene",
-                json!({"scene_id": missing, "content": "missing"}),
+                "write_scene",
+                json!({"content": "Welcome.", "direction": "calmly", "extra": true}),
             ),
+            call("set_name", json!({"name": "Aster"})),
             call(
-                "add_scene",
-                json!({"content": "Welcome.", "direction": "calmly"}),
+                "write_definition",
+                json!({"definition": "A quiet archivist."}),
             ),
-            call("set_character_name", json!({"name": "Aster"})),
-            call("show_preview", json!({})),
+            call("show_preview", json!({"message": "Take a look."})),
         ];
         let first = reduce_creation_tool_calls(
             &base,
@@ -631,13 +675,19 @@ mod tests {
         assert_eq!(first.outputs[0].value["code"], "not_found");
         assert!(first.outputs[1..].iter().all(|output| !output.is_error));
         assert_eq!(first.proposal.stage, CreationStage::AwaitingReview);
-        let CreationDraft::Character { name, scenes, .. } = first.proposal.draft else {
+        let CreationDraft::Character {
+            name,
+            definition,
+            scenes,
+        } = first.proposal.draft
+        else {
             panic!("character draft");
         };
         assert_eq!(name.as_deref(), Some("Aster"));
+        assert_eq!(definition.as_deref(), Some("A quiet archivist."));
         assert_eq!(scenes.len(), 1);
         assert_eq!(first.outputs[1].value["scene_id"], json!(scenes[0].id));
-        assert_eq!(first.outputs[3].value["stage"], json!("awaiting_review"));
+        assert_eq!(first.outputs[4].value["stage"], json!("awaiting_review"));
 
         let editable = crate::CreationProposal::initial(
             CreationProposalId::new(),
@@ -653,26 +703,106 @@ mod tests {
             TimestampMillis::new(2),
         )
         .expect("editable");
-        let updated = editable
-            .apply(
-                CreationProposalId::new(),
-                CreationTurnId::new(),
-                vec![crate::CreationOperation::UpdateScene {
-                    id: scenes[0].id,
-                    content: "Revised welcome.".to_owned(),
-                    direction: None,
-                }],
-                TimestampMillis::new(3),
-            )
-            .expect("update scene");
-        let CreationDraft::Character { scenes, .. } = updated.draft else {
+        let edited = reduce_creation_tool_calls(
+            &editable,
+            CreationProposalId::new(),
+            CreationTurnId::new(),
+            &[
+                call(
+                    "edit_scene",
+                    json!({"id": scenes[0].id, "content": "Revised welcome."}),
+                ),
+                call("delete_scene", json!({"id": scenes[0].id})),
+                call("delete_scene", json!({"id": scenes[0].id})),
+            ],
+            TimestampMillis::new(3),
+        )
+        .expect("edit and delete scene");
+        assert!(!edited.outputs[0].is_error && !edited.outputs[1].is_error);
+        assert_eq!(edited.outputs[2].value["code"], "not_found");
+        let CreationDraft::Character { scenes, .. } = edited.proposal.draft else {
             panic!("character draft");
         };
-        assert_eq!(scenes[0].direction.as_deref(), Some("calmly"));
+        assert!(scenes.is_empty());
     }
 
     #[test]
-    fn undeclared_version_mismatch_and_unknown_arguments_fail_before_reduction() {
+    fn lorebook_entries_are_written_edited_reordered_and_deleted() {
+        let base = crate::CreationProposal::initial(
+            CreationProposalId::new(),
+            CreationDraft::Lorebook {
+                name: None,
+                description: None,
+                entries: Vec::new(),
+            },
+            TimestampMillis::new(1),
+        )
+        .expect("base");
+        let written = reduce_creation_tool_calls(
+            &base,
+            CreationProposalId::new(),
+            CreationTurnId::new(),
+            &[
+                call(
+                    "write_lore_entry",
+                    json!({"title": "Pact", "content": "Sworn."}),
+                ),
+                call(
+                    "write_lore_entry",
+                    json!({"title": "Siege", "content": "Held."}),
+                ),
+                call(
+                    "write_lore_entry",
+                    json!({"title": "Oath", "content": "Kept."}),
+                ),
+            ],
+            TimestampMillis::new(2),
+        )
+        .expect("write entries");
+        let ids = written
+            .outputs
+            .iter()
+            .map(|output| output.value["entry_id"].as_str().expect("id").to_owned())
+            .collect::<Vec<_>>();
+        let changed = reduce_creation_tool_calls(
+            &written.proposal,
+            CreationProposalId::new(),
+            CreationTurnId::new(),
+            &[
+                call(
+                    "edit_lore_entry",
+                    json!({"id": ids[1], "title": "Siege of Khovar", "content": "Broken."}),
+                ),
+                call(
+                    "edit_lore_entry",
+                    json!({"id": LorebookEntryId::new(), "title": "Ghost", "content": "None."}),
+                ),
+                call("reorder_lore_entries", json!({"order": [ids[2], ids[1]]})),
+                call("reorder_lore_entries", json!({"order": [ids[2], ids[2]]})),
+                call("delete_lore_entry", json!({"id": ids[0]})),
+            ],
+            TimestampMillis::new(3),
+        )
+        .expect("change entries");
+        assert!(!changed.outputs[0].is_error);
+        assert_eq!(changed.outputs[1].value["code"], "not_found");
+        assert!(!changed.outputs[2].is_error);
+        assert_eq!(changed.outputs[3].value["code"], "duplicate_identity");
+        assert!(!changed.outputs[4].is_error);
+        let CreationDraft::Lorebook { entries, .. } = changed.proposal.draft else {
+            panic!("lorebook draft");
+        };
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| (entry.title.as_str(), entry.content.as_str()))
+                .collect::<Vec<_>>(),
+            [("Oath", "Kept."), ("Siege of Khovar", "Broken.")]
+        );
+    }
+
+    #[test]
+    fn undeclared_version_mismatch_and_missing_arguments_fail_before_reduction() {
         let base = crate::CreationProposal::initial(
             CreationProposalId::new(),
             CreationDraft::Persona {
@@ -692,21 +822,19 @@ mod tests {
             )
         };
         assert_eq!(
-            reduce(&[call("add_scene", json!({"content": "wrong target"}))]),
+            reduce(&[call("write_scene", json!({"content": "wrong target"}))]),
             Err(CreationToolContractError::UnsupportedTool)
         );
-        let mut stale = call("set_persona_name", json!({"name": "Aster"}));
+        let mut stale = call("set_name", json!({"name": "Aster"}));
         stale.definition_version = 2;
         assert_eq!(
             reduce(&[stale]),
             Err(CreationToolContractError::DefinitionVersionMismatch)
         );
         assert_eq!(
-            reduce(&[call(
-                "set_persona_name",
-                json!({"name": "Aster", "extra": true})
-            )]),
-            Err(CreationToolContractError::UnknownArgument)
+            reduce(&[call("set_name", json!({"title": "Aster"}))]),
+            Err(CreationToolContractError::MissingOrInvalidArgument("name"))
         );
+        assert!(reduce(&[call("set_name", json!({"name": "Aster", "extra": true}))]).is_ok());
     }
 }

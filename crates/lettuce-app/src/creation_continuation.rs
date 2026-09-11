@@ -104,7 +104,8 @@ impl<
     R: CreationWorkflowRepository
         + CreationAttemptRepository
         + ProviderReplayArtifactPort
-        + JobUsageLedger,
+        + JobUsageLedger
+        + crate::runtime_text::RuntimeTextSource,
     I: InferencePort + ?Sized,
 > CreationContinuationCoordinator<'a, R, I>
 {
@@ -165,8 +166,20 @@ impl<
         {
             return Err(CreationContinuationError::InvalidOwnership);
         }
-        let mut request =
-            build_creation_inference_request(&attempt, &turn, &base, profile, handle, stream_sink)?;
+        let text = crate::runtime_text::RuntimeText::load(
+            self.repository,
+            crate::BuiltInPromptId::CreationRuntime,
+        )
+        .map_err(|_| CreationContinuationError::RuntimeTextUnavailable)?;
+        let mut request = build_creation_inference_request(
+            &attempt,
+            &turn,
+            &base,
+            &text,
+            profile,
+            handle,
+            stream_sink,
+        )?;
         let mut rounds = self
             .repository
             .list_creation_inference_rounds(owner, attempt.id)?;
@@ -420,6 +433,7 @@ fn build_creation_inference_request(
     attempt: &CreationInferenceAttempt,
     turn: &lettuce_creation::CreationTurn,
     base: &CreationProposal,
+    text: &crate::runtime_text::RuntimeText,
     profile: ResolvedInferenceProfile,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
@@ -473,7 +487,10 @@ fn build_creation_inference_request(
         cancellation: Some(handle.id()),
         stream_sink,
         media_grants: Vec::new(),
-        tools: Some(attempt.tool_request.clone()),
+        tools: Some(lettuce_creation::describe_creation_tools(
+            &attempt.tool_request,
+            &|key| text.render_with(key, []).unwrap_or_default(),
+        )),
     };
     request.validate()?;
     Ok(request)
@@ -759,6 +776,8 @@ pub enum CreationContinuationError {
     UndeclaredTool,
     #[error("provider failed the creation request")]
     ProviderFailed,
+    #[error("creation runtime text is unavailable")]
+    RuntimeTextUnavailable,
     #[error("creation request was cancelled")]
     Cancelled,
     #[error("creation inference reached its round limit")]
@@ -791,6 +810,14 @@ mod tests {
         ProviderConfig, ProviderProtocol,
     };
     use lettuce_settings::SecretOwnerId;
+
+    fn with_built_ins(database: Database) -> Database {
+        crate::BuiltInPromptService::new(&database)
+            .expect("built-in prompt catalog")
+            .bootstrap(TimestampMillis::new(1))
+            .expect("bootstrap built-in prompts");
+        database
+    }
     use lettuce_types::{
         CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, JobId,
         ModelProfileId, ProviderAccountId, Revision,
@@ -1001,7 +1028,7 @@ mod tests {
 
     #[tokio::test]
     async fn runs_two_native_rounds_and_replays_the_committed_result_exactly() {
-        let database = Database::open_in_memory().expect("database");
+        let database = with_built_ins(Database::open_in_memory().expect("database"));
         let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
@@ -1013,13 +1040,13 @@ mod tests {
                     }],
                     vec![
                         tool_call(
-                            "set_persona_name",
+                            "set_name",
                             serde_json::json!({"name": "Navigator"}),
                             "call-name",
                         ),
                         tool_call(
-                            "set_persona_description",
-                            serde_json::json!({"description": "Maps careful routes."}),
+                            "write_definition",
+                            serde_json::json!({"definition": "Maps careful routes."}),
                             "call-description",
                         ),
                     ],
@@ -1084,6 +1111,34 @@ mod tests {
         {
             let requests = inference.requests.lock().expect("requests");
             assert_eq!(requests.len(), 2);
+            let tools = requests[0].tools.as_ref().expect("tools");
+            assert_eq!(
+                tools
+                    .definitions
+                    .iter()
+                    .map(|definition| (definition.name.as_str(), definition.description.as_deref()))
+                    .collect::<Vec<_>>(),
+                [
+                    (
+                        "write_definition",
+                        crate::runtime_text::RuntimeText::from_seed(
+                            crate::BuiltInPromptId::CreationRuntime
+                        )
+                        .render_with("creation_write_definition_tool", [])
+                        .ok()
+                        .as_deref()
+                    ),
+                    ("set_name", Some("Set the character/persona/lorebook name.")),
+                    (
+                        "show_preview",
+                        Some("Render a preview of the current draft to the user.")
+                    ),
+                ]
+            );
+            assert_eq!(
+                tools.definitions[2].parameters["properties"]["message"]["description"],
+                serde_json::json!("Optional remark shown alongside the preview.")
+            );
             assert!(
                 requests[1]
                     .context
@@ -1148,7 +1203,7 @@ mod tests {
 
     #[test]
     fn turn_and_first_attempt_admit_atomically_and_replay_exactly() {
-        let database = Database::open_in_memory().expect("database");
+        let database = with_built_ins(Database::open_in_memory().expect("database"));
         let workflow_id = CreationWorkflowId::new();
         let base_proposal_id = CreationProposalId::new();
         let workflow = database
@@ -1224,7 +1279,7 @@ mod tests {
 
     #[test]
     fn interrupted_attempt_recovers_into_an_empty_bound_child() {
-        let database = Database::open_in_memory().expect("database");
+        let database = with_built_ins(Database::open_in_memory().expect("database"));
         let workflow_id = CreationWorkflowId::new();
         let base_proposal_id = CreationProposalId::new();
         let workflow = database
@@ -1295,7 +1350,7 @@ mod tests {
                         id: lettuce_types::ToolExecutionId::new(),
                         definition_version: 1,
                         call: tool_call(
-                            "set_persona_name",
+                            "set_name",
                             serde_json::json!({"name": "Navigator"}),
                             "partial-call",
                         ),
@@ -1367,7 +1422,7 @@ mod tests {
             "lettuce-creation-recovery-{}.db",
             GenerationAttemptId::new()
         ));
-        let setup_database = Database::open(&path).expect("setup database");
+        let setup_database = with_built_ins(Database::open(&path).expect("setup database"));
         let parent_handle = JobHandle::new(JobId::new());
         let profile = profile();
         let parent_id = setup(&setup_database, &parent_handle, &profile);
@@ -1430,7 +1485,7 @@ mod tests {
 
     #[tokio::test]
     async fn text_only_completion_succeeds_without_fabricating_a_proposal() {
-        let database = Database::open_in_memory().expect("database");
+        let database = with_built_ins(Database::open_in_memory().expect("database"));
         let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
@@ -1463,7 +1518,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancellation_settles_the_attempt_before_provider_dispatch() {
-        let database = Database::open_in_memory().expect("database");
+        let database = with_built_ins(Database::open_in_memory().expect("database"));
         let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
@@ -1496,7 +1551,7 @@ mod tests {
 
     #[tokio::test]
     async fn provider_unavailability_fails_the_attempt_without_a_round() {
-        let database = Database::open_in_memory().expect("database");
+        let database = with_built_ins(Database::open_in_memory().expect("database"));
         let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
@@ -1546,7 +1601,7 @@ mod tests {
     #[tokio::test]
     async fn rejected_and_cancelled_responses_keep_usage_without_checkpointing() {
         for finish in [FinishReason::Error, FinishReason::Cancelled] {
-            let database = Database::open_in_memory().expect("database");
+            let database = with_built_ins(Database::open_in_memory().expect("database"));
             let handle = job_handle(&database);
             let profile = profile();
             let attempt_id = setup(&database, &handle, &profile);
@@ -1599,7 +1654,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_durable_job_stops_dispatch_without_provider_failure() {
-        let database = Database::open_in_memory().expect("database");
+        let database = with_built_ins(Database::open_in_memory().expect("database"));
         let handle = JobHandle::new(JobId::new());
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
@@ -1629,7 +1684,7 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_rejects_the_wrong_job_or_resolved_profile_before_starting() {
-        let database = Database::open_in_memory().expect("database");
+        let database = with_built_ins(Database::open_in_memory().expect("database"));
         let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
@@ -1673,7 +1728,7 @@ mod tests {
 
     #[tokio::test]
     async fn eight_non_terminal_rounds_fail_with_the_durable_round_limit() {
-        let database = Database::open_in_memory().expect("database");
+        let database = with_built_ins(Database::open_in_memory().expect("database"));
         let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
@@ -1682,7 +1737,7 @@ mod tests {
                 Ok(outcome(
                     Vec::new(),
                     vec![tool_call(
-                        "set_persona_name",
+                        "set_name",
                         serde_json::json!({"name": format!("Navigator {ordinal}")}),
                         &format!("call-{ordinal}"),
                     )],

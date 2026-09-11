@@ -42,7 +42,8 @@ pub use proposal::{
 pub use staged_lorebook::*;
 pub use staged_lorebook_sources::*;
 pub use tool::{
-    AdmittedCreationToolCall, CreationToolApply, CreationToolBatch, CreationToolCommit,
-    CreationToolContractError, apply_creation_tool_calls, creation_tool_request,
-    reduce_creation_tool_calls, validate_creation_tool_calls,
+    AdmittedCreationToolCall, CREATION_TOOL_TEXT_KEYS, CreationToolApply, CreationToolBatch,
+    CreationToolCommit, CreationToolContractError, apply_creation_tool_calls,
+    creation_tool_request, describe_creation_tools, reduce_creation_tool_calls,
+    validate_creation_tool_calls,
 };

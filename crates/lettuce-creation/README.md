@@ -102,12 +102,27 @@ slice writes character, persona, or lorebook aggregates. Final authored-domain
 apply, provider continuation, image/media leases, administrative tools, and
 frontend events remain later slices.
 
-The native proposal-tool contract is also active. Drafting exposes only the
-versioned mutators valid for the current target plus `show_preview`; review
-exposes only `request_confirmation`, and confirmation exposes no tools. Exact
-declaration/version checks reject undeclared or malformed calls before
+The native proposal-tool contract is also active and uses the legacy
+creation-agent tool names and schemas (`old-code/.../creation_helper/agent/
+tool_defs.rs`, `verbs.rs`) for every operation the proposal supports:
+character `write_definition`, `write_scene`, `set_name`, `edit_scene`,
+`delete_scene`; persona `write_definition`, `set_name`; lorebook
+`write_lore_entry`, `set_name`, `edit_lore_entry`, `delete_lore_entry`,
+`reorder_lore_entries`; plus `show_preview` in drafting and
+`request_confirmation` in review (both accept the legacy optional `message`).
+Confirmation exposes no tools. Definitions carry no text here: descriptions
+and parameter descriptions are catalog keys (`CREATION_TOOL_TEXT_KEYS`) that
+`describe_creation_tools` fills from the application's
+`prompt_app_creation_runtime` document, so stored attempts keep the shape
+only. Unknown arguments are ignored as legacy did; undeclared tools, version
+mismatches and missing or malformed required arguments are rejected before
 reduction. Valid calls reduce in provider order into one proposal and one typed
 result per call, including operation errors without stopping later calls.
+Legacy tools that need draft fields or services the proposal does not have yet
+(model, prompt, gradient, lorebook attachment, list reads, images, persona and
+lorebook deletion) are later slices; the lorebook description tool was
+removed because legacy had none. Corrected: the legacy `edit_scene` texts
+promised `sc_*` ids that never existed; they now point at the draft summary.
 Application-generated scene and lorebook-entry IDs are deterministic across an
 exact proposal retry, and the repository CAS commits the proposal before any
 later provider-continuation work.
