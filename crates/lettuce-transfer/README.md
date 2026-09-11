@@ -356,6 +356,19 @@ protected snapshots or selected branch head, so none are fabricated.
 Conversion remains read-only and does not ingest attachment or background
 bytes.
 
+Legacy companion scheduled notes now map into the existing companion-owned
+note and recurrence types as another bounded read-only plan. Archive order,
+identity, authored companion owner, label and content bytes, availability,
+end-exclusive expiry input, recurrence window, enabled state and timestamps
+remain explicit. The compatibility boundary rejects duplicate IDs, missing or
+non-companion owners, unknown recurrence values, negative times and windows,
+expiry at or before availability and reversed write timestamps. It does not
+normalize archived text or evaluate schedules during conversion. Runtime
+activation, local calendar handling, effective-time selection, rendering order
+and prompt limits remain owned by the existing companion and application paths,
+so the legacy scheduling semantics and clock source are unchanged. No note or
+companion state is written.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established
