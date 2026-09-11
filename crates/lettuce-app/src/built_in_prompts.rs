@@ -546,6 +546,7 @@ fn is_legacy_variable_allowed_for(purpose: PromptPurpose, value: &str) -> bool {
             value,
             "companion.name" | "authored_core" | "current_core" | "accumulated_growth"
         ),
+        PromptPurpose::RuntimeText => true,
         PromptPurpose::Undefined => false,
     }
 }
@@ -629,6 +630,8 @@ fn is_registered_legacy_variable(value: &str) -> bool {
                 | "lora_keywords[character]"
                 | "lora_keywords[persona]"
                 | "image_model_instructions"
+                | "retrieved_memories"
+                | "regenerate_guidance"
         )
 }
 

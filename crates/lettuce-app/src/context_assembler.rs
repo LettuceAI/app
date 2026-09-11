@@ -1452,6 +1452,7 @@ fn prompt_purpose(purpose: lettuce_conversations::PromptPurposeV1) -> PromptPurp
         lettuce_conversations::PromptPurposeV1::CompanionConsolidation => {
             PromptPurpose::CompanionConsolidation
         }
+        lettuce_conversations::PromptPurposeV1::RuntimeText => PromptPurpose::RuntimeText,
     }
 }
 

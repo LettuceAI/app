@@ -685,6 +685,7 @@ pub enum PromptPurposeV1 {
     CompanionSoulWriter,
     CompanionGrowthcycle,
     CompanionConsolidation,
+    RuntimeText,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

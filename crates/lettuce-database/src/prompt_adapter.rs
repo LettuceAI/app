@@ -130,6 +130,7 @@ fn purpose_name(value: PromptPurpose) -> Option<&'static str> {
         PromptPurpose::CompanionSoulWriter => "companion_soul_writer",
         PromptPurpose::CompanionGrowthcycle => "companion_growthcycle",
         PromptPurpose::CompanionConsolidation => "companion_consolidation",
+        PromptPurpose::RuntimeText => "runtime_text",
     })
 }
 
@@ -157,6 +158,7 @@ fn purpose_from_name(value: &str) -> Result<PromptPurpose, rusqlite::Error> {
         "companion_soul_writer" => Ok(PromptPurpose::CompanionSoulWriter),
         "companion_growthcycle" => Ok(PromptPurpose::CompanionGrowthcycle),
         "companion_consolidation" => Ok(PromptPurpose::CompanionConsolidation),
+        "runtime_text" => Ok(PromptPurpose::RuntimeText),
         _ => Err(invalid()),
     }
 }
@@ -1879,6 +1881,7 @@ mod tests {
             PromptPurpose::CompanionSoulWriter,
             PromptPurpose::CompanionGrowthcycle,
             PromptPurpose::CompanionConsolidation,
+            PromptPurpose::RuntimeText,
         ];
         for (index, purpose) in purposes.into_iter().enumerate() {
             let document = database

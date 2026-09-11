@@ -84,6 +84,8 @@ pub enum PromptPurpose {
     CompanionSoulWriter,
     CompanionGrowthcycle,
     CompanionConsolidation,
+    /// Catalog-owned fragments that the runtime injects by entry key.
+    RuntimeText,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -934,6 +936,8 @@ pub enum PromptVariable {
     CharacterLoraKeywords,
     PersonaLoraKeywords,
     ImageModelInstructions,
+    RetrievedMemories,
+    RegenerateGuidance,
 }
 
 impl PromptVariable {
@@ -1015,6 +1019,8 @@ impl PromptVariable {
             Self::CharacterLoraKeywords => "{{lora_keywords[character]}}",
             Self::PersonaLoraKeywords => "{{lora_keywords[persona]}}",
             Self::ImageModelInstructions => "{{image_model_instructions}}",
+            Self::RetrievedMemories => "{{retrieved_memories}}",
+            Self::RegenerateGuidance => "{{regenerate_guidance}}",
         }
     }
 
@@ -1095,6 +1101,8 @@ impl PromptVariable {
         Self::CharacterLoraKeywords,
         Self::PersonaLoraKeywords,
         Self::ImageModelInstructions,
+        Self::RetrievedMemories,
+        Self::RegenerateGuidance,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.
@@ -1102,7 +1110,7 @@ impl PromptVariable {
     pub const fn is_allowed_for(self, purpose: PromptPurpose) -> bool {
         use PromptPurpose as Purpose;
         use PromptVariable as Variable;
-        if matches!(purpose, Purpose::Undefined)
+        if matches!(purpose, Purpose::Undefined | Purpose::RuntimeText)
             || matches!(
                 self,
                 Variable::Date
@@ -1243,7 +1251,7 @@ impl PromptVariable {
                     | Variable::CurrentCore
                     | Variable::AccumulatedGrowth
             ),
-            Purpose::Undefined => true,
+            Purpose::Undefined | Purpose::RuntimeText => true,
         }
     }
 }
@@ -1254,43 +1262,65 @@ impl PromptRenderValues {
             .purpose_values
             .get(&PromptVariable::CurrentDraft)
             .map_or("", String::as_str);
-        let mut rendered = render_legacy_conditionals(source, !current_draft.is_empty())?;
-        let replacements = [
-            ("{{char.name}}", self.character_name.as_str()),
-            ("{{char.desc}}", self.character_description.as_str()),
-            ("{{persona.name}}", self.persona_name.as_str()),
-            ("{{persona.desc}}", self.persona_description.as_str()),
-            ("{{user.name}}", self.user_name.as_str()),
-            ("{{user.desc}}", self.user_description.as_str()),
-            ("{{ai_name}}", self.ai_name.as_str()),
-            ("{{ai_description}}", self.ai_description.as_str()),
-            ("{{persona_name}}", self.persona_name.as_str()),
-            ("{{persona_description}}", self.persona_description.as_str()),
-            ("{{user_name}}", self.user_name.as_str()),
-            ("{{user_description}}", self.user_description.as_str()),
-            ("{{char}}", self.character_name.as_str()),
-            ("{{persona}}", self.persona_name.as_str()),
-            ("{{user}}", self.user_name.as_str()),
-            ("{{scene}}", self.scene.as_str()),
-            ("{{scene_direction}}", self.scene_direction.as_str()),
-            ("{{lorebook}}", self.lorebook.as_str()),
-            ("{{author_note}}", self.author_note.as_str()),
-            ("{{context_summary}}", self.context_summary.as_str()),
-            ("{{key_memories}}", self.key_memories.as_str()),
-            ("{{content_rules}}", self.content_rules.as_str()),
-            // The old runtime intentionally leaves authored character rules empty.
-            ("{{rules}}", ""),
-            ("{{ai_rules}}", ""),
-        ];
-        for (placeholder, value) in replacements {
-            rendered = rendered.replace(placeholder, value);
+        let conditioned = render_legacy_conditionals(source, !current_draft.is_empty())?;
+        let names = |value: &str| {
+            value
+                .replace("{{char}}", &self.character_name)
+                .replace("{{persona}}", &self.persona_name)
+                .replace("{{user}}", &self.user_name)
+        };
+        let character_description = names(&self.character_description);
+        let persona_description = names(&self.persona_description);
+        let user_description = names(&self.user_description);
+        let ai_description = names(&self.ai_description);
+        let scene = names(&self.scene);
+        let scene_direction = names(&self.scene_direction);
+        let value = |placeholder: &str| -> Option<&str> {
+            Some(match placeholder {
+                "{{char.name}}" | "{{char}}" => self.character_name.as_str(),
+                "{{ai_name}}" => self.ai_name.as_str(),
+                "{{char.desc}}" => character_description.as_str(),
+                "{{persona.name}}" | "{{persona_name}}" | "{{persona}}" => {
+                    self.persona_name.as_str()
+                }
+                "{{persona.desc}}" | "{{persona_description}}" => persona_description.as_str(),
+                "{{user.name}}" | "{{user_name}}" | "{{user}}" => self.user_name.as_str(),
+                "{{user.desc}}" | "{{user_description}}" => user_description.as_str(),
+                "{{ai_description}}" => ai_description.as_str(),
+                "{{scene}}" => scene.as_str(),
+                "{{scene_direction}}" => scene_direction.as_str(),
+                "{{lorebook}}" => self.lorebook.as_str(),
+                "{{author_note}}" => self.author_note.as_str(),
+                "{{context_summary}}" => self.context_summary.as_str(),
+                "{{key_memories}}" => self.key_memories.as_str(),
+                "{{content_rules}}" => self.content_rules.as_str(),
+                "{{rules}}" | "{{ai_rules}}" => "",
+                _ => PromptVariable::ALL
+                    .iter()
+                    .find(|variable| variable.placeholder() == placeholder)
+                    .map(|variable| self.purpose_values.get(variable).map_or("", String::as_str))?,
+            })
+        };
+        let mut rendered = String::with_capacity(conditioned.len());
+        let mut rest = conditioned.as_str();
+        while let Some(start) = rest.find("{{") {
+            rendered.push_str(&rest[..start]);
+            let candidate = &rest[start..];
+            let replacement = candidate
+                .find("}}")
+                .and_then(|end| value(&candidate[..end + 2]).map(|value| (end + 2, value)));
+            match replacement {
+                Some((consumed, value)) => {
+                    rendered.push_str(value);
+                    rest = &candidate[consumed..];
+                }
+                None => {
+                    rendered.push_str("{{");
+                    rest = &candidate[2..];
+                }
+            }
         }
-        for variable in PromptVariable::ALL {
-            rendered = rendered.replace(
-                variable.placeholder(),
-                self.purpose_values.get(variable).map_or("", String::as_str),
-            );
-        }
+        rendered.push_str(rest);
         Ok(rendered)
     }
 }
@@ -2349,6 +2379,32 @@ mod tests {
             }
             .validate()
             .is_ok()
+        );
+    }
+
+    #[test]
+    fn substituted_values_are_not_rendered_again() {
+        let entry = PromptEntry {
+            id: PromptEntryId::new(),
+            name: "context".into(),
+            content: "{{char.desc}}|{{lorebook}}|{{author_note}}".into(),
+            ..PromptEntry::default()
+        };
+        let mut context = PromptRenderContext::default();
+        context.values.character_name = "Mira".into();
+        context.values.user_name = "Sam".into();
+        context.values.character_description = "{{char}} trusts {{user}}.".into();
+        context.values.lorebook = "Dates look like {{date}}.".into();
+        context.values.author_note = "Keep {{content_rules}} literal.".into();
+        context.values.content_rules = "RULES".into();
+        context
+            .values
+            .purpose_values
+            .insert(PromptVariable::Date, "2026-09-11".into());
+        let rendered = render_prompt(&document(entry), &context).expect("render");
+        assert_eq!(
+            rendered.in_chat[0].content,
+            "Mira trusts Sam.|Dates look like {{date}}.|Keep {{content_rules}} literal."
         );
     }
 

@@ -424,6 +424,7 @@ pub(crate) const fn prompt_purpose(value: PromptPurpose) -> PromptPurposeV1 {
         PromptPurpose::CompanionSoulWriter => PromptPurposeV1::CompanionSoulWriter,
         PromptPurpose::CompanionGrowthcycle => PromptPurposeV1::CompanionGrowthcycle,
         PromptPurpose::CompanionConsolidation => PromptPurposeV1::CompanionConsolidation,
+        PromptPurpose::RuntimeText => PromptPurposeV1::RuntimeText,
     }
 }
 

@@ -12,7 +12,7 @@ CREATE TABLE prompt_documents (
         'lorebook_generator_coherence', 'avatar_generation',
         'avatar_edit_request', 'scene_generation', 'scene_prompt_writer',
         'design_reference_writer', 'companion_soul_writer',
-        'companion_growthcycle', 'companion_consolidation'
+        'companion_growthcycle', 'companion_consolidation', 'runtime_text'
     )),
     condense INTEGER NOT NULL CHECK (condense IN (0, 1)),
     behavior_version TEXT NOT NULL CHECK (behavior_version IN ('legacy_v1', 'deterministic_v2')),
