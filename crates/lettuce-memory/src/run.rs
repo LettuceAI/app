@@ -10,7 +10,9 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{dynamic_memory_tool_request, dynamic_memory_tool_request_for_run};
+use crate::{
+    DynamicMemoryToolOptions, dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape,
+};
 
 pub const MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES: usize = 1024;
 pub const MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS: u8 = 8;
@@ -132,11 +134,17 @@ impl DynamicMemoryRun {
                 )
             })
             || self.profile.tool_policy != ToolPolicy::Required
-            || self.tool_request
-                != dynamic_memory_tool_request_for_run(
-                    self.supersession_enabled,
-                    self.time_awareness_enabled,
-                )
+            || ![false, true].into_iter().any(|group| {
+                dynamic_memory_tool_shape(&self.tool_request)
+                    == dynamic_memory_tool_shape(&dynamic_memory_tool_request_for_run(
+                        DynamicMemoryToolOptions {
+                            group,
+                            supersession_enabled: self.supersession_enabled,
+                            require_source_message_id: self.time_awareness_enabled,
+                        },
+                        &|key| key.to_owned(),
+                    ))
+            })
             || self.starting_memory.id != self.space_id
             || self.starting_memory.validate().is_err()
         {
@@ -161,6 +169,8 @@ pub struct NewDynamicMemoryRunAttempt {
     pub supersession_enabled: bool,
     pub structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
     pub summary_window: DynamicMemorySummaryWindow,
+    /// The legacy tool contract with its catalog texts, frozen with the run.
+    pub tool_request: lettuce_conversations::ToolRequest,
     pub job_id: JobId,
     pub now: TimestampMillis,
 }
@@ -343,7 +353,13 @@ impl NewDynamicMemoryInferenceRound {
         }
         let mut ids = HashSet::new();
         let mut provider_ids = HashSet::new();
-        let request = dynamic_memory_tool_request();
+        const TOOL_NAMES: [&str; 5] = [
+            "create_memory",
+            "delete_memory",
+            "pin_memory",
+            "unpin_memory",
+            "done",
+        ];
         for call in &self.calls {
             call.call
                 .validate()
@@ -356,10 +372,8 @@ impl NewDynamicMemoryInferenceRound {
                     .as_deref()
                     .is_some_and(|id| !provider_ids.insert(id))
                 || call.call.provider_replay.as_ref() != self.provider_replay.as_ref()
-                || !request.definitions.iter().any(|definition| {
-                    definition.name == call.call.name
-                        && definition.version == call.definition_version
-                })
+                || call.definition_version != 1
+                || !TOOL_NAMES.contains(&call.call.name.as_str())
             {
                 return Err(DynamicMemoryRunError::InvalidCall);
             }

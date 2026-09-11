@@ -527,7 +527,7 @@ fn build_first_request(
         .items
         .iter()
         .filter(|item| item.superseded_by.is_none())
-        .map(|item| format!("[{}] {}", item.id, item.text))
+        .map(|item| format!("[{}] {}", item.short_id, item.text))
         .collect::<Vec<_>>();
     let mut values = PromptRenderValues::default();
     values
@@ -811,7 +811,11 @@ mod tests {
         InferenceCandidate, InferenceUsage, InferenceWarningCode, OutputPolicy, ProposedToolCall,
         SafetyContext, ToolPolicy,
     };
-    use lettuce_memory::{MemoryCategory, MemoryItem, Score, dynamic_memory_tool_request};
+    use lettuce_memory::{MemoryCategory, MemoryItem, Score};
+
+    fn dynamic_memory_tool_request() -> lettuce_conversations::ToolRequest {
+        crate::companion_memory_run::test_memory_tool_request(false, false)
+    }
     use lettuce_models::{
         CapabilityStatus, ChatParameterResolutionInput, ChatRequirements, ExpectedModelIdentity,
         ModelCapabilities, ModelKind, ModelProfile, ModelProfileConfig, ProviderAccount,
@@ -1258,6 +1262,7 @@ mod tests {
             revision: Revision::INITIAL,
             items: vec![MemoryItem {
                 id: memory_id,
+                short_id: lettuce_memory::MemoryShortId::derived(memory_id),
                 text: "The user prefers tea.".into(),
                 category: MemoryCategory::Preference,
                 source_message_id: Some(run.source_messages[0].message_id),
@@ -1348,7 +1353,8 @@ mod tests {
         assert_eq!(
             *last_text,
             format!(
-                "Conversation transcript summary:\nPrior summary.\n\nRecent transcript lines:\nuser: Hello\nassistant: Hi\n\nCurrent memories (with IDs):\n[{memory_id}] The user prefers tea."
+                "Conversation transcript summary:\nPrior summary.\n\nRecent transcript lines:\nuser: Hello\nassistant: Hi\n\nCurrent memories (with IDs):\n[{}] The user prefers tea.",
+                lettuce_memory::MemoryShortId::derived(memory_id)
             )
         );
         assert_eq!(request.tools, Some(dynamic_memory_tool_request()));
@@ -1385,7 +1391,7 @@ mod tests {
         time_aware_run.time_awareness_enabled = true;
         time_aware_run.supersession_enabled = true;
         time_aware_run.tool_request =
-            lettuce_memory::dynamic_memory_tool_request_for_run(true, true);
+            crate::companion_memory_run::test_memory_tool_request(true, true);
         let sources = [
             MaterializedSource {
                 message_id: time_aware_run.source_messages[0].message_id,
@@ -1444,7 +1450,7 @@ mod tests {
         }
         assert_eq!(
             request.tools,
-            Some(lettuce_memory::dynamic_memory_tool_request_for_run(
+            Some(crate::companion_memory_run::test_memory_tool_request(
                 true, true
             ))
         );

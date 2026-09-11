@@ -754,10 +754,7 @@ impl DynamicMemoryRunRepository for Database {
             supersession_enabled: input.supersession_enabled,
             structured_fallback_format: input.structured_fallback_format,
             summary_window: input.summary_window,
-            tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
-                input.supersession_enabled,
-                input.time_awareness_enabled,
-            ),
+            tool_request: input.tool_request,
             created_at: input.now,
         };
         requested_run
@@ -1789,6 +1786,7 @@ mod tests {
     fn memory_item(id: MemoryId, text: &str, at: i64) -> MemoryItem {
         MemoryItem {
             id,
+            short_id: lettuce_memory::MemoryShortId::derived(id),
             text: text.into(),
             category: MemoryCategory::Other,
             source_message_id: None,
@@ -1895,6 +1893,14 @@ mod tests {
                     start: 0,
                     end: 2,
                 },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: false,
+                        supersession_enabled: true,
+                        require_source_message_id: true,
+                    },
+                    &|key| key.to_owned(),
+                ),
                 job_id: JobId::new(),
                 now: TimestampMillis::new(10),
             })
@@ -1999,6 +2005,14 @@ mod tests {
                     start: 0,
                     end: 2,
                 },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: false,
+                        supersession_enabled: true,
+                        require_source_message_id: true,
+                    },
+                    &|key| key.to_owned(),
+                ),
                 job_id: JobId::new(),
                 now: TimestampMillis::new(10),
             })
@@ -2059,6 +2073,14 @@ mod tests {
                     start: 2,
                     end: 4,
                 },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: false,
+                        supersession_enabled: true,
+                        require_source_message_id: true,
+                    },
+                    &|key| key.to_owned(),
+                ),
                 job_id: JobId::new(),
                 now: TimestampMillis::new(14),
             })
@@ -2257,6 +2279,14 @@ mod tests {
                     start: 0,
                     end: u64::try_from(messages.len()).expect("messages"),
                 },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: false,
+                        supersession_enabled: true,
+                        require_source_message_id: true,
+                    },
+                    &|key| key.to_owned(),
+                ),
                 job_id: JobId::new(),
                 now: TimestampMillis::new(10),
             })
@@ -2343,6 +2373,7 @@ mod tests {
                 expected_revision: Revision::INITIAL,
                 items: vec![MemoryItem {
                     id: memory_id,
+                    short_id: lettuce_memory::MemoryShortId::derived(memory_id),
                     text: "The user prefers tea".into(),
                     category: MemoryCategory::Preference,
                     source_message_id: Some(messages[0].message_id),
@@ -2441,6 +2472,14 @@ mod tests {
                 start: 0,
                 end: u64::try_from(messages.len()).expect("messages"),
             },
+            tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                lettuce_memory::DynamicMemoryToolOptions {
+                    group: false,
+                    supersession_enabled: true,
+                    require_source_message_id: true,
+                },
+                &|key| key.to_owned(),
+            ),
             job_id: JobId::new(),
             now: TimestampMillis::new(10),
         };
@@ -2457,10 +2496,7 @@ mod tests {
             .expect("admit");
         assert!(admitted.run.time_awareness_enabled);
         assert!(admitted.run.supersession_enabled);
-        assert_eq!(
-            admitted.run.tool_request,
-            lettuce_memory::dynamic_memory_tool_request_for_run(true, true)
-        );
+        assert_eq!(admitted.run.tool_request, admission.tool_request);
         assert_eq!(
             database
                 .admit_dynamic_memory_run_attempt(admission)
@@ -2531,6 +2567,7 @@ mod tests {
                         expected_revision: Revision::INITIAL,
                         items: vec![MemoryItem {
                             id: memory_id,
+                            short_id: lettuce_memory::MemoryShortId::derived(memory_id),
                             text: "The user prefers tea".into(),
                             category: MemoryCategory::Preference,
                             source_message_id: Some(messages[0].message_id),

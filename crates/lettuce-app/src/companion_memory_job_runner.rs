@@ -67,6 +67,7 @@ impl<
         + JobUsageLedger
         + CompanionTurnEffectRepository
         + GlobalSettingsStore
+        + crate::runtime_text::RuntimeTextSource
         + ?Sized,
     C: ConversationReader + ?Sized,
     I: InferencePort + ?Sized,

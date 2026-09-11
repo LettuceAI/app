@@ -491,6 +491,7 @@ mod tests {
             &backend,
             vec![MemoryItem {
                 id: existing_id,
+                short_id: lettuce_memory::MemoryShortId::derived(existing_id),
                 text: "Mira likes green tea".to_owned(),
                 category: MemoryCategory::Other,
                 source_message_id: None,

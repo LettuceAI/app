@@ -46,7 +46,7 @@ use lettuce_memory::{
     DynamicMemoryAttemptStatus, DynamicMemoryRoundFinishReason,
     DynamicMemoryRunRepository, DynamicMemorySourceMessage, MemoryCategory, MemoryChangeSet,
     MemoryItem, MemoryPolicy as DynamicMemoryPolicy, MemoryRepository, MemorySummary, MemorySummaryChange, MemorySummaryRepository, NewDynamicMemoryInferenceRound,
-    NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall, Score, dynamic_memory_tool_request,
+    NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall, Score,
 };
 use lettuce_models::{
     ModelKind, ModelProfile, ModelProfileConfig, ModelProfileRepository, ProviderAccount,
@@ -2633,6 +2633,14 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 start: stored_summary.window_end,
                 end: stored_summary.window_end + 1,
             },
+            tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                lettuce_memory::DynamicMemoryToolOptions {
+                    group: false,
+                    supersession_enabled: false,
+                    require_source_message_id: false,
+                },
+                &|key| key.to_owned(),
+            ),
             job_id: failure_job_id,
             now: TimestampMillis::new(NOW.get() + 39),
         })
@@ -7104,6 +7112,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
     let selected_memory_id = MemoryId::new();
     let memory_item = MemoryItem {
         id: selected_memory_id,
+        short_id: lettuce_memory::MemoryShortId::derived(selected_memory_id),
         text: "  Ada keeps the brass harbour key.  ".into(),
         category: MemoryCategory::WorldDetail,
         source_message_id: Some(selected_message_id),
@@ -7160,6 +7169,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
             expected_revision: second_space.revision,
             items: vec![MemoryItem {
                 id: foreign_memory_id,
+                short_id: lettuce_memory::MemoryShortId::derived(foreign_memory_id),
                 text: "Foreign memory.".into(),
                 category: MemoryCategory::Other,
                 source_message_id: Some(foreign_message_id),
@@ -8058,6 +8068,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
                 start: 0,
                 end: 1,
             },
+            tool_request: crate::companion_memory_run::test_memory_tool_request(false, false),
             job_id,
             now: TimestampMillis::new(1_010),
         })

@@ -851,6 +851,7 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
             .expect("manual memory exists");
     let manual_item = MemoryItem {
         id: MemoryId::new(),
+        short_id: lettuce_memory::MemoryShortId::new(900001).expect("short id"),
         text: "Mira keeps a handwritten tea journal.".into(),
         category: MemoryCategory::Preference,
         source_message_id: None,
@@ -1872,6 +1873,7 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
         .expect("memory exists");
     let memory = MemoryItem {
         id: memory_id,
+        short_id: lettuce_memory::MemoryShortId::derived(memory_id),
         text: "Mira prefers tea by the harbor.".into(),
         category: MemoryCategory::Preference,
         source_message_id: None,
@@ -1894,6 +1896,7 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
     };
     let untouched_memory = MemoryItem {
         id: MemoryId::new(),
+        short_id: lettuce_memory::MemoryShortId::new(900002).expect("short id"),
         text: "Mira catalogued the northern lighthouse.".into(),
         category: MemoryCategory::WorldDetail,
         source_message_id: None,
@@ -2118,6 +2121,7 @@ async fn disabled_global_dynamic_memory_renders_direct_memories_like_manual_mode
         .expect("memory exists");
     let cold_memory = MemoryItem {
         id: MemoryId::new(),
+        short_id: lettuce_memory::MemoryShortId::new(900003).expect("short id"),
         text: "Mira hides a spare key under the mat.".into(),
         category: MemoryCategory::WorldDetail,
         source_message_id: None,
@@ -2204,6 +2208,7 @@ async fn chat_runtime_sections_follow_catalog_edits() {
             expected_revision: space.revision,
             items: vec![MemoryItem {
                 id: MemoryId::new(),
+                short_id: lettuce_memory::MemoryShortId::new(900004).expect("short id"),
                 text: "Mira keeps a brass compass.".into(),
                 category: MemoryCategory::WorldDetail,
                 source_message_id: None,

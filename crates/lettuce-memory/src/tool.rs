@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use crate::model::validate_memory_text;
 use crate::{
-    MemoryCategory, MemoryChangeSet, MemoryItem, MemoryPolicy, MemorySpaceSnapshot,
+    MemoryCategory, MemoryChangeSet, MemoryItem, MemoryPolicy, MemoryShortId, MemorySpaceSnapshot,
     MemoryValidationError, Score,
 };
 
@@ -15,93 +15,137 @@ const TOOL_VERSION: u32 = 1;
 const MAX_DONE_SUMMARY_BYTES: usize = 4096;
 const MAX_SUPERSEDED_MEMORIES: usize = 40;
 
-pub fn dynamic_memory_tool_request() -> ToolRequest {
-    dynamic_memory_tool_request_for_run(false, false)
+/// Runtime catalog keys for the text the memory tool contract sends to a model.
+pub const DYNAMIC_MEMORY_TOOL_TEXT_KEYS: [&str; 18] = [
+    "memory_create_tool",
+    "memory_create_tool_group",
+    "memory_text_parameter",
+    "memory_important_parameter",
+    "memory_category_parameter",
+    "memory_source_message_parameter",
+    "memory_supersedes_parameter",
+    "memory_delete_tool",
+    "memory_delete_text_parameter",
+    "memory_delete_text_parameter_group",
+    "memory_delete_confidence_parameter",
+    "memory_pin_tool",
+    "memory_pin_tool_group",
+    "memory_pin_id_parameter",
+    "memory_unpin_tool",
+    "memory_unpin_id_parameter",
+    "memory_done_tool",
+    "memory_done_summary_parameter",
+];
+
+/// Which legacy memory tool contract a run uses. Group chats use the legacy
+/// group contract, which has no source attribution or supersession.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DynamicMemoryToolOptions {
+    pub group: bool,
+    pub supersession_enabled: bool,
+    pub require_source_message_id: bool,
 }
 
-pub fn dynamic_memory_tool_request_with_source_requirement(
-    require_source_message_id: bool,
-) -> ToolRequest {
-    dynamic_memory_tool_request_for_run(false, require_source_message_id)
-}
-
+/// The legacy memory tool contract; `text` resolves a runtime catalog key.
+#[must_use]
 pub fn dynamic_memory_tool_request_for_run(
-    supersession_enabled: bool,
-    require_source_message_id: bool,
+    options: DynamicMemoryToolOptions,
+    text: &dyn Fn(&str) -> String,
 ) -> ToolRequest {
-    let mut create_required = vec!["text", "category"];
-    if require_source_message_id {
-        create_required.push("source_message_id");
-    }
+    let variant = |direct: &str, group: &str| text(if options.group { group } else { direct });
     let mut create_properties = json!({
-        "text": { "type": "string" },
+        "text": { "type": "string", "description": text("memory_text_parameter") },
+        "important": { "type": "boolean", "description": text("memory_important_parameter") },
         "category": {
             "type": "string",
-            "enum": ["character_trait", "relationship", "plot_event", "world_detail", "preference", "other"]
-        },
-        "important": { "type": "boolean" },
-        "source_message_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "ID from the transcript message where this fact or event occurred."
+            "enum": ["character_trait", "relationship", "plot_event", "world_detail", "preference", "other"],
+            "description": text("memory_category_parameter")
         }
     });
-    if supersession_enabled {
-        create_properties["supersedes"] = json!({
-            "type": "array",
-            "items": { "type": "string", "format": "uuid" },
-            "description": "IDs of older memories this entry replaces."
+    if !options.group {
+        create_properties["source_message_id"] = json!({
+            "type": "string",
+            "description": text("memory_source_message_parameter")
         });
     }
+    if options.supersession_enabled && !options.group {
+        create_properties["supersedes"] = json!({
+            "type": "array",
+            "items": { "type": "string" },
+            "description": text("memory_supersedes_parameter")
+        });
+    }
+    let mut create_required = vec!["text", "category"];
+    if options.require_source_message_id && !options.group {
+        create_required.push("source_message_id");
+    }
+    let id_parameter = |key: &str| {
+        json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string", "description": text(key) }
+            },
+            "required": ["id"]
+        })
+    };
     ToolRequest {
         definitions: vec![
             ToolDefinition {
                 name: "create_memory".to_string(),
-                description: Some("Create one concise categorized long-term memory.".to_string()),
+                description: Some(variant("memory_create_tool", "memory_create_tool_group")),
                 parameters: json!({
                     "type": "object",
                     "properties": create_properties,
-                    "required": create_required,
-                    "additionalProperties": false
+                    "required": create_required
                 }),
                 version: TOOL_VERSION,
             },
             ToolDefinition {
                 name: "delete_memory".to_string(),
-                description: Some(
-                    "Delete a memory by stable ID. Low confidence performs a reversible soft delete."
-                        .to_string(),
-                ),
+                description: Some(text("memory_delete_tool")),
                 parameters: json!({
                     "type": "object",
                     "properties": {
-                        "id": { "type": "string", "format": "uuid" },
-                        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+                        "text": {
+                            "type": "string",
+                            "description": variant(
+                                "memory_delete_text_parameter",
+                                "memory_delete_text_parameter_group",
+                            )
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "description": text("memory_delete_confidence_parameter")
+                        }
                     },
-                    "required": ["id"],
-                    "additionalProperties": false
+                    "required": ["text"]
                 }),
                 version: TOOL_VERSION,
             },
             ToolDefinition {
                 name: "pin_memory".to_string(),
-                description: Some("Pin a memory so policy cannot demote or trim it.".to_string()),
-                parameters: id_parameters(),
+                description: Some(variant("memory_pin_tool", "memory_pin_tool_group")),
+                parameters: id_parameter("memory_pin_id_parameter"),
                 version: TOOL_VERSION,
             },
             ToolDefinition {
                 name: "unpin_memory".to_string(),
-                description: Some("Unpin a memory so normal policy applies.".to_string()),
-                parameters: id_parameters(),
+                description: Some(text("memory_unpin_tool")),
+                parameters: id_parameter("memory_unpin_id_parameter"),
                 version: TOOL_VERSION,
             },
             ToolDefinition {
                 name: "done".to_string(),
-                description: Some("Finish the current memory update round.".to_string()),
+                description: Some(text("memory_done_tool")),
                 parameters: json!({
                     "type": "object",
-                    "properties": { "summary": { "type": "string" } },
-                    "additionalProperties": false
+                    "properties": {
+                        "summary": {
+                            "type": "string",
+                            "description": text("memory_done_summary_parameter")
+                        }
+                    },
+                    "required": []
                 }),
                 version: TOOL_VERSION,
             },
@@ -110,13 +154,26 @@ pub fn dynamic_memory_tool_request_for_run(
     }
 }
 
-fn id_parameters() -> Value {
-    json!({
-        "type": "object",
-        "properties": { "id": { "type": "string", "format": "uuid" } },
-        "required": ["id"],
-        "additionalProperties": false
-    })
+/// The contract with every description removed, for comparing a frozen run
+/// request against the options it was built from.
+#[must_use]
+pub fn dynamic_memory_tool_shape(request: &ToolRequest) -> ToolRequest {
+    fn strip(value: &mut Value) {
+        match value {
+            Value::Object(object) => {
+                object.remove("description");
+                object.values_mut().for_each(strip);
+            }
+            Value::Array(values) => values.iter_mut().for_each(strip),
+            _ => {}
+        }
+    }
+    let mut shape = request.clone();
+    for definition in &mut shape.definitions {
+        definition.description = None;
+        strip(&mut definition.parameters);
+    }
+    shape
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,40 +184,64 @@ pub enum MemoryToolArguments {
         category: MemoryCategory,
         important: bool,
         source_message_id: Option<MessageId>,
-        supersedes: Vec<MemoryId>,
+        supersedes: Vec<MemoryReference>,
     },
     DeleteMemory {
-        id: MemoryId,
+        target: MemoryReference,
         confidence: Option<Score>,
     },
     PinMemory {
-        id: MemoryId,
+        target: MemoryReference,
     },
     UnpinMemory {
-        id: MemoryId,
+        target: MemoryReference,
     },
     Done {
         summary: Option<String>,
     },
 }
 
+/// A memory as the model named it: a six-digit short id, a stable id, or (for
+/// deletes) the exact memory text. It resolves against the items current when
+/// the call applies, as legacy did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct MemoryReference(pub String);
+
+impl MemoryReference {
+    fn cleaned(&self) -> &str {
+        self.0
+            .trim()
+            .trim_matches(|character| {
+                matches!(character, '#' | '*' | '"' | '\'' | '[' | ']' | '(' | ')')
+            })
+            .trim()
+    }
+
+    fn resolve_id(&self, items: &[MemoryItem]) -> Option<usize> {
+        let cleaned = self.cleaned();
+        if let Some(short_id) = MemoryShortId::parse(cleaned) {
+            return items.iter().position(|item| item.short_id == short_id);
+        }
+        let id = cleaned.parse::<MemoryId>().ok()?;
+        items.iter().position(|item| item.id == id)
+    }
+
+    fn resolve_id_or_text(&self, items: &[MemoryItem]) -> Option<usize> {
+        self.resolve_id(items)
+            .or_else(|| items.iter().position(|item| item.text == self.0))
+    }
+}
+
 impl MemoryToolArguments {
+    /// Reads arguments as leniently as legacy: unknown keys are ignored and
+    /// optional fields with the wrong shape fall back to their defaults.
     pub fn parse(name: &str, arguments: &Value) -> Result<Self, MemoryToolError> {
         let object = arguments
             .as_object()
             .ok_or(MemoryToolError::ArgumentsMustBeObject)?;
         match name {
             "create_memory" => {
-                ensure_keys(
-                    object,
-                    &[
-                        "text",
-                        "category",
-                        "important",
-                        "source_message_id",
-                        "supersedes",
-                    ],
-                )?;
                 let text = required_string(object, "text")?;
                 validate_memory_text(&text)?;
                 let category = match required_string(object, "category")?.as_str() {
@@ -174,40 +255,22 @@ impl MemoryToolArguments {
                 };
                 let important = object
                     .get("important")
-                    .map(|value| {
-                        value
-                            .as_bool()
-                            .ok_or(MemoryToolError::InvalidField("important"))
-                    })
-                    .transpose()?
+                    .and_then(Value::as_bool)
                     .unwrap_or(false);
                 let source_message_id = object
                     .get("source_message_id")
-                    .map(|value| {
-                        value
-                            .as_str()
-                            .ok_or(MemoryToolError::InvalidField("source_message_id"))?
-                            .parse()
-                            .map_err(|_| MemoryToolError::InvalidField("source_message_id"))
-                    })
-                    .transpose()?;
+                    .and_then(Value::as_str)
+                    .and_then(|value| value.trim().parse().ok());
                 let supersedes = object
                     .get("supersedes")
-                    .map(|value| {
-                        value
-                            .as_array()
-                            .ok_or(MemoryToolError::InvalidField("supersedes"))?
+                    .and_then(Value::as_array)
+                    .map(|values| {
+                        values
                             .iter()
-                            .map(|value| {
-                                value
-                                    .as_str()
-                                    .ok_or(MemoryToolError::InvalidField("supersedes"))?
-                                    .parse()
-                                    .map_err(|_| MemoryToolError::InvalidField("supersedes"))
-                            })
+                            .filter_map(Value::as_str)
+                            .map(|value| MemoryReference(value.to_owned()))
                             .collect()
                     })
-                    .transpose()?
                     .unwrap_or_default();
                 Ok(Self::CreateMemory {
                     text: text.trim().to_string(),
@@ -218,61 +281,37 @@ impl MemoryToolArguments {
                 })
             }
             "delete_memory" => {
-                ensure_keys(object, &["id", "confidence"])?;
-                let id = parse_id(object, "id")?;
+                let target = MemoryReference(required_string(object, "text")?);
                 let confidence = object
                     .get("confidence")
-                    .map(|value| {
-                        value
-                            .as_f64()
-                            .ok_or(MemoryToolError::InvalidField("confidence"))
-                            .and_then(|value| Score::from_ratio(value).map_err(Into::into))
-                    })
-                    .transpose()?;
-                Ok(Self::DeleteMemory { id, confidence })
+                    .and_then(Value::as_f64)
+                    .filter(|value| value.is_finite())
+                    .and_then(|value| Score::from_ratio(value.clamp(0.0, 1.0)).ok());
+                Ok(Self::DeleteMemory { target, confidence })
             }
-            "pin_memory" => {
-                ensure_keys(object, &["id"])?;
-                Ok(Self::PinMemory {
-                    id: parse_id(object, "id")?,
-                })
-            }
-            "unpin_memory" => {
-                ensure_keys(object, &["id"])?;
-                Ok(Self::UnpinMemory {
-                    id: parse_id(object, "id")?,
-                })
-            }
+            "pin_memory" => Ok(Self::PinMemory {
+                target: MemoryReference(required_string(object, "id")?),
+            }),
+            "unpin_memory" => Ok(Self::UnpinMemory {
+                target: MemoryReference(required_string(object, "id")?),
+            }),
             "done" => {
-                ensure_keys(object, &["summary"])?;
-                let summary = object
-                    .get("summary")
-                    .map(|value| {
-                        let summary = value
-                            .as_str()
-                            .ok_or(MemoryToolError::InvalidField("summary"))?
-                            .trim();
-                        if summary.len() > MAX_DONE_SUMMARY_BYTES {
-                            return Err(MemoryToolError::SummaryTooLarge);
+                let summary = object.get("summary").and_then(Value::as_str).map(|value| {
+                    let mut summary = value.trim();
+                    while summary.len() > MAX_DONE_SUMMARY_BYTES {
+                        let mut end = MAX_DONE_SUMMARY_BYTES;
+                        while !summary.is_char_boundary(end) {
+                            end -= 1;
                         }
-                        Ok(summary.to_string())
-                    })
-                    .transpose()?;
+                        summary = &summary[..end];
+                    }
+                    summary.to_string()
+                });
                 Ok(Self::Done { summary })
             }
             _ => Err(MemoryToolError::UnsupportedTool),
         }
     }
-}
-
-fn ensure_keys(
-    object: &serde_json::Map<String, Value>,
-    allowed: &[&str],
-) -> Result<(), MemoryToolError> {
-    if object.keys().any(|key| !allowed.contains(&key.as_str())) {
-        return Err(MemoryToolError::UnknownField);
-    }
-    Ok(())
 }
 
 fn required_string(
@@ -284,15 +323,6 @@ fn required_string(
         .and_then(Value::as_str)
         .map(str::to_string)
         .ok_or(MemoryToolError::MissingField(key))
-}
-
-fn parse_id(
-    object: &serde_json::Map<String, Value>,
-    key: &'static str,
-) -> Result<MemoryId, MemoryToolError> {
-    required_string(object, key)?
-        .parse()
-        .map_err(|_| MemoryToolError::InvalidField(key))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -373,7 +403,7 @@ pub enum MemoryToolOutcome {
         id: MemoryId,
     },
     TargetNotFound {
-        id: MemoryId,
+        reference: MemoryReference,
     },
     Done {
         summary: Option<String>,
@@ -441,16 +471,20 @@ impl MemoryToolReducer {
                         (*source_message_id, call.source_role, call.observed_at),
                         call.create.clone(),
                     ),
-                    MemoryToolArguments::DeleteMemory { id, confidence } => apply_delete(
+                    MemoryToolArguments::DeleteMemory { target, confidence } => apply_delete(
                         &mut items,
-                        *id,
+                        target,
                         confidence.unwrap_or(policy.delete_confidence_default),
                         policy,
                         hard_delete_limit,
                         &mut hard_delete_count,
                     ),
-                    MemoryToolArguments::PinMemory { id } => apply_pin(&mut items, *id, true),
-                    MemoryToolArguments::UnpinMemory { id } => apply_pin(&mut items, *id, false),
+                    MemoryToolArguments::PinMemory { target } => {
+                        apply_pin(&mut items, target, true)
+                    }
+                    MemoryToolArguments::UnpinMemory { target } => {
+                        apply_pin(&mut items, target, false)
+                    }
                     MemoryToolArguments::Done { summary } => {
                         stopped = true;
                         MemoryToolOutcome::Done {
@@ -491,7 +525,7 @@ fn apply_create(
     text: &str,
     category: MemoryCategory,
     important: bool,
-    requested_supersedes: &[MemoryId],
+    requested_supersedes: &[MemoryReference],
     observed_context: (
         Option<MessageId>,
         Option<lettuce_conversations::MessageRole>,
@@ -523,18 +557,24 @@ fn apply_create(
         return MemoryToolOutcome::DuplicateSkipped { existing_id };
     }
 
-    let supersedes = requested_supersedes
-        .iter()
-        .copied()
-        .filter(|id| {
-            *id != preparation.id
-                && items
-                    .iter()
-                    .any(|item| item.id == *id && item.superseded_by.is_none())
-        })
-        .collect::<Vec<_>>();
+    let mut supersedes = Vec::new();
+    for reference in requested_supersedes {
+        if let Some(index) = reference.resolve_id(items) {
+            let id = items[index].id;
+            if id != preparation.id
+                && items[index].superseded_by.is_none()
+                && !supersedes.contains(&id)
+            {
+                supersedes.push(id);
+            }
+        }
+    }
+    let short_id = MemoryShortId::allocate(preparation.id, |candidate| {
+        items.iter().any(|item| item.short_id == candidate)
+    });
     items.push(MemoryItem {
         id: preparation.id,
+        short_id,
         text: text.to_string(),
         category,
         source_message_id,
@@ -660,15 +700,18 @@ fn keywords(value: &str) -> HashSet<String> {
 
 fn apply_delete(
     items: &mut Vec<MemoryItem>,
-    id: MemoryId,
+    target: &MemoryReference,
     confidence: Score,
     policy: &MemoryPolicy,
     hard_delete_limit: usize,
     hard_delete_count: &mut usize,
 ) -> MemoryToolOutcome {
-    let Some(index) = items.iter().position(|item| item.id == id) else {
-        return MemoryToolOutcome::TargetNotFound { id };
+    let Some(index) = target.resolve_id_or_text(items) else {
+        return MemoryToolOutcome::TargetNotFound {
+            reference: target.clone(),
+        };
     };
+    let id = items[index].id;
     let hard_requested = confidence >= Score::HARD_DELETE_THRESHOLD;
     if !hard_requested || *hard_delete_count >= hard_delete_limit {
         items[index].is_cold = true;
@@ -695,10 +738,18 @@ fn hard_delete_limit(initial_count: usize, ratio: Score) -> usize {
     scaled.max(1)
 }
 
-fn apply_pin(items: &mut [MemoryItem], id: MemoryId, pinned: bool) -> MemoryToolOutcome {
-    let Some(item) = items.iter_mut().find(|item| item.id == id) else {
-        return MemoryToolOutcome::TargetNotFound { id };
+fn apply_pin(
+    items: &mut [MemoryItem],
+    target: &MemoryReference,
+    pinned: bool,
+) -> MemoryToolOutcome {
+    let Some(index) = target.resolve_id(items) else {
+        return MemoryToolOutcome::TargetNotFound {
+            reference: target.clone(),
+        };
     };
+    let item = &mut items[index];
+    let id = item.id;
     item.is_pinned = pinned;
     if pinned {
         item.is_cold = false;
@@ -823,11 +874,32 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        CreateMemoryPreparation, MemoryToolArguments, MemoryToolCall, MemoryToolOutcome,
-        MemoryToolReducer, SoftDeleteReason, dynamic_memory_tool_request,
-        dynamic_memory_tool_request_for_run, dynamic_memory_tool_request_with_source_requirement,
+        CreateMemoryPreparation, DynamicMemoryToolOptions, MemoryReference, MemoryToolArguments,
+        MemoryToolCall, MemoryToolOutcome, MemoryToolReducer, SoftDeleteReason,
+        dynamic_memory_tool_request_for_run,
     };
-    use crate::{MemoryCategory, MemoryItem, MemoryPolicy, MemorySpaceSnapshot, Score};
+    use crate::{
+        MemoryCategory, MemoryItem, MemoryPolicy, MemoryShortId, MemorySpaceSnapshot, Score,
+    };
+
+    fn tool_request(
+        group: bool,
+        supersession_enabled: bool,
+        require_source_message_id: bool,
+    ) -> lettuce_conversations::ToolRequest {
+        dynamic_memory_tool_request_for_run(
+            DynamicMemoryToolOptions {
+                group,
+                supersession_enabled,
+                require_source_message_id,
+            },
+            &|key| key.to_owned(),
+        )
+    }
+
+    fn reference(id: MemoryId) -> MemoryReference {
+        MemoryReference(id.to_string())
+    }
 
     fn score(points: u16) -> Score {
         match Score::from_basis_points(points) {
@@ -847,8 +919,10 @@ mod tests {
     }
 
     fn item(text: &str, tokens: u32, accessed: i64, pinned: bool) -> MemoryItem {
+        let id = MemoryId::new();
         MemoryItem {
-            id: MemoryId::new(),
+            id,
+            short_id: MemoryShortId::derived(id),
             text: text.to_string(),
             category: MemoryCategory::Other,
             source_message_id: None,
@@ -891,7 +965,7 @@ mod tests {
 
     #[test]
     fn declarations_are_versioned_and_required() {
-        let request = dynamic_memory_tool_request();
+        let request = tool_request(false, false, false);
         assert!(request.validate().is_ok());
         assert!(
             request
@@ -913,7 +987,7 @@ mod tests {
                 .any(|field| field == "source_message_id")
         );
 
-        let time_aware = dynamic_memory_tool_request_with_source_requirement(true);
+        let time_aware = tool_request(false, false, true);
         let create_required = time_aware.definitions[0].parameters["required"]
             .as_array()
             .expect("required fields");
@@ -924,32 +998,129 @@ mod tests {
         );
 
         assert!(
-            dynamic_memory_tool_request_for_run(true, false).definitions[0].parameters
-                ["properties"]
+            tool_request(false, true, false).definitions[0].parameters["properties"]
                 .get("supersedes")
                 .is_some()
         );
         assert!(
-            dynamic_memory_tool_request_for_run(false, false).definitions[0].parameters
-                ["properties"]
+            tool_request(false, false, false).definitions[0].parameters["properties"]
                 .get("supersedes")
                 .is_none()
         );
     }
 
     #[test]
-    fn strict_arguments_use_stable_ids() {
+    fn legacy_references_resolve_by_short_id_or_exact_text() {
+        let first = item("Mira likes tea.", 2, 1, false);
+        let second = item("Mira keeps a brass key.", 2, 2, false);
+        let third = item("Mira fears storms.", 2, 3, false);
+        let (first_short, second_id, third_short) = (first.short_id, second.id, third.short_id);
+        let state = snapshot(vec![first, second, third]);
+        let calls = vec![
+            call(MemoryToolArguments::PinMemory {
+                target: MemoryReference(format!("#{first_short}")),
+            }),
+            call(MemoryToolArguments::DeleteMemory {
+                target: MemoryReference("Mira keeps a brass key.".into()),
+                confidence: Some(Score::FULL),
+            }),
+            call(MemoryToolArguments::DeleteMemory {
+                target: MemoryReference(format!("[{third_short}]")),
+                confidence: Some(score(1_000)),
+            }),
+            call(MemoryToolArguments::UnpinMemory {
+                target: MemoryReference("999999x".into()),
+            }),
+        ];
+        let result = MemoryToolReducer
+            .reduce(&state, &policy(), &calls)
+            .expect("reduce");
+        assert!(matches!(
+            result.results[0].outcome,
+            MemoryToolOutcome::Pinned { .. }
+        ));
+        assert!(matches!(
+            result.results[1].outcome,
+            MemoryToolOutcome::Deleted { id } if id == second_id
+        ));
+        assert!(matches!(
+            result.results[2].outcome,
+            MemoryToolOutcome::SoftDeleted { .. }
+        ));
+        assert!(matches!(
+            result.results[3].outcome,
+            MemoryToolOutcome::TargetNotFound { .. }
+        ));
+    }
+
+    #[test]
+    fn short_ids_are_six_digits_and_probe_past_collisions() {
         let id = MemoryId::new();
-        let parsed =
-            MemoryToolArguments::parse("delete_memory", &json!({ "id": id, "confidence": 0.75 }));
+        let derived = MemoryShortId::derived(id);
+        assert_eq!(derived.to_string().len(), 6);
+        assert_eq!(MemoryShortId::parse(&derived.to_string()), Some(derived));
+        assert_eq!(MemoryShortId::parse("12345"), None);
+        assert_eq!(MemoryShortId::parse("12345a"), None);
+        let next = MemoryShortId::allocate(id, |candidate| candidate == derived);
+        assert_eq!(next.get(), (derived.get() + 1) % MemoryShortId::SPACE);
+        let group = tool_request(true, true, true);
+        assert!(
+            group.definitions[0].parameters["properties"]
+                .get("source_message_id")
+                .is_none()
+        );
+        assert!(
+            group.definitions[0].parameters["properties"]
+                .get("supersedes")
+                .is_none()
+        );
+        assert_eq!(
+            group.definitions[0].parameters["required"],
+            json!(["text", "category"])
+        );
+        assert_eq!(
+            MemoryToolArguments::parse(
+                "delete_memory",
+                &json!({ "text": "123456", "confidence": 1.5, "reason": "stale" })
+            ),
+            Ok(MemoryToolArguments::DeleteMemory {
+                target: MemoryReference("123456".into()),
+                confidence: Some(Score::FULL),
+            })
+        );
+        assert!(matches!(
+            MemoryToolArguments::parse(
+                "create_memory",
+                &json!({
+                    "text": "Mira likes tea.",
+                    "category": "preference",
+                    "source_message_id": "1",
+                    "important": "yes",
+                    "note": "extra"
+                })
+            ),
+            Ok(MemoryToolArguments::CreateMemory {
+                source_message_id: None,
+                important: false,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn arguments_keep_legacy_references() {
+        let parsed = MemoryToolArguments::parse(
+            "delete_memory",
+            &json!({ "text": "[123456]", "confidence": 0.75 }),
+        );
         assert_eq!(
             parsed,
             Ok(MemoryToolArguments::DeleteMemory {
-                id,
+                target: MemoryReference("[123456]".into()),
                 confidence: Some(score(7_500)),
             })
         );
-        assert!(MemoryToolArguments::parse("delete_memory", &json!({ "text": "legacy" })).is_err());
+        assert!(MemoryToolArguments::parse("delete_memory", &json!({ "id": "123456" })).is_err());
 
         let source_message_id = MessageId::new();
         assert_eq!(
@@ -1003,6 +1174,40 @@ mod tests {
     }
 
     #[test]
+    fn create_probes_past_an_existing_short_id() {
+        let created_id = MemoryId::new();
+        let mut existing = item("Mira likes tea.", 2, 1, false);
+        existing.short_id = MemoryShortId::derived(created_id);
+        let mut create = call(MemoryToolArguments::CreateMemory {
+            text: "Mira owns a lighthouse.".to_owned(),
+            category: MemoryCategory::WorldDetail,
+            important: false,
+            source_message_id: None,
+            supersedes: Vec::new(),
+        });
+        create.create = Some(CreateMemoryPreparation {
+            id: created_id,
+            token_count: 4,
+            created_at: TimestampMillis::new(2),
+            semantic_duplicate: None,
+        });
+        let result = MemoryToolReducer
+            .reduce(&snapshot(vec![existing]), &policy(), &[create])
+            .expect("reduce create");
+        let created = result
+            .change
+            .expect("create change")
+            .items
+            .into_iter()
+            .find(|item| item.id == created_id)
+            .expect("created memory");
+        assert_eq!(
+            created.short_id.get(),
+            (MemoryShortId::derived(created_id).get() + 1) % MemoryShortId::SPACE
+        );
+    }
+
+    #[test]
     fn create_supersedes_only_existing_active_memories() {
         let active = item("Mira lives in Ankara.", 4, 1, false);
         let active_id = active.id;
@@ -1017,7 +1222,11 @@ mod tests {
             category: MemoryCategory::WorldDetail,
             important: false,
             source_message_id: None,
-            supersedes: vec![active_id, already_superseded_id, MemoryId::new()],
+            supersedes: vec![
+                reference(active_id),
+                reference(already_superseded_id),
+                reference(MemoryId::new()),
+            ],
         });
         create.create = Some(CreateMemoryPreparation {
             id: created_id,
@@ -1072,7 +1281,7 @@ mod tests {
             category: MemoryCategory::WorldDetail,
             important: false,
             source_message_id: None,
-            supersedes: vec![active_id],
+            supersedes: vec![reference(active_id)],
         });
         create.create = Some(CreateMemoryPreparation {
             id: MemoryId::new(),
@@ -1202,11 +1411,11 @@ mod tests {
         let state = snapshot(vec![first, second, third]);
         let calls = vec![
             call(MemoryToolArguments::DeleteMemory {
-                id: first_id,
+                target: reference(first_id),
                 confidence: Some(Score::FULL),
             }),
             call(MemoryToolArguments::DeleteMemory {
-                id: second_id,
+                target: reference(second_id),
                 confidence: Some(Score::FULL),
             }),
         ];
@@ -1240,11 +1449,11 @@ mod tests {
         let state = snapshot(vec![first, second, cold_one, cold_two]);
         let calls = vec![
             call(MemoryToolArguments::DeleteMemory {
-                id: first_id,
+                target: reference(first_id),
                 confidence: Some(Score::FULL),
             }),
             call(MemoryToolArguments::DeleteMemory {
-                id: second_id,
+                target: reference(second_id),
                 confidence: Some(Score::FULL),
             }),
         ];
@@ -1272,7 +1481,9 @@ mod tests {
             &policy(),
             &[
                 call(MemoryToolArguments::Done { summary: None }),
-                call(MemoryToolArguments::UnpinMemory { id: pinned_id }),
+                call(MemoryToolArguments::UnpinMemory {
+                    target: reference(pinned_id),
+                }),
             ],
         ) {
             Ok(result) => result,
@@ -1299,9 +1510,15 @@ mod tests {
             &snapshot(vec![existing]),
             &policy(),
             &[
-                call(MemoryToolArguments::PinMemory { id: existing_id }),
-                call(MemoryToolArguments::UnpinMemory { id: existing_id }),
-                call(MemoryToolArguments::PinMemory { id: missing_id }),
+                call(MemoryToolArguments::PinMemory {
+                    target: reference(existing_id),
+                }),
+                call(MemoryToolArguments::UnpinMemory {
+                    target: reference(existing_id),
+                }),
+                call(MemoryToolArguments::PinMemory {
+                    target: reference(missing_id),
+                }),
             ],
         ) {
             Ok(result) => result,
@@ -1317,7 +1534,7 @@ mod tests {
         ));
         assert!(matches!(
             result.results[2].outcome,
-            MemoryToolOutcome::TargetNotFound { id } if id == missing_id
+            MemoryToolOutcome::TargetNotFound { reference: ref missing } if *missing == reference(missing_id)
         ));
     }
 

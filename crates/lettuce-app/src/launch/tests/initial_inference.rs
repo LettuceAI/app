@@ -192,7 +192,9 @@ fn fixture(database: &Database) -> (ConversationId, InferenceRequest, JobHandle)
             cancellation: Some(job.id),
             stream_sink: None,
             media_grants: vec![],
-            tools: Some(dynamic_memory_tool_request()),
+            tools: Some(crate::companion_memory_run::test_memory_tool_request(
+                false, false,
+            )),
         },
         JobHandle::new(job.id),
     )

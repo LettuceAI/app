@@ -1246,6 +1246,7 @@ mod tests {
                 expected_revision: rewind.memory.revision,
                 items: vec![MemoryItem {
                     id: memory_id,
+                    short_id: lettuce_memory::MemoryShortId::derived(memory_id),
                     text: "The user asked to preserve full backup state.".into(),
                     category: MemoryCategory::Preference,
                     source_message_id: Some(effect_user_message_id),
@@ -1419,6 +1420,14 @@ mod tests {
                     start: 0,
                     end: 1,
                 },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: false,
+                        supersession_enabled: true,
+                        require_source_message_id: true,
+                    },
+                    &|key| key.to_owned(),
+                ),
                 job_id: terminal_job.id,
                 now: TimestampMillis::new(33),
             },
@@ -1499,6 +1508,14 @@ mod tests {
                     start: 0,
                     end: 1,
                 },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: false,
+                        supersession_enabled: false,
+                        require_source_message_id: false,
+                    },
+                    &|key| key.to_owned(),
+                ),
                 job_id: pending_job.id,
                 now: TimestampMillis::new(37),
             },

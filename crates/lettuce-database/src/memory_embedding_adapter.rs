@@ -207,6 +207,7 @@ mod tests {
     fn item(id: MemoryId, text: &str) -> MemoryItem {
         MemoryItem {
             id,
+            short_id: lettuce_memory::MemoryShortId::derived(id),
             text: text.to_owned(),
             category: MemoryCategory::Other,
             source_message_id: None,

@@ -496,7 +496,7 @@ mod tests {
         assert!(matches!(
             &calls[0].arguments,
             MemoryToolArguments::CreateMemory { supersedes, .. }
-                if supersedes == &[requested_supersede]
+                if supersedes == &[lettuce_memory::MemoryReference(requested_supersede.to_string())]
         ));
 
         let unanchored = evidence(

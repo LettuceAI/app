@@ -73,6 +73,7 @@ mod tests {
         let observed_at = TimestampMillis::new(1_700_000_000_000);
         let mut memory = MemoryItem {
             id: MemoryId::new(),
+            short_id: lettuce_memory::MemoryShortId::new(900001).expect("short id"),
             text: "Mira prefers tea".into(),
             category: MemoryCategory::Preference,
             source_message_id: None,

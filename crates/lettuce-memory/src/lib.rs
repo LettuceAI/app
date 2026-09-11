@@ -10,7 +10,7 @@ mod tool;
 
 pub use model::{
     DynamicMemoryPendingApproval, DynamicMemoryRunMode, MAX_MEMORY_SUMMARY_BYTES,
-    MAX_MEMORY_SUMMARY_SOURCE_MESSAGES, MemoryCategory, MemoryItem, MemoryPolicy,
+    MAX_MEMORY_SUMMARY_SOURCE_MESSAGES, MemoryCategory, MemoryItem, MemoryPolicy, MemoryShortId,
     MemorySpaceSnapshot, MemorySummary, MemoryValidationError, Score, memory_revision_id,
 };
 pub use port::{
@@ -36,8 +36,9 @@ pub use structured_fallback::{
     StructuredFallbackError, memory_operations_fallback_prompt, parse_memory_operations_from_text,
 };
 pub use tool::{
-    CreateMemoryPreparation, MemoryBatchResult, MemoryToolArguments, MemoryToolCall,
-    MemoryToolError, MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
-    SemanticDuplicateEvidence, SoftDeleteReason, dynamic_memory_tool_request,
-    dynamic_memory_tool_request_for_run, dynamic_memory_tool_request_with_source_requirement,
+    CreateMemoryPreparation, DYNAMIC_MEMORY_TOOL_TEXT_KEYS, DynamicMemoryToolOptions,
+    MemoryBatchResult, MemoryReference, MemoryToolArguments, MemoryToolCall, MemoryToolError,
+    MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
+    SemanticDuplicateEvidence, SoftDeleteReason, dynamic_memory_tool_request_for_run,
+    dynamic_memory_tool_shape,
 };

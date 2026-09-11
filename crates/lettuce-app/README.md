@@ -739,6 +739,10 @@ display name when there is none, where legacy wrote "user" / "the user
 persona"). A missing runtime document
 fails the turn with `RuntimeTextUnavailable`.
 
+Post-turn memory runs freeze the legacy memory tool contract with the
+descriptions of the built-in `prompt_app_memory_runtime` document (group runs
+use the legacy group wording and no `source_message_id`), and the memory
+manager input lists memories as `[six-digit id] text`.
 The reply itself carries no memory tools: legacy writes memories in
 a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`). Plain direct
 and group conversations now admit that cycle through

@@ -411,6 +411,8 @@ failure/cancellation removes an unconsumed seed, while interrupted recovery
 keeps it with the same turn. Ready/failed settlement stores typed memory IDs,
 the exact source-message window, and bounded summary data behind the
 companion-owned repository port. Terminal effects are immutable.
+Memory items store their six-digit `short_id` with a per-space uniqueness
+constraint.
 Migration 9 stores one immutable dynamic-memory retrieval-access receipt per
 generation attempt. Its transaction verifies conversation, attempt, space,
 revision and every selected active memory before applying the legacy cold

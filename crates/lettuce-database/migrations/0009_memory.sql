@@ -49,6 +49,7 @@ CREATE TABLE memory_summary_source_messages (
 CREATE TABLE memory_items (
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     id TEXT NOT NULL UNIQUE,
+    short_id INTEGER NOT NULL CHECK (short_id BETWEEN 0 AND 999999),
     ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 4095),
     text TEXT NOT NULL CHECK (
         length(trim(text)) > 0
@@ -77,6 +78,7 @@ CREATE TABLE memory_items (
     last_accessed_at INTEGER NOT NULL,
     PRIMARY KEY (space_id, id),
     UNIQUE (space_id, ordinal),
+    UNIQUE (space_id, short_id),
     CHECK (NOT (is_pinned = 1 AND is_cold = 1)),
     CHECK (
         (source_role IS NULL AND observed_at IS NULL AND observed_time_precision IS NULL)

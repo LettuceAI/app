@@ -40,6 +40,8 @@ pub enum CompanionPostTurnMemoryRunError {
     Memory(MemoryRepositoryError),
     #[error("post-turn memory run failed: {0}")]
     Run(DynamicMemoryRunRepositoryError),
+    #[error("post-turn memory runtime prompt text is unavailable")]
+    RuntimeText,
 }
 
 #[derive(Debug)]
@@ -50,7 +52,11 @@ pub struct CompanionPostTurnMemoryRunCoordinator<'a, R: ?Sized, C: ?Sized> {
 
 impl<
     'a,
-    R: DynamicMemoryRunRepository + MemoryRepository + MemorySummaryRepository + ?Sized,
+    R: DynamicMemoryRunRepository
+        + MemoryRepository
+        + MemorySummaryRepository
+        + crate::runtime_text::RuntimeTextSource
+        + ?Sized,
     C: ConversationReader + ?Sized,
 > CompanionPostTurnMemoryRunCoordinator<'a, R, C>
 {
@@ -161,6 +167,21 @@ impl<
                     conversation_id,
                     expected_messages,
                 )?;
+                let group = self
+                    .conversations
+                    .get(conversation_id)
+                    .map_err(CompanionPostTurnMemoryRunError::Conversation)?
+                    .conversation
+                    .kind
+                    .is_group();
+                let tool_request = memory_tool_request(
+                    self.repository,
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group,
+                        supersession_enabled,
+                        require_source_message_id: time_awareness_enabled,
+                    },
+                )?;
                 let attempt_id = stable_attempt_id(run_id, 0, handle.id());
                 let DynamicMemoryRunAttemptAdmission { run, attempt } = self
                     .repository
@@ -176,6 +197,7 @@ impl<
                         supersession_enabled,
                         structured_fallback_format,
                         summary_window,
+                        tool_request,
                         job_id: handle.id(),
                         now,
                     })
@@ -273,6 +295,44 @@ fn expected_effect_messages(
         .batch
         .source_messages()
         .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)
+}
+
+/// A key-labelled memory tool contract for tests that do not read the catalog.
+#[cfg(test)]
+pub(crate) fn test_memory_tool_request(
+    supersession_enabled: bool,
+    require_source_message_id: bool,
+) -> lettuce_conversations::ToolRequest {
+    lettuce_memory::dynamic_memory_tool_request_for_run(
+        lettuce_memory::DynamicMemoryToolOptions {
+            group: false,
+            supersession_enabled,
+            require_source_message_id,
+        },
+        &|key| key.to_owned(),
+    )
+}
+
+/// The legacy memory tool contract with its catalog descriptions.
+pub(crate) fn memory_tool_request<R: crate::runtime_text::RuntimeTextSource + ?Sized>(
+    repository: &R,
+    options: lettuce_memory::DynamicMemoryToolOptions,
+) -> Result<lettuce_conversations::ToolRequest, CompanionPostTurnMemoryRunError> {
+    let text =
+        crate::runtime_text::RuntimeText::load(repository, crate::BuiltInPromptId::MemoryRuntime)
+            .map_err(|_| CompanionPostTurnMemoryRunError::RuntimeText)?;
+    let texts = lettuce_memory::DYNAMIC_MEMORY_TOOL_TEXT_KEYS
+        .iter()
+        .map(|key| {
+            text.render_with(key, [])
+                .map(|value| (*key, value))
+                .map_err(|_| CompanionPostTurnMemoryRunError::RuntimeText)
+        })
+        .collect::<Result<HashMap<_, _>, _>>()?;
+    Ok(lettuce_memory::dynamic_memory_tool_request_for_run(
+        options,
+        &|key| texts.get(key).cloned().unwrap_or_default(),
+    ))
 }
 
 fn resolve_source_messages<C: ConversationReader + ?Sized>(
@@ -601,6 +661,16 @@ mod tests {
         }
     }
 
+    impl crate::runtime_text::RuntimeTextSource for Repository {
+        fn runtime_text_document(
+            &self,
+            id: crate::BuiltInPromptId,
+        ) -> Result<Option<lettuce_context::PromptDocument>, lettuce_context::PromptRepositoryError>
+        {
+            Ok(Some(crate::built_in_prompts::seed_document(id)))
+        }
+    }
+
     impl DynamicMemoryRunRepository for Repository {
         fn admit_dynamic_memory_run_attempt(
             &self,
@@ -620,10 +690,7 @@ mod tests {
                 supersession_enabled: input.supersession_enabled,
                 structured_fallback_format: input.structured_fallback_format,
                 summary_window: input.summary_window,
-                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
-                    input.supersession_enabled,
-                    input.time_awareness_enabled,
-                ),
+                tool_request: input.tool_request,
                 created_at: input.now,
             };
             let attempt = DynamicMemoryAttempt {
@@ -1119,8 +1186,14 @@ mod tests {
             }
         );
         assert_eq!(
-            first.run.tool_request,
-            lettuce_memory::dynamic_memory_tool_request_for_run(true, true)
+            lettuce_memory::dynamic_memory_tool_shape(&first.run.tool_request),
+            lettuce_memory::dynamic_memory_tool_shape(&test_memory_tool_request(true, true))
+        );
+        assert_eq!(
+            first.run.tool_request.definitions[1].description.as_deref(),
+            Some(
+                "Delete an outdated or redundant memory. Low confidence (< 0.7) triggers soft-delete to cold storage."
+            )
         );
         *repository.summary.lock().expect("summary") = Some(lettuce_memory::MemorySummary {
             space_id: repository.snapshot.id,

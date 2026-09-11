@@ -3,8 +3,8 @@ use std::str::FromStr;
 use lettuce_memory::{
     DynamicMemoryApprovalRepository, DynamicMemoryPendingApproval, MemoryCategory, MemoryChangeSet,
     MemoryItem, MemoryRepository, MemoryRepositoryError, MemoryRetrievalAccess,
-    MemoryRetrievalAccessReceipt, MemoryRetrievalRepository, MemorySpaceSnapshot, MemorySummary,
-    MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository, Score,
+    MemoryRetrievalAccessReceipt, MemoryRetrievalRepository, MemoryShortId, MemorySpaceSnapshot,
+    MemorySummary, MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository, Score,
 };
 use lettuce_types::{ConversationId, MemorySpaceId, MessageId, Revision, TimestampMillis};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
@@ -12,7 +12,7 @@ use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 use crate::Database;
 
 const SELECT_ITEM: &str = "
-    SELECT id, text, category, source_message_id, source_role, observed_at, observed_time_precision,
+    SELECT id, short_id, text, category, source_message_id, source_role, observed_at, observed_time_precision,
            superseded_by, superseded_at, supersedes_json, token_count, is_cold, is_pinned,
            importance, persistence_importance, prompt_importance, volatility,
            access_count, created_at, last_accessed_at
@@ -78,8 +78,8 @@ pub(super) fn insert_items(
                     space_id, id, ordinal, text, category, source_message_id, source_role, observed_at, observed_time_precision,
                     superseded_by, superseded_at, supersedes_json, token_count, is_cold, is_pinned,
                     importance, persistence_importance, prompt_importance, volatility,
-                    access_count, created_at, last_accessed_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+                    access_count, created_at, last_accessed_at, short_id
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
                 params![
                     space_id.to_string(),
                     item.id.to_string(),
@@ -107,6 +107,7 @@ pub(super) fn insert_items(
                     i64::from(item.access_count),
                     item.created_at.get(),
                     item.last_accessed_at.get(),
+                    i64::from(item.short_id.get()),
                 ],
             )
             .map_err(storage)?;
@@ -157,45 +158,47 @@ pub(super) fn get_in(
         while let Some(row) = rows.next().map_err(storage)? {
             items.push(MemoryItem {
                 id: parse_id(row.get::<_, String>(0).map_err(storage)?)?,
-                text: row.get(1).map_err(storage)?,
-                category: parse_category(&row.get::<_, String>(2).map_err(storage)?)?,
+                short_id: MemoryShortId::new(row.get(1).map_err(storage)?)
+                    .ok_or_else(|| storage("invalid memory short id"))?,
+                text: row.get(2).map_err(storage)?,
+                category: parse_category(&row.get::<_, String>(3).map_err(storage)?)?,
                 source_message_id: row
-                    .get::<_, Option<String>>(3)
+                    .get::<_, Option<String>>(4)
                     .map_err(storage)?
                     .map(parse_id)
                     .transpose()?,
-                source_role: match row.get::<_, Option<String>>(4).map_err(storage)?.as_deref() {
+                source_role: match row.get::<_, Option<String>>(5).map_err(storage)?.as_deref() {
                     Some("user") => Some(lettuce_conversations::MessageRole::User),
                     Some("assistant") => Some(lettuce_conversations::MessageRole::Assistant),
                     None => None,
                     _ => return Err(storage("invalid memory source role")),
                 },
                 observed_at: row
-                    .get::<_, Option<i64>>(5)
+                    .get::<_, Option<i64>>(6)
                     .map_err(storage)?
                     .map(TimestampMillis::new),
-                observed_time_precision: row.get(6).map_err(storage)?,
+                observed_time_precision: row.get(7).map_err(storage)?,
                 superseded_by: row
-                    .get::<_, Option<String>>(7)
+                    .get::<_, Option<String>>(8)
                     .map_err(storage)?
                     .map(parse_id)
                     .transpose()?,
                 superseded_at: row
-                    .get::<_, Option<i64>>(8)
+                    .get::<_, Option<i64>>(9)
                     .map_err(storage)?
                     .map(TimestampMillis::new),
-                supersedes: serde_json::from_str(&row.get::<_, String>(9).map_err(storage)?)
+                supersedes: serde_json::from_str(&row.get::<_, String>(10).map_err(storage)?)
                     .map_err(storage)?,
-                token_count: row.get(10).map_err(storage)?,
-                is_cold: row.get(11).map_err(storage)?,
-                is_pinned: row.get(12).map_err(storage)?,
-                importance: parse_score(row.get(13).map_err(storage)?)?,
-                persistence_importance: parse_score(row.get(14).map_err(storage)?)?,
-                prompt_importance: parse_score(row.get(15).map_err(storage)?)?,
-                volatility: parse_score(row.get(16).map_err(storage)?)?,
-                access_count: row.get(17).map_err(storage)?,
-                created_at: TimestampMillis::new(row.get(18).map_err(storage)?),
-                last_accessed_at: TimestampMillis::new(row.get(19).map_err(storage)?),
+                token_count: row.get(11).map_err(storage)?,
+                is_cold: row.get(12).map_err(storage)?,
+                is_pinned: row.get(13).map_err(storage)?,
+                importance: parse_score(row.get(14).map_err(storage)?)?,
+                persistence_importance: parse_score(row.get(15).map_err(storage)?)?,
+                prompt_importance: parse_score(row.get(16).map_err(storage)?)?,
+                volatility: parse_score(row.get(17).map_err(storage)?)?,
+                access_count: row.get(18).map_err(storage)?,
+                created_at: TimestampMillis::new(row.get(19).map_err(storage)?),
+                last_accessed_at: TimestampMillis::new(row.get(20).map_err(storage)?),
             });
         }
         items
@@ -856,6 +859,7 @@ mod tests {
     fn item(id: MemoryId, text: &str) -> MemoryItem {
         MemoryItem {
             id,
+            short_id: lettuce_memory::MemoryShortId::derived(id),
             text: text.to_owned(),
             category: MemoryCategory::Other,
             source_message_id: None,

@@ -41,10 +41,11 @@ pub enum BuiltInPromptId {
     ChatRuntime,
     GroupSpeakerSelection,
     LorebookRuntime,
+    MemoryRuntime,
 }
 
 impl BuiltInPromptId {
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 28] = [
         Self::AppDefault,
         Self::LocalRoleplay,
         Self::Companion,
@@ -72,6 +73,7 @@ impl BuiltInPromptId {
         Self::ChatRuntime,
         Self::GroupSpeakerSelection,
         Self::LorebookRuntime,
+        Self::MemoryRuntime,
     ];
 
     #[must_use]
@@ -104,6 +106,7 @@ impl BuiltInPromptId {
             Self::ChatRuntime => "prompt_app_chat_runtime",
             Self::GroupSpeakerSelection => "prompt_app_group_speaker_selection",
             Self::LorebookRuntime => "prompt_app_lorebook_runtime",
+            Self::MemoryRuntime => "prompt_app_memory_runtime",
         }
     }
 
@@ -140,9 +143,10 @@ impl BuiltInPromptId {
             Self::CompanionSoulWriter => PromptPurpose::CompanionSoulWriter,
             Self::CompanionGrowthcycle => PromptPurpose::CompanionGrowthcycle,
             Self::CompanionConsolidation => PromptPurpose::CompanionConsolidation,
-            Self::ChatRuntime | Self::GroupSpeakerSelection | Self::LorebookRuntime => {
-                PromptPurpose::RuntimeText
-            }
+            Self::ChatRuntime
+            | Self::GroupSpeakerSelection
+            | Self::LorebookRuntime
+            | Self::MemoryRuntime => PromptPurpose::RuntimeText,
         }
     }
 
@@ -185,6 +189,55 @@ pub(crate) fn active_built_in_prompt<R: PromptRepository + ?Sized>(
     }
 }
 
+/// A bundled built-in as an unsaved document, for test repositories that do not
+/// run the prompt bootstrap.
+#[cfg(test)]
+pub(crate) fn seed_document(id: BuiltInPromptId) -> PromptDocument {
+    let catalog = BuiltInPromptCatalog::bundled().expect("bundled catalog");
+    let seed = catalog.seed(id);
+    let digest = seed.computed_seed_digest().expect("seed digest");
+    let now = TimestampMillis::new(1);
+    PromptDocument {
+        id: PromptDocumentId::new(),
+        status: lettuce_context::LifecycleStatus::Active,
+        name: seed.metadata.name.clone(),
+        purpose: seed.metadata.purpose,
+        entries: seed
+            .entries
+            .iter()
+            .cloned()
+            .map(|draft| lettuce_context::PromptEntry {
+                id: lettuce_types::PromptEntryId::new(),
+                built_in_entry_key: draft.built_in_entry_key,
+                name: draft.name,
+                role: draft.role,
+                content: draft.content,
+                enabled: draft.enabled,
+                injection_position: draft.injection_position,
+                depth: draft.depth,
+                conditional_min_messages: draft.conditional_min_messages,
+                interval_turns: draft.interval_turns,
+                system_prompt: draft.system_prompt,
+                conditions: draft.conditions,
+                payload: draft.payload,
+            })
+            .collect(),
+        condense: seed.metadata.condense,
+        behavior_version: seed.metadata.behavior_version,
+        provenance: PromptProvenance::BuiltIn {
+            key: seed.key.clone(),
+            seed_version: seed.seed_version,
+            seed_digest: digest.clone(),
+            authored_digest: digest,
+            required: seed.required,
+            protected: seed.protected,
+        },
+        revision: lettuce_types::Revision::INITIAL,
+        created_at: now,
+        updated_at: now,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuiltInPromptIds {
     pub app_default: PromptDocumentId,
@@ -214,6 +267,7 @@ pub struct BuiltInPromptIds {
     pub chat_runtime: PromptDocumentId,
     pub group_speaker_selection: PromptDocumentId,
     pub lorebook_runtime: PromptDocumentId,
+    pub memory_runtime: PromptDocumentId,
 }
 
 impl BuiltInPromptIds {
@@ -262,6 +316,7 @@ impl BuiltInPromptIds {
             chat_runtime: required(BuiltInPromptId::ChatRuntime),
             group_speaker_selection: required(BuiltInPromptId::GroupSpeakerSelection),
             lorebook_runtime: required(BuiltInPromptId::LorebookRuntime),
+            memory_runtime: required(BuiltInPromptId::MemoryRuntime),
         })
     }
 
@@ -295,6 +350,7 @@ impl BuiltInPromptIds {
             BuiltInPromptId::ChatRuntime => self.chat_runtime,
             BuiltInPromptId::GroupSpeakerSelection => self.group_speaker_selection,
             BuiltInPromptId::LorebookRuntime => self.lorebook_runtime,
+            BuiltInPromptId::MemoryRuntime => self.memory_runtime,
         }
     }
 }
@@ -911,7 +967,7 @@ mod tests {
     #[test]
     fn catalog_is_the_exact_closed_legacy_set() {
         let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
-        assert_eq!(catalog.seeds().len(), 27);
+        assert_eq!(catalog.seeds().len(), 28);
 
         let actual = catalog
             .seeds()
@@ -1011,7 +1067,7 @@ mod tests {
         assert_eq!(calls[1].mode, BuiltInReconcileMode::ResetToSeed);
         assert_eq!(calls[1].seeds.len(), 1);
         assert_eq!(calls[2].mode, BuiltInReconcileMode::ResetToSeed);
-        assert_eq!(calls[2].seeds.len(), 27);
+        assert_eq!(calls[2].seeds.len(), 28);
     }
 
     #[test]
@@ -1236,6 +1292,16 @@ mod tests {
             assert!(exists(key), "{key}");
             key.to_owned()
         };
+        let memory = catalog.seed(BuiltInPromptId::MemoryRuntime);
+        for key in lettuce_memory::DYNAMIC_MEMORY_TOOL_TEXT_KEYS {
+            assert!(
+                memory
+                    .entries
+                    .iter()
+                    .any(|entry| entry.built_in_entry_key.as_deref() == Some(key)),
+                "{key}"
+            );
+        }
         lettuce_creation::lorebook_entry_tool_request(false, &resolve)
             .validate()
             .expect("entry tool contract");

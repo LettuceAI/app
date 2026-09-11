@@ -75,6 +75,76 @@ impl Score {
     }
 }
 
+/// The legacy six-digit memory id a model sees and quotes back. It is unique
+/// within a memory space and never changes after creation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct MemoryShortId(u32);
+
+impl MemoryShortId {
+    pub const SPACE: u32 = 1_000_000;
+
+    #[must_use]
+    pub const fn new(value: u32) -> Option<Self> {
+        if value < Self::SPACE {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    /// The preferred short id of a memory, before collision probing.
+    #[must_use]
+    pub fn derived(id: MemoryId) -> Self {
+        #[allow(clippy::cast_possible_truncation)]
+        Self((id.as_uuid().as_u128() % u128::from(Self::SPACE)) as u32)
+    }
+
+    /// The derived short id, moved upward past ids already in use.
+    #[must_use]
+    pub fn allocate(id: MemoryId, in_use: impl Fn(Self) -> bool) -> Self {
+        let mut candidate = Self::derived(id);
+        while in_use(candidate) {
+            candidate = Self((candidate.0 + 1) % Self::SPACE);
+        }
+        candidate
+    }
+
+    /// Exactly six ASCII digits, as legacy rendered them.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        (value.len() == 6 && value.bytes().all(|byte| byte.is_ascii_digit()))
+            .then(|| value.parse().ok())
+            .flatten()
+            .and_then(Self::new)
+    }
+}
+
+impl TryFrom<u32> for MemoryShortId {
+    type Error = MemoryValidationError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or(MemoryValidationError::InvalidShortId)
+    }
+}
+
+impl From<MemoryShortId> for u32 {
+    fn from(value: MemoryShortId) -> Self {
+        value.0
+    }
+}
+
+impl std::fmt::Display for MemoryShortId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{:06}", self.0)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryCategory {
@@ -90,6 +160,7 @@ pub enum MemoryCategory {
 #[serde(deny_unknown_fields)]
 pub struct MemoryItem {
     pub id: MemoryId,
+    pub short_id: MemoryShortId,
     pub text: String,
     pub category: MemoryCategory,
     pub source_message_id: Option<MessageId>,
@@ -154,10 +225,14 @@ impl MemorySpaceSnapshot {
             return Err(MemoryValidationError::TooManyItems);
         }
         let mut ids = HashSet::with_capacity(self.items.len());
+        let mut short_ids = HashSet::with_capacity(self.items.len());
         for item in &self.items {
             item.validate()?;
             if !ids.insert(item.id) {
                 return Err(MemoryValidationError::DuplicateItemId);
+            }
+            if !short_ids.insert(item.short_id) {
+                return Err(MemoryValidationError::DuplicateShortId);
             }
         }
         Ok(())
@@ -234,6 +309,10 @@ pub enum MemoryValidationError {
     InvalidTemporalAttribution,
     #[error("memory space contains duplicate item ids")]
     DuplicateItemId,
+    #[error("memory space contains duplicate short ids")]
+    DuplicateShortId,
+    #[error("memory short id is outside six digits")]
+    InvalidShortId,
     #[error("memory space contains too many items")]
     TooManyItems,
     #[error("memory space revision must be positive")]

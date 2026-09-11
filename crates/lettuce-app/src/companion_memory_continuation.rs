@@ -395,7 +395,9 @@ mod tests {
         let (round, results) = round_and_results(
             "pin_memory",
             json!({"id":target.to_string()}),
-            MemoryToolOutcome::TargetNotFound { id: target },
+            MemoryToolOutcome::TargetNotFound {
+                reference: lettuce_memory::MemoryReference(target.to_string()),
+            },
         );
         let context = context_after_settlement(&round, &results).expect("context");
         assert_eq!(context.messages.len(), 3);
@@ -410,7 +412,7 @@ mod tests {
             [ProviderContextPart::ToolResult(result)]
                 if result.execution_id == round.calls[0].id
                     && !result.output.is_error
-                    && result.output.value == json!({"status":"target_not_found","id":target})
+                    && result.output.value == json!({"status":"target_not_found","reference":target.to_string()})
         ));
     }
 

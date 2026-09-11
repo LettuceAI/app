@@ -26,10 +26,24 @@ authoritative memory item. This source identity is optional for the shared
 direct/group tool contract and is the attribution boundary used by companion
 post-turn effect settlement when several turns are coalesced into one cycle.
 
-The new contract deliberately replaces ambiguous legacy text or six-digit
-delete targets with stable memory UUIDs, reports missing targets explicitly,
-and applies one validated change set instead of mutating session projections in
-place. Companion-required source validation and supersession, provider-driven
+Every memory item carries a legacy six-digit `short_id`, unique within its
+space and fixed at creation (derived from the memory ID, probing upward past
+ids in use). Models see `[short_id] text` and the legacy tool contract:
+`delete_memory` takes `text` (a six-digit id, or the exact memory text),
+`pin_memory`/`unpin_memory` take `id`, and `supersedes` lists ids. Arguments
+keep the model's raw `MemoryReference`, which the reducer resolves against the
+items current when the call applies (legacy cleaning of `# * " ' [ ] ( )`;
+stable UUIDs still resolve). Missing targets are reported explicitly and the
+batch applies one validated change set instead of mutating session projections
+in place. Tool and parameter descriptions are catalog keys
+(`DYNAMIC_MEMORY_TOOL_TEXT_KEYS`) resolved by the application, with direct and
+group variants; runs freeze the resulting request and validation compares its
+description-free shape. Arguments parse as leniently as legacy: unknown keys are
+ignored, a non-UUID `source_message_id` or non-boolean `important` falls back to
+its default, and `confidence` is clamped to 0..1. Group contracts never carry
+source attribution or supersession. Invalid text or category still fails the
+call; legacy skipped such calls with a result, which is later work together
+with legacy-shaped tool results (six-digit ids in results). Companion-required source validation and supersession, provider-driven
 category repair, and UI events remain later slices. ONNX inference runtime
 ownership belongs in
 `lettuce-embeddings`; this crate consumes typed duplicate evidence through the
