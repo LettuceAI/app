@@ -25,6 +25,7 @@ mod companion_memory_loop;
 mod companion_memory_run;
 mod companion_memory_summary;
 mod companion_memory_terminal;
+mod companion_prompt_text;
 mod companion_soul_writer_dispatch;
 mod companion_soul_writer_execution;
 mod companion_soul_writer_job;

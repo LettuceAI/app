@@ -66,6 +66,15 @@ impl RuntimeText {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn disable_for_test(&mut self, key: &str) {
+        for entry in &mut self.document.entries {
+            if entry.built_in_entry_key.as_deref() == Some(key) {
+                entry.enabled = false;
+            }
+        }
+    }
+
     pub(crate) const fn document(&self) -> &PromptDocument {
         &self.document
     }

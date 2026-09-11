@@ -746,6 +746,13 @@ author note and swap note name `{{persona.name}}` (the persona, or the user's
 display name when there is none, where legacy wrote "user" / "the user
 persona"). A missing runtime document
 fails the turn with `RuntimeTextUnavailable`.
+The companion state block and the scheduled-notes block render line by line
+from the built-in `prompt_app_companion_runtime` document (bands, emotion
+labels, Soul lines, regulation cues, note line, truncation marker and
+heading, byte-identical to legacy by default); `lettuce-companions` decides
+which lines apply. A disabled or blank line or emotion item is left out, a
+disabled word fragment (band, label, partner fallback) renders empty inside its
+line, and a disabled note line or block drops the scheduled-notes section.
 
 Post-turn memory runs freeze the legacy memory tool contract with the
 descriptions of the built-in `prompt_app_memory_runtime` document (group runs

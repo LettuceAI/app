@@ -11,8 +11,7 @@ use async_trait::async_trait;
 use lettuce_characters::{CharacterRepository, PersonaRepository};
 use lettuce_companions::{
     CompanionPromptStateInput, CompanionScheduledNoteRepository, CompanionStateOwner,
-    CompanionStateRepository, SoulOwner, SoulRepository, active_scheduled_notes,
-    render_prompt_state, render_scheduled_notes_block,
+    CompanionStateRepository, SoulOwner, SoulRepository, active_scheduled_notes, prompt_state,
 };
 use lettuce_context::{
     DetectionPolicy, KeywordMatchMode, LorebookSnapshotActivationEntry,
@@ -427,7 +426,8 @@ where
         + PersonaRepository
         + SoulRepository
         + CompanionStateRepository
-        + CompanionScheduledNoteRepository,
+        + CompanionScheduledNoteRepository
+        + PromptRepository,
 {
     fn companion_prompt_state(
         &self,
@@ -485,16 +485,22 @@ where
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
             .flatten()
             .map(|persona| persona.title);
-        Ok(Some(render_prompt_state(&CompanionPromptStateInput {
-            character_name: &character.character.profile.name,
-            partner_name: partner_name.as_deref(),
+        let facts = prompt_state(&CompanionPromptStateInput {
             soul: &config.soul,
             soul_state: &soul,
             runtime_state: &state.state,
             style_notes: &config.prompting.style_notes,
             continuity_episode: episode.episode_index,
             effective_at,
-        })))
+        });
+        crate::companion_prompt_text::render_companion_state(
+            &companion_runtime_text(self.sources)?,
+            &character.character.profile.name,
+            partner_name.as_deref(),
+            &facts,
+        )
+        .map(|state| Some(state).filter(|state| !state.is_empty()))
+        .map_err(runtime_text_error)
     }
 
     fn companion_scheduled_notes(
@@ -517,7 +523,30 @@ where
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
         let active = active_scheduled_notes(notes, effective_at)
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
-        Ok(render_scheduled_notes_block(&active))
+        if active.is_empty() {
+            return Ok(None);
+        }
+        crate::companion_prompt_text::render_scheduled_notes(
+            &companion_runtime_text(self.sources)?,
+            &active,
+        )
+        .map_err(runtime_text_error)
+    }
+}
+
+fn companion_runtime_text<S: PromptRepository + ?Sized>(
+    sources: &S,
+) -> Result<crate::runtime_text::RuntimeText, ContextAssemblyError> {
+    crate::runtime_text::RuntimeText::load(sources, crate::BuiltInPromptId::CompanionRuntime)
+        .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable)
+}
+
+fn runtime_text_error(error: crate::runtime_text::RuntimeTextError) -> ContextAssemblyError {
+    match error {
+        crate::runtime_text::RuntimeTextError::Unavailable => {
+            ContextAssemblyError::RuntimeTextUnavailable
+        }
+        crate::runtime_text::RuntimeTextError::Render => ContextAssemblyError::PromptRender,
     }
 }
 

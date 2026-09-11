@@ -42,10 +42,11 @@ pub enum BuiltInPromptId {
     GroupSpeakerSelection,
     LorebookRuntime,
     MemoryRuntime,
+    CompanionRuntime,
 }
 
 impl BuiltInPromptId {
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 29] = [
         Self::AppDefault,
         Self::LocalRoleplay,
         Self::Companion,
@@ -74,6 +75,7 @@ impl BuiltInPromptId {
         Self::GroupSpeakerSelection,
         Self::LorebookRuntime,
         Self::MemoryRuntime,
+        Self::CompanionRuntime,
     ];
 
     #[must_use]
@@ -107,6 +109,7 @@ impl BuiltInPromptId {
             Self::GroupSpeakerSelection => "prompt_app_group_speaker_selection",
             Self::LorebookRuntime => "prompt_app_lorebook_runtime",
             Self::MemoryRuntime => "prompt_app_memory_runtime",
+            Self::CompanionRuntime => "prompt_app_companion_runtime",
         }
     }
 
@@ -146,7 +149,8 @@ impl BuiltInPromptId {
             Self::ChatRuntime
             | Self::GroupSpeakerSelection
             | Self::LorebookRuntime
-            | Self::MemoryRuntime => PromptPurpose::RuntimeText,
+            | Self::MemoryRuntime
+            | Self::CompanionRuntime => PromptPurpose::RuntimeText,
         }
     }
 
@@ -268,6 +272,7 @@ pub struct BuiltInPromptIds {
     pub group_speaker_selection: PromptDocumentId,
     pub lorebook_runtime: PromptDocumentId,
     pub memory_runtime: PromptDocumentId,
+    pub companion_runtime: PromptDocumentId,
 }
 
 impl BuiltInPromptIds {
@@ -317,6 +322,7 @@ impl BuiltInPromptIds {
             group_speaker_selection: required(BuiltInPromptId::GroupSpeakerSelection),
             lorebook_runtime: required(BuiltInPromptId::LorebookRuntime),
             memory_runtime: required(BuiltInPromptId::MemoryRuntime),
+            companion_runtime: required(BuiltInPromptId::CompanionRuntime),
         })
     }
 
@@ -351,6 +357,7 @@ impl BuiltInPromptIds {
             BuiltInPromptId::GroupSpeakerSelection => self.group_speaker_selection,
             BuiltInPromptId::LorebookRuntime => self.lorebook_runtime,
             BuiltInPromptId::MemoryRuntime => self.memory_runtime,
+            BuiltInPromptId::CompanionRuntime => self.companion_runtime,
         }
     }
 }
@@ -750,6 +757,18 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "excerpt_source_id"
             | "excerpt_label"
             | "excerpt_content"
+            | "interaction_count"
+            | "closeness_band"
+            | "trust_band"
+            | "affection_band"
+            | "tension_percent"
+            | "emotion_list"
+            | "emotion_label"
+            | "emotion_percent"
+            | "continuity_episode"
+            | "soul_value"
+            | "active_signals"
+            | "note_text"
     )
 }
 
@@ -971,7 +990,7 @@ mod tests {
     #[test]
     fn catalog_is_the_exact_closed_legacy_set() {
         let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
-        assert_eq!(catalog.seeds().len(), 28);
+        assert_eq!(catalog.seeds().len(), 29);
 
         let actual = catalog
             .seeds()
@@ -1071,7 +1090,7 @@ mod tests {
         assert_eq!(calls[1].mode, BuiltInReconcileMode::ResetToSeed);
         assert_eq!(calls[1].seeds.len(), 1);
         assert_eq!(calls[2].mode, BuiltInReconcileMode::ResetToSeed);
-        assert_eq!(calls[2].seeds.len(), 28);
+        assert_eq!(calls[2].seeds.len(), 29);
     }
 
     #[test]

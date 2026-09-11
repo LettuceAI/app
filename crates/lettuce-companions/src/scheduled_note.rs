@@ -125,7 +125,14 @@ pub fn is_scheduled_note_active(
     Ok(true)
 }
 
-pub fn render_scheduled_notes_block(notes: &[CompanionScheduledNote]) -> Option<String> {
+/// Legacy note lines kept under the block's character budget. `line` renders
+/// one note and `truncated` ends a note cut at its content cap; the application
+/// supplies both from the prompt catalog.
+pub fn scheduled_note_lines(
+    notes: &[CompanionScheduledNote],
+    truncated: &str,
+    line: &dyn Fn(&str) -> String,
+) -> Vec<String> {
     let mut lines = Vec::new();
     let mut total_chars = 0usize;
     for note in notes {
@@ -135,23 +142,18 @@ pub fn render_scheduled_notes_block(notes: &[CompanionScheduledNote]) -> Option<
         }
         let capped = if trimmed.chars().count() > MAX_NOTE_CONTENT_CHARS {
             let shortened: String = trimmed.chars().take(MAX_NOTE_CONTENT_CHARS).collect();
-            format!("{}...", shortened.trim_end())
+            format!("{}{truncated}", shortened.trim_end())
         } else {
             trimmed.to_owned()
         };
-        let line = format!("- {capped}");
+        let line = line(&capped);
         if total_chars + line.len() > MAX_BLOCK_CHARS {
             break;
         }
         total_chars += line.len() + 1;
         lines.push(line);
     }
-    (!lines.is_empty()).then(|| {
-        format!(
-            "[Background context you currently hold in mind]\n{}",
-            lines.join("\n")
-        )
-    })
+    lines
 }
 
 fn timestamp_ms_to_local(
@@ -353,10 +355,32 @@ mod tests {
         let normalized = one_time.normalize().expect("normalize note");
         assert_eq!(normalized.label, "reminder");
         assert_eq!(normalized.content, "remember this");
+        let line = |content: &str| format!("- {content}");
         assert_eq!(
-            render_scheduled_notes_block(&[normalized]),
-            Some("[Background context you currently hold in mind]\n- remember this".into())
+            scheduled_note_lines(std::slice::from_ref(&normalized), "...", &line),
+            vec!["- remember this".to_owned()]
         );
+        let mut long = normalized.clone();
+        long.content = format!("{} tail", "a".repeat(999));
+        let mut blank = normalized.clone();
+        blank.content = "   ".into();
+        assert_eq!(
+            scheduled_note_lines(&[blank, long], "...", &line),
+            vec![format!("- {}...", "a".repeat(999))]
+        );
+        let mut filler = normalized;
+        filler.content = "b".repeat(1000);
+        let lines = scheduled_note_lines(
+            &[
+                filler.clone(),
+                filler.clone(),
+                filler.clone(),
+                filler.clone(),
+            ],
+            "...",
+            &line,
+        );
+        assert_eq!(lines.len(), 3);
     }
 
     #[test]

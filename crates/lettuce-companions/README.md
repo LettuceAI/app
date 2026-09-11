@@ -94,8 +94,10 @@ Character-owned scheduled notes now copy the legacy fields and recurrence
 semantics for one-time, daily, weekly, monthly, and yearly activation. Disabled,
 not-yet-available, and end-exclusive expired notes are filtered at the supplied
 effective time; recurrence windows are also end-exclusive. Active notes keep
-the legacy `available_at` then ID order, 1000-character per-note truncation,
-4000-character block cap, bullet format, and exact background-context heading.
+the legacy `available_at` then ID order, 1000-character per-note truncation
+and 4000-character block cap measured on the rendered line; the line, the
+truncation marker and the background-context heading are catalog text the
+application passes in (`scheduled_note_lines`).
 The repository port owns list/upsert/delete only; host scheduling and frontend
 commands remain outside this domain.
 
@@ -157,11 +159,14 @@ and outbox together. Exact conversation-operation replay does not reapply the
 state transition. Classification and transition preparation are application
 work rather than storage behavior and are now wired for direct user sends.
 
-The pure prompt-state renderer copies legacy output byte-for-byte: relationship
-bands, top expressed/blocked dimensions, interaction and continuity wording,
-all twelve authored Soul categories, effective durable facts ordered by
-clamped weight-times-confidence, style notes, active signals, and regulation
-branches. It accepts typed state and an explicit effective clock. Context
+The pure prompt-state function (`prompt_state`) holds no model-facing text: it
+decides the legacy relationship bands, top expressed/blocked dimensions (0.08
+floor), continuity episode, all twelve authored Soul categories with effective
+durable facts ordered by clamped weight-times-confidence, style notes, active
+signals and the regulation/reassurance branches, and returns them as typed
+facts. The application renders each fact from the built-in
+`prompt_app_companion_runtime` catalog document with legacy wording. It
+accepts typed state and an explicit effective clock. Context
 assembler insertion, companion prompt-template selection, scheduled notes,
 continuity episode hydration, and time-awareness clock resolution are wired.
 

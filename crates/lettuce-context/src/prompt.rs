@@ -958,6 +958,18 @@ pub enum PromptVariable {
     ExcerptSourceId,
     ExcerptLabel,
     ExcerptContent,
+    InteractionCount,
+    ClosenessBand,
+    TrustBand,
+    AffectionBand,
+    TensionPercent,
+    EmotionList,
+    EmotionLabel,
+    EmotionPercent,
+    ContinuityEpisode,
+    SoulValue,
+    ActiveSignals,
+    NoteText,
 }
 
 impl PromptVariable {
@@ -1061,6 +1073,18 @@ impl PromptVariable {
             Self::ExcerptSourceId => "{{excerpt_source_id}}",
             Self::ExcerptLabel => "{{excerpt_label}}",
             Self::ExcerptContent => "{{excerpt_content}}",
+            Self::InteractionCount => "{{interaction_count}}",
+            Self::ClosenessBand => "{{closeness_band}}",
+            Self::TrustBand => "{{trust_band}}",
+            Self::AffectionBand => "{{affection_band}}",
+            Self::TensionPercent => "{{tension_percent}}",
+            Self::EmotionList => "{{emotion_list}}",
+            Self::EmotionLabel => "{{emotion_label}}",
+            Self::EmotionPercent => "{{emotion_percent}}",
+            Self::ContinuityEpisode => "{{continuity_episode}}",
+            Self::SoulValue => "{{soul_value}}",
+            Self::ActiveSignals => "{{active_signals}}",
+            Self::NoteText => "{{note_text}}",
         }
     }
 
@@ -1163,6 +1187,18 @@ impl PromptVariable {
         Self::ExcerptSourceId,
         Self::ExcerptLabel,
         Self::ExcerptContent,
+        Self::InteractionCount,
+        Self::ClosenessBand,
+        Self::TrustBand,
+        Self::AffectionBand,
+        Self::TensionPercent,
+        Self::EmotionList,
+        Self::EmotionLabel,
+        Self::EmotionPercent,
+        Self::ContinuityEpisode,
+        Self::SoulValue,
+        Self::ActiveSignals,
+        Self::NoteText,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.

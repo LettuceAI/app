@@ -4,8 +4,6 @@ use crate::{CompanionRuntimeState, CompanionSoulIdentity, EmotionVector, SoulCat
 
 #[derive(Debug)]
 pub struct CompanionPromptStateInput<'a> {
-    pub character_name: &'a str,
-    pub partner_name: Option<&'a str>,
     pub soul: &'a CompanionSoulIdentity,
     pub soul_state: &'a SoulState,
     pub runtime_state: &'a CompanionRuntimeState,
@@ -14,217 +12,162 @@ pub struct CompanionPromptStateInput<'a> {
     pub effective_at: TimestampMillis,
 }
 
-#[must_use]
-pub fn render_prompt_state(input: &CompanionPromptStateInput<'_>) -> String {
-    let state = input.runtime_state;
-    let soul = input.soul;
-    let regulation = soul.regulation_style.clone();
-
-    let expressed = describe_top_dimensions(&state.emotional_state.expressed, 3);
-    let blocked = describe_top_dimensions(&state.emotional_state.blocked, 2);
-    let rel = &state.relationship_state;
-    let partner_name = input
-        .partner_name
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("the current conversation partner");
-
-    let mut lines = vec![
-        format!(
-            "The following relationship and emotional state describes {}'s live relationship with {}, the person currently speaking in this chat.",
-            input.character_name, partner_name,
-        ),
-        "Do not apply these metrics to third-party people mentioned in character definitions, persona descriptions, lore, or memories unless that relationship is explicitly stated.".to_string(),
-        "Closeness, trust, and affection are bidirectional: they can run negative, meaning the character actively dislikes, distrusts, or wants distance from the partner, not merely feels neutral.".to_string(),
-        "Treat these metrics as supporting signals, not as permission to contradict the chat history, memories, or established relationship events. Preserve established emotional breakthroughs as settled continuity; never reset or rediscover them merely because a metric band is lower.".to_string(),
-        format!(
-            "Relationship duration context: this session state has tracked {} user interaction{}.",
-            rel.interaction_count,
-            if rel.interaction_count == 1 { "" } else { "s" },
-        ),
-        format!(
-            "Current {} <-> {} relationship stance: closeness {}, trust {}, affection {}; tension {:.0}%.",
-            input.character_name,
-            partner_name,
-            closeness_band(rel.closeness),
-            trust_band(rel.trust),
-            affection_band(rel.affection),
-            rel.tension * 100.0,
-        ),
-        format!(
-            "Expressed tone right now: {}.",
-            if expressed.is_empty() {
-                "steady and low-intensity"
-            } else {
-                expressed.as_str()
-            }
-        ),
-    ];
-
-    if input.continuity_episode > 0 {
-        lines.push(format!(
-            "Continuity: this chat is episode {} of one continuous relationship. Treat earlier shared memories and settled milestones as prior episodes, not as events that need to be rediscovered.",
-            input.continuity_episode,
-        ));
-    }
-
-    push_soul_line(
-        &mut lines,
-        "Soul essence",
-        &effective_soul_value(
-            &soul.essence,
-            SoulCategory::Essence,
-            input.soul_state,
-            input.effective_at,
-        ),
-    );
-    push_soul_line(
-        &mut lines,
-        "Defining traits",
-        &effective_soul_value(
-            &soul.traits,
-            SoulCategory::Traits,
-            input.soul_state,
-            input.effective_at,
-        ),
-    );
-    push_soul_line(
-        &mut lines,
-        "Backstory",
-        &effective_soul_value(
-            &soul.backstory,
-            SoulCategory::Backstory,
-            input.soul_state,
-            input.effective_at,
-        ),
-    );
-    push_soul_line(
-        &mut lines,
-        "Appearance",
-        &effective_soul_value(
-            &soul.appearance,
-            SoulCategory::Appearance,
-            input.soul_state,
-            input.effective_at,
-        ),
-    );
-    push_soul_line(
-        &mut lines,
-        "Goals",
-        &effective_soul_value(
-            &soul.goals,
-            SoulCategory::Goals,
-            input.soul_state,
-            input.effective_at,
-        ),
-    );
-    push_soul_line(
-        &mut lines,
-        "Likes and favorites",
-        &effective_soul_value(
-            &soul.likes,
-            SoulCategory::Likes,
-            input.soul_state,
-            input.effective_at,
-        ),
-    );
-    push_soul_line(
-        &mut lines,
-        "Companion voice",
-        &effective_soul_value(
-            &soul.voice,
-            SoulCategory::Voice,
-            input.soul_state,
-            input.effective_at,
-        ),
-    );
-    push_soul_line(
-        &mut lines,
-        "Relational style",
-        &effective_soul_value(
-            &soul.relational_style,
-            SoulCategory::RelationalStyle,
-            input.soul_state,
-            input.effective_at,
-        ),
-    );
-    push_soul_line(
-        &mut lines,
-        "Vulnerabilities",
-        &effective_soul_value(
-            &soul.vulnerabilities,
-            SoulCategory::Vulnerabilities,
-            input.soul_state,
-            input.effective_at,
-        ),
-    );
-    push_soul_line(
-        &mut lines,
-        "Fears",
-        &effective_soul_value(
-            &soul.fears,
-            SoulCategory::Fears,
-            input.soul_state,
-            input.effective_at,
-        ),
-    );
-    push_soul_line(
-        &mut lines,
-        "Habits",
-        &effective_soul_value(
-            &soul.habits,
-            SoulCategory::Habits,
-            input.soul_state,
-            input.effective_at,
-        ),
-    );
-    push_soul_line(
-        &mut lines,
-        "Boundaries",
-        &effective_soul_value(
-            &soul.boundaries,
-            SoulCategory::Boundaries,
-            input.soul_state,
-            input.effective_at,
-        ),
-    );
-    push_soul_line(&mut lines, "Companion style notes", input.style_notes);
-
-    if !blocked.is_empty() {
-        lines.push(format!("More strongly felt than shown: {}.", blocked));
-    }
-
-    if !state.active_signals.is_empty() {
-        lines.push(format!(
-            "Recent drivers in {}'s interaction with {}: {}.",
-            input.character_name,
-            partner_name,
-            state.active_signals.join(", ")
-        ));
-    }
-
-    if regulation.suppression >= 0.6 {
-        lines.push(
-            "Regulation: tends to hide direct hurt and avoids blunt emotional disclosure."
-                .to_string(),
-        );
-    } else if regulation.emotional_transparency >= 0.65 {
-        lines.push("Regulation: relatively emotionally direct when trust is present.".to_string());
-    }
-
-    if regulation.reassurance_seeking >= 0.6 && regulation.pride < 0.45 {
-        lines.push("When unsettled, may seek reassurance more openly.".to_string());
-    } else if regulation.pride >= 0.55 {
-        lines.push("When unsettled, may avoid asking directly for reassurance.".to_string());
-    }
-
-    lines.join("\n")
+/// The legacy five-step band shared by closeness, trust and affection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelationshipBand {
+    Lowest,
+    Low,
+    Neutral,
+    High,
+    Highest,
 }
 
-fn push_soul_line(lines: &mut Vec<String>, label: &str, value: &str) {
-    let trimmed = value.trim();
-    if !trimmed.is_empty() {
-        lines.push(format!("{}: {}.", label, trimmed));
+impl RelationshipBand {
+    #[must_use]
+    pub fn of(value: f64) -> Self {
+        if value < -0.5 {
+            Self::Lowest
+        } else if value < -0.15 {
+            Self::Low
+        } else if value <= 0.15 {
+            Self::Neutral
+        } else if value <= 0.5 {
+            Self::High
+        } else {
+            Self::Highest
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmotionDimension {
+    Warmth,
+    Trust,
+    Calm,
+    Vulnerability,
+    Longing,
+    Hurt,
+    Tension,
+    Irritation,
+    Affection,
+    ReassuranceNeed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EmotionReading {
+    pub dimension: EmotionDimension,
+    pub value: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegulationCue {
+    Suppressed,
+    Transparent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReassuranceCue {
+    Open,
+    Avoidant,
+}
+
+/// Soul lines in the order the prompt lists them.
+pub const SOUL_PROMPT_ORDER: [SoulCategory; 12] = [
+    SoulCategory::Essence,
+    SoulCategory::Traits,
+    SoulCategory::Backstory,
+    SoulCategory::Appearance,
+    SoulCategory::Goals,
+    SoulCategory::Likes,
+    SoulCategory::Voice,
+    SoulCategory::RelationalStyle,
+    SoulCategory::Vulnerabilities,
+    SoulCategory::Fears,
+    SoulCategory::Habits,
+    SoulCategory::Boundaries,
+];
+
+/// What the companion state block says, decided with the legacy thresholds;
+/// the application renders each part from the prompt catalog.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompanionPromptState {
+    pub interaction_count: u32,
+    pub closeness: RelationshipBand,
+    pub trust: RelationshipBand,
+    pub affection: RelationshipBand,
+    pub tension: f64,
+    pub expressed: Vec<EmotionReading>,
+    pub continuity_episode: Option<u32>,
+    pub soul: Vec<(SoulCategory, String)>,
+    pub style_notes: Option<String>,
+    pub blocked: Vec<EmotionReading>,
+    pub active_signals: Vec<String>,
+    pub regulation: Option<RegulationCue>,
+    pub reassurance: Option<ReassuranceCue>,
+}
+
+#[must_use]
+pub fn prompt_state(input: &CompanionPromptStateInput<'_>) -> CompanionPromptState {
+    let state = input.runtime_state;
+    let regulation = &input.soul.regulation_style;
+    let rel = &state.relationship_state;
+    CompanionPromptState {
+        interaction_count: rel.interaction_count,
+        closeness: RelationshipBand::of(rel.closeness),
+        trust: RelationshipBand::of(rel.trust),
+        affection: RelationshipBand::of(rel.affection),
+        tension: rel.tension,
+        expressed: top_dimensions(&state.emotional_state.expressed, 3),
+        continuity_episode: (input.continuity_episode > 0).then_some(input.continuity_episode),
+        soul: SOUL_PROMPT_ORDER
+            .into_iter()
+            .filter_map(|category| {
+                let value = effective_soul_value(
+                    soul_base(input.soul, category),
+                    category,
+                    input.soul_state,
+                    input.effective_at,
+                );
+                let trimmed = value.trim();
+                (!trimmed.is_empty()).then(|| (category, trimmed.to_owned()))
+            })
+            .collect(),
+        style_notes: Some(input.style_notes.trim())
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        blocked: top_dimensions(&state.emotional_state.blocked, 2),
+        active_signals: state.active_signals.clone(),
+        regulation: if regulation.suppression >= 0.6 {
+            Some(RegulationCue::Suppressed)
+        } else if regulation.emotional_transparency >= 0.65 {
+            Some(RegulationCue::Transparent)
+        } else {
+            None
+        },
+        reassurance: if regulation.reassurance_seeking >= 0.6 && regulation.pride < 0.45 {
+            Some(ReassuranceCue::Open)
+        } else if regulation.pride >= 0.55 {
+            Some(ReassuranceCue::Avoidant)
+        } else {
+            None
+        },
+    }
+}
+
+fn soul_base(soul: &CompanionSoulIdentity, category: SoulCategory) -> &str {
+    match category {
+        SoulCategory::Essence => &soul.essence,
+        SoulCategory::Traits => &soul.traits,
+        SoulCategory::Backstory => &soul.backstory,
+        SoulCategory::Appearance => &soul.appearance,
+        SoulCategory::Goals => &soul.goals,
+        SoulCategory::Likes => &soul.likes,
+        SoulCategory::Voice => &soul.voice,
+        SoulCategory::RelationalStyle => &soul.relational_style,
+        SoulCategory::Vulnerabilities => &soul.vulnerabilities,
+        SoulCategory::Fears => &soul.fears,
+        SoulCategory::Habits => &soul.habits,
+        SoulCategory::Boundaries => &soul.boundaries,
     }
 }
 
@@ -258,70 +201,26 @@ pub fn effective_soul_value(
     parts.join(" ")
 }
 
-fn describe_top_dimensions(vector: &EmotionVector, count: usize) -> String {
+fn top_dimensions(vector: &EmotionVector, count: usize) -> Vec<EmotionReading> {
     let mut items = vec![
-        ("warmth", vector.warmth),
-        ("trust", vector.trust),
-        ("calm", vector.calm),
-        ("vulnerability", vector.vulnerability),
-        ("longing", vector.longing),
-        ("hurt", vector.hurt),
-        ("tension", vector.tension),
-        ("irritation", vector.irritation),
-        ("affection", vector.affection_intensity),
-        ("reassurance need", vector.reassurance_need),
+        (EmotionDimension::Warmth, vector.warmth),
+        (EmotionDimension::Trust, vector.trust),
+        (EmotionDimension::Calm, vector.calm),
+        (EmotionDimension::Vulnerability, vector.vulnerability),
+        (EmotionDimension::Longing, vector.longing),
+        (EmotionDimension::Hurt, vector.hurt),
+        (EmotionDimension::Tension, vector.tension),
+        (EmotionDimension::Irritation, vector.irritation),
+        (EmotionDimension::Affection, vector.affection_intensity),
+        (EmotionDimension::ReassuranceNeed, vector.reassurance_need),
     ];
     items.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    let described = items
+    items
         .into_iter()
         .filter(|(_, value)| *value >= 0.08)
         .take(count)
-        .map(|(label, value)| format!("{} ({:.0}%)", label, value * 100.0))
-        .collect::<Vec<_>>();
-
-    described.join(", ")
-}
-
-fn affection_band(value: f64) -> &'static str {
-    if value < -0.5 {
-        "hostile"
-    } else if value < -0.15 {
-        "cold/irritated"
-    } else if value <= 0.15 {
-        "neutral"
-    } else if value <= 0.5 {
-        "warm"
-    } else {
-        "deeply affectionate"
-    }
-}
-
-fn trust_band(value: f64) -> &'static str {
-    if value < -0.5 {
-        "distrustful/guarded"
-    } else if value < -0.15 {
-        "wary"
-    } else if value <= 0.15 {
-        "neutral"
-    } else if value <= 0.5 {
-        "trusting"
-    } else {
-        "deeply trusting"
-    }
-}
-
-fn closeness_band(value: f64) -> &'static str {
-    if value < -0.5 {
-        "withdrawing/wants distance"
-    } else if value < -0.15 {
-        "distant"
-    } else if value <= 0.15 {
-        "acquainted"
-    } else if value <= 0.5 {
-        "close"
-    } else {
-        "intimate"
-    }
+        .map(|(dimension, value)| EmotionReading { dimension, value })
+        .collect()
 }
 
 #[cfg(test)]
@@ -372,23 +271,50 @@ mod tests {
         }
     }
 
+    fn reading(dimension: EmotionDimension, value: f64) -> EmotionReading {
+        EmotionReading { dimension, value }
+    }
+
     #[test]
-    fn default_prompt_is_byte_exact_and_uses_partner_fallback() {
+    fn default_state_matches_the_legacy_defaults() {
         let soul = CompanionSoulIdentity::default();
         let soul_state = soul_state(Vec::new());
-        let rendered = render_prompt_state(&CompanionPromptStateInput {
-            character_name: "Mira",
-            partner_name: Some("  "),
+        let mut state = prompt_state(&CompanionPromptStateInput {
             soul: &soul,
             soul_state: &soul_state,
             runtime_state: &state(),
-            style_notes: "",
+            style_notes: "  ",
             continuity_episode: 0,
             effective_at: TimestampMillis::new(20),
         });
         assert_eq!(
-            rendered,
-            "The following relationship and emotional state describes Mira's live relationship with the current conversation partner, the person currently speaking in this chat.\nDo not apply these metrics to third-party people mentioned in character definitions, persona descriptions, lore, or memories unless that relationship is explicitly stated.\nCloseness, trust, and affection are bidirectional: they can run negative, meaning the character actively dislikes, distrusts, or wants distance from the partner, not merely feels neutral.\nTreat these metrics as supporting signals, not as permission to contradict the chat history, memories, or established relationship events. Preserve established emotional breakthroughs as settled continuity; never reset or rediscover them merely because a metric band is lower.\nRelationship duration context: this session state has tracked 0 user interactions.\nCurrent Mira <-> the current conversation partner relationship stance: closeness acquainted, trust neutral, affection neutral; tension 0%.\nExpressed tone right now: calm (50%), warmth (34%), trust (30%)."
+            std::mem::take(&mut state.expressed)
+                .into_iter()
+                .map(|reading| (reading.dimension, format!("{:.0}", reading.value * 100.0)))
+                .collect::<Vec<_>>(),
+            vec![
+                (EmotionDimension::Calm, "50".to_owned()),
+                (EmotionDimension::Warmth, "34".to_owned()),
+                (EmotionDimension::Trust, "30".to_owned()),
+            ]
+        );
+        assert_eq!(
+            state,
+            CompanionPromptState {
+                interaction_count: 0,
+                closeness: RelationshipBand::Neutral,
+                trust: RelationshipBand::Neutral,
+                affection: RelationshipBand::Neutral,
+                tension: 0.0,
+                expressed: Vec::new(),
+                continuity_episode: None,
+                soul: Vec::new(),
+                style_notes: None,
+                blocked: Vec::new(),
+                active_signals: Vec::new(),
+                regulation: None,
+                reassurance: None,
+            }
         );
     }
 
@@ -396,6 +322,8 @@ mod tests {
     fn effective_soul_facts_copy_legacy_score_order_and_validity() {
         let soul = CompanionSoulIdentity {
             likes: " Tea ".into(),
+            boundaries: "No lies".into(),
+            essence: "Curious".into(),
             ..CompanionSoulIdentity::default()
         };
         let mut future = fact("future", "Future", 1.0, 1.0);
@@ -409,23 +337,28 @@ mod tests {
             future,
             ended,
         ]);
-        let rendered = render_prompt_state(&CompanionPromptStateInput {
-            character_name: "Mira",
-            partner_name: Some("Ari"),
+        let state = prompt_state(&CompanionPromptStateInput {
             soul: &soul,
             soul_state: &soul_state,
             runtime_state: &state(),
-            style_notes: "",
-            continuity_episode: 0,
+            style_notes: " restrained ",
+            continuity_episode: 2,
             effective_at: TimestampMillis::new(20),
         });
-        assert!(rendered.contains("Likes and favorites: Tea Harbors Letters Rain."));
-        assert!(!rendered.contains("Future"));
-        assert!(!rendered.contains("Ended"));
+        assert_eq!(
+            state.soul,
+            vec![
+                (SoulCategory::Essence, "Curious".to_owned()),
+                (SoulCategory::Likes, "Tea Harbors Letters Rain".to_owned()),
+                (SoulCategory::Boundaries, "No lies".to_owned()),
+            ]
+        );
+        assert_eq!(state.style_notes.as_deref(), Some("restrained"));
+        assert_eq!(state.continuity_episode, Some(2));
     }
 
     #[test]
-    fn bands_blocked_signals_continuity_and_regulation_copy_boundaries() {
+    fn blocked_signals_and_regulation_copy_legacy_thresholds() {
         let soul = CompanionSoulIdentity {
             regulation_style: RegulationStyle {
                 suppression: 0.6,
@@ -439,70 +372,25 @@ mod tests {
         runtime.relationship_state.closeness = -0.51;
         runtime.relationship_state.trust = -0.5;
         runtime.relationship_state.affection = 0.51;
-        runtime.relationship_state.tension = 0.456;
         runtime.relationship_state.interaction_count = 1;
         runtime.emotional_state.blocked.hurt = 0.08;
         runtime.active_signals = vec!["emotion:conflict".into()];
         let soul_state = soul_state(Vec::new());
-        let rendered = render_prompt_state(&CompanionPromptStateInput {
-            character_name: "Mira",
-            partner_name: Some("Ari"),
+        let state = prompt_state(&CompanionPromptStateInput {
             soul: &soul,
             soul_state: &soul_state,
             runtime_state: &runtime,
-            style_notes: " restrained ",
-            continuity_episode: 2,
+            style_notes: "",
+            continuity_episode: 0,
             effective_at: TimestampMillis::new(20),
         });
-        assert!(rendered.contains("tracked 1 user interaction."));
-        assert!(rendered.contains("closeness withdrawing/wants distance, trust wary, affection deeply affectionate; tension 46%."));
-        assert!(
-            rendered.contains("Continuity: this chat is episode 2 of one continuous relationship.")
-        );
-        assert!(rendered.contains("Companion style notes: restrained."));
-        assert!(rendered.contains("More strongly felt than shown: hurt (8%)."));
-        assert!(
-            rendered.contains("Recent drivers in Mira's interaction with Ari: emotion:conflict.")
-        );
-        assert!(rendered.contains(
-            "Regulation: tends to hide direct hurt and avoids blunt emotional disclosure."
-        ));
-        assert!(rendered.contains("When unsettled, may seek reassurance more openly."));
-    }
-
-    #[test]
-    fn every_relationship_band_boundary_is_exact() {
-        assert_eq!(closeness_band(-0.51), "withdrawing/wants distance");
-        assert_eq!(closeness_band(-0.5), "distant");
-        assert_eq!(closeness_band(-0.15), "acquainted");
-        assert_eq!(closeness_band(0.15), "acquainted");
-        assert_eq!(closeness_band(0.5), "close");
-        assert_eq!(closeness_band(0.51), "intimate");
-
-        assert_eq!(trust_band(-0.51), "distrustful/guarded");
-        assert_eq!(trust_band(-0.5), "wary");
-        assert_eq!(trust_band(-0.15), "neutral");
-        assert_eq!(trust_band(0.15), "neutral");
-        assert_eq!(trust_band(0.5), "trusting");
-        assert_eq!(trust_band(0.51), "deeply trusting");
-
-        assert_eq!(affection_band(-0.51), "hostile");
-        assert_eq!(affection_band(-0.5), "cold/irritated");
-        assert_eq!(affection_band(-0.15), "neutral");
-        assert_eq!(affection_band(0.15), "neutral");
-        assert_eq!(affection_band(0.5), "warm");
-        assert_eq!(affection_band(0.51), "deeply affectionate");
-    }
-
-    #[test]
-    fn top_dimension_and_alternate_regulation_thresholds_are_exact() {
-        let vector = EmotionVector {
-            warmth: 0.079,
-            trust: 0.08,
-            calm: 0.081,
-            ..EmotionVector::default()
-        };
-        assert_eq!(describe_top_dimensions(&vector, 3), "calm (8%), trust (8%)");
+        assert_eq!(state.closeness, RelationshipBand::Lowest);
+        assert_eq!(state.trust, RelationshipBand::Low);
+        assert_eq!(state.affection, RelationshipBand::Highest);
+        assert_eq!(state.blocked, vec![reading(EmotionDimension::Hurt, 0.08)]);
+        assert_eq!(state.active_signals, vec!["emotion:conflict".to_owned()]);
+        assert_eq!(state.regulation, Some(RegulationCue::Suppressed));
+        assert_eq!(state.reassurance, Some(ReassuranceCue::Open));
 
         let soul = CompanionSoulIdentity {
             regulation_style: RegulationStyle {
@@ -514,20 +402,47 @@ mod tests {
             },
             ..CompanionSoulIdentity::default()
         };
-        let soul_state = soul_state(Vec::new());
-        let rendered = render_prompt_state(&CompanionPromptStateInput {
-            character_name: "Mira",
-            partner_name: Some("Ari"),
+        let state = prompt_state(&CompanionPromptStateInput {
             soul: &soul,
             soul_state: &soul_state,
-            runtime_state: &state(),
+            runtime_state: &runtime,
             style_notes: "",
             continuity_episode: 0,
             effective_at: TimestampMillis::new(20),
         });
-        assert!(
-            rendered.contains("Regulation: relatively emotionally direct when trust is present.")
+        assert_eq!(state.regulation, Some(RegulationCue::Transparent));
+        assert_eq!(state.reassurance, Some(ReassuranceCue::Avoidant));
+    }
+
+    #[test]
+    fn every_relationship_band_boundary_is_exact() {
+        for (value, band) in [
+            (-0.51, RelationshipBand::Lowest),
+            (-0.5, RelationshipBand::Low),
+            (-0.15, RelationshipBand::Neutral),
+            (0.15, RelationshipBand::Neutral),
+            (0.5, RelationshipBand::High),
+            (0.51, RelationshipBand::Highest),
+            (f64::NAN, RelationshipBand::Highest),
+        ] {
+            assert_eq!(RelationshipBand::of(value), band, "{value}");
+        }
+    }
+
+    #[test]
+    fn top_dimensions_keep_the_legacy_floor_and_order() {
+        let vector = EmotionVector {
+            warmth: 0.079,
+            trust: 0.08,
+            calm: 0.081,
+            ..EmotionVector::default()
+        };
+        assert_eq!(
+            top_dimensions(&vector, 3),
+            vec![
+                reading(EmotionDimension::Calm, 0.081),
+                reading(EmotionDimension::Trust, 0.08),
+            ]
         );
-        assert!(rendered.contains("When unsettled, may avoid asking directly for reassurance."));
     }
 }
