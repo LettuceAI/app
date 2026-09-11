@@ -40,6 +40,6 @@ pub use tool::{
     CreateMemoryPreparation, DYNAMIC_MEMORY_TOOL_TEXT_KEYS, DynamicMemoryToolOptions,
     MemoryBatchResult, MemoryReference, MemoryToolArguments, MemoryToolCall, MemoryToolError,
     MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
-    SemanticDuplicateEvidence, SoftDeleteReason, dynamic_memory_tool_request_for_run,
-    dynamic_memory_tool_shape,
+    MemoryToolSkipReason, SemanticDuplicateEvidence, SoftDeleteReason,
+    dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape,
 };

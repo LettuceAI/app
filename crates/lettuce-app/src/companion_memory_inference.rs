@@ -52,8 +52,6 @@ pub enum CompanionMemoryInferenceError {
     MixedToolAndContent,
     #[error("background memory inference returned inconsistent protected replay material")]
     InvalidSignedReplay,
-    #[error("background memory inference called an undeclared tool")]
-    UndeclaredTool,
     #[error("background memory conversation read failed: {0}")]
     Conversation(ConversationRepositoryError),
     #[error("background memory read failed: {0}")]
@@ -786,15 +784,15 @@ pub(crate) fn plan_memory_round(
         .tool_calls
         .iter()
         .map(|call| {
-            let definition = run
+            let definition_version = run
                 .tool_request
                 .definitions
                 .iter()
                 .find(|definition| definition.name == call.name)
-                .ok_or(CompanionMemoryInferenceError::UndeclaredTool)?;
+                .map_or(1, |definition| definition.version);
             Ok(NewDynamicMemoryToolCall {
                 id: ToolExecutionId::new(),
-                definition_version: definition.version,
+                definition_version,
                 call: call.clone(),
             })
         })

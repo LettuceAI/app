@@ -7,7 +7,7 @@ use lettuce_embeddings::{
 use lettuce_jobs::{Claim, ResourceClass, handle::JobHandle};
 use lettuce_memory::{
     CreateMemoryPreparation, DynamicMemoryToolCallEvidence, MemoryBatchResult, MemorySpaceSnapshot,
-    MemoryToolArguments, MemoryToolError, MemoryToolOutcome,
+    MemoryToolArguments, MemoryToolOutcome,
 };
 use lettuce_types::{MemoryId, MemorySpaceId, TimestampMillis, ToolExecutionId};
 
@@ -189,8 +189,11 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
             if definition_version != TOOL_VERSION {
                 return Err(DynamicMemoryPreparationError::InvalidExecution);
             }
-            let arguments = MemoryToolArguments::parse(name, value)?;
+            let arguments = MemoryToolArguments::parse_or_skip(name, value);
             let MemoryToolArguments::CreateMemory { text, .. } = arguments else {
+                if name == "create_memory" {
+                    seeds.remove(&execution_id);
+                }
                 continue;
             };
             let seed = seeds
@@ -285,8 +288,6 @@ pub enum DynamicMemoryPreparationError {
     InvalidSeeds,
     #[error("dynamic-memory preparation was cancelled")]
     Cancelled,
-    #[error("dynamic-memory tool call is invalid: {0}")]
-    Tool(#[from] MemoryToolError),
     #[error("embedding projection repository failed: {0}")]
     Projection(#[from] EmbeddingProjectionError),
 }

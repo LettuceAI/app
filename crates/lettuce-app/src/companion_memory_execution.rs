@@ -181,7 +181,8 @@ fn prepare_background_calls(
         if !ids.insert(call.id) {
             return Err(CompanionMemoryRoundExecutionError::InvalidOwnership);
         }
-        let mut arguments = MemoryToolArguments::parse(&call.call.name, &call.call.arguments)?;
+        let mut arguments =
+            MemoryToolArguments::parse_or_skip(&call.call.name, &call.call.arguments);
         let mut source_role = None;
         let mut observed_at = None;
         if let MemoryToolArguments::CreateMemory {

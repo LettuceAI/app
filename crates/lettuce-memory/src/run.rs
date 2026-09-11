@@ -355,13 +355,6 @@ impl NewDynamicMemoryInferenceRound {
         }
         let mut ids = HashSet::new();
         let mut provider_ids = HashSet::new();
-        const TOOL_NAMES: [&str; 5] = [
-            "create_memory",
-            "delete_memory",
-            "pin_memory",
-            "unpin_memory",
-            "done",
-        ];
         for call in &self.calls {
             call.call
                 .validate()
@@ -375,7 +368,6 @@ impl NewDynamicMemoryInferenceRound {
                     .is_some_and(|id| !provider_ids.insert(id))
                 || call.call.provider_replay.as_ref() != self.provider_replay.as_ref()
                 || call.definition_version != 1
-                || !TOOL_NAMES.contains(&call.call.name.as_str())
             {
                 return Err(DynamicMemoryRunError::InvalidCall);
             }

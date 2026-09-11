@@ -41,9 +41,14 @@ group variants; runs freeze the resulting request and validation compares its
 description-free shape. Arguments parse as leniently as legacy: unknown keys are
 ignored, a non-UUID `source_message_id` or non-boolean `important` falls back to
 its default, and `confidence` is clamped to 0..1. Group contracts never carry
-source attribution or supersession. Invalid text or category still fails the
-call; legacy skipped such calls with a result, which is later work together
-with legacy-shaped tool results (six-digit ids in results). Structured
+source attribution or supersession. A call that cannot be applied (missing
+or invalid text, missing or unknown category, missing target,
+undeclared tool name) settles as `Skipped` with a typed reason instead of
+failing the round, as legacy skipped such calls; a round may repeat `done`. Still missing from legacy:
+category repair for unknown categories (`retag_memory`, repair fallbacks,
+keyword guess), legacy memory-text quality checks (280-byte limit, refusal and
+meta-output markers) and legacy-shaped tool results (six-digit ids,
+`updatedMemories`). Structured
 fallback prompts are catalog keys (`memory_operations_fallback_prompt_key`).
 Runs store up to 64 inference rounds and 4096 tool calls per attempt. Companion-required source validation and supersession, provider-driven
 category repair, and UI events remain later slices. ONNX inference runtime

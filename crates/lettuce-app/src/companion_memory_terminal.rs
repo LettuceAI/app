@@ -56,8 +56,7 @@ impl CompanionMemoryTerminalFailure {
             }
             CompanionMemoryInferenceError::MultipleCandidates
             | CompanionMemoryInferenceError::MixedToolAndContent
-            | CompanionMemoryInferenceError::InvalidSignedReplay
-            | CompanionMemoryInferenceError::UndeclaredTool => Self::ProviderRejected,
+            | CompanionMemoryInferenceError::InvalidSignedReplay => Self::ProviderRejected,
             CompanionMemoryInferenceError::InvalidOwnership
             | CompanionMemoryInferenceError::InvalidPrompt
             | CompanionMemoryInferenceError::InvalidSource

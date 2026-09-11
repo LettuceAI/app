@@ -326,14 +326,16 @@ fn done_summary(
         if call.call.name != "done" {
             continue;
         }
-        let MemoryToolOutcome::Done {
-            summary: done_summary,
-        } = &result.outcome
-        else {
-            return Err(CompanionMemoryContinuationError::InvalidSettlement);
-        };
-        if summary.replace(done_summary.clone()).is_some() {
-            return Err(CompanionMemoryContinuationError::InvalidSettlement);
+        match &result.outcome {
+            MemoryToolOutcome::Done {
+                summary: done_summary,
+            } => {
+                if summary.replace(done_summary.clone()).is_some() {
+                    return Err(CompanionMemoryContinuationError::InvalidSettlement);
+                }
+            }
+            MemoryToolOutcome::StoppedAfterDone if summary.is_some() => {}
+            _ => return Err(CompanionMemoryContinuationError::InvalidSettlement),
         }
     }
     Ok(summary)

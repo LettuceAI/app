@@ -199,6 +199,23 @@ pub enum MemoryToolArguments {
     Done {
         summary: Option<String>,
     },
+    /// A call whose arguments cannot be applied; it settles as `Skipped`
+    /// instead of failing the round, as legacy skipped such calls.
+    Unusable {
+        reason: MemoryToolSkipReason,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryToolSkipReason {
+    MissingText,
+    InvalidText,
+    MissingCategory,
+    InvalidCategory,
+    MissingTarget,
+    UnsupportedTool,
+    MalformedArguments,
 }
 
 /// A memory as the model named it: a six-digit short id, a stable id, or (for
@@ -234,6 +251,25 @@ impl MemoryReference {
 }
 
 impl MemoryToolArguments {
+    /// Like `parse`, but an unusable call becomes `Unusable` with its reason.
+    #[must_use]
+    pub fn parse_or_skip(name: &str, arguments: &Value) -> Self {
+        Self::parse(name, arguments).unwrap_or_else(|error| Self::Unusable {
+            reason: match error {
+                MemoryToolError::MissingField("text") if name == "delete_memory" => {
+                    MemoryToolSkipReason::MissingTarget
+                }
+                MemoryToolError::MissingField("text") => MemoryToolSkipReason::MissingText,
+                MemoryToolError::MissingField("category") => MemoryToolSkipReason::MissingCategory,
+                MemoryToolError::MissingField("id") => MemoryToolSkipReason::MissingTarget,
+                MemoryToolError::InvalidCategory => MemoryToolSkipReason::InvalidCategory,
+                MemoryToolError::UnsupportedTool => MemoryToolSkipReason::UnsupportedTool,
+                MemoryToolError::Validation(_) => MemoryToolSkipReason::InvalidText,
+                _ => MemoryToolSkipReason::MalformedArguments,
+            },
+        })
+    }
+
     /// Reads arguments as leniently as legacy: unknown keys are ignored and
     /// optional fields with the wrong shape fall back to their defaults.
     pub fn parse(name: &str, arguments: &Value) -> Result<Self, MemoryToolError> {
@@ -411,6 +447,9 @@ pub enum MemoryToolOutcome {
     Rejected {
         reason: MemoryToolRejection,
     },
+    Skipped {
+        reason: MemoryToolSkipReason,
+    },
     StoppedAfterDone,
 }
 
@@ -490,6 +529,9 @@ impl MemoryToolReducer {
                         MemoryToolOutcome::Done {
                             summary: summary.clone(),
                         }
+                    }
+                    MemoryToolArguments::Unusable { reason } => {
+                        MemoryToolOutcome::Skipped { reason: *reason }
                     }
                 }
             };
@@ -1105,6 +1147,64 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn unusable_calls_settle_as_skipped_instead_of_failing() {
+        use super::MemoryToolSkipReason;
+        let cases = [
+            (
+                "create_memory",
+                json!({ "category": "other" }),
+                MemoryToolSkipReason::MissingText,
+            ),
+            (
+                "create_memory",
+                json!({ "text": "Mira likes tea.", "category": "mood" }),
+                MemoryToolSkipReason::InvalidCategory,
+            ),
+            (
+                "create_memory",
+                json!({ "text": "   ", "category": "other" }),
+                MemoryToolSkipReason::InvalidText,
+            ),
+            ("pin_memory", json!({}), MemoryToolSkipReason::MissingTarget),
+            (
+                "retag_memory",
+                json!({}),
+                MemoryToolSkipReason::UnsupportedTool,
+            ),
+            (
+                "delete_memory",
+                json!("123456"),
+                MemoryToolSkipReason::MalformedArguments,
+            ),
+        ];
+        let calls = cases
+            .iter()
+            .map(|(name, arguments, _)| call(MemoryToolArguments::parse_or_skip(name, arguments)))
+            .collect::<Vec<_>>();
+        let result = MemoryToolReducer
+            .reduce(
+                &snapshot(vec![item("Mira likes tea.", 2, 1, false)]),
+                &policy(),
+                &calls,
+            )
+            .expect("reduce");
+        assert_eq!(result.results.len(), cases.len());
+        assert_eq!(
+            MemoryToolArguments::parse_or_skip("delete_memory", &json!({ "confidence": 0.9 })),
+            MemoryToolArguments::Unusable {
+                reason: MemoryToolSkipReason::MissingTarget
+            }
+        );
+        for (result, (_, _, reason)) in result.results.iter().zip(&cases) {
+            assert_eq!(
+                result.outcome,
+                MemoryToolOutcome::Skipped { reason: *reason }
+            );
+        }
+        assert!(result.change.is_none());
     }
 
     #[test]
