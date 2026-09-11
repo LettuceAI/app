@@ -23,7 +23,10 @@ key. Add allocates identity and order, update/remove/reorder require an existing
 typed ID, and replace supplies the complete ordered draft set.
 Lorebook entry create uses `Append` or an explicit insertion index, while
 update/remove/reorder target an existing entry. Entry titles may be empty, as
-legacy blank entries are, but stay length-bounded. Successful prompt mutations
+legacy blank entries are, but stay length-bounded. Direct and companion chat
+rendering moves a Relative entry that names a volatile turn value (lorebook,
+memories, summaries, companion state, scheduled notes, dates or times) to
+in-chat depth 0, as legacy did; other purposes keep authored positions. Successful prompt mutations
 return the complete document with one root revision bump.
 
 Built-in prompts use a separate seed/reconcile port. Seeds have stable unique

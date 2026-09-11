@@ -1481,6 +1481,24 @@ pub fn render_prompt_snapshot(
     )
 }
 
+fn contains_volatile_turn_context(content: &str) -> bool {
+    [
+        "{{lorebook}}",
+        "{{key_memories}}",
+        "{{context_summary}}",
+        "{{memory_summary}}",
+        "{{selected_memories}}",
+        "{{companion_state}}",
+        "{{scheduled_notes}}",
+        "{{date",
+        "{{time",
+        "{{weekday}}",
+        "{{datetime_",
+    ]
+    .iter()
+    .any(|placeholder| content.contains(placeholder))
+}
+
 fn render_prompt_input(
     document_id: PromptDocumentId,
     document_revision: Revision,
@@ -1501,14 +1519,20 @@ fn render_prompt_input(
         if !entry_selected(behavior_version, entry, context) {
             continue;
         }
-        let message = render_entry(entry, &context.values)?;
-        // A placeholder-only entry can become empty for a purpose that does
-        // not provide its value. Payload entries still carry an operation
-        // (for example an image slot), so retain them even with blank text.
+        let mut message = render_entry(entry, &context.values)?;
         if message.content.trim().is_empty() && message.payload.is_none() {
             continue;
         }
         match entry.injection_position {
+            PromptEntryPosition::Relative
+                if matches!(
+                    purpose,
+                    PromptPurpose::DirectChat | PromptPurpose::CompanionChat
+                ) && contains_volatile_turn_context(&entry.content) =>
+            {
+                message.depth = 0;
+                rendered.in_chat.push(message);
+            }
             PromptEntryPosition::Relative => rendered.relative.push(message),
             PromptEntryPosition::InChat => rendered.in_chat.push(message),
             PromptEntryPosition::Conditional => {
@@ -2326,6 +2350,38 @@ mod tests {
             .validate()
             .is_ok()
         );
+    }
+
+    #[test]
+    fn direct_chat_moves_volatile_relative_entries_after_the_transcript() {
+        let volatile = PromptEntry {
+            id: PromptEntryId::new(),
+            name: "memories".into(),
+            content: "Known facts:\n{{key_memories}}".into(),
+            depth: 3,
+            ..PromptEntry::default()
+        };
+        let stable = PromptEntry {
+            id: PromptEntryId::new(),
+            name: "rules".into(),
+            content: "Stay in character.".into(),
+            ..PromptEntry::default()
+        };
+        let mut prompt = document(volatile.clone());
+        prompt.entries.push(stable.clone());
+        let mut context = PromptRenderContext::default();
+        context.values.key_memories = "- Mira prefers tea".into();
+        let rendered = render_prompt(&prompt, &context).expect("direct chat render");
+        assert_eq!(rendered.relative.len(), 1);
+        assert_eq!(rendered.relative[0].entry_id, stable.id);
+        assert_eq!(rendered.in_chat.len(), 1);
+        assert_eq!(rendered.in_chat[0].entry_id, volatile.id);
+        assert_eq!(rendered.in_chat[0].depth, 0);
+
+        prompt.purpose = PromptPurpose::GroupChatRoleplay;
+        let rendered = render_prompt(&prompt, &context).expect("group render");
+        assert_eq!(rendered.relative.len(), 2);
+        assert!(rendered.in_chat.is_empty());
     }
 
     #[test]
