@@ -178,6 +178,23 @@ pub fn resolve_effective_settings(
     }
 }
 
+/// The speaker-selection method a group conversation uses now: its own
+/// setting, or the group's method it was launched with.
+#[must_use]
+pub fn effective_speaker_selection(
+    conversation: &Conversation,
+) -> Option<crate::snapshot::GroupSpeakerSelectionSnapshot> {
+    let ConversationKind::Group(details) = &conversation.kind else {
+        return None;
+    };
+    current_or_launch(
+        conversation,
+        |settings| settings.speaker_selection_provenance,
+        |settings| settings.speaker_selection,
+        Some(details.group.speaker_selection),
+    )
+}
+
 fn current_or_selection<T: Clone>(
     conversation: &Conversation,
     provenance: impl Fn(&crate::CurrentConversationSettings) -> SettingProvenance,
@@ -586,6 +603,7 @@ mod tests {
                 lorebooks: PatchValue::Set(vec![override_book.clone()]),
                 persona: PatchValue::Keep,
                 scene: PatchValue::Keep,
+                speaker_selection: PatchValue::Keep,
             }
             .apply(None, None)
             .expect("settings override"),
@@ -601,6 +619,39 @@ mod tests {
             ValidationError::InvalidReference {
                 field: "effective_settings.selected_speaker"
             }
+        );
+        assert_eq!(effective_speaker_selection(&conversation), None);
+        let mut direct_selection = conversation.clone();
+        direct_selection.current_settings = Some(
+            CurrentConversationSettingsPatch {
+                speaker_selection: PatchValue::Set(GroupSpeakerSelectionSnapshot::Director),
+                ..CurrentConversationSettingsPatch::default()
+            }
+            .apply(None, None)
+            .expect("patch"),
+        );
+        assert!(direct_selection.validate().is_err());
+    }
+
+    #[test]
+    fn group_conversations_can_choose_their_own_speaker_selection() {
+        let (mut conversation, _) = group_conversation(GroupChatModeSnapshot::Roleplay);
+        assert_eq!(
+            effective_speaker_selection(&conversation),
+            Some(GroupSpeakerSelectionSnapshot::RoundRobin)
+        );
+        conversation.current_settings = Some(
+            CurrentConversationSettingsPatch {
+                speaker_selection: PatchValue::Set(GroupSpeakerSelectionSnapshot::Llm),
+                ..CurrentConversationSettingsPatch::default()
+            }
+            .apply(None, None)
+            .expect("patch"),
+        );
+        conversation.validate().expect("group override");
+        assert_eq!(
+            effective_speaker_selection(&conversation),
+            Some(GroupSpeakerSelectionSnapshot::Llm)
         );
     }
 

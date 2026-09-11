@@ -439,6 +439,9 @@ full repository must validate projection equality on every write and hydrate.
 Usage rows are references owned by the external `UsagePort`, not copied usage
 records.
 
+`conversation_settings` keeps a group conversation's own speaker-selection
+method (`speaker_selection` with `current_override` or `launch_inherited`
+provenance).
 Migration 8 also stores one immutable provider-backed speaker-selection
 dispatch per generation attempt. Admission requires the attached attempt to be
 preparing at `SelectingSpeaker`; settlement requires the linked job inference

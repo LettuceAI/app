@@ -1108,6 +1108,87 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
 }
 
 #[tokio::test]
+async fn a_group_switched_to_llm_selection_uses_the_live_speaker_model() {
+    use lettuce_conversations::ConversationRepository as _;
+    let path = std::env::temp_dir().join(format!("lettuce-group-switch-{}.db", RequestId::new()));
+    let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+    let (scenario, speakers) = group_scenario(
+        &backend,
+        "switch-llm",
+        lettuce_characters::SpeakerSelection::RoundRobin,
+        false,
+    );
+    backend
+        .database()
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id: scenario.conversation_id,
+                    expected_settings_revision: None,
+                    operation: lettuce_conversations::OperationToken {
+                        key: lettuce_jobs::IdempotencyKey::new("switch-llm-settings").expect("key"),
+                        request_digest: lettuce_types::ContentHash::parse("ab".repeat(32))
+                            .expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        speaker_selection: lettuce_conversations::PatchValue::Set(
+                            lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm,
+                        ),
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                Vec::new(),
+            )
+            .expect("prepared settings"),
+            TimestampMillis::new(1_012),
+        )
+        .expect("switch to LLM selection");
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![
+        call_outcome(
+            "switch-llm-selection",
+            "select_next_speaker",
+            serde_json::json!({ "character_id": speakers[1] }),
+            (15, 2),
+        ),
+        text_outcome("switch-llm-generation", "Group reply.", 20, 4),
+    ]);
+    let engine = ScenarioEmbeddingEngine;
+    let result = backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("run switched group generation");
+    let decision = result.turn.selected_speaker.expect("speaker decision");
+    assert_eq!(decision.participant_id, speakers[1]);
+    assert_eq!(decision.method, SpeakerDecisionMethod::Llm);
+    assert_eq!(decision.fallback, SpeakerFallback::None);
+    assert_eq!(decision.decision_model, None);
+    let requests = inference.requests.lock().expect("requests");
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0]
+            .tools
+            .as_ref()
+            .expect("selection tools")
+            .definitions[0]
+            .name,
+        "select_next_speaker"
+    );
+    assert_eq!(
+        requests[0].profile.chat_profile.model_profile_id,
+        GlobalSettingsStore::load(backend.database())
+            .expect("settings")
+            .default_model_profile_id
+            .expect("default model")
+    );
+}
+
+#[tokio::test]
 async fn app_backend_checkpoints_llm_group_selection_and_falls_back_to_heuristic() {
     for (name, selection, expected_method, expected_fallback) in [
         (

@@ -466,6 +466,9 @@ where
         let ConversationKind::Group(details) = &aggregate.conversation.kind else {
             return Ok(());
         };
+        let speaker_selection =
+            lettuce_conversations::effective_speaker_selection(&aggregate.conversation)
+                .unwrap_or(details.group.speaker_selection);
         let mut turn = ConversationReader::get_turn(self.repository, work.turn_id)
             .map_err(ConversationGenerationInputError::Repository)?;
         if turn.selected_speaker.is_some()
@@ -475,7 +478,7 @@ where
             return Ok(());
         }
         if matches!(
-            details.group.speaker_selection,
+            speaker_selection,
             lettuce_conversations::GroupSpeakerSelectionSnapshot::Director
                 | lettuce_conversations::GroupSpeakerSelectionSnapshot::DirectorAction
         ) {
@@ -593,8 +596,7 @@ where
             timeline: timeline.items,
         };
         let selected_speaker = if mention_source.is_none()
-            && details.group.speaker_selection
-                == lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm
+            && speaker_selection == lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm
         {
             self.select_speaker_via_llm(
                 work,
@@ -606,7 +608,7 @@ where
             )
             .await?
         } else {
-            select_group_speaker(&policy_request, details.group.speaker_selection)
+            select_group_speaker(&policy_request, speaker_selection)
                 .map_err(|_| ConversationGenerationInputError::SpeakerUnavailable)?
         };
         self.repository
@@ -686,13 +688,24 @@ where
         if available.is_empty() {
             return Err(ConversationGenerationInputError::SpeakerUnavailable);
         }
-        let Some(selection_model) = selection_model else {
-            return heuristic_fallback(policy, None, None);
+        let model_id = match selection_model {
+            Some(snapshot) => snapshot.source_id,
+            None => {
+                let settings = lettuce_settings::GlobalSettingsStore::load(self.repository)
+                    .map_err(ConversationGenerationInputError::Settings)?;
+                let Some(id) = settings
+                    .group_speaker_model_profile_id
+                    .or(settings.default_model_profile_id)
+                else {
+                    return heuristic_fallback(policy, None, None);
+                };
+                id
+            }
         };
-        let Some(model) = ModelProfileRepository::get(self.repository, selection_model.source_id)
+        let Some(model) = ModelProfileRepository::get(self.repository, model_id)
             .map_err(ConversationGenerationInputError::ModelRepository)?
         else {
-            return heuristic_fallback(policy, None, None);
+            return heuristic_fallback(policy, selection_model, None);
         };
         let Some(account) =
             ProviderAccountRepository::get(self.repository, model.provider_account_id)
@@ -700,8 +713,21 @@ where
         else {
             return heuristic_fallback(policy, None, None);
         };
+        let expected = selection_model.map_or_else(
+            || lettuce_models::ExpectedModelIdentity {
+                model_profile_id: model.id,
+                model_revision: model.revision,
+                provider_account_id: account.id,
+                provider_account_revision: account.revision,
+                external_model_id: model.external_model_id.clone(),
+                display_name: model.display_name.clone(),
+                provider_protocol: account.protocol,
+                model_kind: model.kind,
+            },
+            lettuce_conversations::ModelSelectionSnapshot::expected_chat_identity,
+        );
         let profile = match lettuce_models::resolve_chat_profile(
-            &selection_model.expected_chat_identity(),
+            &expected,
             &model,
             &account,
             &ChatParameterResolutionInput::default(),
@@ -798,7 +824,7 @@ where
             .unwrap_or_else(|| {
                 heuristic_fallback(
                     policy,
-                    Some(selection_model),
+                    selection_model,
                     Some(admission.record.usage_event_id),
                 )
                 .expect("available speaker has a heuristic fallback")
@@ -808,7 +834,7 @@ where
             )) => return Err(ConversationGenerationInputError::Cancelled),
             Err(crate::job_inference_usage::JobInferenceError::Provider(_)) => heuristic_fallback(
                 policy,
-                Some(selection_model),
+                selection_model,
                 Some(admission.record.usage_event_id),
             )?,
             Err(crate::job_inference_usage::JobInferenceError::Evidence) => {
@@ -1001,7 +1027,9 @@ where
         }
         let (participant_id, method, reference) = if let Some(participant_id) = turn.forced_speaker
         {
-            let method = match details.group.speaker_selection {
+            let method = match lettuce_conversations::effective_speaker_selection(conversation)
+                .unwrap_or(details.group.speaker_selection)
+            {
                 lettuce_conversations::GroupSpeakerSelectionSnapshot::Director => {
                     SpeakerDecisionMethod::Director
                 }
@@ -1764,7 +1792,7 @@ fn speaker_selection_tools(
 fn llm_speaker_decision(
     outcome: &lettuce_conversations::InferenceOutcome,
     available: &[&lettuce_conversations::ConversationParticipant],
-    selection_model: &lettuce_conversations::ModelSelectionSnapshot,
+    selection_model: Option<&lettuce_conversations::ModelSelectionSnapshot>,
     usage_event_id: UsageEventId,
 ) -> Option<SelectedSpeakerDecision> {
     for call in outcome
@@ -1802,7 +1830,7 @@ fn llm_speaker_decision(
             fallback: SpeakerFallback::None,
             reference: None,
             rationale_summary,
-            decision_model: Some(selection_model.clone()),
+            decision_model: selection_model.cloned(),
             usage_event_id: Some(usage_event_id),
         });
     }

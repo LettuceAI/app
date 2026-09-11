@@ -1382,7 +1382,7 @@ fn read_current_settings(
 {
     transaction
         .query_row(
-            "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance FROM conversation_settings WHERE conversation_id = ?1",
+            "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance FROM conversation_settings WHERE conversation_id = ?1",
             [conversation_id.to_string()],
             slice::read_settings,
         )
@@ -1412,7 +1412,7 @@ fn write_settings(
     if create {
         transaction
             .execute(
-                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?19)",
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?20, ?21, ?19, ?19)",
                 params![
                     conversation_id.to_string(),
                     revision,
@@ -1433,6 +1433,8 @@ fn write_settings(
                     scene,
                     slice::provenance_name(settings.scene_provenance),
                     now.get(),
+                    settings.speaker_selection.map(slice::speaker_selection_name),
+                    slice::provenance_name(settings.speaker_selection_provenance),
                 ],
             )
             .map_err(kernel::map_constraint)?;
@@ -1440,7 +1442,7 @@ fn write_settings(
     }
     let changed = transaction
         .execute(
-            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19 WHERE conversation_id = ?1 AND revision = ?20",
+            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19, speaker_selection = ?21, speaker_selection_provenance = ?22 WHERE conversation_id = ?1 AND revision = ?20",
             params![
                 conversation_id.to_string(),
                 revision,
@@ -1462,6 +1464,8 @@ fn write_settings(
                 slice::provenance_name(settings.scene_provenance),
                 now.get(),
                 revision - 1,
+                settings.speaker_selection.map(slice::speaker_selection_name),
+                slice::provenance_name(settings.speaker_selection_provenance),
             ],
         )
         .map_err(kernel::map_constraint)?;
@@ -10897,6 +10901,7 @@ mod tests {
                 lorebooks: PatchValue::Keep,
                 persona: PatchValue::Keep,
                 scene: PatchValue::Keep,
+                speaker_selection: PatchValue::Keep,
             }
         };
         let prepared = |command: UpdateConversationSettings| {
@@ -11056,6 +11061,7 @@ mod tests {
                 lorebooks: PatchValue::Keep,
                 persona: PatchValue::Keep,
                 scene: PatchValue::Keep,
+                speaker_selection: PatchValue::Keep,
             }
         };
         let create = fixture
@@ -11190,6 +11196,7 @@ mod tests {
                     lorebooks: PatchValue::Keep,
                     persona: PatchValue::Keep,
                     scene,
+                    speaker_selection: PatchValue::Keep,
                 }
             };
         fixture
@@ -11245,6 +11252,38 @@ mod tests {
             )
             .expect("scene rollback");
         assert_eq!(artifact_count, 0);
+
+        fixture
+            .database
+            .update_settings(
+                PreparedConversationSettingsUpdate::new(
+                    UpdateConversationSettings {
+                        conversation_id: fixture.conversation_id,
+                        expected_settings_revision: Some(Revision::INITIAL),
+                        operation: token("group-settings-speaker", "78"),
+                        patch: CurrentConversationSettingsPatch {
+                            speaker_selection: PatchValue::Set(
+                                lettuce_conversations::GroupSpeakerSelectionSnapshot::Director,
+                            ),
+                            ..CurrentConversationSettingsPatch::default()
+                        },
+                    },
+                    Vec::new(),
+                )
+                .expect("prepared speaker selection"),
+                TimestampMillis::new(22),
+            )
+            .expect("speaker selection");
+        let conversation = ConversationReader::get(&*fixture.database, fixture.conversation_id)
+            .expect("conversation")
+            .conversation;
+        assert_eq!(
+            lettuce_conversations::effective_speaker_selection(&conversation),
+            Some(lettuce_conversations::GroupSpeakerSelectionSnapshot::Director)
+        );
+        let settings = conversation.current_settings.expect("settings");
+        assert_eq!(settings.revision, Revision::new(2));
+        assert!(settings.prompt.is_some());
     }
 
     #[test]

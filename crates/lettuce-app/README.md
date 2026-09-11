@@ -726,7 +726,12 @@ turn's original source message, resolves the selected participant's effective
 settings and exact snapshotted live model/account, assembles provider-neutral
 context, derives unique media grants from that context, and invokes the
 claimed-job runner. Stored explicit decisions, including muted mention targets,
-run directly. For a user-message send in a non-director group, a mention of an
+run directly. Automatic selection, the director check and the method recorded
+for a forced speaker use the conversation's current speaker-selection method
+(its own setting, else the group's method at launch). LLM selection without a
+launch speaker-model snapshot (a conversation switched to LLM later) uses the
+live group speaker model, else the default model, as legacy resolved it per
+call; its decision records no model snapshot. For a user-message send in a non-director group, a mention of an
 enabled character in that message becomes the explicit speaker before any
 heuristic, round-robin or LLM selection, so no speaker-selection call is made
 and mute is bypassed as in legacy. Mentions resolve against each character's

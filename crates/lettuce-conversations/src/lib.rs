@@ -1048,6 +1048,7 @@ mod tests {
             lorebooks: PatchValue::Keep,
             persona: PatchValue::Keep,
             scene: PatchValue::Keep,
+            speaker_selection: PatchValue::Keep,
         };
         assert!(
             PreparedConversationSettingsUpdate::new(command(patch.clone()), Vec::new()).is_ok()
@@ -2464,6 +2465,7 @@ mod tests {
             lorebooks: PatchValue::Keep,
             persona: PatchValue::Keep,
             scene: PatchValue::Keep,
+            speaker_selection: PatchValue::Keep,
         };
         let command = UpdateConversationSettings {
             conversation_id: ConversationId::new(),
@@ -2514,6 +2516,8 @@ mod tests {
             persona_provenance: SettingProvenance::Disabled,
             scene: None,
             scene_provenance: SettingProvenance::Disabled,
+            speaker_selection: None,
+            speaker_selection_provenance: SettingProvenance::LaunchInherited,
         };
         let preserved = patch
             .apply(Some(&existing), Some(Revision::INITIAL))
@@ -2554,6 +2558,7 @@ mod tests {
             lorebooks: PatchValue::Keep,
             persona: PatchValue::Keep,
             scene: PatchValue::Keep,
+            speaker_selection: PatchValue::Keep,
         };
         let created = set.apply(None, None).expect("create settings");
         assert_eq!(created.revision, Revision::INITIAL);
@@ -2577,6 +2582,7 @@ mod tests {
             lorebooks: PatchValue::UseLaunchDefault,
             persona: PatchValue::UseLaunchDefault,
             scene: PatchValue::UseLaunchDefault,
+            speaker_selection: PatchValue::Keep,
         };
         let inherited = use_launch_default
             .apply(Some(&created), Some(Revision::INITIAL))
@@ -2612,6 +2618,7 @@ mod tests {
             lorebooks: PatchValue::Clear,
             persona: PatchValue::Clear,
             scene: PatchValue::Clear,
+            speaker_selection: PatchValue::Keep,
         };
         let disabled = clear
             .apply(Some(&created), Some(Revision::INITIAL))
@@ -2625,6 +2632,44 @@ mod tests {
         assert_eq!(disabled.model_provenance, SettingProvenance::Disabled);
         assert_eq!(disabled.voice, None);
         assert_eq!(disabled.voice_provenance, SettingProvenance::Disabled);
+
+        let director = CurrentConversationSettingsPatch {
+            speaker_selection: PatchValue::Set(
+                crate::snapshot::GroupSpeakerSelectionSnapshot::Director,
+            ),
+            ..CurrentConversationSettingsPatch::default()
+        };
+        let chosen = director
+            .apply(Some(&created), Some(Revision::INITIAL))
+            .expect("set speaker selection");
+        assert_eq!(
+            chosen.speaker_selection,
+            Some(crate::snapshot::GroupSpeakerSelectionSnapshot::Director)
+        );
+        assert_eq!(
+            chosen.speaker_selection_provenance,
+            SettingProvenance::CurrentOverride
+        );
+        assert_eq!(chosen.author_note.as_deref(), Some("note"));
+        let restored = CurrentConversationSettingsPatch {
+            speaker_selection: PatchValue::UseLaunchDefault,
+            ..CurrentConversationSettingsPatch::default()
+        }
+        .apply(Some(&chosen), Some(Revision::new(2)))
+        .expect("group method again");
+        assert_eq!(restored.speaker_selection, None);
+        assert_eq!(
+            restored.speaker_selection_provenance,
+            SettingProvenance::LaunchInherited
+        );
+        assert!(
+            CurrentConversationSettingsPatch {
+                speaker_selection: PatchValue::Clear,
+                ..CurrentConversationSettingsPatch::default()
+            }
+            .apply(Some(&created), Some(Revision::INITIAL))
+            .is_err()
+        );
 
         let first_inherited = use_launch_default
             .apply(None, None)
@@ -2705,6 +2750,7 @@ mod tests {
             lorebooks: PatchValue::Set(vec![lorebook.clone()]),
             persona: PatchValue::Set(persona),
             scene: PatchValue::Set(scene),
+            speaker_selection: PatchValue::Keep,
         };
         let current = patch.apply(None, None).expect("context settings");
         assert_eq!(current.prompt, Some(prompt.clone()));
@@ -2807,6 +2853,8 @@ mod tests {
             persona_provenance: SettingProvenance::Disabled,
             scene: None,
             scene_provenance: SettingProvenance::Disabled,
+            speaker_selection: None,
+            speaker_selection_provenance: SettingProvenance::LaunchInherited,
         };
         assert!(settings.validate().is_ok());
         settings.revision = Revision::new(0);

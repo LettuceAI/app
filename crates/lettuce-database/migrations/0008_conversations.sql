@@ -65,6 +65,8 @@ CREATE TABLE conversation_settings (
     persona_provenance TEXT NOT NULL CHECK (persona_provenance IN ('launch_inherited', 'current_override', 'disabled')),
     scene_json TEXT CHECK (scene_json IS NULL OR (json_valid(scene_json) AND json_extract(scene_json, '$.format_version') = 1)),
     scene_provenance TEXT NOT NULL CHECK (scene_provenance IN ('launch_inherited', 'current_override', 'disabled')),
+    speaker_selection TEXT CHECK (speaker_selection IS NULL OR speaker_selection IN ('llm', 'heuristic', 'round_robin', 'director', 'director_action')),
+    speaker_selection_provenance TEXT NOT NULL DEFAULT 'launch_inherited' CHECK (speaker_selection_provenance IN ('launch_inherited', 'current_override')),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     CHECK (author_note IS NULL OR (length(trim(author_note)) > 0 AND length(CAST(author_note AS BLOB)) <= 1048576)),
@@ -76,6 +78,7 @@ CREATE TABLE conversation_settings (
     CHECK ((lorebooks_json IS NOT NULL) = (lorebooks_provenance = 'current_override')),
     CHECK ((persona_json IS NOT NULL) = (persona_provenance = 'current_override')),
     CHECK ((scene_json IS NOT NULL) = (scene_provenance = 'current_override')),
+    CHECK ((speaker_selection IS NOT NULL) = (speaker_selection_provenance = 'current_override')),
     CHECK (created_at <= updated_at)
 ) STRICT;
 

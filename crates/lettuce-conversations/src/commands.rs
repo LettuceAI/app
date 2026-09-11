@@ -961,16 +961,17 @@ impl RegenerateCandidate {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub enum PatchValue<T> {
+    #[default]
     Keep,
     Set(T),
     Clear,
     UseLaunchDefault,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct CurrentConversationSettingsPatch {
     pub author_note: PatchValue<String>,
@@ -981,10 +982,19 @@ pub struct CurrentConversationSettingsPatch {
     pub lorebooks: PatchValue<Vec<LorebookLaunchSnapshot>>,
     pub persona: PatchValue<PersonaLaunchSnapshot>,
     pub scene: PatchValue<SceneLaunchSnapshot>,
+    /// Group conversations only; it cannot be cleared, only set or returned
+    /// to the group's method.
+    #[serde(default)]
+    pub speaker_selection: PatchValue<crate::snapshot::GroupSpeakerSelectionSnapshot>,
 }
 
 impl CurrentConversationSettingsPatch {
     pub fn validate(&self) -> Result<(), ValidationError> {
+        if matches!(self.speaker_selection, PatchValue::Clear) {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.speaker_selection",
+            });
+        }
         if let PatchValue::Set(note) = &self.author_note {
             validate_text(
                 "conversation_settings.author_note",
@@ -1102,6 +1112,8 @@ impl CurrentConversationSettingsPatch {
             persona_provenance: SettingProvenance::LaunchInherited,
             scene: None,
             scene_provenance: SettingProvenance::LaunchInherited,
+            speaker_selection: None,
+            speaker_selection_provenance: SettingProvenance::LaunchInherited,
         };
         let base = current.unwrap_or(&empty);
         let (author_note, author_note_provenance) = apply_value(
@@ -1152,6 +1164,12 @@ impl CurrentConversationSettingsPatch {
             base.scene_provenance,
             current.is_some(),
         );
+        let (speaker_selection, speaker_selection_provenance) = apply_value(
+            &self.speaker_selection,
+            base.speaker_selection.as_ref(),
+            base.speaker_selection_provenance,
+            current.is_some(),
+        );
         let result = crate::model::CurrentConversationSettings {
             revision,
             author_note,
@@ -1170,15 +1188,18 @@ impl CurrentConversationSettingsPatch {
             persona_provenance,
             scene,
             scene_provenance,
+            speaker_selection,
+            speaker_selection_provenance,
         };
         result.validate()?;
         Ok(result)
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SettingProvenance {
+    #[default]
     LaunchInherited,
     CurrentOverride,
     Disabled,

@@ -180,7 +180,7 @@ fn save_settings(
         return Ok(());
     };
     let revision = sql_revision(settings.revision)?;
-    transaction.execute("INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)", params![conversation.id.to_string(), revision, settings.author_note, provenance_name(settings.author_note_provenance), settings.memory.as_ref().map(encode).transpose()?, provenance_name(settings.memory_provenance), settings.model_override.as_ref().map(encode).transpose()?, provenance_name(settings.model_provenance), settings.voice.as_ref().map(encode).transpose()?, provenance_name(settings.voice_provenance), settings.prompt.as_ref().map(encode).transpose()?, provenance_name(settings.prompt_provenance), settings.lorebooks.as_ref().map(encode).transpose()?, provenance_name(settings.lorebooks_provenance), settings.persona.as_ref().map(encode).transpose()?, provenance_name(settings.persona_provenance), settings.scene.as_ref().map(encode).transpose()?, provenance_name(settings.scene_provenance), conversation.created_at.get(), conversation.updated_at.get()]).map_err(db)?;
+    transaction.execute("INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)", params![conversation.id.to_string(), revision, settings.author_note, provenance_name(settings.author_note_provenance), settings.memory.as_ref().map(encode).transpose()?, provenance_name(settings.memory_provenance), settings.model_override.as_ref().map(encode).transpose()?, provenance_name(settings.model_provenance), settings.voice.as_ref().map(encode).transpose()?, provenance_name(settings.voice_provenance), settings.prompt.as_ref().map(encode).transpose()?, provenance_name(settings.prompt_provenance), settings.lorebooks.as_ref().map(encode).transpose()?, provenance_name(settings.lorebooks_provenance), settings.persona.as_ref().map(encode).transpose()?, provenance_name(settings.persona_provenance), settings.scene.as_ref().map(encode).transpose()?, provenance_name(settings.scene_provenance), settings.speaker_selection.map(speaker_selection_name), provenance_name(settings.speaker_selection_provenance), conversation.created_at.get(), conversation.updated_at.get()]).map_err(db)?;
     Ok(())
 }
 
@@ -500,7 +500,7 @@ where
     }
 
     let settings = transaction
-        .query_row("SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance FROM conversation_settings WHERE conversation_id = ?1", [id.to_string()], read_settings)
+        .query_row("SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance FROM conversation_settings WHERE conversation_id = ?1", [id.to_string()], read_settings)
         .optional()
         .map_err(db)?;
     if let Some(settings) = &settings {
@@ -636,7 +636,39 @@ pub(crate) fn read_settings(row: &Row<'_>) -> Result<CurrentConversationSettings
             .transpose()
             .map_err(|_| rusqlite::Error::InvalidQuery)?,
         scene_provenance: provenance_from_name(&row.get::<_, String>(16)?)?,
+        speaker_selection: row
+            .get::<_, Option<String>>(17)?
+            .map(|value| speaker_selection_from_name(&value))
+            .transpose()?,
+        speaker_selection_provenance: provenance_from_name(&row.get::<_, String>(18)?)?,
     })
+}
+
+pub(crate) fn speaker_selection_name(
+    value: lettuce_conversations::GroupSpeakerSelectionSnapshot,
+) -> &'static str {
+    use lettuce_conversations::GroupSpeakerSelectionSnapshot as Selection;
+    match value {
+        Selection::Llm => "llm",
+        Selection::Heuristic => "heuristic",
+        Selection::RoundRobin => "round_robin",
+        Selection::Director => "director",
+        Selection::DirectorAction => "director_action",
+    }
+}
+
+fn speaker_selection_from_name(
+    value: &str,
+) -> Result<lettuce_conversations::GroupSpeakerSelectionSnapshot, rusqlite::Error> {
+    use lettuce_conversations::GroupSpeakerSelectionSnapshot as Selection;
+    match value {
+        "llm" => Ok(Selection::Llm),
+        "heuristic" => Ok(Selection::Heuristic),
+        "round_robin" => Ok(Selection::RoundRobin),
+        "director" => Ok(Selection::Director),
+        "director_action" => Ok(Selection::DirectorAction),
+        _ => Err(rusqlite::Error::InvalidQuery),
+    }
 }
 
 pub(crate) fn read_branch(

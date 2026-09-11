@@ -190,6 +190,18 @@ tool request. Admission returns the usage-event identity for the actual provider
 call; settlement stores only the validated final speaker decision. A pending
 record blocks redispatch, while a settled record can replay the decision without
 retaining a second copy of the provider response.
+A group conversation can change its speaker-selection method after launch, as
+legacy did per session: `CurrentConversationSettingsPatch.speaker_selection`
+sets it or returns it to the method the group had at launch (it cannot be
+cleared, and setting it on a direct conversation is rejected), and
+`effective_speaker_selection` resolves the method the next turn uses. Until
+conversations follow their group live, the fallback is the launch-time group
+method, not the group's current one. The method is read when the turn's job
+runs, so switching to director mode while a turn without a chosen speaker is
+queued fails that turn as speaker-unavailable. When a conversation switched to
+LLM selection has no launch speaker-model snapshot, the application resolves
+the model live; a speaker-model snapshot is simply unused while the method is
+not LLM.
 An LLM group launch may retain a dedicated speaker-selection model snapshot.
 The optional field is backward-compatible for existing snapshot documents and
 is valid only with the LLM policy. Its protected model artifact freezes the

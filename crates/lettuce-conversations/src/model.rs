@@ -105,6 +105,12 @@ pub struct CurrentConversationSettings {
     pub persona_provenance: crate::commands::SettingProvenance,
     pub scene: Option<crate::snapshot::SceneLaunchSnapshot>,
     pub scene_provenance: crate::commands::SettingProvenance,
+    /// A group conversation's own speaker-selection method; legacy edited it
+    /// per session.
+    #[serde(default)]
+    pub speaker_selection: Option<crate::snapshot::GroupSpeakerSelectionSnapshot>,
+    #[serde(default)]
+    pub speaker_selection_provenance: crate::commands::SettingProvenance,
 }
 
 impl CurrentConversationSettings {
@@ -218,6 +224,15 @@ impl CurrentConversationSettings {
                 field: "conversation_settings.scene_provenance",
             });
         }
+        if self.speaker_selection.is_some()
+            != (self.speaker_selection_provenance
+                == crate::commands::SettingProvenance::CurrentOverride)
+            || self.speaker_selection_provenance == crate::commands::SettingProvenance::Disabled
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.speaker_selection_provenance",
+            });
+        }
         if let Some(memory) = &self.memory {
             memory.validate()?;
         }
@@ -256,6 +271,11 @@ impl CurrentConversationSettings {
 
     pub fn validate_against_kind(&self, kind: &ConversationKind) -> Result<(), ValidationError> {
         self.validate()?;
+        if matches!(kind, ConversationKind::Direct(_)) && self.speaker_selection.is_some() {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.speaker_selection",
+            });
+        }
         let expected_prompt = match kind {
             ConversationKind::Direct(_) => crate::snapshot::PromptPurposeSnapshot::Direct,
             ConversationKind::Group(details) => match details.group.chat_mode {
