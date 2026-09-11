@@ -888,6 +888,7 @@ where
             dynamic_memory_enabled: dynamic_memory,
             ..Default::default()
         };
+        let context_window = lettuce_conversations::ContextWindowPolicy::default();
         let context = ConversationContextAssembler::new(self.repository)
             .assemble(ContextRequest {
                 conversation_id: work.conversation_id,
@@ -901,14 +902,14 @@ where
                 operation: turn.operation,
                 swap_roles: turn.swap_roles,
                 guidance: turn.guidance.clone(),
-                window: Default::default(),
+                window: context_window,
                 selected_speaker,
                 capabilities: profile.capabilities.clone(),
                 safety: SafetyContext::Standard,
                 prompt_runtime,
                 prompt_values: runtime.prompt_values,
                 memory: memory_contribution,
-                timeline: timeline.items,
+                timeline: context_timeline(timeline.items, context_window, source_message_id),
             })
             .await
             .map_err(ConversationGenerationInputError::Context)?;
@@ -1174,9 +1175,7 @@ where
                 .repository
                 .timeline_page(conversation_id, branch_id, &request)
                 .map_err(ConversationGenerationInputError::Repository)?;
-            if page.branch_path != complete.branch_path
-                || complete.items.len().saturating_add(page.items.len()) > 512
-            {
+            if page.branch_path != complete.branch_path {
                 return Err(ConversationGenerationInputError::Context(
                     ContextAssemblyError::SizeLimit,
                 ));
@@ -1200,6 +1199,40 @@ fn modality_scopes(capabilities: lettuce_models::ModalityCapabilities) -> Vec<St
     .filter(|(_, status)| *status == CapabilityStatus::Supported)
     .map(|(name, _)| name.into())
     .collect()
+}
+
+fn context_timeline(
+    items: Vec<lettuce_conversations::TimelineItem>,
+    window: lettuce_conversations::ContextWindowPolicy,
+    source_message_id: lettuce_types::MessageId,
+) -> Vec<lettuce_conversations::TimelineItem> {
+    let mut remaining = window.recent_non_pinned_limit.saturating_add(1);
+    let mut kept = items
+        .into_iter()
+        .rev()
+        .filter(|item| {
+            if item.message.id == source_message_id {
+                return true;
+            }
+            if matches!(
+                item.message.visibility,
+                lettuce_conversations::MessageVisibility::Hidden
+                    | lettuce_conversations::MessageVisibility::Tombstoned
+            ) {
+                return false;
+            }
+            if item.message.pinned || item.message.role == MessageRole::Scene {
+                return true;
+            }
+            if remaining == 0 {
+                return false;
+            }
+            remaining -= 1;
+            true
+        })
+        .collect::<Vec<_>>();
+    kept.reverse();
+    kept
 }
 
 fn retain_source_ancestry(
@@ -1671,4 +1704,77 @@ fn keywords(value: &str) -> Vec<String> {
         .filter(|word| seen.insert((*word).to_owned()))
         .map(str::to_owned)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use lettuce_conversations::{
+        ContextWindowPolicy, Message, MessageRenderSource, MessageRole, MessageVisibility,
+        TimelineItem,
+    };
+    use lettuce_types::{
+        ConversationBranchId, ConversationId, MessageCandidateId, MessageId, Revision,
+        TimestampMillis,
+    };
+
+    use super::context_timeline;
+
+    fn item(
+        index: i64,
+        role: MessageRole,
+        visibility: MessageVisibility,
+        pinned: bool,
+    ) -> TimelineItem {
+        TimelineItem {
+            message: Message {
+                id: MessageId::new(),
+                conversation_id: ConversationId::new(),
+                branch_id: ConversationBranchId::new(),
+                parent_message_id: None,
+                author_participant_id: None,
+                role,
+                logical_time: TimestampMillis::new(index),
+                effective_time: TimestampMillis::new(index),
+                visibility,
+                pinned,
+                scene_edited: false,
+                active_render_source: MessageRenderSource::Candidate(MessageCandidateId::new()),
+                revision: Revision::INITIAL,
+                created_at: TimestampMillis::new(index),
+                updated_at: TimestampMillis::new(index),
+            },
+            active_revision: None,
+            active_candidate: None,
+            initial_origin: None,
+        }
+    }
+
+    #[test]
+    fn long_timelines_keep_pinned_scene_source_and_the_recent_window() {
+        let items = (0..600_i64)
+            .map(|index| match index {
+                5 => item(index, MessageRole::Scene, MessageVisibility::Visible, false),
+                598 => item(
+                    index,
+                    MessageRole::Assistant,
+                    MessageVisibility::Hidden,
+                    false,
+                ),
+                _ if index % 100 == 0 => {
+                    item(index, MessageRole::User, MessageVisibility::Visible, true)
+                }
+                _ => item(index, MessageRole::User, MessageVisibility::Visible, false),
+            })
+            .collect::<Vec<_>>();
+        let source = items[599].message.id;
+        let kept = context_timeline(items, ContextWindowPolicy::default(), source);
+        let indices = kept
+            .iter()
+            .map(|item| item.message.created_at.get())
+            .collect::<Vec<_>>();
+        let mut expected = vec![0, 5, 100, 200, 300, 400, 500];
+        expected.extend(533..=597);
+        expected.push(599);
+        assert_eq!(indices, expected);
+    }
 }

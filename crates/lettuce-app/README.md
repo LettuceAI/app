@@ -649,7 +649,10 @@ reconstructed from the launch-frozen policy, current conversation-owned memory
 space and immutable settled round plans. When no dispatch exists, the runner
 loads the durable turn and branch ancestry (timeline pages arrive newest first
 and are reversed into oldest-first order, which speaker selection and memory
-queries rely on), trims a finalized replay back to the
+queries rely on; the whole branch is read, so long chats no longer fail, and the
+context request carries only pinned and scene messages, the source message and
+the recent window the assembler can select, so its omitted-message count reflects
+that trimmed input), trims a finalized replay back to the
 turn's original source message, resolves the selected participant's effective
 settings and exact snapshotted live model/account, assembles provider-neutral
 context, derives unique media grants from that context, and invokes the
