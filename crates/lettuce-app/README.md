@@ -498,7 +498,7 @@ Legacy removed empty sections by string replacement in Rust. The catalog
 expresses the same rule as entry conditions instead: the app default's
 `entry_world_info` requires `hasLorebookContent` and `entry_context_summary`
 requires `hasMemorySummary`, so an empty lorebook or a non-dynamic chat no
-longer sends a bare heading. Prompt text never lives in Rust.
+longer sends a bare heading.
 
 `AppBackend::usage_costs` exposes `UsageCostCoordinator::capture_job` for
 caller-triggered OpenRouter cost capture by job and dispatch ID. It reads
@@ -677,10 +677,14 @@ persists an automatic-selection rationale. An unresolved group turn fails with
 the stream sink and prompt runtime values remain caller-supplied; the sink stays
 outside the durable initial-dispatch fingerprint, so replay may use a new sink
 without another provider call. Context or model preparation failures map into
-the existing run settlement categories. A dynamic direct turn resolves the
+the existing run settlement categories. Every turn reads live global settings
+for its history window: dynamic memory uses `summary_message_interval`, other
+modes `manual_mode_context_window` (legacy only loaded the latest 120 messages;
+the window is now bounded by the 512-message context policy instead). A
+dynamic direct turn resolves the
 persisted global policy, loads its authoritative
-conversation memory space and summary, embeds the current or enriched two-message
-query, and selects current projections with the legacy threshold, cold-memory
+conversation memory space and summary, embeds the latest user message (or the
+enriched last two messages), and selects current projections with the legacy threshold, cold-memory
 penalty, category diversity, and smart recent/accessed fallbacks. Memory
 reaches the prompt as in legacy: `{{key_memories}}` and `HasKeyMemories` use
 every hot or pinned active memory (on send taken before retrieval promotes cold

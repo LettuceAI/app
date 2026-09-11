@@ -1344,8 +1344,10 @@ impl Default for ContextWindowPolicy {
 }
 
 impl ContextWindowPolicy {
+    pub const MAX_RECENT_NON_PINNED: usize = 512;
+
     fn validate(self) -> Result<(), crate::ValidationError> {
-        if self.recent_non_pinned_limit > 512 {
+        if self.recent_non_pinned_limit > Self::MAX_RECENT_NON_PINNED {
             return Err(crate::ValidationError::OutOfBounds {
                 field: "context_window.recent_non_pinned_limit",
             });

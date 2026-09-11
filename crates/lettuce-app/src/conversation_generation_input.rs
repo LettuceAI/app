@@ -141,6 +141,7 @@ pub(crate) enum ConversationGenerationInputError {
     Profile(ChatProfileResolutionError),
     Context(ContextAssemblyError),
     Memory(MemoryRepositoryError),
+    Settings(lettuce_settings::GlobalSettingsStoreError),
     Embedding,
     Cancelled,
     MemoryInputUnavailable,
@@ -197,7 +198,8 @@ where
         + MemoryEmbeddingRepository
         + MemoryRepository
         + MemoryRetrievalRepository
-        + MemorySummaryRepository,
+        + MemorySummaryRepository
+        + lettuce_settings::GlobalSettingsStore,
     I: InferencePort + ?Sized,
 {
     pub async fn execute_next<C>(
@@ -898,7 +900,22 @@ where
             dynamic_memory_enabled: dynamic_memory,
             ..Default::default()
         };
-        let context_window = lettuce_conversations::ContextWindowPolicy::default();
+        let settings = lettuce_settings::GlobalSettingsStore::load(self.repository)
+            .map_err(ConversationGenerationInputError::Settings)?
+            .settings;
+        let window_messages = if dynamic_memory {
+            settings.dynamic_memory.summary_message_interval
+        } else {
+            settings.manual_mode_context_window
+        };
+        let context_window = lettuce_conversations::ContextWindowPolicy {
+            recent_non_pinned_limit: usize::try_from(window_messages)
+                .unwrap_or(usize::MAX)
+                .clamp(
+                    1,
+                    lettuce_conversations::ContextWindowPolicy::MAX_RECENT_NON_PINNED,
+                ),
+        };
         let context = ConversationContextAssembler::new(self.repository)
             .assemble(ContextRequest {
                 conversation_id: work.conversation_id,
@@ -1342,6 +1359,10 @@ impl ConversationGenerationInputError {
                     code: lettuce_conversations::GenerationFailureCode::ContextUnavailable,
                 }
             }
+            Self::Settings(error) => {
+                tracing::warn!(?error, "conversation settings could not be read");
+                ConversationGenerationRunError::Repository(ConversationRepositoryError::Storage)
+            }
             Self::Memory(error) => {
                 tracing::warn!(?error, "dynamic-memory state preparation failed");
                 ConversationGenerationRunError::PreparationFailed {
@@ -1386,11 +1407,10 @@ fn memory_query(timeline: &[lettuce_conversations::TimelineItem], enriched: bool
     let mut messages = timeline
         .iter()
         .rev()
-        .filter(|item| {
-            matches!(
-                item.message.role,
-                MessageRole::User | MessageRole::Assistant
-            )
+        .filter(|item| match item.message.role {
+            MessageRole::User => true,
+            MessageRole::Assistant => enriched,
+            _ => false,
         })
         .filter_map(|item| {
             let parts = item
@@ -1781,15 +1801,15 @@ fn keywords(value: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use lettuce_conversations::{
-        ContextWindowPolicy, Message, MessageRenderSource, MessageRole, MessageVisibility,
-        TimelineItem,
+        ContextWindowPolicy, Message, MessagePart, MessageRenderSource, MessageRevision,
+        MessageRole, MessageVisibility, TimelineItem,
     };
     use lettuce_types::{
-        ConversationBranchId, ConversationId, MessageCandidateId, MessageId, Revision,
-        TimestampMillis,
+        ConversationBranchId, ConversationId, MessageCandidateId, MessageId, MessageRevisionId,
+        Revision, TimestampMillis,
     };
 
-    use super::context_timeline;
+    use super::{context_timeline, memory_query};
 
     fn item(
         index: i64,
@@ -1819,6 +1839,33 @@ mod tests {
             active_candidate: None,
             initial_origin: None,
         }
+    }
+
+    fn text_item(index: i64, role: MessageRole, text: &str) -> TimelineItem {
+        let mut item = item(index, role, MessageVisibility::Visible, false);
+        item.active_revision = Some(MessageRevision {
+            id: MessageRevisionId::new(),
+            message_id: item.message.id,
+            sequence: Revision::INITIAL,
+            parts: vec![MessagePart::Text { text: text.into() }],
+            authored_at: TimestampMillis::new(index),
+            source_turn_id: None,
+            provider_replay: None,
+        });
+        item
+    }
+
+    #[test]
+    fn plain_memory_query_uses_the_latest_user_message() {
+        let timeline = [
+            text_item(1, MessageRole::User, "Where is the lighthouse?"),
+            text_item(2, MessageRole::Assistant, "North of the harbor."),
+        ];
+        assert_eq!(memory_query(&timeline, false), "Where is the lighthouse?");
+        assert_eq!(
+            memory_query(&timeline, true),
+            "Where is the lighthouse?\nNorth of the harbor."
+        );
     }
 
     #[test]

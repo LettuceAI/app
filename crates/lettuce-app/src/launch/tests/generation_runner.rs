@@ -965,6 +965,16 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
         space_id: None,
     };
     let continued_work = admit_and_claim(backend.database(), &continued_scenario, 1_026);
+    let stored_settings = GlobalSettingsStore::load(backend.database()).expect("settings");
+    let mut narrow_window = stored_settings.settings;
+    narrow_window.manual_mode_context_window = 1;
+    GlobalSettingsStore::save(
+        backend.database(),
+        narrow_window,
+        stored_settings.default_model_profile_id,
+        stored_settings.revision,
+    )
+    .expect("narrow the manual context window");
     let continued_inference = scripted(vec![text_outcome(
         "prepared-manual-continue-response",
         "Continued reply",
@@ -980,16 +990,29 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
         )
         .await
         .expect("run manual continuation");
-    assert!(continued_inference
-        .requests
-        .lock()
-        .expect("continuation requests")[0]
-        .context
-        .messages
-        .iter()
-        .any(|message| message.parts.iter().any(|part| {
-            matches!(part, ProviderContextPart::Text { text } if text.contains("- Mira keeps a handwritten tea journal."))
-        })));
+    {
+        let requests = continued_inference
+            .requests
+            .lock()
+            .expect("continuation requests");
+        let texts = requests[0]
+            .context
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                ProviderContextPart::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            texts
+                .iter()
+                .any(|text| text.contains("- Mira keeps a handwritten tea journal."))
+        );
+        assert!(texts.contains(&"Prepared reply"));
+        assert!(!texts.contains(&"Remember tea."));
+    }
 
     let current = ConversationReader::get(backend.database(), scenario.conversation_id)
         .expect("conversation after continuation")
