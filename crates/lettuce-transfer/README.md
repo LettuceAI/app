@@ -403,6 +403,25 @@ memory-space revision. The legacy importer's table-wide delete and permissive
 malformed-JSON-to-empty behavior are not reproduced, and no memory row is
 written.
 
+Legacy creation-helper sessions now have a bounded read-only compatibility
+plan. It retains the exporter’s recency order, goal and status, byte-exact
+nested session and uploaded-image JSON, drafts and draft history, chat messages,
+tool calls/results, block order, create/edit target and timestamps. Outer row
+identity, goal, status and timestamps must agree with the nested session. Edit
+targets resolve through the authored graph, draft scene links remain closed,
+and cached image asset IDs resolve unambiguously to retained archive images.
+Older inline base64 and current asset-backed uploads are both preserved and
+hashed independently, including the valid case where both copies exist.
+Duplicate identities, malformed tool/block graphs, unsafe or missing image
+references and oversized nested state reject; tied recency timestamps report
+the legacy query’s missing order tie breaker. A pristine active create session
+whose draft fits the current target can serve as initial draft input only. No
+legacy row is classified as a durable workflow record because it has no project
+revision, proposal identity or lineage; conversational helper history also
+lacks turn/attempt identities and inference checkpoints. The old importer’s
+table-wide delete is not reproduced, and this slice writes no creation or media
+state.
+
 The first version-1 conversion slice turns legacy settings, provider accounts,
 models, prompt templates, audio providers, user voices, portable credentials
 and chat templates into one bounded read-only plan. It preserves the established
