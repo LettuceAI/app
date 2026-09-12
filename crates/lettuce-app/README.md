@@ -222,6 +222,24 @@ episode at the source message's effective clock through the existing typed
 condition when no scheduled notes exist, where legacy stripped the rendered
 heading from the string afterwards (`prompt_engine.rs` 4349-4350) and left four
 newlines behind; that whitespace-only difference is deliberate.
+
+`companion_clock` resolves legacy `is_companion_mode` and the session clock for a
+conversation: a direct chat is a companion chat when its live character is a
+companion or it has companion state, and its clock counts only while time
+awareness is on. Generation input renders every time placeholder the caller left
+unset from the clock's effective now (legacy `time_placeholder_values`), sets the
+time-awareness prompt fact that gates the catalog `# Time` entry, and formats
+memory lines against the clock. With time awareness the assembler prefixes each
+direct user and assistant history message with its stored `<time>` stamp, as
+legacy `push_user_or_assistant_message_with_context` did, and the post-turn
+memory host freezes the same flag into the memory run (legacy `flow.rs`), which
+was hardcoded off before. Group prompts also get these time values, where
+legacy left the literal placeholders in group prompts; that is a deliberate
+correction. Legacy applied the clock whenever time awareness was on without
+checking companion mode, but only companion sessions could turn it on, so the
+companion requirement changes nothing reachable. A replayed attempt formats its
+memory lines with the clock settings current at replay. Stripping stamps a model
+echoes and temporal-range retrieval are not ported yet.
 Roleplay and group assembly do not read companion state. Missing or corrupt
 companion state fails assembly closed, and the composition root exposes the
 fully wired assembler over the shared database ports.

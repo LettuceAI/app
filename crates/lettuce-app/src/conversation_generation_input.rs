@@ -886,6 +886,14 @@ where
             .map_err(ConversationGenerationInputError::Settings)?
             .settings;
         let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
+        let clock = crate::companion_clock::companion_clock_context(
+            self.repository,
+            &aggregate.conversation,
+        )
+        .map_err(|_| {
+            ConversationGenerationInputError::Context(ContextAssemblyError::ConversationUnavailable)
+        })?;
+        let reference_now = clock.effective_now(now);
         let memory_mode = match memory_settings.map(|memory| memory.mode) {
             Some(MemoryModeSnapshot::Dynamic)
                 if !group && !global_settings.dynamic_memory.enabled =>
@@ -928,20 +936,7 @@ where
         retain_source_ancestry(&mut timeline.items, source_message_id)?;
         let memory_contribution = match memory_mode {
             MemoryModeSnapshot::Dynamic => {
-                let companion = match &aggregate.conversation.kind {
-                    ConversationKind::Direct(details) => CharacterRepository::get(
-                        self.repository,
-                        details.character.source_id,
-                    )
-                    .map_err(|_| ConversationGenerationInputError::Context(
-                        ContextAssemblyError::ConversationUnavailable,
-                    ))?
-                    .ok_or(ConversationGenerationInputError::Context(
-                        ContextAssemblyError::ConversationUnavailable,
-                    ))?
-                    .character.defaults.interaction_mode == lettuce_characters::InteractionMode::Companion,
-                    ConversationKind::Group(_) => false,
-                };
+                let companion = clock.companion;
                 let policy = memory_settings
                     .and_then(|memory| memory.dynamic_policy.as_ref())
                     .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
@@ -953,6 +948,7 @@ where
                         operation: turn.operation,
                         group,
                         companion,
+                        clock,
                         source_message_id,
                     },
                     now,
@@ -970,10 +966,13 @@ where
             input_scopes: modality_scopes(profile.capabilities.input_modalities),
             output_scopes: modality_scopes(profile.capabilities.output_modalities),
             dynamic_memory_enabled: dynamic_memory,
+            time_awareness_enabled: clock.time_awareness_enabled(),
             conversation_message_count: Some(conversation_message_count),
             ..Default::default()
         };
         let context_window = history_window(&global_settings, dynamic_memory, group);
+        let mut prompt_values = runtime.prompt_values;
+        crate::companion_clock::fill_time_values(&mut prompt_values, reference_now);
         let context = ConversationContextAssembler::new(self.repository)
             .assemble(ContextRequest {
                 conversation_id: work.conversation_id,
@@ -992,7 +991,7 @@ where
                 capabilities: profile.capabilities.clone(),
                 safety: SafetyContext::Standard,
                 prompt_runtime,
-                prompt_values: runtime.prompt_values,
+                prompt_values,
                 memory: memory_contribution,
                 timeline: context_timeline(timeline.items, context_window, source_message_id),
             })
@@ -1156,6 +1155,7 @@ where
             };
             (selected, revision, None, now)
         };
+        let effective_now = shape.clock.effective_now(effective_now);
         let retrieved = selected
             .iter()
             .map(|item| crate::memory_prompt::memory_prompt_line(item, effective_now))
@@ -1359,6 +1359,7 @@ struct MemoryPromptShape {
     operation: lettuce_conversations::GenerationOperation,
     group: bool,
     companion: bool,
+    clock: crate::companion_clock::CompanionClockContext,
 }
 
 fn history_window(
@@ -1932,14 +1933,18 @@ fn select_memories<'a>(
         }
         if !group {
             let adjusted_score = |item: &lettuce_memory::MemoryItem| {
-                let score = scored.iter()
+                let score = scored
+                    .iter()
                     .find(|(_, candidate)| candidate.id == item.id)
                     .map_or(0.0, |(score, _)| *score);
-                score + if companion { lexical_anchor_boost(query_text, &item.text) } else { 0.0 }
+                score
+                    + if companion {
+                        lexical_anchor_boost(query_text, &item.text)
+                    } else {
+                        0.0
+                    }
             };
-            selected.sort_by(|left, right| {
-                adjusted_score(right).total_cmp(&adjusted_score(left))
-            });
+            selected.sort_by(|left, right| adjusted_score(right).total_cmp(&adjusted_score(left)));
         }
         for recent in [true, false] {
             if selected.len() == limit {
@@ -2011,22 +2016,33 @@ fn select_memories<'a>(
 fn lexical_anchor_boost(query: &str, memory_text: &str) -> f32 {
     let query = query.to_ascii_lowercase();
     let memory = memory_text.to_ascii_lowercase();
-    let tokens = |text: &str| text.split(|ch: char| !ch.is_ascii_alphanumeric())
-        .filter(|token| token.len() >= 3)
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
+    let tokens = |text: &str| {
+        text.split(|ch: char| !ch.is_ascii_alphanumeric())
+            .filter(|token| token.len() >= 3)
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
     let query_tokens = tokens(&query);
     if query_tokens.is_empty() {
         return 0.0;
     }
-    let overlap = query_tokens.iter()
+    let overlap = query_tokens
+        .iter()
         .filter(|token| memory.contains(token.as_str()))
-        .count() as f32 / query_tokens.len() as f32;
+        .count() as f32
+        / query_tokens.len() as f32;
     let sequence = query.split("after ").nth(1).map_or(0.0, |anchor| {
         let anchor_tokens = tokens(anchor);
-        if anchor_tokens.is_empty() || !anchor_tokens.iter().all(|token| memory.contains(token.as_str())) {
+        if anchor_tokens.is_empty()
+            || !anchor_tokens
+                .iter()
+                .all(|token| memory.contains(token.as_str()))
+        {
             0.0
-        } else if ["then ", "after ", "afterward"].iter().any(|marker| memory.contains(marker)) {
+        } else if ["then ", "after ", "afterward"]
+            .iter()
+            .any(|marker| memory.contains(marker))
+        {
             0.35
         } else {
             0.15
@@ -2073,7 +2089,10 @@ mod tests {
 
     use super::{context_timeline, conversation_message_count, history_window, memory_query};
 
-    fn retrieval_memory(index: i64, category: lettuce_memory::MemoryCategory) -> lettuce_memory::MemoryItem {
+    fn retrieval_memory(
+        index: i64,
+        category: lettuce_memory::MemoryCategory,
+    ) -> lettuce_memory::MemoryItem {
         use lettuce_memory::{MemoryItem, MemoryShortId, Score};
         let id = lettuce_types::MemoryId::new();
         MemoryItem {
@@ -2125,21 +2144,39 @@ mod tests {
             let mut values = vec![0.0; 64];
             values[0] = score;
             values[1] = (1.0 - score * score).sqrt();
-            EmbeddingVector { values, source_revision: "retrieval-test".into() }
+            EmbeddingVector {
+                values,
+                source_revision: "retrieval-test".into(),
+            }
         };
         let space_id = lettuce_types::MemorySpaceId::new();
-        let projections = items.iter().zip(scores).map(|(item, score)| MemoryEmbeddingProjection {
-            space_id,
-            memory_id: item.id,
-            source_text: item.text.clone(),
-            vector: vector(*score),
-            dimensions: EmbeddingDimensions::D64,
-            updated_at: item.created_at,
-        }).rev().collect::<Vec<_>>();
+        let projections = items
+            .iter()
+            .zip(scores)
+            .map(|(item, score)| MemoryEmbeddingProjection {
+                space_id,
+                memory_id: item.id,
+                source_text: item.text.clone(),
+                vector: vector(*score),
+                dimensions: EmbeddingDimensions::D64,
+                updated_at: item.created_at,
+            })
+            .rev()
+            .collect::<Vec<_>>();
         super::select_memories(
-            query, &vector(1.0), &projections, &items.iter().collect::<Vec<_>>(),
-            limit, 0.35, strategy, group, companion,
-        ).into_iter().map(|item| item.id).collect()
+            query,
+            &vector(1.0),
+            &projections,
+            &items.iter().collect::<Vec<_>>(),
+            limit,
+            0.35,
+            strategy,
+            group,
+            companion,
+        )
+        .into_iter()
+        .map(|item| item.id)
+        .collect()
     }
 
     #[test]
@@ -2147,7 +2184,9 @@ mod tests {
         use lettuce_conversations::MemoryRetrievalStrategySnapshot::{Cosine, Smart};
         use lettuce_memory::MemoryCategory::Other;
         let mut items = vec![
-            retrieval_memory(1, Other), retrieval_memory(2, Other), retrieval_memory(3, Other),
+            retrieval_memory(1, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(3, Other),
         ];
         items[0].text = "Mira enjoys the mountains.".into();
         items[1].text = "After the harbor visit, Mira went home.".into();
@@ -2170,9 +2209,16 @@ mod tests {
             retrieval_results(&items, &scores, 1, false, Smart, query, true),
             vec![items[0].id],
         );
-        assert_eq!(super::lexical_anchor_boost("?!", "After the harbor visit."), 0.0);
-        assert!((super::lexical_anchor_boost("after harbor", "Harbor then home") - 0.45).abs() < 0.0001);
-        assert!((super::lexical_anchor_boost("after harbor", "Harbor visit") - 0.25).abs() < 0.0001);
+        assert_eq!(
+            super::lexical_anchor_boost("?!", "After the harbor visit."),
+            0.0
+        );
+        assert!(
+            (super::lexical_anchor_boost("after harbor", "Harbor then home") - 0.45).abs() < 0.0001
+        );
+        assert!(
+            (super::lexical_anchor_boost("after harbor", "Harbor visit") - 0.25).abs() < 0.0001
+        );
     }
 
     #[test]
@@ -2180,17 +2226,34 @@ mod tests {
         use lettuce_conversations::MemoryRetrievalStrategySnapshot::Smart;
         use lettuce_memory::MemoryCategory::{Other, PlotEvent};
         let mut items = vec![
-            retrieval_memory(1, Other), retrieval_memory(2, Other),
-            retrieval_memory(3, Other), retrieval_memory(4, PlotEvent),
-            retrieval_memory(5, Other), retrieval_memory(6, Other),
+            retrieval_memory(1, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(3, Other),
+            retrieval_memory(4, PlotEvent),
+            retrieval_memory(5, Other),
+            retrieval_memory(6, Other),
         ];
         items[4].access_count = 20;
         let scores = [0.95, 0.9, 0.85, 0.8, 0.1, 0.1];
-        let expected = |indices: &[usize]| indices.iter().map(|index| items[*index].id).collect::<Vec<_>>();
-        assert_eq!(retrieve_ids(&items, &scores, 4, false, Smart), expected(&[0, 1, 2, 3]));
-        assert_eq!(retrieve_ids(&items, &scores, 4, true, Smart), expected(&[0, 1, 5, 4]));
+        let expected = |indices: &[usize]| {
+            indices
+                .iter()
+                .map(|index| items[*index].id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            retrieve_ids(&items, &scores, 4, false, Smart),
+            expected(&[0, 1, 2, 3])
+        );
+        assert_eq!(
+            retrieve_ids(&items, &scores, 4, true, Smart),
+            expected(&[0, 1, 5, 4])
+        );
         assert!(retrieve_ids(&items, &scores, 0, true, Smart).is_empty());
-        assert_eq!(retrieve_ids(&items, &[0.8; 6], 2, false, Smart), expected(&[0, 1]));
+        assert_eq!(
+            retrieve_ids(&items, &[0.8; 6], 2, false, Smart),
+            expected(&[0, 1])
+        );
         for item in &mut items {
             item.is_cold = true;
         }
@@ -2205,19 +2268,33 @@ mod tests {
         use lettuce_conversations::MemoryRetrievalStrategySnapshot::{Cosine, Smart};
         use lettuce_memory::MemoryCategory::Other;
         let mut items = vec![
-            retrieval_memory(3, Other), retrieval_memory(2, Other), retrieval_memory(1, Other),
+            retrieval_memory(3, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(1, Other),
         ];
         items[0].access_count = 30;
         items[1].access_count = 20;
         items[2].access_count = 10;
         let expected = items.iter().map(|item| item.id).collect::<Vec<_>>();
-        assert_eq!(retrieve_ids(&items, &[0.9, 0.1, 0.1], 3, false, Smart), expected);
+        assert_eq!(
+            retrieve_ids(&items, &[0.9, 0.1, 0.1], 3, false, Smart),
+            expected
+        );
         items[0].is_cold = true;
-        assert_eq!(retrieve_ids(&items, &[0.9, 0.8, 0.7], 3, false, Cosine), vec![items[1].id, items[2].id, items[0].id]);
-        assert_eq!(retrieve_ids(&items, &[0.4, 0.1, 0.1], 3, false, Cosine), Vec::new());
+        assert_eq!(
+            retrieve_ids(&items, &[0.9, 0.8, 0.7], 3, false, Cosine),
+            vec![items[1].id, items[2].id, items[0].id]
+        );
+        assert_eq!(
+            retrieve_ids(&items, &[0.4, 0.1, 0.1], 3, false, Cosine),
+            Vec::new()
+        );
         items[1].is_cold = true;
         items[2].is_cold = true;
-        assert_eq!(retrieve_ids(&items, &[0.1, 0.1, 0.1], 3, true, Smart), expected);
+        assert_eq!(
+            retrieve_ids(&items, &[0.1, 0.1, 0.1], 3, true, Smart),
+            expected
+        );
     }
 
     fn item(

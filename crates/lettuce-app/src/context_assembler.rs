@@ -412,6 +412,7 @@ where
                 request.swap_roles,
                 &runtime,
                 &group_user_name,
+                !group && request.prompt_runtime.time_awareness_enabled,
             )? {
                 transcript.push(message);
             }
@@ -2054,6 +2055,7 @@ fn provider_message(
     swap_roles: bool,
     runtime: &RuntimeSections,
     group_user_name: &str,
+    time_stamps: bool,
 ) -> Result<Option<ProviderNeutralMessage>, ContextAssemblyError> {
     if item.message.role == MessageRole::Scene {
         return Ok(None);
@@ -2077,6 +2079,24 @@ fn provider_message(
         (_, role) => role,
     };
     let mut context_parts = provider_context_parts(parts(item))?;
+    if time_stamps
+        && matches!(
+            item.message.role,
+            MessageRole::User | MessageRole::Assistant
+        )
+    {
+        let stamp = crate::companion_memory_inference::format_message_timestamp(
+            item.message.effective_time,
+        );
+        match context_parts.iter_mut().find_map(|part| match part {
+            ProviderContextPart::Text { text } => Some(text),
+            _ => None,
+        }) {
+            Some(text) if text.is_empty() => *text = stamp,
+            Some(text) => *text = format!("{stamp} {text}"),
+            None => context_parts.insert(0, ProviderContextPart::Text { text: stamp }),
+        }
+    }
     if matches!(aggregate.conversation.kind, ConversationKind::Group(_))
         && role == MessageRole::User
         && matches!(

@@ -8,6 +8,7 @@
 
 mod asr_learning_transfer;
 mod built_in_prompts;
+mod companion_clock;
 mod companion_consolidation_dispatch;
 mod companion_consolidation_execution;
 mod companion_consolidation_job;

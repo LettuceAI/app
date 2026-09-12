@@ -62,6 +62,8 @@ pub enum CompanionMemoryHostError {
     Conversation(ConversationRepositoryError),
     #[error("post-turn memory companion lookup failed: {0:?}")]
     Companion(lettuce_companions::CompanionStateRepositoryError),
+    #[error("post-turn memory character lookup failed: {0:?}")]
+    Character(lettuce_characters::RepositoryError),
     #[error("post-turn memory dispatch failed: {0}")]
     Dispatch(#[from] CompanionMemoryDispatchError),
     #[error("post-turn memory runtime inputs are unavailable: {0}")]
@@ -80,6 +82,7 @@ pub trait CompanionMemoryHostSources:
     + lettuce_usage::JobUsageLedger
     + lettuce_companions::CompanionTurnEffectRepository
     + CompanionStateRepository
+    + lettuce_characters::CharacterRepository
     + GlobalSettingsStore
     + ConversationReader
     + ModelProfileRepository
@@ -99,6 +102,7 @@ impl<T> CompanionMemoryHostSources for T where
         + lettuce_usage::JobUsageLedger
         + lettuce_companions::CompanionTurnEffectRepository
         + CompanionStateRepository
+        + lettuce_characters::CharacterRepository
         + GlobalSettingsStore
         + ConversationReader
         + ModelProfileRepository
@@ -396,6 +400,11 @@ where
             )
         })?;
         let companion = self.is_companion(&aggregate.conversation)?;
+        let clock = crate::companion_clock::companion_clock_context(
+            self.repository,
+            &aggregate.conversation,
+        )
+        .map_err(clock_error)?;
         Ok(CompanionMemoryRuntimeInputs {
             profile: ResolvedInferenceProfile {
                 chat_profile,
@@ -404,7 +413,7 @@ where
                 safety_policy: SafetyContext::Standard,
                 correlation_id: None,
             },
-            time_awareness_enabled: false,
+            time_awareness_enabled: clock.time_awareness_enabled(),
             supersession_enabled: companion,
             structured_fallback_format: match dynamic.structured_fallback_format {
                 MemoryStructuredFallbackFormat::Json => DynamicMemoryStructuredFallbackFormat::Json,
@@ -516,6 +525,20 @@ where
             .ok_or(CompanionMemoryHostError::RuntimeInputs(
                 CompanionMemoryRuntimeInputError::MissingPrompt,
             ))
+    }
+}
+
+fn clock_error(error: crate::companion_clock::CompanionClockError) -> CompanionMemoryHostError {
+    match error {
+        crate::companion_clock::CompanionClockError::Character(error) => {
+            CompanionMemoryHostError::Character(error)
+        }
+        crate::companion_clock::CompanionClockError::MissingCharacter => {
+            CompanionMemoryHostError::Conversation(ConversationRepositoryError::NotFound)
+        }
+        crate::companion_clock::CompanionClockError::Companion(error) => {
+            CompanionMemoryHostError::Companion(error)
+        }
     }
 }
 

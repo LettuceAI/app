@@ -3048,7 +3048,29 @@ async fn companion_context_assembles_live_prompt_state_deterministically() {
         "[Background context you currently hold in mind]\n- Remember the station reunion."
     ));
     assert!(text.contains("Stay with me."));
+    assert!(!text.contains("# Time\n"));
     assert!(first.attributions.prompt.is_some());
+    let mut aware = context_request_for(&database, launched.value.conversation.id, source_message_id);
+    aware.prompt_runtime.time_awareness_enabled = true;
+    let stamped = assembler
+        .assemble(aware)
+        .await
+        .expect("assemble time-aware companion context");
+    let stamped_text = stamped
+        .messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .filter_map(|part| match part {
+            ProviderContextPart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let stamp = crate::companion_memory_inference::format_message_timestamp(TimestampMillis::new(
+        NOW.get() + 10,
+    ));
+    assert!(stamped_text.contains(&format!("{stamp} Stay with me.")));
+    assert!(stamped_text.contains("# Time\nThe app attaches"));
     database
         .delete_scheduled_note(note_id)
         .expect("delete scheduled note");

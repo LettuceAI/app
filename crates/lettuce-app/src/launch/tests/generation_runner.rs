@@ -3272,6 +3272,44 @@ async fn post_turn_memory_host_admits_only_this_companion_conversation_effects()
         .resolve_runtime_inputs(&work[0].admission)
         .expect("runtime inputs for a companion conversation");
     assert!(inputs.supersession_enabled);
+    assert!(!inputs.time_awareness_enabled);
+    {
+        use lettuce_conversations::ConversationRepository as _;
+        database
+            .update_settings(
+                lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                    lettuce_conversations::UpdateConversationSettings {
+                        conversation_id: first,
+                        expected_settings_revision: None,
+                        operation: lettuce_conversations::OperationToken {
+                            key: lettuce_jobs::IdempotencyKey::new("companion-host-clock")
+                                .expect("key"),
+                            request_digest: lettuce_types::ContentHash::parse("ab".repeat(32))
+                                .expect("digest"),
+                        },
+                        patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                            companion_clock: lettuce_conversations::PatchValue::Set(
+                                lettuce_conversations::CompanionClockSettings {
+                                    time_awareness_enabled: true,
+                                    time_override:
+                                        lettuce_conversations::CompanionTimeOverride::Live,
+                                },
+                            ),
+                            ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                        },
+                    },
+                    Vec::new(),
+                )
+                .expect("prepared clock settings"),
+                TimestampMillis::new(1_031),
+            )
+            .expect("enable companion time awareness");
+    }
+    assert!(
+        host.resolve_runtime_inputs(&work[0].admission)
+            .expect("time-aware runtime inputs")
+            .time_awareness_enabled
+    );
     assert!(
         CompanionTurnEffectRepository::list_processing(database, 512)
             .expect("processing effects")
