@@ -16,6 +16,8 @@ pub struct GlobalSettings {
     #[serde(default)]
     pub group_dynamic_memory: Option<DynamicMemorySettings>,
     #[serde(default)]
+    pub dynamic_memory_prompts: DynamicMemoryPromptSelection,
+    #[serde(default)]
     pub embedding: EmbeddingSettings,
     #[serde(default = "default_manual_mode_context_window")]
     pub manual_mode_context_window: u32,
@@ -34,6 +36,7 @@ impl Default for GlobalSettings {
             lorebook_generator: LorebookGeneratorSettings::default(),
             dynamic_memory: DynamicMemorySettings::default(),
             group_dynamic_memory: None,
+            dynamic_memory_prompts: DynamicMemoryPromptSelection::default(),
             embedding: EmbeddingSettings::default(),
             manual_mode_context_window: default_manual_mode_context_window(),
         }
@@ -68,6 +71,17 @@ pub enum MemoryRunMode {
     Auto,
     AskFirst,
     Manual,
+}
+
+/// The user's dynamic-memory prompt overrides (legacy
+/// `dynamicMemorySummarizerPromptTemplateId` /
+/// `dynamicMemoryManagerPromptTemplateId`), shared by direct and group chats;
+/// unset means the built-in document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DynamicMemoryPromptSelection {
+    pub summarizer_prompt_id: Option<PromptDocumentId>,
+    pub manager_prompt_id: Option<PromptDocumentId>,
 }
 
 /// The document format the dynamic-memory cycle asks for when a model cannot
@@ -280,6 +294,10 @@ mod tests {
         assert_eq!(settings.lorebook_generator.output_tokens(), 4096);
         assert_eq!(settings.dynamic_memory, DynamicMemorySettings::default());
         assert_eq!(settings.group_dynamic_memory, None);
+        assert_eq!(
+            settings.dynamic_memory_prompts,
+            DynamicMemoryPromptSelection::default()
+        );
         assert_eq!(
             settings.effective_group_dynamic_memory(),
             &settings.dynamic_memory

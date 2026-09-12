@@ -578,6 +578,7 @@ pub(crate) fn canonicalize_and_validate(
         return Err(ProviderBackupGraphError::InvalidGraph);
     }
     let generator = &graph.settings.value.lorebook_generator.selection;
+    let memory_prompts = &graph.settings.value.dynamic_memory_prompts;
     if generator
         .model_profile_id
         .is_some_and(|id| !profile_ids.contains_key(&id))
@@ -586,6 +587,8 @@ pub(crate) fn canonicalize_and_validate(
             generator.writer_prompt_id,
             generator.refine_prompt_id,
             generator.coherence_prompt_id,
+            memory_prompts.summarizer_prompt_id,
+            memory_prompts.manager_prompt_id,
         ]
         .into_iter()
         .flatten()

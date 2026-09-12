@@ -135,8 +135,13 @@ settings hold, including `enabled`, the summary interval (0 becomes 1, as the
 legacy cycle used), run mode (unknown values run as `auto`, like legacy),
 decay, delete confidence, hard-delete ratio and recursive loops; the advanced
 `dynamicMemoryStructuredFallbackFormat` (`json`/`xml`) sets both the direct and
-the group settings, any other value is malformed; only unknown keys remain
-unsupported notices.
+the group settings, any other value is malformed; the summarizer and manager
+prompt template ids are retained as source ids (`dynamic_memory_prompt_source_ids`)
+and, like the lorebook generator prompt ids, checked against the backed-up
+prompt templates but not yet materialized into settings on import; only
+unknown keys remain unsupported notices. Version-2 backup graphs reject a
+settings document whose dynamic-memory prompt overrides name a prompt outside
+the graph.
 
 Legacy import admission now seals provider-account and model-profile source IDs
 alongside the existing graph and media plan. Each account receives a stable

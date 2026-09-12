@@ -32,7 +32,10 @@ enabled, a 20-message summary interval, `auto` run mode (`ask_first` and
 `manual` also exist), 0.08 per-cycle decay, recursive memory loops off with
 a hard cap of 20 rounds, and the `xml` structured fallback format (legacy
 `dynamicMemoryStructuredFallbackFormat`, `json` is the other value) for models
-that answer the memory cycle without tool calls. `embedding.dimensions` keeps the legacy
+that answer the memory cycle without tool calls. `dynamic_memory_prompts` holds
+the user's summarizer and manager prompt document overrides (legacy
+`dynamicMemorySummarizerPromptTemplateId` / `dynamicMemoryManagerPromptTemplateId`,
+shared by direct and group chats); unset means the built-in document. `embedding.dimensions` keeps the legacy
 `embeddingDimensions` preference; unset means the embedding default.
 `manual_mode_context_window` (legacy `manualModeContextWindow`, default 50) is
 the history window for chats without dynamic memory; dynamic chats use the

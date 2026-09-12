@@ -18,9 +18,9 @@ mod native_secrets;
 mod secrets;
 
 pub use global::{
-    DynamicMemorySettings, EmbeddingSettings, GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings,
-    GlobalSettingsStore, GlobalSettingsStoreError, LorebookGeneratorSelection,
-    LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
+    DynamicMemoryPromptSelection, DynamicMemorySettings, EmbeddingSettings,
+    GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
+    LorebookGeneratorSelection, LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
     MemoryStructuredFallbackFormat, PureMode, StoredGlobalSettings,
 };
 

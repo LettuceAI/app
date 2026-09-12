@@ -2867,6 +2867,85 @@ async fn post_turn_memory_host_answers_ask_first_with_skip_and_trigger() {
 }
 
 #[tokio::test]
+async fn post_turn_memory_host_honors_active_prompt_overrides_of_the_right_purpose() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let manager_override = seed_prompt(
+        database,
+        "Custom memory manager",
+        PromptPurpose::DynamicMemoryManager,
+    );
+    let wrong_purpose = seed_prompt(database, "Not a summarizer", PromptPurpose::DirectChat);
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = true;
+    settings.dynamic_memory.summary_message_interval = 2;
+    settings.dynamic_memory_prompts.manager_prompt_id = Some(manager_override);
+    settings.dynamic_memory_prompts.summarizer_prompt_id = Some(wrong_purpose);
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("save dynamic memory settings");
+    let scenario = scenario_with_resolvable_profile(database, true, "host-prompts", true);
+    let generation = admit_and_claim(database, &scenario, 1_015);
+    let engine = ScenarioEmbeddingEngine;
+    let reply = scripted(vec![text_outcome("prompt-reply", "Tea it is.", 5, 3)]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &reply)
+        .run(
+            &generation,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("finalize plain dynamic turn");
+    let memory = scripted(Vec::new());
+    let host = backend.companion_memory_host(&engine, &memory);
+    let work = host
+        .after_turn(
+            scenario.conversation_id,
+            lettuce_conversations::GenerationOperation::Send,
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("send admits the interval window")
+        .into_iter()
+        .next()
+        .expect("claimed plain memory work");
+    let inputs = host
+        .resolve_runtime_inputs(&work.admission)
+        .expect("runtime inputs");
+    assert_eq!(inputs.memory_prompt.id, manager_override);
+    assert_eq!(
+        inputs.summary_prompt.id,
+        backend
+            .built_in_prompt_ids()
+            .get(BuiltInPromptId::DynamicSummary)
+    );
+
+    let revision = PromptRepository::get(database, manager_override)
+        .expect("prompt")
+        .expect("override")
+        .revision;
+    PromptRepository::archive(database, manager_override, revision, TimestampMillis::new(1_031))
+        .expect("archive the override");
+    let inputs = host
+        .resolve_runtime_inputs(&work.admission)
+        .expect("runtime inputs after archiving");
+    assert_eq!(
+        inputs.memory_prompt.id,
+        backend
+            .built_in_prompt_ids()
+            .get(BuiltInPromptId::DynamicMemory)
+    );
+}
+
+#[tokio::test]
 async fn preexisting_progress_checkpoint_advances_runner_stage_sequences() {
     let database = database();
     let scenario = scenario(&database, false, "progress-sequence");

@@ -64,9 +64,19 @@ pub struct LegacyBackupSettingsCandidate {
     pub group_speaker_model_profile_id: Option<ModelProfileId>,
     pub lorebook_generator_model_profile_id: Option<ModelProfileId>,
     pub lorebook_generator_prompt_source_ids: LorebookGeneratorPromptSources,
+    pub dynamic_memory_prompt_source_ids: DynamicMemoryPromptSources,
     pub deprecated_system_prompt: Option<String>,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
+}
+
+/// Legacy `dynamicMemorySummarizerPromptTemplateId` /
+/// `dynamicMemoryManagerPromptTemplateId`, retained as source template ids
+/// like the lorebook generator prompts.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DynamicMemoryPromptSources {
+    pub summarizer: Option<String>,
+    pub manager: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -586,6 +596,8 @@ fn map_settings(
         "dynamicMemory",
         "groupDynamicMemory",
         "dynamicMemoryStructuredFallbackFormat",
+        "dynamicMemorySummarizerPromptTemplateId",
+        "dynamicMemoryManagerPromptTemplateId",
         "embeddingDimensions",
         "manualModeContextWindow",
         "summarisationModelId",
@@ -650,6 +662,7 @@ fn map_settings(
             },
             dynamic_memory,
             group_dynamic_memory,
+            dynamic_memory_prompts: lettuce_settings::DynamicMemoryPromptSelection::default(),
             embedding: EmbeddingSettings {
                 dimensions: optional_u32(advanced, "embeddingDimensions")?
                     .and_then(|value| u16::try_from(value).ok()),
@@ -664,6 +677,10 @@ fn map_settings(
         group_speaker_model_profile_id: advanced_id(advanced, "groupSpeakerSelectionModelId")?,
         lorebook_generator_model_profile_id: generator_model,
         lorebook_generator_prompt_source_ids: generator_prompts,
+        dynamic_memory_prompt_source_ids: DynamicMemoryPromptSources {
+            summarizer: normalized_string(advanced, "dynamicMemorySummarizerPromptTemplateId")?,
+            manager: normalized_string(advanced, "dynamicMemoryManagerPromptTemplateId")?,
+        },
         deprecated_system_prompt: normalize_option(row.system_prompt.clone()),
         created_at: TimestampMillis::new(created),
         updated_at: TimestampMillis::new(updated),
@@ -1880,6 +1897,23 @@ fn validate_selections(
             ));
         }
     }
+    for (field, value) in [
+        (
+            "dynamicMemorySummarizerPromptTemplateId",
+            &settings.dynamic_memory_prompt_source_ids.summarizer,
+        ),
+        (
+            "dynamicMemoryManagerPromptTemplateId",
+            &settings.dynamic_memory_prompt_source_ids.manager,
+        ),
+    ] {
+        if value.as_deref().is_some_and(|id| !prompt_ids.contains(id)) {
+            return Err(orphan(
+                LegacyBackupDocumentKind::Settings,
+                format!("advanced_settings.{field}"),
+            ));
+        }
+    }
     for (index, model) in providers.model_profiles.iter().enumerate() {
         if model
             .prompt_template_id
@@ -2891,6 +2925,8 @@ mod tests {
                         "lorebookGeneratorMaxTokens": 2048,
                         "lorebookGeneratorPlannerPromptTemplateId": "prompt-main",
                         "dynamicMemoryStructuredFallbackFormat": "json",
+                        "dynamicMemorySummarizerPromptTemplateId": "prompt-main",
+                        "dynamicMemoryManagerPromptTemplateId": " ",
                         "dynamicMemory": {
                             "maxEntries": 60,
                             "minSimilarityThreshold": 0.42,
@@ -3112,7 +3148,16 @@ mod tests {
         );
         assert!(!plan.notices.iter().any(|notice| {
             notice.field == "advanced_settings.dynamicMemoryStructuredFallbackFormat"
+                || notice.field == "advanced_settings.dynamicMemorySummarizerPromptTemplateId"
+                || notice.field == "advanced_settings.dynamicMemoryManagerPromptTemplateId"
         }));
+        assert_eq!(
+            plan.settings.dynamic_memory_prompt_source_ids,
+            DynamicMemoryPromptSources {
+                summarizer: Some("prompt-main".into()),
+                manager: None,
+            }
+        );
         assert!(
             !plan
                 .notices

@@ -889,8 +889,10 @@ for companion conversations and the interval window for plain ones;
 inputs (model: the admission override, then `dynamic_memory_model_profile_id`,
 then the default model, else the job is rescheduled so the same window runs
 once a model is configured, like legacy's "Summarisation model not configured"
-retry on the next turn; the local manager prompt for
-llama.cpp accounts; policy, duplicate threshold and fallback format from the
+retry on the next turn; the user's `dynamic_memory_prompts` override when it
+is an active document of the right purpose, else the local manager prompt for
+llama.cpp accounts or the built-in document, as legacy fell back to its
+built-in entries for a missing template; policy, duplicate threshold and fallback format from the
 settings; supersession for companion conversations); `run_claimed` seeds
 creates with the embedding tokenizer (zero on failure, as legacy), runs the job
 runner and settles the job. `trigger` is legacy `trigger_dynamic_memory` /

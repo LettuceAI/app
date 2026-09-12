@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use lettuce_companions::{CompanionStateOwner, CompanionStateRepository};
-use lettuce_context::{PromptDocument, PromptRepository};
+use lettuce_context::{LifecycleStatus, PromptDocument, PromptPurpose, PromptRepository};
 use lettuce_conversations::{
     ConversationKind, ConversationReader, ConversationRepositoryError, GenerationOperation,
     InferencePort, MemoryModeSnapshot, OutputPolicy, ResolvedInferenceProfile, SafetyContext,
@@ -350,8 +350,21 @@ where
         } else {
             BuiltInPromptId::DynamicMemory
         };
-        let summary_prompt = self.built_in_prompt(BuiltInPromptId::DynamicSummary)?;
-        let memory_prompt = self.built_in_prompt(manager_prompt)?;
+        let overrides = stored.settings.dynamic_memory_prompts;
+        let summary_prompt = match self.prompt_override(
+            overrides.summarizer_prompt_id,
+            PromptPurpose::DynamicMemorySummarizer,
+        )? {
+            Some(document) => document,
+            None => self.built_in_prompt(BuiltInPromptId::DynamicSummary)?,
+        };
+        let memory_prompt = match self.prompt_override(
+            overrides.manager_prompt_id,
+            PromptPurpose::DynamicMemoryManager,
+        )? {
+            Some(document) => document,
+            None => self.built_in_prompt(manager_prompt)?,
+        };
         let score = |basis_points| {
             lettuce_memory::Score::from_basis_points(basis_points).ok_or(
                 CompanionMemoryHostError::RuntimeInputs(
@@ -468,6 +481,24 @@ where
         CompanionStateRepository::get(self.repository, owner)
             .map(|state| state.is_some())
             .map_err(CompanionMemoryHostError::Companion)
+    }
+
+    /// Legacy read the override template by id and fell back to the built-in
+    /// entries when it was missing; an inactive document or one of another
+    /// purpose falls back the same way.
+    fn prompt_override(
+        &self,
+        id: Option<lettuce_types::PromptDocumentId>,
+        purpose: PromptPurpose,
+    ) -> Result<Option<PromptDocument>, CompanionMemoryHostError> {
+        let Some(id) = id else {
+            return Ok(None);
+        };
+        Ok(PromptRepository::get(self.repository, id)
+            .map_err(|_| storage())?
+            .filter(|document| {
+                document.status == LifecycleStatus::Active && document.purpose == purpose
+            }))
     }
 
     fn built_in_prompt(
