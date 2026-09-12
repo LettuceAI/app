@@ -104,6 +104,8 @@ pub enum ReplyHelperError {
     InvalidPrompt,
     #[error("reply helper job storage failed: {0}")]
     Jobs(#[from] StoreError),
+    #[error("reply helper request was already settled")]
+    AlreadySettled,
     #[error("reply helper job could not be claimed")]
     NotClaimed,
     #[error("reply helper inference failed: {0}")]
@@ -228,6 +230,22 @@ where
             .repository
             .claim(job.id, worker_id, at, lease_for, allowed)?
         else {
+            if job.is_terminal() {
+                return Err(ReplyHelperError::AlreadySettled);
+            }
+            if job.state == lettuce_jobs::JobState::Queued {
+                self.repository
+                    .append_and_transition(JobMutation::RequestCancellation {
+                        id: job.id,
+                        reason: CancellationReason::User,
+                        at,
+                    })?;
+                self.repository
+                    .append_and_transition(JobMutation::FinishQueuedCancellation {
+                        id: job.id,
+                        at,
+                    })?;
+            }
             return Err(ReplyHelperError::NotClaimed);
         };
         let handle = JobHandle::new(job.id);
@@ -772,7 +790,8 @@ fn job_error(error: &ReplyHelperError) -> JobError {
         ReplyHelperError::Inference(PortError::Unavailable)
         | ReplyHelperError::Evidence
         | ReplyHelperError::ReplayCleanup
-        | ReplyHelperError::NotClaimed => (
+        | ReplyHelperError::NotClaimed
+        | ReplyHelperError::AlreadySettled => (
             JobErrorCode::ResourceUnavailable,
             true,
             "reply-helper-unavailable",

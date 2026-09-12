@@ -3115,6 +3115,37 @@ async fn reply_helper_falls_back_to_a_plain_request_when_the_model_cannot_stream
 }
 
 #[tokio::test]
+async fn reply_helper_never_leaves_an_unclaimable_job_queued() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let inference = scripted(Vec::new());
+    let helper = backend.reply_helper(&inference);
+    let request = crate::ReplyHelperRequest {
+        conversation_id: lettuce_types::ConversationId::new(),
+        request_id: RequestId::new(),
+        current_draft: None,
+        swap_places: false,
+    };
+    let generate = |allowed: ResourceAvailability| {
+        let helper = &helper;
+        let request = &request;
+        async move {
+            helper
+                .generate(request, WorkerId::new(), TimestampMillis::new(1_030), LEASE, &allowed)
+                .await
+        }
+    };
+    assert!(matches!(
+        generate(ResourceAvailability::none()).await,
+        Err(crate::ReplyHelperError::NotClaimed)
+    ));
+    assert!(matches!(
+        generate(ResourceAvailability::all()).await,
+        Err(crate::ReplyHelperError::AlreadySettled)
+    ));
+    assert!(inference.requests.lock().expect("requests").is_empty());
+}
+
+#[tokio::test]
 async fn reply_helper_drafts_a_group_reply_with_the_whole_cast() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
     let (scenario, _) = group_scenario(
