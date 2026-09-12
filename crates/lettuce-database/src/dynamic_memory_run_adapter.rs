@@ -2358,6 +2358,12 @@ mod tests {
             .expect("effect")
             .expect("stored effect");
         assert_eq!(effect.status, CompanionTurnEffectStatus::Processing);
+        assert_eq!(
+            database
+                .list_processing_for_conversation(conversation_id, 10)
+                .expect("conversation pending effects"),
+            std::slice::from_ref(&effect)
+        );
         let rewind = database
             .rewind_dynamic_memory_suffix(DynamicMemorySuffixRewind {
                 operation_id: OperationId::new(),
@@ -2383,6 +2389,12 @@ mod tests {
             database
                 .list_processing(10)
                 .expect("pending effects")
+                .is_empty()
+        );
+        assert!(
+            database
+                .list_processing_for_conversation(conversation_id, 10)
+                .expect("conversation pending effects")
                 .is_empty()
         );
     }

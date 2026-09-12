@@ -1048,6 +1048,11 @@ send/regenerate/retry orchestration and durable request-body replay remain later
 Generation finalization derives a regenerated candidate's persisted ordinal
 from the prior candidate instead of trusting the provider-local response index;
 this preserves dense alternatives while new-assistant turns still begin at zero.
+Both the post-turn admission and explicit triggers list pending effects with
+`list_processing_for_conversation`, which filters status, conversation and
+invalidations before the 512-effect page limit; the earlier status-agnostic
+page stopped admitting after 512 settled effects and a global page could be
+filled by other conversations.
 
 The legacy import admission coordinator fingerprints the complete preflight inventory and provider/model/prompt/persona/lorebook/media plans, derives the closed source ID set, and admits it through the transfer-owned repository port. It allocates no IDs itself and performs no filesystem ingest, secret read, secret-store write, or domain creation; SQLite returns sealed account, profile, prompt, secret-reference, graph, and media mappings so retries and reopen use the same destination identities. The deterministic legacy llama.cpp account participates in the same assignment path. The legacy database and storage tree remain untouched and retained.
 

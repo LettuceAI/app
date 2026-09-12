@@ -1343,6 +1343,49 @@ impl CompanionTurnEffectRepository for Database {
             .collect()
     }
 
+    fn list_processing_for_conversation(
+        &self,
+        conversation_id: ConversationId,
+        limit: u16,
+    ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
+        if limit == 0 || limit > 512 {
+            return Err(CompanionTurnEffectRepositoryError::Invalid);
+        }
+        let connection = self.connection().map_err(effect_failure)?;
+        let assistant_ids = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT assistant_message_id FROM companion_turn_effects
+                     WHERE conversation_id = ?1
+                       AND status = 'processing'
+                       AND NOT EXISTS (
+                           SELECT 1 FROM companion_turn_effect_invalidations invalidation
+                           WHERE invalidation.effect_id = companion_turn_effects.id
+                       )
+                     ORDER BY created_at, id
+                     LIMIT ?2",
+                )
+                .map_err(effect_failure)?;
+            statement
+                .query_map(
+                    params![conversation_id.to_string(), i64::from(limit)],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(effect_failure)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(effect_failure)?
+        };
+        assistant_ids
+            .into_iter()
+            .map(|assistant_message_id| {
+                let assistant_message_id =
+                    MessageId::from_str(&assistant_message_id).map_err(effect_corrupt)?;
+                load_effect(&connection, conversation_id, assistant_message_id)?
+                    .ok_or(CompanionTurnEffectRepositoryError::Corrupt)
+            })
+            .collect()
+    }
+
     fn settle(
         &self,
         effect_id: CompanionEffectId,

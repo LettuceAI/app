@@ -201,6 +201,9 @@ The repository can list bounded processing effects in stable
 conversation/time/effect order. Those normalized rows are the durable pending
 queue authority; runtime worker jobs can be reconstructed after process loss
 without storing a second copy of the turn seed or source identities.
+`list_processing_for_conversation` lists one conversation's pending effects with
+the status and invalidation filter applied before the page limit, so settled
+history or other conversations can never hide pending work.
 Delete-after rewind marks affected effects as invalidated through an immutable
 overlay. Their original processing/ready/failed evidence remains unchanged for
 audit, while invalidated processing effects no longer appear in the worker

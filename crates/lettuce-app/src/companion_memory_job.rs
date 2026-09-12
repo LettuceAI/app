@@ -214,16 +214,14 @@ impl<
         }
         let effects = self
             .effects
-            .list_for_conversation(conversation_id, limit)
-            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
-            .into_iter()
-            .filter(|effect| effect.status == CompanionTurnEffectStatus::Processing)
-            .collect::<Vec<_>>();
+            .list_processing_for_conversation(conversation_id, limit)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
         if effects.is_empty() {
             return Ok(None);
         }
         if effects.iter().any(|effect| {
-            effect.conversation_id != conversation_id
+            effect.status != CompanionTurnEffectStatus::Processing
+                || effect.conversation_id != conversation_id
                 || effect.source_window.is_some()
                 || effect.summary.is_some()
         }) {
@@ -374,13 +372,11 @@ impl<
         }
         let mut effects = self
             .effects
-            .list_processing(limit)
-            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
-            .into_iter()
-            .filter(|effect| effect.conversation_id == conversation_id)
-            .collect::<Vec<_>>();
+            .list_processing_for_conversation(conversation_id, limit)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
         if effects.iter().any(|effect| {
             effect.status != CompanionTurnEffectStatus::Processing
+                || effect.conversation_id != conversation_id
                 || effect.source_window.is_some()
                 || effect.summary.is_some()
         }) {
@@ -997,6 +993,45 @@ mod tests {
                 .collect())
         }
 
+        fn list_for_conversation(
+            &self,
+            conversation_id: ConversationId,
+            limit: u16,
+        ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
+            let mut effects = self
+                .0
+                .lock()
+                .expect("effects")
+                .iter()
+                .filter(|effect| effect.conversation_id == conversation_id)
+                .cloned()
+                .collect::<Vec<_>>();
+            effects.sort_by_key(|effect| (effect.created_at, effect.id));
+            effects.truncate(usize::from(limit));
+            Ok(effects)
+        }
+
+        fn list_processing_for_conversation(
+            &self,
+            conversation_id: ConversationId,
+            limit: u16,
+        ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
+            let mut effects = self
+                .0
+                .lock()
+                .expect("effects")
+                .iter()
+                .filter(|effect| {
+                    effect.conversation_id == conversation_id
+                        && effect.status == CompanionTurnEffectStatus::Processing
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            effects.sort_by_key(|effect| (effect.created_at, effect.id));
+            effects.truncate(usize::from(limit));
+            Ok(effects)
+        }
+
         fn settle(
             &self,
             effect_id: CompanionEffectId,
@@ -1359,6 +1394,49 @@ mod tests {
         let boundary = ready_effect_prefix(vec![first], 1).expect("whole effect");
         assert_eq!(boundary.len(), 1);
         assert!(boundary[0].user_message_id.is_some());
+    }
+
+    #[test]
+    fn settled_history_and_other_conversations_never_hide_pending_effects() {
+        let effects = Effects::default();
+        let conversation = ConversationId::new();
+        let other = ConversationId::new();
+        let mut stored = (0..i64::from(MAX_COMPANION_POST_TURN_EFFECTS))
+            .map(|index| {
+                let mut settled = effect(conversation, index);
+                settled.status = CompanionTurnEffectStatus::Ready;
+                settled
+            })
+            .collect::<Vec<_>>();
+        stored.extend(
+            (0..i64::from(MAX_COMPANION_POST_TURN_EFFECTS)).map(|index| effect(other, index)),
+        );
+        let pending = effect(conversation, 10_000);
+        stored.push(pending.clone());
+        effects.replace(stored);
+        let discover_jobs = InMemoryJobStore::new();
+        let discovered = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &discover_jobs)
+            .discover_and_admit_for_conversation(
+                conversation,
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
+                DynamicMemoryRunMode::Auto,
+                TimestampMillis::new(20_000),
+            )
+            .expect("discover pending effect")
+            .expect("pending effect admitted");
+        assert_eq!(discovered.batch.effects(), std::slice::from_ref(&pending));
+        let trigger_jobs = InMemoryJobStore::new();
+        let triggered = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &trigger_jobs)
+            .trigger_and_admit(
+                conversation,
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
+                CompanionMemoryWindowSelection::Recent,
+            )
+            .expect("trigger pending effect")
+            .expect("triggered admission");
+        assert_eq!(triggered.batch.effects(), [pending]);
     }
 
     #[test]

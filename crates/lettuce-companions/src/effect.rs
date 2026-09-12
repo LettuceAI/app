@@ -248,6 +248,14 @@ pub trait CompanionTurnEffectRepository: Send + Sync {
         Err(CompanionTurnEffectRepositoryError::Invalid)
     }
 
+    fn list_processing_for_conversation(
+        &self,
+        _conversation_id: ConversationId,
+        _limit: u16,
+    ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
+        Err(CompanionTurnEffectRepositoryError::Invalid)
+    }
+
     fn settle(
         &self,
         effect_id: CompanionEffectId,
