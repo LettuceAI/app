@@ -551,6 +551,7 @@ fn map_personas(
         });
     }
     Ok(LegacyPersonaPlan {
+        skipped: Vec::new(),
         personas,
         default_persona_id,
     })

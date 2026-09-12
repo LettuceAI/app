@@ -767,4 +767,9 @@ references whose file is gone: a persona avatar (with its crop), each persona
 design reference and a lorebook avatar, since the old app showed no image for
 them and the stale id stays in the untouched legacy database; the reference
 count limit is checked before pruning, and unsafe or ambiguous references still
-abort. Every other malformed record still aborts.
+abort. `reconcile_legacy_persona_lorebooks` prunes and records persona bindings
+to lorebooks absent from the lorebook plan and drops repeated ids (legacy kept a
+deleted lorebook's id in `activeLorebookIds`, its editor listed only existing
+lorebooks, and chats resolved such an id to no entries; repeats counted once);
+admission rejects an unreconciled or repeated binding. Every
+other malformed record still aborts.

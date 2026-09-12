@@ -209,6 +209,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
             skips: {
                 let mut skips = provider_models.skipped.clone();
                 skips.extend(media.skipped.iter().cloned());
+                skips.extend(personas.skipped.iter().cloned());
                 skips.sort();
                 skips
             },
@@ -256,6 +257,7 @@ fn validate_plan(
         || !valid_asr_media_plan(asr, media)
         || total_bytes != Some(media.total_bytes)
         || !valid_media_skips(media, personas, lorebooks)
+        || !valid_persona_bindings(personas, lorebooks)
     {
         return Err(LegacyImportRepositoryError::InvalidInput);
     }
@@ -346,6 +348,78 @@ fn valid_asr_media_plan(asr: &LegacyAsrPlan, media: &LegacyMediaPlan) -> bool {
     found.len() == examples.len()
 }
 
+pub fn reconcile_legacy_persona_lorebooks(
+    personas: &mut LegacyPersonaPlan,
+    lorebooks: &LegacyLorebookPlan,
+) {
+    let known = lorebooks
+        .lorebooks
+        .iter()
+        .map(|lorebook| lorebook.id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut skipped = Vec::new();
+    for persona in &mut personas.personas {
+        let persona_id = persona.id;
+        let mut seen = std::collections::BTreeSet::new();
+        persona.active_lorebook_ids.retain(|lorebook_id| {
+            if !seen.insert(*lorebook_id) {
+                return false;
+            }
+            let present = known.contains(lorebook_id);
+            if !present {
+                skipped.push(lettuce_transfer::LegacyImportSkip {
+                    kind: lettuce_transfer::LegacyImportSkipKind::PersonaLorebookBinding,
+                    source_key: format!("{persona_id}:{lorebook_id}"),
+                    reason: lettuce_transfer::LegacyImportSkipReason::MissingLorebook,
+                });
+            }
+            present
+        });
+    }
+    personas.skipped.extend(skipped);
+    personas.skipped.sort();
+    personas.skipped.dedup();
+}
+
+fn valid_persona_bindings(personas: &LegacyPersonaPlan, lorebooks: &LegacyLorebookPlan) -> bool {
+    let known = lorebooks
+        .lorebooks
+        .iter()
+        .map(|lorebook| lorebook.id)
+        .collect::<std::collections::BTreeSet<_>>();
+    personas.personas.iter().all(|persona| {
+        persona
+            .active_lorebook_ids
+            .iter()
+            .all(|lorebook_id| known.contains(lorebook_id))
+            && persona
+                .active_lorebook_ids
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                == persona.active_lorebook_ids.len()
+    }) && personas
+        .skipped
+        .windows(2)
+        .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
+        && personas.skipped.iter().all(|skip| {
+            skip.kind == lettuce_transfer::LegacyImportSkipKind::PersonaLorebookBinding
+                && skip.reason == lettuce_transfer::LegacyImportSkipReason::MissingLorebook
+                && skip
+                    .source_key
+                    .split_once(':')
+                    .is_some_and(|(persona_id, lorebook_id)| {
+                        personas.personas.iter().any(|persona| {
+                            persona.id.to_string() == persona_id
+                                && persona
+                                    .active_lorebook_ids
+                                    .iter()
+                                    .all(|bound| bound.to_string() != lorebook_id)
+                        }) && !known.iter().any(|known| known.to_string() == lorebook_id)
+                    })
+        })
+}
+
 fn valid_media_skips(
     media: &LegacyMediaPlan,
     personas: &LegacyPersonaPlan,
@@ -425,6 +499,13 @@ fn valid_provider_model_plan(plan: &LegacyProviderModelPlan) -> bool {
             .skipped
             .windows(2)
             .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
+        && plan.skipped.iter().all(|skip| {
+            matches!(
+                skip.kind,
+                lettuce_transfer::LegacyImportSkipKind::SettingsDefaultProviderAccount
+                    | lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile
+            )
+        })
 }
 
 fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSkip]) {
@@ -436,12 +517,14 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipKind::PersonaAvatar => 4,
             lettuce_transfer::LegacyImportSkipKind::PersonaDesignReference => 5,
             lettuce_transfer::LegacyImportSkipKind::LorebookAvatar => 6,
+            lettuce_transfer::LegacyImportSkipKind::PersonaLorebookBinding => 7,
         });
         hash.text(&skip.source_key);
         hash.u32(match skip.reason {
             lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount => 1,
             lettuce_transfer::LegacyImportSkipReason::MissingModelProfile => 2,
             lettuce_transfer::LegacyImportSkipReason::MissingMediaFile => 3,
+            lettuce_transfer::LegacyImportSkipReason::MissingLorebook => 4,
         });
     }
 }
@@ -645,6 +728,7 @@ pub(crate) fn plan_fingerprint(
     hash.option(personas.default_persona_id.as_ref(), |hash, value| {
         hash.text(&value.to_string())
     });
+    write_skips(&mut hash, &personas.skipped);
     hash.u64(lorebooks.lorebooks.len() as u64);
     for lorebook in &lorebooks.lorebooks {
         hash.text(&lorebook.id.to_string());
@@ -888,6 +972,7 @@ mod tests {
 
     fn personas() -> LegacyPersonaPlan {
         LegacyPersonaPlan {
+            skipped: Vec::new(),
             personas: vec![LegacyPersonaCandidate {
                 id: PersonaId::new(),
                 title: "Owner".to_owned(),
@@ -1800,6 +1885,58 @@ mod tests {
     }
 
     #[test]
+    fn persona_bindings_to_missing_lorebooks_are_reconciled_before_admission() {
+        use lettuce_transfer::{LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason};
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-app-legacy-import-bindings-{}.sqlite3",
+            LegacyImportRunId::new()
+        ));
+        let run_id = LegacyImportRunId::new();
+        let inventory = inventory();
+        let lorebooks = LegacyLorebookPlan {
+            lorebooks: Vec::new(),
+        };
+        let media = LegacyMediaPlan {
+            media: Vec::new(),
+            total_bytes: 0,
+            skipped: Vec::new(),
+        };
+        let missing = lettuce_types::LorebookId::new();
+        let mut personas = personas();
+        personas.personas[0].active_lorebook_ids = vec![missing, missing];
+        let backend = AppBackend::open(&path, TimestampMillis::new(10)).expect("open backend");
+        assert_eq!(
+            backend.legacy_import_admission().admit(
+                run_id,
+                &inventory,
+                &import_plan(&provider_models(), &personas, &lorebooks, &media),
+                TimestampMillis::new(20),
+            ),
+            Err(LegacyImportRepositoryError::InvalidInput)
+        );
+        super::reconcile_legacy_persona_lorebooks(&mut personas, &lorebooks);
+        assert!(personas.personas[0].active_lorebook_ids.is_empty());
+        let expected = vec![LegacyImportSkip {
+            kind: LegacyImportSkipKind::PersonaLorebookBinding,
+            source_key: format!("{}:{missing}", personas.personas[0].id),
+            reason: LegacyImportSkipReason::MissingLorebook,
+        }];
+        assert_eq!(personas.skipped, expected);
+        let admitted = backend
+            .legacy_import_admission()
+            .admit(
+                run_id,
+                &inventory,
+                &import_plan(&provider_models(), &personas, &lorebooks, &media),
+                TimestampMillis::new(20),
+            )
+            .expect("admit reconciled personas");
+        assert_eq!(admitted.skips, expected);
+        drop(backend);
+        fs::remove_file(path).expect("remove database");
+    }
+
+    #[test]
     fn backend_admission_replays_and_rejects_changed_source_content() {
         let path = std::env::temp_dir().join(format!(
             "lettuce-app-legacy-import-{}.sqlite3",
@@ -1999,6 +2136,7 @@ mod tests {
         let source_persona_id = PersonaId::new();
         let source_book_id = LorebookId::new();
         let collision_personas = LegacyPersonaPlan {
+            skipped: Vec::new(),
             personas: vec![LegacyPersonaCandidate {
                 id: source_persona_id,
                 title: "Collision Source".to_owned(),

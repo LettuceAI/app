@@ -504,6 +504,7 @@ mod tests {
         std::fs::write(avatar_dir.join("avatar_base.webp"), b"avatar").expect("write avatar");
         std::fs::write(root.join("images/shared.png"), b"shared").expect("write shared image");
         let personas = LegacyPersonaPlan {
+            skipped: Vec::new(),
             personas: vec![persona(
                 persona_id,
                 Some("avatar_base.webp"),
@@ -582,6 +583,7 @@ mod tests {
         let plan = plan_legacy_media(
             &root,
             &mut LegacyPersonaPlan {
+                skipped: Vec::new(),
                 personas: Vec::new(),
                 default_persona_id: None,
             },
@@ -627,6 +629,7 @@ mod tests {
             scale: 1.5,
         });
         let mut personas = LegacyPersonaPlan {
+            skipped: Vec::new(),
             personas: vec![with_crop],
             default_persona_id: None,
         };
@@ -661,6 +664,7 @@ mod tests {
         let root = root();
         let persona_id = PersonaId::new();
         let missing = LegacyPersonaPlan {
+            skipped: Vec::new(),
             personas: vec![persona(
                 persona_id,
                 None,
@@ -685,6 +689,7 @@ mod tests {
             }]
         );
         let unsafe_plan = LegacyPersonaPlan {
+            skipped: Vec::new(),
             personas: vec![persona(persona_id, Some("../avatar.webp"), Vec::new())],
             default_persona_id: None,
         };
@@ -702,6 +707,7 @@ mod tests {
         std::fs::write(root.join("images/conflict.jpg"), b"one").expect("write jpg");
         std::fs::write(root.join("images/conflict.png"), b"two").expect("write png");
         let ambiguous = LegacyPersonaPlan {
+            skipped: Vec::new(),
             personas: vec![persona(
                 persona_id,
                 None,
@@ -735,6 +741,7 @@ mod tests {
             })
             .collect();
         let too_many = LegacyPersonaPlan {
+            skipped: Vec::new(),
             personas: vec![persona(persona_id, None, references)],
             default_persona_id: None,
         };
@@ -754,6 +761,7 @@ mod tests {
             .set_len(LEGACY_MEDIA_OBJECT_BYTES_LIMIT + 1)
             .expect("size large image");
         let too_large = LegacyPersonaPlan {
+            skipped: Vec::new(),
             personas: vec![persona(
                 persona_id,
                 None,

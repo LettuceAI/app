@@ -412,6 +412,7 @@ pub enum LegacyImportSkipKind {
     PersonaAvatar,
     PersonaDesignReference,
     LorebookAvatar,
+    PersonaLorebookBinding,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -419,6 +420,7 @@ pub enum LegacyImportSkipReason {
     MissingProviderAccount,
     MissingModelProfile,
     MissingMediaFile,
+    MissingLorebook,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -555,6 +557,7 @@ pub struct LegacyPersonaCandidate {
 pub struct LegacyPersonaPlan {
     pub personas: Vec<LegacyPersonaCandidate>,
     pub default_persona_id: Option<PersonaId>,
+    pub skipped: Vec<LegacyImportSkip>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

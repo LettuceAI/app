@@ -432,6 +432,7 @@ mod tests {
             group_conversations: 0,
         };
         let personas = LegacyPersonaPlan {
+            skipped: Vec::new(),
             personas: vec![LegacyPersonaCandidate {
                 id: persona_id,
                 title: "Owner".to_owned(),
@@ -925,6 +926,7 @@ mod tests {
             locator: "reference.png".to_owned(),
         };
         let personas = LegacyPersonaPlan {
+            skipped: Vec::new(),
             personas: vec![LegacyPersonaCandidate {
                 id: persona_id,
                 title: "Imported Owner".to_owned(),

@@ -1230,6 +1230,7 @@ fn plan_legacy_personas_with_limit(
         });
     }
     Ok(LegacyPersonaPlan {
+        skipped: Vec::new(),
         personas,
         default_persona_id,
     })
