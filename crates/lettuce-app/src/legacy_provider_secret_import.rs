@@ -247,6 +247,7 @@ mod tests {
         let admission = backend
             .database()
             .admit(LegacyImportAdmissionRequest {
+                skips: Vec::new(),
                 run_id,
                 source_schema_version: LEGACY_DATABASE_SCHEMA_VERSION,
                 inventory_fingerprint: ContentHash::parse("ab".repeat(32)).expect("inventory hash"),
@@ -327,6 +328,7 @@ mod tests {
         let replayed_admission = reopened
             .database()
             .admit(LegacyImportAdmissionRequest {
+                skips: Vec::new(),
                 run_id,
                 source_schema_version: LEGACY_DATABASE_SCHEMA_VERSION,
                 inventory_fingerprint: ContentHash::parse("ab".repeat(32)).expect("inventory hash"),

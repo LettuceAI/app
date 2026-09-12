@@ -206,6 +206,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
                     })
                     .collect(),
             },
+            skips: provider_models.skipped.clone(),
             admitted_at,
         })
     }
@@ -370,6 +371,10 @@ fn valid_provider_model_plan(plan: &LegacyProviderModelPlan) -> bool {
         && plan
             .default_model_profile_id
             .is_none_or(|id| model_ids.contains(&id))
+        && plan
+            .skipped
+            .windows(2)
+            .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
 }
 
 struct Fingerprint(blake3::Hasher);
@@ -455,7 +460,7 @@ pub(crate) fn plan_fingerprint(
     asr: &LegacyAsrPlan,
     media: &LegacyMediaPlan,
 ) -> ContentHash {
-    let mut hash = Fingerprint::new("lettuce-legacy-import-plan-v4");
+    let mut hash = Fingerprint::new("lettuce-legacy-import-plan-v5");
     hash.u64(provider_models.provider_accounts.len() as u64);
     for provider in &provider_models.provider_accounts {
         hash.text(&provider.id.to_string());
@@ -522,6 +527,18 @@ pub(crate) fn plan_fingerprint(
         provider_models.default_model_profile_id.as_ref(),
         |hash, value| hash.text(&value.to_string()),
     );
+    hash.u64(provider_models.skipped.len() as u64);
+    for skip in &provider_models.skipped {
+        hash.u32(match skip.kind {
+            lettuce_transfer::LegacyImportSkipKind::SettingsDefaultProviderAccount => 2,
+            lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile => 3,
+        });
+        hash.text(&skip.source_key);
+        hash.u32(match skip.reason {
+            lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount => 1,
+            lettuce_transfer::LegacyImportSkipReason::MissingModelProfile => 2,
+        });
+    }
     hash.u64(prompts.prompts.len() as u64);
     for prompt in &prompts.prompts {
         hash.text(&prompt.source_id);
@@ -832,6 +849,7 @@ mod tests {
 
     fn provider_models() -> LegacyProviderModelPlan {
         LegacyProviderModelPlan {
+            skipped: Vec::new(),
             provider_accounts: Vec::new(),
             model_profiles: Vec::new(),
             default_provider_account_id: None,
@@ -878,6 +896,7 @@ mod tests {
         let llama_id = ProviderAccountId::from_str("6c657474-7563-652d-6c6c-616d61637070")
             .expect("built-in llama account id");
         LegacyProviderModelPlan {
+            skipped: Vec::new(),
             provider_accounts: vec![
                 LegacyProviderAccountCandidate {
                     id: provider_id,
@@ -1648,6 +1667,44 @@ mod tests {
                 .default_model_profile_id,
             Some(existing_model.id)
         );
+        drop(backend);
+        fs::remove_file(path).expect("remove database");
+    }
+
+    #[test]
+    fn admission_seals_the_cleared_legacy_defaults() {
+        use lettuce_transfer::{LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason};
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-app-legacy-import-skips-{}.sqlite3",
+            LegacyImportRunId::new()
+        ));
+        let run_id = LegacyImportRunId::new();
+        let inventory = inventory();
+        let personas = personas();
+        let lorebooks = LegacyLorebookPlan {
+            lorebooks: Vec::new(),
+        };
+        let media = LegacyMediaPlan {
+            media: Vec::new(),
+            total_bytes: 0,
+        };
+        let mut models = provider_models();
+        models.skipped = vec![LegacyImportSkip {
+            kind: LegacyImportSkipKind::SettingsDefaultModelProfile,
+            source_key: ModelProfileId::new().to_string(),
+            reason: LegacyImportSkipReason::MissingModelProfile,
+        }];
+        let backend = AppBackend::open(&path, TimestampMillis::new(10)).expect("open backend");
+        let admitted = backend
+            .legacy_import_admission()
+            .admit(
+                run_id,
+                &inventory,
+                &import_plan(&models, &personas, &lorebooks, &media),
+                TimestampMillis::new(20),
+            )
+            .expect("admit with a cleared default");
+        assert_eq!(admitted.skips, models.skipped);
         drop(backend);
         fs::remove_file(path).expect("remove database");
     }

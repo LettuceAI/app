@@ -942,14 +942,18 @@ fn plan_legacy_provider_models_with_limits(
                 .then_with(|| left.id.cmp(&right.id))
         });
     }
-    if default_provider_account_id
-        .is_some_and(|id| !provider_accounts.iter().any(|provider| provider.id == id))
-    {
-        return Err(LegacyDatabasePreflightError::OrphanRecord {
-            table: "settings.default_provider_credential_id",
-            parent_table: "provider_credentials",
-        });
-    }
+    let mut skipped = Vec::new();
+    let default_provider_account_id = match default_provider_account_id {
+        Some(id) if !provider_accounts.iter().any(|provider| provider.id == id) => {
+            skipped.push(lettuce_transfer::LegacyImportSkip {
+                kind: lettuce_transfer::LegacyImportSkipKind::SettingsDefaultProviderAccount,
+                source_key: id.to_string(),
+                reason: lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount,
+            });
+            None
+        }
+        other => other,
+    };
 
     let mut statement = connection
         .prepare(
@@ -1083,18 +1087,24 @@ fn plan_legacy_provider_models_with_limits(
             created_at: TimestampMillis::new(created_at),
         });
     }
-    if default_model_profile_id.is_some_and(|id| !model_profiles.iter().any(|model| model.id == id))
-    {
-        return Err(LegacyDatabasePreflightError::OrphanRecord {
-            table: "settings.default_model_id",
-            parent_table: "models",
-        });
-    }
+    let default_model_profile_id = match default_model_profile_id {
+        Some(id) if !model_profiles.iter().any(|model| model.id == id) => {
+            skipped.push(lettuce_transfer::LegacyImportSkip {
+                kind: lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile,
+                source_key: id.to_string(),
+                reason: lettuce_transfer::LegacyImportSkipReason::MissingModelProfile,
+            });
+            None
+        }
+        other => other,
+    };
+    skipped.sort();
     Ok(LegacyProviderModelPlan {
         provider_accounts,
         model_profiles,
         default_provider_account_id,
         default_model_profile_id,
+        skipped,
     })
 }
 
@@ -2733,7 +2743,7 @@ mod tests {
     }
 
     #[test]
-    fn provider_model_plan_rejects_malformed_orphans_and_bounds() {
+    fn provider_model_plan_rejects_orphan_models_and_clears_orphan_defaults() {
         let path = provider_model_database();
         let provider_id = ProviderAccountId::new();
         let model_id = ModelProfileId::new();
@@ -2793,18 +2803,35 @@ mod tests {
                 limit: 0
             })
         );
+        let missing_default_model = ModelProfileId::new();
+        let missing_default_provider = ProviderAccountId::new();
         connection
             .execute(
-                "UPDATE settings SET default_model_id=?1",
-                [ModelProfileId::new().to_string()],
+                "UPDATE settings SET default_model_id=?1, default_provider_credential_id=?2",
+                rusqlite::params![
+                    missing_default_model.to_string(),
+                    missing_default_provider.to_string()
+                ],
             )
-            .expect("set orphan default");
+            .expect("set orphan defaults");
+        let plan = plan_legacy_provider_models(&path).expect("orphan defaults are cleared");
+        assert_eq!(plan.default_model_profile_id, None);
+        assert_eq!(plan.default_provider_account_id, None);
+        assert_eq!(plan.model_profiles.len(), 1);
         assert_eq!(
-            plan_legacy_provider_models(&path),
-            Err(LegacyDatabasePreflightError::OrphanRecord {
-                table: "settings.default_model_id",
-                parent_table: "models"
-            })
+            plan.skipped,
+            vec![
+                lettuce_transfer::LegacyImportSkip {
+                    kind: lettuce_transfer::LegacyImportSkipKind::SettingsDefaultProviderAccount,
+                    source_key: missing_default_provider.to_string(),
+                    reason: lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount,
+                },
+                lettuce_transfer::LegacyImportSkip {
+                    kind: lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile,
+                    source_key: missing_default_model.to_string(),
+                    reason: lettuce_transfer::LegacyImportSkipReason::MissingModelProfile,
+                },
+            ]
         );
         drop(connection);
         std::fs::remove_file(path).expect("remove legacy database");

@@ -1237,6 +1237,7 @@ fn map_provider_models(
         model_profiles: models,
         default_provider_account_id: None,
         default_model_profile_id: None,
+        skipped: Vec::new(),
     })
 }
 

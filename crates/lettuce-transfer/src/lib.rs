@@ -393,6 +393,28 @@ pub struct LegacyProviderModelPlan {
     pub model_profiles: Vec<LegacyModelProfileCandidate>,
     pub default_provider_account_id: Option<ProviderAccountId>,
     pub default_model_profile_id: Option<ModelProfileId>,
+    pub skipped: Vec<LegacyImportSkip>,
+}
+
+/// A legacy record the import leaves out, sealed with the run as evidence.
+/// Only records the legacy app itself already ignored are skipped.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LegacyImportSkip {
+    pub kind: LegacyImportSkipKind,
+    pub source_key: String,
+    pub reason: LegacyImportSkipReason,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LegacyImportSkipKind {
+    SettingsDefaultProviderAccount,
+    SettingsDefaultModelProfile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LegacyImportSkipReason {
+    MissingProviderAccount,
+    MissingModelProfile,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -767,6 +789,7 @@ pub struct LegacyImportAdmissionRequest {
     pub inventory_fingerprint: ContentHash,
     pub plan_fingerprint: ContentHash,
     pub sources: LegacyImportSources,
+    pub skips: Vec<LegacyImportSkip>,
     pub admitted_at: TimestampMillis,
 }
 
@@ -843,6 +866,7 @@ pub struct LegacyImportAdmission {
     pub plan_fingerprint: ContentHash,
     pub status: LegacyImportRunStatus,
     pub assignments: Vec<LegacyImportAssignment>,
+    pub skips: Vec<LegacyImportSkip>,
     pub admitted_at: TimestampMillis,
     pub replayed: bool,
 }

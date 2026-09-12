@@ -754,3 +754,12 @@ memories, companion tables, usage, audio providers, user voices and the legacy
 settings documents are not imported by any stage yet. `completed` is reserved
 for a run that covers every legacy domain, and any future step that deletes
 legacy data must require it together with explicit user approval.
+
+Legacy records the old app itself ignored are skipped instead of aborting the
+import, and every skip is sealed with the run in `legacy_import_skips` (insert
+only while admitting, never updated or deleted) and hashed into the plan
+fingerprint. Currently: a settings default provider or default model that no
+longer exists (legacy `provider_delete` and `model_delete` never cleared them and
+the old app ignored a stale id). A model whose provider credential no longer
+resolves still aborts the import: the old app kept listing and editing such a
+model, so dropping it would lose data. Every other malformed record still aborts.

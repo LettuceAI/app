@@ -44,6 +44,18 @@ impl LegacyImportRepository for Database {
         mut request: LegacyImportAdmissionRequest,
     ) -> Result<LegacyImportAdmission, LegacyImportRepositoryError> {
         normalize_sources(&mut request.sources)?;
+        request.skips.sort();
+        if request
+            .skips
+            .windows(2)
+            .any(|pair| pair[0].kind == pair[1].kind && pair[0].source_key == pair[1].source_key)
+            || request
+                .skips
+                .iter()
+                .any(|skip| skip.source_key.trim().is_empty())
+        {
+            return Err(LegacyImportRepositoryError::InvalidInput);
+        }
         if request.source_schema_version != LEGACY_DATABASE_SCHEMA_VERSION {
             return Err(LegacyImportRepositoryError::InvalidInput);
         }
@@ -58,6 +70,7 @@ impl LegacyImportRepository for Database {
                 || existing.inventory_fingerprint != request.inventory_fingerprint
                 || existing.plan_fingerprint != request.plan_fingerprint
                 || assignment_sources(&existing.assignments) != request.sources
+                || existing.skips != request.skips
             {
                 return Err(LegacyImportRepositoryError::Conflict);
             }
@@ -81,6 +94,19 @@ impl LegacyImportRepository for Database {
             )
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
         insert_assignments(&transaction, request.run_id, &request.sources)?;
+        for skip in &request.skips {
+            transaction
+                .execute(
+                    "INSERT INTO legacy_import_skips (run_id,source_kind,source_key,reason) VALUES (?1,?2,?3,?4)",
+                    params![
+                        request.run_id.to_string(),
+                        skip_kind_name(skip.kind),
+                        skip.source_key,
+                        skip_reason_name(skip.reason),
+                    ],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        }
         transaction
             .execute(
                 "UPDATE legacy_import_runs SET status='admitted' WHERE id=?1 AND status='admitting'",
@@ -1820,9 +1846,81 @@ fn load_admission(
             .map_err(|_| LegacyImportRepositoryError::Storage)?,
         status: parse_status(&status)?,
         assignments: load_assignments(transaction, run_id)?,
+        skips: load_skips(transaction, run_id)?,
         admitted_at: TimestampMillis::new(admitted_at),
         replayed: false,
     }))
+}
+
+fn skip_kind_name(kind: lettuce_transfer::LegacyImportSkipKind) -> &'static str {
+    match kind {
+        lettuce_transfer::LegacyImportSkipKind::SettingsDefaultProviderAccount => {
+            "settings_default_provider_account"
+        }
+        lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile => {
+            "settings_default_model_profile"
+        }
+    }
+}
+
+fn skip_reason_name(reason: lettuce_transfer::LegacyImportSkipReason) -> &'static str {
+    match reason {
+        lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount => {
+            "missing_provider_account"
+        }
+        lettuce_transfer::LegacyImportSkipReason::MissingModelProfile => "missing_model_profile",
+    }
+}
+
+fn load_skips(
+    transaction: &Transaction<'_>,
+    run_id: LegacyImportRunId,
+) -> Result<Vec<lettuce_transfer::LegacyImportSkip>, LegacyImportRepositoryError> {
+    let mut statement = transaction
+        .prepare(
+            "SELECT source_kind,source_key,reason FROM legacy_import_skips WHERE run_id=?1 ORDER BY source_kind,source_key",
+        )
+        .map_err(|_| LegacyImportRepositoryError::Storage)?;
+    let rows = statement
+        .query_map([run_id.to_string()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(|_| LegacyImportRepositoryError::Storage)?;
+    let mut skips = rows
+        .map(|row| {
+            let (kind, source_key, reason) =
+                row.map_err(|_| LegacyImportRepositoryError::Storage)?;
+            let kind = match kind.as_str() {
+                "settings_default_provider_account" => {
+                    lettuce_transfer::LegacyImportSkipKind::SettingsDefaultProviderAccount
+                }
+                "settings_default_model_profile" => {
+                    lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile
+                }
+                _ => return Err(LegacyImportRepositoryError::Storage),
+            };
+            let reason = match reason.as_str() {
+                "missing_provider_account" => {
+                    lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount
+                }
+                "missing_model_profile" => {
+                    lettuce_transfer::LegacyImportSkipReason::MissingModelProfile
+                }
+                _ => return Err(LegacyImportRepositoryError::Storage),
+            };
+            Ok(lettuce_transfer::LegacyImportSkip {
+                kind,
+                source_key,
+                reason,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    skips.sort();
+    Ok(skips)
 }
 
 fn parse_status(value: &str) -> Result<LegacyImportRunStatus, LegacyImportRepositoryError> {
@@ -2115,9 +2213,63 @@ mod tests {
         ))
     }
 
+    #[test]
+    fn admission_seals_skips_and_replays_them() {
+        use lettuce_transfer::{LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason};
+        let database = Database::open_in_memory().expect("database");
+        let run_id = LegacyImportRunId::new();
+        let missing_provider = LegacyImportSkip {
+            kind: LegacyImportSkipKind::SettingsDefaultProviderAccount,
+            source_key: ProviderAccountId::new().to_string(),
+            reason: LegacyImportSkipReason::MissingProviderAccount,
+        };
+        let missing_default = LegacyImportSkip {
+            kind: LegacyImportSkipKind::SettingsDefaultModelProfile,
+            source_key: ModelProfileId::new().to_string(),
+            reason: LegacyImportSkipReason::MissingModelProfile,
+        };
+        let mut admitted_request = request(run_id);
+        admitted_request.skips = vec![missing_default.clone(), missing_provider.clone()];
+        let admitted = database
+            .admit(admitted_request.clone())
+            .expect("admit with skips");
+        let mut expected = vec![missing_default, missing_provider.clone()];
+        expected.sort();
+        assert_eq!(admitted.skips, expected);
+        let replay = database
+            .admit(admitted_request.clone())
+            .expect("replay with skips");
+        assert!(replay.replayed);
+        assert_eq!(replay.skips, expected);
+        let mut changed = admitted_request;
+        changed.skips = vec![missing_provider];
+        assert_eq!(
+            database.admit(changed),
+            Err(LegacyImportRepositoryError::Conflict)
+        );
+        let connection = database.connection().expect("connection");
+        assert!(
+            connection
+                .execute(
+                    "DELETE FROM legacy_import_skips WHERE run_id=?1",
+                    [run_id.to_string()]
+                )
+                .is_err()
+        );
+        assert!(
+            connection
+                .execute(
+                    "UPDATE legacy_import_skips SET reason='missing_model_profile' WHERE run_id=?1",
+                    [run_id.to_string()]
+                )
+                .is_err()
+        );
+    }
+
     fn request(run_id: LegacyImportRunId) -> LegacyImportAdmissionRequest {
         let provider_account_id = ProviderAccountId::new();
         LegacyImportAdmissionRequest {
+            skips: Vec::new(),
             run_id,
             source_schema_version: LEGACY_DATABASE_SCHEMA_VERSION,
             inventory_fingerprint: ContentHash::parse("ab".repeat(32)).expect("inventory hash"),

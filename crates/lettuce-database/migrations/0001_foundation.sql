@@ -177,6 +177,33 @@ BEGIN
     SELECT RAISE(ABORT, 'legacy import assignment is immutable');
 END;
 
+CREATE TABLE legacy_import_skips (
+    run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('settings_default_provider_account','settings_default_model_profile')),
+    source_key TEXT NOT NULL CHECK (length(trim(source_key)) > 0),
+    reason TEXT NOT NULL CHECK (reason IN ('missing_provider_account','missing_model_profile')),
+    PRIMARY KEY (run_id, source_kind, source_key)
+) STRICT;
+
+CREATE TRIGGER legacy_import_skips_insert_guard
+BEFORE INSERT ON legacy_import_skips
+WHEN (SELECT status FROM legacy_import_runs WHERE id = NEW.run_id) <> 'admitting'
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import skips are sealed');
+END;
+
+CREATE TRIGGER legacy_import_skips_update_forbidden
+BEFORE UPDATE ON legacy_import_skips
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import skip is immutable');
+END;
+
+CREATE TRIGGER legacy_import_skips_delete_forbidden
+BEFORE DELETE ON legacy_import_skips
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import skip is immutable');
+END;
+
 CREATE TRIGGER legacy_import_secret_completions_insert_guard
 BEFORE INSERT ON legacy_import_secret_completions
 WHEN NOT EXISTS (

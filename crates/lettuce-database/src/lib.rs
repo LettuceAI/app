@@ -4271,6 +4271,7 @@ mod tests {
                 "legacy_import_results",
                 "legacy_import_runs",
                 "legacy_import_secret_completions",
+                "legacy_import_skips",
                 "lorebook_entries",
                 "lorebooks",
                 "media_assets",

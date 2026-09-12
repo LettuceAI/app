@@ -378,6 +378,7 @@ mod tests {
 
     fn provider_models() -> LegacyProviderModelPlan {
         LegacyProviderModelPlan {
+            skipped: Vec::new(),
             provider_accounts: Vec::new(),
             model_profiles: Vec::new(),
             default_provider_account_id: None,
@@ -642,6 +643,7 @@ mod tests {
         let run_id = LegacyImportRunId::new();
         let admission = database
             .admit(LegacyImportAdmissionRequest {
+                skips: Vec::new(),
                 run_id,
                 source_schema_version: lettuce_transfer::LEGACY_DATABASE_SCHEMA_VERSION,
                 inventory_fingerprint: ContentHash::parse("ab".repeat(32)).expect("inventory hash"),
