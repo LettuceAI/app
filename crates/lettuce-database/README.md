@@ -273,6 +273,14 @@ Possession of `Database` is a trusted application-composition capability: ordina
 conversation repositories and DTOs expose artifact references only and cannot
 export protected bytes. Trusted transfer remains a separate composition-only
 capability.
+The settings row carries the optional companion clock as nullable versioned
+JSON, read and written through the existing settings CAS, outbox and backup
+materialization path. New user and assistant messages of a direct chat take
+their effective time from that clock when the live character is a companion or
+the conversation has companion session state, the two sides of legacy's
+`is_companion_mode` (session mode or character mode), as legacy stamped
+`effective_at`; a finalized turn event reports the stored message time,
+so a regenerated reply keeps its original time like legacy.
 
 Dynamic-memory run admission applies the optional cycle-start memory change
 (`cycle_start_change`) through the same compare-and-apply as any memory change,

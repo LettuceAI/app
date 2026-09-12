@@ -88,6 +88,8 @@ pub enum ParticipantSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CurrentConversationSettings {
+    #[serde(default)]
+    pub companion_clock: Option<crate::CompanionClockSettings>,
     pub revision: Revision,
     pub author_note: Option<String>,
     pub author_note_provenance: crate::commands::SettingProvenance,
@@ -115,6 +117,9 @@ pub struct CurrentConversationSettings {
 
 impl CurrentConversationSettings {
     pub fn validate(&self) -> Result<(), ValidationError> {
+        if let Some(clock) = self.companion_clock {
+            clock.validate()?;
+        }
         if self.revision.get() == 0 {
             return Err(ValidationError::ZeroRevision);
         }
@@ -271,6 +276,11 @@ impl CurrentConversationSettings {
 
     pub fn validate_against_kind(&self, kind: &ConversationKind) -> Result<(), ValidationError> {
         self.validate()?;
+        if matches!(kind, ConversationKind::Group(_)) && self.companion_clock.is_some() {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.companion_clock",
+            });
+        }
         if matches!(kind, ConversationKind::Direct(_)) && self.speaker_selection.is_some() {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.speaker_selection",

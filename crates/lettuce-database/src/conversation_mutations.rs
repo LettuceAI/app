@@ -819,9 +819,10 @@ fn insert_assistant_message(
     now: TimestampMillis,
 ) -> Result<(), ConversationRepositoryError> {
     let ordinal = allocate_timeline_ordinal(transaction, conversation_id)?;
+    let effective_at = message_effective_time(transaction, conversation_id, now)?;
     transaction
         .execute(
-            "INSERT INTO conversation_messages (conversation_id, id, branch_id, parent_message_id, author_participant_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, active_candidate_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, 'assistant', ?6, ?7, ?7, 'visible', 0, 0, NULL, ?8, 1, ?7, ?7)",
+            "INSERT INTO conversation_messages (conversation_id, id, branch_id, parent_message_id, author_participant_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, active_candidate_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, 'assistant', ?6, ?7, ?9, 'visible', 0, 0, NULL, ?8, 1, ?7, ?7)",
             params![
                 conversation_id.to_string(),
                 message_id.to_string(),
@@ -831,6 +832,7 @@ fn insert_assistant_message(
                 ordinal,
                 now.get(),
                 candidate_id.to_string(),
+                effective_at.get(),
             ],
         )
         .map_err(kernel::map_constraint)?;
@@ -1375,6 +1377,39 @@ fn branch_descendants(
     rows.into_iter().map(slice::parse_id).collect()
 }
 
+fn message_effective_time(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    now: TimestampMillis,
+) -> Result<TimestampMillis, ConversationRepositoryError> {
+    let value: Option<String> = transaction
+        .query_row(
+            "SELECT settings.companion_clock_json FROM conversation_settings AS settings
+         JOIN conversations AS conversation ON conversation.id = settings.conversation_id
+         WHERE conversation.id = ?1 AND conversation.kind = 'direct'
+           AND settings.companion_clock_json IS NOT NULL
+           AND (EXISTS (SELECT 1 FROM conversation_participants AS participant
+               JOIN characters AS character ON character.id = participant.source_id
+               WHERE participant.conversation_id = conversation.id
+                 AND participant.source_kind = 'character'
+                 AND character.interaction_mode = 'companion')
+             OR EXISTS (SELECT 1 FROM companion_session_states AS state
+               WHERE state.conversation_id = conversation.id))",
+            [conversation_id.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(slice::db)?;
+    let clock = value
+        .map(|value| slice::decode::<lettuce_conversations::CompanionClockSettings>(&value))
+        .transpose()?
+        .unwrap_or_default();
+    clock
+        .validate()
+        .map_err(ConversationRepositoryError::Invalid)?;
+    Ok(clock.effective_now(now))
+}
+
 fn read_current_settings(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
@@ -1382,7 +1417,7 @@ fn read_current_settings(
 {
     transaction
         .query_row(
-            "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance FROM conversation_settings WHERE conversation_id = ?1",
+            "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, companion_clock_json FROM conversation_settings WHERE conversation_id = ?1",
             [conversation_id.to_string()],
             slice::read_settings,
         )
@@ -1412,7 +1447,7 @@ fn write_settings(
     if create {
         transaction
             .execute(
-                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?20, ?21, ?19, ?19)",
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at, companion_clock_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?20, ?21, ?19, ?19, ?22)",
                 params![
                     conversation_id.to_string(),
                     revision,
@@ -1435,6 +1470,7 @@ fn write_settings(
                     now.get(),
                     settings.speaker_selection.map(slice::speaker_selection_name),
                     slice::provenance_name(settings.speaker_selection_provenance),
+                    settings.companion_clock.as_ref().map(slice::encode).transpose()?,
                 ],
             )
             .map_err(kernel::map_constraint)?;
@@ -1442,7 +1478,7 @@ fn write_settings(
     }
     let changed = transaction
         .execute(
-            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19, speaker_selection = ?21, speaker_selection_provenance = ?22 WHERE conversation_id = ?1 AND revision = ?20",
+            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19, speaker_selection = ?21, speaker_selection_provenance = ?22, companion_clock_json = ?23 WHERE conversation_id = ?1 AND revision = ?20",
             params![
                 conversation_id.to_string(),
                 revision,
@@ -1466,6 +1502,7 @@ fn write_settings(
                 revision - 1,
                 settings.speaker_selection.map(slice::speaker_selection_name),
                 slice::provenance_name(settings.speaker_selection_provenance),
+                settings.companion_clock.as_ref().map(slice::encode).transpose()?,
             ],
         )
         .map_err(kernel::map_constraint)?;
@@ -1657,9 +1694,10 @@ fn insert_user_message(
     let message_id = MessageId::new();
     let revision_id = MessageRevisionId::new();
     let ordinal = allocate_timeline_ordinal(transaction, command.conversation_id)?;
+    let effective_at = message_effective_time(transaction, command.conversation_id, now)?;
     transaction
         .execute(
-            "INSERT INTO conversation_messages (conversation_id, id, branch_id, parent_message_id, author_participant_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, active_candidate_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9, ?10, ?11, ?12, NULL, 1, ?8, ?8)",
+            "INSERT INTO conversation_messages (conversation_id, id, branch_id, parent_message_id, author_participant_id, role, timeline_ordinal, logical_time, effective_time, visibility, pinned, scene_edited, active_revision_id, active_candidate_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?13, ?9, ?10, ?11, ?12, NULL, 1, ?8, ?8)",
             params![
                 command.conversation_id.to_string(),
                 message_id.to_string(),
@@ -1673,6 +1711,7 @@ fn insert_user_message(
                 i64::from(command.message.pinned),
                 i64::from(command.message.scene_edited),
                 revision_id.to_string(),
+                effective_at.get(),
             ],
         )
         .map_err(kernel::map_constraint)?;
@@ -10902,6 +10941,7 @@ mod tests {
                 persona: PatchValue::Keep,
                 scene: PatchValue::Keep,
                 speaker_selection: PatchValue::Keep,
+                companion_clock: PatchValue::Keep,
             }
         };
         let prepared = |command: UpdateConversationSettings| {
@@ -11040,6 +11080,269 @@ mod tests {
     }
 
     #[test]
+    fn companion_clock_settings_survive_reopen_and_reset_without_losing_other_settings() {
+        use lettuce_conversations::{CompanionClockSettings, CompanionTimeOverride};
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-companion-clock-{}.db",
+            ConversationId::new()
+        ));
+        let fixture = direct_fixture_on(std::rc::Rc::new(Database::open(&path).expect("database")));
+        let clock = CompanionClockSettings {
+            time_awareness_enabled: true,
+            time_override: CompanionTimeOverride::Ticking {
+                anchor_at: TimestampMillis::new(100),
+                set_at: TimestampMillis::new(20),
+            },
+        };
+        let command = UpdateConversationSettings {
+            conversation_id: fixture.conversation_id,
+            expected_settings_revision: None,
+            operation: token("clock-create", "cd"),
+            patch: CurrentConversationSettingsPatch {
+                companion_clock: PatchValue::Set(clock),
+                author_note: PatchValue::Set("Keep the harbor in view.".into()),
+                ..Default::default()
+            },
+        };
+        let prepare = |command| {
+            PreparedConversationSettingsUpdate::new(command, Vec::new()).expect("prepare")
+        };
+        let saved = fixture
+            .database
+            .update_settings(prepare(command.clone()), TimestampMillis::new(20))
+            .expect("save");
+        let id = fixture.conversation_id;
+        drop(fixture);
+        let reopened = Database::open(&path).expect("reopen");
+        let settings = ConversationReader::get(&reopened, id)
+            .expect("read")
+            .conversation
+            .current_settings
+            .expect("settings");
+        assert_eq!(settings.companion_clock, Some(clock));
+        let replay = reopened
+            .update_settings(prepare(command), TimestampMillis::new(30))
+            .expect("replay");
+        assert_eq!(replay.outbox, saved.outbox);
+        let reset = reopened
+            .update_settings(
+                prepare(UpdateConversationSettings {
+                    conversation_id: id,
+                    expected_settings_revision: Some(settings.revision),
+                    operation: token("clock-reset", "cd"),
+                    patch: CurrentConversationSettingsPatch {
+                        companion_clock: PatchValue::Clear,
+                        ..Default::default()
+                    },
+                }),
+                TimestampMillis::new(31),
+            )
+            .expect("reset");
+        let settings = reset.value.current_settings.expect("settings");
+        assert_eq!(settings.companion_clock, None);
+        assert_eq!(
+            settings.author_note.as_deref(),
+            Some("Keep the harbor in view.")
+        );
+        assert!(matches!(
+            reopened.update_settings(
+                prepare(UpdateConversationSettings {
+                    conversation_id: id,
+                    expected_settings_revision: Some(Revision::INITIAL),
+                    operation: token("clock-stale", "cd"),
+                    patch: CurrentConversationSettingsPatch {
+                        companion_clock: PatchValue::Set(clock),
+                        ..Default::default()
+                    },
+                }),
+                TimestampMillis::new(32)
+            ),
+            Err(ConversationRepositoryError::StaleRevision { .. })
+        ));
+        drop(reopened);
+        std::fs::remove_file(path).expect("remove test database");
+    }
+
+    #[test]
+    fn companion_messages_take_their_effective_time_from_the_session_clock() {
+        use lettuce_conversations::{CompanionClockSettings, CompanionTimeOverride};
+        let mut fixture = direct_fixture();
+        let settings = fixture
+            .database
+            .update_settings(
+                PreparedConversationSettingsUpdate::new(
+                    UpdateConversationSettings {
+                        conversation_id: fixture.conversation_id,
+                        expected_settings_revision: None,
+                        operation: token("clock-frozen", "cd"),
+                        patch: CurrentConversationSettingsPatch {
+                            companion_clock: PatchValue::Set(CompanionClockSettings {
+                                time_awareness_enabled: true,
+                                time_override: CompanionTimeOverride::Frozen {
+                                    anchor_at: TimestampMillis::new(5_000),
+                                },
+                            }),
+                            ..Default::default()
+                        },
+                    },
+                    Vec::new(),
+                )
+                .expect("prepare clock"),
+                TimestampMillis::new(10),
+            )
+            .expect("save clock");
+        assert!(settings.value.current_settings.is_some());
+        let effective_time = |fixture: &Fixture, message_id: MessageId| -> i64 {
+            fixture
+                .database
+                .connection()
+                .expect("connection")
+                .query_row(
+                    "SELECT effective_time FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2",
+                    params![fixture.conversation_id.to_string(), message_id.to_string()],
+                    |row| row.get(0),
+                )
+                .expect("effective time")
+        };
+        let turn = |fixture: &mut Fixture, key: &str, at: i64| {
+            fixture.revision = conversation_revision(fixture);
+            let send = fixture
+                .database
+                .begin_send(
+                    &send_command(fixture, &format!("{key}-send"), "cd", text("hello")),
+                    TimestampMillis::new(at),
+                )
+                .expect("send");
+            let GenerationTarget::NewAssistant {
+                message_id,
+                parent_message_id: Some(user_message),
+                ..
+            } = send.value.turn.target
+            else {
+                panic!("expected a new assistant target");
+            };
+            let revision = drive(
+                fixture,
+                send.value.turn.id,
+                send.value.attempt.id,
+                &[
+                    GenerationTurnStatus::Preparing,
+                    GenerationTurnStatus::ContextPrepared,
+                    GenerationTurnStatus::Running,
+                ],
+                &format!("{key}-drive"),
+                at + 1,
+            );
+            let finalized = fixture
+                .database
+                .finalize_generation(
+                    send.value.turn.id,
+                    send.value.attempt.id,
+                    conversation_revision(fixture),
+                    revision,
+                    &token(&format!("{key}-finalize"), "cd"),
+                    finalization_draft(text("reply"), 0),
+                    UsageEventId::new(),
+                    TimestampMillis::new(at + 10),
+                )
+                .expect("finalize");
+            let ConversationOutboxEvent::TurnFinalized {
+                effective_time: event_time,
+                ..
+            } = finalized.outbox[0].event
+            else {
+                panic!("expected a finalized turn event");
+            };
+            assert_eq!(event_time.get(), at + 10);
+            (user_message, message_id)
+        };
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO characters (id,status,name,normalized_name,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,voice_autoplay,presentation_json,revision,created_at,updated_at) SELECT source_id,'active','Ada','ada','{}','{}','{}','roleplay','manual',0,'{}',1,1,1 FROM conversation_participants WHERE conversation_id = ?1 AND source_kind = 'character'",
+                [fixture.conversation_id.to_string()],
+            )
+            .expect("roleplay character");
+        let (user, assistant) = turn(&mut fixture, "roleplay", 20);
+        assert_eq!(effective_time(&fixture, user), 20);
+        assert_eq!(effective_time(&fixture, assistant), 30);
+        let raw = fixture.database.connection().expect("connection");
+        raw.execute(
+            "INSERT INTO companion_relationship_states (character_id,persona_key,persona_id,closeness,trust,affection,tension,stability,interaction_count,last_interaction_at,revision,created_at,updated_at) SELECT source_id,'__default__',NULL,0.0,0.0,0.0,0.0,0.5,0,1,1,1,1 FROM conversation_participants WHERE conversation_id = ?1 AND source_kind = 'character'",
+            [fixture.conversation_id.to_string()],
+        )
+        .expect("relationship state");
+        raw.execute(
+            "INSERT INTO companion_session_states (conversation_id,character_id,persona_key,persona_id,initial_hash,confidence,emotional_updated_at,state_updated_at,revision,created_at,updated_at) SELECT conversation_id,source_id,'__default__',NULL,zeroblob(32),0.5,1,1,1,1,1 FROM conversation_participants WHERE conversation_id = ?1 AND source_kind = 'character'",
+            [fixture.conversation_id.to_string()],
+        )
+        .expect("session state");
+        drop(raw);
+        let (user, assistant) = turn(&mut fixture, "session-state", 30);
+        assert_eq!(effective_time(&fixture, user), 5_000);
+        assert_eq!(effective_time(&fixture, assistant), 5_000);
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "DELETE FROM companion_session_states WHERE conversation_id = ?1",
+                [fixture.conversation_id.to_string()],
+            )
+            .expect("remove session state");
+        let updated = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE characters SET interaction_mode = 'companion' WHERE id IN (SELECT source_id FROM conversation_participants WHERE conversation_id = ?1 AND source_kind = 'character')",
+                [fixture.conversation_id.to_string()],
+            )
+            .expect("companion character");
+        assert_eq!(updated, 1);
+        let clock_json: Option<String> = scalar(
+            &fixture.database,
+            "SELECT companion_clock_json FROM conversation_settings WHERE conversation_id = ?1",
+            &fixture.conversation_id.to_string(),
+        );
+        assert!(clock_json.is_some());
+        let (user, assistant) = turn(&mut fixture, "companion", 40);
+        assert_eq!(effective_time(&fixture, user), 5_000);
+        assert_eq!(effective_time(&fixture, assistant), 5_000);
+        let settings_revision =
+            ConversationReader::get(fixture.database.as_ref(), fixture.conversation_id)
+                .expect("aggregate")
+                .conversation
+                .current_settings
+                .expect("settings")
+                .revision;
+        fixture
+            .database
+            .update_settings(
+                PreparedConversationSettingsUpdate::new(
+                    UpdateConversationSettings {
+                        conversation_id: fixture.conversation_id,
+                        expected_settings_revision: Some(settings_revision),
+                        operation: token("clock-clear", "cd"),
+                        patch: CurrentConversationSettingsPatch {
+                            companion_clock: PatchValue::Clear,
+                            ..Default::default()
+                        },
+                    },
+                    Vec::new(),
+                )
+                .expect("prepare clear"),
+                TimestampMillis::new(60),
+            )
+            .expect("clear clock");
+        let (user, assistant) = turn(&mut fixture, "cleared", 70);
+        assert_eq!(effective_time(&fixture, user), 70);
+        assert_eq!(effective_time(&fixture, assistant), 80);
+    }
+
+    #[test]
     fn settings_context_artifacts_are_atomic_and_historical_refs_survive_reset() {
         let fixture = direct_fixture();
         let prompt_id = lettuce_types::PromptDocumentId::new();
@@ -11053,6 +11356,7 @@ mod tests {
         };
         let patch = |prompt: PatchValue<lettuce_conversations::PromptLaunchSnapshot>| {
             CurrentConversationSettingsPatch {
+                companion_clock: PatchValue::Keep,
                 author_note: PatchValue::Keep,
                 memory: PatchValue::Keep,
                 model_override: PatchValue::Keep,
@@ -11188,6 +11492,7 @@ mod tests {
             |prompt: PatchValue<lettuce_conversations::PromptLaunchSnapshot>,
              scene: PatchValue<lettuce_conversations::SceneLaunchSnapshot>| {
                 CurrentConversationSettingsPatch {
+                    companion_clock: PatchValue::Keep,
                     author_note: PatchValue::Keep,
                     memory: PatchValue::Keep,
                     model_override: PatchValue::Keep,

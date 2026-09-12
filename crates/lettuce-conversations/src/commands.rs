@@ -974,6 +974,8 @@ pub enum PatchValue<T> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct CurrentConversationSettingsPatch {
+    #[serde(default)]
+    pub companion_clock: PatchValue<crate::CompanionClockSettings>,
     pub author_note: PatchValue<String>,
     pub memory: PatchValue<crate::snapshot::MemorySettingsSnapshot>,
     pub model_override: PatchValue<ModelSelectionSnapshot>,
@@ -990,6 +992,9 @@ pub struct CurrentConversationSettingsPatch {
 
 impl CurrentConversationSettingsPatch {
     pub fn validate(&self) -> Result<(), ValidationError> {
+        if let PatchValue::Set(clock) = self.companion_clock {
+            clock.validate()?;
+        }
         if matches!(self.speaker_selection, PatchValue::Clear) {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.speaker_selection",
@@ -1095,6 +1100,7 @@ impl CurrentConversationSettingsPatch {
             }
         }
         let empty = crate::model::CurrentConversationSettings {
+            companion_clock: None,
             revision,
             author_note: None,
             author_note_provenance: SettingProvenance::LaunchInherited,
@@ -1171,6 +1177,11 @@ impl CurrentConversationSettingsPatch {
             current.is_some(),
         );
         let result = crate::model::CurrentConversationSettings {
+            companion_clock: match self.companion_clock {
+                PatchValue::Keep => base.companion_clock,
+                PatchValue::Set(clock) => Some(clock),
+                PatchValue::Clear | PatchValue::UseLaunchDefault => None,
+            },
             revision,
             author_note,
             author_note_provenance,

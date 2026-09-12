@@ -180,7 +180,7 @@ fn save_settings(
         return Ok(());
     };
     let revision = sql_revision(settings.revision)?;
-    transaction.execute("INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)", params![conversation.id.to_string(), revision, settings.author_note, provenance_name(settings.author_note_provenance), settings.memory.as_ref().map(encode).transpose()?, provenance_name(settings.memory_provenance), settings.model_override.as_ref().map(encode).transpose()?, provenance_name(settings.model_provenance), settings.voice.as_ref().map(encode).transpose()?, provenance_name(settings.voice_provenance), settings.prompt.as_ref().map(encode).transpose()?, provenance_name(settings.prompt_provenance), settings.lorebooks.as_ref().map(encode).transpose()?, provenance_name(settings.lorebooks_provenance), settings.persona.as_ref().map(encode).transpose()?, provenance_name(settings.persona_provenance), settings.scene.as_ref().map(encode).transpose()?, provenance_name(settings.scene_provenance), settings.speaker_selection.map(speaker_selection_name), provenance_name(settings.speaker_selection_provenance), conversation.created_at.get(), conversation.updated_at.get()]).map_err(db)?;
+    transaction.execute("INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at, companion_clock_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)", params![conversation.id.to_string(), revision, settings.author_note, provenance_name(settings.author_note_provenance), settings.memory.as_ref().map(encode).transpose()?, provenance_name(settings.memory_provenance), settings.model_override.as_ref().map(encode).transpose()?, provenance_name(settings.model_provenance), settings.voice.as_ref().map(encode).transpose()?, provenance_name(settings.voice_provenance), settings.prompt.as_ref().map(encode).transpose()?, provenance_name(settings.prompt_provenance), settings.lorebooks.as_ref().map(encode).transpose()?, provenance_name(settings.lorebooks_provenance), settings.persona.as_ref().map(encode).transpose()?, provenance_name(settings.persona_provenance), settings.scene.as_ref().map(encode).transpose()?, provenance_name(settings.scene_provenance), settings.speaker_selection.map(speaker_selection_name), provenance_name(settings.speaker_selection_provenance), conversation.created_at.get(), conversation.updated_at.get(), settings.companion_clock.as_ref().map(encode).transpose()?]).map_err(db)?;
     Ok(())
 }
 
@@ -500,7 +500,7 @@ where
     }
 
     let settings = transaction
-        .query_row("SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance FROM conversation_settings WHERE conversation_id = ?1", [id.to_string()], read_settings)
+        .query_row("SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, companion_clock_json FROM conversation_settings WHERE conversation_id = ?1", [id.to_string()], read_settings)
         .optional()
         .map_err(db)?;
     if let Some(settings) = &settings {
@@ -591,6 +591,11 @@ pub(crate) fn read_participant(row: &Row<'_>) -> Result<ConversationParticipant,
 
 pub(crate) fn read_settings(row: &Row<'_>) -> Result<CurrentConversationSettings, rusqlite::Error> {
     Ok(CurrentConversationSettings {
+        companion_clock: row
+            .get::<_, Option<String>>(19)?
+            .map(|value| decode(&value))
+            .transpose()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
         revision: rev(row.get(0)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
         author_note: row.get(1)?,
         author_note_provenance: provenance_from_name(&row.get::<_, String>(2)?)?,

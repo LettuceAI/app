@@ -644,6 +644,7 @@ mod tests {
                 persona: PatchValue::Keep,
                 scene: PatchValue::Keep,
                 speaker_selection: PatchValue::Keep,
+                companion_clock: PatchValue::Keep,
             }
             .apply(None, None)
             .expect("settings override"),

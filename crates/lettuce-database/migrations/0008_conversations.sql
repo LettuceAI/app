@@ -67,6 +67,7 @@ CREATE TABLE conversation_settings (
     scene_provenance TEXT NOT NULL CHECK (scene_provenance IN ('launch_inherited', 'current_override', 'disabled')),
     speaker_selection TEXT CHECK (speaker_selection IS NULL OR speaker_selection IN ('llm', 'heuristic', 'round_robin', 'director', 'director_action')),
     speaker_selection_provenance TEXT NOT NULL DEFAULT 'launch_inherited' CHECK (speaker_selection_provenance IN ('launch_inherited', 'current_override')),
+    companion_clock_json TEXT CHECK (companion_clock_json IS NULL OR (json_valid(companion_clock_json) AND json_extract(companion_clock_json, '$.format_version') = 1)),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     CHECK (author_note IS NULL OR (length(trim(author_note)) > 0 AND length(CAST(author_note AS BLOB)) <= 1048576)),

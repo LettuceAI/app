@@ -201,7 +201,17 @@ runs, so switching to director mode while a turn without a chosen speaker is
 queued fails that turn as speaker-unavailable. When a conversation switched to
 LLM selection has no launch speaker-model snapshot, the application resolves
 the model live; a speaker-model snapshot is simply unused while the method is
-not LLM. The heuristic's recency distance counts every visible message after a
+not LLM. Direct conversations can store optional `CompanionClockSettings`
+through the existing settings patch: time awareness defaults off, and the
+override is live, frozen or ticking. Clearing or resetting restores the live,
+disabled default without changing other settings. Effective time uses the
+stored anchor and nonnegative elapsed real time; invalid negative anchors are
+rejected. This is session-owned data, not a character launch snapshot. The
+database stamps new messages of companion direct chats with this effective time.
+Prompt timestamps, the memory cycle's time awareness and temporal retrieval do
+not read it yet, and legacy imports do not yet carry the legacy
+`timeAwarenessEnabled` and `timeOverride` preferences.
+The heuristic's recency distance counts every visible message after a
 participant's last line, the pending user message included, because legacy
 numbered every stored group message as a turn and scored
 `current_turn - last_spoke_turn`; an explicit speaker missing from the cast is

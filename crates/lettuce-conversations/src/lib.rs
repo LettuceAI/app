@@ -6,6 +6,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod artifact;
+mod clock;
 mod commands;
 mod content;
 mod document;
@@ -23,6 +24,7 @@ mod tool;
 mod validation;
 
 pub use artifact::*;
+pub use clock::*;
 pub use commands::*;
 pub use content::*;
 pub use document::*;
@@ -1049,6 +1051,7 @@ mod tests {
             persona: PatchValue::Keep,
             scene: PatchValue::Keep,
             speaker_selection: PatchValue::Keep,
+            companion_clock: PatchValue::Keep,
         };
         assert!(
             PreparedConversationSettingsUpdate::new(command(patch.clone()), Vec::new()).is_ok()
@@ -2466,6 +2469,7 @@ mod tests {
             persona: PatchValue::Keep,
             scene: PatchValue::Keep,
             speaker_selection: PatchValue::Keep,
+            companion_clock: PatchValue::Keep,
         };
         let command = UpdateConversationSettings {
             conversation_id: ConversationId::new(),
@@ -2499,6 +2503,7 @@ mod tests {
             SettingProvenance::LaunchInherited
         );
         let existing = CurrentConversationSettings {
+            companion_clock: None,
             revision: Revision::INITIAL,
             author_note: None,
             author_note_provenance: SettingProvenance::Disabled,
@@ -2559,6 +2564,7 @@ mod tests {
             persona: PatchValue::Keep,
             scene: PatchValue::Keep,
             speaker_selection: PatchValue::Keep,
+            companion_clock: PatchValue::Keep,
         };
         let created = set.apply(None, None).expect("create settings");
         assert_eq!(created.revision, Revision::INITIAL);
@@ -2583,6 +2589,7 @@ mod tests {
             persona: PatchValue::UseLaunchDefault,
             scene: PatchValue::UseLaunchDefault,
             speaker_selection: PatchValue::Keep,
+            companion_clock: PatchValue::Keep,
         };
         let inherited = use_launch_default
             .apply(Some(&created), Some(Revision::INITIAL))
@@ -2619,6 +2626,7 @@ mod tests {
             persona: PatchValue::Clear,
             scene: PatchValue::Clear,
             speaker_selection: PatchValue::Keep,
+            companion_clock: PatchValue::Keep,
         };
         let disabled = clear
             .apply(Some(&created), Some(Revision::INITIAL))
@@ -2751,6 +2759,7 @@ mod tests {
             persona: PatchValue::Set(persona),
             scene: PatchValue::Set(scene),
             speaker_selection: PatchValue::Keep,
+            companion_clock: PatchValue::Keep,
         };
         let current = patch.apply(None, None).expect("context settings");
         assert_eq!(current.prompt, Some(prompt.clone()));
@@ -2836,6 +2845,7 @@ mod tests {
     #[test]
     fn persisted_settings_require_a_revision_and_validate_resolved_values() {
         let mut settings = CurrentConversationSettings {
+            companion_clock: None,
             revision: Revision::INITIAL,
             author_note: None,
             author_note_provenance: SettingProvenance::Disabled,
