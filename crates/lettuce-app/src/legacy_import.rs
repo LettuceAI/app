@@ -255,7 +255,7 @@ fn validate_plan(
         || !valid_asr_plan(asr)
         || !valid_asr_media_plan(asr, media)
         || total_bytes != Some(media.total_bytes)
-        || !valid_media_skips(media)
+        || !valid_media_skips(media, personas, lorebooks)
     {
         return Err(LegacyImportRepositoryError::InvalidInput);
     }
@@ -346,19 +346,47 @@ fn valid_asr_media_plan(asr: &LegacyAsrPlan, media: &LegacyMediaPlan) -> bool {
     found.len() == examples.len()
 }
 
-fn valid_media_skips(media: &LegacyMediaPlan) -> bool {
+fn valid_media_skips(
+    media: &LegacyMediaPlan,
+    personas: &LegacyPersonaPlan,
+    lorebooks: &LegacyLorebookPlan,
+) -> bool {
+    use lettuce_transfer::LegacyImportSkipKind::{
+        LorebookAvatar, PersonaAvatar, PersonaDesignReference,
+    };
+    let persona = |id: &str| {
+        personas
+            .personas
+            .iter()
+            .find(|persona| persona.id.to_string() == id)
+    };
     media
         .skipped
         .windows(2)
         .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
         && media.skipped.iter().all(|skip| {
             skip.reason == lettuce_transfer::LegacyImportSkipReason::MissingMediaFile
-                && matches!(
-                    skip.kind,
-                    lettuce_transfer::LegacyImportSkipKind::PersonaAvatar
-                        | lettuce_transfer::LegacyImportSkipKind::PersonaDesignReference
-                        | lettuce_transfer::LegacyImportSkipKind::LorebookAvatar
-                )
+                && match skip.kind {
+                    PersonaAvatar => persona(&skip.source_key).is_some_and(|persona| {
+                        persona.avatar.is_none() && persona.avatar_crop.is_none()
+                    }),
+                    PersonaDesignReference => {
+                        skip.source_key
+                            .split_once(':')
+                            .is_some_and(|(id, locator)| {
+                                persona(id).is_some_and(|persona| {
+                                    persona
+                                        .design_references
+                                        .iter()
+                                        .all(|reference| reference.locator != locator)
+                                })
+                            })
+                    }
+                    LorebookAvatar => lorebooks.lorebooks.iter().any(|lorebook| {
+                        lorebook.id.to_string() == skip.source_key && lorebook.avatar.is_none()
+                    }),
+                    _ => false,
+                }
         })
 }
 
@@ -1754,6 +1782,19 @@ mod tests {
         expected.extend(media.skipped.iter().cloned());
         expected.sort();
         assert_eq!(admitted.skips, expected);
+        let mut unpruned = personas.clone();
+        unpruned.personas[0].avatar = Some(lettuce_transfer::LegacyMediaReference {
+            locator: "still-here.webp".into(),
+        });
+        assert_eq!(
+            backend.legacy_import_admission().admit(
+                LegacyImportRunId::new(),
+                &inventory,
+                &import_plan(&models, &unpruned, &lorebooks, &media),
+                TimestampMillis::new(30),
+            ),
+            Err(LegacyImportRepositoryError::InvalidInput)
+        );
         drop(backend);
         fs::remove_file(path).expect("remove database");
     }
