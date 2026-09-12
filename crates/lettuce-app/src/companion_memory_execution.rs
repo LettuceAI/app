@@ -5,8 +5,9 @@ use lettuce_jobs::{Claim, handle::JobHandle};
 use lettuce_memory::{
     DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
     DynamicMemoryBackgroundRoundSettlement, DynamicMemoryInferenceRound,
-    DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, MemoryPolicy, MemoryRepository,
-    MemoryRepositoryError, MemoryToolArguments, MemoryToolCall, MemoryToolError, MemoryToolReducer,
+    DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, MemoryCycleBudget, MemoryPolicy,
+    MemoryRepository, MemoryRepositoryError, MemoryToolArguments, MemoryToolCall, MemoryToolError,
+    MemoryToolReducer,
 };
 use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, MemoryId, TimestampMillis};
 
@@ -73,9 +74,10 @@ impl<
             self.cancel(&attempt, now)?;
             return Err(CompanionMemoryRoundExecutionError::Cancelled);
         }
-        let round = self
+        let rounds = self
             .repository
-            .list_dynamic_memory_inference_rounds(run_id, attempt_id)?
+            .list_dynamic_memory_inference_rounds(run_id, attempt_id)?;
+        let round = rounds
             .get(usize::from(round_ordinal))
             .cloned()
             .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership)?;
@@ -119,7 +121,23 @@ impl<
             run.supersession_enabled,
             &prepared,
         )?;
-        let reduction = MemoryToolReducer.reduce(&snapshot, policy, &calls)?;
+        let mut hard_deletes_used = 0;
+        for earlier in rounds
+            .iter()
+            .filter(|earlier| earlier.ordinal < round_ordinal)
+        {
+            let settlement = self
+                .repository
+                .load_dynamic_memory_round_settlement(run_id, attempt_id, earlier.ordinal)?
+                .ok_or(CompanionMemoryRoundExecutionError::InvalidOwnership)?;
+            hard_deletes_used += MemoryCycleBudget::count_hard_deletes(&settlement.results);
+        }
+        let budget = MemoryCycleBudget::new(
+            run.starting_memory.items.len(),
+            policy.max_hard_delete_ratio_per_cycle,
+            hard_deletes_used,
+        );
+        let reduction = MemoryToolReducer.reduce_round(&snapshot, policy, budget, &calls)?;
         let settlement = self.repository.commit_dynamic_memory_background_round(
             DynamicMemoryBackgroundRoundCommit {
                 run_id,

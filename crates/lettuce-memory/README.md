@@ -19,7 +19,14 @@ tool declarations, strict typed arguments and outcomes, a deterministic ordered
 reducer over revisioned memory-space snapshots, and an atomic compare-and-apply
 repository port. It preserves duplicate suppression, low-confidence demotion,
 cycle-start hard-delete limits, pin protection, hot-token budgeting, and
-capacity trimming. The verified scenarios are pinned in
+capacity trimming. A cycle's hard-delete budget (`MemoryCycleBudget`) is
+legacy's `floor(count_at_cycle_start * ratio).max(1)` over every item, cold
+included, and counts the `Deleted` outcomes of every earlier round
+(`reduce_round`); `reduce` is the first round of a fresh cycle. Capacity
+trimming and hot-budget demotion no longer run per round: `finish_cycle` applies
+them once, trim first and then demote as legacy did after its loop and repair
+pass, as one change set the application commits through the memory CAS. The
+verified scenarios are pinned in
 `fixtures/legacy-import/dynamic-memory-tool-scenarios-v1.json`.
 Create calls also preserve the model-selected transcript message ID on the
 authoritative memory item. This source identity is optional for the shared
@@ -74,9 +81,14 @@ because legacy's dropped result shifted every later tool result onto the wrong
 call; the listing also excludes superseded items for group runs, which legacy's
 group copy did not filter (group runs never supersede, so nothing is hidden). A
 padded `category` is trimmed before the allow-list check as legacy did, and a
-blank one counts as missing.
-Still missing from legacy: the raw-arguments fallback for a missing `text`
-argument. Structured
+blank one counts as missing. A create keeps its category as `CategoryArgument`
+(tagged, missing or invalid) through parsing, so the reducer reports a duplicate
+before a missing or invalid category exactly as legacy checked text, embedding,
+duplicate and then category. Legacy's fallback of using the raw argument string
+as the memory text when `text` was missing is deliberately not reproduced: the
+raw arguments of a create without `text` are the JSON of the other fields, not
+a memory, so such a call is skipped for its missing text. Structured fallback
+booleans are trimmed and ASCII-lowercased like legacy. Structured
 fallback prompts are catalog keys (`memory_operations_fallback_prompt_key`).
 Runs store up to 64 inference rounds and 4096 tool calls per attempt. Companion-required source validation and supersession
 and UI events remain later slices. ONNX inference runtime

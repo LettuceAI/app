@@ -280,6 +280,7 @@ impl<
                 }
             }
         }
+        self.finish_cycle(&dispatch, &admission.batch, policy, handle, now)?;
         let terminal = CompanionMemoryTerminalCoordinator::new(self.repository).settle_success(
             dispatch.run.id,
             dispatch.attempt.id,
@@ -296,6 +297,55 @@ impl<
             effects: terminal.effects,
             fresh_memories: terminal.fresh_memories,
         })
+    }
+
+    /// Legacy trimmed to `max_entries` and demoted to the hot budget once per
+    /// cycle after the loop and the repair pass; replaying a finished cycle
+    /// finds nothing left to change.
+    fn finish_cycle(
+        &self,
+        dispatch: &CompanionPostTurnMemoryRunDispatch,
+        batch: &crate::CompanionPostTurnMemoryBatch,
+        policy: &lettuce_memory::MemoryPolicy,
+        handle: &JobHandle,
+        now: TimestampMillis,
+    ) -> Result<(), CompanionMemoryJobRunError> {
+        let snapshot = self
+            .repository
+            .get(dispatch.run.space_id)
+            .map_err(|error| CompanionMemoryJobRunError::Terminal(error.into()))?
+            .ok_or(CompanionMemoryJobRunError::Terminal(
+                CompanionMemoryTerminalError::InvalidOwnership,
+            ))?;
+        let finish = match lettuce_memory::MemoryToolReducer.finish_cycle(&snapshot, policy) {
+            Ok(finish) => finish,
+            Err(error) => {
+                let error = CompanionMemoryLoopError::Execution(
+                    CompanionMemoryRoundExecutionError::Tool(error),
+                );
+                CompanionMemoryTerminalCoordinator::new(self.repository).settle_failure(
+                    dispatch.run.id,
+                    dispatch.attempt.id,
+                    batch,
+                    handle,
+                    CompanionMemoryTerminalFailure::from_loop_error(&error),
+                    now,
+                )?;
+                return Err(CompanionMemoryJobRunError::Loop(error));
+            }
+        };
+        if let Some(change) = finish.change {
+            tracing::info!(
+                run_id = %dispatch.run.id,
+                trimmed = finish.trimmed_ids.len(),
+                demoted = finish.demoted_ids.len(),
+                "applied the cycle-end memory capacity and hot budget"
+            );
+            self.repository
+                .compare_and_apply(change)
+                .map_err(|error| CompanionMemoryJobRunError::Terminal(error.into()))?;
+        }
+        Ok(())
     }
 }
 

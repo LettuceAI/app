@@ -164,10 +164,10 @@ fn insert_string(arguments: &mut Map<String, Value>, key: &str, value: Option<St
 }
 
 fn insert_bool(arguments: &mut Map<String, Value>, key: &str, value: Option<String>) {
-    let value = value.as_deref().map(str::trim);
-    if matches!(value, Some("true" | "1" | "yes")) {
+    let value = value.map(|value| value.trim().to_ascii_lowercase());
+    if matches!(value.as_deref(), Some("true" | "1" | "yes")) {
         arguments.insert(key.to_owned(), Value::Bool(true));
-    } else if matches!(value, Some("false" | "0" | "no")) {
+    } else if matches!(value.as_deref(), Some("false" | "0" | "no")) {
         arguments.insert(key.to_owned(), Value::Bool(false));
     }
 }
@@ -495,6 +495,18 @@ mod tests {
             json!({"important":true,"text":"Sam & Elias reconciled","category":"relationship"})
         );
         assert_eq!(calls[1].arguments, json!({"summary":"all set"}));
+    }
+
+    #[test]
+    fn xml_booleans_are_trimmed_and_case_insensitive_like_legacy() {
+        let calls = parse_memory_operations_from_text(
+            "<memory_ops><create_memory important=\" Yes \"><text>Mira likes tea</text><category>preference</category></create_memory><create_memory important=\"FALSE\"><text>Mira left the harbor</text><category>plot_event</category></create_memory><create_memory important=\"maybe\"><text>Mira hums</text><category>other</category></create_memory></memory_ops>",
+            DynamicMemoryStructuredFallbackFormat::Xml,
+        )
+        .expect("xml");
+        assert_eq!(calls[0].arguments["important"], json!(true));
+        assert_eq!(calls[1].arguments["important"], json!(false));
+        assert!(calls[2].arguments.get("important").is_none());
     }
 
     #[test]

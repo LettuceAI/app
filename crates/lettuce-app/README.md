@@ -254,7 +254,9 @@ single provider tool candidate as round zero. A committed round replays without
 provider I/O; cancellation settles before admission, and rejected, empty,
 mixed-content, undeclared, or inconsistent signed-replay outcomes do not become
 durable calls. One admitted background round now reuses the existing create
-preparation and typed reducer, then atomically settles its ordered results with
+preparation and typed reducer with the cycle's hard-delete budget (the run's
+starting item count and the hard deletes settled by earlier rounds), then
+atomically settles its ordered results with
 the memory CAS; exact retry returns those results without embedding or reducing
 again, and `done` preserves the existing short-circuit behavior. When a native
 tool request errors or returns no calls, the coordinator copies the legacy
@@ -856,7 +858,9 @@ guess for all of them. The repair round is stored with
 resume instead of continuing the manager loop out of the repair prompt, an
 attempt that already holds one is never repaired again, and a failed repair
 round execution logs and keeps the cycle as legacy did; only cancellation
-propagates.
+propagates. After the repair pass the runner applies the reducer's
+`finish_cycle` (trim to `max_entries`, then demote to the hot token budget)
+through the memory CAS before the attempt settles; a replay finds no change.
 The reply itself carries no memory tools: legacy writes memories in
 a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`). Plain direct
 and group conversations now admit that cycle through

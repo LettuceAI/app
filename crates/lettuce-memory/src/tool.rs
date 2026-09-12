@@ -180,7 +180,7 @@ pub fn dynamic_memory_tool_shape(request: &ToolRequest) -> ToolRequest {
 pub enum MemoryToolArguments {
     CreateMemory {
         text: String,
-        category: MemoryCategory,
+        category: CategoryArgument,
         important: bool,
         source_message_id: Option<MessageId>,
         supersedes: Vec<MemoryReference>,
@@ -203,6 +203,17 @@ pub enum MemoryToolArguments {
     Unusable {
         reason: MemoryToolSkipReason,
     },
+}
+
+/// The category a create named. Legacy validated it only after the duplicate
+/// check, so an untagged or mistagged create is still reported as a duplicate
+/// when its text already exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum CategoryArgument {
+    Tagged { category: MemoryCategory },
+    Missing,
+    Invalid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -289,16 +300,17 @@ impl MemoryToolArguments {
             "create_memory" => {
                 let text = crate::normalize_memory_text(&required_string(object, "text")?)
                     .map_err(MemoryToolError::Text)?;
-                let category = required_string(object, "category")?;
-                let category = match category.trim() {
-                    "" => return Err(MemoryToolError::MissingField("category")),
-                    "character_trait" => MemoryCategory::CharacterTrait,
-                    "relationship" => MemoryCategory::Relationship,
-                    "plot_event" => MemoryCategory::PlotEvent,
-                    "world_detail" => MemoryCategory::WorldDetail,
-                    "preference" => MemoryCategory::Preference,
-                    "other" => MemoryCategory::Other,
-                    _ => return Err(MemoryToolError::InvalidCategory),
+                let category = match object
+                    .get("category")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|category| !category.is_empty())
+                {
+                    None => CategoryArgument::Missing,
+                    Some(category) => MemoryCategory::parse(category)
+                        .map_or(CategoryArgument::Invalid, |category| {
+                            CategoryArgument::Tagged { category }
+                        }),
                 };
                 let important = object
                     .get("important")
@@ -519,18 +531,84 @@ pub struct MemoryToolResult {
 pub struct MemoryBatchResult {
     pub change: Option<MemoryChangeSet>,
     pub results: Vec<MemoryToolResult>,
-    pub demoted_ids: Vec<MemoryId>,
+}
+
+/// Legacy allowed `floor(initial_count * ratio).max(1)` hard deletes per cycle,
+/// counting every memory (cold included) at cycle start and every hard delete
+/// across the cycle's rounds; a cycle over an empty space allows none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MemoryCycleBudget {
+    pub hard_delete_limit: usize,
+    pub hard_deletes_used: usize,
+}
+
+impl MemoryCycleBudget {
+    #[must_use]
+    pub fn new(initial_count: usize, ratio: Score, hard_deletes_used: usize) -> Self {
+        let hard_delete_limit = if initial_count == 0 {
+            0
+        } else {
+            (initial_count.saturating_mul(usize::from(ratio.basis_points())) / 10_000).max(1)
+        };
+        Self {
+            hard_delete_limit,
+            hard_deletes_used,
+        }
+    }
+
+    /// The budget of a cycle starting from `snapshot` with no hard delete yet.
+    #[must_use]
+    pub fn fresh(snapshot: &MemorySpaceSnapshot, policy: &MemoryPolicy) -> Self {
+        Self::new(
+            snapshot.items.len(),
+            policy.max_hard_delete_ratio_per_cycle,
+            0,
+        )
+    }
+
+    /// How many hard deletes the settled results already spent.
+    #[must_use]
+    pub fn count_hard_deletes(results: &[MemoryToolResult]) -> usize {
+        results
+            .iter()
+            .filter(|result| matches!(result.outcome, MemoryToolOutcome::Deleted { .. }))
+            .count()
+    }
+}
+
+/// The once-per-cycle policy pass legacy ran after the loop and the repair
+/// pass: trim to `max_entries`, then demote to the hot token budget.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryCycleFinish {
+    pub change: Option<MemoryChangeSet>,
     pub trimmed_ids: Vec<MemoryId>,
+    pub demoted_ids: Vec<MemoryId>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MemoryToolReducer;
 
 impl MemoryToolReducer {
+    /// One round of a cycle that starts at `snapshot`.
     pub fn reduce(
         &self,
         snapshot: &MemorySpaceSnapshot,
         policy: &MemoryPolicy,
+        calls: &[MemoryToolCall],
+    ) -> Result<MemoryBatchResult, MemoryToolError> {
+        self.reduce_round(
+            snapshot,
+            policy,
+            MemoryCycleBudget::fresh(snapshot, policy),
+            calls,
+        )
+    }
+
+    pub fn reduce_round(
+        &self,
+        snapshot: &MemorySpaceSnapshot,
+        policy: &MemoryPolicy,
+        budget: MemoryCycleBudget,
         calls: &[MemoryToolCall],
     ) -> Result<MemoryBatchResult, MemoryToolError> {
         snapshot.validate()?;
@@ -538,10 +616,8 @@ impl MemoryToolReducer {
 
         let original_items = snapshot.items.clone();
         let mut items = original_items.clone();
-        let initial_active_count = items.iter().filter(|item| !item.is_cold).count();
-        let hard_delete_limit =
-            hard_delete_limit(initial_active_count, policy.max_hard_delete_ratio_per_cycle);
-        let mut hard_delete_count = 0usize;
+        let hard_delete_limit = budget.hard_delete_limit;
+        let mut hard_delete_count = budget.hard_deletes_used;
         let mut stopped = false;
         let mut results = Vec::with_capacity(calls.len());
 
@@ -597,8 +673,6 @@ impl MemoryToolReducer {
         }
 
         ensure_pinned_hot(&mut items);
-        let demoted_ids = enforce_hot_budget(&mut items, policy.hot_token_budget);
-        let trimmed_ids = trim_to_capacity(&mut items, policy.max_entries);
         let change = (items != original_items).then_some(MemoryChangeSet {
             space_id: snapshot.id,
             expected_revision: snapshot.revision,
@@ -608,11 +682,32 @@ impl MemoryToolReducer {
             change.validate()?;
         }
 
-        Ok(MemoryBatchResult {
+        Ok(MemoryBatchResult { change, results })
+    }
+
+    pub fn finish_cycle(
+        &self,
+        snapshot: &MemorySpaceSnapshot,
+        policy: &MemoryPolicy,
+    ) -> Result<MemoryCycleFinish, MemoryToolError> {
+        snapshot.validate()?;
+        policy.validate()?;
+        let mut items = snapshot.items.clone();
+        ensure_pinned_hot(&mut items);
+        let trimmed_ids = trim_to_capacity(&mut items, policy.max_entries);
+        let demoted_ids = enforce_hot_budget(&mut items, policy.hot_token_budget);
+        let change = (items != snapshot.items).then_some(MemoryChangeSet {
+            space_id: snapshot.id,
+            expected_revision: snapshot.revision,
+            items,
+        });
+        if let Some(change) = &change {
+            change.validate()?;
+        }
+        Ok(MemoryCycleFinish {
             change,
-            results,
-            demoted_ids,
             trimmed_ids,
+            demoted_ids,
         })
     }
 }
@@ -620,7 +715,7 @@ impl MemoryToolReducer {
 fn apply_create(
     items: &mut Vec<MemoryItem>,
     text: &str,
-    category: MemoryCategory,
+    category: CategoryArgument,
     important: bool,
     requested_supersedes: &[MemoryReference],
     observed_context: (
@@ -655,6 +750,19 @@ fn apply_create(
     {
         return MemoryToolOutcome::DuplicateSkipped { existing_id, kind };
     }
+    let category = match category {
+        CategoryArgument::Tagged { category } => category,
+        CategoryArgument::Missing => {
+            return MemoryToolOutcome::Skipped {
+                reason: MemoryToolSkipReason::MissingCategory,
+            };
+        }
+        CategoryArgument::Invalid => {
+            return MemoryToolOutcome::Skipped {
+                reason: MemoryToolSkipReason::InvalidCategory,
+            };
+        }
+    };
 
     let mut supersedes = Vec::new();
     for reference in requested_supersedes {
@@ -849,14 +957,6 @@ fn apply_delete(
     }
 }
 
-fn hard_delete_limit(initial_count: usize, ratio: Score) -> usize {
-    if initial_count == 0 {
-        return 0;
-    }
-    let scaled = initial_count.saturating_mul(usize::from(ratio.basis_points())) / 10_000;
-    scaled.max(1)
-}
-
 fn apply_pin(
     items: &mut [MemoryItem],
     target: &MemoryReference,
@@ -996,9 +1096,10 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        CreateMemoryPreparation, DuplicateKind, DynamicMemoryToolOptions, MemoryReference,
-        MemoryToolArguments, MemoryToolCall, MemoryToolError, MemoryToolOutcome, MemoryToolReducer,
-        SoftDeleteReason, dynamic_memory_tool_request_for_run,
+        CategoryArgument, CreateMemoryPreparation, DuplicateKind, DynamicMemoryToolOptions,
+        MemoryCycleBudget, MemoryReference, MemoryToolArguments, MemoryToolCall, MemoryToolError,
+        MemoryToolOutcome, MemoryToolReducer, MemoryToolSkipReason, SoftDeleteReason,
+        dynamic_memory_tool_request_for_run,
     };
     use crate::{
         MemoryCategory, MemoryItem, MemoryPolicy, MemoryShortId, MemorySpaceSnapshot, Score,
@@ -1247,17 +1348,11 @@ mod tests {
 
     #[test]
     fn unusable_calls_settle_as_skipped_instead_of_failing() {
-        use super::MemoryToolSkipReason;
         let cases = [
             (
                 "create_memory",
                 json!({ "category": "other" }),
                 MemoryToolSkipReason::MissingText,
-            ),
-            (
-                "create_memory",
-                json!({ "text": "Mira likes tea.", "category": "mood" }),
-                MemoryToolSkipReason::InvalidCategory,
             ),
             (
                 "create_memory",
@@ -1345,7 +1440,9 @@ mod tests {
             ),
             Ok(MemoryToolArguments::CreateMemory {
                 text: "Mira made a promise.".to_owned(),
-                category: MemoryCategory::Relationship,
+                category: CategoryArgument::Tagged {
+                    category: MemoryCategory::Relationship,
+                },
                 important: false,
                 source_message_id: Some(source_message_id),
                 supersedes: Vec::new(),
@@ -1359,7 +1456,9 @@ mod tests {
         let created_id = MemoryId::new();
         let mut create = call(MemoryToolArguments::CreateMemory {
             text: "Mira made a promise.".to_owned(),
-            category: MemoryCategory::Relationship,
+            category: CategoryArgument::Tagged {
+                category: MemoryCategory::Relationship,
+            },
             important: false,
             source_message_id: Some(source_message_id),
             supersedes: Vec::new(),
@@ -1391,7 +1490,9 @@ mod tests {
         existing.short_id = MemoryShortId::derived(created_id);
         let mut create = call(MemoryToolArguments::CreateMemory {
             text: "Mira owns a lighthouse.".to_owned(),
-            category: MemoryCategory::WorldDetail,
+            category: CategoryArgument::Tagged {
+                category: MemoryCategory::WorldDetail,
+            },
             important: false,
             source_message_id: None,
             supersedes: Vec::new(),
@@ -1430,7 +1531,9 @@ mod tests {
         let created_id = MemoryId::new();
         let mut create = call(MemoryToolArguments::CreateMemory {
             text: "Mira lives in Berlin.".to_owned(),
-            category: MemoryCategory::WorldDetail,
+            category: CategoryArgument::Tagged {
+                category: MemoryCategory::WorldDetail,
+            },
             important: false,
             source_message_id: None,
             supersedes: vec![
@@ -1489,7 +1592,9 @@ mod tests {
         items.push(active);
         let mut create = call(MemoryToolArguments::CreateMemory {
             text: "new location".to_owned(),
-            category: MemoryCategory::WorldDetail,
+            category: CategoryArgument::Tagged {
+                category: MemoryCategory::WorldDetail,
+            },
             important: false,
             source_message_id: None,
             supersedes: vec![reference(active_id)],
@@ -1531,7 +1636,9 @@ mod tests {
         let create_id = MemoryId::new();
         let mut first = call(MemoryToolArguments::CreateMemory {
             text: "mira likes the old harbor".to_string(),
-            category: MemoryCategory::Preference,
+            category: CategoryArgument::Tagged {
+                category: MemoryCategory::Preference,
+            },
             important: false,
             source_message_id: None,
             supersedes: Vec::new(),
@@ -1558,7 +1665,9 @@ mod tests {
 
         let mut semantic = call(MemoryToolArguments::CreateMemory {
             text: "She enjoys visiting the docks".to_string(),
-            category: MemoryCategory::Preference,
+            category: CategoryArgument::Tagged {
+                category: MemoryCategory::Preference,
+            },
             important: false,
             source_message_id: None,
             supersedes: Vec::new(),
@@ -1601,7 +1710,9 @@ mod tests {
                 &json!({"text": "Mira likes tea", "category": " preference "})
             ),
             Ok(MemoryToolArguments::CreateMemory {
-                category: MemoryCategory::Preference,
+                category: CategoryArgument::Tagged {
+                    category: MemoryCategory::Preference,
+                },
                 ..
             })
         ));
@@ -1610,8 +1721,72 @@ mod tests {
                 "create_memory",
                 &json!({"text": "Mira likes tea", "category": "   "})
             ),
-            Err(MemoryToolError::MissingField("category"))
+            Ok(MemoryToolArguments::CreateMemory {
+                category: CategoryArgument::Missing,
+                ..
+            })
         ));
+        assert!(matches!(
+            MemoryToolArguments::parse(
+                "create_memory",
+                &json!({"text": "Mira likes tea", "category": "mood"})
+            ),
+            Ok(MemoryToolArguments::CreateMemory {
+                category: CategoryArgument::Invalid,
+                ..
+            })
+        ));
+        assert!(matches!(
+            MemoryToolArguments::parse("create_memory", &json!({"category": "other"})),
+            Err(MemoryToolError::MissingField("text"))
+        ));
+    }
+
+    #[test]
+    fn untagged_creates_are_checked_for_duplicates_before_their_category() {
+        let existing = item("Mira likes tea.", 4, 1, false);
+        let existing_id = existing.id;
+        let state = snapshot(vec![existing]);
+        let mut duplicate = call(MemoryToolArguments::CreateMemory {
+            text: "mira likes tea".to_string(),
+            category: CategoryArgument::Missing,
+            important: false,
+            source_message_id: None,
+            supersedes: Vec::new(),
+        });
+        duplicate.create = Some(CreateMemoryPreparation {
+            id: MemoryId::new(),
+            token_count: 3,
+            created_at: TimestampMillis::new(2),
+            semantic_duplicate: None,
+        });
+        let mut untagged = call(MemoryToolArguments::CreateMemory {
+            text: "The captain trusts Mira.".to_string(),
+            category: CategoryArgument::Invalid,
+            important: false,
+            source_message_id: None,
+            supersedes: Vec::new(),
+        });
+        untagged.create = Some(CreateMemoryPreparation {
+            id: MemoryId::new(),
+            token_count: 4,
+            created_at: TimestampMillis::new(2),
+            semantic_duplicate: None,
+        });
+        let result = MemoryToolReducer
+            .reduce(&state, &policy(), &[duplicate, untagged])
+            .expect("reduce");
+        assert!(result.change.is_none());
+        assert!(matches!(
+            result.results[0].outcome,
+            MemoryToolOutcome::DuplicateSkipped { existing_id: id, .. } if id == existing_id
+        ));
+        assert_eq!(
+            result.results[1].outcome,
+            MemoryToolOutcome::Skipped {
+                reason: MemoryToolSkipReason::InvalidCategory
+            }
+        );
     }
 
     #[test]
@@ -1628,7 +1803,9 @@ mod tests {
         let create_id = MemoryId::new();
         let mut create = call(MemoryToolArguments::CreateMemory {
             text: "Mira moved to the coast last spring.".to_string(),
-            category: MemoryCategory::PlotEvent,
+            category: CategoryArgument::Tagged {
+                category: MemoryCategory::PlotEvent,
+            },
             important: false,
             source_message_id: None,
             supersedes: Vec::new(),
@@ -1703,7 +1880,9 @@ mod tests {
         let existing = item("existing", 4, 1, false);
         let mut create = call(MemoryToolArguments::CreateMemory {
             text: "different memory".to_owned(),
-            category: MemoryCategory::Other,
+            category: CategoryArgument::Tagged {
+                category: MemoryCategory::Other,
+            },
             important: false,
             source_message_id: None,
             supersedes: Vec::new(),
@@ -1770,7 +1949,7 @@ mod tests {
     }
 
     #[test]
-    fn hard_delete_limit_uses_cycle_start_active_count() {
+    fn hard_delete_budget_counts_every_cycle_start_item_and_spans_rounds() {
         let first = item("first", 2, 1, false);
         let second = item("second", 2, 2, false);
         let first_id = first.id;
@@ -1790,17 +1969,48 @@ mod tests {
                 confidence: Some(Score::FULL),
             }),
         ];
-        let result = match MemoryToolReducer.reduce(&state, &policy(), &calls) {
-            Ok(result) => result,
-            Err(error) => panic!("reduction failed: {error}"),
-        };
+        let budget = MemoryCycleBudget::fresh(&state, &policy());
+        assert_eq!(budget.hard_delete_limit, 2);
+        let result = MemoryToolReducer
+            .reduce(&state, &policy(), &calls)
+            .expect("reduce");
+        assert!(matches!(
+            result.results[0].outcome,
+            MemoryToolOutcome::Deleted { .. }
+        ));
         assert!(matches!(
             result.results[1].outcome,
+            MemoryToolOutcome::Deleted { .. }
+        ));
+        assert_eq!(MemoryCycleBudget::count_hard_deletes(&result.results), 2);
+
+        let later_round = MemoryToolReducer
+            .reduce_round(
+                &state,
+                &policy(),
+                MemoryCycleBudget::new(4, score(5_000), 2),
+                &calls[..1],
+            )
+            .expect("reduce");
+        assert!(matches!(
+            later_round.results[0].outcome,
             MemoryToolOutcome::SoftDeleted {
                 reason: SoftDeleteReason::HardDeleteLimitReached,
                 ..
             }
         ));
+        assert_eq!(
+            MemoryCycleBudget::new(0, score(5_000), 0).hard_delete_limit,
+            0
+        );
+        assert_eq!(
+            MemoryCycleBudget::new(1, score(1_000), 0).hard_delete_limit,
+            1
+        );
+        assert_eq!(
+            MemoryCycleBudget::new(10, score(3_000), 0).hard_delete_limit,
+            3
+        );
     }
 
     #[test]
@@ -1826,12 +2036,22 @@ mod tests {
             result.results[1].outcome,
             MemoryToolOutcome::StoppedAfterDone
         ));
-        let change = match result.change {
-            Some(change) => change,
-            None => panic!("budget policy should demote the unpinned item"),
-        };
+        assert!(result.change.is_none());
+        let finish = MemoryToolReducer
+            .finish_cycle(&state, &policy())
+            .expect("finish");
+        let change = finish
+            .change
+            .expect("budget policy should demote the old item");
+        assert_eq!(finish.demoted_ids.len(), 1);
         let pinned = change.items.iter().find(|item| item.id == pinned_id);
         assert!(pinned.is_some_and(|item| item.is_pinned && !item.is_cold));
+        assert!(
+            change
+                .items
+                .iter()
+                .any(|item| item.text == "old" && item.is_cold)
+        );
     }
 
     #[test]
@@ -1880,15 +2100,17 @@ mod tests {
         let mut stronger = item("stronger", 2, 2, false);
         stronger.importance = score(8_000);
         let newest = item("newest", 2, 3, false);
-        let result = match MemoryToolReducer.reduce(
-            &snapshot(vec![pinned, weakest, stronger, newest]),
-            &policy(),
-            &[],
-        ) {
+        let state = snapshot(vec![pinned, weakest, stronger, newest]);
+        let rounds_keep_everything = MemoryToolReducer
+            .reduce(&state, &policy(), &[])
+            .expect("reduce");
+        assert!(rounds_keep_everything.change.is_none());
+        let result = match MemoryToolReducer.finish_cycle(&state, &policy()) {
             Ok(result) => result,
-            Err(error) => panic!("reduction failed: {error}"),
+            Err(error) => panic!("cycle finish failed: {error}"),
         };
         assert_eq!(result.trimmed_ids, vec![weakest_id]);
+        assert!(result.demoted_ids.is_empty());
         let change = match result.change {
             Some(change) => change,
             None => panic!("capacity policy should produce a change"),
