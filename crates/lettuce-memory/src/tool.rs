@@ -673,6 +673,7 @@ impl MemoryToolReducer {
         }
 
         ensure_pinned_hot(&mut items);
+        trim_to_capacity(&mut items, crate::model::MAX_MEMORY_ITEMS);
         let change = (items != original_items).then_some(MemoryChangeSet {
             space_id: snapshot.id,
             expected_revision: snapshot.revision,
@@ -2116,6 +2117,54 @@ mod tests {
             None => panic!("capacity policy should produce a change"),
         };
         assert!(change.items.iter().any(|item| item.id == pinned_id));
+    }
+
+    #[test]
+    fn a_round_never_exceeds_the_storage_item_ceiling() {
+        let items = (0..crate::model::MAX_MEMORY_ITEMS)
+            .map(|index| {
+                let index = i64::try_from(index).expect("index");
+                item(&format!("memory {index}"), 1, index + 1, false)
+            })
+            .collect::<Vec<_>>();
+        let weakest_id = items[0].id;
+        let state = snapshot(items);
+        let create_id = MemoryId::new();
+        let mut create = call(MemoryToolArguments::CreateMemory {
+            text: "One more memory than the ceiling allows.".to_string(),
+            category: CategoryArgument::Tagged {
+                category: MemoryCategory::Other,
+            },
+            important: false,
+            source_message_id: None,
+            supersedes: Vec::new(),
+        });
+        create.create = Some(CreateMemoryPreparation {
+            id: create_id,
+            token_count: 8,
+            created_at: TimestampMillis::new(9_000),
+            semantic_duplicate: None,
+        });
+        let result = MemoryToolReducer
+            .reduce_round(
+                &state,
+                &MemoryPolicy {
+                    max_entries: crate::model::MAX_MEMORY_ITEMS,
+                    hot_token_budget: u32::MAX,
+                    ..policy()
+                },
+                MemoryCycleBudget::new(crate::model::MAX_MEMORY_ITEMS, score(5_000), 0),
+                &[create],
+            )
+            .expect("reduce");
+        assert!(matches!(
+            result.results[0].outcome,
+            MemoryToolOutcome::Created { id, .. } if id == create_id
+        ));
+        let change = result.change.expect("change");
+        assert_eq!(change.items.len(), crate::model::MAX_MEMORY_ITEMS);
+        assert!(change.items.iter().any(|item| item.id == create_id));
+        assert!(!change.items.iter().any(|item| item.id == weakest_id));
     }
 
     #[test]

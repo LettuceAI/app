@@ -7,7 +7,7 @@ use lettuce_embeddings::MemoryEmbeddingRepository;
 use lettuce_jobs::{Claim, handle::JobHandle};
 use lettuce_memory::{
     DynamicMemoryInferenceRound, DynamicMemoryRunRepository, DynamicMemoryStructuredFallbackFormat,
-    MemoryItem, MemoryRepository, MemorySummaryRepository,
+    MemoryItem, MemoryRepository, MemoryRepositoryError, MemorySummaryRepository,
 };
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{RequestId, TimestampMillis};
@@ -310,44 +310,58 @@ impl<
         handle: &JobHandle,
         now: TimestampMillis,
     ) -> Result<(), CompanionMemoryJobRunError> {
-        let snapshot = self
-            .repository
-            .get(dispatch.run.space_id)
-            .map_err(|error| CompanionMemoryJobRunError::Terminal(error.into()))?
-            .ok_or(CompanionMemoryJobRunError::Terminal(
-                CompanionMemoryTerminalError::InvalidOwnership,
-            ))?;
-        let finish = match lettuce_memory::MemoryToolReducer.finish_cycle(&snapshot, policy) {
-            Ok(finish) => finish,
-            Err(error) => {
-                let error = CompanionMemoryLoopError::Execution(
-                    CompanionMemoryRoundExecutionError::Tool(error),
-                );
-                CompanionMemoryTerminalCoordinator::new(self.repository).settle_failure(
-                    dispatch.run.id,
-                    dispatch.attempt.id,
-                    batch,
-                    handle,
-                    CompanionMemoryTerminalFailure::from_loop_error(&error),
-                    now,
-                )?;
-                return Err(CompanionMemoryJobRunError::Loop(error));
+        for attempt in 0..CYCLE_FINISH_ATTEMPTS {
+            let outcome = self
+                .repository
+                .get(dispatch.run.space_id)
+                .and_then(|snapshot| {
+                    let snapshot = snapshot.ok_or(MemoryRepositoryError::NotFound)?;
+                    let finish = lettuce_memory::MemoryToolReducer
+                        .finish_cycle(&snapshot, policy)
+                        .map_err(|error| MemoryRepositoryError::Failure(error.to_string()))?;
+                    let Some(change) = finish.change else {
+                        return Ok(None);
+                    };
+                    self.repository.compare_and_apply(change)?;
+                    Ok(Some((finish.trimmed_ids.len(), finish.demoted_ids.len())))
+                });
+            match outcome {
+                Ok(None) => return Ok(()),
+                Ok(Some((trimmed, demoted))) => {
+                    tracing::info!(
+                        run_id = %dispatch.run.id,
+                        trimmed,
+                        demoted,
+                        "applied the cycle-end memory capacity and hot budget"
+                    );
+                    return Ok(());
+                }
+                Err(MemoryRepositoryError::Conflict) if attempt + 1 < CYCLE_FINISH_ATTEMPTS => {}
+                Err(MemoryRepositoryError::Conflict) => {
+                    tracing::warn!(
+                        run_id = %dispatch.run.id,
+                        "cycle-end memory policy kept conflicting with concurrent changes; keeping the cycle"
+                    );
+                    return Ok(());
+                }
+                Err(error) => {
+                    CompanionMemoryTerminalCoordinator::new(self.repository).settle_failure(
+                        dispatch.run.id,
+                        dispatch.attempt.id,
+                        batch,
+                        handle,
+                        CompanionMemoryTerminalFailure::Recovery,
+                        now,
+                    )?;
+                    return Err(CompanionMemoryJobRunError::Terminal(error.into()));
+                }
             }
-        };
-        if let Some(change) = finish.change {
-            tracing::info!(
-                run_id = %dispatch.run.id,
-                trimmed = finish.trimmed_ids.len(),
-                demoted = finish.demoted_ids.len(),
-                "applied the cycle-end memory capacity and hot budget"
-            );
-            self.repository
-                .compare_and_apply(change)
-                .map_err(|error| CompanionMemoryJobRunError::Terminal(error.into()))?;
         }
         Ok(())
     }
 }
+
+const CYCLE_FINISH_ATTEMPTS: usize = 3;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionMemoryJobRunError {

@@ -2489,7 +2489,7 @@ async fn plain_dynamic_turns_admit_and_run_a_post_turn_memory_cycle() {
             &memory_prompt,
             &DynamicMemoryPolicy {
                 max_entries: 10,
-                hot_token_budget: 100,
+                hot_token_budget: 2,
                 cold_threshold: Score::from_basis_points(2_000).expect("score"),
                 delete_confidence_default: Score::from_basis_points(5_000).expect("score"),
                 max_hard_delete_ratio_per_cycle: Score::from_basis_points(5_000).expect("score"),
@@ -2542,6 +2542,10 @@ async fn plain_dynamic_turns_admit_and_run_a_post_turn_memory_cycle() {
         .expect("memory space");
     assert_eq!(stored.items.len(), 1);
     assert_eq!(stored.items[0].id, memory_id);
+    assert!(
+        stored.items[0].is_cold,
+        "the cycle end demotes the created memory past the two-token hot budget"
+    );
     assert!(
         claim(2, lettuce_memory::DynamicMemoryRunMode::Auto)
             .expect("cursor advanced")
