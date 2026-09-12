@@ -602,6 +602,7 @@ fn plan_legacy_prompts_with_limit(
             ))
         })
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let mut skipped = Vec::new();
     let mut prompts = Vec::new();
     for row in rows {
         let (source_id, name, prompt_type, content, entries_json, condense, created_at, updated_at) =
@@ -610,12 +611,30 @@ fn plan_legacy_prompts_with_limit(
             return Err(prompt_malformed("identity"));
         }
         let mut purpose: PromptPurpose = serde_json::from_value(Value::String(prompt_type))
-            .map_err(|_| prompt_malformed("prompt_type"))?;
+            .unwrap_or_else(|_| {
+                skipped.push(legacy_value_skip(
+                    "prompt_templates.prompt_type",
+                    &source_id,
+                    lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue,
+                ));
+                PromptPurpose::Undefined
+            });
         if purpose == PromptPurpose::Undefined {
             purpose = PromptPurpose::DirectChat;
         }
-        let rows: Vec<LegacyPromptEntryRow> =
-            serde_json::from_str(&entries_json).map_err(|_| prompt_malformed("entries"))?;
+        let rows: Vec<LegacyPromptEntryRow> = match serde_json::from_str::<Value>(&entries_json) {
+            Ok(Value::Array(_)) => {
+                serde_json::from_str(&entries_json).map_err(|_| prompt_malformed("entries"))?
+            }
+            _ => {
+                skipped.push(legacy_value_skip(
+                    "prompt_templates.entries",
+                    &source_id,
+                    lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+                ));
+                Vec::new()
+            }
+        };
         let mut entries = rows
             .into_iter()
             .map(|entry| {
@@ -694,10 +713,12 @@ fn plan_legacy_prompts_with_limit(
     {
         return Err(prompt_malformed("id"));
     }
+    skipped.sort();
     Ok(LegacyPromptPlan {
         prompts,
         default_prompt_source_id: normalized_optional(default_prompt_source_id),
         deprecated_system_prompt: normalized_optional(deprecated_system_prompt),
+        skipped,
     })
 }
 
@@ -1172,6 +1193,7 @@ fn plan_legacy_personas_with_limit(
         })
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
     let mut personas = Vec::with_capacity(count as usize);
+    let mut skipped = Vec::new();
     let mut default_persona_id = None;
     for row in rows {
         let (
@@ -1202,8 +1224,44 @@ fn plan_legacy_personas_with_limit(
             })
             .transpose()?;
         let avatar_crop = legacy_crop(crop_x, crop_y, crop_scale)?;
-        let design_references = parse_media_references(design_reference_image_ids)?;
-        let active_lorebook_ids = parse_lorebook_ids(&active_lorebook_ids)?;
+        let persona_key = id.to_string();
+        let design_references = if design_reference_image_ids
+            .as_deref()
+            .is_some_and(|value| serde_json::from_str::<Vec<String>>(value).is_err())
+        {
+            skipped.push(legacy_value_skip(
+                "personas.design_reference_image_ids",
+                &persona_key,
+                lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+            Vec::new()
+        } else {
+            parse_media_references(design_reference_image_ids)?
+        };
+        let active_lorebook_ids = match serde_json::from_str::<Vec<String>>(&active_lorebook_ids) {
+            Ok(values) => values
+                .into_iter()
+                .filter_map(|value| match LorebookId::from_str(&value) {
+                    Ok(lorebook_id) => Some(lorebook_id),
+                    Err(_) => {
+                        skipped.push(lettuce_transfer::LegacyImportSkip {
+                            kind: lettuce_transfer::LegacyImportSkipKind::PersonaLorebookBinding,
+                            source_key: format!("{persona_key}:{value}"),
+                            reason: lettuce_transfer::LegacyImportSkipReason::MissingLorebook,
+                        });
+                        None
+                    }
+                })
+                .collect(),
+            Err(_) => {
+                skipped.push(legacy_value_skip(
+                    "personas.active_lorebook_ids",
+                    &persona_key,
+                    lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+                ));
+                Vec::new()
+            }
+        };
         let image_recommendation = legacy_image_recommendation(lora_name, lora_strength)?;
         if updated_at < created_at {
             return Err(malformed("timestamps"));
@@ -1229,8 +1287,10 @@ fn plan_legacy_personas_with_limit(
             updated_at: TimestampMillis::new(updated_at),
         });
     }
+    skipped.sort();
+    skipped.dedup();
     Ok(LegacyPersonaPlan {
-        skipped: Vec::new(),
+        skipped,
         personas,
         default_persona_id,
     })
@@ -1267,6 +1327,7 @@ fn plan_legacy_lorebooks_with_limits(
             ))
         })
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let mut skipped = Vec::new();
     let mut lorebooks = Vec::new();
     let mut indexes = BTreeMap::new();
     for row in rows {
@@ -1283,7 +1344,14 @@ fn plan_legacy_lorebooks_with_limits(
         let detection_policy = match detection_policy.as_str() {
             "recent_message_window" => LegacyLorebookDetectionPolicy::RecentMessageWindow,
             "latest_user_message" => LegacyLorebookDetectionPolicy::LatestUserMessage,
-            _ => return Err(lorebook_malformed("keyword_detection_mode")),
+            _ => {
+                skipped.push(legacy_value_skip(
+                    "lorebooks.keyword_detection_mode",
+                    &id.to_string(),
+                    lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue,
+                ));
+                LegacyLorebookDetectionPolicy::RecentMessageWindow
+            }
         };
         if updated_at < created_at {
             return Err(lorebook_malformed("timestamps"));
@@ -1358,11 +1426,25 @@ fn plan_legacy_lorebooks_with_limits(
         let enabled = legacy_flag(enabled, "enabled")?;
         let always_active = legacy_flag(always_active, "always_active")?;
         let case_sensitive = legacy_flag(case_sensitive, "case_sensitive")?;
-        let keywords = serde_json::from_str(&keywords).map_err(|_| entry_malformed("keywords"))?;
+        let keywords = serde_json::from_str::<Vec<String>>(&keywords).unwrap_or_else(|_| {
+            skipped.push(legacy_value_skip(
+                "lorebook_entries.keywords",
+                &id.to_string(),
+                lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+            Vec::new()
+        });
         let match_mode = match match_mode.as_str() {
             "literal" => LegacyKeywordMatchMode::Literal,
             "regex" => LegacyKeywordMatchMode::Regex,
-            _ => return Err(entry_malformed("keyword_match_mode")),
+            _ => {
+                skipped.push(legacy_value_skip(
+                    "lorebook_entries.keyword_match_mode",
+                    &id.to_string(),
+                    lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue,
+                ));
+                LegacyKeywordMatchMode::Literal
+            }
         };
         if updated_at < created_at {
             return Err(entry_malformed("timestamps"));
@@ -1382,10 +1464,8 @@ fn plan_legacy_lorebooks_with_limits(
             updated_at: TimestampMillis::new(updated_at),
         });
     }
-    Ok(LegacyLorebookPlan {
-        lorebooks,
-        skipped: Vec::new(),
-    })
+    skipped.sort();
+    Ok(LegacyLorebookPlan { lorebooks, skipped })
 }
 
 fn require_count_limit(
@@ -1466,13 +1546,16 @@ fn parse_media_references(
         .collect()
 }
 
-fn parse_lorebook_ids(value: &str) -> Result<Vec<LorebookId>, LegacyDatabasePreflightError> {
-    let values: Vec<String> =
-        serde_json::from_str(value).map_err(|_| malformed("active_lorebook_ids"))?;
-    values
-        .into_iter()
-        .map(|value| LorebookId::from_str(&value).map_err(|_| malformed("active_lorebook_ids")))
-        .collect()
+fn legacy_value_skip(
+    field: &str,
+    row_id: &str,
+    reason: lettuce_transfer::LegacyImportSkipReason,
+) -> lettuce_transfer::LegacyImportSkip {
+    lettuce_transfer::LegacyImportSkip {
+        kind: lettuce_transfer::LegacyImportSkipKind::LegacyValue,
+        source_key: format!("{field}:{row_id}"),
+        reason,
+    }
 }
 
 fn legacy_image_recommendation(
@@ -2270,6 +2353,58 @@ mod tests {
             .expect("create provider model schema");
         drop(connection);
         path
+    }
+
+    #[test]
+    fn prompt_plan_falls_back_on_unknown_type_and_malformed_entries_like_legacy() {
+        let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute_batch(
+                r#"DROP TABLE prompt_templates;
+                 ALTER TABLE settings ADD COLUMN prompt_template_id TEXT;
+                 ALTER TABLE settings ADD COLUMN system_prompt TEXT;
+                 CREATE TABLE prompt_templates (
+                   id TEXT PRIMARY KEY,
+                   name TEXT NOT NULL,
+                   prompt_type TEXT NOT NULL,
+                   content TEXT NOT NULL,
+                   entries TEXT NOT NULL,
+                   condense_prompt_entries INTEGER NOT NULL,
+                   created_at INTEGER NOT NULL,
+                   updated_at INTEGER NOT NULL
+                 );
+                 INSERT INTO prompt_templates VALUES (
+                   'mystery-template','Mystery','mystery','Stay in character.','not-json',0,1,2
+                 );"#,
+            )
+            .expect("insert malformed prompt");
+        drop(connection);
+        let plan = plan_legacy_prompts(&path).expect("malformed prompt falls back");
+        let prompt = plan
+            .prompts
+            .iter()
+            .find(|prompt| prompt.source_id == "mystery-template")
+            .expect("planned prompt");
+        assert_eq!(prompt.purpose, PromptPurpose::DirectChat);
+        assert_eq!(prompt.entries.len(), 1);
+        assert_eq!(
+            plan.skipped
+                .iter()
+                .map(|skip| (skip.source_key.as_str(), skip.reason))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "prompt_templates.entries:mystery-template",
+                    lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue
+                ),
+                (
+                    "prompt_templates.prompt_type:mystery-template",
+                    lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue
+                ),
+            ]
+        );
+        std::fs::remove_file(path).expect("remove legacy database");
     }
 
     #[test]
@@ -3093,7 +3228,7 @@ mod tests {
     }
 
     #[test]
-    fn persona_plan_rejects_malformed_fields() {
+    fn persona_plan_skips_malformed_reference_lists_like_legacy() {
         let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
         let connection = Connection::open(&path).expect("open legacy database");
         connection
@@ -3104,13 +3239,20 @@ mod tests {
             .expect("corrupt persona");
         drop(connection);
 
-        assert_eq!(
-            plan_legacy_personas(&path),
-            Err(LegacyDatabasePreflightError::MalformedRecord {
-                table: "personas",
-                field: "design_reference_image_ids"
-            })
+        let plan = plan_legacy_personas(&path).expect("malformed design references are skipped");
+        assert!(
+            plan.personas
+                .iter()
+                .all(|persona| persona.design_references.is_empty())
         );
+        assert!(!plan.skipped.is_empty());
+        assert!(plan.skipped.iter().all(|skip| {
+            skip.kind == lettuce_transfer::LegacyImportSkipKind::LegacyValue
+                && skip
+                    .source_key
+                    .starts_with("personas.design_reference_image_ids:")
+                && skip.reason == lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue
+        }));
         std::fs::remove_file(path).expect("remove legacy database");
     }
 
@@ -3207,7 +3349,7 @@ mod tests {
     }
 
     #[test]
-    fn lorebook_plan_rejects_malformed_enums_and_keywords() {
+    fn lorebook_plan_falls_back_on_malformed_enums_and_keywords_like_legacy() {
         let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
         let connection = Connection::open(&path).expect("open legacy database");
         connection
@@ -3218,12 +3360,14 @@ mod tests {
             .expect("insert malformed lorebook");
         drop(connection);
 
+        let plan = plan_legacy_lorebooks(&path).expect("unknown detection mode falls back");
         assert_eq!(
-            plan_legacy_lorebooks(&path),
-            Err(LegacyDatabasePreflightError::MalformedRecord {
-                table: "lorebooks",
-                field: "keyword_detection_mode"
-            })
+            plan.lorebooks[0].detection_policy,
+            LegacyLorebookDetectionPolicy::RecentMessageWindow
+        );
+        assert_eq!(
+            plan.skipped[0].source_key,
+            format!("lorebooks.keyword_detection_mode:{}", plan.lorebooks[0].id)
         );
         let connection = Connection::open(&path).expect("reopen legacy database");
         connection
@@ -3242,12 +3386,14 @@ mod tests {
             )
             .expect("insert malformed entry");
         drop(connection);
+        let plan = plan_legacy_lorebooks(&path).expect("malformed keywords fall back");
+        assert!(plan.lorebooks[0].entries[0].keywords.is_empty());
         assert_eq!(
-            plan_legacy_lorebooks(&path),
-            Err(LegacyDatabasePreflightError::MalformedRecord {
-                table: "lorebook_entries",
-                field: "keywords"
-            })
+            plan.skipped[0].source_key,
+            format!(
+                "lorebook_entries.keywords:{}",
+                plan.lorebooks[0].entries[0].id
+            )
         );
         std::fs::remove_file(path).expect("remove legacy database");
     }

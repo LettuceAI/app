@@ -388,6 +388,7 @@ mod tests {
 
     fn prompts() -> lettuce_transfer::LegacyPromptPlan {
         lettuce_transfer::LegacyPromptPlan {
+            skipped: Vec::new(),
             prompts: Vec::new(),
             default_prompt_source_id: None,
             deprecated_system_prompt: None,

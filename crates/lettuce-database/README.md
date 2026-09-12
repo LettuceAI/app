@@ -775,5 +775,13 @@ admission rejects an unreconciled or repeated binding. `reconcile_legacy_loreboo
 prunes and records a regex keyword that does not compile in the form the matcher
 uses (trimmed, lowercased unless case-sensitive, default regex limits, exactly
 like the legacy matcher), because legacy never matched such a keyword; admission
-rejects a plan that still holds one. Every
+rejects a plan that still holds one. Values the old app read leniently fall back to
+the value it used and are recorded as `legacy_value` skips keyed
+`<table>.<field>:<row id>`: an unknown prompt type (Undefined, then direct chat),
+prompt entries that are not a JSON array (empty, then the content entry; a
+valid array the new types cannot read still aborts), malformed persona
+design reference or lorebook id lists (empty; a non-UUID lorebook id is recorded
+as a missing lorebook binding), an unknown lorebook detection mode (recent
+message window), malformed entry keywords JSON (empty) and an unknown keyword
+match mode (literal). Every
 other malformed record still aborts.

@@ -1869,6 +1869,7 @@ fn skip_kind_name(kind: lettuce_transfer::LegacyImportSkipKind) -> &'static str 
             "persona_lorebook_binding"
         }
         lettuce_transfer::LegacyImportSkipKind::LorebookEntryKeyword => "lorebook_entry_keyword",
+        lettuce_transfer::LegacyImportSkipKind::LegacyValue => "legacy_value",
     }
 }
 
@@ -1881,6 +1882,8 @@ fn skip_reason_name(reason: lettuce_transfer::LegacyImportSkipReason) -> &'stati
         lettuce_transfer::LegacyImportSkipReason::MissingMediaFile => "missing_media_file",
         lettuce_transfer::LegacyImportSkipReason::MissingLorebook => "missing_lorebook",
         lettuce_transfer::LegacyImportSkipReason::InvalidRegex => "invalid_regex",
+        lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue => "malformed_legacy_value",
+        lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue => "unknown_legacy_value",
     }
 }
 
@@ -1924,6 +1927,7 @@ fn load_skips(
                 "lorebook_entry_keyword" => {
                     lettuce_transfer::LegacyImportSkipKind::LorebookEntryKeyword
                 }
+                "legacy_value" => lettuce_transfer::LegacyImportSkipKind::LegacyValue,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             let reason = match reason.as_str() {
@@ -1936,6 +1940,12 @@ fn load_skips(
                 "missing_media_file" => lettuce_transfer::LegacyImportSkipReason::MissingMediaFile,
                 "missing_lorebook" => lettuce_transfer::LegacyImportSkipReason::MissingLorebook,
                 "invalid_regex" => lettuce_transfer::LegacyImportSkipReason::InvalidRegex,
+                "malformed_legacy_value" => {
+                    lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue
+                }
+                "unknown_legacy_value" => {
+                    lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue
+                }
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             Ok(lettuce_transfer::LegacyImportSkip {

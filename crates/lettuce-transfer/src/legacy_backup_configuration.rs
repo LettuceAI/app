@@ -1384,6 +1384,7 @@ fn map_prompts(
     }
     prompts.sort_by(|left, right| left.source_id.cmp(&right.source_id));
     Ok(LegacyPromptPlan {
+        skipped: Vec::new(),
         prompts,
         default_prompt_source_id: settings.default_prompt_source_id.clone(),
         deprecated_system_prompt: settings.deprecated_system_prompt.clone(),

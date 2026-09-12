@@ -414,6 +414,7 @@ pub enum LegacyImportSkipKind {
     LorebookAvatar,
     PersonaLorebookBinding,
     LorebookEntryKeyword,
+    LegacyValue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -423,6 +424,8 @@ pub enum LegacyImportSkipReason {
     MissingMediaFile,
     MissingLorebook,
     InvalidRegex,
+    MalformedLegacyValue,
+    UnknownLegacyValue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -447,6 +450,7 @@ pub struct LegacyPromptPlan {
     pub prompts: Vec<LegacyPromptCandidate>,
     pub default_prompt_source_id: Option<String>,
     pub deprecated_system_prompt: Option<String>,
+    pub skipped: Vec<LegacyImportSkip>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

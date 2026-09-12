@@ -211,6 +211,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
                 skips.extend(media.skipped.iter().cloned());
                 skips.extend(personas.skipped.iter().cloned());
                 skips.extend(lorebooks.skipped.iter().cloned());
+                skips.extend(prompts.skipped.iter().cloned());
                 skips.sort();
                 skips
             },
@@ -266,6 +267,27 @@ fn validate_plan(
     Ok(())
 }
 
+fn legacy_value_skip(skip: &lettuce_transfer::LegacyImportSkip, prefixes: &[&str]) -> bool {
+    use lettuce_transfer::LegacyImportSkipReason::{MalformedLegacyValue, UnknownLegacyValue};
+    const FALLBACKS: [(&str, lettuce_transfer::LegacyImportSkipReason); 7] = [
+        ("prompt_templates.prompt_type", UnknownLegacyValue),
+        ("prompt_templates.entries", MalformedLegacyValue),
+        ("personas.design_reference_image_ids", MalformedLegacyValue),
+        ("personas.active_lorebook_ids", MalformedLegacyValue),
+        ("lorebooks.keyword_detection_mode", UnknownLegacyValue),
+        ("lorebook_entries.keywords", MalformedLegacyValue),
+        ("lorebook_entries.keyword_match_mode", UnknownLegacyValue),
+    ];
+    skip.kind == lettuce_transfer::LegacyImportSkipKind::LegacyValue
+        && skip.source_key.split_once(':').is_some_and(|(field, row)| {
+            !row.trim().is_empty()
+                && prefixes.iter().any(|prefix| field.starts_with(prefix))
+                && FALLBACKS
+                    .iter()
+                    .any(|(allowed, reason)| *allowed == field && *reason == skip.reason)
+        })
+}
+
 fn valid_prompt_plan(plan: &LegacyPromptPlan) -> bool {
     let prompt_ids = plan
         .prompts
@@ -273,6 +295,14 @@ fn valid_prompt_plan(plan: &LegacyPromptPlan) -> bool {
         .map(|prompt| prompt.source_id.as_str())
         .collect::<std::collections::BTreeSet<_>>();
     prompt_ids.len() == plan.prompts.len()
+        && plan
+            .skipped
+            .windows(2)
+            .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
+        && plan
+            .skipped
+            .iter()
+            .all(|skip| legacy_value_skip(skip, &["prompt_templates."]))
         && plan.prompts.iter().all(|prompt| {
             !prompt.source_id.trim().is_empty()
                 && prompt.purpose != lettuce_context::PromptPurpose::Undefined
@@ -425,22 +455,23 @@ fn valid_lorebook_skips(lorebooks: &LegacyLorebookPlan) -> bool {
         .windows(2)
         .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
         && lorebooks.skipped.iter().all(|skip| {
-            skip.kind == lettuce_transfer::LegacyImportSkipKind::LorebookEntryKeyword
-                && skip.reason == lettuce_transfer::LegacyImportSkipReason::InvalidRegex
-                && skip
-                    .source_key
-                    .split_once(':')
-                    .is_some_and(|(entry_id, index)| {
-                        index
-                            .parse::<usize>()
-                            .is_ok_and(|parsed| parsed.to_string() == index)
-                            && lorebooks.lorebooks.iter().any(|lorebook| {
-                                lorebook.entries.iter().any(|entry| {
-                                    entry.id.to_string() == entry_id
-                                        && entry.match_mode == LegacyKeywordMatchMode::Regex
+            legacy_value_skip(skip, &["lorebooks.", "lorebook_entries."])
+                || skip.kind == lettuce_transfer::LegacyImportSkipKind::LorebookEntryKeyword
+                    && skip.reason == lettuce_transfer::LegacyImportSkipReason::InvalidRegex
+                    && skip
+                        .source_key
+                        .split_once(':')
+                        .is_some_and(|(entry_id, index)| {
+                            index
+                                .parse::<usize>()
+                                .is_ok_and(|parsed| parsed.to_string() == index)
+                                && lorebooks.lorebooks.iter().any(|lorebook| {
+                                    lorebook.entries.iter().any(|entry| {
+                                        entry.id.to_string() == entry_id
+                                            && entry.match_mode == LegacyKeywordMatchMode::Regex
+                                    })
                                 })
-                            })
-                    })
+                        })
         })
 }
 
@@ -466,20 +497,21 @@ fn valid_persona_bindings(personas: &LegacyPersonaPlan, lorebooks: &LegacyLorebo
         .windows(2)
         .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
         && personas.skipped.iter().all(|skip| {
-            skip.kind == lettuce_transfer::LegacyImportSkipKind::PersonaLorebookBinding
-                && skip.reason == lettuce_transfer::LegacyImportSkipReason::MissingLorebook
-                && skip
-                    .source_key
-                    .split_once(':')
-                    .is_some_and(|(persona_id, lorebook_id)| {
-                        personas.personas.iter().any(|persona| {
-                            persona.id.to_string() == persona_id
-                                && persona
-                                    .active_lorebook_ids
-                                    .iter()
-                                    .all(|bound| bound.to_string() != lorebook_id)
-                        }) && !known.iter().any(|known| known.to_string() == lorebook_id)
-                    })
+            legacy_value_skip(skip, &["personas."])
+                || skip.kind == lettuce_transfer::LegacyImportSkipKind::PersonaLorebookBinding
+                    && skip.reason == lettuce_transfer::LegacyImportSkipReason::MissingLorebook
+                    && skip
+                        .source_key
+                        .split_once(':')
+                        .is_some_and(|(persona_id, lorebook_id)| {
+                            personas.personas.iter().any(|persona| {
+                                persona.id.to_string() == persona_id
+                                    && persona
+                                        .active_lorebook_ids
+                                        .iter()
+                                        .all(|bound| bound.to_string() != lorebook_id)
+                            }) && !known.iter().any(|known| known.to_string() == lorebook_id)
+                        })
         })
 }
 
@@ -582,6 +614,7 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipKind::LorebookAvatar => 6,
             lettuce_transfer::LegacyImportSkipKind::PersonaLorebookBinding => 7,
             lettuce_transfer::LegacyImportSkipKind::LorebookEntryKeyword => 8,
+            lettuce_transfer::LegacyImportSkipKind::LegacyValue => 9,
         });
         hash.text(&skip.source_key);
         hash.u32(match skip.reason {
@@ -590,6 +623,8 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipReason::MissingMediaFile => 3,
             lettuce_transfer::LegacyImportSkipReason::MissingLorebook => 4,
             lettuce_transfer::LegacyImportSkipReason::InvalidRegex => 5,
+            lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue => 6,
+            lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue => 7,
         });
     }
 }
@@ -762,6 +797,7 @@ pub(crate) fn plan_fingerprint(
     hash.option(prompts.default_prompt_source_id.as_ref(), |hash, value| {
         hash.text(value)
     });
+    write_skips(&mut hash, &prompts.skipped);
     hash.option(prompts.deprecated_system_prompt.as_ref(), |hash, value| {
         hash.text(value)
     });
@@ -1069,6 +1105,7 @@ mod tests {
 
     fn prompts() -> LegacyPromptPlan {
         LegacyPromptPlan {
+            skipped: Vec::new(),
             prompts: Vec::new(),
             default_prompt_source_id: None,
             deprecated_system_prompt: None,
@@ -1470,6 +1507,7 @@ mod tests {
         ));
         let source_id = "legacy-direct-prompt".to_owned();
         let prompt_plan = LegacyPromptPlan {
+            skipped: Vec::new(),
             prompts: vec![LegacyPromptCandidate {
                 source_id: source_id.clone(),
                 name: "Imported Direct Prompt".to_owned(),
