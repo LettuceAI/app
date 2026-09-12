@@ -477,6 +477,7 @@ mod tests {
             inventory,
             personas,
             LegacyLorebookPlan {
+                skipped: Vec::new(),
                 lorebooks: Vec::new(),
             },
             media,
@@ -951,6 +952,7 @@ mod tests {
             default_persona_id: Some(persona_id),
         };
         let lorebooks = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: vec![
                 LegacyLorebookCandidate {
                     id: first_book_id,

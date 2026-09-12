@@ -24,8 +24,6 @@ pub const MAX_LOREBOOK_SOURCES: usize = 128;
 pub const MAX_ACTIVE_LOREBOOK_ENTRIES: usize = MAX_LOREBOOK_ENTRIES;
 pub const MAX_ACTIVE_LOREBOOK_CONTENT_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_MATCH_CONTEXT_BYTES: usize = 1024 * 1024;
-const REGEX_SIZE_LIMIT: usize = 256 * 1024;
-const REGEX_DFA_SIZE_LIMIT: usize = 256 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -279,7 +277,7 @@ fn validate_entry_fields(
     }
     if match_mode == KeywordMatchMode::Regex {
         for keyword in keywords {
-            compile_regex(keyword, case_sensitive)?;
+            validate_regex_keyword(keyword, case_sensitive)?;
         }
     }
     Ok(())
@@ -461,14 +459,25 @@ pub(crate) fn keyword_matches_with_mode(
         .any(|word| word == normalized_keyword))
 }
 
+pub fn validate_regex_keyword(
+    keyword: &str,
+    case_sensitive: bool,
+) -> Result<(), LorebookValidationError> {
+    let keyword = keyword.trim();
+    let pattern = if case_sensitive {
+        keyword.to_owned()
+    } else {
+        keyword.to_lowercase()
+    };
+    compile_regex(&pattern, case_sensitive).map(|_| ())
+}
+
 fn compile_regex(
     keyword: &str,
     case_sensitive: bool,
 ) -> Result<regex::Regex, LorebookValidationError> {
     RegexBuilder::new(keyword)
         .case_insensitive(!case_sensitive)
-        .size_limit(REGEX_SIZE_LIMIT)
-        .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
         .build()
         .map_err(|error| LorebookValidationError::InvalidRegex(error.to_string()))
 }
@@ -1549,6 +1558,26 @@ mod tests {
         assert_eq!(
             LorebookMatcher::new().activate(&book, &[bad_order], &[], None),
             Err(LorebookValidationError::InvalidOrdering)
+        );
+    }
+
+    #[test]
+    fn regex_keywords_validate_in_the_form_the_matcher_compiles() {
+        assert!(validate_regex_keyword(r"hero\Z", false).is_ok());
+        assert!(validate_regex_keyword(r"hero\Z", true).is_err());
+        assert!(validate_regex_keyword(r"\w{100}", false).is_ok());
+        assert!(validate_regex_keyword("[", false).is_err());
+        let book = book(DetectionPolicy::LatestUserMessage);
+        let mut upper = entry(&book, 0, r"HERO\Z");
+        upper.match_mode = KeywordMatchMode::Regex;
+        assert!(upper.validate().is_ok());
+        assert_eq!(
+            LorebookMatcher::new()
+                .activate(&book, &[upper], &[], Some("the hero"))
+                .expect("valid lorebook")
+                .entries
+                .len(),
+            1
         );
     }
 

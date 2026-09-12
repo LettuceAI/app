@@ -515,6 +515,7 @@ mod tests {
             default_persona_id: Some(persona_id),
         };
         let lorebooks = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: vec![lorebook(lorebook_id, Some("shared"))],
         };
 
@@ -588,6 +589,7 @@ mod tests {
                 default_persona_id: None,
             },
             &mut LegacyLorebookPlan {
+                skipped: Vec::new(),
                 lorebooks: Vec::new(),
             },
             &asr,
@@ -634,6 +636,7 @@ mod tests {
             default_persona_id: None,
         };
         let mut lorebooks = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: vec![lorebook(lorebook_id, Some("absent"))],
         };
         let plan = plan_legacy_media(&root, &mut personas, &mut lorebooks, &empty_asr())
@@ -675,7 +678,10 @@ mod tests {
             default_persona_id: None,
         };
         let mut pruned = missing.clone();
-        let mut no_lorebooks = LegacyLorebookPlan { lorebooks: vec![] };
+        let mut no_lorebooks = LegacyLorebookPlan {
+            lorebooks: vec![],
+            skipped: Vec::new(),
+        };
         let plan = plan_legacy_media(&root, &mut pruned, &mut no_lorebooks, &empty_asr())
             .expect("a missing design reference is pruned");
         assert!(plan.media.is_empty());
@@ -697,7 +703,10 @@ mod tests {
             plan_legacy_media(
                 &root,
                 &mut unsafe_plan.clone(),
-                &mut LegacyLorebookPlan { lorebooks: vec![] },
+                &mut LegacyLorebookPlan {
+                    lorebooks: vec![],
+                    skipped: Vec::new()
+                },
                 &empty_asr(),
             ),
             Err(LegacyDatabasePreflightError::UnsafeMediaReference {
@@ -721,7 +730,10 @@ mod tests {
             plan_legacy_media(
                 &root,
                 &mut ambiguous.clone(),
-                &mut LegacyLorebookPlan { lorebooks: vec![] },
+                &mut LegacyLorebookPlan {
+                    lorebooks: vec![],
+                    skipped: Vec::new()
+                },
                 &empty_asr(),
             ),
             Err(LegacyDatabasePreflightError::ConflictingMediaReference {
@@ -749,7 +761,10 @@ mod tests {
             plan_legacy_media(
                 &root,
                 &mut too_many.clone(),
-                &mut LegacyLorebookPlan { lorebooks: vec![] },
+                &mut LegacyLorebookPlan {
+                    lorebooks: vec![],
+                    skipped: Vec::new()
+                },
                 &empty_asr(),
             ),
             Err(LegacyDatabasePreflightError::MediaReferenceLimitExceeded {
@@ -775,7 +790,10 @@ mod tests {
             plan_legacy_media(
                 &root,
                 &mut too_large.clone(),
-                &mut LegacyLorebookPlan { lorebooks: vec![] },
+                &mut LegacyLorebookPlan {
+                    lorebooks: vec![],
+                    skipped: Vec::new()
+                },
                 &empty_asr(),
             ),
             Err(LegacyDatabasePreflightError::MediaObjectTooLarge {

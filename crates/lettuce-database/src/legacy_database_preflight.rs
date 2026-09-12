@@ -1382,7 +1382,10 @@ fn plan_legacy_lorebooks_with_limits(
             updated_at: TimestampMillis::new(updated_at),
         });
     }
-    Ok(LegacyLorebookPlan { lorebooks })
+    Ok(LegacyLorebookPlan {
+        lorebooks,
+        skipped: Vec::new(),
+    })
 }
 
 fn require_count_limit(

@@ -210,6 +210,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
                 let mut skips = provider_models.skipped.clone();
                 skips.extend(media.skipped.iter().cloned());
                 skips.extend(personas.skipped.iter().cloned());
+                skips.extend(lorebooks.skipped.iter().cloned());
                 skips.sort();
                 skips
             },
@@ -258,6 +259,7 @@ fn validate_plan(
         || total_bytes != Some(media.total_bytes)
         || !valid_media_skips(media, personas, lorebooks)
         || !valid_persona_bindings(personas, lorebooks)
+        || !valid_lorebook_skips(lorebooks)
     {
         return Err(LegacyImportRepositoryError::InvalidInput);
     }
@@ -379,6 +381,67 @@ pub fn reconcile_legacy_persona_lorebooks(
     personas.skipped.extend(skipped);
     personas.skipped.sort();
     personas.skipped.dedup();
+}
+
+pub fn reconcile_legacy_lorebook_keywords(lorebooks: &mut LegacyLorebookPlan) {
+    let mut skipped = Vec::new();
+    for lorebook in &mut lorebooks.lorebooks {
+        for entry in &mut lorebook.entries {
+            if entry.match_mode != LegacyKeywordMatchMode::Regex {
+                continue;
+            }
+            let entry_id = entry.id;
+            let case_sensitive = entry.case_sensitive;
+            let mut index = 0_usize;
+            entry.keywords.retain(|keyword| {
+                let keep = lettuce_context::validate_regex_keyword(keyword, case_sensitive).is_ok();
+                if !keep {
+                    skipped.push(lettuce_transfer::LegacyImportSkip {
+                        kind: lettuce_transfer::LegacyImportSkipKind::LorebookEntryKeyword,
+                        source_key: format!("{entry_id}:{index}"),
+                        reason: lettuce_transfer::LegacyImportSkipReason::InvalidRegex,
+                    });
+                }
+                index += 1;
+                keep
+            });
+        }
+    }
+    lorebooks.skipped.extend(skipped);
+    lorebooks.skipped.sort();
+    lorebooks.skipped.dedup();
+}
+
+fn valid_lorebook_skips(lorebooks: &LegacyLorebookPlan) -> bool {
+    lorebooks.lorebooks.iter().all(|lorebook| {
+        lorebook.entries.iter().all(|entry| {
+            entry.match_mode != LegacyKeywordMatchMode::Regex
+                || entry.keywords.iter().all(|keyword| {
+                    lettuce_context::validate_regex_keyword(keyword, entry.case_sensitive).is_ok()
+                })
+        })
+    }) && lorebooks
+        .skipped
+        .windows(2)
+        .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
+        && lorebooks.skipped.iter().all(|skip| {
+            skip.kind == lettuce_transfer::LegacyImportSkipKind::LorebookEntryKeyword
+                && skip.reason == lettuce_transfer::LegacyImportSkipReason::InvalidRegex
+                && skip
+                    .source_key
+                    .split_once(':')
+                    .is_some_and(|(entry_id, index)| {
+                        index
+                            .parse::<usize>()
+                            .is_ok_and(|parsed| parsed.to_string() == index)
+                            && lorebooks.lorebooks.iter().any(|lorebook| {
+                                lorebook.entries.iter().any(|entry| {
+                                    entry.id.to_string() == entry_id
+                                        && entry.match_mode == LegacyKeywordMatchMode::Regex
+                                })
+                            })
+                    })
+        })
 }
 
 fn valid_persona_bindings(personas: &LegacyPersonaPlan, lorebooks: &LegacyLorebookPlan) -> bool {
@@ -518,6 +581,7 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipKind::PersonaDesignReference => 5,
             lettuce_transfer::LegacyImportSkipKind::LorebookAvatar => 6,
             lettuce_transfer::LegacyImportSkipKind::PersonaLorebookBinding => 7,
+            lettuce_transfer::LegacyImportSkipKind::LorebookEntryKeyword => 8,
         });
         hash.text(&skip.source_key);
         hash.u32(match skip.reason {
@@ -525,6 +589,7 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipReason::MissingModelProfile => 2,
             lettuce_transfer::LegacyImportSkipReason::MissingMediaFile => 3,
             lettuce_transfer::LegacyImportSkipReason::MissingLorebook => 4,
+            lettuce_transfer::LegacyImportSkipReason::InvalidRegex => 5,
         });
     }
 }
@@ -764,6 +829,7 @@ pub(crate) fn plan_fingerprint(
         hash.i64(lorebook.created_at.get());
         hash.i64(lorebook.updated_at.get());
     }
+    write_skips(&mut hash, &lorebooks.skipped);
     write_asr_plan(&mut hash, asr);
     write_skips(&mut hash, &media.skipped);
     hash.u64(media.media.len() as u64);
@@ -1136,6 +1202,7 @@ mod tests {
         };
         let personas = personas();
         let lorebooks = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
@@ -1226,6 +1293,7 @@ mod tests {
         let provider_models = provider_plan();
         let personas = personas();
         let lorebooks = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
@@ -1433,6 +1501,7 @@ mod tests {
         let provider_models = provider_models();
         let personas = personas();
         let lorebooks = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
@@ -1526,6 +1595,7 @@ mod tests {
         let provider_models = provider_plan();
         let personas = personas();
         let lorebooks = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
@@ -1598,6 +1668,7 @@ mod tests {
         }
         let personas = personas();
         let lorebooks = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
@@ -1760,6 +1831,7 @@ mod tests {
         }
         let personas = personas();
         let lorebooks = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
@@ -1832,6 +1904,7 @@ mod tests {
         let inventory = inventory();
         let personas = personas();
         let lorebooks = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
@@ -1894,6 +1967,7 @@ mod tests {
         let run_id = LegacyImportRunId::new();
         let inventory = inventory();
         let lorebooks = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
@@ -1937,6 +2011,58 @@ mod tests {
     }
 
     #[test]
+    fn regex_keywords_legacy_could_never_match_are_pruned_and_recorded() {
+        use lettuce_transfer::{
+            LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason, LegacyKeywordMatchMode,
+            LegacyLorebookCandidate, LegacyLorebookEntryCandidate,
+        };
+        let entry = |match_mode, keywords: &[&str]| LegacyLorebookEntryCandidate {
+            id: lettuce_types::LorebookEntryId::new(),
+            title: "Entry".into(),
+            enabled: true,
+            always_active: false,
+            keywords: keywords
+                .iter()
+                .map(|keyword| (*keyword).to_owned())
+                .collect(),
+            case_sensitive: false,
+            match_mode,
+            content: "Lore".into(),
+            priority: 0,
+            display_order: 0,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        };
+        let regex_entry = entry(LegacyKeywordMatchMode::Regex, &["hero.*", "(", "[a-"]);
+        let literal_entry = entry(LegacyKeywordMatchMode::Literal, &["("]);
+        let regex_id = regex_entry.id;
+        let mut lorebooks = LegacyLorebookPlan {
+            lorebooks: vec![LegacyLorebookCandidate {
+                id: lettuce_types::LorebookId::new(),
+                name: "World".into(),
+                avatar: None,
+                detection_policy: LegacyLorebookDetectionPolicy::RecentMessageWindow,
+                entries: vec![regex_entry, literal_entry],
+                created_at: TimestampMillis::new(1),
+                updated_at: TimestampMillis::new(1),
+            }],
+            skipped: Vec::new(),
+        };
+        super::reconcile_legacy_lorebook_keywords(&mut lorebooks);
+        assert_eq!(lorebooks.lorebooks[0].entries[0].keywords, ["hero.*"]);
+        assert_eq!(lorebooks.lorebooks[0].entries[1].keywords, ["("]);
+        let skip = |index: usize| LegacyImportSkip {
+            kind: LegacyImportSkipKind::LorebookEntryKeyword,
+            source_key: format!("{regex_id}:{index}"),
+            reason: LegacyImportSkipReason::InvalidRegex,
+        };
+        assert_eq!(lorebooks.skipped, vec![skip(1), skip(2)]);
+        assert!(super::valid_lorebook_skips(&lorebooks));
+        lorebooks.lorebooks[0].entries[0].keywords.push("(".into());
+        assert!(!super::valid_lorebook_skips(&lorebooks));
+    }
+
+    #[test]
     fn backend_admission_replays_and_rejects_changed_source_content() {
         let path = std::env::temp_dir().join(format!(
             "lettuce-app-legacy-import-{}.sqlite3",
@@ -1946,6 +2072,7 @@ mod tests {
         let inventory = inventory();
         let personas = personas();
         let lorebooks = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
@@ -2002,6 +2129,7 @@ mod tests {
             &provider_models(),
             &personas(),
             &LegacyLorebookPlan {
+                skipped: Vec::new(),
                 lorebooks: Vec::new(),
             },
             &LegacyMediaPlan {
@@ -2106,6 +2234,7 @@ mod tests {
         };
         let empty_personas = personas();
         let empty_books = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: Vec::new(),
         };
         let empty_run = LegacyImportRunId::new();
@@ -2154,6 +2283,7 @@ mod tests {
             default_persona_id: Some(source_persona_id),
         };
         let collision_books = LegacyLorebookPlan {
+            skipped: Vec::new(),
             lorebooks: vec![LegacyLorebookCandidate {
                 id: source_book_id,
                 name: "Rollback Book".to_owned(),

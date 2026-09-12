@@ -413,6 +413,7 @@ pub enum LegacyImportSkipKind {
     PersonaDesignReference,
     LorebookAvatar,
     PersonaLorebookBinding,
+    LorebookEntryKeyword,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -421,6 +422,7 @@ pub enum LegacyImportSkipReason {
     MissingModelProfile,
     MissingMediaFile,
     MissingLorebook,
+    InvalidRegex,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -602,6 +604,7 @@ pub struct LegacyLorebookCandidate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyLorebookPlan {
     pub lorebooks: Vec<LegacyLorebookCandidate>,
+    pub skipped: Vec<LegacyImportSkip>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

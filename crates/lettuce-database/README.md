@@ -771,5 +771,9 @@ abort. `reconcile_legacy_persona_lorebooks` prunes and records persona bindings
 to lorebooks absent from the lorebook plan and drops repeated ids (legacy kept a
 deleted lorebook's id in `activeLorebookIds`, its editor listed only existing
 lorebooks, and chats resolved such an id to no entries; repeats counted once);
-admission rejects an unreconciled or repeated binding. Every
+admission rejects an unreconciled or repeated binding. `reconcile_legacy_lorebook_keywords`
+prunes and records a regex keyword that does not compile in the form the matcher
+uses (trimmed, lowercased unless case-sensitive, default regex limits, exactly
+like the legacy matcher), because legacy never matched such a keyword; admission
+rejects a plan that still holds one. Every
 other malformed record still aborts.

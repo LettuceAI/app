@@ -84,3 +84,10 @@ normalized substring matching.
 Import/export, sessions, sync/backup, hard purge, legacy ID conversion,
 database/schema types, events, FTS, async ports, and conversation assembly are
 deferred to their owning crates.
+
+Regex keywords are validated in exactly the form the matcher compiles: trimmed,
+lowercased unless the entry is case-sensitive, with the regex crate's default
+size limits, matching the legacy matcher (which silently treated an
+uncompilable keyword as never matching). Earlier explicit 256 KiB limits and
+raw-keyword validation rejected patterns legacy matched (`\w{100}`, a
+case-insensitive `hero\Z`) and accepted ones the matcher could never compile.

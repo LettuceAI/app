@@ -651,7 +651,10 @@ fn map_lorebooks(
             updated_at: TimestampMillis::new(row.updated_at),
         });
     }
-    Ok(LegacyLorebookPlan { lorebooks: books })
+    Ok(LegacyLorebookPlan {
+        lorebooks: books,
+        skipped: Vec::new(),
+    })
 }
 
 fn map_characters(

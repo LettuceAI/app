@@ -179,9 +179,9 @@ END;
 
 CREATE TABLE legacy_import_skips (
     run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
-    source_kind TEXT NOT NULL CHECK (source_kind IN ('settings_default_provider_account','settings_default_model_profile','persona_avatar','persona_design_reference','lorebook_avatar','persona_lorebook_binding')),
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('settings_default_provider_account','settings_default_model_profile','persona_avatar','persona_design_reference','lorebook_avatar','persona_lorebook_binding','lorebook_entry_keyword')),
     source_key TEXT NOT NULL CHECK (length(trim(source_key)) > 0),
-    reason TEXT NOT NULL CHECK (reason IN ('missing_provider_account','missing_model_profile','missing_media_file','missing_lorebook')),
+    reason TEXT NOT NULL CHECK (reason IN ('missing_provider_account','missing_model_profile','missing_media_file','missing_lorebook','invalid_regex')),
     PRIMARY KEY (run_id, source_kind, source_key)
 ) STRICT;
 
