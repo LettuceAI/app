@@ -1238,8 +1238,7 @@ where
             .items
             .iter()
             .filter(|item| item.superseded_by.is_none())
-            .map(|item| (item.id, item))
-            .collect::<HashMap<_, _>>();
+            .collect::<Vec<_>>();
         if active.is_empty() {
             return Ok(Vec::new());
         }
@@ -1288,6 +1287,7 @@ where
             limit,
             threshold,
             settings.retrieval_strategy,
+            shape.group,
         );
         Ok(selected.into_iter().cloned().collect())
     }
@@ -1854,19 +1854,26 @@ fn heuristic_fallback(
     Ok(decision)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn select_memories<'a>(
     query_text: &str,
     query: &lettuce_embeddings::EmbeddingVector,
     projections: &[lettuce_embeddings::MemoryEmbeddingProjection],
-    active: &HashMap<lettuce_types::MemoryId, &'a lettuce_memory::MemoryItem>,
+    active: &[&'a lettuce_memory::MemoryItem],
     limit: usize,
     threshold: f32,
     strategy: MemoryRetrievalStrategySnapshot,
+    group: bool,
 ) -> Vec<&'a lettuce_memory::MemoryItem> {
-    let mut scored = projections
+    let projections = projections
         .iter()
-        .filter_map(|projection| {
-            let item = active.get(&projection.memory_id).copied()?;
+        .map(|projection| (projection.memory_id, projection))
+        .collect::<HashMap<_, _>>();
+    let mut scored = active
+        .iter()
+        .copied()
+        .filter_map(|item| {
+            let projection = projections.get(&item.id)?;
             let raw = query.cosine_similarity(&projection.vector)?;
             let score = if item.is_cold && !item.is_pinned {
                 raw * 0.7
@@ -1876,17 +1883,19 @@ fn select_memories<'a>(
             (score >= threshold).then_some((score, item))
         })
         .collect::<Vec<_>>();
-    scored.sort_by(|(left_score, left), (right_score, right)| {
-        right_score
-            .total_cmp(left_score)
-            .then_with(|| left.id.cmp(&right.id))
-    });
+    scored.sort_by(|(left_score, _), (right_score, _)| right_score.total_cmp(left_score));
+    let smart = strategy == MemoryRetrievalStrategySnapshot::Smart;
+    let semantic_limit = if smart && group {
+        limit.saturating_sub(2).max(1).min(limit)
+    } else {
+        limit
+    };
     let mut selected = Vec::new();
-    if strategy == MemoryRetrievalStrategySnapshot::Smart {
+    if smart {
         let mut categories = HashMap::new();
         for (_, item) in &scored {
             let count = categories.entry(item.category).or_insert(0usize);
-            if *count < 2 && selected.len() < limit {
+            if *count < 2 && selected.len() < semantic_limit {
                 *count += 1;
                 selected.push(*item);
             }
@@ -1894,42 +1903,70 @@ fn select_memories<'a>(
     } else {
         selected.extend(scored.iter().take(limit).map(|(_, item)| *item));
     }
-    if strategy == MemoryRetrievalStrategySnapshot::Smart && selected.len() < limit {
+    if smart {
         for (_, item) in &scored {
-            if selected.len() == limit {
+            if selected.len() == semantic_limit {
                 break;
             }
             if !selected.iter().any(|selected| selected.id == item.id) {
                 selected.push(*item);
             }
         }
-        for item in [
-            active
-                .values()
-                .copied()
-                .filter(|item| !item.is_cold)
-                .max_by_key(|item| item.created_at),
-            active
-                .values()
-                .copied()
-                .filter(|item| !item.is_cold && item.access_count > 0)
-                .max_by_key(|item| item.access_count),
-        ]
-        .into_iter()
-        .flatten()
-        {
+        if !group {
+            selected.sort_by_key(|item| {
+                scored.iter().position(|(_, candidate)| candidate.id == item.id)
+            });
+        }
+        for recent in [true, false] {
             if selected.len() == limit {
                 break;
             }
-            if !selected.iter().any(|selected| selected.id == item.id) {
+            let candidates = active.iter().copied().filter(|item| {
+                !item.is_cold && !selected.iter().any(|selected| selected.id == item.id)
+            });
+            let item = if recent {
+                candidates.max_by_key(|item| item.created_at)
+            } else {
+                candidates
+                    .filter(|item| item.access_count > 0)
+                    .max_by_key(|item| item.access_count)
+            };
+            if let Some(item) = item {
                 selected.push(item);
+            }
+        }
+        if group && selected.len() < limit {
+            let mut categories = HashMap::new();
+            let mut extra = Vec::new();
+            for (_, item) in &scored {
+                let count = categories.entry(item.category).or_insert(0usize);
+                if *count < 2 && extra.len() < limit {
+                    *count += 1;
+                    extra.push(*item);
+                }
+            }
+            for (_, item) in &scored {
+                if extra.len() == limit {
+                    break;
+                }
+                if !extra.iter().any(|candidate| candidate.id == item.id) {
+                    extra.push(item);
+                }
+            }
+            for item in extra {
+                if selected.len() == limit {
+                    break;
+                }
+                if !selected.iter().any(|candidate| candidate.id == item.id) {
+                    selected.push(item);
+                }
             }
         }
     }
     if strategy == MemoryRetrievalStrategySnapshot::Smart && selected.is_empty() {
         let keywords = keywords(query_text);
         let mut cold = active
-            .values()
+            .iter()
             .copied()
             .filter(|item| item.is_cold)
             .filter_map(|item| {
@@ -1941,11 +1978,7 @@ fn select_memories<'a>(
                 (matches > 0).then_some((matches, item))
             })
             .collect::<Vec<_>>();
-        cold.sort_by(|(left_count, left), (right_count, right)| {
-            right_count
-                .cmp(left_count)
-                .then_with(|| left.id.cmp(&right.id))
-        });
+        cold.sort_by(|(left_count, _), (right_count, _)| right_count.cmp(left_count));
         selected.extend(cold.into_iter().take(limit).map(|(_, item)| item));
     }
     selected
@@ -1988,6 +2021,108 @@ mod tests {
     };
 
     use super::{context_timeline, conversation_message_count, history_window, memory_query};
+
+    fn retrieval_memory(index: i64, category: lettuce_memory::MemoryCategory) -> lettuce_memory::MemoryItem {
+        use lettuce_memory::{MemoryItem, MemoryShortId, Score};
+        let id = lettuce_types::MemoryId::new();
+        MemoryItem {
+            id,
+            short_id: MemoryShortId::derived(id),
+            text: format!("Harbor fact {index}"),
+            category,
+            source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
+            token_count: 3,
+            is_cold: false,
+            is_pinned: false,
+            importance: Score::FULL,
+            persistence_importance: Score::FULL,
+            prompt_importance: Score::FULL,
+            volatility: Score::LEGACY_VOLATILITY,
+            access_count: 0,
+            created_at: TimestampMillis::new(index),
+            last_accessed_at: TimestampMillis::new(index),
+        }
+    }
+
+    fn retrieve_ids(
+        items: &[lettuce_memory::MemoryItem],
+        scores: &[f32],
+        limit: usize,
+        group: bool,
+        strategy: lettuce_conversations::MemoryRetrievalStrategySnapshot,
+    ) -> Vec<lettuce_types::MemoryId> {
+        use lettuce_embeddings::{EmbeddingDimensions, EmbeddingVector, MemoryEmbeddingProjection};
+        let vector = |score: f32| {
+            let mut values = vec![0.0; 64];
+            values[0] = score;
+            values[1] = (1.0 - score * score).sqrt();
+            EmbeddingVector { values, source_revision: "retrieval-test".into() }
+        };
+        let space_id = lettuce_types::MemorySpaceId::new();
+        let projections = items.iter().zip(scores).map(|(item, score)| MemoryEmbeddingProjection {
+            space_id,
+            memory_id: item.id,
+            source_text: item.text.clone(),
+            vector: vector(*score),
+            dimensions: EmbeddingDimensions::D64,
+            updated_at: item.created_at,
+        }).rev().collect::<Vec<_>>();
+        super::select_memories(
+            "harbor", &vector(1.0), &projections, &items.iter().collect::<Vec<_>>(),
+            limit, 0.35, strategy, group,
+        ).into_iter().map(|item| item.id).collect()
+    }
+
+    #[test]
+    fn retrieval_preserves_direct_score_order_and_group_recent_frequency_slots() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::Smart;
+        use lettuce_memory::MemoryCategory::{Other, PlotEvent};
+        let mut items = vec![
+            retrieval_memory(1, Other), retrieval_memory(2, Other),
+            retrieval_memory(3, Other), retrieval_memory(4, PlotEvent),
+            retrieval_memory(5, Other), retrieval_memory(6, Other),
+        ];
+        items[4].access_count = 20;
+        let scores = [0.95, 0.9, 0.85, 0.8, 0.1, 0.1];
+        let expected = |indices: &[usize]| indices.iter().map(|index| items[*index].id).collect::<Vec<_>>();
+        assert_eq!(retrieve_ids(&items, &scores, 4, false, Smart), expected(&[0, 1, 2, 3]));
+        assert_eq!(retrieve_ids(&items, &scores, 4, true, Smart), expected(&[0, 1, 5, 4]));
+        assert!(retrieve_ids(&items, &scores, 0, true, Smart).is_empty());
+        assert_eq!(retrieve_ids(&items, &[0.8; 6], 2, false, Smart), expected(&[0, 1]));
+        for item in &mut items {
+            item.is_cold = true;
+        }
+        assert_eq!(
+            retrieve_ids(&items, &scores, 4, true, Smart),
+            vec![items[0].id, items[1].id, items[3].id, items[2].id],
+        );
+    }
+
+    #[test]
+    fn retrieval_fallbacks_skip_selected_memories_and_keep_cold_score_penalty() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::{Cosine, Smart};
+        use lettuce_memory::MemoryCategory::Other;
+        let mut items = vec![
+            retrieval_memory(3, Other), retrieval_memory(2, Other), retrieval_memory(1, Other),
+        ];
+        items[0].access_count = 30;
+        items[1].access_count = 20;
+        items[2].access_count = 10;
+        let expected = items.iter().map(|item| item.id).collect::<Vec<_>>();
+        assert_eq!(retrieve_ids(&items, &[0.9, 0.1, 0.1], 3, false, Smart), expected);
+        items[0].is_cold = true;
+        assert_eq!(retrieve_ids(&items, &[0.9, 0.8, 0.7], 3, false, Cosine), vec![items[1].id, items[2].id, items[0].id]);
+        assert_eq!(retrieve_ids(&items, &[0.4, 0.1, 0.1], 3, false, Cosine), Vec::new());
+        items[1].is_cold = true;
+        items[2].is_cold = true;
+        assert_eq!(retrieve_ids(&items, &[0.1, 0.1, 0.1], 3, true, Smart), expected);
+    }
 
     fn item(
         index: i64,
