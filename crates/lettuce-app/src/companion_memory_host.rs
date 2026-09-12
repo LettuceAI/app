@@ -189,6 +189,8 @@ where
     /// model override): a forced cycle over the most recent window, which also
     /// answers an `ask_first` approval. The same gate as `after_turn` applies,
     /// as legacy's cycle checked it before running.
+    /// A cycle already running for the conversation is reported as
+    /// `CycleInProgress`; an empty result means memory is gated off.
     #[allow(clippy::too_many_arguments)]
     pub fn trigger(
         &self,

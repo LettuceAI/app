@@ -131,6 +131,8 @@ pub enum CompanionPostTurnMemoryAdmissionError {
     Conversation(ConversationRepositoryError),
     #[error("conversation memory lookup failed: {0}")]
     Memory(MemoryRepositoryError),
+    #[error("a memory cycle is already running for this conversation")]
+    CycleInProgress,
 }
 
 #[derive(Debug)]
@@ -416,12 +418,12 @@ impl<
             selected_model_profile_id,
             update_dynamic_memory_model_on_success,
         )?;
-        if admitted.is_some() {
-            self.effects
-                .clear_dynamic_memory_pending_approval(conversation_id)
-                .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
-        }
-        Ok(admitted)
+        self.effects
+            .clear_dynamic_memory_pending_approval(conversation_id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
+        admitted
+            .map(Some)
+            .ok_or(CompanionPostTurnMemoryAdmissionError::CycleInProgress)
     }
 
     pub fn retry_direct_with_model_and_admit(
@@ -515,12 +517,12 @@ impl<
             selected_model_profile_id,
             update_dynamic_memory_model_on_success,
         )?;
-        if admitted.is_some() {
-            self.effects
-                .clear_dynamic_memory_pending_approval(conversation_id)
-                .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
-        }
-        Ok(admitted)
+        self.effects
+            .clear_dynamic_memory_pending_approval(conversation_id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
+        admitted
+            .map(Some)
+            .ok_or(CompanionPostTurnMemoryAdmissionError::CycleInProgress)
     }
 
     pub fn admit_plain_after_turn(
@@ -1437,6 +1439,44 @@ mod tests {
             .expect("trigger pending effect")
             .expect("triggered admission");
         assert_eq!(triggered.batch.effects(), [pending]);
+    }
+
+    #[test]
+    fn a_trigger_during_a_running_cycle_reports_it_and_clears_the_approval() {
+        let effects = Effects::default();
+        let jobs = InMemoryJobStore::new();
+        let conversation = ConversationId::new();
+        effects.replace(vec![effect(conversation, 10), effect(conversation, 20)]);
+        let coordinator = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &jobs);
+        coordinator
+            .discover_and_admit_for_conversation(
+                conversation,
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
+                DynamicMemoryRunMode::Auto,
+                TimestampMillis::new(30),
+            )
+            .expect("discover")
+            .expect("automatic cycle admitted");
+        effects
+            .prompt_dynamic_memory_if_due(conversation, 4, 1, TimestampMillis::new(31))
+            .expect("prompt")
+            .expect("pending approval");
+        assert!(matches!(
+            coordinator.trigger_and_admit(
+                conversation,
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
+                CompanionMemoryWindowSelection::Recent,
+            ),
+            Err(CompanionPostTurnMemoryAdmissionError::CycleInProgress)
+        ));
+        assert!(
+            effects
+                .get_dynamic_memory_pending_approval(conversation)
+                .expect("approval")
+                .is_none()
+        );
     }
 
     #[test]
