@@ -92,7 +92,7 @@ CREATE TABLE legacy_import_runs (
     source_schema_version INTEGER NOT NULL CHECK (source_schema_version > 0),
     inventory_fingerprint TEXT NOT NULL CHECK (length(inventory_fingerprint) = 64),
     plan_fingerprint TEXT NOT NULL CHECK (length(plan_fingerprint) = 64),
-    status TEXT NOT NULL CHECK (status IN ('admitting','admitted','importing','completed','failed')),
+    status TEXT NOT NULL CHECK (status IN ('admitting','admitted','importing','completed','partial','failed')),
     admitted_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 ) STRICT;
@@ -152,7 +152,7 @@ BEFORE UPDATE OF status ON legacy_import_runs
 WHEN NOT (
     (OLD.status = 'admitting' AND NEW.status = 'admitted') OR
     (OLD.status = 'admitted' AND NEW.status IN ('importing','failed')) OR
-    (OLD.status = 'importing' AND NEW.status IN ('completed','failed'))
+    (OLD.status = 'importing' AND NEW.status IN ('completed','partial','failed'))
 )
 BEGIN
     SELECT RAISE(ABORT, 'invalid legacy import status transition');

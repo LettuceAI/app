@@ -201,7 +201,7 @@ WHEN NOT EXISTS (
     FROM legacy_import_runs AS run
     WHERE run.id = NEW.run_id
       AND run.plan_fingerprint = NEW.plan_fingerprint
-      AND run.status IN ('admitted', 'importing', 'completed')
+      AND run.status IN ('admitted', 'importing', 'completed', 'partial')
       AND NEW.vocabulary_count = (
           SELECT count(*) FROM legacy_import_assignments
           WHERE run_id = NEW.run_id AND source_kind = 'asr_vocabulary'

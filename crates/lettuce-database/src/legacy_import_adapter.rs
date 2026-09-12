@@ -237,7 +237,7 @@ impl LegacyImportRepository for Database {
         if let Some(mut receipt) = load_receipt(&transaction, request.run_id)? {
             let expected_status =
                 if load_provider_model_receipt(&transaction, request.run_id)?.is_some() {
-                    LegacyImportRunStatus::Completed
+                    LegacyImportRunStatus::Partial
                 } else {
                     LegacyImportRunStatus::Importing
                 };
@@ -475,6 +475,7 @@ impl LegacyImportRepository for Database {
             LegacyImportRunStatus::Admitted
                 | LegacyImportRunStatus::Importing
                 | LegacyImportRunStatus::Completed
+                | LegacyImportRunStatus::Partial
         ) {
             return Err(LegacyImportRepositoryError::Conflict);
         }
@@ -664,7 +665,7 @@ impl LegacyImportRepository for Database {
             return Err(LegacyImportRepositoryError::Conflict);
         }
         if let Some(mut receipt) = load_provider_model_receipt(&transaction, request.run_id)? {
-            if admission.status != LegacyImportRunStatus::Completed {
+            if admission.status != LegacyImportRunStatus::Partial {
                 return Err(LegacyImportRepositoryError::Storage);
             }
             receipt.replayed = true;
@@ -876,7 +877,7 @@ impl LegacyImportRepository for Database {
             .map_err(|_| LegacyImportRepositoryError::Conflict)?;
         let changed = transaction
             .execute(
-                "UPDATE legacy_import_runs SET status='completed',updated_at=?2 WHERE id=?1 AND status='importing'",
+                "UPDATE legacy_import_runs SET status='partial',updated_at=?2 WHERE id=?1 AND status='importing'",
                 params![request.run_id.to_string(), request.completed_at.get()],
             )
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
@@ -1829,6 +1830,7 @@ fn parse_status(value: &str) -> Result<LegacyImportRunStatus, LegacyImportReposi
         "admitted" => Ok(LegacyImportRunStatus::Admitted),
         "importing" => Ok(LegacyImportRunStatus::Importing),
         "completed" => Ok(LegacyImportRunStatus::Completed),
+        "partial" => Ok(LegacyImportRunStatus::Partial),
         "failed" => Ok(LegacyImportRunStatus::Failed),
         _ => Err(LegacyImportRepositoryError::Storage),
     }

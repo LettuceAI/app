@@ -723,7 +723,11 @@ impl std::error::Error for LegacyDatabasePreflightError {}
 pub enum LegacyImportRunStatus {
     Admitted,
     Importing,
+    /// Reserved for a run that imported every legacy domain.
     Completed,
+    /// Every planned stage finished while some legacy domains are not imported
+    /// by any stage yet, so the run must not be treated as a full migration.
+    Partial,
     Failed,
 }
 

@@ -1206,7 +1206,7 @@ mod tests {
             .legacy_import_admission()
             .admit(run_id, &inventory, &plan, TimestampMillis::new(70))
             .expect("replay admission");
-        assert_eq!(replayed_admission.status, LegacyImportRunStatus::Completed);
+        assert_eq!(replayed_admission.status, LegacyImportRunStatus::Partial);
         let replay = reopened
             .legacy_provider_model_importer(&secret_store)
             .execute(&replayed_admission, &plan, TimestampMillis::new(80))

@@ -747,3 +747,10 @@ nothing. The same backup source can be admitted again under a new operation, so
 an immutable admission never blocks a later restore of that file. The table
 contains no secret values, media bytes or domain snapshots and cannot perform
 materialization, cutover or cleanup.
+
+A legacy import run whose planned stages all finish ends as `partial`, not
+`completed`: characters, chat templates, sessions and messages, groups,
+memories, companion tables, usage, audio providers, user voices and the legacy
+settings documents are not imported by any stage yet. `completed` is reserved
+for a run that covers every legacy domain, and any future step that deletes
+legacy data must require it together with explicit user approval.
