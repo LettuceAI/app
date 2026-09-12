@@ -282,7 +282,7 @@ catalog entries (`memory_id_line`, `memory_skip_*`), which the first-round
 memory list uses as well. `done`, `stopped_after_done` and rejected results keep
 their typed shape.
 An already admitted next round replays without provider I/O. Debounce/startup
-wiring and binding admission to host startup/finalization remain later slices.
+wiring remains a later slice.
 The composition root now exposes its SQLite database as the durable generic
 `JobStore`. The background loop connects the
 existing round executor and continuation coordinator until the durable `done`
@@ -872,8 +872,23 @@ the active branch are counted from the summary cursor, `manual` admits nothing,
 `ask_first` records a pending approval, and `auto` admits exactly one
 interval-sized window per run, as legacy did. The run reuses the existing
 background summary, memory-round and terminal pipeline with a message-window
-source instead of companion effects. Host wiring after finalization remains a
-later slice. Retrieval embedding unavailability preserves
+source instead of companion effects. `CompanionMemoryHostCoordinator`
+(`companion_memory_host`) is the host entry point legacy's
+`enqueue_post_turn_dynamic_memory` provided: `after_turn` admits and claims the
+cycle a finished send or continue earns (never a regenerate; direct chats need
+the global `enabled` flag and a dynamic session, groups only a dynamic session,
+as legacy gated them), discovering processing effects for companion
+conversations and the interval window for plain ones; `resolve_runtime_inputs`
+reads the live direct or group settings into the runner inputs (model: the
+admission override, then `dynamic_memory_model_profile_id`, then the default
+model, else the job fails as a retryable provider-unavailable error like
+legacy's "Summarisation model not configured"; the local manager prompt for
+llama.cpp accounts; policy, duplicate threshold and fallback format from the
+settings; supersession for companion conversations); `run_claimed` seeds
+creates with the embedding tokenizer (zero on failure, as legacy), runs the job
+runner and settles the job. Companion time awareness has no destination yet, so
+the host passes it disabled, as generation does. Retrieval embedding
+unavailability preserves
 the legacy behavior of continuing without retrieved keys. A nonempty selection
 now atomically promotes selected cold items and records the legacy access count,
 time and importance updates exactly once under the preparation attempt. The

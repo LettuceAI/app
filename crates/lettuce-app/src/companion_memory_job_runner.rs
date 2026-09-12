@@ -379,6 +379,8 @@ pub enum CompanionMemoryJobRunError {
     Settings(lettuce_settings::GlobalSettingsStoreError),
     #[error("background memory category repair failed: {0}")]
     Repair(crate::CompanionMemoryRepairError),
+    #[error("background memory runtime inputs are unavailable: {0}")]
+    RuntimeInputs(crate::CompanionMemoryRuntimeInputError),
 }
 
 impl CompanionMemoryJobRunError {
@@ -390,6 +392,7 @@ impl CompanionMemoryJobRunError {
             }
             Self::Loop(error) => Some(CompanionMemoryTerminalFailure::from_loop_error(error)),
             Self::Repair(_) => Some(CompanionMemoryTerminalFailure::Cancelled),
+            Self::RuntimeInputs(_) => Some(CompanionMemoryTerminalFailure::ProviderUnavailable),
             Self::Admission(_) | Self::Terminal(_) | Self::Conversation(_) | Self::Settings(_) => {
                 None
             }

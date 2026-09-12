@@ -70,6 +70,15 @@ pub enum MemoryRunMode {
     Manual,
 }
 
+/// The document format the dynamic-memory cycle asks for when a model cannot
+/// call tools; legacy defaulted to XML.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryStructuredFallbackFormat {
+    Json,
+    Xml,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DynamicMemorySettings {
@@ -89,6 +98,7 @@ pub struct DynamicMemorySettings {
     pub decay_rate_basis_points: u16,
     pub recursive_memory_loops: bool,
     pub recursive_memory_loop_hard_cap: u32,
+    pub structured_fallback_format: MemoryStructuredFallbackFormat,
 }
 
 impl Default for DynamicMemorySettings {
@@ -110,6 +120,7 @@ impl Default for DynamicMemorySettings {
             decay_rate_basis_points: 800,
             recursive_memory_loops: false,
             recursive_memory_loop_hard_cap: 20,
+            structured_fallback_format: MemoryStructuredFallbackFormat::Xml,
         }
     }
 }
@@ -247,6 +258,10 @@ mod tests {
         assert_eq!(settings.decay_rate_basis_points, 800);
         assert!(!settings.recursive_memory_loops);
         assert_eq!(settings.recursive_memory_loop_hard_cap, 20);
+        assert_eq!(
+            settings.structured_fallback_format,
+            MemoryStructuredFallbackFormat::Xml
+        );
         let stored: DynamicMemorySettings =
             serde_json::from_str(r#"{"max_entries":12,"run_mode":"ask_first"}"#)
                 .expect("partial settings document");

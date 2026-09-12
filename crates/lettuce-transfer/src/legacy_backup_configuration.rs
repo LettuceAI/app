@@ -17,7 +17,7 @@ use lettuce_models::{
 use lettuce_settings::{
     DynamicMemorySettings, EmbeddingSettings, GlobalSettings, HeaderName,
     LorebookGeneratorSelection, LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
-    PureMode, SecretOwnerId, SecretPurpose, SecretRef, SecretValue,
+    MemoryStructuredFallbackFormat, PureMode, SecretOwnerId, SecretPurpose, SecretRef, SecretValue,
 };
 use lettuce_speech::{AudioProvider, AudioProviderConfig, UserVoice};
 use lettuce_types::{
@@ -521,17 +521,33 @@ fn map_settings(
         true,
         LegacyBackupDocumentKind::Settings,
     )?;
-    let dynamic_memory = map_dynamic_memory(
+    let mut dynamic_memory = map_dynamic_memory(
         advanced.get("dynamicMemory"),
         "advanced_settings.dynamicMemory",
         notices,
     )?;
-    let group_dynamic_memory = advanced
+    let mut group_dynamic_memory = advanced
         .get("groupDynamicMemory")
         .map(|value| {
             map_dynamic_memory(Some(value), "advanced_settings.groupDynamicMemory", notices)
         })
         .transpose()?;
+    if let Some(format) = advanced.get("dynamicMemoryStructuredFallbackFormat") {
+        let format = match format.as_str() {
+            Some("json") => MemoryStructuredFallbackFormat::Json,
+            Some("xml") => MemoryStructuredFallbackFormat::Xml,
+            _ => {
+                return Err(malformed(
+                    LegacyBackupDocumentKind::Settings,
+                    "advanced_settings.dynamicMemoryStructuredFallbackFormat",
+                ));
+            }
+        };
+        dynamic_memory.structured_fallback_format = format;
+        if let Some(group) = &mut group_dynamic_memory {
+            group.structured_fallback_format = format;
+        }
+    }
     let default_provider_account_id = parse_optional_id(
         row.default_provider_credential_id.as_deref(),
         LegacyBackupDocumentKind::Settings,
@@ -569,6 +585,7 @@ fn map_settings(
         "appUpdateChecksEnabled",
         "dynamicMemory",
         "groupDynamicMemory",
+        "dynamicMemoryStructuredFallbackFormat",
         "embeddingDimensions",
         "manualModeContextWindow",
         "summarisationModelId",
@@ -1894,11 +1911,11 @@ fn source_ids(
     let mut result = BTreeSet::new();
     for row in rows {
         let id = row
-                .get("id")
-                .and_then(Value::as_str)
-                .filter(|id| !id.trim().is_empty())
-                .map(str::to_owned)
-                .ok_or_else(|| malformed(kind, "id"))?;
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.trim().is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| malformed(kind, "id"))?;
         if !result.insert(id) {
             return Err(malformed(kind, "id"));
         }
@@ -3068,8 +3085,12 @@ mod tests {
         assert_eq!(memory.decay_rate_basis_points, 1_000);
         assert_eq!(memory.delete_confidence_basis_points, 7_000);
         assert_eq!(memory.max_hard_delete_ratio_basis_points, 2_500);
-        assert!(!plan.notices.iter().any(|notice| notice.field
-            == "advanced_settings.dynamicMemory.decayRate"));
+        assert!(
+            !plan
+                .notices
+                .iter()
+                .any(|notice| notice.field == "advanced_settings.dynamicMemory.decayRate")
+        );
         assert!(plan.notices.iter().any(|notice| notice.kind
             == LegacyBackupConversionNoticeKind::Unsupported
             && notice.field == "advanced_settings.dynamicMemory.unknownKnob"));

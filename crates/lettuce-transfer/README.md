@@ -133,8 +133,10 @@ account only when a llama.cpp model needs it; it carries no secret or endpoint.
 Legacy `dynamicMemory`/`groupDynamicMemory` settings map every field the current
 settings hold, including `enabled`, the summary interval (0 becomes 1, as the
 legacy cycle used), run mode (unknown values run as `auto`, like legacy),
-decay, delete confidence, hard-delete ratio and recursive loops; only unknown
-keys remain unsupported notices.
+decay, delete confidence, hard-delete ratio and recursive loops; the advanced
+`dynamicMemoryStructuredFallbackFormat` (`json`/`xml`) sets both the direct and
+the group settings, any other value is malformed; only unknown keys remain
+unsupported notices.
 
 Legacy import admission now seals provider-account and model-profile source IDs
 alongside the existing graph and media plan. Each account receives a stable

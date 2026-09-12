@@ -294,8 +294,10 @@ impl AppBackend {
     pub fn whisper_downloads(
         &self,
         install_root: impl AsRef<Path>,
-    ) -> Result<crate::WhisperDownloadCoordinator<'_, Database, Database>, crate::WhisperDownloadError>
-    {
+    ) -> Result<
+        crate::WhisperDownloadCoordinator<'_, Database, Database>,
+        crate::WhisperDownloadError,
+    > {
         crate::WhisperDownloadCoordinator::new(
             self.database.as_ref(),
             self.database.as_ref(),
@@ -414,6 +416,15 @@ impl AppBackend {
             self.database.as_ref(),
             self.database.as_ref(),
         )
+    }
+
+    #[must_use]
+    pub fn companion_memory_host<'a, E: ?Sized, I: ?Sized>(
+        &'a self,
+        engine: &'a E,
+        inference: &'a I,
+    ) -> crate::CompanionMemoryHostCoordinator<'a, Database, E, I> {
+        crate::CompanionMemoryHostCoordinator::new(self.database.as_ref(), engine, inference)
     }
 
     #[must_use]

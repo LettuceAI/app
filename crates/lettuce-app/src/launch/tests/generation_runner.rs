@@ -2554,6 +2554,136 @@ async fn plain_dynamic_turns_admit_and_run_a_post_turn_memory_cycle() {
 }
 
 #[tokio::test]
+async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = true;
+    settings.dynamic_memory.summary_message_interval = 2;
+    settings.dynamic_memory.hot_memory_token_budget = 2;
+    settings.dynamic_memory.structured_fallback_format =
+        lettuce_settings::MemoryStructuredFallbackFormat::Json;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("save dynamic memory settings");
+    let scenario = scenario_with_resolvable_profile(database, true, "host-post-turn", true);
+    let generation = admit_and_claim(database, &scenario, 1_015);
+    let engine = ScenarioEmbeddingEngine;
+    let reply = scripted(vec![text_outcome("host-reply", "Tea it is.", 5, 3)]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &reply)
+        .run(
+            &generation,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("finalize plain dynamic turn");
+    let memory = scripted(vec![
+        call_outcome(
+            "host-summary",
+            "write_summary",
+            serde_json::json!({"summary": "The user chose tea."}),
+            (6, 2),
+        ),
+        call_outcome(
+            "host-create",
+            "create_memory",
+            serde_json::json!({"text": "The user prefers tea", "category": "preference"}),
+            (7, 2),
+        ),
+    ]);
+    let host = backend.companion_memory_host(&engine, &memory);
+    let claim = |operation| {
+        host.after_turn(
+            scenario.conversation_id,
+            operation,
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+    };
+    assert!(
+        claim(lettuce_conversations::GenerationOperation::Regenerate)
+            .expect("regenerate never admits a cycle")
+            .is_empty()
+    );
+    let work = claim(lettuce_conversations::GenerationOperation::Send)
+        .expect("send admits the interval window")
+        .into_iter()
+        .next()
+        .expect("claimed plain memory work");
+    let inputs = host
+        .resolve_runtime_inputs(&work.admission)
+        .expect("runtime inputs from live settings");
+    assert_eq!(inputs.policy.hot_token_budget, 2);
+    assert_eq!(
+        inputs.structured_fallback_format,
+        lettuce_memory::DynamicMemoryStructuredFallbackFormat::Json
+    );
+    assert_eq!(
+        inputs.memory_prompt.purpose,
+        PromptPurpose::DynamicMemoryManager
+    );
+    assert_eq!(
+        inputs.summary_prompt.purpose,
+        PromptPurpose::DynamicMemorySummarizer
+    );
+    assert!(!inputs.supersession_enabled);
+    assert_eq!(
+        inputs.profile.chat_profile.model_profile_id,
+        scenario.model.source_id
+    );
+    let settled = host
+        .run_claimed(work, CancellationReason::User, TimestampMillis::new(1_032))
+        .await
+        .expect("run and settle the claimed cycle");
+    let crate::CompanionMemorySettledWork::Succeeded { result, job } = settled else {
+        panic!("the plain cycle should succeed");
+    };
+    assert_eq!(job.state, JobState::Succeeded);
+    assert_eq!(
+        result.dispatch.attempt.status,
+        lettuce_memory::DynamicMemoryAttemptStatus::Succeeded
+    );
+    assert_eq!(memory.requests.lock().expect("memory requests").len(), 2);
+    let space_id = scenario.space_id.expect("dynamic memory space");
+    let summary = MemorySummaryRepository::get_summary(database, space_id)
+        .expect("summary")
+        .expect("stored summary");
+    assert_eq!(summary.text, "The user chose tea.");
+    let stored_memory = MemoryRepository::get(database, space_id)
+        .expect("memory")
+        .expect("memory space");
+    assert_eq!(stored_memory.items.len(), 1);
+    assert_eq!(stored_memory.items[0].text, "The user prefers tea");
+    assert_eq!(stored_memory.items[0].token_count, 4);
+    assert!(stored_memory.items[0].is_cold);
+
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut disabled = stored.settings;
+    disabled.dynamic_memory.enabled = false;
+    GlobalSettingsStore::save(
+        database,
+        disabled,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("disable dynamic memory");
+    assert!(
+        claim(lettuce_conversations::GenerationOperation::Continue)
+            .expect("disabled global setting admits nothing")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn preexisting_progress_checkpoint_advances_runner_stage_sequences() {
     let database = database();
     let scenario = scenario(&database, false, "progress-sequence");

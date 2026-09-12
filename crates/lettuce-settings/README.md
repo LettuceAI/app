@@ -29,8 +29,10 @@ and two-message context enrichment. Scores use integer basis points so persisted
 policy values remain exact. Older settings documents receive these defaults.
 The post-turn cycle settings follow the legacy schema defaults: disabled until
 enabled, a 20-message summary interval, `auto` run mode (`ask_first` and
-`manual` also exist), 0.08 per-cycle decay, and recursive memory loops off with
-a hard cap of 20 rounds. `embedding.dimensions` keeps the legacy
+`manual` also exist), 0.08 per-cycle decay, recursive memory loops off with
+a hard cap of 20 rounds, and the `xml` structured fallback format (legacy
+`dynamicMemoryStructuredFallbackFormat`, `json` is the other value) for models
+that answer the memory cycle without tool calls. `embedding.dimensions` keeps the legacy
 `embeddingDimensions` preference; unset means the embedding default.
 `manual_mode_context_window` (legacy `manualModeContextWindow`, default 50) is
 the history window for chats without dynamic memory; dynamic chats use the
