@@ -1060,6 +1060,10 @@ Both the post-turn admission and explicit triggers list pending effects with
 invalidations before the 512-effect page limit; the earlier status-agnostic
 page stopped admitting after 512 settled effects and a global page could be
 filled by other conversations.
+The reply helper's streaming setting is a preference, not a requirement: the
+request streams only when the account has streaming enabled and the model does
+not declare streaming unsupported, otherwise it is sent as a plain request, as
+legacy `effective_streaming_enabled_with_override` downgraded it.
 
 The legacy import admission coordinator fingerprints the complete preflight inventory and provider/model/prompt/persona/lorebook/media plans, derives the closed source ID set, and admits it through the transfer-owned repository port. It allocates no IDs itself and performs no filesystem ingest, secret read, secret-store write, or domain creation; SQLite returns sealed account, profile, prompt, secret-reference, graph, and media mappings so retries and reopen use the same destination identities. The deterministic legacy llama.cpp account participates in the same assignment path. The legacy database and storage tree remain untouched and retained.
 

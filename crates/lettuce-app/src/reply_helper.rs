@@ -411,12 +411,12 @@ where
                 model.config.capabilities.parameter_support,
                 settings.max_output_tokens,
             ),
-            &ChatRequirements {
-                require_streaming: streaming,
-                ..Default::default()
-            },
+            &ChatRequirements::default(),
         )
         .map_err(ReplyHelperError::InvalidModel)?;
+        let streaming = streaming
+            && chat_profile.streaming_enabled
+            && model.config.capabilities.streaming != lettuce_models::CapabilityStatus::Unsupported;
         let (override_id, built_in) = match settings.style {
             HelpMeReplyStyle::Roleplay => {
                 (settings.roleplay_prompt_id, BuiltInPromptId::ReplyHelper)

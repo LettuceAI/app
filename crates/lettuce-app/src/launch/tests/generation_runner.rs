@@ -3062,6 +3062,59 @@ async fn reply_helper_drafts_the_next_user_message_from_live_settings() {
 }
 
 #[tokio::test]
+async fn reply_helper_falls_back_to_a_plain_request_when_the_model_cannot_stream() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let scenario = scenario_with_resolvable_profile(database, false, "reply-helper-plain", true);
+    let generation = admit_and_claim(database, &scenario, 1_015);
+    let engine = ScenarioEmbeddingEngine;
+    let reply = scripted(vec![text_outcome("reply-helper-plain-reply", "Tea it is.", 5, 3)]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &reply)
+        .run(
+            &generation,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("finalize the turn");
+    let mut model = ModelProfileRepository::get(database, scenario.model.source_id)
+        .expect("model")
+        .expect("model exists");
+    let revision = model.revision;
+    model.config.capabilities.streaming = lettuce_models::CapabilityStatus::Unsupported;
+    ModelProfileRepository::upsert(database, model, Some(revision)).expect("non-streaming model");
+    let inference = scripted(vec![text_outcome(
+        "reply-helper-plain-draft",
+        "Sounds lovely.",
+        9,
+        4,
+    )]);
+    let helper = backend.reply_helper(&inference);
+    let request = crate::ReplyHelperRequest {
+        conversation_id: scenario.conversation_id,
+        request_id: RequestId::new(),
+        current_draft: None,
+        swap_places: false,
+    };
+    let drafted = helper
+        .generate(
+            &request,
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .await
+        .expect("draft without streaming");
+    assert_eq!(drafted.text, "Sounds lovely.");
+    assert_eq!(
+        inference.requests.lock().expect("requests")[0].stream_sink,
+        None
+    );
+}
+
+#[tokio::test]
 async fn reply_helper_drafts_a_group_reply_with_the_whole_cast() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
     let (scenario, _) = group_scenario(
