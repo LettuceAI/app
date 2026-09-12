@@ -1934,7 +1934,7 @@ fn select_memories<'a>(
         .copied()
         .filter_map(|item| {
             let projection = projections.get(&item.id)?;
-            let raw = query.cosine_similarity(&projection.vector)?;
+            let raw = legacy_cosine(query, &projection.vector)?;
             let score = if item.is_cold && !item.is_pinned {
                 raw * 0.7
             } else {
@@ -2052,6 +2052,25 @@ fn select_memories<'a>(
         selected.extend(cold.into_iter().take(limit).map(|(_, item)| item));
     }
     selected
+}
+
+/// Legacy scored a zero-norm vector as 0 instead of skipping it, while a NaN
+/// component still failed every threshold comparison.
+fn legacy_cosine(
+    query: &lettuce_embeddings::EmbeddingVector,
+    memory: &lettuce_embeddings::EmbeddingVector,
+) -> Option<f32> {
+    query.cosine_similarity(memory).or_else(|| {
+        (query.source_revision == memory.source_revision
+            && query.values.len() == memory.values.len()
+            && !memory.values.is_empty()
+            && query
+                .values
+                .iter()
+                .chain(&memory.values)
+                .all(|value| value.is_finite()))
+        .then_some(0.0)
+    })
 }
 
 /// Legacy temporal candidates: only memories observed inside the queried
@@ -2313,6 +2332,54 @@ mod tests {
             false,
         );
         assert!(ordinary.len() > temporal.len());
+    }
+
+    #[test]
+    fn zero_norm_memories_score_zero_and_nan_vectors_never_match() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::Cosine;
+        use lettuce_embeddings::{EmbeddingDimensions, EmbeddingVector, MemoryEmbeddingProjection};
+        use lettuce_memory::MemoryCategory::Other;
+        let items = [retrieval_memory(1, Other), retrieval_memory(2, Other)];
+        let vector = |values: Vec<f32>| EmbeddingVector {
+            values,
+            source_revision: "retrieval-test".into(),
+        };
+        let mut query = vec![0.0; 64];
+        query[0] = 1.0;
+        let mut nan = vec![0.0; 64];
+        nan[0] = f32::NAN;
+        let space_id = lettuce_types::MemorySpaceId::new();
+        let projections = [(0, vec![0.0; 64]), (1, nan)]
+            .into_iter()
+            .map(|(index, values)| MemoryEmbeddingProjection {
+                space_id,
+                memory_id: items[index].id,
+                source_text: items[index].text.clone(),
+                vector: vector(values),
+                dimensions: EmbeddingDimensions::D64,
+                updated_at: items[index].created_at,
+            })
+            .collect::<Vec<_>>();
+        let active = items.iter().collect::<Vec<_>>();
+        let select = |threshold| {
+            super::select_memories(
+                "harbor",
+                &vector(query.clone()),
+                &projections,
+                &active,
+                2,
+                threshold,
+                Cosine,
+                false,
+                false,
+                false,
+            )
+            .into_iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(select(-1.0), vec![items[0].id]);
+        assert!(select(0.35).is_empty());
     }
 
     #[test]

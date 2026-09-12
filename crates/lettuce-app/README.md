@@ -253,6 +253,8 @@ legacy `detect_temporal_query_range`); when one is found only memories observed
 inside that half-open window are candidates (none means no retrieved memories),
 the similarity threshold drops to -1 and the recent and frequent fill slots are
 skipped, while the cold keyword fallback still searches the filtered set.
+A memory whose stored vector has zero norm scores 0 like legacy, so the -1
+threshold still admits it, while a vector with a NaN component never matches.
 Calendar arithmetic is checked: an amount that overflows a date yields no range,
 where legacy panicked on inputs like "200000000000 days ago".
 Roleplay and group assembly do not read companion state. Missing or corrupt
