@@ -762,4 +762,9 @@ fingerprint. Currently: a settings default provider or default model that no
 longer exists (legacy `provider_delete` and `model_delete` never cleared them and
 the old app ignored a stale id). A model whose provider credential no longer
 resolves still aborts the import: the old app kept listing and editing such a
-model, so dropping it would lose data. Every other malformed record still aborts.
+model, so dropping it would lose data. The media planner also prunes and records
+references whose file is gone: a persona avatar (with its crop), each persona
+design reference and a lorebook avatar, since the old app showed no image for
+them and the stale id stays in the untouched legacy database; the reference
+count limit is checked before pruning, and unsafe or ambiguous references still
+abort. Every other malformed record still aborts.

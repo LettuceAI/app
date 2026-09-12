@@ -206,7 +206,12 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
                     })
                     .collect(),
             },
-            skips: provider_models.skipped.clone(),
+            skips: {
+                let mut skips = provider_models.skipped.clone();
+                skips.extend(media.skipped.iter().cloned());
+                skips.sort();
+                skips
+            },
             admitted_at,
         })
     }
@@ -250,6 +255,7 @@ fn validate_plan(
         || !valid_asr_plan(asr)
         || !valid_asr_media_plan(asr, media)
         || total_bytes != Some(media.total_bytes)
+        || !valid_media_skips(media)
     {
         return Err(LegacyImportRepositoryError::InvalidInput);
     }
@@ -340,6 +346,22 @@ fn valid_asr_media_plan(asr: &LegacyAsrPlan, media: &LegacyMediaPlan) -> bool {
     found.len() == examples.len()
 }
 
+fn valid_media_skips(media: &LegacyMediaPlan) -> bool {
+    media
+        .skipped
+        .windows(2)
+        .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
+        && media.skipped.iter().all(|skip| {
+            skip.reason == lettuce_transfer::LegacyImportSkipReason::MissingMediaFile
+                && matches!(
+                    skip.kind,
+                    lettuce_transfer::LegacyImportSkipKind::PersonaAvatar
+                        | lettuce_transfer::LegacyImportSkipKind::PersonaDesignReference
+                        | lettuce_transfer::LegacyImportSkipKind::LorebookAvatar
+                )
+        })
+}
+
 fn valid_provider_model_plan(plan: &LegacyProviderModelPlan) -> bool {
     let provider_ids = plan
         .provider_accounts
@@ -375,6 +397,25 @@ fn valid_provider_model_plan(plan: &LegacyProviderModelPlan) -> bool {
             .skipped
             .windows(2)
             .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
+}
+
+fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSkip]) {
+    hash.u64(skips.len() as u64);
+    for skip in skips {
+        hash.u32(match skip.kind {
+            lettuce_transfer::LegacyImportSkipKind::SettingsDefaultProviderAccount => 2,
+            lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile => 3,
+            lettuce_transfer::LegacyImportSkipKind::PersonaAvatar => 4,
+            lettuce_transfer::LegacyImportSkipKind::PersonaDesignReference => 5,
+            lettuce_transfer::LegacyImportSkipKind::LorebookAvatar => 6,
+        });
+        hash.text(&skip.source_key);
+        hash.u32(match skip.reason {
+            lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount => 1,
+            lettuce_transfer::LegacyImportSkipReason::MissingModelProfile => 2,
+            lettuce_transfer::LegacyImportSkipReason::MissingMediaFile => 3,
+        });
+    }
 }
 
 struct Fingerprint(blake3::Hasher);
@@ -527,18 +568,7 @@ pub(crate) fn plan_fingerprint(
         provider_models.default_model_profile_id.as_ref(),
         |hash, value| hash.text(&value.to_string()),
     );
-    hash.u64(provider_models.skipped.len() as u64);
-    for skip in &provider_models.skipped {
-        hash.u32(match skip.kind {
-            lettuce_transfer::LegacyImportSkipKind::SettingsDefaultProviderAccount => 2,
-            lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile => 3,
-        });
-        hash.text(&skip.source_key);
-        hash.u32(match skip.reason {
-            lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount => 1,
-            lettuce_transfer::LegacyImportSkipReason::MissingModelProfile => 2,
-        });
-    }
+    write_skips(&mut hash, &provider_models.skipped);
     hash.u64(prompts.prompts.len() as u64);
     for prompt in &prompts.prompts {
         hash.text(&prompt.source_id);
@@ -623,6 +653,7 @@ pub(crate) fn plan_fingerprint(
         hash.i64(lorebook.updated_at.get());
     }
     write_asr_plan(&mut hash, asr);
+    write_skips(&mut hash, &media.skipped);
     hash.u64(media.media.len() as u64);
     for candidate in &media.media {
         hash.text(&candidate.relative_path);
@@ -995,6 +1026,7 @@ mod tests {
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: Vec::new(),
             total_bytes: 0,
         };
@@ -1084,6 +1116,7 @@ mod tests {
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: Vec::new(),
             total_bytes: 0,
         };
@@ -1290,6 +1323,7 @@ mod tests {
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: Vec::new(),
             total_bytes: 0,
         };
@@ -1382,6 +1416,7 @@ mod tests {
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: Vec::new(),
             total_bytes: 0,
         };
@@ -1453,6 +1488,7 @@ mod tests {
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: Vec::new(),
             total_bytes: 0,
         };
@@ -1614,6 +1650,7 @@ mod tests {
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: Vec::new(),
             total_bytes: 0,
         };
@@ -1672,7 +1709,7 @@ mod tests {
     }
 
     #[test]
-    fn admission_seals_the_cleared_legacy_defaults() {
+    fn admission_seals_cleared_defaults_and_pruned_media() {
         use lettuce_transfer::{LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason};
         let path = std::env::temp_dir().join(format!(
             "lettuce-app-legacy-import-skips-{}.sqlite3",
@@ -1685,6 +1722,7 @@ mod tests {
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: Vec::new(),
             total_bytes: 0,
         };
@@ -1694,6 +1732,14 @@ mod tests {
             source_key: ModelProfileId::new().to_string(),
             reason: LegacyImportSkipReason::MissingModelProfile,
         }];
+        let media = LegacyMediaPlan {
+            skipped: vec![LegacyImportSkip {
+                kind: LegacyImportSkipKind::PersonaAvatar,
+                source_key: personas.personas[0].id.to_string(),
+                reason: LegacyImportSkipReason::MissingMediaFile,
+            }],
+            ..media
+        };
         let backend = AppBackend::open(&path, TimestampMillis::new(10)).expect("open backend");
         let admitted = backend
             .legacy_import_admission()
@@ -1704,7 +1750,10 @@ mod tests {
                 TimestampMillis::new(20),
             )
             .expect("admit with a cleared default");
-        assert_eq!(admitted.skips, models.skipped);
+        let mut expected = models.skipped.clone();
+        expected.extend(media.skipped.iter().cloned());
+        expected.sort();
+        assert_eq!(admitted.skips, expected);
         drop(backend);
         fs::remove_file(path).expect("remove database");
     }
@@ -1722,6 +1771,7 @@ mod tests {
             lorebooks: Vec::new(),
         };
         let media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: Vec::new(),
             total_bytes: 0,
         };
@@ -1777,6 +1827,7 @@ mod tests {
                 lorebooks: Vec::new(),
             },
             &LegacyMediaPlan {
+                skipped: Vec::new(),
                 media: Vec::new(),
                 total_bytes: 0,
             },
@@ -1799,6 +1850,7 @@ mod tests {
                 created_at: "2026-01-01 00:00:00".to_owned(),
             });
         plan.media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: vec![LegacyMediaCandidate {
                 relative_path: "asr/voice-examples/9.wav".to_owned(),
                 source_locator: "/retained/voice.wav".to_owned(),
@@ -1811,6 +1863,7 @@ mod tests {
         let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("open backend");
         let mut missing_media = plan.clone();
         missing_media.media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: Vec::new(),
             total_bytes: 0,
         };
@@ -1869,6 +1922,7 @@ mod tests {
         ));
         let backend = AppBackend::open(&path, TimestampMillis::new(10)).expect("open backend");
         let empty_media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: Vec::new(),
             total_bytes: 0,
         };

@@ -409,12 +409,16 @@ pub struct LegacyImportSkip {
 pub enum LegacyImportSkipKind {
     SettingsDefaultProviderAccount,
     SettingsDefaultModelProfile,
+    PersonaAvatar,
+    PersonaDesignReference,
+    LorebookAvatar,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LegacyImportSkipReason {
     MissingProviderAccount,
     MissingModelProfile,
+    MissingMediaFile,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -624,6 +628,7 @@ pub struct LegacyMediaCandidate {
 pub struct LegacyMediaPlan {
     pub media: Vec<LegacyMediaCandidate>,
     pub total_bytes: u64,
+    pub skipped: Vec<LegacyImportSkip>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

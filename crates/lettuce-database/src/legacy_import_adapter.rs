@@ -1860,6 +1860,11 @@ fn skip_kind_name(kind: lettuce_transfer::LegacyImportSkipKind) -> &'static str 
         lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile => {
             "settings_default_model_profile"
         }
+        lettuce_transfer::LegacyImportSkipKind::PersonaAvatar => "persona_avatar",
+        lettuce_transfer::LegacyImportSkipKind::PersonaDesignReference => {
+            "persona_design_reference"
+        }
+        lettuce_transfer::LegacyImportSkipKind::LorebookAvatar => "lorebook_avatar",
     }
 }
 
@@ -1869,6 +1874,7 @@ fn skip_reason_name(reason: lettuce_transfer::LegacyImportSkipReason) -> &'stati
             "missing_provider_account"
         }
         lettuce_transfer::LegacyImportSkipReason::MissingModelProfile => "missing_model_profile",
+        lettuce_transfer::LegacyImportSkipReason::MissingMediaFile => "missing_media_file",
     }
 }
 
@@ -1901,6 +1907,11 @@ fn load_skips(
                 "settings_default_model_profile" => {
                     lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile
                 }
+                "persona_avatar" => lettuce_transfer::LegacyImportSkipKind::PersonaAvatar,
+                "persona_design_reference" => {
+                    lettuce_transfer::LegacyImportSkipKind::PersonaDesignReference
+                }
+                "lorebook_avatar" => lettuce_transfer::LegacyImportSkipKind::LorebookAvatar,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             let reason = match reason.as_str() {
@@ -1910,6 +1921,7 @@ fn load_skips(
                 "missing_model_profile" => {
                     lettuce_transfer::LegacyImportSkipReason::MissingModelProfile
                 }
+                "missing_media_file" => lettuce_transfer::LegacyImportSkipReason::MissingMediaFile,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             Ok(lettuce_transfer::LegacyImportSkip {

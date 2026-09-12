@@ -186,7 +186,11 @@ pub fn plan_legacy_backup_authored_media(
         });
     }
     Ok(LegacyBackupAuthoredMediaPlan {
-        media: LegacyMediaPlan { media, total_bytes },
+        media: LegacyMediaPlan {
+            media,
+            total_bytes,
+            skipped: Vec::new(),
+        },
         authored,
     })
 }

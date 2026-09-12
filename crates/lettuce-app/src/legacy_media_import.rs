@@ -450,6 +450,7 @@ mod tests {
         };
         let hash = content_hash(bytes);
         let media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: vec![
                 LegacyMediaCandidate {
                     relative_path: "images/avatar.png".to_owned(),
@@ -621,6 +622,7 @@ mod tests {
         std::fs::write(&audio_path, &audio).expect("write voice audio");
         let persona_id = PersonaId::new();
         let media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: vec![
                 LegacyMediaCandidate {
                     relative_path: "images/avatar.png".to_owned(),
@@ -995,6 +997,7 @@ mod tests {
             ],
         };
         let media = LegacyMediaPlan {
+            skipped: Vec::new(),
             media: vec![
                 LegacyMediaCandidate {
                     relative_path: "images/shared.png".to_owned(),

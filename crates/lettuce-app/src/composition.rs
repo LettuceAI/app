@@ -125,8 +125,8 @@ impl AppBackend {
     pub fn plan_legacy_media(
         &self,
         storage_root: impl AsRef<Path>,
-        personas: &lettuce_transfer::LegacyPersonaPlan,
-        lorebooks: &lettuce_transfer::LegacyLorebookPlan,
+        personas: &mut lettuce_transfer::LegacyPersonaPlan,
+        lorebooks: &mut lettuce_transfer::LegacyLorebookPlan,
         asr: &lettuce_transfer::LegacyAsrPlan,
     ) -> Result<lettuce_transfer::LegacyMediaPlan, lettuce_transfer::LegacyDatabasePreflightError>
     {

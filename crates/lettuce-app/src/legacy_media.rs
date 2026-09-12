@@ -7,8 +7,9 @@ use std::{
 
 use lettuce_transfer::{
     LEGACY_MEDIA_OBJECT_BYTES_LIMIT, LEGACY_MEDIA_REFERENCE_LIMIT, LEGACY_MEDIA_TOTAL_BYTES_LIMIT,
-    LegacyAsrPlan, LegacyDatabasePreflightError, LegacyLorebookPlan, LegacyMediaCandidate,
-    LegacyMediaPlan, LegacyMediaUse, LegacyPersonaPlan,
+    LegacyAsrPlan, LegacyDatabasePreflightError, LegacyImportSkip, LegacyImportSkipKind,
+    LegacyImportSkipReason, LegacyLorebookPlan, LegacyMediaCandidate, LegacyMediaPlan,
+    LegacyMediaUse, LegacyPersonaPlan,
 };
 use lettuce_types::ContentHash;
 
@@ -21,8 +22,8 @@ struct PendingMedia {
 
 pub fn plan_legacy_media(
     storage_root: impl AsRef<Path>,
-    personas: &LegacyPersonaPlan,
-    lorebooks: &LegacyLorebookPlan,
+    personas: &mut LegacyPersonaPlan,
+    lorebooks: &mut LegacyLorebookPlan,
     asr: &LegacyAsrPlan,
 ) -> Result<LegacyMediaPlan, LegacyDatabasePreflightError> {
     let storage_root = std::fs::canonicalize(storage_root)
@@ -31,6 +32,7 @@ pub fn plan_legacy_media(
         return Err(LegacyDatabasePreflightError::Unavailable);
     }
     require_reference_count(personas, lorebooks, asr)?;
+    let skipped = prune_missing_media(&storage_root, personas, lorebooks)?;
     let mut pending = BTreeMap::new();
     for persona in &personas.personas {
         if let Some(avatar) = &persona.avatar {
@@ -135,7 +137,74 @@ pub fn plan_legacy_media(
             uses: pending.uses,
         });
     }
-    Ok(LegacyMediaPlan { media, total_bytes })
+    Ok(LegacyMediaPlan {
+        media,
+        total_bytes,
+        skipped,
+    })
+}
+
+fn prune_missing_media(
+    storage_root: &Path,
+    personas: &mut LegacyPersonaPlan,
+    lorebooks: &mut LegacyLorebookPlan,
+) -> Result<Vec<LegacyImportSkip>, LegacyDatabasePreflightError> {
+    let skip = |kind, source_key| LegacyImportSkip {
+        kind,
+        source_key,
+        reason: LegacyImportSkipReason::MissingMediaFile,
+    };
+    let mut skipped = Vec::new();
+    for persona in &mut personas.personas {
+        if let Some(avatar) = &persona.avatar {
+            let relative = PathBuf::from("avatars")
+                .join(format!("persona-{}", persona.id))
+                .join(avatar_filename(&avatar.locator)?);
+            let present = storage_root.join(relative).try_exists().map_err(|_| {
+                LegacyDatabasePreflightError::MediaReadFailed {
+                    locator: avatar.locator.clone(),
+                }
+            })?;
+            if !present {
+                skipped.push(skip(
+                    LegacyImportSkipKind::PersonaAvatar,
+                    persona.id.to_string(),
+                ));
+                persona.avatar = None;
+                persona.avatar_crop = None;
+            }
+        }
+        let mut kept = Vec::with_capacity(persona.design_references.len());
+        for reference in std::mem::take(&mut persona.design_references) {
+            match image_reference_path(storage_root, &reference.locator) {
+                Ok(_) => kept.push(reference),
+                Err(LegacyDatabasePreflightError::MissingMedia { .. }) => skipped.push(skip(
+                    LegacyImportSkipKind::PersonaDesignReference,
+                    format!("{}:{}", persona.id, reference.locator),
+                )),
+                Err(error) => return Err(error),
+            }
+        }
+        persona.design_references = kept;
+    }
+    for lorebook in &mut lorebooks.lorebooks {
+        if let Some(avatar) = &lorebook.avatar {
+            match image_reference_path(storage_root, &avatar.locator) {
+                Ok(_) => {}
+                Err(LegacyDatabasePreflightError::MissingMedia { .. }) => {
+                    skipped.push(skip(
+                        LegacyImportSkipKind::LorebookAvatar,
+                        lorebook.id.to_string(),
+                    ));
+                    lorebook.avatar = None;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+    skipped.sort();
+    skipped.dedup();
+    Ok(skipped)
 }
 
 fn require_reference_count(
@@ -448,8 +517,13 @@ mod tests {
             lorebooks: vec![lorebook(lorebook_id, Some("shared"))],
         };
 
-        let plan =
-            plan_legacy_media(&root, &personas, &lorebooks, &empty_asr()).expect("plan media");
+        let plan = plan_legacy_media(
+            &root,
+            &mut personas.clone(),
+            &mut lorebooks.clone(),
+            &empty_asr(),
+        )
+        .expect("plan media");
 
         assert_eq!(plan.media.len(), 2);
         assert_eq!(plan.total_bytes, 12);
@@ -507,11 +581,11 @@ mod tests {
 
         let plan = plan_legacy_media(
             &root,
-            &LegacyPersonaPlan {
+            &mut LegacyPersonaPlan {
                 personas: Vec::new(),
                 default_persona_id: None,
             },
-            &LegacyLorebookPlan {
+            &mut LegacyLorebookPlan {
                 lorebooks: Vec::new(),
             },
             &asr,
@@ -542,6 +616,47 @@ mod tests {
     }
 
     #[test]
+    fn missing_avatar_files_are_pruned_with_their_crop_and_recorded() {
+        let root = root();
+        let persona_id = PersonaId::new();
+        let lorebook_id = LorebookId::new();
+        let mut with_crop = persona(persona_id, Some("gone.webp"), Vec::new());
+        with_crop.avatar_crop = Some(lettuce_transfer::LegacyCrop {
+            x: 0.1,
+            y: 0.2,
+            scale: 1.5,
+        });
+        let mut personas = LegacyPersonaPlan {
+            personas: vec![with_crop],
+            default_persona_id: None,
+        };
+        let mut lorebooks = LegacyLorebookPlan {
+            lorebooks: vec![lorebook(lorebook_id, Some("absent"))],
+        };
+        let plan = plan_legacy_media(&root, &mut personas, &mut lorebooks, &empty_asr())
+            .expect("missing avatars are pruned");
+        assert!(plan.media.is_empty());
+        assert_eq!(personas.personas[0].avatar, None);
+        assert_eq!(personas.personas[0].avatar_crop, None);
+        assert_eq!(lorebooks.lorebooks[0].avatar, None);
+        let mut expected = vec![
+            LegacyImportSkip {
+                kind: LegacyImportSkipKind::PersonaAvatar,
+                source_key: persona_id.to_string(),
+                reason: LegacyImportSkipReason::MissingMediaFile,
+            },
+            LegacyImportSkip {
+                kind: LegacyImportSkipKind::LorebookAvatar,
+                source_key: lorebook_id.to_string(),
+                reason: LegacyImportSkipReason::MissingMediaFile,
+            },
+        ];
+        expected.sort();
+        assert_eq!(plan.skipped, expected);
+        std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
     fn media_plan_rejects_missing_unsafe_and_ambiguous_locators() {
         let root = root();
         let persona_id = PersonaId::new();
@@ -555,16 +670,19 @@ mod tests {
             )],
             default_persona_id: None,
         };
+        let mut pruned = missing.clone();
+        let mut no_lorebooks = LegacyLorebookPlan { lorebooks: vec![] };
+        let plan = plan_legacy_media(&root, &mut pruned, &mut no_lorebooks, &empty_asr())
+            .expect("a missing design reference is pruned");
+        assert!(plan.media.is_empty());
+        assert!(pruned.personas[0].design_references.is_empty());
         assert_eq!(
-            plan_legacy_media(
-                &root,
-                &missing,
-                &LegacyLorebookPlan { lorebooks: vec![] },
-                &empty_asr(),
-            ),
-            Err(LegacyDatabasePreflightError::MissingMedia {
-                locator: "missing".into()
-            })
+            plan.skipped,
+            vec![LegacyImportSkip {
+                kind: LegacyImportSkipKind::PersonaDesignReference,
+                source_key: format!("{persona_id}:missing"),
+                reason: LegacyImportSkipReason::MissingMediaFile,
+            }]
         );
         let unsafe_plan = LegacyPersonaPlan {
             personas: vec![persona(persona_id, Some("../avatar.webp"), Vec::new())],
@@ -573,8 +691,8 @@ mod tests {
         assert_eq!(
             plan_legacy_media(
                 &root,
-                &unsafe_plan,
-                &LegacyLorebookPlan { lorebooks: vec![] },
+                &mut unsafe_plan.clone(),
+                &mut LegacyLorebookPlan { lorebooks: vec![] },
                 &empty_asr(),
             ),
             Err(LegacyDatabasePreflightError::UnsafeMediaReference {
@@ -596,8 +714,8 @@ mod tests {
         assert_eq!(
             plan_legacy_media(
                 &root,
-                &ambiguous,
-                &LegacyLorebookPlan { lorebooks: vec![] },
+                &mut ambiguous.clone(),
+                &mut LegacyLorebookPlan { lorebooks: vec![] },
                 &empty_asr(),
             ),
             Err(LegacyDatabasePreflightError::ConflictingMediaReference {
@@ -623,8 +741,8 @@ mod tests {
         assert_eq!(
             plan_legacy_media(
                 &root,
-                &too_many,
-                &LegacyLorebookPlan { lorebooks: vec![] },
+                &mut too_many.clone(),
+                &mut LegacyLorebookPlan { lorebooks: vec![] },
                 &empty_asr(),
             ),
             Err(LegacyDatabasePreflightError::MediaReferenceLimitExceeded {
@@ -648,8 +766,8 @@ mod tests {
         assert_eq!(
             plan_legacy_media(
                 &root,
-                &too_large,
-                &LegacyLorebookPlan { lorebooks: vec![] },
+                &mut too_large.clone(),
+                &mut LegacyLorebookPlan { lorebooks: vec![] },
                 &empty_asr(),
             ),
             Err(LegacyDatabasePreflightError::MediaObjectTooLarge {
