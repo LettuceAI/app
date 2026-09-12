@@ -164,7 +164,12 @@ pub struct NewDynamicMemoryRunAttempt {
     pub attempt_id: DynamicMemoryAttemptId,
     pub conversation_id: ConversationId,
     pub space_id: MemorySpaceId,
+    /// The memory space as the cycle sees it, after `cycle_start_change`.
     pub starting_memory: crate::MemorySpaceSnapshot,
+    /// Legacy's cycle-start pass (pinned items restored, hot items decayed),
+    /// committed in the same transaction as the run so a replay never decays
+    /// twice.
+    pub cycle_start_change: Option<crate::MemoryChangeSet>,
     pub source_messages: Vec<DynamicMemorySourceMessage>,
     pub profile: ResolvedInferenceProfile,
     pub time_awareness_enabled: bool,
@@ -175,6 +180,28 @@ pub struct NewDynamicMemoryRunAttempt {
     pub tool_request: lettuce_conversations::ToolRequest,
     pub job_id: JobId,
     pub now: TimestampMillis,
+}
+
+impl NewDynamicMemoryRunAttempt {
+    pub fn validate_cycle_start(&self) -> Result<(), DynamicMemoryRunError> {
+        let Some(change) = &self.cycle_start_change else {
+            return Ok(());
+        };
+        change
+            .validate()
+            .map_err(|_| DynamicMemoryRunError::InvalidRun)?;
+        if change.space_id != self.space_id
+            || change
+                .expected_revision
+                .next()
+                .ok()
+                .is_none_or(|next| next != self.starting_memory.revision)
+            || change.items != self.starting_memory.items
+        {
+            return Err(DynamicMemoryRunError::InvalidRun);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

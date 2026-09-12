@@ -118,6 +118,7 @@ impl<
                     time_awareness_enabled,
                     supersession_enabled,
                     structured_fallback_format,
+                    policy,
                     handle,
                     now,
                 )?;

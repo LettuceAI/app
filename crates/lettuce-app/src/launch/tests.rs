@@ -1895,6 +1895,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         cold_threshold: Score::from_basis_points(2_000).expect("score"),
         delete_confidence_default: Score::from_basis_points(5_000).expect("score"),
         max_hard_delete_ratio_per_cycle: Score::from_basis_points(5_000).expect("score"),
+        decay_rate: Score::from_basis_points(800).expect("score"),
     };
     let dispatch = crate::CompanionPostTurnMemoryRunCoordinator::new(&database, &database)
         .admit_or_recover(
@@ -1903,6 +1904,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             true,
             true,
             lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
+            &policy,
             &work.handle,
             TimestampMillis::new(NOW.get() + 12),
         )
@@ -2627,6 +2629,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             attempt_id: failure_attempt_id,
             conversation_id: current.id,
             space_id: failure_memory.id,
+            cycle_start_change: None,
             starting_memory: failure_memory,
             source_messages: vec![DynamicMemorySourceMessage {
                 message_id: continued_source.message.id,
@@ -8085,6 +8088,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
             attempt_id,
             conversation_id,
             space_id,
+            cycle_start_change: None,
             starting_memory: MemoryRepository::get(&database, space_id)
                 .expect("starting memory")
                 .expect("memory space"),
@@ -8208,6 +8212,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
         cold_threshold: Score::from_basis_points(2_000).expect("score"),
         delete_confidence_default: Score::from_basis_points(5_000).expect("score"),
         max_hard_delete_ratio_per_cycle: Score::from_basis_points(5_000).expect("score"),
+        decay_rate: Score::from_basis_points(800).expect("score"),
     };
     let memory_id = MemoryId::new();
     let coordinator =

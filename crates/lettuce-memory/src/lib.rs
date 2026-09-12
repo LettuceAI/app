@@ -48,7 +48,7 @@ pub use text::{
 pub use tool::{
     CategoryArgument, CreateMemoryPreparation, DYNAMIC_MEMORY_TOOL_TEXT_KEYS, DuplicateKind,
     DynamicMemoryToolOptions, ListedMemory, MemoryBatchResult, MemoryCycleBudget,
-    MemoryCycleFinish, MemoryReference, MemoryToolArguments, MemoryToolCall, MemoryToolError,
+    MemoryCycleFinish, MemoryCycleStart, MemoryReference, MemoryToolArguments, MemoryToolCall, MemoryToolError,
     MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
     MemoryToolSkipReason, SemanticDuplicateEvidence, SoftDeleteReason,
     dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape, list_memories,

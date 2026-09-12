@@ -863,7 +863,12 @@ propagates. After the repair pass the runner applies the reducer's
 through the memory CAS before the attempt settles; a replay finds no change. A
 revision conflict re-reads and retries twice, then keeps the cycle with a
 warning (legacy saved last-write-wins); any other storage failure settles the
-attempt as a recovery failure.
+attempt as a recovery failure. At the other end, `admit_or_recover` runs the
+reducer's `start_cycle` (legacy's pre-summary decay) on the space and admits the
+resulting change with the run, so `starting_memory` is the post-decay space and
+a recovered or replayed run never decays again; legacy's turn-effect diff was
+taken before decay, which only matters for an existing memory sourced from the
+current window whose importance changed.
 The reply itself carries no memory tools: legacy writes memories in
 a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`). Plain direct
 and group conversations now admit that cycle through

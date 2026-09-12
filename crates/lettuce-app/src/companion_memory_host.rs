@@ -275,6 +275,7 @@ where
             cold_threshold: score(dynamic.cold_threshold_basis_points)?,
             delete_confidence_default: score(dynamic.delete_confidence_basis_points)?,
             max_hard_delete_ratio_per_cycle: score(dynamic.max_hard_delete_ratio_basis_points)?,
+            decay_rate: score(dynamic.decay_rate_basis_points)?,
         };
         policy.validate().map_err(|_| {
             CompanionMemoryHostError::RuntimeInputs(

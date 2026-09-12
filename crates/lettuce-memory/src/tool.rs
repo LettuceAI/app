@@ -576,6 +576,17 @@ impl MemoryCycleBudget {
     }
 }
 
+/// The cycle-start pass legacy ran before the summary phase: pinned memories
+/// return to hot, then every hot unpinned memory decays by
+/// `decay_rate / (1 + sqrt(access_count))` and goes cold below the threshold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryCycleStart {
+    pub change: Option<MemoryChangeSet>,
+    pub restored_pinned: usize,
+    pub decayed: usize,
+    pub demoted_ids: Vec<MemoryId>,
+}
+
 /// The once-per-cycle policy pass legacy ran after the loop and the repair
 /// pass: trim to `max_entries`, then demote to the hot token budget.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -684,6 +695,52 @@ impl MemoryToolReducer {
         }
 
         Ok(MemoryBatchResult { change, results })
+    }
+
+    pub fn start_cycle(
+        &self,
+        snapshot: &MemorySpaceSnapshot,
+        policy: &MemoryPolicy,
+    ) -> Result<MemoryCycleStart, MemoryToolError> {
+        snapshot.validate()?;
+        policy.validate()?;
+        let mut items = snapshot.items.clone();
+        let restored_pinned = items
+            .iter()
+            .filter(|item| item.is_pinned && item.is_cold)
+            .count();
+        ensure_pinned_hot(&mut items);
+        let mut decayed = 0;
+        let mut demoted_ids = Vec::new();
+        for item in items.iter_mut() {
+            if item.is_cold || item.is_pinned {
+                continue;
+            }
+            let adaptive_rate =
+                policy.decay_rate.ratio() / (1.0 + f64::from(item.access_count).sqrt());
+            let next = (item.importance.ratio() - adaptive_rate).max(0.0);
+            item.importance =
+                Score::from_ratio(next).map_err(|_| MemoryToolError::InvalidField("importance"))?;
+            decayed += 1;
+            if item.importance < policy.cold_threshold {
+                item.is_cold = true;
+                demoted_ids.push(item.id);
+            }
+        }
+        let change = (items != snapshot.items).then_some(MemoryChangeSet {
+            space_id: snapshot.id,
+            expected_revision: snapshot.revision,
+            items,
+        });
+        if let Some(change) = &change {
+            change.validate()?;
+        }
+        Ok(MemoryCycleStart {
+            change,
+            restored_pinned,
+            decayed,
+            demoted_ids,
+        })
     }
 
     pub fn finish_cycle(
@@ -1139,6 +1196,7 @@ mod tests {
             cold_threshold: score(2_000),
             delete_confidence_default: score(5_000),
             max_hard_delete_ratio_per_cycle: score(5_000),
+            decay_rate: score(800),
         }
     }
 
@@ -2120,11 +2178,71 @@ mod tests {
     }
 
     #[test]
+    fn cycle_start_restores_pinned_items_and_decays_hot_ones_like_legacy() {
+        let mut pinned = item("pinned", 2, 1, true);
+        pinned.importance = score(1_000);
+        let pinned_id = pinned.id;
+        let mut fresh = item("fresh", 2, 2, false);
+        fresh.importance = score(5_000);
+        let fresh_id = fresh.id;
+        let mut visited = item("visited", 2, 3, false);
+        visited.importance = score(5_000);
+        visited.access_count = 4;
+        let visited_id = visited.id;
+        let mut fading = item("fading", 2, 4, false);
+        fading.importance = score(2_050);
+        let fading_id = fading.id;
+        let mut cold = item("cold", 2, 5, false);
+        cold.is_cold = true;
+        cold.importance = score(1_000);
+        let cold_id = cold.id;
+        let state = snapshot(vec![pinned, fresh, visited, fading, cold]);
+        let start = MemoryToolReducer
+            .start_cycle(
+                &state,
+                &MemoryPolicy {
+                    cold_threshold: score(2_000),
+                    decay_rate: score(800),
+                    ..policy()
+                },
+            )
+            .expect("cycle start");
+        assert_eq!(start.restored_pinned, 0);
+        assert_eq!(start.decayed, 3);
+        assert_eq!(start.demoted_ids, vec![fading_id]);
+        let change = start.change.expect("change");
+        let find = |id| {
+            change
+                .items
+                .iter()
+                .find(|item| item.id == id)
+                .expect("item")
+        };
+        let pinned = find(pinned_id);
+        assert!(!pinned.is_cold && pinned.importance == score(1_000));
+        assert_eq!(find(fresh_id).importance, score(4_200));
+        assert_eq!(find(visited_id).importance, score(4_733));
+        let fading = find(fading_id);
+        assert!(fading.is_cold && fading.importance == score(1_250));
+        let cold = find(cold_id);
+        assert!(cold.is_cold && cold.importance == score(1_000));
+
+        let settled = MemoryToolReducer
+            .start_cycle(&snapshot(vec![item("pinned", 2, 1, true)]), &policy())
+            .expect("nothing to decay");
+        assert!(settled.change.is_none());
+        assert_eq!((settled.restored_pinned, settled.decayed), (0, 0));
+    }
+
+    #[test]
     fn a_round_never_exceeds_the_storage_item_ceiling() {
         let items = (0..crate::model::MAX_MEMORY_ITEMS)
             .map(|index| {
-                let index = i64::try_from(index).expect("index");
-                item(&format!("memory {index}"), 1, index + 1, false)
+                let ordinal = i64::try_from(index).expect("index");
+                let mut memory = item(&format!("memory {ordinal}"), 1, ordinal + 1, false);
+                memory.short_id =
+                    MemoryShortId::new(u32::try_from(index).expect("short id")).expect("short id");
+                memory
             })
             .collect::<Vec<_>>();
         let weakest_id = items[0].id;

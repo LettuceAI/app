@@ -9,8 +9,9 @@ use lettuce_memory::{
     DynamicMemoryRunAttemptAdmission, DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError,
     DynamicMemorySourceMessage, DynamicMemoryStructuredFallbackFormat,
     DynamicMemorySummaryCheckpoint, DynamicMemorySummaryCommit, DynamicMemorySummaryWindow,
-    DynamicMemoryToolCallEvidence, MemorySummary, MemorySummaryChange, MemoryToolResult,
-    NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
+    DynamicMemoryToolCallEvidence, MemoryRepositoryError, MemorySummary, MemorySummaryChange,
+    MemoryToolResult, NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound,
+    NewDynamicMemoryRunAttempt,
 };
 use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -750,8 +751,12 @@ impl DynamicMemoryRunRepository for Database {
 
     fn admit_dynamic_memory_run_attempt(
         &self,
-        input: NewDynamicMemoryRunAttempt,
+        mut input: NewDynamicMemoryRunAttempt,
     ) -> Result<DynamicMemoryRunAttemptAdmission, DynamicMemoryRunRepositoryError> {
+        input
+            .validate_cycle_start()
+            .map_err(|_| DynamicMemoryRunRepositoryError::Invalid)?;
+        let cycle_start_change = input.cycle_start_change.take();
         let requested_run = DynamicMemoryRun {
             id: input.run_id,
             conversation_id: input.conversation_id,
@@ -795,6 +800,18 @@ impl DynamicMemoryRunRepository for Database {
             Ok(_) => return Err(DynamicMemoryRunRepositoryError::Conflict),
             Err(DynamicMemoryRunRepositoryError::NotFound) => {}
             Err(error) => return Err(error),
+        }
+        if let Some(change) = &cycle_start_change {
+            memory_adapter::compare_and_apply_in(&transaction, change).map_err(
+                |error| match error {
+                    MemoryRepositoryError::Conflict => DynamicMemoryRunRepositoryError::Conflict,
+                    MemoryRepositoryError::NotFound => DynamicMemoryRunRepositoryError::NotFound,
+                    MemoryRepositoryError::Invalid(_) => DynamicMemoryRunRepositoryError::Invalid,
+                    MemoryRepositoryError::AlreadyExists | MemoryRepositoryError::Failure(_) => {
+                        DynamicMemoryRunRepositoryError::Storage
+                    }
+                },
+            )?;
         }
         if memory_adapter::get_in(&transaction, requested_run.space_id)
             .map_err(|_| DynamicMemoryRunRepositoryError::Storage)?
@@ -1893,6 +1910,7 @@ mod tests {
                 conversation_id,
                 space_id,
                 starting_memory: database.get(space_id).expect("memory").expect("space"),
+                cycle_start_change: None,
                 source_messages: messages.clone(),
                 profile: profile(),
                 time_awareness_enabled: true,
@@ -1992,6 +2010,107 @@ mod tests {
     }
 
     #[test]
+    fn run_admission_applies_the_cycle_start_change_atomically() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let before = database.get(space_id).expect("memory").expect("space");
+        let memory_id = MemoryId::new();
+        let decayed = vec![MemoryItem {
+            id: memory_id,
+            short_id: lettuce_memory::MemoryShortId::derived(memory_id),
+            text: "The user prefers tea".into(),
+            category: MemoryCategory::Preference,
+            source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
+            token_count: 4,
+            is_cold: false,
+            is_pinned: false,
+            importance: Score::from_basis_points(4_200).expect("score"),
+            persistence_importance: Score::FULL,
+            prompt_importance: Score::FULL,
+            volatility: Score::LEGACY_VOLATILITY,
+            access_count: 0,
+            created_at: TimestampMillis::new(5),
+            last_accessed_at: TimestampMillis::new(5),
+        }];
+        let change = MemoryChangeSet {
+            space_id,
+            expected_revision: before.revision,
+            items: decayed.clone(),
+        };
+        let starting_memory = lettuce_memory::MemorySpaceSnapshot {
+            id: space_id,
+            revision: before.revision.next().expect("revision"),
+            items: decayed,
+        };
+        let admission =
+            |run_id, attempt_id, change: Option<MemoryChangeSet>| NewDynamicMemoryRunAttempt {
+                run_id,
+                attempt_id,
+                conversation_id,
+                space_id,
+                starting_memory: starting_memory.clone(),
+                cycle_start_change: change,
+                source_messages: messages.clone(),
+                profile: profile(),
+                time_awareness_enabled: false,
+                supersession_enabled: false,
+                structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                    message_interval: 2,
+                    start: 0,
+                    end: 2,
+                },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: false,
+                        supersession_enabled: false,
+                        require_source_message_id: false,
+                    },
+                    &|key| key.to_owned(),
+                ),
+                job_id: JobId::new(),
+                now: TimestampMillis::new(10),
+            };
+        let mut stale = change.clone();
+        stale.expected_revision = Revision::new(7);
+        let stale_run = DynamicMemoryRunId::new();
+        assert_eq!(
+            database
+                .admit_dynamic_memory_run_attempt(admission(
+                    stale_run,
+                    DynamicMemoryAttemptId::new(),
+                    Some(stale),
+                ))
+                .err(),
+            Some(DynamicMemoryRunRepositoryError::Invalid)
+        );
+        assert_eq!(
+            database.get(space_id).expect("memory").expect("space"),
+            before
+        );
+        let admitted = database
+            .admit_dynamic_memory_run_attempt(admission(
+                DynamicMemoryRunId::new(),
+                DynamicMemoryAttemptId::new(),
+                Some(change),
+            ))
+            .expect("admission with the cycle start change");
+        let after = database.get(space_id).expect("memory").expect("space");
+        assert_eq!(after, starting_memory);
+        assert_eq!(admitted.run.starting_memory, starting_memory);
+        assert_eq!(
+            database.load_dynamic_memory_run(stale_run).err(),
+            Some(DynamicMemoryRunRepositoryError::NotFound)
+        );
+    }
+
+    #[test]
     fn suffix_rewind_restores_the_prior_run_boundary_once() {
         let database = Database::open_in_memory().expect("database");
         let (conversation_id, space_id, messages) = conversation_fixture(&database);
@@ -2005,6 +2124,7 @@ mod tests {
                 conversation_id,
                 space_id,
                 starting_memory: database.get(space_id).expect("memory").expect("space"),
+                cycle_start_change: None,
                 source_messages: messages.clone(),
                 profile: profile(),
                 time_awareness_enabled: true,
@@ -2073,6 +2193,7 @@ mod tests {
                 conversation_id,
                 space_id,
                 starting_memory: before_second.clone(),
+                cycle_start_change: None,
                 source_messages: messages,
                 profile: profile(),
                 time_awareness_enabled: true,
@@ -2279,6 +2400,7 @@ mod tests {
                 conversation_id,
                 space_id,
                 starting_memory: database.get(space_id).expect("memory").expect("space"),
+                cycle_start_change: None,
                 source_messages: messages.clone(),
                 profile: profile(),
                 time_awareness_enabled: true,
@@ -2480,6 +2602,7 @@ mod tests {
             conversation_id,
             space_id,
             starting_memory: database.get(space_id).expect("memory").expect("space"),
+            cycle_start_change: None,
             source_messages: messages.clone(),
             profile: profile(),
             time_awareness_enabled: true,

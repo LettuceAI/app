@@ -274,6 +274,12 @@ conversation repositories and DTOs expose artifact references only and cannot
 export protected bytes. Trusted transfer remains a separate composition-only
 capability.
 
+Dynamic-memory run admission applies the optional cycle-start memory change
+(`cycle_start_change`) through the same compare-and-apply as any memory change,
+inside the transaction that inserts the run, and then requires the stored space
+to equal the run's `starting_memory`; a stale change conflicts and inserts no
+run.
+
 Migration 10 owns the append-only usage ledger. The adapter derives conversation
 ownership from the durable generation attempt, records known token counters or
 one explicit unavailable reason with immutable model/provider revisions, and

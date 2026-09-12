@@ -284,6 +284,7 @@ pub struct MemoryPolicy {
     pub cold_threshold: Score,
     pub delete_confidence_default: Score,
     pub max_hard_delete_ratio_per_cycle: Score,
+    pub decay_rate: Score,
 }
 
 impl MemoryPolicy {

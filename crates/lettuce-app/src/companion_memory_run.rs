@@ -76,6 +76,7 @@ impl<
         time_awareness_enabled: bool,
         supersession_enabled: bool,
         structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
+        policy: &lettuce_memory::MemoryPolicy,
         handle: &JobHandle,
         now: TimestampMillis,
     ) -> Result<CompanionPostTurnMemoryRunDispatch, CompanionPostTurnMemoryRunError> {
@@ -183,14 +184,41 @@ impl<
                     },
                 )?;
                 let attempt_id = stable_attempt_id(run_id, 0, handle.id());
+                let start = lettuce_memory::MemoryToolReducer
+                    .start_cycle(&snapshot, policy)
+                    .map_err(|_| CompanionPostTurnMemoryRunError::InvalidAdmission)?;
+                if start.restored_pinned > 0 || start.decayed > 0 {
+                    tracing::info!(
+                        conversation_id = %conversation_id,
+                        restored_pinned = start.restored_pinned,
+                        decayed = start.decayed,
+                        demoted = start.demoted_ids.len(),
+                        "applied the cycle-start memory decay"
+                    );
+                }
+                let (starting_memory, cycle_start_change) = match start.change {
+                    Some(change) => (
+                        lettuce_memory::MemorySpaceSnapshot {
+                            id: snapshot.id,
+                            revision: change
+                                .expected_revision
+                                .next()
+                                .map_err(|_| CompanionPostTurnMemoryRunError::InvalidAdmission)?,
+                            items: change.items.clone(),
+                        },
+                        Some(change),
+                    ),
+                    None => (snapshot, None),
+                };
                 let DynamicMemoryRunAttemptAdmission { run, attempt } = self
                     .repository
                     .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
                         run_id,
                         attempt_id,
                         conversation_id,
-                        space_id: snapshot.id,
-                        starting_memory: snapshot,
+                        space_id: starting_memory.id,
+                        starting_memory,
+                        cycle_start_change,
                         source_messages,
                         profile,
                         time_awareness_enabled,
@@ -831,6 +859,19 @@ mod tests {
         }
     }
 
+    fn policy() -> lettuce_memory::MemoryPolicy {
+        lettuce_memory::MemoryPolicy {
+            max_entries: 50,
+            hot_token_budget: 2_000,
+            cold_threshold: lettuce_memory::Score::from_basis_points(3_000).expect("score"),
+            delete_confidence_default: lettuce_memory::Score::from_basis_points(5_000)
+                .expect("score"),
+            max_hard_delete_ratio_per_cycle: lettuce_memory::Score::from_basis_points(5_000)
+                .expect("score"),
+            decay_rate: lettuce_memory::Score::from_basis_points(800).expect("score"),
+        }
+    }
+
     fn profile() -> ResolvedInferenceProfile {
         let account_id = ProviderAccountId::new();
         let profile_id = ModelProfileId::new();
@@ -1129,6 +1170,7 @@ mod tests {
                 true,
                 true,
                 DynamicMemoryStructuredFallbackFormat::Xml,
+                &policy(),
                 &first_handle,
                 TimestampMillis::new(10),
             )
@@ -1217,6 +1259,7 @@ mod tests {
                 true,
                 true,
                 DynamicMemoryStructuredFallbackFormat::Json,
+                &policy(),
                 &first_handle,
                 TimestampMillis::new(11),
             ),
@@ -1231,6 +1274,7 @@ mod tests {
                 true,
                 true,
                 DynamicMemoryStructuredFallbackFormat::Xml,
+                &policy(),
                 &first_handle,
                 TimestampMillis::new(11),
             ),
@@ -1243,6 +1287,7 @@ mod tests {
                 true,
                 false,
                 DynamicMemoryStructuredFallbackFormat::Xml,
+                &policy(),
                 &first_handle,
                 TimestampMillis::new(11),
             ),
@@ -1256,6 +1301,7 @@ mod tests {
                     true,
                     true,
                     DynamicMemoryStructuredFallbackFormat::Xml,
+                    &policy(),
                     &first_handle,
                     TimestampMillis::new(11),
                 )
@@ -1273,6 +1319,7 @@ mod tests {
                 true,
                 true,
                 DynamicMemoryStructuredFallbackFormat::Xml,
+                &policy(),
                 &first_handle,
                 TimestampMillis::new(11),
             ),
@@ -1289,6 +1336,7 @@ mod tests {
                 true,
                 true,
                 DynamicMemoryStructuredFallbackFormat::Xml,
+                &policy(),
                 &restarted_handle,
                 TimestampMillis::new(12),
             )

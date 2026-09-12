@@ -1403,6 +1403,7 @@ mod tests {
             cold_threshold: Score::ZERO,
             delete_confidence_default: Score::HARD_DELETE_THRESHOLD,
             max_hard_delete_ratio_per_cycle: Score::FULL,
+            decay_rate: Score::ZERO,
         };
         let sources = [
             MaterializedSource {

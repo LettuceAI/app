@@ -2493,6 +2493,7 @@ async fn plain_dynamic_turns_admit_and_run_a_post_turn_memory_cycle() {
                 cold_threshold: Score::from_basis_points(2_000).expect("score"),
                 delete_confidence_default: Score::from_basis_points(5_000).expect("score"),
                 max_hard_delete_ratio_per_cycle: Score::from_basis_points(5_000).expect("score"),
+                decay_rate: Score::from_basis_points(800).expect("score"),
             },
             Score::from_basis_points(9_000).expect("score"),
             &work.claim,

@@ -390,6 +390,7 @@ mod tests {
                     cold_threshold: Score::ZERO,
                     delete_confidence_default: Score::FULL,
                     max_hard_delete_ratio_per_cycle: Score::FULL,
+                    decay_rate: Score::ZERO,
                 },
                 &prepare_background_calls(
                     &round,

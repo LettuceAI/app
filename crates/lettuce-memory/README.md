@@ -25,7 +25,15 @@ included, and counts the `Deleted` outcomes of every earlier round
 (`reduce_round`); `reduce` is the first round of a fresh cycle. Capacity
 trimming and hot-budget demotion no longer run per round: `finish_cycle` applies
 them once, trim first and then demote as legacy did after its loop and repair
-pass, as one change set the application commits through the memory CAS. A round
+pass, as one change set the application commits through the memory CAS.
+`start_cycle` is legacy's pass before the summary phase: every hot unpinned
+item decays by `decay_rate / (1 + sqrt(access_count))` (importance floored at
+zero, cold below `cold_threshold`; scores round to basis points), and the
+change set is admitted with the run (`NewDynamicMemoryRunAttempt::
+cycle_start_change`, validated against the post-decay `starting_memory`) so a
+replay never decays twice. Legacy also restored pinned-but-cold items to hot
+there; the snapshot invariant already rejects that state, so `restored_pinned`
+stays zero for stored spaces. `MemoryPolicy` carries `decay_rate`. A round
 still trims to the storage ceiling (`MAX_MEMORY_ITEMS`, 4096) so a space whose
 `max_entries` equals the ceiling cannot fail validation mid-cycle; legacy had no
 ceiling. The verified scenarios are pinned in
