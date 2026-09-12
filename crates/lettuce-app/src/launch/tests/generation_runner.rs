@@ -3131,6 +3131,156 @@ async fn reply_helper_drafts_a_group_reply_with_the_whole_cast() {
     assert!(input.ends_with("Generate a reply for user to say next in this group chat."));
 }
 
+fn companion_conversation_with_processing_effect(
+    backend: &AppBackend,
+    prefix: &str,
+) -> lettuce_types::ConversationId {
+    let database = backend.database();
+    let model_id = seed_model(database, ProviderProtocol::Ollama, prefix);
+    let mut model = ModelProfileRepository::get(database, model_id)
+        .expect("model")
+        .expect("model exists");
+    let revision = model.revision;
+    model.config.chat_parameters.temperature = None;
+    model.config.capabilities.streaming = lettuce_models::CapabilityStatus::Supported;
+    model.config.capabilities.tools = lettuce_models::CapabilityStatus::Supported;
+    ModelProfileRepository::upsert(database, model, Some(revision)).expect("resolvable model");
+    set_application_default_model(database, model_id);
+    let character_id = seed_character(database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.memory_policy = MemoryPolicy::Dynamic;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let launched = ConversationLaunchPlanner::new(database)
+        .launch_direct(&request(character_id, &format!("{prefix}-launch")), NOW)
+        .expect("launch companion");
+    let sent = CompanionTurnCoordinator::<_, ScenarioEmotionEngine>::new(database, None)
+        .begin_send(
+            &direct_send_command(&launched.value.conversation, &format!("{prefix}-send"), "I missed you."),
+            TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
+        )
+        .expect("send companion message");
+    let turn_id = sent.value.turn.id;
+    let attempt_id = sent.value.attempt.id;
+    let mut turn = sent.value.turn;
+    let operation = |value: &str| OperationToken {
+        key: key(value),
+        request_digest: ContentHash::parse("ef".repeat(32)).expect("digest"),
+    };
+    for (sequence, status) in [
+        GenerationTurnStatus::Preparing,
+        GenerationTurnStatus::ContextPrepared,
+        GenerationTurnStatus::Running,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        turn = database
+            .append_event(
+                turn_id,
+                turn.revision,
+                &operation(&format!("{prefix}-stage-{sequence}")),
+                GenerationCheckpointEnvelope {
+                    turn_id,
+                    attempt_id,
+                    job_id: None,
+                    correlation_id: None,
+                    sequence: u64::try_from(sequence + 1).expect("sequence"),
+                    event: GenerationCheckpointEvent::Stage { status },
+                },
+                TimestampMillis::new(NOW.get() + 2 + i64::try_from(sequence).expect("time")),
+            )
+            .expect("advance companion turn")
+            .value;
+    }
+    let conversation = ConversationReader::get(database, launched.value.conversation.id)
+        .expect("current conversation")
+        .conversation;
+    let ConversationKind::Direct(details) = &conversation.kind else {
+        panic!("expected direct conversation");
+    };
+    let model = match &details.model {
+        SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => model.clone(),
+        SnapshotSelection::Disabled => panic!("expected resolved model"),
+    };
+    database
+        .finalize_generation(
+            turn_id,
+            attempt_id,
+            conversation.revision,
+            turn.revision,
+            &operation(&format!("{prefix}-finalize")),
+            FinalizationDraft {
+                parts: vec![MessagePart::Text {
+                    text: "I missed you too.".into(),
+                }],
+                ordinal: 0,
+                model,
+                replay: None,
+                outcome: GenerationCheckpointEvent::Completed,
+            },
+            UsageEventId::new(),
+            TimestampMillis::new(NOW.get() + 10),
+        )
+        .expect("finalize assistant");
+    conversation.id
+}
+
+#[tokio::test]
+async fn post_turn_memory_host_admits_only_this_companion_conversation_effects() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = true;
+    settings.dynamic_memory.summary_message_interval = 2;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("save dynamic memory settings");
+    let first = companion_conversation_with_processing_effect(&backend, "companion-host-a");
+    let second = companion_conversation_with_processing_effect(&backend, "companion-host-b");
+    assert_eq!(
+        CompanionTurnEffectRepository::list_processing(database, 512)
+            .expect("processing effects")
+            .len(),
+        2
+    );
+    let engine = ScenarioEmbeddingEngine;
+    let memory = scripted(Vec::new());
+    let host = backend.companion_memory_host(&engine, &memory);
+    let work = host
+        .after_turn(
+            first,
+            lettuce_conversations::GenerationOperation::Send,
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("companion after_turn");
+    assert_eq!(work.len(), 1);
+    assert_eq!(work[0].admission.batch.conversation_id, first);
+    let effects = work[0].admission.batch.effects();
+    assert_eq!(effects.len(), 1);
+    assert_eq!(effects[0].conversation_id, first);
+    let inputs = host
+        .resolve_runtime_inputs(&work[0].admission)
+        .expect("runtime inputs for a companion conversation");
+    assert!(inputs.supersession_enabled);
+    assert!(
+        CompanionTurnEffectRepository::list_processing(database, 512)
+            .expect("processing effects")
+            .iter()
+            .any(|effect| effect.conversation_id == second),
+        "the other companion conversation's effect stays untouched"
+    );
+}
+
 #[tokio::test]
 async fn preexisting_progress_checkpoint_advances_runner_stage_sequences() {
     let database = database();
