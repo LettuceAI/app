@@ -52,13 +52,18 @@ meta-marker text is skipped with its own reason, including legacy's false
 positives (a memory containing `i cannot` or `user:` is dropped). The summary
 validator shares the same normalization. Interleaved thinking tags of different
 kinds are stripped pair by pair instead of by earliest opening tag, which
-differs from legacy only for malformed output. Still missing from legacy:
-category repair for unknown categories (`retag_memory`, repair fallbacks,
-keyword guess), the raw-arguments fallback for a missing `text` argument, and
-legacy-shaped tool results (six-digit ids, `updatedMemories`). Structured
+differs from legacy only for malformed output. A create skipped for a missing or
+invalid category is re-tagged by legacy's single-tool repair contract
+(`retag_memory`, required tool choice, the six categories as an enum), whose
+prompt, parameter texts and structured fallback are catalog keys
+(`MEMORY_REPAIR_TOOL_TEXT_KEYS`, `memory_repairs_fallback_prompt_key`); a repair
+request that answers with nothing falls back to legacy's keyword buckets
+(`guess_memory_category`, first matching bucket wins). Still missing from legacy:
+the raw-arguments fallback for a missing `text` argument and legacy-shaped tool
+results (six-digit ids, `updatedMemories`). Structured
 fallback prompts are catalog keys (`memory_operations_fallback_prompt_key`).
-Runs store up to 64 inference rounds and 4096 tool calls per attempt. Companion-required source validation and supersession, provider-driven
-category repair, and UI events remain later slices. ONNX inference runtime
+Runs store up to 64 inference rounds and 4096 tool calls per attempt. Companion-required source validation and supersession
+and UI events remain later slices. ONNX inference runtime
 ownership belongs in
 `lettuce-embeddings`; this crate consumes typed duplicate evidence through the
 application coordinator.

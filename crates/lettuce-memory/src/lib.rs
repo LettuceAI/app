@@ -4,6 +4,7 @@
 
 mod model;
 mod port;
+mod repair;
 mod run;
 mod structured_fallback;
 mod text;
@@ -23,6 +24,10 @@ pub use port::{
     MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalAccessReceipt,
     MemoryRetrievalRepository, MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository,
 };
+pub use repair::{
+    MEMORY_CATEGORIES, MEMORY_REPAIR_TOOL_NAME, MEMORY_REPAIR_TOOL_TEXT_KEYS,
+    guess_memory_category, memory_repair_tool_request, memory_repairs_fallback_prompt_key,
+};
 pub use run::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
     DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound, DynamicMemoryRoundFinishReason,
@@ -35,7 +40,7 @@ pub use run::{
 };
 pub use structured_fallback::{
     StructuredFallbackError, memory_operations_fallback_prompt_key,
-    parse_memory_operations_from_text,
+    parse_memory_operations_from_text, parse_memory_repairs_from_text,
 };
 pub use text::{
     MemoryTextProblem, collapse_whitespace, normalize_llm_output_text, normalize_memory_text,

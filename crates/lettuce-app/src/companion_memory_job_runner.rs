@@ -89,7 +89,7 @@ impl<
         handle: &JobHandle,
         stream_sink: Option<RequestId>,
         now: TimestampMillis,
-        seeds_for_round: F,
+        mut seeds_for_round: F,
     ) -> Result<CompanionMemoryJobRunResult, CompanionMemoryJobRunError>
     where
         F: FnMut(&DynamicMemoryInferenceRound) -> Vec<MemoryCreateSeed>,
@@ -179,7 +179,7 @@ impl<
                 return Err(CompanionMemoryJobRunError::Inference(error));
             }
         };
-        let loop_result =
+        let mut loop_result =
             match CompanionMemoryLoopCoordinator::new(self.engine, self.repository, self.inference)
                 .run_until_done(
                     dispatch.run.id,
@@ -191,7 +191,7 @@ impl<
                     handle,
                     stream_sink,
                     now,
-                    seeds_for_round,
+                    &mut seeds_for_round,
                 )
                 .await
             {
@@ -208,6 +208,56 @@ impl<
                     return Err(CompanionMemoryJobRunError::Loop(error));
                 }
             };
+        let repaired =
+            match crate::CompanionMemoryRepairCoordinator::new(self.repository, self.inference)
+                .repair_round(&dispatch.run, dispatch.attempt.id, handle, stream_sink, now)
+                .await
+            {
+                Ok(round) => round,
+                Err(crate::CompanionMemoryRepairError::Cancelled) => {
+                    CompanionMemoryTerminalCoordinator::new(self.repository).settle_failure(
+                        dispatch.run.id,
+                        dispatch.attempt.id,
+                        &admission.batch,
+                        handle,
+                        CompanionMemoryTerminalFailure::Cancelled,
+                        now,
+                    )?;
+                    return Err(CompanionMemoryJobRunError::Repair(
+                        crate::CompanionMemoryRepairError::Cancelled,
+                    ));
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        run_id = %dispatch.run.id,
+                        %error,
+                        "memory category repair did not run; keeping the cycle"
+                    );
+                    None
+                }
+            };
+        if let Some(round) = repaired {
+            let seeds = seeds_for_round(&round);
+            let executed = crate::CompanionMemoryRoundExecutor::new(self.engine, self.repository)
+                .execute_round(
+                    dispatch.run.id,
+                    dispatch.attempt.id,
+                    round.ordinal,
+                    policy,
+                    &seeds,
+                    duplicate_threshold,
+                    claim,
+                    handle,
+                    now,
+                )
+                .map_err(|error| {
+                    CompanionMemoryJobRunError::Loop(CompanionMemoryLoopError::Execution(error))
+                })?;
+            loop_result
+                .projection_repairs_pending
+                .extend(executed.projection_repairs_pending);
+            loop_result.completed_rounds = loop_result.completed_rounds.saturating_add(1);
+        }
         let terminal = CompanionMemoryTerminalCoordinator::new(self.repository).settle_success(
             dispatch.run.id,
             dispatch.attempt.id,
@@ -241,6 +291,8 @@ pub enum CompanionMemoryJobRunError {
     Conversation(lettuce_conversations::ConversationRepositoryError),
     #[error("background memory settings are unavailable: {0}")]
     Settings(lettuce_settings::GlobalSettingsStoreError),
+    #[error("background memory category repair failed: {0}")]
+    Repair(crate::CompanionMemoryRepairError),
 }
 
 impl CompanionMemoryJobRunError {
@@ -251,6 +303,7 @@ impl CompanionMemoryJobRunError {
                 Some(CompanionMemoryTerminalFailure::from_inference_error(error))
             }
             Self::Loop(error) => Some(CompanionMemoryTerminalFailure::from_loop_error(error)),
+            Self::Repair(_) => Some(CompanionMemoryTerminalFailure::Cancelled),
             Self::Admission(_) | Self::Terminal(_) | Self::Conversation(_) | Self::Settings(_) => {
                 None
             }

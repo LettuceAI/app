@@ -805,6 +805,7 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "draft_item_id"
             | "tool_name"
             | "tool_error"
+            | "memory_categories"
     )
 }
 
@@ -1382,9 +1383,15 @@ mod tests {
             "elapsed_months",
             "elapsed_year",
             "elapsed_years",
+            "memory_repair_rules",
+            "memory_repair_input",
+            "memory_repair_line",
+            "memory_repair_fallback_json",
+            "memory_repair_fallback_xml",
         ];
         for key in lettuce_memory::DYNAMIC_MEMORY_TOOL_TEXT_KEYS
             .into_iter()
+            .chain(lettuce_memory::MEMORY_REPAIR_TOOL_TEXT_KEYS)
             .chain(line_keys)
         {
             assert!(

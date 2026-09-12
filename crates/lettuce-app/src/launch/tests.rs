@@ -2097,7 +2097,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             outcomes: Mutex::new(VecDeque::from([Err(PortError::Unavailable)])),
             requests: Mutex::new(Vec::new()),
         };
-        let failed = crate::run_memory_request_with_fallback(&repository, &inference, &work.handle, memory_request.clone(), lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml, NOW).await;
+        let failed = crate::run_memory_request_with_fallback(&repository, &inference, &work.handle, memory_request.clone(), lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml, crate::MemoryFallbackKind::Operations, NOW).await;
         assert!(matches!(failed, Err(crate::CompanionMemoryInferenceError::Run(lettuce_memory::DynamicMemoryRunRepositoryError::Storage))));
         assert_eq!(inference.requests.lock().expect("requests").len(), usize::from(!fail_admission));
     }

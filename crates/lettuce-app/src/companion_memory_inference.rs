@@ -174,6 +174,7 @@ impl<
             handle,
             request,
             run.structured_fallback_format,
+            MemoryFallbackKind::Operations,
             now,
         )
         .await
@@ -236,12 +237,30 @@ impl<
     }
 }
 
+/// Which structured fallback a request falls back to when the model answers
+/// without tool calls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MemoryFallbackKind {
+    Operations,
+    Repairs,
+}
+
+impl MemoryFallbackKind {
+    fn prompt_key(self, format: DynamicMemoryStructuredFallbackFormat) -> &'static str {
+        match self {
+            Self::Operations => memory_operations_fallback_prompt_key(format),
+            Self::Repairs => lettuce_memory::memory_repairs_fallback_prompt_key(format),
+        }
+    }
+}
+
 pub(crate) async fn run_memory_request_with_fallback<R, I>(
     repository: &R,
     inference: &I,
     handle: &JobHandle,
     request: InferenceRequest,
     format: DynamicMemoryStructuredFallbackFormat,
+    kind: MemoryFallbackKind,
     now: TimestampMillis,
 ) -> Result<InferenceOutcome, CompanionMemoryInferenceError>
 where
@@ -279,7 +298,7 @@ where
     }
     let fallback_prompt =
         crate::runtime_text::RuntimeText::load(repository, crate::BuiltInPromptId::MemoryRuntime)
-            .and_then(|text| text.render_with(memory_operations_fallback_prompt_key(format), []));
+            .and_then(|text| text.render_with(kind.prompt_key(format), []));
     let fallback_prompt = match fallback_prompt {
         Ok(prompt) => prompt,
         Err(_) => {
@@ -325,7 +344,7 @@ where
                 });
             }
         };
-    let parsed = parse_fallback_outcome(&mut outcome, format);
+    let parsed = parse_fallback_outcome(&mut outcome, format, kind);
     if let Err(error) = parsed {
         if let Some(primary) = &primary {
             cleanup_outcome_replays(repository, primary)?;
@@ -375,6 +394,7 @@ where
 fn parse_fallback_outcome(
     outcome: &mut InferenceOutcome,
     format: DynamicMemoryStructuredFallbackFormat,
+    kind: MemoryFallbackKind,
 ) -> Result<(), CompanionMemoryInferenceError> {
     outcome
         .validate()
@@ -393,9 +413,34 @@ fn parse_fallback_outcome(
     if text.is_empty() {
         return Err(CompanionMemoryInferenceError::NoToolCalls);
     }
-    let mut calls = parse_memory_operations_from_text(&text, format)
-        .map_err(|_| CompanionMemoryInferenceError::NoToolCalls)?;
-    if calls.is_empty() {
+    let mut calls = match kind {
+        MemoryFallbackKind::Operations => parse_memory_operations_from_text(&text, format)
+            .map_err(|_| CompanionMemoryInferenceError::NoToolCalls)?,
+        MemoryFallbackKind::Repairs => {
+            lettuce_memory::parse_memory_repairs_from_text(&text, format)
+                .map_err(|_| CompanionMemoryInferenceError::NoToolCalls)?
+                .into_iter()
+                .enumerate()
+                .map(
+                    |(index, (text, category))| lettuce_conversations::ProposedToolCall {
+                        provider_call_id: Some(format!("fallback_repair_{}", index + 1)),
+                        name: lettuce_memory::MEMORY_REPAIR_TOOL_NAME.to_owned(),
+                        arguments: serde_json::json!({
+                            "text": text,
+                            "category": category.as_str()
+                        }),
+                        raw_arguments: None,
+                        provider_replay: None,
+                    },
+                )
+                .collect()
+        }
+    };
+    if kind == MemoryFallbackKind::Repairs {
+        if calls.is_empty() {
+            return Err(CompanionMemoryInferenceError::NoToolCalls);
+        }
+    } else if calls.is_empty() {
         calls.push(lettuce_conversations::ProposedToolCall {
             provider_call_id: Some("fallback_done".to_owned()),
             name: "done".to_owned(),
@@ -1060,6 +1105,7 @@ mod tests {
             &JobHandle::new(job_id),
             fallback_request(),
             DynamicMemoryStructuredFallbackFormat::Xml,
+            MemoryFallbackKind::Operations,
             TimestampMillis::new(1),
         )
         .await
@@ -1115,6 +1161,7 @@ mod tests {
             &JobHandle::new(job_id),
             fallback_request(),
             DynamicMemoryStructuredFallbackFormat::Json,
+            MemoryFallbackKind::Operations,
             TimestampMillis::new(1),
         )
         .await
@@ -1176,6 +1223,7 @@ mod tests {
                     &JobHandle::new(job_id),
                     fallback_request(),
                     DynamicMemoryStructuredFallbackFormat::Xml,
+                    MemoryFallbackKind::Operations,
                     TimestampMillis::new(1)
                 )
                 .await,
@@ -1212,6 +1260,7 @@ mod tests {
             &handle,
             fallback_request(),
             DynamicMemoryStructuredFallbackFormat::Xml,
+            MemoryFallbackKind::Operations,
             TimestampMillis::new(1),
         )
         .await;

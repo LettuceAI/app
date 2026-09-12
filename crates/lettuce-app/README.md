@@ -833,6 +833,16 @@ with it, rounds continue until `done` or `recursive_memory_loop_hard_cap`
 (bounded by the 64-round storage limit), and reaching the cap ends the cycle
 normally instead of failing it. A recursive round that returns no tool calls (even after the
 structured fallback) also ends the cycle normally, as legacy did.
+After the loop and before the run settles, every create the rounds skipped for a
+missing or invalid category is re-tagged once through the memory-owned
+`retag_memory` contract, rendered from the same `prompt_app_memory_runtime`
+document (repair rules, numbered input lines, the category list and its
+JSON/XML fallback). Answered candidates are admitted as one final round of
+`create_memory` calls that the round executor applies like any other round;
+candidates the request leaves unanswered are dropped, and a request that answers
+with nothing usable falls back to legacy's keyword guess for all of them. A
+failed or empty repair request leaves the cycle's result untouched; only
+cancellation propagates.
 The reply itself carries no memory tools: legacy writes memories in
 a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`). Plain direct
 and group conversations now admit that cycle through

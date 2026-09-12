@@ -165,6 +165,7 @@ impl<
             handle,
             request,
             run.structured_fallback_format,
+            crate::companion_memory_inference::MemoryFallbackKind::Operations,
             now,
         )
         .await

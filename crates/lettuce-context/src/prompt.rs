@@ -992,6 +992,7 @@ pub enum PromptVariable {
     DraftItemId,
     ToolName,
     ToolError,
+    MemoryCategories,
 }
 
 impl PromptVariable {
@@ -1129,6 +1130,7 @@ impl PromptVariable {
             Self::DraftItemId => "{{draft_item_id}}",
             Self::ToolName => "{{tool_name}}",
             Self::ToolError => "{{tool_error}}",
+            Self::MemoryCategories => "{{memory_categories}}",
         }
     }
 
@@ -1265,6 +1267,7 @@ impl PromptVariable {
         Self::DraftItemId,
         Self::ToolName,
         Self::ToolError,
+        Self::MemoryCategories,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.

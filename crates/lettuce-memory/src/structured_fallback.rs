@@ -335,6 +335,136 @@ fn parse_xml(raw: &str) -> Result<Vec<ProposedToolCall>, StructuredFallbackError
     Ok(calls)
 }
 
+const REPAIR_ROOT_TAGS: &[&str] = &["memory_repairs", "items"];
+
+/// The categories a repair fallback response assigned, keyed by the exact
+/// memory text it repaired.
+pub fn parse_memory_repairs_from_text(
+    raw: &str,
+    format: DynamicMemoryStructuredFallbackFormat,
+) -> Result<Vec<(String, crate::MemoryCategory)>, StructuredFallbackError> {
+    match format {
+        DynamicMemoryStructuredFallbackFormat::Json => parse_repairs_json(raw),
+        DynamicMemoryStructuredFallbackFormat::Xml => parse_repairs_xml(raw),
+    }
+}
+
+fn parse_repairs_json(
+    raw: &str,
+) -> Result<Vec<(String, crate::MemoryCategory)>, StructuredFallbackError> {
+    let normalized = normalize(raw);
+    let value: Value = serde_json::from_str(json_snippet(&normalized).unwrap_or(&normalized))
+        .map_err(|_| StructuredFallbackError::InvalidJson)?;
+    let items = match &value {
+        Value::Array(items) => items,
+        Value::Object(map) => map
+            .get("items")
+            .or_else(|| map.get("repairs"))
+            .or_else(|| map.get("results"))
+            .and_then(Value::as_array)
+            .ok_or(StructuredFallbackError::InvalidJson)?,
+        _ => return Err(StructuredFallbackError::InvalidJson),
+    };
+    Ok(items
+        .iter()
+        .filter_map(|item| {
+            repair_entry(item.get("text")?.as_str()?, item.get("category")?.as_str()?)
+        })
+        .collect())
+}
+
+fn parse_repairs_xml(
+    raw: &str,
+) -> Result<Vec<(String, crate::MemoryCategory)>, StructuredFallbackError> {
+    let normalized = normalize(raw);
+    let mut reader = Reader::from_str(&normalized);
+    reader.config_mut().trim_text(false);
+    let mut buffer = Vec::new();
+    let mut root_seen = false;
+    let mut current = None;
+    let mut current_field = None;
+    let mut repairs = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Start(event)) => {
+                let tag = String::from_utf8_lossy(event.name().as_ref()).into_owned();
+                if !root_seen && REPAIR_ROOT_TAGS.contains(&tag.as_str()) {
+                    root_seen = true;
+                } else if root_seen && current.is_none() && tag == "item" {
+                    current = Some(operation_arguments(&event));
+                } else if current.is_some() {
+                    current_field = Some(tag);
+                }
+            }
+            Ok(Event::Empty(event)) => {
+                let tag = String::from_utf8_lossy(event.name().as_ref()).into_owned();
+                if !root_seen && REPAIR_ROOT_TAGS.contains(&tag.as_str()) {
+                    root_seen = true;
+                } else if root_seen && tag == "item" {
+                    push_repair(&mut repairs, operation_arguments(&event));
+                }
+            }
+            Ok(Event::Text(event)) => {
+                if let (Some(field), Some(arguments)) = (current_field.as_deref(), current.as_mut())
+                {
+                    let encoded = String::from_utf8_lossy(event.as_ref());
+                    let text =
+                        unescape(&encoded).map_err(|_| StructuredFallbackError::InvalidXml)?;
+                    append(arguments, field, &text);
+                }
+            }
+            Ok(Event::CData(event)) => {
+                if let (Some(field), Some(arguments)) = (current_field.as_deref(), current.as_mut())
+                {
+                    append(arguments, field, &String::from_utf8_lossy(event.as_ref()));
+                }
+            }
+            Ok(Event::GeneralRef(event)) => {
+                if let (Some(field), Some(arguments)) = (current_field.as_deref(), current.as_mut())
+                {
+                    append(arguments, field, &decode_reference(event)?);
+                }
+            }
+            Ok(Event::End(event)) => {
+                let tag = String::from_utf8_lossy(event.name().as_ref()).into_owned();
+                if current_field.as_deref() == Some(tag.as_str()) {
+                    current_field = None;
+                } else if tag == "item"
+                    && let Some(arguments) = current.take()
+                {
+                    push_repair(&mut repairs, arguments);
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => return Err(StructuredFallbackError::InvalidXml),
+            _ => {}
+        }
+        buffer.clear();
+    }
+    if !root_seen {
+        return Err(StructuredFallbackError::InvalidXml);
+    }
+    Ok(repairs)
+}
+
+fn push_repair(repairs: &mut Vec<(String, crate::MemoryCategory)>, arguments: Map<String, Value>) {
+    let text = arguments.get("text").and_then(Value::as_str);
+    let category = arguments.get("category").and_then(Value::as_str);
+    if let (Some(text), Some(category)) = (text, category)
+        && let Some(entry) = repair_entry(text, category)
+    {
+        repairs.push(entry);
+    }
+}
+
+fn repair_entry(text: &str, category: &str) -> Option<(String, crate::MemoryCategory)> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    crate::MemoryCategory::parse(category.trim()).map(|category| (text.to_owned(), category))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum StructuredFallbackError {
     #[error("fallback response did not contain valid JSON operations")]
@@ -377,5 +507,40 @@ mod tests {
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].provider_call_id.as_deref(), Some("json_op_1"));
         assert_eq!(calls[1].arguments, json!({"summary":"captured"}));
+    }
+
+    #[test]
+    fn parses_legacy_repair_fallbacks_in_both_formats() {
+        let xml = parse_memory_repairs_from_text(
+            "```xml\n<memory_repairs><item><text>Mira prefers tea </text><category>preference</category></item><item text=\"Ari sails\" category=\"plot_event\" /><item><text>bad</text><category>milestone</category></item></memory_repairs>\n```",
+            DynamicMemoryStructuredFallbackFormat::Xml,
+        )
+        .expect("xml repairs");
+        assert_eq!(
+            xml,
+            vec![
+                (
+                    "Mira prefers tea".to_owned(),
+                    crate::MemoryCategory::Preference
+                ),
+                ("Ari sails".to_owned(), crate::MemoryCategory::PlotEvent),
+            ]
+        );
+        let json = parse_memory_repairs_from_text(
+            "{\"results\":[{\"text\":\" Mira prefers tea \",\"category\":\"preference\"},{\"text\":\"\",\"category\":\"other\"}]}",
+            DynamicMemoryStructuredFallbackFormat::Json,
+        )
+        .expect("json repairs");
+        assert_eq!(
+            json,
+            vec![(
+                "Mira prefers tea".to_owned(),
+                crate::MemoryCategory::Preference
+            )]
+        );
+        assert_eq!(
+            parse_memory_repairs_from_text("not xml", DynamicMemoryStructuredFallbackFormat::Xml),
+            Err(StructuredFallbackError::InvalidXml)
+        );
     }
 }
