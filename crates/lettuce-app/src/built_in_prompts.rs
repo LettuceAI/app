@@ -1540,6 +1540,43 @@ mod tests {
         assert_eq!(rendered_sections(&populated), 2);
     }
 
+    #[test]
+    fn companion_continuity_drops_the_scheduled_section_without_notes() {
+        let catalog = BuiltInPromptCatalog::bundled().expect("catalog");
+        let document = outcome(
+            catalog.seed(BuiltInPromptId::Companion),
+            TimestampMillis::new(1),
+        )
+        .document;
+        let continuity = |context: &PromptRenderContext| {
+            render_prompt(&document, context)
+                .expect("render companion")
+                .in_chat
+                .into_iter()
+                .find(|message| message.content.starts_with("# Relationship Continuity"))
+                .expect("continuity entry")
+                .content
+        };
+        let mut context = PromptRenderContext::default();
+        context.conditions.companion_mode_enabled = true;
+        context.values.context_summary = "Mira reached the harbor.".into();
+        context
+            .values
+            .purpose_values
+            .insert(PromptVariable::CompanionState, "Warm.".into());
+        let without_notes = continuity(&context);
+        assert!(!without_notes.contains("Scheduled Background Context"));
+        assert!(without_notes.contains("## Live Companion State\nWarm.\n\n## Key Memories\n"));
+        context
+            .values
+            .purpose_values
+            .insert(PromptVariable::ScheduledNotes, "- Dentist at noon".into());
+        let with_notes = continuity(&context);
+        assert!(with_notes.contains(
+            "## Live Companion State\nWarm.\n\n## Scheduled Background Context\n- Dentist at noon\n\n## Key Memories\n"
+        ));
+    }
+
     #[derive(Default)]
     struct FakeBootstrap {
         calls: Mutex<Vec<BuiltInReconcileRequest>>,

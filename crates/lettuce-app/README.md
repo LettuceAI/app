@@ -217,7 +217,11 @@ assembly reads the current authored Soul/prompting config, character-owned
 Soul state, conversation/persona-scoped runtime state, and current persona
 name, then renders the legacy prompt-state block with the stored continuity
 episode at the source message's effective clock through the existing typed
-`companion_state` placeholder.
+`companion_state` placeholder. The bundled companion continuity entry drops its
+"Scheduled Background Context" sub-section through an `{{#if scheduled_notes}}`
+condition when no scheduled notes exist, where legacy stripped the rendered
+heading from the string afterwards (`prompt_engine.rs` 4349-4350) and left four
+newlines behind; that whitespace-only difference is deliberate.
 Roleplay and group assembly do not read companion state. Missing or corrupt
 companion state fails assembly closed, and the composition root exposes the
 fully wired assembler over the shared database ports.
