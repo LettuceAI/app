@@ -238,8 +238,12 @@ legacy left the literal placeholders in group prompts; that is a deliberate
 correction. Legacy applied the clock whenever time awareness was on without
 checking companion mode, but only companion sessions could turn it on, so the
 companion requirement changes nothing reachable. A replayed attempt formats its
-memory lines with the clock settings current at replay. Stripping stamps a model
-echoes and temporal-range retrieval are not ported yet.
+memory lines with the clock settings current at replay. With time awareness the
+generation runner also strips timestamps the model echoed from every text part
+of the final candidate before the empty-reply check (legacy
+`strip_echoed_time_stamps`: `<time>` tags and the old bracket stamp anywhere, one
+invented leading stamp, then trim); the replay input constructor resolves the same
+flag. Temporal-range retrieval is not ported yet.
 Roleplay and group assembly do not read companion state. Missing or corrupt
 companion state fails assembly closed, and the composition root exposes the
 fully wired assembler over the shared database ports.

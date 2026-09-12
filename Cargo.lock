@@ -1259,6 +1259,7 @@ dependencies = [
  "lettuce-types",
  "lettuce-usage",
  "rand 0.8.8",
+ "regex",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

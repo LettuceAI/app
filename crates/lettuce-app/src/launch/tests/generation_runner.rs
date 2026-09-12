@@ -131,6 +131,7 @@ fn scenario_with_resolvable_profile(
 
 fn input(scenario: &Scenario) -> ConversationGenerationInput {
     ConversationGenerationInput {
+        strip_time_stamps: false,
         model: scenario.model.clone(),
         attributions: Default::default(),
         profile: ResolvedInferenceProfile {
@@ -4048,4 +4049,29 @@ async fn derived_operation_tokens_are_stable_and_replay_recorded_operations() {
         .expect("replay");
     assert_eq!(records(&database), first);
     assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+}
+
+#[tokio::test]
+async fn time_aware_generation_strips_echoed_time_stamps_before_finalizing() {
+    let database = database();
+    let scenario = scenario(&database, false, "strip-stamps");
+    let work = admit_and_claim(&database, &scenario, 1_015);
+    let inference = scripted(vec![text_outcome(
+        "strip-stamps-response",
+        "<time>2026-03-12 18:00</time> Hey, you're up late.",
+        9,
+        3,
+    )]);
+    let mut stamped_input = input(&scenario);
+    stamped_input.strip_time_stamps = true;
+    let result = ConversationGenerationJobRunner::new(&database, &inference)
+        .run(&work, stamped_input, TimestampMillis::new(1_020))
+        .await
+        .expect("run with time awareness");
+    assert_eq!(
+        result.candidate.parts,
+        vec![lettuce_conversations::MessagePart::Text {
+            text: "Hey, you're up late.".into(),
+        }]
+    );
 }

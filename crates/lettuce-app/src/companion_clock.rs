@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use chrono::{Datelike, Local, LocalResult, TimeZone};
 use lettuce_characters::{CharacterRepository, InteractionMode, RepositoryError};
 use lettuce_companions::{
@@ -7,6 +9,7 @@ use lettuce_conversations::{
     CompanionClockSettings, Conversation, ConversationKind, PromptRuntimeValues, SnapshotSelection,
 };
 use lettuce_types::TimestampMillis;
+use regex::Regex;
 
 /// Legacy `is_companion_mode` and the session time preferences of one
 /// conversation: a direct chat is a companion chat when its live character is
@@ -110,13 +113,94 @@ pub(crate) fn fill_time_values(values: &mut PromptRuntimeValues, reference: Time
     }
 }
 
+fn tagged_time_stamp() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(r"(?im)<\s*time\s*>[^<>\n]{0,48}(?:<\s*/\s*time\s*>|$)\s*")
+            .expect("valid tagged timestamp regex")
+    })
+}
+
+fn bracket_time_stamp() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(
+            r"(?i)\[\s*(?:[a-z]{3,9}\s+)?\d{1,2}:\d{2}\s*(?:am|pm)\s*,?\s*\d{4}-\d{2}-\d{2}\s*\]\s*",
+        )
+        .expect("valid bracket timestamp regex")
+    })
+}
+
+fn leading_invented_time_stamp() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(
+            r"(?i)^\s*[\[\(\*]{1,2}\s*(?:[a-z]{3,9},?\s+){0,2}\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?\s*,?\s*(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|(?:[a-z]{3,9}\s+)?\d{1,2},?\s*\d{4})?\s*[\]\)\*]{1,2}[\s,:\-]*",
+        )
+        .expect("valid leading invented timestamp regex")
+    })
+}
+
+/// Legacy `strip_echoed_time_stamps`: removes `<time>` tags and the older
+/// bracket stamp anywhere, plus one invented stamp at the start of the reply,
+/// so a model's own timestamps are never persisted; roleplay brackets stay.
+pub(crate) fn strip_echoed_time_stamps(text: &str) -> String {
+    let without_tags = tagged_time_stamp().replace_all(text, "");
+    let without_brackets = bracket_time_stamp().replace_all(&without_tags, "");
+    leading_invented_time_stamp()
+        .replace(&without_brackets, "")
+        .trim()
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::{DateTime, Local, TimeZone};
     use lettuce_conversations::PromptRuntimeValues;
     use lettuce_types::TimestampMillis;
 
-    use super::fill_time_values;
+    use super::{fill_time_values, strip_echoed_time_stamps};
+
+    #[test]
+    fn echoed_time_stamps_are_stripped_like_legacy() {
+        assert_eq!(
+            strip_echoed_time_stamps("<time>Thu 6:50 PM, 2026-03-12</time> Hey, you're up late."),
+            "Hey, you're up late."
+        );
+        assert_eq!(
+            strip_echoed_time_stamps("<time>Thu 6:50 PM, 2026-03-12\nHey, you're up late."),
+            "Hey, you're up late."
+        );
+        assert_eq!(
+            strip_echoed_time_stamps("[Thu 6:50 PM, 2026-03-12] Hey."),
+            "Hey."
+        );
+        assert_eq!(strip_echoed_time_stamps("[6:50 PM] Hey."), "Hey.");
+        assert_eq!(strip_echoed_time_stamps("(Thursday, 6:50 PM) Hey."), "Hey.");
+        assert_eq!(strip_echoed_time_stamps("**6:50 AM** Hey."), "Hey.");
+        assert_eq!(
+            strip_echoed_time_stamps("[2026-03-12 18:50] Hey."),
+            "[2026-03-12 18:50] Hey."
+        );
+    }
+
+    #[test]
+    fn roleplay_brackets_and_mid_message_clocks_survive_stamp_stripping() {
+        assert_eq!(
+            strip_echoed_time_stamps("[she smiles] Hey."),
+            "[she smiles] Hey."
+        );
+        assert_eq!(
+            strip_echoed_time_stamps("[she checks her watch at 6:50] Hey."),
+            "[she checks her watch at 6:50] Hey."
+        );
+        assert_eq!(
+            strip_echoed_time_stamps("*she smiles* Hey."),
+            "*she smiles* Hey."
+        );
+        let text = "I'll be there at 6:50 PM, promise.";
+        assert_eq!(strip_echoed_time_stamps(text), text);
+    }
 
     #[test]
     fn time_values_follow_the_reference_time_and_keep_caller_values() {

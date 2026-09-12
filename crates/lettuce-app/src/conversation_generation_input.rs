@@ -442,6 +442,15 @@ where
             .resolved_model
             .clone()
             .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let aggregate = ConversationReader::get(self.repository, work.conversation_id)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        let clock = crate::companion_clock::companion_clock_context(
+            self.repository,
+            &aggregate.conversation,
+        )
+        .map_err(|_| {
+            ConversationGenerationInputError::Context(ContextAssemblyError::ConversationUnavailable)
+        })?;
         let mut request = record.request;
         request.attempt_id = work.attempt_id;
         request.cancellation = Some(work.handle.id());
@@ -453,6 +462,7 @@ where
             context: request.context,
             media_grants: request.media_grants,
             stream_sink: request.stream_sink,
+            strip_time_stamps: clock.time_awareness_enabled(),
         }))
     }
 
@@ -1025,6 +1035,7 @@ where
             context,
             media_grants,
             stream_sink: runtime.stream_sink,
+            strip_time_stamps: clock.time_awareness_enabled(),
         })
     }
 

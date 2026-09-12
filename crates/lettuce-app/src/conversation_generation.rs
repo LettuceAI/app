@@ -333,6 +333,7 @@ pub struct ConversationGenerationInput {
     pub context: ProviderNeutralContext,
     pub media_grants: Vec<AssetId>,
     pub stream_sink: Option<RequestId>,
+    pub strip_time_stamps: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -722,6 +723,13 @@ impl<
             | lettuce_conversations::FinishReason::Length => {}
         }
         let mut candidate = outcome.candidates[0].clone();
+        if input.strip_time_stamps {
+            for part in &mut candidate.parts {
+                if let MessagePart::Text { text } = part {
+                    *text = crate::companion_clock::strip_echoed_time_stamps(text);
+                }
+            }
+        }
         if !candidate.tool_calls.is_empty() {
             return Err(ConversationGenerationRunError::Provider {
                 error: PortError::Rejected,
