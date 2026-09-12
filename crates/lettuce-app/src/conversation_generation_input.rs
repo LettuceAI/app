@@ -444,13 +444,18 @@ where
             .ok_or(ConversationGenerationInputError::MissingModel)?;
         let aggregate = ConversationReader::get(self.repository, work.conversation_id)
             .map_err(ConversationGenerationInputError::Repository)?;
-        let clock = crate::companion_clock::companion_clock_context(
+        let strip_time_stamps = match crate::companion_clock::companion_clock_context(
             self.repository,
             &aggregate.conversation,
-        )
-        .map_err(|_| {
-            ConversationGenerationInputError::Context(ContextAssemblyError::ConversationUnavailable)
-        })?;
+        ) {
+            Ok(clock) => clock.time_awareness_enabled(),
+            Err(crate::companion_clock::CompanionClockError::MissingCharacter) => false,
+            Err(_) => {
+                return Err(ConversationGenerationInputError::Context(
+                    ContextAssemblyError::ConversationUnavailable,
+                ));
+            }
+        };
         let mut request = record.request;
         request.attempt_id = work.attempt_id;
         request.cancellation = Some(work.handle.id());
@@ -462,7 +467,7 @@ where
             context: request.context,
             media_grants: request.media_grants,
             stream_sink: request.stream_sink,
-            strip_time_stamps: clock.time_awareness_enabled(),
+            strip_time_stamps,
         }))
     }
 

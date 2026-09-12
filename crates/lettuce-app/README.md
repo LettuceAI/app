@@ -243,7 +243,11 @@ generation runner also strips timestamps the model echoed from every text part
 of the final candidate before the empty-reply check (legacy
 `strip_echoed_time_stamps`: `<time>` tags and the old bracket stamp anywhere, one
 invented leading stamp, then trim); the replay input constructor resolves the same
-flag. Temporal-range retrieval is not ported yet.
+flag, treating a character deleted after dispatch as no time awareness so the
+recorded request still recovers. Legacy stripped after its empty-response check,
+so a reply that was only a timestamp was saved as an empty message; stripping
+first makes it an empty-reply failure, a deliberate correction. Temporal-range
+retrieval is not ported yet.
 Roleplay and group assembly do not read companion state. Missing or corrupt
 companion state fails assembly closed, and the composition root exposes the
 fully wired assembler over the shared database ports.
