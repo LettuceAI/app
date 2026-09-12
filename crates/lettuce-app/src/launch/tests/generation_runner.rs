@@ -3061,6 +3061,77 @@ async fn reply_helper_drafts_the_next_user_message_from_live_settings() {
 }
 
 #[tokio::test]
+async fn reply_helper_drafts_a_group_reply_with_the_whole_cast() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let (scenario, _) = group_scenario(
+        &backend,
+        "reply-helper-group",
+        lettuce_characters::SpeakerSelection::RoundRobin,
+        false,
+    );
+    let inference = scripted(vec![text_outcome(
+        "group-reply-helper-draft",
+        "Shall we all sit down?",
+        9,
+        4,
+    )]);
+    let helper = backend.reply_helper(&inference);
+    let drafted = helper
+        .generate(
+            &crate::ReplyHelperRequest {
+                conversation_id: scenario.conversation_id,
+                request_id: RequestId::new(),
+                current_draft: None,
+                swap_places: true,
+            },
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .await
+        .expect("draft a group reply");
+    assert_eq!(drafted.text, "Shall we all sit down?");
+    assert_eq!(drafted.job.state, JobState::Succeeded);
+    let sent = {
+        let requests = inference.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 1);
+        requests[0].clone()
+    };
+    let texts = sent
+        .context
+        .messages
+        .iter()
+        .map(|message| {
+            message
+                .parts
+                .iter()
+                .filter_map(|part| match part {
+                    ProviderContextPart::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .collect::<Vec<_>>();
+    let character_entry = texts
+        .iter()
+        .find(|text| text.starts_with("# The Character You're Talking To"))
+        .expect("character entry");
+    assert!(character_entry.contains("Ada") && character_entry.contains("Bea"));
+    assert!(character_entry.contains("participants in a group conversation"));
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("Generate a fresh, detailed response"))
+    );
+    let input = texts.last().expect("runtime input");
+    assert!(input.starts_with("Here is the recent group conversation:\n\n"));
+    assert!(input.contains("user: Hello cast."));
+    assert!(input.ends_with("Generate a reply for user to say next in this group chat."));
+}
+
+#[tokio::test]
 async fn preexisting_progress_checkpoint_advances_runner_stage_sequences() {
     let database = database();
     let scenario = scenario(&database, false, "progress-sequence");

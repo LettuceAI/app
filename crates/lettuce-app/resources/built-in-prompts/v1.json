@@ -3165,6 +3165,48 @@
           "systemPrompt": false,
           "conditions": null,
           "promptEntryPayload": null
+        },
+        {
+          "key": "runtime_group_reply_helper_input",
+          "name": "Group Reply Helper Input",
+          "role": "system",
+          "content": "Here is the recent group conversation:\n\n{{selected_messages}}\n\nGenerate a reply for {{speaker_name}} to say next in this group chat.",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "runtime_group_reply_helper_character_description",
+          "name": "Group reply helper character description",
+          "role": "system",
+          "content": "participants in a group conversation",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "runtime_group_reply_helper_unknown_speaker",
+          "name": "Group reply helper unknown speaker",
+          "role": "system",
+          "content": "Character",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
         }
       ]
     },

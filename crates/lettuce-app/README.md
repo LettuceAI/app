@@ -884,9 +884,15 @@ and `{{current_draft}}` values; the runtime user entry from
 `runtime_reply_helper_input`). It runs as a `CreationRun` job keyed by the
 request id (usage evidence, cancellation), streams to the request id when
 `streaming` is on, cleans the completion like legacy (trim, quotes, leading
-"{user}:") and settles the job. Group conversations are not supported yet
-(legacy `group_chat_generate_user_reply`), and legacy's per-model HelpMeReply
-feature override has no destination.
+"{user}:") and settles the job. Group conversations follow legacy
+`group_chat_generate_user_reply`: every character participant is listed as
+"Name (definition or description)" in place of the character name, the
+character description is the catalog filler "participants in a group
+conversation", transcript lines name the message's character ("Character"
+when unknown), places are never swapped, and the group input/closing text comes
+from `runtime_group_reply_helper_*`; unlike legacy's hardcoded ten messages the
+group history honors `history_count`. Legacy's per-model HelpMeReply feature
+override has no destination.
 The reply itself carries no memory tools: legacy writes memories in
 a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`). Plain direct
 and group conversations now admit that cycle through

@@ -9,9 +9,9 @@ use lettuce_context::{
 use lettuce_conversations::{
     ConversationKind, ConversationReader, ConversationRepositoryError, GenerationOperation,
     InferenceOutcome, InferencePort, InferenceRequest, MessagePart, MessageRole, MessageVisibility,
-    OutputPolicy, PortError, ProviderContextPart, ProviderFailureKind, ProviderNeutralContext,
-    ProviderNeutralMessage, ProviderReplayArtifactPort, ResolvedInferenceProfile, SafetyContext,
-    ToolPolicy, resolve_effective_settings,
+    OutputPolicy, ParticipantSource, PortError, ProviderContextPart, ProviderFailureKind,
+    ProviderNeutralContext, ProviderNeutralMessage, ProviderReplayArtifactPort,
+    ResolvedInferenceProfile, SafetyContext, ToolPolicy, effective_persona,
 };
 use lettuce_jobs::{
     CancellationPolicy, CancellationReason, FiniteFraction, IdempotencyKey, JobError, JobErrorCode,
@@ -88,8 +88,8 @@ pub enum ReplyHelperError {
     Conversation(ConversationRepositoryError),
     #[error("reply helper character lookup failed: {0:?}")]
     Character(lettuce_characters::RepositoryError),
-    #[error("reply helper supports direct conversations only")]
-    UnsupportedConversation,
+    #[error("No characters found in group session")]
+    NoCharacters,
     #[error("No conversation history to base reply on")]
     NoHistory,
     #[error("No model configured for Help Me Reply")]
@@ -177,6 +177,31 @@ struct Speakers {
     character_description: String,
     persona_name: String,
     persona_description: String,
+}
+
+struct Cast {
+    speakers: Speakers,
+    swap_places: bool,
+    members: Vec<(
+        lettuce_types::ConversationParticipantId,
+        lettuce_characters::CharacterProfile,
+    )>,
+    group: bool,
+}
+
+struct DialogueLine {
+    role: MessageRole,
+    author: Option<lettuce_types::ConversationParticipantId>,
+    text: String,
+}
+
+/// Legacy read the character's definition, else its description.
+fn character_description(profile: &lettuce_characters::CharacterProfile) -> &str {
+    profile
+        .definition
+        .as_deref()
+        .or(profile.description.as_deref())
+        .unwrap_or_default()
 }
 
 impl<R, I> ReplyHelperCoordinator<'_, R, I>
@@ -286,41 +311,78 @@ where
         let settings = &stored.settings.help_me_reply;
         let aggregate = ConversationReader::get(self.repository, request.conversation_id)
             .map_err(ReplyHelperError::Conversation)?;
-        let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
-            return Err(ReplyHelperError::UnsupportedConversation);
-        };
-        let effective =
-            resolve_effective_settings(&aggregate.conversation, None).map_err(|error| {
-                ReplyHelperError::Conversation(ConversationRepositoryError::Invalid(error))
-            })?;
-        let character = CharacterRepository::get(self.repository, details.character.source_id)
-            .map_err(ReplyHelperError::Character)?
-            .ok_or(ReplyHelperError::UnsupportedConversation)?
-            .character;
-        let persona = effective
-            .persona
-            .as_ref()
+        let text = RuntimeText::load(self.repository, BuiltInPromptId::ChatRuntime)
+            .map_err(|_| ReplyHelperError::MissingPrompt)?;
+        let persona = effective_persona(&aggregate.conversation)
             .map(|persona| PersonaRepository::get(self.repository, persona.source_id))
             .transpose()
             .map_err(ReplyHelperError::Character)?
             .flatten();
-        let speakers = speakers(
-            &character.profile.name,
-            character
-                .profile
-                .definition
-                .as_deref()
-                .or(character.profile.description.as_deref())
-                .unwrap_or_default(),
-            persona
-                .as_ref()
-                .map(|persona| (persona.title.as_str(), persona.description.as_str())),
-            request.swap_places,
-        );
+        let persona = persona
+            .as_ref()
+            .map(|persona| (persona.title.as_str(), persona.description.as_str()));
+        let cast = match &aggregate.conversation.kind {
+            ConversationKind::Direct(details) => {
+                let character =
+                    CharacterRepository::get(self.repository, details.character.source_id)
+                        .map_err(ReplyHelperError::Character)?
+                        .ok_or(ReplyHelperError::NoCharacters)?
+                        .character;
+                Cast {
+                    speakers: speakers(
+                        &character.profile.name,
+                        character_description(&character.profile),
+                        persona,
+                        request.swap_places,
+                    ),
+                    swap_places: request.swap_places,
+                    members: Vec::new(),
+                    group: false,
+                }
+            }
+            ConversationKind::Group(_) => {
+                let mut members = Vec::new();
+                for participant in &aggregate.conversation.participants {
+                    let ParticipantSource::Character(character_id) = participant.source else {
+                        continue;
+                    };
+                    if let Some(details) = CharacterRepository::get(self.repository, character_id)
+                        .map_err(ReplyHelperError::Character)?
+                    {
+                        members.push((participant.id, details.character.profile));
+                    }
+                }
+                if members.is_empty() {
+                    return Err(ReplyHelperError::NoCharacters);
+                }
+                let character_list = members
+                    .iter()
+                    .map(|(_, profile)| {
+                        let description = character_description(profile);
+                        if description.is_empty() {
+                            profile.name.clone()
+                        } else {
+                            format!("{} ({description})", profile.name)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let group_description = text
+                    .render_with("runtime_group_reply_helper_character_description", [])
+                    .map_err(|_| ReplyHelperError::MissingPrompt)?;
+                Cast {
+                    speakers: speakers(&character_list, &group_description, persona, false),
+                    swap_places: false,
+                    members,
+                    group: true,
+                }
+            }
+        };
         let history = self.recent_dialogue(&aggregate.conversation, settings.history_count())?;
         if history.is_empty() {
             return Err(ReplyHelperError::NoHistory);
         }
+        let speakers = &cast.speakers;
         let model_id = settings
             .model_profile_id
             .or(stored.default_model_profile_id)
@@ -377,13 +439,11 @@ where
                 .map_err(|_| ReplyHelperError::MissingPrompt)?
                 .ok_or(ReplyHelperError::MissingPrompt)?,
         };
-        let text = RuntimeText::load(self.repository, BuiltInPromptId::ChatRuntime)
-            .map_err(|_| ReplyHelperError::MissingPrompt)?;
-        let mut messages = render_entries(&document, &speakers, request.current_draft.as_deref())?;
+        let mut messages = render_entries(&document, speakers, request.current_draft.as_deref())?;
         messages.push(ProviderNeutralMessage {
             role: MessageRole::User,
             parts: vec![ProviderContextPart::Text {
-                text: reply_input(&text, &history, &speakers, request.swap_places)?,
+                text: reply_input(&text, &history, &cast)?,
             }],
         });
         let context = ProviderNeutralContext {
@@ -416,7 +476,7 @@ where
             .map_err(|_| ReplyHelperError::InvalidPrompt)?;
         Ok(PreparedReply {
             request,
-            user_name: speakers.persona_name,
+            user_name: cast.speakers.persona_name,
         })
     }
 
@@ -426,7 +486,7 @@ where
         &self,
         conversation: &lettuce_conversations::Conversation,
         limit: usize,
-    ) -> Result<Vec<(MessageRole, String)>, ReplyHelperError> {
+    ) -> Result<Vec<DialogueLine>, ReplyHelperError> {
         let mut recent = Vec::new();
         let mut cursor = None;
         loop {
@@ -463,7 +523,11 @@ where
                             .map(|revision| revision.parts.as_slice())
                     })
                     .unwrap_or_default();
-                recent.push((item.message.role, message_text(parts)));
+                recent.push(DialogueLine {
+                    role: item.message.role,
+                    author: item.message.author_participant_id,
+                    text: message_text(parts),
+                });
             }
             if recent.len() >= limit {
                 break;
@@ -616,14 +680,21 @@ fn render_entries(
 }
 
 /// Legacy's runtime user entry: every recent message as "{name}: {text}"
-/// (roles swapped with the speakers when `swap_places`), then the request to
-/// draft the persona's next line.
+/// (roles swapped with the speakers when `swap_places`; group replies name
+/// each message's character, "Character" when it is unknown), then the
+/// request to draft the persona's next line.
 fn reply_input(
     text: &RuntimeText,
-    history: &[(MessageRole, String)],
-    speakers: &Speakers,
-    swap_places: bool,
+    history: &[DialogueLine],
+    cast: &Cast,
 ) -> Result<String, ReplyHelperError> {
+    let speakers = &cast.speakers;
+    let unknown = if cast.group {
+        text.render_with("runtime_group_reply_helper_unknown_speaker", [])
+            .map_err(|_| ReplyHelperError::MissingPrompt)?
+    } else {
+        String::new()
+    };
     let line = |name: &str, content: &str| {
         text.render_with(
             "runtime_reply_helper_line",
@@ -635,22 +706,29 @@ fn reply_input(
     };
     let lines = history
         .iter()
-        .map(|(role, content)| {
-            let user_spoke = (*role == MessageRole::User) != swap_places;
-            line(
-                if user_spoke {
-                    &speakers.persona_name
-                } else {
-                    &speakers.character_name
-                },
-                content,
-            )
+        .map(|entry| {
+            let user_spoke = (entry.role == MessageRole::User) != cast.swap_places;
+            let name = if user_spoke {
+                speakers.persona_name.as_str()
+            } else if cast.group {
+                cast.members
+                    .iter()
+                    .find(|(participant, _)| Some(*participant) == entry.author)
+                    .map_or(unknown.as_str(), |(_, profile)| profile.name.as_str())
+            } else {
+                speakers.character_name.as_str()
+            };
+            line(name, &entry.text)
         })
         .collect::<Result<Vec<_>, RuntimeTextError>>()
         .map_err(|_| ReplyHelperError::MissingPrompt)?
         .join("\n\n");
     text.render_with(
-        "runtime_reply_helper_input",
+        if cast.group {
+            "runtime_group_reply_helper_input"
+        } else {
+            "runtime_reply_helper_input"
+        },
         [
             (Variable::SelectedMessages, lines),
             (Variable::SpeakerName, speakers.persona_name.clone()),
@@ -722,7 +800,7 @@ fn job_error(error: &ReplyHelperError) -> JobError {
             "reply-helper-storage-failed",
         ),
         ReplyHelperError::Disabled
-        | ReplyHelperError::UnsupportedConversation
+        | ReplyHelperError::NoCharacters
         | ReplyHelperError::NoHistory
         | ReplyHelperError::MissingModel
         | ReplyHelperError::InvalidModel(_)
