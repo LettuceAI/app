@@ -869,6 +869,24 @@ resulting change with the run, so `starting_memory` is the post-decay space and
 a recovered or replayed run never decays again; legacy's turn-effect diff was
 taken before decay, which only matters for an existing memory sourced from the
 current window whose importance changed.
+`ReplyHelperCoordinator` (`reply_helper`) is legacy `chat_generate_user_reply`
+("help me reply") for direct conversations: gated by `help_me_reply.enabled`
+before any job exists; the live character (definition, else description) and
+the effective persona (title, description; "user" and empty without one),
+swapped when `swap_places` as legacy `swapped_prompt_entities`; the last
+`history_count` visible user/assistant messages of the active branch; the
+`help_me_reply` model, else the default model, with legacy's temperature 0.8 and
+top_p 1.0 applied only where the model declares the parameter and the settings'
+output cap; the per-style prompt override (active, right purpose) or the
+built-in roleplay/conversational document rendered with the character, persona
+and `{{current_draft}}` values; the runtime user entry from
+`prompt_app_chat_runtime` (`runtime_reply_helper_line`,
+`runtime_reply_helper_input`). It runs as a `CreationRun` job keyed by the
+request id (usage evidence, cancellation), streams to the request id when
+`streaming` is on, cleans the completion like legacy (trim, quotes, leading
+"{user}:") and settles the job. Group conversations are not supported yet
+(legacy `group_chat_generate_user_reply`), and legacy's per-model HelpMeReply
+feature override has no destination.
 The reply itself carries no memory tools: legacy writes memories in
 a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`). Plain direct
 and group conversations now admit that cycle through

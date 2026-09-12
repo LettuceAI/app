@@ -428,6 +428,14 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn reply_helper<'a, I: ?Sized>(
+        &'a self,
+        inference: &'a I,
+    ) -> crate::ReplyHelperCoordinator<'a, Database, I> {
+        crate::ReplyHelperCoordinator::new(self.database.as_ref(), inference)
+    }
+
+    #[must_use]
     pub fn conversation_generation_dispatcher(
         &self,
     ) -> crate::ConversationGenerationDispatchCoordinator<'_, Database, Database> {

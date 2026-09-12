@@ -2946,6 +2946,121 @@ async fn post_turn_memory_host_honors_active_prompt_overrides_of_the_right_purpo
 }
 
 #[tokio::test]
+async fn reply_helper_drafts_the_next_user_message_from_live_settings() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let scenario = scenario_with_resolvable_profile(database, false, "reply-helper", true);
+    let generation = admit_and_claim(database, &scenario, 1_015);
+    let engine = ScenarioEmbeddingEngine;
+    let reply = scripted(vec![text_outcome("reply-helper-reply", "Tea it is.", 5, 3)]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &reply)
+        .run(
+            &generation,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("finalize the turn");
+    let inference = scripted(vec![text_outcome(
+        "reply-helper-draft",
+        "\"user: Sounds lovely, pour me a cup.\"",
+        9,
+        4,
+    )]);
+    let helper = backend.reply_helper(&inference);
+    let request = crate::ReplyHelperRequest {
+        conversation_id: scenario.conversation_id,
+        request_id: RequestId::new(),
+        current_draft: Some("pour me".into()),
+        swap_places: false,
+    };
+    let drafted = helper
+        .generate(
+            &request,
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .await
+        .expect("draft a reply");
+    assert_eq!(drafted.text, "Sounds lovely, pour me a cup.");
+    assert_eq!(drafted.job.state, JobState::Succeeded);
+    assert_eq!(drafted.job.kind, lettuce_jobs::JobKind::CreationRun);
+    let sent = {
+        let requests = inference.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 1);
+        requests[0].clone()
+    };
+    assert!(sent.tools.is_none());
+    assert_eq!(sent.stream_sink, Some(request.request_id));
+    assert_eq!(
+        sent.profile.chat_profile.parameters.temperature,
+        None,
+        "the scenario model declares no temperature support, so the 0.8 default stays off"
+    );
+    assert_eq!(
+        sent.profile.chat_profile.parameters.visible_max_output_tokens,
+        Some(150)
+    );
+    let texts = sent
+        .context
+        .messages
+        .iter()
+        .map(|message| {
+            message
+                .parts
+                .iter()
+                .filter_map(|part| match part {
+                    ProviderContextPart::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .collect::<Vec<_>>();
+    assert!(texts[0].contains("helping the user write their next message"));
+    assert!(texts.iter().any(|text| text.contains("Name: Ada")));
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("The user has started writing: \"pour me\""))
+    );
+    let input = texts.last().expect("runtime input");
+    assert!(input.starts_with("Here is the recent conversation:\n\n"));
+    assert!(input.contains("user: Remember tea."));
+    assert!(input.contains("Ada: Tea it is."));
+    assert!(input.ends_with("Generate a reply for user to say next."));
+    assert_eq!(sent.context.messages.last().expect("input").role, MessageRole::User);
+
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.help_me_reply.enabled = false;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("disable the reply helper");
+    let disabled = helper
+        .generate(
+            &crate::ReplyHelperRequest {
+                request_id: RequestId::new(),
+                ..request.clone()
+            },
+            WorkerId::new(),
+            TimestampMillis::new(1_031),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .await;
+    assert!(matches!(disabled, Err(crate::ReplyHelperError::Disabled)));
+    assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+}
+
+#[tokio::test]
 async fn preexisting_progress_checkpoint_advances_runner_stage_sequences() {
     let database = database();
     let scenario = scenario(&database, false, "progress-sequence");

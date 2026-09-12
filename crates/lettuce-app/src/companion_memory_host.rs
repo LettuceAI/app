@@ -344,6 +344,7 @@ where
                 stored
                     .settings
                     .dynamic_memory_llama_sampler_overwrite_enabled,
+                model.config.capabilities.parameter_support,
             ),
             &ChatRequirements::default(),
         )
@@ -526,17 +527,35 @@ where
 fn memory_parameter_input(
     protocol: ProviderProtocol,
     overwrite_llama_sampler: bool,
+    support: lettuce_models::ParameterSupport,
 ) -> ChatParameterResolutionInput {
-    use lettuce_models::ParameterOverride::Set;
+    use lettuce_models::ParameterOverride::{Inherit, Set};
     if protocol != ProviderProtocol::LlamaCpp || !overwrite_llama_sampler {
         return ChatParameterResolutionInput::default();
     }
+    let declared = |status| status == lettuce_models::CapabilityStatus::Supported;
     ChatParameterResolutionInput {
         operation: lettuce_models::ChatParameterOverrides {
-            top_k: Set(40),
-            frequency_penalty: Set(0.0),
-            presence_penalty: Set(0.0),
-            repetition_penalty: Set(1.0),
+            top_k: if declared(support.top_k) {
+                Set(40)
+            } else {
+                Inherit
+            },
+            frequency_penalty: if declared(support.frequency_penalty) {
+                Set(0.0)
+            } else {
+                Inherit
+            },
+            presence_penalty: if declared(support.presence_penalty) {
+                Set(0.0)
+            } else {
+                Inherit
+            },
+            repetition_penalty: if declared(support.repetition_penalty) {
+                Set(1.0)
+            } else {
+                Inherit
+            },
             ..Default::default()
         },
         ..Default::default()
@@ -595,13 +614,21 @@ fn create_seeds<E: MemoryEmbeddingEngine + ?Sized>(
 
 #[cfg(test)]
 mod tests {
-    use lettuce_models::{ParameterOverride, ProviderProtocol};
+    use lettuce_models::{CapabilityStatus, ParameterOverride, ParameterSupport, ProviderProtocol};
 
     use super::memory_parameter_input;
 
     #[test]
     fn llama_cpp_memory_calls_drop_the_creative_sampler_unless_disabled() {
-        let forced = memory_parameter_input(ProviderProtocol::LlamaCpp, true);
+        let declared = ParameterSupport {
+            temperature: CapabilityStatus::Supported,
+            top_p: CapabilityStatus::Supported,
+            top_k: CapabilityStatus::Supported,
+            frequency_penalty: CapabilityStatus::Supported,
+            presence_penalty: CapabilityStatus::Unknown,
+            repetition_penalty: CapabilityStatus::Supported,
+        };
+        let forced = memory_parameter_input(ProviderProtocol::LlamaCpp, true, declared);
         assert_eq!(forced.operation.top_k, ParameterOverride::Set(40));
         assert_eq!(
             forced.operation.frequency_penalty,
@@ -609,7 +636,7 @@ mod tests {
         );
         assert_eq!(
             forced.operation.presence_penalty,
-            ParameterOverride::Set(0.0)
+            ParameterOverride::Inherit
         );
         assert_eq!(
             forced.operation.repetition_penalty,
@@ -617,11 +644,11 @@ mod tests {
         );
         assert_eq!(forced.operation.temperature, ParameterOverride::Inherit);
         assert_eq!(
-            memory_parameter_input(ProviderProtocol::LlamaCpp, false),
+            memory_parameter_input(ProviderProtocol::LlamaCpp, false, declared),
             lettuce_models::ChatParameterResolutionInput::default()
         );
         assert_eq!(
-            memory_parameter_input(ProviderProtocol::Ollama, true),
+            memory_parameter_input(ProviderProtocol::Ollama, true, declared),
             lettuce_models::ChatParameterResolutionInput::default()
         );
     }

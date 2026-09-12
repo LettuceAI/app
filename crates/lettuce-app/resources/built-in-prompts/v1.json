@@ -3137,6 +3137,34 @@
           "systemPrompt": false,
           "conditions": null,
           "promptEntryPayload": null
+        },
+        {
+          "key": "runtime_reply_helper_line",
+          "name": "Reply helper transcript line",
+          "role": "system",
+          "content": "{{speaker_name}}: {{message_text}}",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "runtime_reply_helper_input",
+          "name": "Reply Helper Input",
+          "role": "system",
+          "content": "Here is the recent conversation:\n\n{{selected_messages}}\n\nGenerate a reply for {{speaker_name}} to say next.",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
         }
       ]
     },
