@@ -882,12 +882,14 @@ source instead of companion effects. `CompanionMemoryHostCoordinator`
 `enqueue_post_turn_dynamic_memory` provided: `after_turn` admits and claims the
 cycle a finished send or continue earns (never a regenerate; direct chats need
 the global `enabled` flag and a dynamic session, groups only a dynamic session,
-as legacy gated them), discovering processing effects for companion
-conversations and the interval window for plain ones; `resolve_runtime_inputs`
-reads the live direct or group settings into the runner inputs (model: the
-admission override, then `dynamic_memory_model_profile_id`, then the default
-model, else the job fails as a retryable provider-unavailable error like
-legacy's "Summarisation model not configured"; the local manager prompt for
+as legacy gated them; the memory mode comes from `effective_memory`, which
+needs no selected speaker), admitting this conversation's processing effects
+for companion conversations and the interval window for plain ones;
+`resolve_runtime_inputs` reads the live direct or group settings into the runner
+inputs (model: the admission override, then `dynamic_memory_model_profile_id`,
+then the default model, else the job is rescheduled so the same window runs
+once a model is configured, like legacy's "Summarisation model not configured"
+retry on the next turn; the local manager prompt for
 llama.cpp accounts; policy, duplicate threshold and fallback format from the
 settings; supersession for companion conversations); `run_claimed` seeds
 creates with the embedding tokenizer (zero on failure, as legacy), runs the job

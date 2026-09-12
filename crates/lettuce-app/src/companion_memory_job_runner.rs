@@ -393,10 +393,11 @@ impl CompanionMemoryJobRunError {
             }
             Self::Loop(error) => Some(CompanionMemoryTerminalFailure::from_loop_error(error)),
             Self::Repair(_) => Some(CompanionMemoryTerminalFailure::Cancelled),
-            Self::RuntimeInputs(_) => Some(CompanionMemoryTerminalFailure::ProviderUnavailable),
-            Self::Admission(_) | Self::Terminal(_) | Self::Conversation(_) | Self::Settings(_) => {
-                None
-            }
+            Self::RuntimeInputs(_)
+            | Self::Admission(_)
+            | Self::Terminal(_)
+            | Self::Conversation(_)
+            | Self::Settings(_) => None,
         }
     }
 }

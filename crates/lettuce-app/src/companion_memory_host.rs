@@ -5,7 +5,7 @@ use lettuce_context::{PromptDocument, PromptRepository};
 use lettuce_conversations::{
     ConversationKind, ConversationReader, ConversationRepositoryError, GenerationOperation,
     InferencePort, MemoryModeSnapshot, OutputPolicy, ResolvedInferenceProfile, SafetyContext,
-    SnapshotSelection, ToolPolicy, resolve_effective_settings,
+    SnapshotSelection, ToolPolicy, effective_memory,
 };
 use lettuce_jobs::{CancellationReason, JobStore, ResourceAvailability, WorkerId};
 use lettuce_memory::{DynamicMemoryRunMode, DynamicMemoryStructuredFallbackFormat, MemoryPolicy};
@@ -37,8 +37,9 @@ pub struct CompanionMemoryRuntimeInputs {
     pub duplicate_threshold: lettuce_memory::Score,
 }
 
-/// Why a claimed cycle could not resolve its runtime inputs; the job fails
-/// with a retryable error so a settings fix lets a retry run it.
+/// Why a claimed cycle could not resolve its runtime inputs; the job is
+/// rescheduled so a settings fix lets the same window run, as legacy retried
+/// the cycle on the next turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CompanionMemoryRuntimeInputError {
     #[error("summarisation model not configured")]
@@ -162,11 +163,7 @@ where
         } else {
             &settings.dynamic_memory
         };
-        let dynamic_session = resolve_effective_settings(&aggregate.conversation, None)
-            .map_err(|error| {
-                CompanionMemoryHostError::Conversation(ConversationRepositoryError::Invalid(error))
-            })?
-            .memory
+        let dynamic_session = effective_memory(&aggregate.conversation)
             .is_some_and(|memory| memory.mode == MemoryModeSnapshot::Dynamic);
         if !dynamic_session || (!group && !dynamic.enabled) {
             return Ok(Vec::new());
@@ -174,7 +171,8 @@ where
         let run_mode = run_mode(dynamic.run_mode);
         let dispatcher = CompanionMemoryDispatchCoordinator::new(self.repository, self.repository);
         if self.is_companion(&aggregate.conversation)? {
-            Ok(dispatcher.discover_and_claim(
+            Ok(dispatcher.admit_companion_after_turn_and_claim(
+                conversation_id,
                 MAX_COMPANION_POST_TURN_EFFECTS,
                 dynamic.summary_message_interval,
                 run_mode,
@@ -305,8 +303,9 @@ where
     }
 
     /// Runs one claimed cycle with live inputs and settles its job. Missing
-    /// runtime inputs fail the job without starting a run, as legacy skipped
-    /// the cycle when no summarisation model was configured.
+    /// runtime inputs reschedule the job without starting a run, as legacy
+    /// skipped the cycle when no summarisation model was configured and tried
+    /// again on the next turn.
     pub async fn run_claimed(
         &self,
         work: CompanionMemoryClaimedWork,

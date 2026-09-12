@@ -183,50 +183,112 @@ impl<
         }
 
         let mut admissions = Vec::with_capacity(by_conversation.len());
-        for (conversation_id, mut effects) in by_conversation {
-            effects.sort_by_key(|effect| (effect.created_at, effect.id));
-            let unsummarized_message_count = effect_message_count(&effects);
-            match run_mode {
-                DynamicMemoryRunMode::Manual => continue,
-                DynamicMemoryRunMode::AskFirst => {
-                    if unsummarized_message_count >= u64::from(summary_message_interval) {
-                        self.effects
-                            .prompt_dynamic_memory_if_due(
-                                conversation_id,
-                                unsummarized_message_count,
-                                summary_message_interval,
-                                now,
-                            )
-                            .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
-                    }
-                    continue;
-                }
-                DynamicMemoryRunMode::Auto => {}
-            }
-            let Some(effects) = ready_effect_prefix(effects, summary_message_interval) else {
-                continue;
-            };
-            if let Some(admission) = self.admit_selected(
+        for (conversation_id, effects) in by_conversation {
+            if let Some(admission) = self.admit_processing_effects(
                 conversation_id,
+                effects,
                 summary_message_interval,
-                CompanionMemoryWindowSelection::Automatic,
-                unsummarized_message_count,
-                PostTurnMemorySource::CompanionEffects {
-                    effects,
-                    source_effect_offset: 0,
-                    settle_effects: true,
-                },
-                None,
-                None,
-                false,
+                run_mode,
+                now,
             )? {
-                self.effects
-                    .clear_dynamic_memory_pending_approval(conversation_id)
-                    .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
                 admissions.push(admission);
             }
         }
         Ok(admissions)
+    }
+
+    /// Legacy's post-turn scheduler was per session: only this conversation's
+    /// processing effects are admitted, under the settings the caller
+    /// resolved for it.
+    pub fn discover_and_admit_for_conversation(
+        &self,
+        conversation_id: ConversationId,
+        limit: u16,
+        summary_message_interval: u32,
+        run_mode: DynamicMemoryRunMode,
+        now: TimestampMillis,
+    ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
+    {
+        if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS || summary_message_interval == 0 {
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+        }
+        let effects = self
+            .effects
+            .list_for_conversation(conversation_id, limit)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
+            .into_iter()
+            .filter(|effect| effect.status == CompanionTurnEffectStatus::Processing)
+            .collect::<Vec<_>>();
+        if effects.is_empty() {
+            return Ok(None);
+        }
+        if effects.iter().any(|effect| {
+            effect.conversation_id != conversation_id
+                || effect.source_window.is_some()
+                || effect.summary.is_some()
+        }) {
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+        }
+        self.admit_processing_effects(
+            conversation_id,
+            effects,
+            summary_message_interval,
+            run_mode,
+            now,
+        )
+    }
+
+    fn admit_processing_effects(
+        &self,
+        conversation_id: ConversationId,
+        mut effects: Vec<CompanionTurnEffect>,
+        summary_message_interval: u32,
+        run_mode: DynamicMemoryRunMode,
+        now: TimestampMillis,
+    ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
+    {
+        effects.sort_by_key(|effect| (effect.created_at, effect.id));
+        let unsummarized_message_count = effect_message_count(&effects);
+        match run_mode {
+            DynamicMemoryRunMode::Manual => return Ok(None),
+            DynamicMemoryRunMode::AskFirst => {
+                if unsummarized_message_count >= u64::from(summary_message_interval) {
+                    self.effects
+                        .prompt_dynamic_memory_if_due(
+                            conversation_id,
+                            unsummarized_message_count,
+                            summary_message_interval,
+                            now,
+                        )
+                        .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
+                }
+                return Ok(None);
+            }
+            DynamicMemoryRunMode::Auto => {}
+        }
+        let Some(effects) = ready_effect_prefix(effects, summary_message_interval) else {
+            return Ok(None);
+        };
+        let admission = self.admit_selected(
+            conversation_id,
+            summary_message_interval,
+            CompanionMemoryWindowSelection::Automatic,
+            unsummarized_message_count,
+            PostTurnMemorySource::CompanionEffects {
+                effects,
+                source_effect_offset: 0,
+                settle_effects: true,
+            },
+            None,
+            None,
+            false,
+        )?;
+        if admission.is_some() {
+            self.effects
+                .clear_dynamic_memory_pending_approval(conversation_id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
+        }
+        Ok(admission)
     }
 
     pub fn skip_pending_approval(

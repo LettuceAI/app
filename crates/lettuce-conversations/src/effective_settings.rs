@@ -178,6 +178,26 @@ pub fn resolve_effective_settings(
     }
 }
 
+/// The memory settings a conversation uses now, for either kind and without
+/// a selected speaker: its own setting, or the launch value.
+#[must_use]
+pub fn effective_memory(conversation: &Conversation) -> Option<MemorySettingsSnapshot> {
+    match &conversation.kind {
+        ConversationKind::Direct(details) => current_or_selection(
+            conversation,
+            |settings| settings.memory_provenance,
+            |settings| settings.memory.clone(),
+            &details.memory,
+        ),
+        ConversationKind::Group(details) => current_or_launch(
+            conversation,
+            |settings| settings.memory_provenance,
+            |settings| settings.memory.clone(),
+            selection_value(&details.group.memory),
+        ),
+    }
+}
+
 /// The speaker-selection method a group conversation uses now: its own
 /// setting, or the group's method it was launched with.
 #[must_use]

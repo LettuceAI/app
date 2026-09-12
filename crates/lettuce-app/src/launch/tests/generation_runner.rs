@@ -2615,8 +2615,54 @@ async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
             .expect("regenerate never admits a cycle")
             .is_empty()
     );
-    let work = claim(lettuce_conversations::GenerationOperation::Send)
+    let toggle_enabled = |enabled: bool| {
+        let stored = GlobalSettingsStore::load(database).expect("settings");
+        let mut settings = stored.settings;
+        settings.dynamic_memory.enabled = enabled;
+        GlobalSettingsStore::save(
+            database,
+            settings,
+            stored.default_model_profile_id,
+            stored.revision,
+        )
+        .expect("toggle dynamic memory");
+    };
+    toggle_enabled(false);
+    assert!(
+        claim(lettuce_conversations::GenerationOperation::Send)
+            .expect("disabled global setting admits nothing")
+            .is_empty()
+    );
+    toggle_enabled(true);
+    let set_default_model = |model: Option<lettuce_types::ModelProfileId>| {
+        let stored = GlobalSettingsStore::load(database).expect("settings");
+        GlobalSettingsStore::save(database, stored.settings, model, stored.revision)
+            .expect("default model");
+    };
+    set_default_model(None);
+    let unresolved = claim(lettuce_conversations::GenerationOperation::Send)
         .expect("send admits the interval window")
+        .into_iter()
+        .next()
+        .expect("claimed plain memory work");
+    let rescheduled = host
+        .run_claimed(unresolved, CancellationReason::User, TimestampMillis::new(1_031))
+        .await
+        .expect("settle the unresolved cycle");
+    let crate::CompanionMemorySettledWork::RetryScheduled { error, job } = rescheduled else {
+        panic!("a missing summarisation model reschedules the job");
+    };
+    assert!(matches!(
+        error,
+        crate::CompanionMemoryJobRunError::RuntimeInputs(
+            crate::CompanionMemoryRuntimeInputError::MissingModel
+        )
+    ));
+    assert_eq!(job.state, JobState::Queued);
+    assert!(memory.requests.lock().expect("memory requests").is_empty());
+    set_default_model(Some(scenario.model.source_id));
+    let work = claim(lettuce_conversations::GenerationOperation::Send)
+        .expect("the rescheduled window is claimed again")
         .into_iter()
         .next()
         .expect("claimed plain memory work");
@@ -2667,20 +2713,23 @@ async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
     assert_eq!(stored_memory.items[0].token_count, 4);
     assert!(stored_memory.items[0].is_cold);
 
-    let stored = GlobalSettingsStore::load(database).expect("settings");
-    let mut disabled = stored.settings;
-    disabled.dynamic_memory.enabled = false;
-    GlobalSettingsStore::save(
-        database,
-        disabled,
-        stored.default_model_profile_id,
-        stored.revision,
-    )
-    .expect("disable dynamic memory");
+    let (group, _) = group_scenario(
+        &backend,
+        "host-group",
+        lettuce_characters::SpeakerSelection::RoundRobin,
+        false,
+    );
     assert!(
-        claim(lettuce_conversations::GenerationOperation::Continue)
-            .expect("disabled global setting admits nothing")
-            .is_empty()
+        host.after_turn(
+            group.conversation_id,
+            lettuce_conversations::GenerationOperation::Send,
+            WorkerId::new(),
+            TimestampMillis::new(1_040),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("a group conversation resolves its memory mode without a speaker")
+        .is_empty()
     );
 }
 
