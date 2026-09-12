@@ -201,7 +201,11 @@ runs, so switching to director mode while a turn without a chosen speaker is
 queued fails that turn as speaker-unavailable. When a conversation switched to
 LLM selection has no launch speaker-model snapshot, the application resolves
 the model live; a speaker-model snapshot is simply unused while the method is
-not LLM.
+not LLM. The heuristic's recency distance counts every visible message after a
+participant's last line, the pending user message included, because legacy
+numbered every stored group message as a turn and scored
+`current_turn - last_spoke_turn`; an explicit speaker missing from the cast is
+an error, never a panic.
 An LLM group launch may retain a dedicated speaker-selection model snapshot.
 The optional field is backward-compatible for existing snapshot documents and
 is valid only with the LLM policy. Its protected model artifact freezes the

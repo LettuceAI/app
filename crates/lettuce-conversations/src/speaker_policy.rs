@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use lettuce_types::ConversationParticipantId;
 
-use crate::content::MessageRole;
+use crate::content::{MessageRole, MessageVisibility};
 use crate::ports::{SpeakerParticipantState, SpeakerPolicyRequest};
 use crate::snapshot::GroupSpeakerSelectionSnapshot;
 use crate::{SelectedSpeakerDecision, SpeakerDecisionMethod, SpeakerFallback};
@@ -32,10 +32,18 @@ pub fn select_group_speaker(
     validate_request(request)?;
 
     if let Some(participant_id) = request.forced_speaker {
-        return explicit_decision(request, participant_id);
+        return explicit_decision(
+            request,
+            participant_id,
+            SpeakerSelectionError::UnknownForcedSpeaker,
+        );
     }
     if let Some(participant_id) = request.mention_source {
-        return explicit_decision(request, participant_id);
+        return explicit_decision(
+            request,
+            participant_id,
+            SpeakerSelectionError::UnknownMentionSource,
+        );
     }
 
     match policy {
@@ -74,12 +82,13 @@ fn validate_request(request: &SpeakerPolicyRequest) -> Result<(), SpeakerSelecti
 fn explicit_decision(
     request: &SpeakerPolicyRequest,
     participant_id: ConversationParticipantId,
+    unknown: SpeakerSelectionError,
 ) -> Result<SelectedSpeakerDecision, SpeakerSelectionError> {
     let participant = request
         .participants
         .iter()
         .find(|participant| participant.id == participant_id)
-        .expect("explicit speaker was validated as a participant");
+        .ok_or(unknown)?;
     if !participant.eligible {
         return Err(SpeakerSelectionError::IneligibleExplicitSpeaker);
     }
@@ -194,10 +203,6 @@ fn heuristic_speaker(
         .map(|participant| u64::from(participant.speak_count))
         .sum();
     let participant_count = available.len() as u64;
-    let latest_assistant_index = request
-        .timeline
-        .iter()
-        .rposition(|item| item.message.role == MessageRole::Assistant);
 
     let mut best: Option<(ConversationParticipantId, i64)> = None;
     for participant in available {
@@ -213,7 +218,7 @@ fn heuristic_speaker(
             }
         }
 
-        match recency_turns_ago(request, participant, latest_assistant_index) {
+        match recency_turns_ago(request, participant) {
             None => score += 50_000,
             Some(0) => score -= 30_000,
             Some(1) => score -= 15_000,
@@ -228,22 +233,25 @@ fn heuristic_speaker(
     best.map(|(participant_id, _)| participant_id)
 }
 
+/// Legacy numbered every stored group message as a turn and scored
+/// `current_turn - last_spoke_turn`, so the distance counts every visible
+/// message after the participant's last line, the pending user message
+/// included.
 fn recency_turns_ago(
     request: &SpeakerPolicyRequest,
     participant: &SpeakerParticipantState,
-    latest_assistant_index: Option<usize>,
 ) -> Option<u64> {
-    let last_index = request.timeline.iter().rposition(|item| {
+    let visible = request
+        .timeline
+        .iter()
+        .filter(|item| item.message.visibility == MessageVisibility::Visible)
+        .collect::<Vec<_>>();
+    let last_index = visible.iter().rposition(|item| {
         item.message.role == MessageRole::Assistant
             && item.message.author_participant_id == Some(participant.id)
     });
-    if let (Some(last_index), Some(latest_index)) = (last_index, latest_assistant_index) {
-        return Some(
-            request.timeline[last_index + 1..=latest_index]
-                .iter()
-                .filter(|item| item.message.role == MessageRole::Assistant)
-                .count() as u64,
-        );
+    if let Some(last_index) = last_index {
+        return Some((visible.len() - 1 - last_index) as u64);
     }
     if request.prior_speaker == Some(participant.id) {
         return Some(0);
@@ -312,6 +320,13 @@ mod tests {
             prior_speaker: None,
             timeline: Vec::new(),
         }
+    }
+
+    fn user_message(at: i64) -> TimelineItem {
+        let mut item = assistant_message(ConversationParticipantId::new(), at);
+        item.message.author_participant_id = None;
+        item.message.role = MessageRole::User;
+        item
     }
 
     fn assistant_message(participant_id: ConversationParticipantId, at: i64) -> TimelineItem {
@@ -506,6 +521,32 @@ mod tests {
                 .participant_id,
             recent
         );
+    }
+
+    #[test]
+    fn recency_counts_every_visible_message_like_legacy_turn_numbers() {
+        let speaker = ConversationParticipantId::new();
+        let mut request = request(vec![participant(speaker, 1, true, false)]);
+        let mut hidden = user_message(5);
+        hidden.message.visibility = MessageVisibility::Tombstoned;
+        request.timeline = vec![
+            assistant_message(speaker, 1),
+            user_message(2),
+            assistant_message(ConversationParticipantId::new(), 3),
+            user_message(4),
+            hidden,
+        ];
+        assert_eq!(
+            recency_turns_ago(&request, &request.participants[0]),
+            Some(3)
+        );
+        request.timeline.truncate(1);
+        assert_eq!(
+            recency_turns_ago(&request, &request.participants[0]),
+            Some(0)
+        );
+        request.timeline.clear();
+        assert_eq!(recency_turns_ago(&request, &request.participants[0]), None);
     }
 
     #[test]
