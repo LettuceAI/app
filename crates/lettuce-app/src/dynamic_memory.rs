@@ -46,7 +46,7 @@ pub(crate) fn persist_created_projections<R: MemoryEmbeddingRepository + ?Sized>
         .results
         .iter()
         .filter_map(|result| match result.outcome {
-            MemoryToolOutcome::Created { id } => Some((result.execution_id, id)),
+            MemoryToolOutcome::Created { id, .. } => Some((result.execution_id, id)),
             _ => None,
         })
         .collect::<HashMap<_, _>>();

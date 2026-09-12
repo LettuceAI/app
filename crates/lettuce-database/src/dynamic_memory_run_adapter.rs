@@ -2398,7 +2398,14 @@ mod tests {
             results: vec![
                 MemoryToolResult {
                     execution_id: create_id,
-                    outcome: MemoryToolOutcome::Created { id: memory_id },
+                    outcome: MemoryToolOutcome::Created {
+                        id: memory_id,
+                        short_id: lettuce_memory::MemoryShortId::derived(memory_id),
+                        memories: vec![lettuce_memory::ListedMemory {
+                            short_id: lettuce_memory::MemoryShortId::derived(memory_id),
+                            text: "The user prefers tea".into(),
+                        }],
+                    },
                 },
                 MemoryToolResult {
                     execution_id: done_id,
@@ -2591,7 +2598,14 @@ mod tests {
                     }),
                     results: vec![MemoryToolResult {
                         execution_id: call_id,
-                        outcome: MemoryToolOutcome::Created { id: memory_id },
+                        outcome: MemoryToolOutcome::Created {
+                            id: memory_id,
+                            short_id: lettuce_memory::MemoryShortId::derived(memory_id),
+                            memories: vec![lettuce_memory::ListedMemory {
+                                short_id: lettuce_memory::MemoryShortId::derived(memory_id),
+                                text: "The user prefers tea".into(),
+                            }],
+                        },
                     }],
                 },
                 TimestampMillis::new(12),

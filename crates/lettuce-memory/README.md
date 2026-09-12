@@ -58,9 +58,23 @@ invalid category is re-tagged by legacy's single-tool repair contract
 prompt, parameter texts and structured fallback are catalog keys
 (`MEMORY_REPAIR_TOOL_TEXT_KEYS`, `memory_repairs_fallback_prompt_key`); a repair
 request that answers with nothing falls back to legacy's keyword buckets
-(`guess_memory_category`, first matching bucket wins). Still missing from legacy:
-the raw-arguments fallback for a missing `text` argument and legacy-shaped tool
-results (six-digit ids, `updatedMemories`). Structured
+(`guess_memory_category`, first matching bucket wins). Every outcome carries what
+legacy echoed back to the model: a created, deleted, pinned or unpinned memory's
+six-digit id, a deleted memory's text, the `[short_id] text` list right after
+the call applied (superseded items excluded, `ListedMemory`), and which
+duplicate check matched (`DuplicateKind`, with the cosine and threshold for a
+semantic match); the application renders those into the legacy tool-result
+payloads. A call legacy silently dropped from its results (a create without a
+string `text`, a delete without a string `text`, a pin without a string `id`, or
+non-object arguments, and in group chats a pin or unpin whose target was not
+found) settles as `Skipped` or `TargetNotFound` with a typed reason instead,
+because legacy's dropped result shifted every later tool result onto the wrong
+call; the listing also excludes superseded items for group runs, which legacy's
+group copy did not filter (group runs never supersede, so nothing is hidden). A
+padded `category` is trimmed before the allow-list check as legacy did, and a
+blank one counts as missing.
+Still missing from legacy: the raw-arguments fallback for a missing `text`
+argument. Structured
 fallback prompts are catalog keys (`memory_operations_fallback_prompt_key`).
 Runs store up to 64 inference rounds and 4096 tool calls per attempt. Companion-required source validation and supersession
 and UI events remain later slices. ONNX inference runtime

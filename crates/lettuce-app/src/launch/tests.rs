@@ -7954,7 +7954,7 @@ fn group_delete_after_keeps_the_scene_anchor_and_tombstones_the_reply() {
 
 #[tokio::test]
 async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_work() {
-    let database = database();
+    let database = database_with_builtins();
     let model_id = seed_model(&database, ProviderProtocol::Ollama, "ollama");
     set_application_default_model(&database, model_id);
     let character_id = plain_character(&database);

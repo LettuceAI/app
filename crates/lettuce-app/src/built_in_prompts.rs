@@ -806,6 +806,10 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "tool_name"
             | "tool_error"
             | "memory_categories"
+            | "memory_id"
+            | "memory_category"
+            | "duplicate_cosine"
+            | "duplicate_threshold"
     )
 }
 
@@ -1388,6 +1392,22 @@ mod tests {
             "memory_repair_line",
             "memory_repair_fallback_json",
             "memory_repair_fallback_xml",
+            "memory_id_line",
+            "memory_skip_missing_text",
+            "memory_skip_invalid_text",
+            "memory_skip_empty_text",
+            "memory_skip_long_text",
+            "memory_skip_refusal_text",
+            "memory_skip_meta_text",
+            "memory_skip_missing_category",
+            "memory_skip_invalid_category",
+            "memory_skip_missing_target",
+            "memory_skip_malformed_arguments",
+            "memory_skip_unsupported_tool",
+            "memory_skip_target_not_found",
+            "memory_skip_duplicate_text",
+            "memory_skip_duplicate_semantic",
+            "memory_skip_duplicate_overlap",
         ];
         for key in lettuce_memory::DYNAMIC_MEMORY_TOOL_TEXT_KEYS
             .into_iter()

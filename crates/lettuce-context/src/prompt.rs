@@ -993,6 +993,10 @@ pub enum PromptVariable {
     ToolName,
     ToolError,
     MemoryCategories,
+    MemoryId,
+    MemoryCategory,
+    DuplicateCosine,
+    DuplicateThreshold,
 }
 
 impl PromptVariable {
@@ -1131,6 +1135,10 @@ impl PromptVariable {
             Self::ToolName => "{{tool_name}}",
             Self::ToolError => "{{tool_error}}",
             Self::MemoryCategories => "{{memory_categories}}",
+            Self::MemoryId => "{{memory_id}}",
+            Self::MemoryCategory => "{{memory_category}}",
+            Self::DuplicateCosine => "{{duplicate_cosine}}",
+            Self::DuplicateThreshold => "{{duplicate_threshold}}",
         }
     }
 
@@ -1268,6 +1276,10 @@ impl PromptVariable {
         Self::ToolName,
         Self::ToolError,
         Self::MemoryCategories,
+        Self::MemoryId,
+        Self::MemoryCategory,
+        Self::DuplicateCosine,
+        Self::DuplicateThreshold,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.

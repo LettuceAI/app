@@ -1,7 +1,7 @@
 use lettuce_conversations::{
     GenerationOperation, InferencePort, InferenceRequest, MessageRole, PortError,
-    ProviderContextPart, ProviderNeutralMessage, ProviderReplayArtifactPort, ToolOutput,
-    TranscriptToolCall, TranscriptToolResult,
+    ProviderContextPart, ProviderNeutralMessage, ProviderReplayArtifactPort, TranscriptToolCall,
+    TranscriptToolResult,
 };
 use lettuce_jobs::handle::JobHandle;
 use lettuce_memory::{
@@ -140,7 +140,12 @@ impl<
             );
             return Ok(CompanionMemoryContinuationResult::Done { summary: None });
         }
-        let context = context_after_settlement(settled_round, &settlement.results)?;
+        let text = crate::runtime_text::RuntimeText::load(
+            self.repository,
+            crate::BuiltInPromptId::MemoryRuntime,
+        )
+        .map_err(|_| CompanionMemoryContinuationError::RuntimeText)?;
+        let context = context_after_settlement(&text, settled_round, &settlement.results)?;
         if handle.cancellation_token().is_cancelled() {
             self.cancel(&attempt, now)?;
             return Err(CompanionMemoryContinuationError::Cancelled);
@@ -268,6 +273,7 @@ fn validate_owner(
 }
 
 fn context_after_settlement(
+    text: &crate::runtime_text::RuntimeText,
     round: &DynamicMemoryInferenceRound,
     results: &[lettuce_memory::MemoryToolResult],
 ) -> Result<lettuce_conversations::ProviderNeutralContext, CompanionMemoryContinuationError> {
@@ -293,11 +299,8 @@ fn context_after_settlement(
             execution_id: call.id,
             provider_call_id: call.call.provider_call_id.clone(),
             name: call.call.name.clone(),
-            output: ToolOutput {
-                value: serde_json::to_value(&result.outcome)
-                    .map_err(|_| CompanionMemoryContinuationError::InvalidSettlement)?,
-                is_error: matches!(result.outcome, MemoryToolOutcome::Rejected { .. }),
-            },
+            output: crate::memory_tool_result::legacy_memory_tool_output(text, &call.call, result)
+                .map_err(|_| CompanionMemoryContinuationError::RuntimeText)?,
         }));
     }
     if calls.len() != results.len() {
@@ -352,6 +355,8 @@ pub enum CompanionMemoryContinuationError {
     UnsettledRound,
     #[error("background memory settlement is invalid")]
     InvalidSettlement,
+    #[error("background memory continuation runtime text is unavailable")]
+    RuntimeText,
     #[error("background memory continuation reached its round limit")]
     RoundLimit,
     #[error("background memory continuation reached its call limit")]
@@ -451,7 +456,9 @@ mod tests {
                 reference: lettuce_memory::MemoryReference(target.to_string()),
             },
         );
-        let context = context_after_settlement(&round, &results).expect("context");
+        let text =
+            crate::runtime_text::RuntimeText::from_seed(crate::BuiltInPromptId::MemoryRuntime);
+        let context = context_after_settlement(&text, &round, &results).expect("context");
         assert_eq!(context.messages.len(), 3);
         assert!(matches!(
             &context.messages[1].parts[..],
@@ -464,7 +471,12 @@ mod tests {
             [ProviderContextPart::ToolResult(result)]
                 if result.execution_id == round.calls[0].id
                     && !result.output.is_error
-                    && result.output.value == json!({"status":"target_not_found","reference":target.to_string()})
+                    && result.output.value == json!({
+                        "status": "skipped",
+                        "name": "pin_memory",
+                        "reason": "target_not_found",
+                        "arguments": {"id": target.to_string()},
+                    })
         ));
     }
 

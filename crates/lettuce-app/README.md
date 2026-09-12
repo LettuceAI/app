@@ -268,9 +268,17 @@ and copies the legacy tool-disabled retry and validation. The validated summary,
 token count, provider context, usage, and cursor commit atomically against the
 memory root; recovery replays that checkpoint without provider I/O, and the
 following memory-tool phase consumes its stored text. A settled background
-round now appends its admitted native calls and typed results to the exact
+round now appends its admitted native calls and their results to the exact
 durable request context, stops before provider I/O on `done`, or dispatches and
 atomically admits the next bounded round with the frozen profile/tool contract.
+Each result is rendered in the legacy payload shape (`memory_tool_result`):
+`status`/`name`, six-digit `memoryId`, `deletedMemoryId`/`deletedText`, the
+`updatedMemories` list from the settled outcome, and for skipped calls the
+echoed `arguments`, `repairQueued` for category skips and a human-readable
+`reason`; the `[id] text` line and every reason are `prompt_app_memory_runtime`
+catalog entries (`memory_id_line`, `memory_skip_*`), which the first-round
+memory list uses as well. `done`, `stopped_after_done` and rejected results keep
+their typed shape.
 An already admitted next round replays without provider I/O. Debounce/startup
 wiring and binding admission to host startup/finalization remain later slices.
 The composition root now exposes its SQLite database as the durable generic

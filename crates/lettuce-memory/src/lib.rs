@@ -46,9 +46,10 @@ pub use text::{
     MemoryTextProblem, collapse_whitespace, normalize_llm_output_text, normalize_memory_text,
 };
 pub use tool::{
-    CreateMemoryPreparation, DYNAMIC_MEMORY_TOOL_TEXT_KEYS, DynamicMemoryToolOptions,
-    MemoryBatchResult, MemoryReference, MemoryToolArguments, MemoryToolCall, MemoryToolError,
-    MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
-    MemoryToolSkipReason, SemanticDuplicateEvidence, SoftDeleteReason,
-    dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape,
+    CreateMemoryPreparation, DYNAMIC_MEMORY_TOOL_TEXT_KEYS, DuplicateKind,
+    DynamicMemoryToolOptions, ListedMemory, MemoryBatchResult, MemoryReference,
+    MemoryToolArguments, MemoryToolCall, MemoryToolError, MemoryToolOutcome, MemoryToolReducer,
+    MemoryToolRejection, MemoryToolResult, MemoryToolSkipReason, SemanticDuplicateEvidence,
+    SoftDeleteReason, dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape,
+    list_memories,
 };

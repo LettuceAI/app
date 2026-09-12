@@ -289,7 +289,9 @@ impl MemoryToolArguments {
             "create_memory" => {
                 let text = crate::normalize_memory_text(&required_string(object, "text")?)
                     .map_err(MemoryToolError::Text)?;
-                let category = match required_string(object, "category")?.as_str() {
+                let category = required_string(object, "category")?;
+                let category = match category.trim() {
+                    "" => return Err(MemoryToolError::MissingField("category")),
                     "character_trait" => MemoryCategory::CharacterTrait,
                     "relationship" => MemoryCategory::Relationship,
                     "plot_event" => MemoryCategory::PlotEvent,
@@ -425,27 +427,71 @@ pub enum MemoryToolRejection {
     InvalidSemanticDuplicateEvidence,
 }
 
+/// One memory as the model sees it in a tool result: the six-digit id and the
+/// text, in item order, superseded items excluded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ListedMemory {
+    pub short_id: MemoryShortId,
+    pub text: String,
+}
+
+#[must_use]
+pub fn list_memories(items: &[MemoryItem]) -> Vec<ListedMemory> {
+    items
+        .iter()
+        .filter(|item| item.superseded_by.is_none())
+        .map(|item| ListedMemory {
+            short_id: item.short_id,
+            text: item.text.clone(),
+        })
+        .collect()
+}
+
+/// Which duplicate check matched, as legacy reported it back to the model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DuplicateKind {
+    NormalizedText,
+    Semantic { cosine: Score, threshold: Score },
+    LexicalOverlap,
+}
+
+/// What a call did, with the facts legacy echoed to the model afterwards: the
+/// six-digit id, a deleted memory's text and the memory list right after the
+/// call applied.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum MemoryToolOutcome {
     Created {
         id: MemoryId,
+        short_id: MemoryShortId,
+        memories: Vec<ListedMemory>,
     },
     DuplicateSkipped {
         existing_id: MemoryId,
+        kind: DuplicateKind,
     },
     Deleted {
         id: MemoryId,
+        short_id: MemoryShortId,
+        text: String,
+        memories: Vec<ListedMemory>,
     },
     SoftDeleted {
         id: MemoryId,
+        short_id: MemoryShortId,
+        text: String,
         reason: SoftDeleteReason,
+        memories: Vec<ListedMemory>,
     },
     Pinned {
         id: MemoryId,
+        short_id: MemoryShortId,
     },
     Unpinned {
         id: MemoryId,
+        short_id: MemoryShortId,
     },
     TargetNotFound {
         reference: MemoryReference,
@@ -604,8 +650,10 @@ fn apply_create(
             reason: MemoryToolRejection::InvalidSemanticDuplicateEvidence,
         };
     }
-    if let Some(existing_id) = duplicate_id(text, preparation.semantic_duplicate.as_ref(), items) {
-        return MemoryToolOutcome::DuplicateSkipped { existing_id };
+    if let Some((existing_id, kind)) =
+        duplicate_id(text, preparation.semantic_duplicate.as_ref(), items)
+    {
+        return MemoryToolOutcome::DuplicateSkipped { existing_id, kind };
     }
 
     let mut supersedes = Vec::new();
@@ -658,7 +706,11 @@ fn apply_create(
         }
         enforce_superseded_cap(items, MAX_SUPERSEDED_MEMORIES);
     }
-    MemoryToolOutcome::Created { id: preparation.id }
+    MemoryToolOutcome::Created {
+        id: preparation.id,
+        short_id,
+        memories: list_memories(items),
+    }
 }
 
 fn enforce_superseded_cap(items: &mut Vec<MemoryItem>, cap: usize) {
@@ -698,10 +750,16 @@ fn duplicate_id(
     candidate: &str,
     semantic_duplicate: Option<&SemanticDuplicateEvidence>,
     items: &[MemoryItem],
-) -> Option<MemoryId> {
+) -> Option<(MemoryId, DuplicateKind)> {
     if let Some(evidence) = semantic_duplicate {
         if items.iter().any(|item| item.id == evidence.existing_id) {
-            return Some(evidence.existing_id);
+            return Some((
+                evidence.existing_id,
+                DuplicateKind::Semantic {
+                    cosine: evidence.cosine_score,
+                    threshold: evidence.threshold,
+                },
+            ));
         }
     }
     let normalized_candidate = normalize_text(candidate);
@@ -709,10 +767,10 @@ fn duplicate_id(
     items.iter().find_map(|item| {
         let normalized_existing = normalize_text(&item.text);
         if !normalized_candidate.is_empty() && normalized_candidate == normalized_existing {
-            return Some(item.id);
+            return Some((item.id, DuplicateKind::NormalizedText));
         }
         (candidate_word_count >= 3 && lexical_overlap(candidate, &item.text) >= 0.9)
-            .then_some(item.id)
+            .then_some((item.id, DuplicateKind::LexicalOverlap))
     })
 }
 
@@ -763,22 +821,32 @@ fn apply_delete(
         };
     };
     let id = items[index].id;
+    let short_id = items[index].short_id;
+    let text = items[index].text.clone();
     let hard_requested = confidence >= Score::HARD_DELETE_THRESHOLD;
     if !hard_requested || *hard_delete_count >= hard_delete_limit {
         items[index].is_cold = true;
         items[index].importance = policy.cold_threshold;
         return MemoryToolOutcome::SoftDeleted {
             id,
+            short_id,
+            text,
             reason: if hard_requested {
                 SoftDeleteReason::HardDeleteLimitReached
             } else {
                 SoftDeleteReason::LowConfidence
             },
+            memories: list_memories(items),
         };
     }
     items.remove(index);
     *hard_delete_count += 1;
-    MemoryToolOutcome::Deleted { id }
+    MemoryToolOutcome::Deleted {
+        id,
+        short_id,
+        text,
+        memories: list_memories(items),
+    }
 }
 
 fn hard_delete_limit(initial_count: usize, ratio: Score) -> usize {
@@ -801,13 +869,14 @@ fn apply_pin(
     };
     let item = &mut items[index];
     let id = item.id;
+    let short_id = item.short_id;
     item.is_pinned = pinned;
     if pinned {
         item.is_cold = false;
         item.importance = Score::FULL;
-        MemoryToolOutcome::Pinned { id }
+        MemoryToolOutcome::Pinned { id, short_id }
     } else {
-        MemoryToolOutcome::Unpinned { id }
+        MemoryToolOutcome::Unpinned { id, short_id }
     }
 }
 
@@ -927,9 +996,9 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        CreateMemoryPreparation, DynamicMemoryToolOptions, MemoryReference, MemoryToolArguments,
-        MemoryToolCall, MemoryToolOutcome, MemoryToolReducer, SoftDeleteReason,
-        dynamic_memory_tool_request_for_run,
+        CreateMemoryPreparation, DuplicateKind, DynamicMemoryToolOptions, MemoryReference,
+        MemoryToolArguments, MemoryToolCall, MemoryToolError, MemoryToolOutcome, MemoryToolReducer,
+        SoftDeleteReason, dynamic_memory_tool_request_for_run,
     };
     use crate::{
         MemoryCategory, MemoryItem, MemoryPolicy, MemoryShortId, MemorySpaceSnapshot, Score,
@@ -1094,7 +1163,7 @@ mod tests {
         ));
         assert!(matches!(
             result.results[1].outcome,
-            MemoryToolOutcome::Deleted { id } if id == second_id
+            MemoryToolOutcome::Deleted { id, .. } if id == second_id
         ));
         assert!(matches!(
             result.results[2].outcome,
@@ -1481,7 +1550,10 @@ mod tests {
         assert!(result.change.is_none());
         assert!(matches!(
             result.results[0].outcome,
-            MemoryToolOutcome::DuplicateSkipped { existing_id: id } if id == existing_id
+            MemoryToolOutcome::DuplicateSkipped {
+                existing_id: id,
+                kind: DuplicateKind::NormalizedText
+            } if id == existing_id
         ));
 
         let mut semantic = call(MemoryToolArguments::CreateMemory {
@@ -1504,7 +1576,126 @@ mod tests {
             }),
         });
         let result = MemoryToolReducer.reduce(&state, &policy(), &[semantic]);
-        assert!(result.is_ok_and(|result| result.change.is_none()));
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => panic!("reduction failed: {error}"),
+        };
+        assert!(result.change.is_none());
+        assert_eq!(
+            result.results[0].outcome,
+            MemoryToolOutcome::DuplicateSkipped {
+                existing_id,
+                kind: DuplicateKind::Semantic {
+                    cosine: score(9_500),
+                    threshold: score(9_000),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn category_is_trimmed_before_the_allow_list_and_blank_means_missing() {
+        assert!(matches!(
+            MemoryToolArguments::parse(
+                "create_memory",
+                &json!({"text": "Mira likes tea", "category": " preference "})
+            ),
+            Ok(MemoryToolArguments::CreateMemory {
+                category: MemoryCategory::Preference,
+                ..
+            })
+        ));
+        assert!(matches!(
+            MemoryToolArguments::parse(
+                "create_memory",
+                &json!({"text": "Mira likes tea", "category": "   "})
+            ),
+            Err(MemoryToolError::MissingField("category"))
+        ));
+    }
+
+    #[test]
+    fn mutation_results_list_the_memories_right_after_each_call() {
+        let first = item("Mira likes the old harbor.", 4, 1, false);
+        let second = item("The lighthouse keeper is her uncle.", 6, 2, false);
+        let mut superseded = item("Mira lived in the capital.", 5, 3, false);
+        superseded.superseded_by = Some(first.id);
+        superseded.superseded_at = Some(TimestampMillis::new(3));
+        let first_short = first.short_id;
+        let second_id = second.id;
+        let second_short = second.short_id;
+        let state = snapshot(vec![first, second, superseded]);
+        let create_id = MemoryId::new();
+        let mut create = call(MemoryToolArguments::CreateMemory {
+            text: "Mira moved to the coast last spring.".to_string(),
+            category: MemoryCategory::PlotEvent,
+            important: false,
+            source_message_id: None,
+            supersedes: Vec::new(),
+        });
+        create.create = Some(CreateMemoryPreparation {
+            id: create_id,
+            token_count: 7,
+            created_at: TimestampMillis::new(4),
+            semantic_duplicate: None,
+        });
+        let calls = vec![
+            create,
+            call(MemoryToolArguments::DeleteMemory {
+                target: reference(second_id),
+                confidence: Some(Score::FULL),
+            }),
+        ];
+        let result = MemoryToolReducer
+            .reduce(
+                &state,
+                &MemoryPolicy {
+                    max_entries: 10,
+                    hot_token_budget: 1_000,
+                    ..policy()
+                },
+                &calls,
+            )
+            .expect("reduction");
+        let created_short = match &result.results[0].outcome {
+            MemoryToolOutcome::Created {
+                id,
+                short_id,
+                memories,
+            } => {
+                assert_eq!(*id, create_id);
+                assert_eq!(
+                    memories
+                        .iter()
+                        .map(|memory| memory.short_id)
+                        .collect::<Vec<_>>(),
+                    vec![first_short, second_short, *short_id]
+                );
+                assert_eq!(memories[2].text, "Mira moved to the coast last spring.");
+                *short_id
+            }
+            other => panic!("unexpected outcome {other:?}"),
+        };
+        match &result.results[1].outcome {
+            MemoryToolOutcome::Deleted {
+                id,
+                short_id,
+                text,
+                memories,
+            } => {
+                assert_eq!(*id, second_id);
+                assert_eq!(*short_id, second_short);
+                assert_eq!(text, "The lighthouse keeper is her uncle.");
+                assert_eq!(
+                    memories
+                        .iter()
+                        .map(|memory| memory.short_id)
+                        .collect::<Vec<_>>(),
+                    vec![first_short, created_short]
+                );
+            }
+            other => panic!("unexpected outcome {other:?}"),
+        }
     }
 
     #[test]
@@ -1668,11 +1859,11 @@ mod tests {
         };
         assert!(matches!(
             result.results[0].outcome,
-            MemoryToolOutcome::Pinned { id } if id == existing_id
+            MemoryToolOutcome::Pinned { id, .. } if id == existing_id
         ));
         assert!(matches!(
             result.results[1].outcome,
-            MemoryToolOutcome::Unpinned { id } if id == existing_id
+            MemoryToolOutcome::Unpinned { id, .. } if id == existing_id
         ));
         assert!(matches!(
             result.results[2].outcome,

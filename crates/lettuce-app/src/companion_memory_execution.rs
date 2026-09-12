@@ -391,7 +391,7 @@ mod tests {
             .expect("reduction");
         assert!(matches!(
             reduced.results[0].outcome,
-            MemoryToolOutcome::Created { id } if id == memory_id
+            MemoryToolOutcome::Created { id, .. } if id == memory_id
         ));
         assert!(matches!(
             reduced.results[1].outcome,

@@ -596,8 +596,9 @@ fn build_first_request(
         .items
         .iter()
         .filter(|item| item.superseded_by.is_none())
-        .map(|item| format!("[{}] {}", item.short_id, item.text))
-        .collect::<Vec<_>>();
+        .map(|item| crate::memory_tool_result::memory_id_line(text, item.short_id, &item.text))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
     let mut values = PromptRenderValues::default();
     values
         .purpose_values
