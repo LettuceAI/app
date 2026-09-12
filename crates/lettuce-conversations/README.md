@@ -209,7 +209,7 @@ stored anchor and nonnegative elapsed real time; invalid negative anchors are
 rejected. This is session-owned data, not a character launch snapshot. The
 database stamps new messages of companion direct chats with this effective time,
 and the application reads it for prompt time values, history timestamps, memory
-lines and the memory cycle's time awareness. Temporal-range retrieval and legacy
+lines, the memory cycle's time awareness and temporal-range retrieval. Legacy
 imports of the `timeAwarenessEnabled` and `timeOverride` preferences are still
 missing.
 The heuristic's recency distance counts every visible message after a

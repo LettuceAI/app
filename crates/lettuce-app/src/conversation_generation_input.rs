@@ -1149,7 +1149,7 @@ where
             )
         } else {
             let selected = self
-                .retrieve_memories(work, timeline, &memory, settings, shape)
+                .retrieve_memories(work, timeline, &memory, settings, shape, now)
                 .await?;
             let revision = if selected.is_empty() {
                 memory.revision
@@ -1264,6 +1264,7 @@ where
         memory: &MemorySpaceSnapshot,
         settings: &DynamicMemoryPolicySnapshot,
         shape: MemoryPromptShape,
+        now: TimestampMillis,
     ) -> Result<Vec<lettuce_memory::MemoryItem>, ConversationGenerationInputError> {
         let active = memory
             .items
@@ -1284,6 +1285,24 @@ where
         if query.is_empty() {
             return Ok(Vec::new());
         }
+        let temporal_range = if shape.clock.time_awareness_enabled() {
+            crate::temporal_query::detect_temporal_query_range(
+                &query,
+                shape.clock.effective_now(now),
+            )
+        } else {
+            None
+        };
+        let active = match temporal_range {
+            Some(range) => {
+                let candidates = temporal_candidates(&active, range);
+                if candidates.is_empty() {
+                    return Ok(Vec::new());
+                }
+                candidates
+            }
+            None => active,
+        };
         let query_embedding = match self.embedding.embed_memory(
             &EmbeddingRequest {
                 text: query.clone(),
@@ -1309,7 +1328,11 @@ where
             )
             .map_err(|_| ConversationGenerationInputError::Embedding)?;
         let limit = usize::from(settings.retrieval_limit);
-        let threshold = f32::from(settings.min_similarity_basis_points) / 10_000.0;
+        let threshold = if temporal_range.is_some() {
+            -1.0
+        } else {
+            f32::from(settings.min_similarity_basis_points) / 10_000.0
+        };
         let selected = select_memories(
             &query,
             &query_embedding,
@@ -1320,6 +1343,7 @@ where
             settings.retrieval_strategy,
             shape.group,
             shape.companion,
+            temporal_range.is_some(),
         );
         Ok(selected.into_iter().cloned().collect())
     }
@@ -1899,6 +1923,7 @@ fn select_memories<'a>(
     strategy: MemoryRetrievalStrategySnapshot,
     group: bool,
     companion: bool,
+    temporal: bool,
 ) -> Vec<&'a lettuce_memory::MemoryItem> {
     let projections = projections
         .iter()
@@ -1963,7 +1988,7 @@ fn select_memories<'a>(
             selected.sort_by(|left, right| adjusted_score(right).total_cmp(&adjusted_score(left)));
         }
         for recent in [true, false] {
-            if selected.len() == limit {
+            if temporal || selected.len() == limit {
                 break;
             }
             let candidates = active.iter().copied().filter(|item| {
@@ -2027,6 +2052,22 @@ fn select_memories<'a>(
         selected.extend(cold.into_iter().take(limit).map(|(_, item)| item));
     }
     selected
+}
+
+/// Legacy temporal candidates: only memories observed inside the queried
+/// window take part, and a memory without an observation time never does.
+fn temporal_candidates<'a>(
+    active: &[&'a lettuce_memory::MemoryItem],
+    range: crate::temporal_query::TemporalRange,
+) -> Vec<&'a lettuce_memory::MemoryItem> {
+    active
+        .iter()
+        .copied()
+        .filter(|item| {
+            item.observed_at
+                .is_some_and(|observed_at| range.contains(observed_at))
+        })
+        .collect()
 }
 
 fn lexical_anchor_boost(query: &str, memory_text: &str) -> f32 {
@@ -2189,10 +2230,89 @@ mod tests {
             strategy,
             group,
             companion,
+            false,
         )
         .into_iter()
         .map(|item| item.id)
         .collect()
+    }
+
+    #[test]
+    fn temporal_retrieval_keeps_only_observed_memories_in_range_without_fill() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::Smart;
+        use lettuce_embeddings::{EmbeddingDimensions, EmbeddingVector, MemoryEmbeddingProjection};
+        use lettuce_memory::MemoryCategory::Other;
+        let mut items = [
+            retrieval_memory(1, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(3, Other),
+            retrieval_memory(4, Other),
+        ];
+        items[0].observed_at = Some(TimestampMillis::new(150));
+        items[1].observed_at = Some(TimestampMillis::new(250));
+        items[2].observed_at = None;
+        items[3].observed_at = Some(TimestampMillis::new(199));
+        items[3].access_count = 40;
+        let range = crate::temporal_query::TemporalRange {
+            start: TimestampMillis::new(100),
+            end: TimestampMillis::new(200),
+        };
+        let active = items.iter().collect::<Vec<_>>();
+        let candidates = super::temporal_candidates(&active, range);
+        assert_eq!(
+            candidates.iter().map(|item| item.id).collect::<Vec<_>>(),
+            vec![items[0].id, items[3].id]
+        );
+        let vector = |score: f32| {
+            let mut values = vec![0.0; 64];
+            values[0] = score;
+            values[1] = (1.0 - score * score).sqrt();
+            EmbeddingVector {
+                values,
+                source_revision: "retrieval-test".into(),
+            }
+        };
+        let space_id = lettuce_types::MemorySpaceId::new();
+        let projections = [(0, -0.2), (3, 0.05)]
+            .into_iter()
+            .map(|(index, score): (usize, f32)| MemoryEmbeddingProjection {
+                space_id,
+                memory_id: items[index].id,
+                source_text: items[index].text.clone(),
+                vector: vector(score),
+                dimensions: EmbeddingDimensions::D64,
+                updated_at: items[index].created_at,
+            })
+            .collect::<Vec<_>>();
+        let temporal = super::select_memories(
+            "what happened last week",
+            &vector(1.0),
+            &projections,
+            &candidates[..1],
+            3,
+            -1.0,
+            Smart,
+            false,
+            true,
+            true,
+        );
+        assert_eq!(
+            temporal.iter().map(|item| item.id).collect::<Vec<_>>(),
+            vec![items[0].id]
+        );
+        let ordinary = super::select_memories(
+            "what happened last week",
+            &vector(1.0),
+            &projections,
+            &active,
+            3,
+            -1.0,
+            Smart,
+            false,
+            true,
+            false,
+        );
+        assert!(ordinary.len() > temporal.len());
     }
 
     #[test]

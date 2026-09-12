@@ -246,8 +246,15 @@ invented leading stamp, then trim); the replay input constructor resolves the sa
 flag, treating a character deleted after dispatch as no time awareness so the
 recorded request still recovers. Legacy stripped after its empty-response check,
 so a reply that was only a timestamp was saved as an empty message; stripping
-first makes it an empty-reply failure, a deliberate correction. Temporal-range
-retrieval is not ported yet.
+first makes it an empty-reply failure, a deliberate correction. For a direct
+companion chat with time awareness, dynamic-memory retrieval detects a calendar
+phrase in the retrieval query against the clock's effective now (`temporal_query`,
+legacy `detect_temporal_query_range`); when one is found only memories observed
+inside that half-open window are candidates (none means no retrieved memories),
+the similarity threshold drops to -1 and the recent and frequent fill slots are
+skipped, while the cold keyword fallback still searches the filtered set.
+Calendar arithmetic is checked: an amount that overflows a date yields no range,
+where legacy panicked on inputs like "200000000000 days ago".
 Roleplay and group assembly do not read companion state. Missing or corrupt
 companion state fails assembly closed, and the composition root exposes the
 fully wired assembler over the shared database ports.

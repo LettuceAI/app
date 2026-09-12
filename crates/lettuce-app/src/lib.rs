@@ -65,6 +65,7 @@ mod lorebook_keyword_execution;
 mod lorebook_keyword_job;
 mod memory_prompt;
 mod memory_tool_result;
+mod temporal_query;
 mod reply_helper;
 mod kokoro_catalog;
 mod kokoro_native_synthesis;
