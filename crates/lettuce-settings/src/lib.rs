@@ -20,8 +20,9 @@ mod secrets;
 pub use global::{
     DynamicMemoryPromptSelection, DynamicMemorySettings, EmbeddingSettings,
     GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
-    LorebookGeneratorSelection, LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
-    MemoryStructuredFallbackFormat, PureMode, StoredGlobalSettings,
+    HelpMeReplySettings, HelpMeReplyStyle, LorebookGeneratorSelection, LorebookGeneratorSettings,
+    MemoryRetrievalStrategy, MemoryRunMode, MemoryStructuredFallbackFormat, PureMode,
+    StoredGlobalSettings,
 };
 
 pub use secrets::{

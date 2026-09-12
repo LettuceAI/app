@@ -15,9 +15,10 @@ use lettuce_models::{
     ProviderProtocol, QueryParameterName, ReasoningEffort, ReasoningMode, WireRole,
 };
 use lettuce_settings::{
-    DynamicMemorySettings, EmbeddingSettings, GlobalSettings, HeaderName,
-    LorebookGeneratorSelection, LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
-    MemoryStructuredFallbackFormat, PureMode, SecretOwnerId, SecretPurpose, SecretRef, SecretValue,
+    DynamicMemorySettings, EmbeddingSettings, GlobalSettings, HeaderName, HelpMeReplySettings,
+    HelpMeReplyStyle, LorebookGeneratorSelection, LorebookGeneratorSettings,
+    MemoryRetrievalStrategy, MemoryRunMode, MemoryStructuredFallbackFormat, PureMode,
+    SecretOwnerId, SecretPurpose, SecretRef, SecretValue,
 };
 use lettuce_speech::{AudioProvider, AudioProviderConfig, UserVoice};
 use lettuce_types::{
@@ -65,6 +66,8 @@ pub struct LegacyBackupSettingsCandidate {
     pub lorebook_generator_model_profile_id: Option<ModelProfileId>,
     pub lorebook_generator_prompt_source_ids: LorebookGeneratorPromptSources,
     pub dynamic_memory_prompt_source_ids: DynamicMemoryPromptSources,
+    pub help_me_reply_model_profile_id: Option<ModelProfileId>,
+    pub help_me_reply_prompt_source_ids: HelpMeReplyPromptSources,
     pub deprecated_system_prompt: Option<String>,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
@@ -73,6 +76,14 @@ pub struct LegacyBackupSettingsCandidate {
 /// Legacy `dynamicMemorySummarizerPromptTemplateId` /
 /// `dynamicMemoryManagerPromptTemplateId`, retained as source template ids
 /// like the lorebook generator prompts.
+/// Legacy `helpMeReplyRoleplayPromptTemplateId` /
+/// `helpMeReplyConversationalPromptTemplateId`, retained as source ids.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HelpMeReplyPromptSources {
+    pub roleplay: Option<String>,
+    pub conversational: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DynamicMemoryPromptSources {
     pub summarizer: Option<String>,
@@ -575,6 +586,8 @@ fn map_settings(
         "default_model_id",
     )?;
     let generator_model = advanced_id(advanced, "lorebookGeneratorModelId")?;
+    let help_me_reply_model = advanced_id(advanced, "helpMeReplyModelId")?;
+    let help_me_reply = map_help_me_reply(advanced, notices)?;
     let generator_prompts = LorebookGeneratorPromptSources {
         planner: normalized_string(advanced, "lorebookGeneratorPlannerPromptTemplateId")?,
         writer: normalized_string(advanced, "lorebookGeneratorWriterPromptTemplateId")?,
@@ -605,6 +618,14 @@ fn map_settings(
         "dynamicMemorySummarizerPromptTemplateId",
         "dynamicMemoryManagerPromptTemplateId",
         "dynamicMemoryLlamaSamplerOverwriteEnabled",
+        "helpMeReplyEnabled",
+        "helpMeReplyModelId",
+        "helpMeReplyStreaming",
+        "helpMeReplyMaxTokens",
+        "helpMeReplyHistoryCount",
+        "helpMeReplyStyle",
+        "helpMeReplyRoleplayPromptTemplateId",
+        "helpMeReplyConversationalPromptTemplateId",
         "embeddingDimensions",
         "manualModeContextWindow",
         "summarisationModelId",
@@ -671,6 +692,7 @@ fn map_settings(
             group_dynamic_memory,
             dynamic_memory_prompts: lettuce_settings::DynamicMemoryPromptSelection::default(),
             dynamic_memory_llama_sampler_overwrite_enabled,
+            help_me_reply,
             embedding: EmbeddingSettings {
                 dimensions: optional_u32(advanced, "embeddingDimensions")?
                     .and_then(|value| u16::try_from(value).ok()),
@@ -689,10 +711,62 @@ fn map_settings(
             summarizer: normalized_string(advanced, "dynamicMemorySummarizerPromptTemplateId")?,
             manager: normalized_string(advanced, "dynamicMemoryManagerPromptTemplateId")?,
         },
+        help_me_reply_model_profile_id: help_me_reply_model,
+        help_me_reply_prompt_source_ids: HelpMeReplyPromptSources {
+            roleplay: normalized_string(advanced, "helpMeReplyRoleplayPromptTemplateId")?,
+            conversational: normalized_string(
+                advanced,
+                "helpMeReplyConversationalPromptTemplateId",
+            )?,
+        },
         deprecated_system_prompt: normalize_option(row.system_prompt.clone()),
         created_at: TimestampMillis::new(created),
         updated_at: TimestampMillis::new(updated),
     })
+}
+
+fn map_help_me_reply(
+    advanced: &Map<String, Value>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> Result<HelpMeReplySettings, LegacyBackupConfigurationError> {
+    let mut result = HelpMeReplySettings::default();
+    result.enabled = optional_bool_value(
+        advanced,
+        "helpMeReplyEnabled",
+        result.enabled,
+        LegacyBackupDocumentKind::Settings,
+    )?;
+    result.streaming = optional_bool_value(
+        advanced,
+        "helpMeReplyStreaming",
+        result.streaming,
+        LegacyBackupDocumentKind::Settings,
+    )?;
+    if let Some(max_tokens) = optional_u32(advanced, "helpMeReplyMaxTokens")? {
+        result.max_output_tokens = max_tokens;
+    }
+    if let Some(history_count) = optional_u32(advanced, "helpMeReplyHistoryCount")? {
+        if history_count == 0 {
+            notices.push(notice(
+                LegacyBackupConversionNoticeKind::Lossy,
+                LegacyBackupDocumentKind::Settings,
+                "advanced_settings.helpMeReplyHistoryCount",
+            ));
+        } else {
+            result.history_count = history_count;
+        }
+    }
+    result.style = match advanced.get("helpMeReplyStyle").and_then(Value::as_str) {
+        None | Some("roleplay") => HelpMeReplyStyle::Roleplay,
+        Some("conversational") => HelpMeReplyStyle::Conversational,
+        Some(_) => {
+            return Err(malformed(
+                LegacyBackupDocumentKind::Settings,
+                "advanced_settings.helpMeReplyStyle",
+            ));
+        }
+    };
+    Ok(result)
 }
 
 fn map_dynamic_memory(
@@ -1865,6 +1939,10 @@ fn validate_selections(
             "advanced_settings.lorebookGeneratorModelId",
             settings.lorebook_generator_model_profile_id,
         ),
+        (
+            "advanced_settings.helpMeReplyModelId",
+            settings.help_me_reply_model_profile_id,
+        ),
     ] {
         if value.is_some_and(|id| !model_ids.contains(&id)) {
             return Err(orphan(LegacyBackupDocumentKind::Settings, field));
@@ -1913,6 +1991,14 @@ fn validate_selections(
         (
             "dynamicMemoryManagerPromptTemplateId",
             &settings.dynamic_memory_prompt_source_ids.manager,
+        ),
+        (
+            "helpMeReplyRoleplayPromptTemplateId",
+            &settings.help_me_reply_prompt_source_ids.roleplay,
+        ),
+        (
+            "helpMeReplyConversationalPromptTemplateId",
+            &settings.help_me_reply_prompt_source_ids.conversational,
         ),
     ] {
         if value.as_deref().is_some_and(|id| !prompt_ids.contains(id)) {
@@ -2911,6 +2997,46 @@ mod tests {
         let model_id = ModelProfileId::new();
         let audio_id = AudioProviderId::new();
         let voice_id = VoiceProfileId::new();
+        let advanced_settings = json!({
+            "appUpdateChecksEnabled": false,
+            "embeddingDimensions": 512,
+            "manualModeContextWindow": 30,
+            "summarisationModelId": model_id,
+            "groupSpeakerSelectionModelId": model_id,
+            "lorebookGeneratorModelId": model_id,
+            "lorebookGeneratorDefaultTargetCount": 14,
+            "lorebookGeneratorMaxTokens": 2048,
+            "lorebookGeneratorPlannerPromptTemplateId": "prompt-main",
+            "dynamicMemoryStructuredFallbackFormat": "json",
+            "dynamicMemorySummarizerPromptTemplateId": "prompt-main",
+            "dynamicMemoryManagerPromptTemplateId": " ",
+            "dynamicMemoryLlamaSamplerOverwriteEnabled": false,
+            "helpMeReplyEnabled": false,
+            "helpMeReplyModelId": model_id,
+            "helpMeReplyStreaming": false,
+            "helpMeReplyMaxTokens": 220,
+            "helpMeReplyHistoryCount": 0,
+            "helpMeReplyStyle": "conversational",
+            "helpMeReplyConversationalPromptTemplateId": "prompt-main",
+            "dynamicMemory": {
+                "maxEntries": 60,
+                "minSimilarityThreshold": 0.42,
+                "retrievalLimit": 7,
+                "retrievalStrategy": "cosine",
+                "hotMemoryTokenBudget": 2400,
+                "coldThreshold": 0.25,
+                "contextEnrichmentEnabled": false,
+                "decayRate": 0.1,
+                "enabled": true,
+                "summaryMessageInterval": 12,
+                "runMode": "askFirst",
+                "recursiveMemoryLoops": true,
+                "recursiveMemoryLoopHardCap": 6,
+                "deleteConfidenceDefault": 0.7,
+                "maxHardDeleteRatioPerCycle": 0.25,
+                "unknownKnob": 1
+            }
+        });
         let documents = vec![
             document(
                 LegacyBackupDocumentKind::Settings,
@@ -2922,39 +3048,7 @@ mod tests {
                     "prompt_template_id": "prompt-main",
                     "system_prompt": "Old global prompt",
                     "migration_version": 92,
-                    "advanced_settings": {
-                        "appUpdateChecksEnabled": false,
-                        "embeddingDimensions": 512,
-                        "manualModeContextWindow": 30,
-                        "summarisationModelId": model_id,
-                        "groupSpeakerSelectionModelId": model_id,
-                        "lorebookGeneratorModelId": model_id,
-                        "lorebookGeneratorDefaultTargetCount": 14,
-                        "lorebookGeneratorMaxTokens": 2048,
-                        "lorebookGeneratorPlannerPromptTemplateId": "prompt-main",
-                        "dynamicMemoryStructuredFallbackFormat": "json",
-                        "dynamicMemorySummarizerPromptTemplateId": "prompt-main",
-                        "dynamicMemoryManagerPromptTemplateId": " ",
-                        "dynamicMemoryLlamaSamplerOverwriteEnabled": false,
-                        "dynamicMemory": {
-                            "maxEntries": 60,
-                            "minSimilarityThreshold": 0.42,
-                            "retrievalLimit": 7,
-                            "retrievalStrategy": "cosine",
-                            "hotMemoryTokenBudget": 2400,
-                            "coldThreshold": 0.25,
-                            "contextEnrichmentEnabled": false,
-                            "decayRate": 0.1,
-                            "enabled": true,
-                            "summaryMessageInterval": 12,
-                            "runMode": "askFirst",
-                            "recursiveMemoryLoops": true,
-                            "recursiveMemoryLoopHardCap": 6,
-                            "deleteConfidenceDefault": 0.7,
-                            "maxHardDeleteRatioPerCycle": 0.25,
-                            "unknownKnob": 1
-                        }
-                    },
+                    "advanced_settings": advanced_settings,
                     "created_at": 10,
                     "updated_at": 20
                 }),
@@ -3173,6 +3267,22 @@ mod tests {
                 .value
                 .dynamic_memory_llama_sampler_overwrite_enabled
         );
+        let help_me_reply = &plan.settings.value.help_me_reply;
+        assert!(!help_me_reply.enabled && !help_me_reply.streaming);
+        assert_eq!(help_me_reply.max_output_tokens, 220);
+        assert_eq!(help_me_reply.history_count(), 10);
+        assert_eq!(help_me_reply.style, HelpMeReplyStyle::Conversational);
+        assert_eq!(plan.settings.help_me_reply_model_profile_id, Some(model_id));
+        assert_eq!(
+            plan.settings.help_me_reply_prompt_source_ids,
+            HelpMeReplyPromptSources {
+                roleplay: None,
+                conversational: Some("prompt-main".into()),
+            }
+        );
+        assert!(plan.notices.iter().any(|notice| notice.kind
+            == LegacyBackupConversionNoticeKind::Lossy
+            && notice.field == "advanced_settings.helpMeReplyHistoryCount"));
         assert!(
             !plan
                 .notices

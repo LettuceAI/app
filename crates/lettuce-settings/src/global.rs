@@ -20,6 +20,8 @@ pub struct GlobalSettings {
     #[serde(default = "default_true")]
     pub dynamic_memory_llama_sampler_overwrite_enabled: bool,
     #[serde(default)]
+    pub help_me_reply: HelpMeReplySettings,
+    #[serde(default)]
     pub embedding: EmbeddingSettings,
     #[serde(default = "default_manual_mode_context_window")]
     pub manual_mode_context_window: u32,
@@ -44,6 +46,7 @@ impl Default for GlobalSettings {
             group_dynamic_memory: None,
             dynamic_memory_prompts: DynamicMemoryPromptSelection::default(),
             dynamic_memory_llama_sampler_overwrite_enabled: true,
+            help_me_reply: HelpMeReplySettings::default(),
             embedding: EmbeddingSettings::default(),
             manual_mode_context_window: default_manual_mode_context_window(),
         }
@@ -89,6 +92,56 @@ pub enum MemoryRunMode {
 pub struct DynamicMemoryPromptSelection {
     pub summarizer_prompt_id: Option<PromptDocumentId>,
     pub manager_prompt_id: Option<PromptDocumentId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HelpMeReplyStyle {
+    Roleplay,
+    Conversational,
+}
+
+/// Legacy `helpMeReply*` advanced settings: the feature toggle, its model,
+/// streaming, output cap, history window, style and the per-style prompt
+/// overrides; unset ids mean the default model and the built-in documents.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct HelpMeReplySettings {
+    pub enabled: bool,
+    pub model_profile_id: Option<ModelProfileId>,
+    pub streaming: bool,
+    pub max_output_tokens: u32,
+    pub history_count: u32,
+    pub style: HelpMeReplyStyle,
+    pub roleplay_prompt_id: Option<PromptDocumentId>,
+    pub conversational_prompt_id: Option<PromptDocumentId>,
+}
+
+impl Default for HelpMeReplySettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            model_profile_id: None,
+            streaming: true,
+            max_output_tokens: 150,
+            history_count: 10,
+            style: HelpMeReplyStyle::Roleplay,
+            roleplay_prompt_id: None,
+            conversational_prompt_id: None,
+        }
+    }
+}
+
+impl HelpMeReplySettings {
+    /// Legacy ignored a zero history count and used ten messages.
+    #[must_use]
+    pub fn history_count(&self) -> usize {
+        if self.history_count == 0 {
+            10
+        } else {
+            self.history_count as usize
+        }
+    }
 }
 
 /// The document format the dynamic-memory cycle asks for when a model cannot
@@ -306,6 +359,19 @@ mod tests {
             DynamicMemoryPromptSelection::default()
         );
         assert!(settings.dynamic_memory_llama_sampler_overwrite_enabled);
+        assert_eq!(settings.help_me_reply, HelpMeReplySettings::default());
+        assert!(settings.help_me_reply.enabled && settings.help_me_reply.streaming);
+        assert_eq!(settings.help_me_reply.max_output_tokens, 150);
+        assert_eq!(settings.help_me_reply.history_count(), 10);
+        assert_eq!(settings.help_me_reply.style, HelpMeReplyStyle::Roleplay);
+        assert_eq!(
+            HelpMeReplySettings {
+                history_count: 0,
+                ..HelpMeReplySettings::default()
+            }
+            .history_count(),
+            10
+        );
         assert_eq!(
             settings.effective_group_dynamic_memory(),
             &settings.dynamic_memory

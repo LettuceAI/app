@@ -38,7 +38,10 @@ the user's summarizer and manager prompt document overrides (legacy
 shared by direct and group chats); unset means the built-in document.
 `dynamic_memory_llama_sampler_overwrite_enabled` (legacy
 `dynamicMemoryLlamaSamplerOverwriteEnabled`, default true) lets memory calls on
-llama.cpp models drop the creative sampler. `embedding.dimensions` keeps the legacy
+llama.cpp models drop the creative sampler. `help_me_reply` carries the legacy
+`helpMeReply*` advanced settings with their defaults (enabled, streaming, 150
+output tokens, ten history messages, `roleplay` style, no model or prompt
+overrides); a zero history count reads as ten, as legacy ignored it. `embedding.dimensions` keeps the legacy
 `embeddingDimensions` preference; unset means the embedding default.
 `manual_mode_context_window` (legacy `manualModeContextWindow`, default 50) is
 the history window for chats without dynamic memory; dynamic chats use the

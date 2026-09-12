@@ -579,9 +579,13 @@ pub(crate) fn canonicalize_and_validate(
     }
     let generator = &graph.settings.value.lorebook_generator.selection;
     let memory_prompts = &graph.settings.value.dynamic_memory_prompts;
+    let help_me_reply = &graph.settings.value.help_me_reply;
     if generator
         .model_profile_id
         .is_some_and(|id| !profile_ids.contains_key(&id))
+        || help_me_reply
+            .model_profile_id
+            .is_some_and(|id| !profile_ids.contains_key(&id))
         || [
             generator.planner_prompt_id,
             generator.writer_prompt_id,
@@ -589,6 +593,8 @@ pub(crate) fn canonicalize_and_validate(
             generator.coherence_prompt_id,
             memory_prompts.summarizer_prompt_id,
             memory_prompts.manager_prompt_id,
+            help_me_reply.roleplay_prompt_id,
+            help_me_reply.conversational_prompt_id,
         ]
         .into_iter()
         .flatten()
