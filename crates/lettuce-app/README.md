@@ -893,7 +893,17 @@ retry on the next turn; the local manager prompt for
 llama.cpp accounts; policy, duplicate threshold and fallback format from the
 settings; supersession for companion conversations); `run_claimed` seeds
 creates with the embedding tokenizer (zero on failure, as legacy), runs the job
-runner and settles the job. Companion time awareness has no destination yet, so
+runner and settles the job. `trigger` is legacy `trigger_dynamic_memory` /
+`retry_dynamic_memory`: the same gate, then a forced cycle over the most recent
+interval-sized slice of the unsummarized dialogue (companion conversations use
+their effects, an optional model override with update-default-on-success is
+carried on the batch); `skip` and `pending_approval_count` are legacy
+`skip_dynamic_memory_cycle` and `dynamic_memory_pending_approval`. A forced
+window never reaches back into already summarized messages, which legacy's
+`next_window(force)` could. When a run already exists for the batch, its frozen
+profile, flags and fallback format win over live inputs that changed meanwhile
+(legacy's in-progress cycle kept the settings it had read); only the
+conversation, space, source messages and interval must still match. Companion time awareness has no destination yet, so
 the host passes it disabled, as generation does. Retrieval embedding
 unavailability preserves
 the legacy behavior of continuing without retrieved keys. A nonempty selection

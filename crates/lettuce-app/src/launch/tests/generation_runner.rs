@@ -2734,6 +2734,139 @@ async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
 }
 
 #[tokio::test]
+async fn post_turn_memory_host_answers_ask_first_with_skip_and_trigger() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = true;
+    settings.dynamic_memory.summary_message_interval = 2;
+    settings.dynamic_memory.run_mode = lettuce_settings::MemoryRunMode::AskFirst;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("save dynamic memory settings");
+    let scenario = scenario_with_resolvable_profile(database, true, "host-ask-first", true);
+    let generation = admit_and_claim(database, &scenario, 1_015);
+    let engine = ScenarioEmbeddingEngine;
+    let reply = scripted(vec![text_outcome("ask-first-reply", "Tea it is.", 5, 3)]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &reply)
+        .run(
+            &generation,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("finalize plain dynamic turn");
+    let memory = scripted(vec![
+        call_outcome(
+            "ask-first-summary",
+            "write_summary",
+            serde_json::json!({"summary": "The user chose tea."}),
+            (6, 2),
+        ),
+        call_outcome(
+            "ask-first-create",
+            "create_memory",
+            serde_json::json!({"text": "The user prefers tea", "category": "preference"}),
+            (7, 2),
+        ),
+    ]);
+    let host = backend.companion_memory_host(&engine, &memory);
+    let after_turn = || {
+        host.after_turn(
+            scenario.conversation_id,
+            lettuce_conversations::GenerationOperation::Send,
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+    };
+    assert!(after_turn().expect("ask_first admits nothing").is_empty());
+    assert_eq!(
+        host.pending_approval_count(scenario.conversation_id)
+            .expect("pending approval"),
+        Some(2)
+    );
+    let skipped = host
+        .skip(scenario.conversation_id, TimestampMillis::new(1_031))
+        .expect("skip the pending approval")
+        .expect("a pending approval was skipped");
+    assert!(skipped.skipped && !skipped.pending);
+    assert_eq!(
+        host.pending_approval_count(scenario.conversation_id)
+            .expect("pending approval"),
+        None
+    );
+    let trigger = |model| {
+        host.trigger(
+            scenario.conversation_id,
+            model,
+            false,
+            WorkerId::new(),
+            TimestampMillis::new(1_032),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+    };
+    let work = trigger(None)
+        .expect("trigger admits the recent window")
+        .into_iter()
+        .next()
+        .expect("claimed plain memory work");
+    assert_eq!(
+        work.admission.batch.window_selection,
+        crate::CompanionMemoryWindowSelection::Recent
+    );
+    assert_eq!(
+        work.admission
+            .batch
+            .source_messages()
+            .expect("plain window")
+            .len(),
+        2
+    );
+    let settled = host
+        .run_claimed(work, CancellationReason::User, TimestampMillis::new(1_033))
+        .await
+        .expect("run the triggered cycle");
+    assert!(matches!(
+        settled,
+        crate::CompanionMemorySettledWork::Succeeded { .. }
+    ));
+    let space_id = scenario.space_id.expect("dynamic memory space");
+    assert_eq!(
+        MemorySummaryRepository::get_summary(database, space_id)
+            .expect("summary")
+            .expect("stored summary")
+            .window_end,
+        2
+    );
+    assert!(
+        trigger(Some(scenario.model.source_id))
+            .expect("nothing left to summarize")
+            .is_empty()
+    );
+
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut manual = stored.settings;
+    manual.dynamic_memory.run_mode = lettuce_settings::MemoryRunMode::Manual;
+    GlobalSettingsStore::save(
+        database,
+        manual,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("manual run mode");
+    assert!(after_turn().expect("manual admits nothing").is_empty());
+}
+
+#[tokio::test]
 async fn preexisting_progress_checkpoint_advances_runner_stage_sequences() {
     let database = database();
     let scenario = scenario(&database, false, "progress-sequence");

@@ -2844,6 +2844,26 @@ mod tests {
     }
 
     #[test]
+    fn unknown_structured_fallback_format_is_malformed() {
+        let error = plan_legacy_backup_configuration(inventory(vec![document(
+            LegacyBackupDocumentKind::Settings,
+            json!({
+                "advanced_settings": {
+                    "dynamicMemoryStructuredFallbackFormat": "yaml"
+                },
+                "created_at": 10,
+                "updated_at": 20
+            }),
+        )]))
+        .expect_err("an unknown fallback format is malformed");
+        assert!(matches!(
+            error,
+            LegacyBackupConfigurationError::Malformed { ref field, .. }
+                if field == "advanced_settings.dynamicMemoryStructuredFallbackFormat"
+        ));
+    }
+
+    #[test]
     fn legacy_configuration_maps_graph_secrets_speech_and_retains_source() {
         let provider_id = ProviderAccountId::new();
         let model_id = ModelProfileId::new();
@@ -2870,6 +2890,7 @@ mod tests {
                         "lorebookGeneratorDefaultTargetCount": 14,
                         "lorebookGeneratorMaxTokens": 2048,
                         "lorebookGeneratorPlannerPromptTemplateId": "prompt-main",
+                        "dynamicMemoryStructuredFallbackFormat": "json",
                         "dynamicMemory": {
                             "maxEntries": 60,
                             "minSimilarityThreshold": 0.42,
@@ -3085,6 +3106,13 @@ mod tests {
         assert_eq!(memory.decay_rate_basis_points, 1_000);
         assert_eq!(memory.delete_confidence_basis_points, 7_000);
         assert_eq!(memory.max_hard_delete_ratio_basis_points, 2_500);
+        assert_eq!(
+            memory.structured_fallback_format,
+            MemoryStructuredFallbackFormat::Json
+        );
+        assert!(!plan.notices.iter().any(|notice| {
+            notice.field == "advanced_settings.dynamicMemoryStructuredFallbackFormat"
+        }));
         assert!(
             !plan
                 .notices

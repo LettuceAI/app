@@ -454,6 +454,79 @@ impl<
         )
     }
 
+    /// Legacy `trigger_dynamic_memory` / `retry_dynamic_memory` for plain
+    /// conversations: forced, so the run mode is ignored, and the window is
+    /// the most recent interval-sized slice of the unsummarized dialogue.
+    pub fn trigger_plain_and_admit(
+        &self,
+        conversation_id: ConversationId,
+        summary_message_interval: u32,
+        selected_model_profile_id: Option<ModelProfileId>,
+        update_dynamic_memory_model_on_success: bool,
+    ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
+    where
+        R: ConversationReader
+            + lettuce_memory::MemoryRepository
+            + lettuce_memory::MemorySummaryRepository,
+    {
+        let interval = usize::try_from(summary_message_interval)
+            .ok()
+            .filter(|interval| {
+                (1..=lettuce_memory::MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES).contains(interval)
+            })
+            .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+        let messages = visible_dialogue(self.effects, conversation_id)?;
+        if let Some(&(last_assistant, _)) = messages
+            .iter()
+            .rev()
+            .find(|(_, role)| *role == MessageRole::Assistant)
+        {
+            if self
+                .effects
+                .get_for_message(conversation_id, last_assistant)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
+                .is_some()
+            {
+                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            }
+        }
+        let space =
+            lettuce_memory::MemoryRepository::get_for_conversation(self.effects, conversation_id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?
+                .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+        let cursor = lettuce_memory::MemorySummaryRepository::get_summary(self.effects, space.id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?
+            .map_or(0, |summary| summary.window_end);
+        let cursor = usize::try_from(cursor)
+            .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+        let unsummarized = messages.len().saturating_sub(cursor);
+        if unsummarized == 0 {
+            self.effects
+                .clear_dynamic_memory_pending_approval(conversation_id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
+            return Ok(None);
+        }
+        let unsummarized_message_count = u64::try_from(unsummarized)
+            .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+        let source_count = interval.min(unsummarized);
+        let admitted = self.admit_selected(
+            conversation_id,
+            summary_message_interval,
+            CompanionMemoryWindowSelection::Recent,
+            unsummarized_message_count,
+            PostTurnMemorySource::Messages(messages[messages.len() - source_count..].to_vec()),
+            None,
+            selected_model_profile_id,
+            update_dynamic_memory_model_on_success,
+        )?;
+        if admitted.is_some() {
+            self.effects
+                .clear_dynamic_memory_pending_approval(conversation_id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
+        }
+        Ok(admitted)
+    }
+
     pub fn admit_plain_after_turn(
         &self,
         conversation_id: ConversationId,

@@ -106,14 +106,20 @@ impl<
                         .iter()
                         .map(|source| (source.message_id, source.role))
                         .ne(expected_messages.iter().copied())
-                    || run.profile != profile
-                    || run.time_awareness_enabled != time_awareness_enabled
-                    || run.supersession_enabled != supersession_enabled
-                    || run.structured_fallback_format != structured_fallback_format
                     || run.summary_window.message_interval
                         != admission.batch.summary_message_interval
                 {
                     return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+                }
+                if run.profile != profile
+                    || run.time_awareness_enabled != time_awareness_enabled
+                    || run.supersession_enabled != supersession_enabled
+                    || run.structured_fallback_format != structured_fallback_format
+                {
+                    tracing::info!(
+                        run_id = %run.id,
+                        "live memory inputs changed; the frozen run keeps its own"
+                    );
                 }
                 let latest = self
                     .repository
@@ -1253,17 +1259,19 @@ mod tests {
         });
         assert!(!first.recovered);
         assert_eq!(
-            coordinator.admit_or_recover(
-                &first_admission,
-                profile(),
-                true,
-                true,
-                DynamicMemoryStructuredFallbackFormat::Json,
-                &policy(),
-                &first_handle,
-                TimestampMillis::new(11),
-            ),
-            Err(CompanionPostTurnMemoryRunError::InvalidAdmission)
+            coordinator
+                .admit_or_recover(
+                    &first_admission,
+                    profile(),
+                    true,
+                    true,
+                    DynamicMemoryStructuredFallbackFormat::Json,
+                    &policy(),
+                    &first_handle,
+                    TimestampMillis::new(11),
+                )
+                .expect("the frozen run keeps its inputs when live ones change"),
+            first
         );
         let mut changed_interval = first_admission.clone();
         changed_interval.batch.summary_message_interval = 21;
@@ -1281,17 +1289,19 @@ mod tests {
             Err(CompanionPostTurnMemoryRunError::InvalidAdmission)
         );
         assert_eq!(
-            coordinator.admit_or_recover(
-                &first_admission,
-                resolved_profile.clone(),
-                true,
-                false,
-                DynamicMemoryStructuredFallbackFormat::Xml,
-                &policy(),
-                &first_handle,
-                TimestampMillis::new(11),
-            ),
-            Err(CompanionPostTurnMemoryRunError::InvalidAdmission)
+            coordinator
+                .admit_or_recover(
+                    &first_admission,
+                    resolved_profile.clone(),
+                    true,
+                    false,
+                    DynamicMemoryStructuredFallbackFormat::Xml,
+                    &policy(),
+                    &first_handle,
+                    TimestampMillis::new(11),
+                )
+                .expect("a changed supersession flag does not reject the frozen run"),
+            first
         );
         assert_eq!(
             coordinator

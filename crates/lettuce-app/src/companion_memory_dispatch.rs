@@ -223,6 +223,39 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
+    pub fn trigger_plain_and_claim(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        summary_message_interval: u32,
+        selected_model_profile_id: Option<lettuce_types::ModelProfileId>,
+        update_default_on_success: bool,
+        worker_id: WorkerId,
+        now: TimestampMillis,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryDispatchError>
+    where
+        R: lettuce_conversations::ConversationReader
+            + lettuce_memory::MemoryRepository
+            + lettuce_memory::MemorySummaryRepository,
+    {
+        let admission = CompanionPostTurnMemoryAdmissionCoordinator::new(self.effects, self.jobs)
+            .trigger_plain_and_admit(
+            conversation_id,
+            summary_message_interval,
+            selected_model_profile_id,
+            update_default_on_success,
+        )?;
+        self.claim_admissions(
+            admission.into_iter().collect(),
+            worker_id,
+            now,
+            lease_for,
+            allowed,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn admit_plain_after_turn_and_claim(
         &self,
         conversation_id: lettuce_types::ConversationId,

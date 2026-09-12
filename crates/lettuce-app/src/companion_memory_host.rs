@@ -152,6 +152,122 @@ where
         if operation == GenerationOperation::Regenerate {
             return Ok(Vec::new());
         }
+        let Some(active) = self.active_cycle(conversation_id)? else {
+            return Ok(Vec::new());
+        };
+        let run_mode = run_mode(active.settings.run_mode);
+        let dispatcher = CompanionMemoryDispatchCoordinator::new(self.repository, self.repository);
+        if active.companion {
+            Ok(dispatcher.admit_companion_after_turn_and_claim(
+                conversation_id,
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                active.settings.summary_message_interval,
+                run_mode,
+                worker_id,
+                now,
+                lease_for,
+                allowed,
+            )?)
+        } else {
+            Ok(dispatcher.admit_plain_after_turn_and_claim(
+                conversation_id,
+                active.settings.summary_message_interval,
+                run_mode,
+                worker_id,
+                now,
+                lease_for,
+                allowed,
+            )?)
+        }
+    }
+
+    /// Legacy `trigger_dynamic_memory` (and `retry_dynamic_memory` with a
+    /// model override): a forced cycle over the most recent window, which also
+    /// answers an `ask_first` approval. The same gate as `after_turn` applies,
+    /// as legacy's cycle checked it before running.
+    #[allow(clippy::too_many_arguments)]
+    pub fn trigger(
+        &self,
+        conversation_id: ConversationId,
+        model_profile_id: Option<lettuce_types::ModelProfileId>,
+        update_default_on_success: bool,
+        worker_id: WorkerId,
+        now: TimestampMillis,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryHostError> {
+        let Some(active) = self.active_cycle(conversation_id)? else {
+            return Ok(Vec::new());
+        };
+        let dispatcher = CompanionMemoryDispatchCoordinator::new(self.repository, self.repository);
+        let interval = active.settings.summary_message_interval;
+        if active.companion {
+            match model_profile_id {
+                Some(model_profile_id) => Ok(dispatcher.retry_direct_with_model_and_claim(
+                    conversation_id,
+                    MAX_COMPANION_POST_TURN_EFFECTS,
+                    interval,
+                    model_profile_id,
+                    update_default_on_success,
+                    worker_id,
+                    now,
+                    lease_for,
+                    allowed,
+                )?),
+                None => Ok(dispatcher.trigger_and_claim(
+                    conversation_id,
+                    MAX_COMPANION_POST_TURN_EFFECTS,
+                    interval,
+                    crate::CompanionMemoryWindowSelection::Recent,
+                    worker_id,
+                    now,
+                    lease_for,
+                    allowed,
+                )?),
+            }
+        } else {
+            Ok(dispatcher.trigger_plain_and_claim(
+                conversation_id,
+                interval,
+                model_profile_id,
+                update_default_on_success,
+                worker_id,
+                now,
+                lease_for,
+                allowed,
+            )?)
+        }
+    }
+
+    /// Legacy `skip_dynamic_memory_cycle`: the pending `ask_first` approval is
+    /// marked skipped.
+    pub fn skip(
+        &self,
+        conversation_id: ConversationId,
+        now: TimestampMillis,
+    ) -> Result<Option<lettuce_memory::DynamicMemoryPendingApproval>, CompanionMemoryHostError>
+    {
+        Ok(
+            CompanionMemoryDispatchCoordinator::new(self.repository, self.repository)
+                .skip_pending_approval(conversation_id, now)?,
+        )
+    }
+
+    /// Legacy `dynamic_memory_pending_approval`.
+    pub fn pending_approval_count(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<u64>, CompanionMemoryHostError> {
+        Ok(
+            CompanionMemoryDispatchCoordinator::new(self.repository, self.repository)
+                .pending_approval_count(conversation_id)?,
+        )
+    }
+
+    fn active_cycle(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<ActiveMemoryCycle>, CompanionMemoryHostError> {
         let aggregate = ConversationReader::get(self.repository, conversation_id)
             .map_err(CompanionMemoryHostError::Conversation)?;
         let settings = GlobalSettingsStore::load(self.repository)
@@ -166,32 +282,12 @@ where
         let dynamic_session = effective_memory(&aggregate.conversation)
             .is_some_and(|memory| memory.mode == MemoryModeSnapshot::Dynamic);
         if !dynamic_session || (!group && !dynamic.enabled) {
-            return Ok(Vec::new());
+            return Ok(None);
         }
-        let run_mode = run_mode(dynamic.run_mode);
-        let dispatcher = CompanionMemoryDispatchCoordinator::new(self.repository, self.repository);
-        if self.is_companion(&aggregate.conversation)? {
-            Ok(dispatcher.admit_companion_after_turn_and_claim(
-                conversation_id,
-                MAX_COMPANION_POST_TURN_EFFECTS,
-                dynamic.summary_message_interval,
-                run_mode,
-                worker_id,
-                now,
-                lease_for,
-                allowed,
-            )?)
-        } else {
-            Ok(dispatcher.admit_plain_after_turn_and_claim(
-                conversation_id,
-                dynamic.summary_message_interval,
-                run_mode,
-                worker_id,
-                now,
-                lease_for,
-                allowed,
-            )?)
-        }
+        Ok(Some(ActiveMemoryCycle {
+            settings: dynamic.clone(),
+            companion: self.is_companion(&aggregate.conversation)?,
+        }))
     }
 
     /// Legacy resolved the summarisation model as override, then
@@ -384,6 +480,11 @@ where
                 CompanionMemoryRuntimeInputError::MissingPrompt,
             ))
     }
+}
+
+struct ActiveMemoryCycle {
+    settings: lettuce_settings::DynamicMemorySettings,
+    companion: bool,
 }
 
 const fn run_mode(mode: MemoryRunMode) -> DynamicMemoryRunMode {
