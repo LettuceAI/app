@@ -676,21 +676,28 @@ impl<
             &source,
         )?;
         let spec = job_spec(conversation_id, idempotency_key.clone())?;
-        let active = self
-            .jobs
-            .list(JobQuery {
-                state: None,
-                kind: Some(JobKind::MemoryExtraction),
-                subject: Some(spec.subject.id.clone()),
-                page: PageRequest {
-                    cursor: None,
-                    limit: PageLimit::new(200),
-                },
-            })
-            .map_err(CompanionPostTurnMemoryAdmissionError::Jobs)?
-            .items
-            .into_iter()
-            .find(|job| !job.is_terminal());
+        let mut cursor = None;
+        let active = loop {
+            let page = self
+                .jobs
+                .list(JobQuery {
+                    state: None,
+                    kind: Some(JobKind::MemoryExtraction),
+                    subject: Some(spec.subject.id.clone()),
+                    page: PageRequest {
+                        cursor: cursor.take(),
+                        limit: PageLimit::new(200),
+                    },
+                })
+                .map_err(CompanionPostTurnMemoryAdmissionError::Jobs)?;
+            if let Some(job) = page.items.into_iter().find(|job| !job.is_terminal()) {
+                break Some(job);
+            }
+            match page.next_cursor {
+                Some(next) => cursor = Some(next),
+                None => break None,
+            }
+        };
         let admitted = match active {
             Some(job) if job.idempotency_key.as_ref() == Some(&idempotency_key) => {
                 lettuce_jobs::CreateJobResult {
@@ -1477,6 +1484,53 @@ mod tests {
                 .expect("approval")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn a_running_cycle_behind_many_settled_jobs_still_blocks_a_second_admission() {
+        let clock = lettuce_jobs::FakeClock::new(TimestampMillis::new(1));
+        let jobs = InMemoryJobStore::with_clock(std::sync::Arc::new(clock.clone()));
+        let conversation = ConversationId::new();
+        for index in 0..250 {
+            let settled = jobs
+                .create_or_get(
+                    super::job_spec(
+                        conversation,
+                        IdempotencyKey::new(format!("settled-{index}")).expect("key"),
+                    )
+                    .expect("spec"),
+                )
+                .expect("settled job")
+                .job;
+            jobs.append_and_transition(lettuce_jobs::JobMutation::RequestCancellation {
+                id: settled.id,
+                reason: lettuce_jobs::CancellationReason::User,
+                at: TimestampMillis::new(1),
+            })
+            .expect("request cancellation");
+            jobs.append_and_transition(lettuce_jobs::JobMutation::FinishQueuedCancellation {
+                id: settled.id,
+                at: TimestampMillis::new(1),
+            })
+            .expect("cancel");
+        }
+        clock.set(TimestampMillis::new(2));
+        jobs.create_or_get(
+            super::job_spec(conversation, IdempotencyKey::new("running").expect("key"))
+                .expect("spec"),
+        )
+        .expect("running job");
+        let effects = Effects::default();
+        effects.replace(vec![effect(conversation, 10)]);
+        assert!(matches!(
+            CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &jobs).trigger_and_admit(
+                conversation,
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                1,
+                CompanionMemoryWindowSelection::Recent,
+            ),
+            Err(CompanionPostTurnMemoryAdmissionError::CycleInProgress)
+        ));
     }
 
     #[test]

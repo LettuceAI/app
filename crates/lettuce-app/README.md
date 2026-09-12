@@ -1071,6 +1071,9 @@ gated memory; legacy started a second concurrent run instead.
 A reply helper job that cannot be claimed is cancelled while still queued, so it
 never lingers, and repeating a request id whose job already settled reports
 `AlreadySettled`.
+The running-cycle check pages through every MemoryExtraction job of the
+conversation instead of only the first 200, so a long job history never hides a
+running cycle.
 
 The legacy import admission coordinator fingerprints the complete preflight inventory and provider/model/prompt/persona/lorebook/media plans, derives the closed source ID set, and admits it through the transfer-owned repository port. It allocates no IDs itself and performs no filesystem ingest, secret read, secret-store write, or domain creation; SQLite returns sealed account, profile, prompt, secret-reference, graph, and media mappings so retries and reopen use the same destination identities. The deterministic legacy llama.cpp account participates in the same assignment path. The legacy database and storage tree remain untouched and retained.
 
