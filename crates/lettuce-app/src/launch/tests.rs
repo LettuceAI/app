@@ -8379,6 +8379,78 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
             .expect("repair pass")
             .is_none()
     );
+
+    let unseeded_create_id = ToolExecutionId::new();
+    database
+        .admit_dynamic_memory_inference_round(
+            run_id,
+            attempt_id,
+            3,
+            3,
+            NewDynamicMemoryInferenceRound {
+                ordinal: 3,
+                request_context: lettuce_conversations::ProviderNeutralContext {
+                    messages: vec![lettuce_conversations::ProviderNeutralMessage {
+                        role: MessageRole::User,
+                        parts: vec![ProviderContextPart::Text {
+                            text: "Classify each memory text.".into(),
+                        }],
+                    }],
+                    attributions: Default::default(),
+                    budget: Default::default(),
+                },
+                parts: Vec::new(),
+                provider_replay: None,
+                usage: None,
+                finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                kind: lettuce_memory::DynamicMemoryRoundKind::Repair,
+                provider_request_id: Some("repair-again".into()),
+                calls: vec![NewDynamicMemoryToolCall {
+                    id: unseeded_create_id,
+                    definition_version: 1,
+                    call: ProposedToolCall {
+                        provider_call_id: Some("repair_create_2".into()),
+                        name: "create_memory".into(),
+                        arguments: serde_json::json!({
+                            "text": "Mira collects sea glass",
+                            "category": "preference",
+                            "important": false,
+                            "source_message_id": source.message.id.to_string()
+                        }),
+                        raw_arguments: None,
+                        provider_replay: None,
+                    },
+                }],
+                admitted_at: TimestampMillis::new(1_103),
+            },
+        )
+        .expect("second repair round");
+    let kept = coordinator
+        .run_until_done(
+            run_id,
+            attempt_id,
+            &policy,
+            crate::CompanionMemoryLoopPolicy {
+                recursive: true,
+                hard_cap: 20,
+            },
+            Score::from_basis_points(9_000).expect("score"),
+            &claim,
+            &handle,
+            None,
+            TimestampMillis::new(1_104),
+            |_| Vec::new(),
+        )
+        .await
+        .expect("a failed repair round keeps the cycle");
+    assert_eq!(kept.completed_rounds, 3);
+    assert!(
+        database
+            .load_dynamic_memory_round_settlement(run_id, attempt_id, 3)
+            .expect("settlement")
+            .is_none()
+    );
+    assert_eq!(scripted.requests.lock().expect("requests").len(), 1);
 }
 
 #[test]

@@ -100,8 +100,28 @@ impl<
                     claim,
                     handle,
                     now,
-                )?;
-                projection_repairs_pending.extend(executed.projection_repairs_pending);
+                );
+                match executed {
+                    Ok(executed) => {
+                        projection_repairs_pending.extend(executed.projection_repairs_pending);
+                    }
+                    Err(CompanionMemoryRoundExecutionError::Cancelled) => {
+                        return Err(CompanionMemoryRoundExecutionError::Cancelled.into());
+                    }
+                    Err(error) if round.kind == DynamicMemoryRoundKind::Repair => {
+                        tracing::warn!(
+                            run_id = %run_id,
+                            %error,
+                            "memory category repair round was not applied; keeping the cycle"
+                        );
+                        return Ok(CompanionMemoryLoopResult {
+                            summary: None,
+                            completed_rounds: round.ordinal,
+                            projection_repairs_pending,
+                        });
+                    }
+                    Err(error) => return Err(error.into()),
+                }
             }
             if round.kind == DynamicMemoryRoundKind::Repair {
                 return Ok(CompanionMemoryLoopResult {
