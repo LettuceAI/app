@@ -847,10 +847,16 @@ missing or invalid category is re-tagged once through the memory-owned
 document (repair rules, numbered input lines, the category list and its
 JSON/XML fallback). Answered candidates are admitted as one final round of
 `create_memory` calls that the round executor applies like any other round;
-candidates the request leaves unanswered are dropped, and a request that answers
-with nothing usable falls back to legacy's keyword guess for all of them. A
-failed or empty repair request leaves the cycle's result untouched; only
-cancellation propagates.
+candidates the request leaves unanswered are dropped, the last answer for a
+text wins as with legacy's map insert, a tool response with no usable
+`retag_memory` call still runs the structured fallback as legacy re-checked,
+and a request that answers with nothing usable falls back to legacy's keyword
+guess for all of them. The repair round is stored with
+`DynamicMemoryRoundKind::Repair`: the loop treats it as terminal on a same-job
+resume instead of continuing the manager loop out of the repair prompt, an
+attempt that already holds one is never repaired again, and a failed repair
+round execution logs and keeps the cycle as legacy did; only cancellation
+propagates.
 The reply itself carries no memory tools: legacy writes memories in
 a separate post-turn cycle (`enqueue_post_turn_dynamic_memory`). Plain direct
 and group conversations now admit that cycle through

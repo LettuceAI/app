@@ -318,6 +318,7 @@ CREATE TABLE dynamic_memory_inference_rounds (
     input_tokens INTEGER CHECK (input_tokens IS NULL OR input_tokens >= 0),
     output_tokens INTEGER CHECK (output_tokens IS NULL OR output_tokens >= 0),
     finish_reason TEXT NOT NULL CHECK (finish_reason IN ('stop', 'length')),
+    kind TEXT NOT NULL CHECK (kind IN ('manager', 'repair')),
     provider_request_id TEXT CHECK (
         provider_request_id IS NULL OR
         (length(trim(provider_request_id)) > 0 AND length(CAST(provider_request_id AS BLOB)) <= 256)

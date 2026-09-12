@@ -1461,6 +1461,7 @@ mod tests {
                 provider_replay: None,
                 usage: None,
                 finish_reason: lettuce_memory::DynamicMemoryRoundFinishReason::Stop,
+                kind: lettuce_memory::DynamicMemoryRoundKind::Manager,
                 provider_request_id: Some("backup-memory-request".into()),
                 calls: Vec::new(),
                 admitted_at: TimestampMillis::new(35),

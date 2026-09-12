@@ -191,7 +191,14 @@ impl<
             self.cancel(&attempt, now)?;
             return Err(CompanionMemoryContinuationError::Cancelled);
         }
-        let planned = match plan_memory_round(&run, next_ordinal, context, &outcome, now) {
+        let planned = match plan_memory_round(
+            &run,
+            next_ordinal,
+            lettuce_memory::DynamicMemoryRoundKind::Manager,
+            context,
+            &outcome,
+            now,
+        ) {
             Ok(round) => round,
             Err(crate::CompanionMemoryInferenceError::Cancelled) => {
                 cleanup_outcome_replays(self.repository, &outcome)
@@ -379,7 +386,8 @@ mod tests {
         ContextAttributions, ContextBudgetReport, ProposedToolCall, ProviderNeutralContext,
     };
     use lettuce_memory::{
-        DynamicMemoryRoundFinishReason, DynamicMemoryToolCallEvidence, MemoryToolResult,
+        DynamicMemoryRoundFinishReason, DynamicMemoryRoundKind, DynamicMemoryToolCallEvidence,
+        MemoryToolResult,
     };
     use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, ToolExecutionId};
     use serde_json::json;
@@ -420,6 +428,7 @@ mod tests {
                 provider_replay: None,
                 usage: None,
                 finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                kind: DynamicMemoryRoundKind::Manager,
                 provider_request_id: None,
                 calls: vec![DynamicMemoryToolCallEvidence {
                     id: call_id,

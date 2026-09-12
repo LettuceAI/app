@@ -2,8 +2,8 @@ use lettuce_conversations::{InferencePort, ProviderReplayArtifactPort};
 use lettuce_embeddings::MemoryEmbeddingRepository;
 use lettuce_jobs::{Claim, handle::JobHandle};
 use lettuce_memory::{
-    DynamicMemoryInferenceRound, DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError,
-    MemoryPolicy, MemoryRepository,
+    DynamicMemoryInferenceRound, DynamicMemoryRoundKind, DynamicMemoryRunRepository,
+    DynamicMemoryRunRepositoryError, MemoryPolicy, MemoryRepository,
 };
 use lettuce_types::{
     DynamicMemoryAttemptId, DynamicMemoryRunId, MemoryId, RequestId, TimestampMillis,
@@ -102,6 +102,13 @@ impl<
                     now,
                 )?;
                 projection_repairs_pending.extend(executed.projection_repairs_pending);
+            }
+            if round.kind == DynamicMemoryRoundKind::Repair {
+                return Ok(CompanionMemoryLoopResult {
+                    summary: None,
+                    completed_rounds: round.ordinal.saturating_add(1),
+                    projection_repairs_pending,
+                });
             }
 
             match continuation

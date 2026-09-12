@@ -16,8 +16,9 @@ use lettuce_usage::JobUsageLedger;
 use crate::{
     CompanionMemoryInferenceCoordinator, CompanionMemoryInferenceError,
     CompanionMemoryLoopCoordinator, CompanionMemoryLoopError, CompanionMemoryLoopResult,
-    CompanionMemorySummaryCoordinator, CompanionMemoryTerminalCoordinator,
-    CompanionMemoryTerminalError, CompanionMemoryTerminalFailure, CompanionPostTurnMemoryAdmission,
+    CompanionMemoryRoundExecutionError, CompanionMemorySummaryCoordinator,
+    CompanionMemoryTerminalCoordinator, CompanionMemoryTerminalError,
+    CompanionMemoryTerminalFailure, CompanionPostTurnMemoryAdmission,
     CompanionPostTurnMemoryRunCoordinator, CompanionPostTurnMemoryRunDispatch,
     CompanionPostTurnMemoryRunError, MemoryCreateSeed, MemoryEmbeddingEngine,
 };
@@ -238,7 +239,7 @@ impl<
             };
         if let Some(round) = repaired {
             let seeds = seeds_for_round(&round);
-            let executed = crate::CompanionMemoryRoundExecutor::new(self.engine, self.repository)
+            match crate::CompanionMemoryRoundExecutor::new(self.engine, self.repository)
                 .execute_round(
                     dispatch.run.id,
                     dispatch.attempt.id,
@@ -249,14 +250,35 @@ impl<
                     claim,
                     handle,
                     now,
-                )
-                .map_err(|error| {
-                    CompanionMemoryJobRunError::Loop(CompanionMemoryLoopError::Execution(error))
-                })?;
-            loop_result
-                .projection_repairs_pending
-                .extend(executed.projection_repairs_pending);
-            loop_result.completed_rounds = loop_result.completed_rounds.saturating_add(1);
+                ) {
+                Ok(executed) => {
+                    loop_result
+                        .projection_repairs_pending
+                        .extend(executed.projection_repairs_pending);
+                    loop_result.completed_rounds = loop_result.completed_rounds.saturating_add(1);
+                }
+                Err(CompanionMemoryRoundExecutionError::Cancelled) => {
+                    let error = CompanionMemoryLoopError::Execution(
+                        CompanionMemoryRoundExecutionError::Cancelled,
+                    );
+                    CompanionMemoryTerminalCoordinator::new(self.repository).settle_failure(
+                        dispatch.run.id,
+                        dispatch.attempt.id,
+                        &admission.batch,
+                        handle,
+                        CompanionMemoryTerminalFailure::from_loop_error(&error),
+                        now,
+                    )?;
+                    return Err(CompanionMemoryJobRunError::Loop(error));
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        run_id = %dispatch.run.id,
+                        %error,
+                        "memory category repair round was not applied; keeping the cycle"
+                    );
+                }
+            }
         }
         let terminal = CompanionMemoryTerminalCoordinator::new(self.repository).settle_success(
             dispatch.run.id,

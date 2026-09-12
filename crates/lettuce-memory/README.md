@@ -58,7 +58,9 @@ invalid category is re-tagged by legacy's single-tool repair contract
 prompt, parameter texts and structured fallback are catalog keys
 (`MEMORY_REPAIR_TOOL_TEXT_KEYS`, `memory_repairs_fallback_prompt_key`); a repair
 request that answers with nothing falls back to legacy's keyword buckets
-(`guess_memory_category`, first matching bucket wins). Every outcome carries what
+(`guess_memory_category`, first matching bucket wins). Rounds record their
+`DynamicMemoryRoundKind` (`manager` or `repair`) so a resumed attempt never
+continues the manager loop from the repair request. Every outcome carries what
 legacy echoed back to the model: a created, deleted, pinned or unpinned memory's
 six-digit id, a deleted memory's text, the `[short_id] text` list right after
 the call applied (superseded items excluded, `ListedMemory`), and which

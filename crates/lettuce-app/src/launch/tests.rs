@@ -8140,6 +8140,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
                 provider_replay: None,
                 usage: None,
                 finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                kind: lettuce_memory::DynamicMemoryRoundKind::Manager,
                 provider_request_id: Some("first".into()),
                 calls: vec![NewDynamicMemoryToolCall {
                     id: create_id,
@@ -8278,6 +8279,106 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
     assert_eq!(stored.items.len(), 1);
     assert_eq!(stored.items[0].id, memory_id);
     assert_eq!(visible_counts(), before);
+
+    let repair_create_id = ToolExecutionId::new();
+    let repaired_memory_id = MemoryId::new();
+    database
+        .admit_dynamic_memory_inference_round(
+            run_id,
+            attempt_id,
+            2,
+            2,
+            NewDynamicMemoryInferenceRound {
+                ordinal: 2,
+                request_context: lettuce_conversations::ProviderNeutralContext {
+                    messages: vec![lettuce_conversations::ProviderNeutralMessage {
+                        role: MessageRole::User,
+                        parts: vec![ProviderContextPart::Text {
+                            text: "Classify each memory text.".into(),
+                        }],
+                    }],
+                    attributions: Default::default(),
+                    budget: Default::default(),
+                },
+                parts: Vec::new(),
+                provider_replay: None,
+                usage: None,
+                finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                kind: lettuce_memory::DynamicMemoryRoundKind::Repair,
+                provider_request_id: Some("repair".into()),
+                calls: vec![NewDynamicMemoryToolCall {
+                    id: repair_create_id,
+                    definition_version: 1,
+                    call: ProposedToolCall {
+                        provider_call_id: Some("repair_create_1".into()),
+                        name: "create_memory".into(),
+                        arguments: serde_json::json!({
+                            "text": "Mira dislikes coffee",
+                            "category": "preference",
+                            "important": false,
+                            "source_message_id": source.message.id.to_string()
+                        }),
+                        raw_arguments: None,
+                        provider_replay: None,
+                    },
+                }],
+                admitted_at: TimestampMillis::new(1_100),
+            },
+        )
+        .expect("repair round");
+    let resumed = coordinator
+        .run_until_done(
+            run_id,
+            attempt_id,
+            &policy,
+            crate::CompanionMemoryLoopPolicy {
+                recursive: true,
+                hard_cap: 20,
+            },
+            Score::from_basis_points(9_000).expect("score"),
+            &claim,
+            &handle,
+            None,
+            TimestampMillis::new(1_101),
+            |round| {
+                seeded_rounds.push(round.ordinal);
+                if round.ordinal == 2 {
+                    vec![crate::MemoryCreateSeed {
+                        execution_id: repair_create_id,
+                        id: repaired_memory_id,
+                        token_count: 4,
+                        created_at: TimestampMillis::new(1_101),
+                    }]
+                } else {
+                    Vec::new()
+                }
+            },
+        )
+        .await
+        .expect("resume after repair round");
+    assert_eq!(resumed.summary, None);
+    assert_eq!(resumed.completed_rounds, 3);
+    assert_eq!(seeded_rounds, vec![2]);
+    assert_eq!(scripted.requests.lock().expect("requests").len(), 1);
+    let settled = database
+        .load_dynamic_memory_round_settlement(run_id, attempt_id, 2)
+        .expect("settlement")
+        .expect("repair round settled");
+    assert_eq!(settled.results.len(), 1);
+    assert_eq!(settled.results[0].execution_id, repair_create_id);
+    assert!(
+        crate::CompanionMemoryRepairCoordinator::new(&database, &scripted)
+            .repair_round(
+                &database.load_dynamic_memory_run(run_id).expect("run"),
+                attempt_id,
+                &handle,
+                None,
+                TimestampMillis::new(1_102),
+            )
+            .await
+            .expect("repair pass")
+            .is_none()
+    );
 }
 
 #[test]

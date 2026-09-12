@@ -306,9 +306,19 @@ pub enum DynamicMemoryRoundFinishReason {
     Length,
 }
 
+/// Which request a round answers: the recursive manager loop, or the single
+/// category repair pass that legacy ran after the loop and never resumed from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DynamicMemoryRoundKind {
+    Manager,
+    Repair,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewDynamicMemoryInferenceRound {
     pub ordinal: u8,
+    pub kind: DynamicMemoryRoundKind,
     pub request_context: lettuce_conversations::ProviderNeutralContext,
     pub parts: Vec<MessagePart>,
     pub provider_replay: Option<ReplayArtifactRef>,
@@ -382,6 +392,7 @@ pub struct DynamicMemoryInferenceRound {
     pub run_id: DynamicMemoryRunId,
     pub attempt_id: DynamicMemoryAttemptId,
     pub ordinal: u8,
+    pub kind: DynamicMemoryRoundKind,
     pub first_call_ordinal: u16,
     pub request_context: lettuce_conversations::ProviderNeutralContext,
     pub parts: Vec<MessagePart>,
@@ -397,6 +408,7 @@ impl DynamicMemoryInferenceRound {
     pub fn validate(&self) -> Result<(), DynamicMemoryRunError> {
         NewDynamicMemoryInferenceRound {
             ordinal: self.ordinal,
+            kind: self.kind,
             request_context: self.request_context.clone(),
             parts: self.parts.clone(),
             provider_replay: self.provider_replay.clone(),

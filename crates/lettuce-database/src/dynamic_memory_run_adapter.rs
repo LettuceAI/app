@@ -5,12 +5,12 @@ use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
     DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
     DynamicMemoryBackgroundRoundSettlement, DynamicMemoryInferenceRound,
-    DynamicMemoryRoundFinishReason, DynamicMemoryRun, DynamicMemoryRunAttemptAdmission,
-    DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
-    DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryCheckpoint,
-    DynamicMemorySummaryCommit, DynamicMemorySummaryWindow, DynamicMemoryToolCallEvidence,
-    MemorySummary, MemorySummaryChange, MemoryToolResult, NewDynamicMemoryAttemptRecovery,
-    NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
+    DynamicMemoryRoundFinishReason, DynamicMemoryRoundKind, DynamicMemoryRun,
+    DynamicMemoryRunAttemptAdmission, DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError,
+    DynamicMemorySourceMessage, DynamicMemoryStructuredFallbackFormat,
+    DynamicMemorySummaryCheckpoint, DynamicMemorySummaryCommit, DynamicMemorySummaryWindow,
+    DynamicMemoryToolCallEvidence, MemorySummary, MemorySummaryChange, MemoryToolResult,
+    NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
 };
 use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -392,7 +392,7 @@ pub(crate) fn list_rounds_in(
         .prepare(
             "SELECT ordinal,first_call_ordinal,call_count,request_context_json,parts_json,provider_replay_artifact_id,\
                     provider_replay_retention,input_tokens,output_tokens,finish_reason,\
-                    provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost \
+                    provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost,kind \
              FROM dynamic_memory_inference_rounds \
              WHERE run_id=?1 AND attempt_id=?2 ORDER BY ordinal",
         )
@@ -469,6 +469,11 @@ pub(crate) fn list_rounds_in(
                 finish_reason: match row.get::<_, String>(9)?.as_str() {
                     "stop" => DynamicMemoryRoundFinishReason::Stop,
                     "length" => DynamicMemoryRoundFinishReason::Length,
+                    _ => return Err(rusqlite::Error::InvalidQuery),
+                },
+                kind: match row.get::<_, String>(17)?.as_str() {
+                    "manager" => DynamicMemoryRoundKind::Manager,
+                    "repair" => DynamicMemoryRoundKind::Repair,
                     _ => return Err(rusqlite::Error::InvalidQuery),
                 },
                 provider_request_id: row.get(10)?,
@@ -638,8 +643,8 @@ fn insert_round_in(
             "INSERT INTO dynamic_memory_inference_rounds \
              (run_id,attempt_id,ordinal,first_call_ordinal,call_count,request_context_json,parts_json,\
               provider_replay_artifact_id,provider_replay_retention,input_tokens,output_tokens,\
-              finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+              finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost,kind) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
             params![
                 round.run_id.to_string(),
                 round.attempt_id.to_string(),
@@ -663,6 +668,10 @@ fn insert_round_in(
                 round.usage.as_ref().and_then(|u| u.cache_write_tokens).map(sql_u64).transpose()?,
                 round.usage.as_ref().and_then(|u| u.web_search_requests).map(sql_u64).transpose()?,
                 round.usage.as_ref().and_then(|u| u.provider_reported_cost).map(lettuce_conversations::ProviderReportedCost::get),
+                match round.kind {
+                    DynamicMemoryRoundKind::Manager => "manager",
+                    DynamicMemoryRoundKind::Repair => "repair",
+                },
             ],
         )
         .map_err(storage)?;
@@ -1131,6 +1140,7 @@ impl DynamicMemoryRunRepository for Database {
             run_id,
             attempt_id,
             ordinal: round.ordinal,
+            kind: round.kind,
             first_call_ordinal: expected_next_call_ordinal,
             request_context: round.request_context,
             parts: round.parts,
@@ -1523,7 +1533,7 @@ mod tests {
     use lettuce_memory::{
         DynamicMemoryApprovalRepository, DynamicMemoryAttemptFailureCode,
         DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
-        DynamicMemoryRoundFinishReason, DynamicMemoryRunRepository,
+        DynamicMemoryRoundFinishReason, DynamicMemoryRoundKind, DynamicMemoryRunRepository,
         DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
         DynamicMemoryStructuredFallbackFormat, DynamicMemorySuffixRewind,
         DynamicMemorySuffixRewindError, DynamicMemorySuffixRewindRepository,
@@ -2324,6 +2334,7 @@ mod tests {
                     provider_replay: None,
                     usage: None,
                     finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                    kind: DynamicMemoryRoundKind::Manager,
                     provider_request_id: None,
                     calls: vec![
                         NewDynamicMemoryToolCall {
@@ -2533,6 +2544,7 @@ mod tests {
             provider_replay: None,
             usage: None,
             finish_reason: DynamicMemoryRoundFinishReason::Stop,
+            kind: DynamicMemoryRoundKind::Manager,
             provider_request_id: Some("memory-request-1".into()),
             calls: vec![NewDynamicMemoryToolCall {
                 id: call_id,

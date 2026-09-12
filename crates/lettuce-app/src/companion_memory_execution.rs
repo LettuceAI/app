@@ -260,9 +260,9 @@ pub enum CompanionMemoryRoundExecutionError {
 mod tests {
     use lettuce_conversations::ProposedToolCall;
     use lettuce_memory::{
-        CreateMemoryPreparation, DynamicMemoryRoundFinishReason, DynamicMemoryToolCallEvidence,
-        MemoryCategory, MemoryPolicy, MemorySpaceSnapshot, MemoryToolOutcome, MemoryToolReducer,
-        NewDynamicMemoryToolCall, Score,
+        CreateMemoryPreparation, DynamicMemoryRoundFinishReason, DynamicMemoryRoundKind,
+        DynamicMemoryToolCallEvidence, MemoryCategory, MemoryPolicy, MemorySpaceSnapshot,
+        MemoryToolOutcome, MemoryToolReducer, NewDynamicMemoryToolCall, Score,
     };
     use lettuce_types::{
         DynamicMemoryAttemptId, DynamicMemoryRunId, MemoryId, MemorySpaceId, MessageId, Revision,
@@ -344,6 +344,7 @@ mod tests {
             provider_replay: None,
             usage: None,
             finish_reason: DynamicMemoryRoundFinishReason::Stop,
+            kind: DynamicMemoryRoundKind::Manager,
             provider_request_id: None,
             calls: calls.clone(),
             admitted_at: TimestampMillis::new(1),
@@ -450,6 +451,7 @@ mod tests {
             provider_replay: None,
             usage: None,
             finish_reason: DynamicMemoryRoundFinishReason::Stop,
+            kind: DynamicMemoryRoundKind::Manager,
             provider_request_id: None,
             calls: vec![call.clone()],
             admitted_at: TimestampMillis::new(1),

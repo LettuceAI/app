@@ -14,11 +14,11 @@ use lettuce_conversations::{
 use lettuce_jobs::handle::JobHandle;
 use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound,
-    DynamicMemoryRoundFinishReason, DynamicMemoryRun, DynamicMemoryRunRepository,
-    DynamicMemoryRunRepositoryError, DynamicMemoryStructuredFallbackFormat, MemoryPolicy,
-    MemoryRepository, MemoryRepositoryError, MemorySpaceSnapshot, NewDynamicMemoryInferenceRound,
-    NewDynamicMemoryToolCall, memory_operations_fallback_prompt_key,
-    parse_memory_operations_from_text,
+    DynamicMemoryRoundFinishReason, DynamicMemoryRoundKind, DynamicMemoryRun,
+    DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError,
+    DynamicMemoryStructuredFallbackFormat, MemoryPolicy, MemoryRepository, MemoryRepositoryError,
+    MemorySpaceSnapshot, NewDynamicMemoryInferenceRound, NewDynamicMemoryToolCall,
+    memory_operations_fallback_prompt_key, parse_memory_operations_from_text,
 };
 use lettuce_types::{
     DynamicMemoryAttemptId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId, RequestId,
@@ -191,7 +191,14 @@ impl<
             self.cancel_attempt(&attempt, now)?;
             return Err(CompanionMemoryInferenceError::Cancelled);
         }
-        let planned = match plan_memory_round(&run, 0, request_context, &outcome, now) {
+        let planned = match plan_memory_round(
+            &run,
+            0,
+            DynamicMemoryRoundKind::Manager,
+            request_context,
+            &outcome,
+            now,
+        ) {
             Ok(round) => round,
             Err(CompanionMemoryInferenceError::Cancelled) => {
                 cleanup_outcome_replays(self.repository, &outcome)?;
@@ -252,6 +259,17 @@ impl MemoryFallbackKind {
             Self::Repairs => lettuce_memory::memory_repairs_fallback_prompt_key(format),
         }
     }
+
+    /// Legacy re-checked a repair response after parsing it and still ran the
+    /// structured fallback when no usable `retag_memory` call came back.
+    fn accepts(self, outcome: &InferenceOutcome) -> bool {
+        match self {
+            Self::Operations => true,
+            Self::Repairs => {
+                !crate::companion_memory_repair::repaired_categories(outcome).is_empty()
+            }
+        }
+    }
 }
 
 pub(crate) async fn run_memory_request_with_fallback<R, I>(
@@ -278,7 +296,9 @@ where
                 cleanup_outcome_replays(repository, &outcome)?;
                 return Err(CompanionMemoryInferenceError::Cancelled);
             }
-            Ok(outcome) if outcome_has_tool_calls(&outcome) => return Ok(outcome),
+            Ok(outcome) if outcome_has_tool_calls(&outcome) && kind.accepts(&outcome) => {
+                return Ok(outcome);
+            }
             Ok(outcome) => Some(outcome),
             Err(JobInferenceError::Provider(PortError::Cancelled)) => {
                 return Err(CompanionMemoryInferenceError::Cancelled);
@@ -786,6 +806,7 @@ pub(crate) fn insert_in_chat_messages(
 pub(crate) fn plan_memory_round(
     run: &DynamicMemoryRun,
     ordinal: u8,
+    kind: DynamicMemoryRoundKind,
     request_context: ProviderNeutralContext,
     outcome: &InferenceOutcome,
     now: TimestampMillis,
@@ -845,6 +866,7 @@ pub(crate) fn plan_memory_round(
         .collect::<Result<Vec<_>, CompanionMemoryInferenceError>>()?;
     let round = NewDynamicMemoryInferenceRound {
         ordinal,
+        kind,
         request_context,
         parts: candidate.parts.clone(),
         provider_replay: candidate.provider_replay.clone(),
@@ -1586,6 +1608,7 @@ mod tests {
             plan_memory_round(
                 &run,
                 0,
+                DynamicMemoryRoundKind::Manager,
                 request_context.clone(),
                 &empty,
                 TimestampMillis::new(2)
@@ -1621,8 +1644,15 @@ mod tests {
             provider_request_id: Some("request-1".into()),
             warning_codes: Vec::<InferenceWarningCode>::new(),
         };
-        let round = plan_memory_round(&run, 0, request_context, &outcome, TimestampMillis::new(2))
-            .expect("round");
+        let round = plan_memory_round(
+            &run,
+            0,
+            DynamicMemoryRoundKind::Manager,
+            request_context,
+            &outcome,
+            TimestampMillis::new(2),
+        )
+        .expect("round");
         assert_eq!(round.calls.len(), 1);
         assert_eq!(round.calls[0].call, outcome.candidates[0].tool_calls[0]);
         assert_eq!(round.provider_request_id.as_deref(), Some("request-1"));

@@ -5,8 +5,9 @@ use lettuce_conversations::{
 };
 use lettuce_jobs::handle::JobHandle;
 use lettuce_memory::{
-    DynamicMemoryInferenceRound, DynamicMemoryRun, DynamicMemoryRunRepository,
-    DynamicMemoryRunRepositoryError, MemoryCategory, MemoryToolOutcome, MemoryToolSkipReason,
+    DynamicMemoryInferenceRound, DynamicMemoryRoundKind, DynamicMemoryRun,
+    DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, MemoryCategory, MemoryToolOutcome,
+    MemoryToolSkipReason,
 };
 use lettuce_types::{
     DynamicMemoryAttemptId, GenerationAttemptId, GenerationTurnId, RequestId, TimestampMillis,
@@ -69,6 +70,12 @@ impl<
         let Some(last) = rounds.last() else {
             return Ok(None);
         };
+        if rounds
+            .iter()
+            .any(|round| round.kind == DynamicMemoryRoundKind::Repair)
+        {
+            return Ok(None);
+        }
         let candidates = self.candidates(run, attempt_id, &rounds)?;
         if candidates.is_empty() {
             return Ok(None);
@@ -142,7 +149,14 @@ impl<
             }
             None => guessed_outcome(&resolved),
         };
-        let planned = match plan_memory_round(run, next_ordinal, context, &outcome, now) {
+        let planned = match plan_memory_round(
+            run,
+            next_ordinal,
+            DynamicMemoryRoundKind::Repair,
+            context,
+            &outcome,
+            now,
+        ) {
             Ok(planned) => planned,
             Err(error) => {
                 cleanup_outcome_replays(self.repository, &outcome)
@@ -290,7 +304,7 @@ fn message(role: MessageRole, text: String) -> ProviderNeutralMessage {
     }
 }
 
-fn repaired_categories(
+pub(crate) fn repaired_categories(
     outcome: &lettuce_conversations::InferenceOutcome,
 ) -> Vec<(String, MemoryCategory)> {
     outcome
@@ -326,7 +340,7 @@ fn resolve(
         .filter_map(|candidate| {
             repairs
                 .iter()
-                .find(|(text, _)| text == &candidate.text)
+                .rfind(|(text, _)| text == &candidate.text)
                 .map(|(_, category)| (candidate.clone(), *category))
         })
         .collect()
@@ -405,8 +419,8 @@ mod tests {
     use std::{collections::VecDeque, sync::Mutex};
 
     use lettuce_conversations::{
-        FinishReason, InferenceCandidate, InferenceOutcome, PortError, ProposedToolCall,
-        ReplayArtifactRef, ToolPolicy,
+        FinishReason, InferenceCandidate, InferenceOutcome, MessagePart, PortError,
+        ProposedToolCall, ReplayArtifactRef, ToolPolicy,
     };
     use lettuce_memory::{
         DynamicMemoryBackgroundRoundSettlement, DynamicMemoryRoundFinishReason,
@@ -570,6 +584,7 @@ mod tests {
                 provider_replay: round.provider_replay,
                 usage: round.usage,
                 finish_reason: round.finish_reason,
+                kind: round.kind,
                 provider_request_id: round.provider_request_id,
                 calls: round
                     .calls
@@ -753,6 +768,25 @@ mod tests {
         }
     }
 
+    fn text_outcome(text: &str) -> InferenceOutcome {
+        InferenceOutcome {
+            provider_response_id: None,
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts: vec![MessagePart::Text {
+                    text: text.to_owned(),
+                }],
+                tool_calls: Vec::new(),
+                provider_replay: None,
+            }],
+            usage: None,
+            finish_reason: FinishReason::Stop,
+            provider_finish_reason: Some("stop".to_owned()),
+            provider_request_id: None,
+            warning_codes: Vec::new(),
+        }
+    }
+
     fn repair_outcome(calls: Vec<ProposedToolCall>) -> InferenceOutcome {
         InferenceOutcome {
             provider_response_id: Some("repair".to_owned()),
@@ -805,6 +839,7 @@ mod tests {
                 provider_replay: None,
                 usage: None,
                 finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                kind: DynamicMemoryRoundKind::Manager,
                 provider_request_id: None,
                 calls,
                 admitted_at: TimestampMillis::new(1),
@@ -860,6 +895,7 @@ mod tests {
             .expect("repair round")
             .expect("repaired round");
         assert_eq!((round.ordinal, round.first_call_ordinal), (1, 2));
+        assert_eq!(round.kind, DynamicMemoryRoundKind::Repair);
         assert_eq!(round.calls.len(), 2);
         for (index, (text, category)) in [
             ("Mira trusts the captain", "relationship"),
@@ -904,10 +940,13 @@ mod tests {
             vec![create_call(execution_id, 0, "She decided to stay")],
         );
         let inference = ScriptedInference {
-            outcomes: Mutex::new(VecDeque::from([Ok(repair_outcome(vec![retag(
-                "She decided to stay",
-                "milestone",
-            )]))])),
+            outcomes: Mutex::new(VecDeque::from([
+                Ok(repair_outcome(vec![retag(
+                    "She decided to stay",
+                    "milestone",
+                )])),
+                Err(PortError::Unavailable),
+            ])),
             requests: Mutex::new(Vec::new()),
         };
         let round = CompanionMemoryRepairCoordinator::new(&repository, &inference)
@@ -971,6 +1010,116 @@ mod tests {
             })
         );
         assert_eq!(inference.requests.lock().expect("requests").len(), 2);
+    }
+
+    #[tokio::test]
+    async fn an_attempt_that_already_has_a_repair_round_is_not_repaired_again() {
+        let run = run();
+        let attempt_id = DynamicMemoryAttemptId::new();
+        let execution_id = ToolExecutionId::new();
+        let repository = fixture(
+            &run,
+            attempt_id,
+            vec![skipped(execution_id, MemoryToolSkipReason::MissingCategory)],
+            vec![create_call(execution_id, 0, "Mira trusts the captain")],
+        );
+        let mut repair = repository.rounds.lock().expect("rounds")[0].clone();
+        repair.ordinal = 1;
+        repair.first_call_ordinal = 1;
+        repair.kind = DynamicMemoryRoundKind::Repair;
+        repository.rounds.lock().expect("rounds").push(repair);
+        let inference = ScriptedInference {
+            outcomes: Mutex::new(VecDeque::new()),
+            requests: Mutex::new(Vec::new()),
+        };
+        let round = CompanionMemoryRepairCoordinator::new(&repository, &inference)
+            .repair_round(
+                &run,
+                attempt_id,
+                &JobHandle::new(JobId::new()),
+                None,
+                TimestampMillis::new(3),
+            )
+            .await
+            .expect("repair round");
+        assert!(round.is_none());
+        assert!(inference.requests.lock().expect("requests").is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_repair_answer_without_usable_calls_runs_the_structured_fallback() {
+        let run = run();
+        let attempt_id = DynamicMemoryAttemptId::new();
+        let execution_id = ToolExecutionId::new();
+        let repository = fixture(
+            &run,
+            attempt_id,
+            vec![skipped(execution_id, MemoryToolSkipReason::MissingCategory)],
+            vec![create_call(execution_id, 0, "Mira trusts the captain")],
+        );
+        let inference = ScriptedInference {
+            outcomes: Mutex::new(VecDeque::from([
+                Ok(repair_outcome(vec![retag(
+                    "Mira trusts the captain",
+                    "milestone",
+                )])),
+                Ok(text_outcome(
+                    r#"{"items":[{"text":"Mira trusts the captain","category":"relationship"}]}"#,
+                )),
+            ])),
+            requests: Mutex::new(Vec::new()),
+        };
+        let round = CompanionMemoryRepairCoordinator::new(&repository, &inference)
+            .repair_round(
+                &run,
+                attempt_id,
+                &JobHandle::new(JobId::new()),
+                None,
+                TimestampMillis::new(3),
+            )
+            .await
+            .expect("repair round")
+            .expect("repaired round");
+        assert_eq!(inference.requests.lock().expect("requests").len(), 2);
+        assert_eq!(
+            round.calls[0].call.arguments["category"],
+            serde_json::json!("relationship")
+        );
+    }
+
+    #[tokio::test]
+    async fn the_last_answer_for_a_text_wins() {
+        let run = run();
+        let attempt_id = DynamicMemoryAttemptId::new();
+        let execution_id = ToolExecutionId::new();
+        let repository = fixture(
+            &run,
+            attempt_id,
+            vec![skipped(execution_id, MemoryToolSkipReason::MissingCategory)],
+            vec![create_call(execution_id, 0, "Mira trusts the captain")],
+        );
+        let inference = ScriptedInference {
+            outcomes: Mutex::new(VecDeque::from([Ok(repair_outcome(vec![
+                retag("Mira trusts the captain", "relationship"),
+                retag("Mira trusts the captain", "character_trait"),
+            ]))])),
+            requests: Mutex::new(Vec::new()),
+        };
+        let round = CompanionMemoryRepairCoordinator::new(&repository, &inference)
+            .repair_round(
+                &run,
+                attempt_id,
+                &JobHandle::new(JobId::new()),
+                None,
+                TimestampMillis::new(3),
+            )
+            .await
+            .expect("repair round")
+            .expect("repaired round");
+        assert_eq!(
+            round.calls[0].call.arguments["category"],
+            serde_json::json!("character_trait")
+        );
     }
 
     #[tokio::test]
