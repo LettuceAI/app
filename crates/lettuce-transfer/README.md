@@ -138,8 +138,9 @@ decay, delete confidence, hard-delete ratio and recursive loops; the advanced
 the group settings, any other value is malformed; the summarizer and manager
 prompt template ids are retained as source ids (`dynamic_memory_prompt_source_ids`)
 and, like the lorebook generator prompt ids, checked against the backed-up
-prompt templates but not yet materialized into settings on import; only
-unknown keys remain unsupported notices. Version-2 backup graphs reject a
+prompt templates but not yet materialized into settings on import;
+`dynamicMemoryLlamaSamplerOverwriteEnabled` maps to the same-named setting
+(default true); only unknown keys remain unsupported notices. Version-2 backup graphs reject a
 settings document whose dynamic-memory prompt overrides name a prompt outside
 the graph.
 

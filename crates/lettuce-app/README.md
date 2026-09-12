@@ -892,7 +892,12 @@ once a model is configured, like legacy's "Summarisation model not configured"
 retry on the next turn; the user's `dynamic_memory_prompts` override when it
 is an active document of the right purpose, else the local manager prompt for
 llama.cpp accounts or the built-in document, as legacy fell back to its
-built-in entries for a missing template; policy, duplicate threshold and fallback format from the
+built-in entries for a missing template; on llama.cpp accounts the memory
+call drops the creative sampler like legacy (`top_k` 40, zero frequency and
+presence penalty, repetition penalty 1.0) unless
+`dynamic_memory_llama_sampler_overwrite_enabled` is off; legacy's per-model
+DynamicMemory feature override, sampler profile/order, min_p, typical_p and
+DRY resets have no destination before the llama.cpp runtime slice; policy, duplicate threshold and fallback format from the
 settings; supersession for companion conversations); `run_claimed` seeds
 creates with the embedding tokenizer (zero on failure, as legacy), runs the job
 runner and settles the job. `trigger` is legacy `trigger_dynamic_memory` /

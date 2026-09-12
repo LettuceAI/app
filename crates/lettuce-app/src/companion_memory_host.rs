@@ -339,7 +339,12 @@ where
             },
             &model,
             &account,
-            &ChatParameterResolutionInput::default(),
+            &memory_parameter_input(
+                account.protocol,
+                stored
+                    .settings
+                    .dynamic_memory_llama_sampler_overwrite_enabled,
+            ),
             &ChatRequirements::default(),
         )
         .map_err(|_| {
@@ -513,6 +518,31 @@ where
     }
 }
 
+/// Legacy stripped the creative llama.cpp sampler for memory calls unless the
+/// user turned `dynamicMemoryLlamaSamplerOverwriteEnabled` off: fixed `top_k`
+/// 40 and neutral penalties. The llama.cpp-only fields it also reset (sampler
+/// profile and order, min_p, typical_p, DRY) have no request-parameter
+/// destination before the llama.cpp runtime slice.
+fn memory_parameter_input(
+    protocol: ProviderProtocol,
+    overwrite_llama_sampler: bool,
+) -> ChatParameterResolutionInput {
+    use lettuce_models::ParameterOverride::Set;
+    if protocol != ProviderProtocol::LlamaCpp || !overwrite_llama_sampler {
+        return ChatParameterResolutionInput::default();
+    }
+    ChatParameterResolutionInput {
+        operation: lettuce_models::ChatParameterOverrides {
+            top_k: Set(40),
+            frequency_penalty: Set(0.0),
+            presence_penalty: Set(0.0),
+            repetition_penalty: Set(1.0),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
 struct ActiveMemoryCycle {
     settings: lettuce_settings::DynamicMemorySettings,
     companion: bool,
@@ -561,4 +591,38 @@ fn create_seeds<E: MemoryEmbeddingEngine + ?Sized>(
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use lettuce_models::{ParameterOverride, ProviderProtocol};
+
+    use super::memory_parameter_input;
+
+    #[test]
+    fn llama_cpp_memory_calls_drop_the_creative_sampler_unless_disabled() {
+        let forced = memory_parameter_input(ProviderProtocol::LlamaCpp, true);
+        assert_eq!(forced.operation.top_k, ParameterOverride::Set(40));
+        assert_eq!(
+            forced.operation.frequency_penalty,
+            ParameterOverride::Set(0.0)
+        );
+        assert_eq!(
+            forced.operation.presence_penalty,
+            ParameterOverride::Set(0.0)
+        );
+        assert_eq!(
+            forced.operation.repetition_penalty,
+            ParameterOverride::Set(1.0)
+        );
+        assert_eq!(forced.operation.temperature, ParameterOverride::Inherit);
+        assert_eq!(
+            memory_parameter_input(ProviderProtocol::LlamaCpp, false),
+            lettuce_models::ChatParameterResolutionInput::default()
+        );
+        assert_eq!(
+            memory_parameter_input(ProviderProtocol::Ollama, true),
+            lettuce_models::ChatParameterResolutionInput::default()
+        );
+    }
 }

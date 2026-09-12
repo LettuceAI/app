@@ -531,6 +531,12 @@ fn map_settings(
         true,
         LegacyBackupDocumentKind::Settings,
     )?;
+    let dynamic_memory_llama_sampler_overwrite_enabled = optional_bool_value(
+        advanced,
+        "dynamicMemoryLlamaSamplerOverwriteEnabled",
+        true,
+        LegacyBackupDocumentKind::Settings,
+    )?;
     let mut dynamic_memory = map_dynamic_memory(
         advanced.get("dynamicMemory"),
         "advanced_settings.dynamicMemory",
@@ -598,6 +604,7 @@ fn map_settings(
         "dynamicMemoryStructuredFallbackFormat",
         "dynamicMemorySummarizerPromptTemplateId",
         "dynamicMemoryManagerPromptTemplateId",
+        "dynamicMemoryLlamaSamplerOverwriteEnabled",
         "embeddingDimensions",
         "manualModeContextWindow",
         "summarisationModelId",
@@ -663,6 +670,7 @@ fn map_settings(
             dynamic_memory,
             group_dynamic_memory,
             dynamic_memory_prompts: lettuce_settings::DynamicMemoryPromptSelection::default(),
+            dynamic_memory_llama_sampler_overwrite_enabled,
             embedding: EmbeddingSettings {
                 dimensions: optional_u32(advanced, "embeddingDimensions")?
                     .and_then(|value| u16::try_from(value).ok()),
@@ -2927,6 +2935,7 @@ mod tests {
                         "dynamicMemoryStructuredFallbackFormat": "json",
                         "dynamicMemorySummarizerPromptTemplateId": "prompt-main",
                         "dynamicMemoryManagerPromptTemplateId": " ",
+                        "dynamicMemoryLlamaSamplerOverwriteEnabled": false,
                         "dynamicMemory": {
                             "maxEntries": 60,
                             "minSimilarityThreshold": 0.42,
@@ -3157,6 +3166,12 @@ mod tests {
                 summarizer: Some("prompt-main".into()),
                 manager: None,
             }
+        );
+        assert!(
+            !plan
+                .settings
+                .value
+                .dynamic_memory_llama_sampler_overwrite_enabled
         );
         assert!(
             !plan

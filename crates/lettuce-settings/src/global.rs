@@ -17,6 +17,8 @@ pub struct GlobalSettings {
     pub group_dynamic_memory: Option<DynamicMemorySettings>,
     #[serde(default)]
     pub dynamic_memory_prompts: DynamicMemoryPromptSelection,
+    #[serde(default = "default_true")]
+    pub dynamic_memory_llama_sampler_overwrite_enabled: bool,
     #[serde(default)]
     pub embedding: EmbeddingSettings,
     #[serde(default = "default_manual_mode_context_window")]
@@ -25,6 +27,10 @@ pub struct GlobalSettings {
 
 const fn default_manual_mode_context_window() -> u32 {
     50
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 impl Default for GlobalSettings {
@@ -37,6 +43,7 @@ impl Default for GlobalSettings {
             dynamic_memory: DynamicMemorySettings::default(),
             group_dynamic_memory: None,
             dynamic_memory_prompts: DynamicMemoryPromptSelection::default(),
+            dynamic_memory_llama_sampler_overwrite_enabled: true,
             embedding: EmbeddingSettings::default(),
             manual_mode_context_window: default_manual_mode_context_window(),
         }
@@ -298,6 +305,7 @@ mod tests {
             settings.dynamic_memory_prompts,
             DynamicMemoryPromptSelection::default()
         );
+        assert!(settings.dynamic_memory_llama_sampler_overwrite_enabled);
         assert_eq!(
             settings.effective_group_dynamic_memory(),
             &settings.dynamic_memory
