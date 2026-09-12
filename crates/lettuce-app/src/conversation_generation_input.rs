@@ -928,6 +928,20 @@ where
         retain_source_ancestry(&mut timeline.items, source_message_id)?;
         let memory_contribution = match memory_mode {
             MemoryModeSnapshot::Dynamic => {
+                let companion = match &aggregate.conversation.kind {
+                    ConversationKind::Direct(details) => CharacterRepository::get(
+                        self.repository,
+                        details.character.source_id,
+                    )
+                    .map_err(|_| ConversationGenerationInputError::Context(
+                        ContextAssemblyError::ConversationUnavailable,
+                    ))?
+                    .ok_or(ConversationGenerationInputError::Context(
+                        ContextAssemblyError::ConversationUnavailable,
+                    ))?
+                    .character.defaults.interaction_mode == lettuce_characters::InteractionMode::Companion,
+                    ConversationKind::Group(_) => false,
+                };
                 let policy = memory_settings
                     .and_then(|memory| memory.dynamic_policy.as_ref())
                     .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
@@ -938,6 +952,7 @@ where
                     MemoryPromptShape {
                         operation: turn.operation,
                         group,
+                        companion,
                         source_message_id,
                     },
                     now,
@@ -1288,6 +1303,7 @@ where
             threshold,
             settings.retrieval_strategy,
             shape.group,
+            shape.companion,
         );
         Ok(selected.into_iter().cloned().collect())
     }
@@ -1342,6 +1358,7 @@ struct MemoryPromptShape {
     source_message_id: lettuce_types::MessageId,
     operation: lettuce_conversations::GenerationOperation,
     group: bool,
+    companion: bool,
 }
 
 fn history_window(
@@ -1864,6 +1881,7 @@ fn select_memories<'a>(
     threshold: f32,
     strategy: MemoryRetrievalStrategySnapshot,
     group: bool,
+    companion: bool,
 ) -> Vec<&'a lettuce_memory::MemoryItem> {
     let projections = projections
         .iter()
@@ -1913,8 +1931,14 @@ fn select_memories<'a>(
             }
         }
         if !group {
-            selected.sort_by_key(|item| {
-                scored.iter().position(|(_, candidate)| candidate.id == item.id)
+            let adjusted_score = |item: &lettuce_memory::MemoryItem| {
+                let score = scored.iter()
+                    .find(|(_, candidate)| candidate.id == item.id)
+                    .map_or(0.0, |(score, _)| *score);
+                score + if companion { lexical_anchor_boost(query_text, &item.text) } else { 0.0 }
+            };
+            selected.sort_by(|left, right| {
+                adjusted_score(right).total_cmp(&adjusted_score(left))
             });
         }
         for recent in [true, false] {
@@ -1982,6 +2006,33 @@ fn select_memories<'a>(
         selected.extend(cold.into_iter().take(limit).map(|(_, item)| item));
     }
     selected
+}
+
+fn lexical_anchor_boost(query: &str, memory_text: &str) -> f32 {
+    let query = query.to_ascii_lowercase();
+    let memory = memory_text.to_ascii_lowercase();
+    let tokens = |text: &str| text.split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|token| token.len() >= 3)
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let query_tokens = tokens(&query);
+    if query_tokens.is_empty() {
+        return 0.0;
+    }
+    let overlap = query_tokens.iter()
+        .filter(|token| memory.contains(token.as_str()))
+        .count() as f32 / query_tokens.len() as f32;
+    let sequence = query.split("after ").nth(1).map_or(0.0, |anchor| {
+        let anchor_tokens = tokens(anchor);
+        if anchor_tokens.is_empty() || !anchor_tokens.iter().all(|token| memory.contains(token.as_str())) {
+            0.0
+        } else if ["then ", "after ", "afterward"].iter().any(|marker| memory.contains(marker)) {
+            0.35
+        } else {
+            0.15
+        }
+    });
+    overlap * 0.2 + sequence
 }
 
 fn normalize_memory_text(value: &str) -> String {
@@ -2057,6 +2108,18 @@ mod tests {
         group: bool,
         strategy: lettuce_conversations::MemoryRetrievalStrategySnapshot,
     ) -> Vec<lettuce_types::MemoryId> {
+        retrieval_results(items, scores, limit, group, strategy, "harbor", false)
+    }
+
+    fn retrieval_results(
+        items: &[lettuce_memory::MemoryItem],
+        scores: &[f32],
+        limit: usize,
+        group: bool,
+        strategy: lettuce_conversations::MemoryRetrievalStrategySnapshot,
+        query: &str,
+        companion: bool,
+    ) -> Vec<lettuce_types::MemoryId> {
         use lettuce_embeddings::{EmbeddingDimensions, EmbeddingVector, MemoryEmbeddingProjection};
         let vector = |score: f32| {
             let mut values = vec![0.0; 64];
@@ -2074,9 +2137,42 @@ mod tests {
             updated_at: item.created_at,
         }).rev().collect::<Vec<_>>();
         super::select_memories(
-            "harbor", &vector(1.0), &projections, &items.iter().collect::<Vec<_>>(),
-            limit, 0.35, strategy, group,
+            query, &vector(1.0), &projections, &items.iter().collect::<Vec<_>>(),
+            limit, 0.35, strategy, group, companion,
         ).into_iter().map(|item| item.id).collect()
+    }
+
+    #[test]
+    fn companion_retrieval_boosts_sequence_anchors_only_after_semantic_selection() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::{Cosine, Smart};
+        use lettuce_memory::MemoryCategory::Other;
+        let mut items = vec![
+            retrieval_memory(1, Other), retrieval_memory(2, Other), retrieval_memory(3, Other),
+        ];
+        items[0].text = "Mira enjoys the mountains.".into();
+        items[1].text = "After the harbor visit, Mira went home.".into();
+        items[2].text = "After the harbor visit, Mira then called home.".into();
+        let query = "What happened after the harbor visit?";
+        let scores = [0.9, 0.7, 0.1];
+        assert_eq!(
+            retrieval_results(&items, &scores, 2, false, Smart, query, true),
+            vec![items[1].id, items[0].id],
+        );
+        assert_eq!(
+            retrieval_results(&items, &scores, 2, false, Smart, query, false),
+            vec![items[0].id, items[1].id],
+        );
+        assert_eq!(
+            retrieval_results(&items, &scores, 2, false, Cosine, query, true),
+            vec![items[0].id, items[1].id],
+        );
+        assert_eq!(
+            retrieval_results(&items, &scores, 1, false, Smart, query, true),
+            vec![items[0].id],
+        );
+        assert_eq!(super::lexical_anchor_boost("?!", "After the harbor visit."), 0.0);
+        assert!((super::lexical_anchor_boost("after harbor", "Harbor then home") - 0.45).abs() < 0.0001);
+        assert!((super::lexical_anchor_boost("after harbor", "Harbor visit") - 0.25).abs() < 0.0001);
     }
 
     #[test]

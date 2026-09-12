@@ -783,9 +783,12 @@ retrieval reserves up to two slots for those hot picks before filling with
 remaining diverse semantic matches. Equal semantic and cold-keyword scores
 retain memory-space order, independent of projection query order. The selected
 IDs also drive the existing retrieval-access receipt and cold promotions.
-Companion temporal-range filtering and lexical-anchor score boosts remain
-pending with effective-clock parity; these ordinary retrieval checks do not
-establish temporal-query parity. Memory
+Companion Smart retrieval applies the legacy lexical overlap and sequence-anchor
+bonuses after semantic candidate selection, preserving the selected set and
+threshold while reordering its prompt lines and recorded IDs. This follows the
+live character's companion mode; roleplay, group and Cosine queries receive no
+bonus. Companion temporal-range filtering remains pending with effective-clock
+parity; these retrieval checks do not establish temporal-query parity. Memory
 reaches the prompt as in legacy: `{{key_memories}}` and `HasKeyMemories` use
 every hot or pinned active memory (on send taken before retrieval promotes cold
 items, on continue and regenerate after), a send also adds a first depth-0
