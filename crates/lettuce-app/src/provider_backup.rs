@@ -615,6 +615,8 @@ mod tests {
                             description: Some("A member of the backup cast".into()),
                             definition: None,
                             design_description: None,
+                            scenario: None,
+                            rules: Vec::new(),
                         },
                         CharacterProvenance::default(),
                         defaults,

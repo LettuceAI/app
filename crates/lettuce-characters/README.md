@@ -17,6 +17,12 @@ appearance vocabulary and recursive widget tree, group speaker/memory/persona
 choices, multiple ordered scenes, per-scene and per-variant directions, selected
 variants, inline assets, and starter message ordering.
 
+`CharacterProfile` also keeps the authored legacy `scenario` and the ordered
+`rules` list. Both live in `profile_json` with serde defaults, so existing rows
+and backups decode unchanged. Legacy rendered `{{rules}}` as empty text and never
+rendered the scenario; the rewrite preserves the data without changing prompt
+output.
+
 All media references use `AssetId`. Widget image locators are either logical
 asset references or an explicit unresolved import token; native paths, data
 URLs, bytes, and serving logic are not domain values. Prompt and lorebook IDs

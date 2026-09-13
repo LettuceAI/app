@@ -22,6 +22,10 @@ pub struct CharacterProfile {
     pub description: Option<String>,
     pub definition: Option<String>,
     pub design_description: Option<String>,
+    #[serde(default)]
+    pub scenario: Option<String>,
+    #[serde(default)]
+    pub rules: Vec<String>,
 }
 
 impl CharacterProfile {
@@ -32,11 +36,16 @@ impl CharacterProfile {
             self.description.as_ref(),
             self.definition.as_ref(),
             self.design_description.as_ref(),
+            self.scenario.as_ref(),
         ]
         .into_iter()
         .flatten()
         {
             validate_text("character.profile", value)?;
+        }
+        validate_collection("character.rules", &self.rules, MAX_COLLECTION_ITEMS)?;
+        for rule in &self.rules {
+            validate_text("character.rules", rule)?;
         }
         Ok(())
     }
@@ -371,6 +380,8 @@ mod tests {
             description: Some("A meticulous engineer".into()),
             definition: None,
             design_description: None,
+            scenario: None,
+            rules: Vec::new(),
         }
     }
 

@@ -48,8 +48,6 @@ pub struct LegacyBackupCharacterCandidate {
     pub id: CharacterId,
     pub profile: CharacterProfile,
     pub provenance: CharacterProvenance,
-    pub scenario: Option<String>,
-    pub rules: Vec<String>,
     pub defaults: LegacyBackupCharacterDefaults,
     pub presentation: LegacyBackupCharacterPresentation,
     pub media: LegacyBackupCharacterMedia,
@@ -749,12 +747,26 @@ fn map_characters(
             row.updated_at,
             LegacyBackupDocumentKind::Characters,
         )?;
+        let rules = row
+            .rules
+            .into_iter()
+            .map(|rule| {
+                rule.as_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| malformed(LegacyBackupDocumentKind::Characters, "rules"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if rules.len() > CHILD_LIMIT {
+            return Err(limit(LegacyBackupDocumentKind::Characters));
+        }
         let profile = CharacterProfile {
             name: row.name,
             nickname: normalize(row.nickname),
             description: normalize(row.description.clone()),
             definition: normalize(row.definition.or(row.description)),
             design_description: normalize(row.design_description),
+            scenario: normalize(row.scenario),
+            rules,
         };
         profile
             .validate()
@@ -892,16 +904,7 @@ fn map_characters(
                 crate::LegacyImportSkipReason::MissingChatTemplate,
             ));
         }
-        let rules = row
-            .rules
-            .into_iter()
-            .map(|rule| {
-                rule.as_str()
-                    .map(str::to_owned)
-                    .ok_or_else(|| malformed(LegacyBackupDocumentKind::Characters, "rules"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        if rules.len() > CHILD_LIMIT || scenes.len() > CHILD_LIMIT {
+        if scenes.len() > CHILD_LIMIT {
             return Err(limit(LegacyBackupDocumentKind::Characters));
         }
         let defaults = LegacyBackupCharacterDefaults {
@@ -964,8 +967,6 @@ fn map_characters(
             id,
             profile,
             provenance,
-            scenario: normalize(row.scenario),
-            rules,
             defaults,
             presentation,
             media: LegacyBackupCharacterMedia {
@@ -2341,8 +2342,8 @@ mod tests {
         assert_eq!(plan.lorebooks.lorebooks[0].entries[0].display_order, 4);
         let character = &plan.characters[0];
         assert_eq!(character.profile.definition.as_deref(), Some("Navigator"));
-        assert_eq!(character.scenario.as_deref(), Some("At the harbor"));
-        assert_eq!(character.rules, ["Stay in character"]);
+        assert_eq!(character.profile.scenario.as_deref(), Some("At the harbor"));
+        assert_eq!(character.profile.rules, ["Stay in character"]);
         assert_eq!(
             character
                 .media
