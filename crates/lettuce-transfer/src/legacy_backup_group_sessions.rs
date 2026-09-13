@@ -1776,6 +1776,8 @@ mod tests {
         let root = id(83);
         let mut row = session(&root, &group, &characters, None, &root, None, Vec::new());
         row["group_character_id"] = Value::Null;
+        row["background_image_path"] = Value::Null;
+        row["starting_scene"] = Value::Null;
         let plan = plan_legacy_backup_group_sessions(source(json!([row]), &characters, &group))
             .expect("an unlinked session gets its own group");
         assert_eq!(
