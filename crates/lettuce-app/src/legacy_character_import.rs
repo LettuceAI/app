@@ -69,15 +69,17 @@ mod tests {
 
     use lettuce_characters::{
         CardStyle, CharacterProfile, CharacterProvenance, CharacterRepository, ChatAppearanceV1,
-        GradientSource, InteractionMode, MemoryPolicy, SceneDocumentV1, ScenePart, Selection,
-        StarterMessage, StarterRole,
+        ChatMode, GradientSource, GroupMember, GroupRepository, InteractionMode, LifecycleStatus,
+        MemoryPolicy, SceneDocumentV1, ScenePart, Selection, SpeakerSelection, StarterMessage,
+        StarterRole,
     };
     use lettuce_companions::CompanionSoulConfig;
     use lettuce_context::{
-        CharacterLorebookBindingRepository, LorebookBinding, PromptEntryDraft, PromptEntryPosition,
-        PromptEntryRole, PromptPurpose,
+        CharacterLorebookBindingRepository, GroupLorebookBindingRepository, LorebookBinding,
+        PromptEntryDraft, PromptEntryPosition, PromptEntryRole, PromptPurpose,
     };
     use lettuce_settings::InMemorySecretStore;
+    use lettuce_transfer::LegacyBackupGroupCandidate;
     use lettuce_transfer::{
         LegacyAsrPlan, LegacyBackupCharacterDefaults, LegacyBackupCharacterMedia,
         LegacyBackupCharacterPresentation, LegacyBackupSceneCandidate,
@@ -87,8 +89,8 @@ mod tests {
         LegacyPromptEntryCandidate, LegacyPromptPlan, LegacyProviderModelPlan,
     };
     use lettuce_types::{
-        ContentHash, ConversationStarterId, LegacyImportRunId, LorebookId, Revision, SceneId,
-        SceneVariantId, StarterMessageId,
+        ContentHash, ConversationStarterId, GroupId, LegacyImportRunId, LorebookId, Revision,
+        SceneId, SceneVariantId, StarterMessageId,
     };
 
     use super::*;
@@ -99,7 +101,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_characters_materialize_with_remapped_references_and_replay() {
+    async fn legacy_characters_and_groups_materialize_with_remapped_references_and_replay() {
         let path = std::env::temp_dir().join(format!(
             "lettuce-app-legacy-characters-{}.sqlite3",
             LegacyImportRunId::new()
@@ -181,11 +183,11 @@ mod tests {
             models: 0,
             prompts: 1,
             personas: 0,
-            characters: 1,
+            characters: 2,
             lorebooks: 1,
             chat_templates: 1,
             direct_conversations: 0,
-            group_profiles: 0,
+            group_profiles: 1,
             group_conversations: 0,
         };
         let character_id = CharacterId::new();
@@ -279,6 +281,84 @@ mod tests {
                 updated_at: TimestampMillis::new(6),
             }],
         }];
+        let second_id = CharacterId::new();
+        let second = LegacyBackupCharacterCandidate {
+            id: second_id,
+            defaults: LegacyBackupCharacterDefaults {
+                interaction_mode: InteractionMode::Roleplay,
+                default_scene_id: None,
+                default_starter_source_id: None,
+                companion_soul: None,
+                companion_prompt_source_id: None,
+                ..character.defaults.clone()
+            },
+            active_lorebook_ids: Vec::new(),
+            scenes: Vec::new(),
+            starters: Vec::new(),
+            ..character.clone()
+        };
+        let characters = vec![character.clone(), second];
+        let group_id = GroupId::new();
+        let group_scene = SceneId::new();
+        let group_variant = SceneVariantId::new();
+        let group = LegacyBackupGroupCandidate {
+            id: group_id,
+            status: LifecycleStatus::Active,
+            name: "Harbor crew".to_owned(),
+            chat_mode: ChatMode::Roleplay,
+            persona: Selection::Inherit,
+            speaker_selection: SpeakerSelection::Director,
+            memory_policy: MemoryPolicy::Manual,
+            disable_character_lorebooks: false,
+            group_conversation_prompt_source_id: Some("deleted-group-prompt".to_owned()),
+            group_roleplay_prompt_source_id: None,
+            chat_appearance: ChatAppearanceV1::default(),
+            members: vec![
+                GroupMember {
+                    character_id,
+                    ordinal: 0,
+                    muted: false,
+                    model_profile_override: None,
+                },
+                GroupMember {
+                    character_id: second_id,
+                    ordinal: 1,
+                    muted: true,
+                    model_profile_override: None,
+                },
+            ],
+            starting_scene: Some(LegacyBackupSceneCandidate {
+                id: group_scene,
+                ordinal: 0,
+                content: scene_text("The crew gathers"),
+                direction: None,
+                background: None,
+                selected_variant_id: Some(group_variant),
+                variants: vec![LegacyBackupSceneVariantCandidate {
+                    id: group_variant,
+                    ordinal: 0,
+                    content: scene_text("The crew argues"),
+                    direction: None,
+                    created_at: TimestampMillis::new(7),
+                }],
+                created_at: TimestampMillis::new(7),
+            }),
+            background: None,
+            lorebook_ids: vec![legacy_lorebook],
+            created_at: TimestampMillis::new(7),
+            updated_at: TimestampMillis::new(8),
+        };
+        let group_bindings = vec![BackupLorebookBindings {
+            owner_id: group_id,
+            bindings: vec![LorebookBinding {
+                lorebook_id: legacy_lorebook,
+                enabled: true,
+                ordinal: 0,
+                revision: Revision::INITIAL,
+                created_at: TimestampMillis::new(7),
+                updated_at: TimestampMillis::new(8),
+            }],
+        }];
         let run_id = LegacyImportRunId::new();
         let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("open backend");
         let admission = backend
@@ -317,7 +397,7 @@ mod tests {
                 .execute(
                     &admission,
                     &plan,
-                    std::slice::from_ref(&character),
+                    &characters,
                     &bindings,
                     TimestampMillis::new(35),
                 )
@@ -329,19 +409,32 @@ mod tests {
             .execute(&admission, &plan, TimestampMillis::new(40))
             .await
             .expect("materialize prompts");
+        assert_eq!(
+            backend
+                .legacy_group_importer()
+                .execute(
+                    &admission,
+                    &plan,
+                    std::slice::from_ref(&group),
+                    &group_bindings,
+                    TimestampMillis::new(45),
+                )
+                .expect_err("groups wait for the characters stage"),
+            LegacyImportRepositoryError::Conflict
+        );
 
         let receipt = backend
             .legacy_character_importer()
             .execute(
                 &admission,
                 &plan,
-                std::slice::from_ref(&character),
+                &characters,
                 &bindings,
                 TimestampMillis::new(50),
             )
             .expect("materialize characters");
 
-        assert_eq!(receipt.record_count, 1);
+        assert_eq!(receipt.record_count, 2);
         assert!(!receipt.replayed);
         let details = CharacterRepository::get(backend.database(), character_id)
             .expect("read character")
@@ -376,6 +469,35 @@ mod tests {
         .expect("character bindings");
         assert_eq!(bound.len(), 1);
         assert_eq!(bound[0].lorebook_id, lorebook_id);
+        let group_receipt = backend
+            .legacy_group_importer()
+            .execute(
+                &admission,
+                &plan,
+                std::slice::from_ref(&group),
+                &group_bindings,
+                TimestampMillis::new(55),
+            )
+            .expect("materialize groups");
+        assert_eq!(group_receipt.record_count, 1);
+        let group_details = GroupRepository::get(backend.database(), group_id)
+            .expect("read group")
+            .expect("group exists");
+        assert_eq!(group_details.group.members.len(), 2);
+        assert!(group_details.group.members[1].muted);
+        assert_eq!(group_details.group.group_conversation_prompt_id, None);
+        assert_eq!(
+            group_details
+                .starting_scene
+                .as_ref()
+                .map(|scene| scene.variants.len()),
+            Some(1)
+        );
+        let group_bound =
+            GroupLorebookBindingRepository::list_group_bindings(backend.database(), group_id)
+                .expect("group bindings");
+        assert_eq!(group_bound.len(), 1);
+        assert_eq!(group_bound[0].lorebook_id, lorebook_id);
         drop(backend);
 
         let reopened = AppBackend::open(&path, TimestampMillis::new(60)).expect("reopen backend");
@@ -388,7 +510,7 @@ mod tests {
             .execute(
                 &replayed_admission,
                 &plan,
-                std::slice::from_ref(&character),
+                &characters,
                 &bindings,
                 TimestampMillis::new(80),
             )

@@ -1141,6 +1141,7 @@ pub struct LegacyProviderModelReceipt {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LegacyImportStage {
     Characters,
+    Groups,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1151,6 +1152,17 @@ pub struct LegacyCharacterMaterializationRequest {
     pub media: LegacyMediaPlan,
     pub characters: Vec<LegacyBackupCharacterCandidate>,
     pub character_lorebooks: Vec<BackupLorebookBindings<CharacterId>>,
+    pub completed_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyGroupMaterializationRequest {
+    pub run_id: LegacyImportRunId,
+    pub plan_fingerprint: ContentHash,
+    pub source_fingerprint: ContentHash,
+    pub media: LegacyMediaPlan,
+    pub groups: Vec<LegacyBackupGroupCandidate>,
+    pub group_lorebooks: Vec<BackupLorebookBindings<GroupId>>,
     pub completed_at: TimestampMillis,
 }
 
@@ -1222,5 +1234,10 @@ pub trait LegacyImportRepository: Send + Sync {
     fn materialize_characters(
         &self,
         request: LegacyCharacterMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
+
+    fn materialize_groups(
+        &self,
+        request: LegacyGroupMaterializationRequest,
     ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
 }

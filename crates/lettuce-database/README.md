@@ -579,6 +579,14 @@ collision rolls back the whole stage. The persona stage now checks only persona
 and lorebook media uses, because the shared media plan also carries character
 and group media.
 
+The groups stage runs through the same stage guard and additionally requires
+the characters stage receipt. It writes every planned reusable group through
+`insert_group_plan`:
+- keeps legacy group, scene and variant ids;
+- remaps the explicit persona and member model overrides (the planner already cleared missing or non-chat ones);
+- remaps group prompts (a missing one becomes the app default) and the group and starting-scene backgrounds;
+- writes the group lorebook bindings.
+
 The read-only legacy provider-secret adapter lists only planned API-key/header
 metadata, then loads one exact value into `SecretValue` on demand. It ignores the
 obsolete pre-v7 API-key reference and never opens the source writable. Migration

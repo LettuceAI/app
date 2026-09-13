@@ -172,6 +172,11 @@ impl AppBackend {
         crate::LegacyCharacterImportCoordinator::new(self.database.as_ref())
     }
 
+    #[must_use]
+    pub fn legacy_group_importer(&self) -> crate::LegacyGroupImportCoordinator<'_, Database> {
+        crate::LegacyGroupImportCoordinator::new(self.database.as_ref())
+    }
+
     pub fn legacy_provider_secret_importer<'a, S, V>(
         &'a self,
         source: &'a S,
