@@ -55,6 +55,29 @@ pub struct LegacyBackupCompatibilityPlan {
 }
 
 impl LegacyBackupCompatibilityPlan {
+    #[must_use]
+    pub fn legacy_import_plan(&self) -> crate::LegacyImportPlan {
+        let asr = &self
+            .creation_helpers
+            .source
+            .source
+            .source
+            .source
+            .source
+            .source
+            .source
+            .source;
+        let authored = &asr.source.authored;
+        crate::LegacyImportPlan {
+            provider_models: authored.configuration.provider_models.clone(),
+            prompts: authored.configuration.prompts.clone(),
+            personas: authored.personas.clone(),
+            lorebooks: authored.lorebooks.clone(),
+            asr: asr.asr.clone(),
+            media: asr.source.media.clone(),
+        }
+    }
+
     pub(crate) fn inventory(&self) -> &LegacyBackupInventory {
         &self.configuration().source
     }

@@ -98,6 +98,13 @@ impl AppBackend {
         crate::read_legacy_database_inventory(app_data_dir)
     }
 
+    pub fn plan_legacy_database_import(
+        &self,
+        app_data_dir: impl AsRef<Path>,
+    ) -> Result<crate::LegacyDatabaseImportPlan, crate::LegacyDatabaseImportPlanError> {
+        crate::plan_legacy_database_import(app_data_dir)
+    }
+
     pub fn plan_legacy_personas(
         &self,
         path: impl AsRef<Path>,

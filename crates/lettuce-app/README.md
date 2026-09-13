@@ -17,6 +17,13 @@ attachments,sessions}` and `generated_images`, in archive order and bounded by
 the archive entry, object and total limits. Unlike the legacy exporter, symbolic
 links are never followed and names that cannot form a safe archive path are left
 out, so the walk cannot read outside the legacy roots.
+`AppBackend::plan_legacy_database_import` plans that inventory through the shared
+legacy backup planner and projects one `LegacyImportPlan`. Provider/model,
+prompt, persona and lorebook plans match the SQLite planners for the same
+database (parity test in `lettuce-database`). ASR rows and voice audio come
+from the database tables, because the legacy backup ASR document has no row ids
+or voice examples; the voice audio candidates merge into the authored media plan
+under the same total limit.
 `AppBackend::plan_legacy_personas` exposes the bounded persona candidates and
 their explicit default owner while leaving all source media unresolved.
 `AppBackend::plan_legacy_lorebooks` exposes the bounded root and ordered-entry

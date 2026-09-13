@@ -1314,9 +1314,10 @@ mod tests {
         CREATE TABLE lorebooks (id TEXT PRIMARY KEY, name TEXT NOT NULL, avatar_path TEXT, keyword_detection_mode TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
         CREATE TABLE lorebook_entries (id TEXT PRIMARY KEY, lorebook_id TEXT NOT NULL, title TEXT NOT NULL, enabled INTEGER NOT NULL, always_active INTEGER NOT NULL, keywords TEXT NOT NULL, case_sensitive INTEGER NOT NULL, keyword_match_mode TEXT NOT NULL, content TEXT NOT NULL, priority INTEGER NOT NULL, display_order INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
         CREATE TABLE creation_helper_sessions (id TEXT PRIMARY KEY, creation_goal TEXT NOT NULL, status TEXT NOT NULL, session_json TEXT NOT NULL, uploaded_images_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
-        CREATE TABLE asr_vocabulary_terms (term TEXT NOT NULL, normalized_term TEXT NOT NULL, language TEXT, category TEXT, scope TEXT NOT NULL, priority INTEGER NOT NULL, use_count INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-        CREATE TABLE asr_corrections (wrong TEXT NOT NULL, normalized_wrong TEXT NOT NULL, correct TEXT NOT NULL, normalized_correct TEXT NOT NULL, language TEXT, scope TEXT NOT NULL, confidence REAL NOT NULL, use_count INTEGER NOT NULL, accepted_count INTEGER NOT NULL, rejected_count INTEGER NOT NULL, seen_count INTEGER NOT NULL, last_seen_at TEXT, user_approved INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-        CREATE TABLE asr_ignored_suggestions (wrong TEXT NOT NULL, normalized_wrong TEXT NOT NULL, correct TEXT NOT NULL, normalized_correct TEXT NOT NULL, language TEXT, scope TEXT NOT NULL, ignored_count INTEGER NOT NULL, last_ignored_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE asr_vocabulary_terms (id INTEGER PRIMARY KEY, term TEXT NOT NULL, normalized_term TEXT NOT NULL, language TEXT, category TEXT, scope TEXT NOT NULL, priority INTEGER NOT NULL, use_count INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE asr_corrections (id INTEGER PRIMARY KEY, wrong TEXT NOT NULL, normalized_wrong TEXT NOT NULL, correct TEXT NOT NULL, normalized_correct TEXT NOT NULL, language TEXT, scope TEXT NOT NULL, confidence REAL NOT NULL, use_count INTEGER NOT NULL, accepted_count INTEGER NOT NULL, rejected_count INTEGER NOT NULL, seen_count INTEGER NOT NULL, last_seen_at TEXT, user_approved INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE asr_ignored_suggestions (id INTEGER PRIMARY KEY, wrong TEXT NOT NULL, normalized_wrong TEXT NOT NULL, correct TEXT NOT NULL, normalized_correct TEXT NOT NULL, language TEXT, scope TEXT NOT NULL, ignored_count INTEGER NOT NULL, last_ignored_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE asr_voice_examples (id INTEGER PRIMARY KEY, audio_path TEXT NOT NULL, expected_text TEXT NOT NULL, normalized_expected_text TEXT NOT NULL, whisper_output TEXT, normalized_whisper_output TEXT, language TEXT, scope TEXT NOT NULL, term_id INTEGER, correction_id INTEGER, created_at TEXT NOT NULL);
     ";
 
     fn id(value: u128) -> String {
@@ -1362,6 +1363,31 @@ mod tests {
                 )
                 .expect("lorebook entry");
         }
+        let provider = id(10);
+        connection
+            .execute(
+                "INSERT INTO provider_credentials VALUES (?1, 'openai', 'OpenAI', NULL, 'sk-test', NULL, NULL, NULL, '{}')",
+                [&provider],
+            )
+            .expect("provider");
+        connection
+            .execute(
+                "INSERT INTO models VALUES (?1, 'gpt-4o', 'openai', ?2, 'OpenAI', 'GPT-4o', 1, 'chat', '[\"text\",\"image\"]', '[\"text\"]', NULL, NULL, NULL)",
+                [id(11), provider.clone()],
+            )
+            .expect("model");
+        connection
+            .execute(
+                "INSERT INTO prompt_templates VALUES (?1, 'Narrator', 'directChat', 'Stay in character', '[]', 0, 1, 1)",
+                [id(12)],
+            )
+            .expect("prompt");
+        connection
+            .execute(
+                "INSERT INTO personas (id, title, description, active_lorebook_ids, is_default, created_at, updated_at) VALUES (?1, 'Reader', 'Reads stories', ?2, 1, 1, 1)",
+                [id(13), format!("[\"{lorebook}\"]")],
+            )
+            .expect("persona");
         connection
             .execute(
                 "INSERT INTO characters (id, name, memory_type, voice_autoplay, disable_avatar_gradient, custom_gradient_enabled, created_at, updated_at) VALUES (?1, 'Ada', 'manual', NULL, 0, 0, 1, 1), (?2, 'Grace', 'manual', 1, 0, 0, 1, 1)",
@@ -1472,6 +1498,41 @@ mod tests {
         })
         .expect("compatibility plan");
         assert_eq!(plan.coverage.present_document_count, 22);
+        std::fs::remove_file(path).expect("remove fixture");
+    }
+
+    #[test]
+    fn backup_chain_import_plan_matches_the_sqlite_planners_for_the_same_database() {
+        let path = legacy_database();
+        let documents = read_legacy_database_documents(&path).expect("legacy documents");
+        let plan = plan_legacy_backup_compatibility(LegacyBackupInventory {
+            version: 1,
+            created_at: 1,
+            app_version: "legacy-database".into(),
+            source_hash: ContentHash::parse("11".repeat(32)).expect("source hash"),
+            documents,
+            media: Vec::new(),
+        })
+        .expect("compatibility plan");
+
+        let import = plan.legacy_import_plan();
+
+        assert_eq!(
+            import.provider_models,
+            crate::plan_legacy_provider_models(&path).expect("provider plan")
+        );
+        assert_eq!(
+            import.prompts,
+            crate::plan_legacy_prompts(&path).expect("prompt plan")
+        );
+        assert_eq!(
+            import.personas,
+            crate::plan_legacy_personas(&path).expect("persona plan")
+        );
+        assert_eq!(
+            import.lorebooks,
+            crate::plan_legacy_lorebooks(&path).expect("lorebook plan")
+        );
         std::fs::remove_file(path).expect("remove fixture");
     }
 }

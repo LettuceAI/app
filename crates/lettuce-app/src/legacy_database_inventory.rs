@@ -5,9 +5,11 @@ use std::{
 };
 
 use lettuce_transfer::{
+    LEGACY_MEDIA_TOTAL_BYTES_LIMIT, LegacyBackupCompatibilityError, LegacyBackupCompatibilityPlan,
     LegacyBackupDocument, LegacyBackupDocumentKind, LegacyBackupInventory, LegacyBackupMedia,
-    LegacyBackupMediaRoot, LegacyDatabasePreflightError, MAX_BACKUP_ENTRIES,
-    MAX_BACKUP_ENTRY_BYTES, MAX_BACKUP_TOTAL_BYTES,
+    LegacyBackupMediaRoot, LegacyDatabasePreflightError, LegacyImportPlan, LegacyLorebookPlan,
+    LegacyMediaPlan, LegacyPersonaPlan, MAX_BACKUP_ENTRIES, MAX_BACKUP_ENTRY_BYTES,
+    MAX_BACKUP_TOTAL_BYTES, plan_legacy_backup_compatibility,
 };
 use lettuce_types::ContentHash;
 use zeroize::Zeroizing;
@@ -232,11 +234,142 @@ fn add_text(hasher: &mut blake3::Hasher, value: &str) {
     hasher.update(value.as_bytes());
 }
 
+#[derive(Debug)]
+pub struct LegacyDatabaseImportPlan {
+    pub compatibility: LegacyBackupCompatibilityPlan,
+    pub plan: LegacyImportPlan,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum LegacyDatabaseImportPlanError {
+    #[error("{0}")]
+    Database(LegacyDatabasePreflightError),
+    #[error(transparent)]
+    Compatibility(#[from] LegacyBackupCompatibilityError),
+}
+
+impl From<LegacyDatabasePreflightError> for LegacyDatabaseImportPlanError {
+    fn from(value: LegacyDatabasePreflightError) -> Self {
+        Self::Database(value)
+    }
+}
+
+/// Plans a live legacy app data directory through the shared legacy backup
+/// planner. ASR rows and voice audio come from the database tables, which keep
+/// the row ids and voice examples a legacy backup document never carried.
+pub fn plan_legacy_database_import(
+    app_data_dir: impl AsRef<Path>,
+) -> Result<LegacyDatabaseImportPlan, LegacyDatabaseImportPlanError> {
+    let app_data_dir =
+        fs::canonicalize(app_data_dir).map_err(|_| LegacyDatabasePreflightError::Unavailable)?;
+    let storage_root = app_data_dir.join("lettuce");
+    let compatibility =
+        plan_legacy_backup_compatibility(read_legacy_database_inventory(&app_data_dir)?)?;
+    let mut plan = compatibility.legacy_import_plan();
+    plan.asr = lettuce_database::plan_legacy_asr(storage_root.join("app.db"))?;
+    let voice_audio = crate::plan_legacy_media(
+        &storage_root,
+        &mut LegacyPersonaPlan {
+            personas: Vec::new(),
+            default_persona_id: None,
+            skipped: Vec::new(),
+        },
+        &mut LegacyLorebookPlan {
+            lorebooks: Vec::new(),
+            skipped: Vec::new(),
+        },
+        &plan.asr,
+    )?;
+    merge_media(&mut plan.media, voice_audio)?;
+    Ok(LegacyDatabaseImportPlan {
+        compatibility,
+        plan,
+    })
+}
+
+fn merge_media(
+    media: &mut LegacyMediaPlan,
+    extra: LegacyMediaPlan,
+) -> Result<(), LegacyDatabasePreflightError> {
+    media.total_bytes = media
+        .total_bytes
+        .checked_add(extra.total_bytes)
+        .filter(|total| *total <= LEGACY_MEDIA_TOTAL_BYTES_LIMIT)
+        .ok_or(LegacyDatabasePreflightError::MediaTotalTooLarge {
+            limit: LEGACY_MEDIA_TOTAL_BYTES_LIMIT,
+        })?;
+    media.media.extend(extra.media);
+    media
+        .media
+        .sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    media.skipped.extend(extra.skipped);
+    media.skipped.sort();
+    media.skipped.dedup();
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use lettuce_types::MediaBlobId;
 
     use super::*;
+
+    fn media_plan(paths: &[&str], total_bytes: u64) -> LegacyMediaPlan {
+        LegacyMediaPlan {
+            media: paths
+                .iter()
+                .map(|path| lettuce_transfer::LegacyMediaCandidate {
+                    relative_path: (*path).to_owned(),
+                    source_locator: (*path).to_owned(),
+                    byte_len: 1,
+                    content_hash: ContentHash::parse("44".repeat(32)).expect("hash"),
+                    uses: Vec::new(),
+                })
+                .collect(),
+            total_bytes,
+            skipped: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn voice_audio_merges_into_the_authored_media_plan_in_path_order_within_the_total_limit() {
+        let mut media = media_plan(&["images/b.png", "avatars/a/a.png"], 2);
+        merge_media(&mut media, media_plan(&["asr/voice-examples/1.wav"], 1)).expect("merge");
+        assert_eq!(
+            media
+                .media
+                .iter()
+                .map(|item| item.relative_path.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "asr/voice-examples/1.wav",
+                "avatars/a/a.png",
+                "images/b.png"
+            ]
+        );
+        assert_eq!(media.total_bytes, 3);
+
+        let mut full = media_plan(&[], LEGACY_MEDIA_TOTAL_BYTES_LIMIT);
+        assert_eq!(
+            merge_media(&mut full, media_plan(&["asr/voice-examples/2.wav"], 1)),
+            Err(LegacyDatabasePreflightError::MediaTotalTooLarge {
+                limit: LEGACY_MEDIA_TOTAL_BYTES_LIMIT,
+            })
+        );
+    }
+
+    #[test]
+    fn a_data_directory_without_a_legacy_database_is_unavailable() {
+        let root = std::env::temp_dir().join(format!("lettuce-legacy-none-{}", MediaBlobId::new()));
+        fs::create_dir_all(&root).expect("empty root");
+        assert!(matches!(
+            plan_legacy_database_import(&root),
+            Err(LegacyDatabaseImportPlanError::Database(
+                LegacyDatabasePreflightError::Unavailable
+            ))
+        ));
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
 
     fn app_data_dir() -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!("lettuce-legacy-app-{}", MediaBlobId::new()));
