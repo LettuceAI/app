@@ -777,7 +777,9 @@ uses (trimmed, lowercased unless case-sensitive, default regex limits, exactly
 like the legacy matcher), because legacy never matched such a keyword; admission
 rejects a plan that still holds one. Values the old app read leniently fall back to
 the value it used and are recorded as `legacy_value` skips keyed
-`<table>.<field>:<row id>`: an unknown prompt type (Undefined, then direct chat),
+`<table>.<field>:<row id>`: an unknown prompt type (Undefined, then direct chat;
+types are read through the legacy prompt store's own table, so its snake_case
+lorebook aliases keep their purpose and runtime text is unknown),
 prompt entries that are not a JSON array (empty, then the content entry; a
 valid array the new types cannot read still aborts), malformed persona
 design reference or lorebook id lists (empty; a non-UUID lorebook id is recorded

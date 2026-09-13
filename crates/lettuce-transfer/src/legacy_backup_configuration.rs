@@ -205,7 +205,7 @@ struct PromptRow {
     id: String,
     name: String,
     #[serde(alias = "promptType")]
-    prompt_type: Option<String>,
+    prompt_type: Option<Value>,
     #[serde(default)]
     content: String,
     #[serde(default)]
@@ -1267,11 +1267,54 @@ fn map_provider_models(
     })
 }
 
+/// The prompt types the legacy prompt store accepted, including its snake_case
+/// lorebook aliases; anything else was stored but read back as undefined.
+#[must_use]
+pub fn legacy_prompt_purpose(value: &str) -> Option<PromptPurpose> {
+    Some(match value {
+        "undefined" => PromptPurpose::Undefined,
+        "directChat" => PromptPurpose::DirectChat,
+        "companionChat" => PromptPurpose::CompanionChat,
+        "groupChatRoleplay" => PromptPurpose::GroupChatRoleplay,
+        "groupChatConversational" => PromptPurpose::GroupChatConversational,
+        "dynamicMemorySummarizer" => PromptPurpose::DynamicMemorySummarizer,
+        "dynamicMemoryManager" => PromptPurpose::DynamicMemoryManager,
+        "replyHelperRoleplay" => PromptPurpose::ReplyHelperRoleplay,
+        "replyHelperConversational" => PromptPurpose::ReplyHelperConversational,
+        "lorebookEntryWriter" | "lorebook_entry_writer" => PromptPurpose::LorebookEntryWriter,
+        "lorebookKeywordGenerator" | "lorebook_keyword_generator" => {
+            PromptPurpose::LorebookKeywordGenerator
+        }
+        "lorebookGeneratorPlanner" | "lorebook_generator_planner" => {
+            PromptPurpose::LorebookGeneratorPlanner
+        }
+        "lorebookGeneratorWriter" | "lorebook_generator_writer" => {
+            PromptPurpose::LorebookGeneratorWriter
+        }
+        "lorebookGeneratorRefine" | "lorebook_generator_refine" => {
+            PromptPurpose::LorebookGeneratorRefine
+        }
+        "lorebookGeneratorCoherence" | "lorebook_generator_coherence" => {
+            PromptPurpose::LorebookGeneratorCoherence
+        }
+        "avatarGeneration" => PromptPurpose::AvatarGeneration,
+        "avatarEditRequest" => PromptPurpose::AvatarEditRequest,
+        "sceneGeneration" => PromptPurpose::SceneGeneration,
+        "scenePromptWriter" => PromptPurpose::ScenePromptWriter,
+        "designReferenceWriter" => PromptPurpose::DesignReferenceWriter,
+        "companionSoulWriter" => PromptPurpose::CompanionSoulWriter,
+        "companionGrowthcycle" => PromptPurpose::CompanionGrowthcycle,
+        "companionConsolidation" => PromptPurpose::CompanionConsolidation,
+        _ => return None,
+    })
+}
+
 fn map_prompts(
     rows: Vec<PromptRow>,
     settings: &LegacyBackupSettingsCandidate,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<LegacyPromptPlan, LegacyBackupConfigurationError> {
+    let mut skipped = Vec::new();
     let mut prompts = Vec::with_capacity(rows.len());
     for (index, row) in rows.into_iter().enumerate() {
         report_extra(
@@ -1288,15 +1331,25 @@ fn map_prompts(
         {
             return Err(malformed(LegacyBackupDocumentKind::PromptTemplates, "id"));
         }
-        let mut purpose: PromptPurpose = serde_json::from_value(Value::String(
-            row.prompt_type.unwrap_or_else(|| "undefined".into()),
-        ))
-        .map_err(|_| {
-            malformed(
-                LegacyBackupDocumentKind::PromptTemplates,
-                format!("[{index}].prompt_type"),
-            )
-        })?;
+        let unknown_type = |skipped: &mut Vec<crate::LegacyImportSkip>| {
+            skipped.push(crate::legacy_value_skip(
+                "prompt_templates.prompt_type",
+                &row.id,
+                crate::LegacyImportSkipReason::UnknownLegacyValue,
+            ));
+        };
+        let prompt_type = match row.prompt_type {
+            None | Some(Value::Null) => "undefined".to_owned(),
+            Some(Value::String(value)) => value,
+            Some(_) => {
+                unknown_type(&mut skipped);
+                "undefined".to_owned()
+            }
+        };
+        let mut purpose = legacy_prompt_purpose(&prompt_type).unwrap_or_else(|| {
+            unknown_type(&mut skipped);
+            PromptPurpose::Undefined
+        });
         if purpose == PromptPurpose::Undefined {
             purpose = PromptPurpose::DirectChat;
             notices.push(notice(
@@ -1306,13 +1359,24 @@ fn map_prompts(
             ));
         }
         let entry_value = match row.entries {
-            Value::String(value) => serde_json::from_str(&value).map_err(|_| {
-                malformed(
-                    LegacyBackupDocumentKind::PromptTemplates,
-                    format!("[{index}].entries"),
-                )
-            })?,
-            value => value,
+            Value::Null => Value::Array(Vec::new()),
+            Value::Array(items) => Value::Array(items),
+            other => {
+                match other
+                    .as_str()
+                    .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                {
+                    Some(Value::Array(items)) => Value::Array(items),
+                    _ => {
+                        skipped.push(crate::legacy_value_skip(
+                            "prompt_templates.entries",
+                            &row.id,
+                            crate::LegacyImportSkipReason::MalformedLegacyValue,
+                        ));
+                        Value::Array(Vec::new())
+                    }
+                }
+            }
         };
         let entry_rows: Vec<PromptEntryRow> =
             serde_json::from_value(entry_value).map_err(|_| {
@@ -1409,8 +1473,9 @@ fn map_prompts(
         });
     }
     prompts.sort_by(|left, right| left.source_id.cmp(&right.source_id));
+    skipped.sort();
     Ok(LegacyPromptPlan {
-        skipped: Vec::new(),
+        skipped,
         prompts,
         default_prompt_source_id: settings.default_prompt_source_id.clone(),
         deprecated_system_prompt: settings.deprecated_system_prompt.clone(),
@@ -3095,6 +3160,66 @@ mod tests {
         ];
         expected.sort();
         assert_eq!(plan.skipped, expected);
+    }
+
+    #[test]
+    fn malformed_prompt_type_and_entries_fall_back_like_legacy_restore() {
+        let plan = plan_legacy_backup_configuration(inventory(vec![document(
+            LegacyBackupDocumentKind::PromptTemplates,
+            json!([
+                {"id": "prompt-unknown", "name": "Unknown", "prompt_type": "villain", "content": "Body", "entries": "not-json"},
+                {"id": "prompt-number", "name": "Number", "prompt_type": 7, "content": "", "entries": {"entry": 1}},
+                {"id": "prompt-missing", "name": "Missing", "content": ""},
+                {"id": "prompt-snake", "name": "Snake", "prompt_type": "lorebook_entry_writer", "content": ""},
+                {"id": "prompt-runtime", "name": "Runtime", "prompt_type": "runtimeText", "content": ""}
+            ]),
+        )]))
+        .expect("malformed prompt values fall back");
+        let prompts = plan.prompts;
+        assert!(prompts.prompts.iter().all(|prompt| {
+            prompt.purpose
+                == if prompt.source_id == "prompt-snake" {
+                    PromptPurpose::LorebookEntryWriter
+                } else {
+                    PromptPurpose::DirectChat
+                }
+        }));
+        let unknown = prompts
+            .prompts
+            .iter()
+            .find(|prompt| prompt.source_id == "prompt-unknown")
+            .expect("unknown prompt");
+        assert_eq!(unknown.entries.len(), 1);
+        assert_eq!(unknown.entries[0].draft.content, "Body");
+        let mut expected = vec![
+            crate::legacy_value_skip(
+                "prompt_templates.prompt_type",
+                "prompt-runtime",
+                crate::LegacyImportSkipReason::UnknownLegacyValue,
+            ),
+            crate::legacy_value_skip(
+                "prompt_templates.prompt_type",
+                "prompt-unknown",
+                crate::LegacyImportSkipReason::UnknownLegacyValue,
+            ),
+            crate::legacy_value_skip(
+                "prompt_templates.entries",
+                "prompt-unknown",
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+            crate::legacy_value_skip(
+                "prompt_templates.prompt_type",
+                "prompt-number",
+                crate::LegacyImportSkipReason::UnknownLegacyValue,
+            ),
+            crate::legacy_value_skip(
+                "prompt_templates.entries",
+                "prompt-number",
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+        ];
+        expected.sort();
+        assert_eq!(prompts.skipped, expected);
     }
 
     #[test]

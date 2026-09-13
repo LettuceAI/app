@@ -482,7 +482,14 @@ valid JSON or have the wrong shape fall back exactly like the SQLite import
 restore wrote them back raw and its settings reader omitted them. Model scopes
 that are not a JSON array become text-only and non-string scope items are
 dropped and recorded, matching legacy restore normalization; JSON `null` counts
-as absent. All model, prompt, audio-voice, chat-character, scene and lorebook links are
+as absent. A prompt type that is missing becomes direct chat like legacy
+restore's "undefined"; a non-string or unknown type also becomes direct chat and
+is recorded as an unknown legacy value. `legacy_prompt_purpose` is the legacy
+prompt store's exact type table (camelCase names plus its snake_case lorebook
+aliases, no runtime text) and is shared with the SQLite import. Prompt entries that are missing or null
+are empty; a string that is not a JSON array, or any other non-array value, is
+empty and recorded (the content entry then applies); a valid array the new
+types cannot read still aborts. All model, prompt, audio-voice, chat-character, scene and lorebook links are
 checked when their owning legacy document is present. The complete decrypted
 source inventory remains attached to the plan, including converted documents,
 so later slices can recover fields that do not yet have a canonical owner without

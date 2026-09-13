@@ -611,8 +611,8 @@ fn plan_legacy_prompts_with_limit(
         if source_id.trim().is_empty() || name.trim().is_empty() || updated_at < created_at {
             return Err(prompt_malformed("identity"));
         }
-        let mut purpose: PromptPurpose = serde_json::from_value(Value::String(prompt_type))
-            .unwrap_or_else(|_| {
+        let mut purpose =
+            lettuce_transfer::legacy_prompt_purpose(&prompt_type).unwrap_or_else(|| {
                 skipped.push(legacy_value_skip(
                     "prompt_templates.prompt_type",
                     &source_id,
