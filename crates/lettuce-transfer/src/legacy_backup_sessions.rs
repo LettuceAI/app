@@ -310,10 +310,10 @@ fn map_sessions(
             return Err(orphan(format!("{path}.persona_id")));
         }
         let session_key = row.id.clone();
-        let mut prompt_source_id = row.prompt_template_id.clone();
+        let prompt_source_id = row.prompt_template_id.clone();
         if prompt_source_id
-            .take_if(|id| !prompt_ids.contains(id.as_str()))
-            .is_some()
+            .as_deref()
+            .is_some_and(|id| !prompt_ids.contains(id))
         {
             skipped.push(crate::LegacyImportSkip {
                 kind: crate::LegacyImportSkipKind::PromptReference,
@@ -1204,7 +1204,7 @@ mod tests {
         let plan = plan_legacy_backup_direct_sessions(source(rows, &character))
             .expect("stale references are cleared");
         let session = &plan.sessions[0];
-        assert_eq!(session.prompt_source_id, None);
+        assert_eq!(session.prompt_source_id.as_deref(), Some("deleted-prompt"));
         assert_eq!(session.lorebook_source_ids_override, Some(Vec::new()));
         assert_eq!(session.selected_scene_source_id, None);
         assert_eq!(session.messages[0].model_source_id, None);

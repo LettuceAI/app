@@ -812,24 +812,32 @@ fn map_characters(
                 crate::LegacyImportSkipReason::MissingModelProfile,
             ));
         }
-        let mut direct_prompt_source_id = normalize(row.prompt_template_id);
-        let mut group_conversation_prompt_source_id = normalize(row.group_chat_prompt_template_id);
-        let mut group_roleplay_prompt_source_id =
-            normalize(row.group_chat_roleplay_prompt_template_id);
+        let direct_prompt_source_id = normalize(row.prompt_template_id);
+        if direct_prompt_source_id
+            .as_deref()
+            .is_some_and(|prompt| !prompt_ids.contains(prompt))
+        {
+            skipped.push(reference(
+                crate::LegacyImportSkipKind::PromptReference,
+                "prompt_template_id",
+                crate::LegacyImportSkipReason::MissingPrompt,
+            ));
+        }
+        let group_conversation_prompt_source_id = normalize(row.group_chat_prompt_template_id);
+        let group_roleplay_prompt_source_id = normalize(row.group_chat_roleplay_prompt_template_id);
         for (field, prompt) in [
-            ("prompt_template_id", &mut direct_prompt_source_id),
             (
                 "group_chat_prompt_template_id",
-                &mut group_conversation_prompt_source_id,
+                &group_conversation_prompt_source_id,
             ),
             (
                 "group_chat_roleplay_prompt_template_id",
-                &mut group_roleplay_prompt_source_id,
+                &group_roleplay_prompt_source_id,
             ),
         ] {
             if prompt
-                .take_if(|prompt| !prompt_ids.contains(prompt.as_str()))
-                .is_some()
+                .as_deref()
+                .is_some_and(|prompt| !prompt_ids.contains(prompt))
             {
                 skipped.push(reference(
                     crate::LegacyImportSkipKind::PromptReference,
@@ -872,7 +880,7 @@ fn map_characters(
                 Vec::new()
             }
         };
-        let starters = map_starters(prompts, chat_templates, id, &scene_ids, lorebook_ids)?;
+        let starters = map_starters(chat_templates, id, &scene_ids, lorebook_ids)?;
         let mut default_starter_source_id = normalize(row.default_chat_template_id);
         if default_starter_source_id
             .take_if(|default| !starters.iter().any(|starter| &starter.source_id == default))
@@ -1083,17 +1091,11 @@ fn map_scenes(
 }
 
 fn map_starters(
-    prompts: &crate::LegacyPromptPlan,
     chat_templates: &[crate::LegacyBackupChatTemplateCandidate],
     character_id: CharacterId,
     scene_ids: &BTreeSet<SceneId>,
     lorebook_ids: &BTreeSet<LorebookId>,
 ) -> Result<Vec<LegacyBackupStarterCandidate>, LegacyBackupAuthoredError> {
-    let prompt_ids = prompts
-        .prompts
-        .iter()
-        .map(|prompt| prompt.source_id.as_str())
-        .collect::<BTreeSet<_>>();
     let owned = chat_templates
         .iter()
         .map(|starter| {
@@ -1118,16 +1120,6 @@ fn map_starters(
             )?;
             if scene_id.is_some_and(|scene| !scene_ids.contains(&scene)) {
                 return Err(orphan(LegacyBackupDocumentKind::ChatTemplates, "scene_id"));
-            }
-            if starter
-                .prompt_source_id
-                .as_deref()
-                .is_some_and(|prompt| !prompt_ids.contains(prompt))
-            {
-                return Err(orphan(
-                    LegacyBackupDocumentKind::ChatTemplates,
-                    "prompt_template_id",
-                ));
             }
             let parsed_lorebooks = starter
                 .lorebook_source_ids
@@ -1386,22 +1378,21 @@ fn map_groups(
                 ));
             }
         };
-        let mut group_conversation_prompt_source_id = normalize(row.group_chat_prompt_template_id);
-        let mut group_roleplay_prompt_source_id =
-            normalize(row.group_chat_roleplay_prompt_template_id);
+        let group_conversation_prompt_source_id = normalize(row.group_chat_prompt_template_id);
+        let group_roleplay_prompt_source_id = normalize(row.group_chat_roleplay_prompt_template_id);
         for (field, prompt) in [
             (
                 "group_chat_prompt_template_id",
-                &mut group_conversation_prompt_source_id,
+                &group_conversation_prompt_source_id,
             ),
             (
                 "group_chat_roleplay_prompt_template_id",
-                &mut group_roleplay_prompt_source_id,
+                &group_roleplay_prompt_source_id,
             ),
         ] {
             if prompt
-                .take_if(|prompt| !prompt_ids.contains(prompt.as_str()))
-                .is_some()
+                .as_deref()
+                .is_some_and(|prompt| !prompt_ids.contains(prompt))
             {
                 skipped.push(reference_skip(
                     crate::LegacyImportSkipKind::PromptReference,
@@ -2702,7 +2693,10 @@ mod tests {
         let character = &plan.characters[0];
         assert_eq!(character.defaults.default_scene_id, None);
         assert_eq!(character.defaults.model_profile_id, None);
-        assert_eq!(character.defaults.direct_prompt_source_id, None);
+        assert_eq!(
+            character.defaults.direct_prompt_source_id.as_deref(),
+            Some("deleted-prompt")
+        );
         assert_eq!(character.defaults.default_starter_source_id, None);
         assert_eq!(
             character
@@ -2714,7 +2708,10 @@ mod tests {
         );
         assert_eq!(character.scenes[0].selected_variant_id, None);
         assert_eq!(character.starters[0].scene_id, None);
-        assert_eq!(character.starters[0].prompt_source_id, None);
+        assert_eq!(
+            character.starters[0].prompt_source_id.as_deref(),
+            Some("deleted-starter-prompt")
+        );
         assert_eq!(character.starters[0].lorebook_ids, Some(Vec::new()));
         let skip = |kind, source_key: String, reason| crate::LegacyImportSkip {
             kind,
@@ -2840,7 +2837,10 @@ mod tests {
             vec![(first.clone(), false, None), (second.clone(), false, None)]
         );
         assert!(matches!(group.persona, Selection::Inherit));
-        assert_eq!(group.group_conversation_prompt_source_id, None);
+        assert_eq!(
+            group.group_conversation_prompt_source_id.as_deref(),
+            Some("deleted-group-prompt")
+        );
         assert!(group.lorebook_ids.is_empty());
         assert_eq!(
             group

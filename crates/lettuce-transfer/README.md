@@ -343,8 +343,7 @@ ancestry, selected-variant ownership, JSON shapes, counters and finite sampling
 values before any write. Equal message timestamps and unordered legacy variant
 queries are reported as ordering loss. References legacy never cleaned up are
 cleared and recorded in the plan's `skipped` list instead of rejecting the
-backup: a deleted session prompt (legacy fell back to the character and app
-prompt), deleted override lorebooks (legacy looked each up and found nothing),
+backup: deleted override lorebooks (legacy looked each up and found nothing),
 a scene the character no longer has (legacy used an empty scene), a message's
 deleted model (only the debug view read it) and a missing selected variant,
 which falls back to the last variant like the legacy chat view. A missing
@@ -545,11 +544,14 @@ are shared with the SQLite import). Non-string JSON values in these string
 fields still abort. Character and starter references legacy never cleaned up
 are cleared or pruned and recorded in the authored and configuration plans'
 `skipped` lists: a character's default scene, default model (legacy failed with
-"model not found"; clearing is a recorded correction), prompt templates, default
+"model not found"; clearing is a recorded correction), default
 starter and missing or non-UUID active lorebook ids (repeats are dropped; legacy
 injected them twice in direct chats), a scene's selected variant (legacy fell
 back to the scene content), and a starter's scene (when the characters document
-is present), prompt and override lorebook ids. Character and starter lorebook
+is present) and override lorebook ids. A character's deleted prompts (direct and
+group) and a starter's deleted prompt are kept and recorded instead, because legacy treated
+them as explicit choices and fell back to the app template rather than
+inheriting. Character and starter lorebook
 links are pruned the same way whether or not the lorebooks document exists, so
 both planners agree. A JSON `null` override means no override silently and
 malformed override JSON means no override with a recorded value, like the
@@ -569,7 +571,8 @@ pruned and recorded in the authored plan's `skipped` list instead: members whose
 character is gone (legacy speaker selection skipped them), muted ids and model
 overrides for non-members, overrides whose model is gone (legacy fell back), a
 deleted persona (legacy's foreign key set it to null, so it inherits), stale
-group prompt and lorebook ids, and a starting scene's missing selected variant
+group lorebook ids (stale group prompt ids are kept and recorded because
+sessions copied them as explicit choices), and a starting scene's missing selected variant
 (legacy group prompts used only the scene content). A group left undersized or
 all-muted by that pruning still aborts until the user decides how to keep it. Group
 lorebooks use the canonical ordered binding document. Group sessions remain in

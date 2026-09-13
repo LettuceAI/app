@@ -1877,10 +1877,10 @@ fn map_chat_templates(
                 crate::LegacyImportSkipReason::MissingScene,
             ));
         }
-        let mut prompt_source_id = normalize_option(row.prompt_template_id);
+        let prompt_source_id = normalize_option(row.prompt_template_id);
         if prompt_source_id
-            .take_if(|prompt| !prompt_ids.contains(prompt.as_str()))
-            .is_some()
+            .as_deref()
+            .is_some_and(|prompt| !prompt_ids.contains(prompt))
         {
             skipped.push(reference(
                 crate::LegacyImportSkipKind::PromptReference,
