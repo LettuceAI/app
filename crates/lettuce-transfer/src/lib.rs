@@ -1135,6 +1135,33 @@ pub struct LegacyProviderModelReceipt {
     pub replayed: bool,
 }
 
+/// A legacy import stage that writes one domain after the provider, prompt,
+/// persona, lorebook and media stages of the same admitted run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LegacyImportStage {
+    Characters,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyCharacterMaterializationRequest {
+    pub run_id: LegacyImportRunId,
+    pub plan_fingerprint: ContentHash,
+    pub source_fingerprint: ContentHash,
+    pub media: LegacyMediaPlan,
+    pub characters: Vec<LegacyBackupCharacterCandidate>,
+    pub character_lorebooks: Vec<BackupLorebookBindings<CharacterId>>,
+    pub completed_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyImportStageReceipt {
+    pub run_id: LegacyImportRunId,
+    pub stage: LegacyImportStage,
+    pub record_count: u64,
+    pub completed_at: TimestampMillis,
+    pub replayed: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LegacyImportRepositoryError {
     InvalidInput,
@@ -1190,4 +1217,9 @@ pub trait LegacyImportRepository: Send + Sync {
         &self,
         request: LegacyProviderModelMaterializationRequest,
     ) -> Result<LegacyProviderModelReceipt, LegacyImportRepositoryError>;
+
+    fn materialize_characters(
+        &self,
+        request: LegacyCharacterMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
 }

@@ -560,6 +560,25 @@ domains later stages write (chat templates, characters, groups, direct and group
 sessions) together with the admitted sub-plan skips. A `partial` run may still
 advance to `completed` or `failed` once those later stages finish.
 
+Later import stages record one immutable `legacy_import_stage_results` row per
+`(run, stage)`. Their insert guard requires a `partial` run bound to a source
+fingerprint. The characters stage requires the persona/lorebook and
+provider/prompt receipts. In one immediate transaction it writes every planned
+character through the ordinary aggregate insert path:
+- profile, scenario, rules, provenance, defaults, presentation, image recommendation and media links;
+- scenes with deterministic background links, variants and starters;
+- companion soul state;
+- character lorebook bindings.
+
+Characters, scenes, variants and starters keep their legacy ids. Models,
+prompts, lorebooks and media are remapped through the sealed assignments. A
+stale prompt reference resolves to the app default, as legacy did. The
+deprecated character system prompt stays in the sealed source evidence like the
+model and settings prompts. Replay returns the receipt; a destination
+collision rolls back the whole stage. The persona stage now checks only persona
+and lorebook media uses, because the shared media plan also carries character
+and group media.
+
 The read-only legacy provider-secret adapter lists only planned API-key/header
 metadata, then loads one exact value into `SecretValue` on demand. It ignores the
 obsolete pre-v7 API-key reference and never opens the source writable. Migration

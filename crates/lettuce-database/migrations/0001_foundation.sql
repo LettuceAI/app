@@ -200,6 +200,36 @@ BEGIN
     SELECT RAISE(ABORT, 'legacy import skip is immutable');
 END;
 
+CREATE TABLE legacy_import_stage_results (
+    run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
+    stage TEXT NOT NULL CHECK (stage IN ('characters')),
+    record_count INTEGER NOT NULL CHECK (record_count >= 0),
+    completed_at INTEGER NOT NULL,
+    PRIMARY KEY (run_id, stage)
+) STRICT;
+
+CREATE TRIGGER legacy_import_stage_results_insert_guard
+BEFORE INSERT ON legacy_import_stage_results
+WHEN NOT EXISTS (
+    SELECT 1 FROM legacy_import_runs
+    WHERE id = NEW.run_id AND status = 'partial' AND source_fingerprint IS NOT NULL
+)
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import stage result is invalid');
+END;
+
+CREATE TRIGGER legacy_import_stage_results_update_forbidden
+BEFORE UPDATE ON legacy_import_stage_results
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import stage result is immutable');
+END;
+
+CREATE TRIGGER legacy_import_stage_results_delete_forbidden
+BEFORE DELETE ON legacy_import_stage_results
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import stage result is immutable');
+END;
+
 CREATE TRIGGER legacy_import_skips_delete_forbidden
 BEFORE DELETE ON legacy_import_skips
 BEGIN

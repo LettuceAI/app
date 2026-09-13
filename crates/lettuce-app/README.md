@@ -24,6 +24,11 @@ database (parity test in `lettuce-database`). ASR rows and voice audio come
 from the database tables, because the legacy backup ASR document has no row ids
 or voice examples; the voice audio candidates merge into the authored media plan
 under the same total limit.
+`AppBackend::legacy_character_importer` writes the planned characters of an
+admitted run through the characters stage. `execute_database_import` takes them
+straight from a `plan_legacy_database_import` result. It requires the plan's
+source fingerprint and runs after the persona/lorebook, media and
+provider/prompt stages.
 `AppBackend::plan_legacy_personas` exposes the bounded persona candidates and
 their explicit default owner while leaving all source media unresolved.
 `AppBackend::plan_legacy_lorebooks` exposes the bounded root and ordered-entry

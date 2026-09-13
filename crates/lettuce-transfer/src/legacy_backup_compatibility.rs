@@ -108,6 +108,22 @@ impl LegacyBackupCompatibilityPlan {
         plan
     }
 
+    #[must_use]
+    pub fn authored_plan(&self) -> &crate::LegacyBackupAuthoredPlan {
+        &self
+            .creation_helpers
+            .source
+            .source
+            .source
+            .source
+            .source
+            .source
+            .source
+            .source
+            .source
+            .authored
+    }
+
     pub(crate) fn inventory(&self) -> &LegacyBackupInventory {
         &self.configuration().source
     }
