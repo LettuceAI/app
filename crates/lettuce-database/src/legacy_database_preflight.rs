@@ -779,12 +779,20 @@ impl LegacyProviderSecretSource for LegacyDatabaseProviderSecretSource {
                 .flatten(),
             LegacyPendingProviderSecret::Header { name } => connection
                 .query_row(
-                    "SELECT value FROM json_each((SELECT headers FROM provider_credentials WHERE id=?1)) WHERE key=?2 AND type='text'",
+                    "SELECT type,value FROM json_each((SELECT headers FROM provider_credentials WHERE id=?1)) WHERE key=?2 ORDER BY id DESC LIMIT 1",
                     params![source.provider_account_id.to_string(), name.as_str()],
-                    |row| row.get::<_, String>(0),
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
                 )
                 .optional()
-                .map_err(|_| LegacyProviderSecretSourceError::Invalid)?,
+                .map_err(|_| LegacyProviderSecretSourceError::Invalid)?
+                .map(|(value_type, value)| {
+                    if value_type == "text" {
+                        value.ok_or(LegacyProviderSecretSourceError::Invalid)
+                    } else {
+                        Err(LegacyProviderSecretSourceError::Invalid)
+                    }
+                })
+                .transpose()?,
         }
         .ok_or(LegacyProviderSecretSourceError::Missing)?;
         SecretValue::new(value).map_err(|_| LegacyProviderSecretSourceError::Invalid)
@@ -828,7 +836,7 @@ fn plan_legacy_provider_models_with_limits(
 
     let mut statement = connection
         .prepare(
-            "SELECT id,provider_id,label,CASE WHEN api_key IS NOT NULL AND trim(api_key) <> '' THEN 1 ELSE 0 END,base_url,default_model,config FROM provider_credentials ORDER BY provider_id COLLATE NOCASE ASC,label COLLATE NOCASE ASC,id ASC",
+            "SELECT id,provider_id,label,CASE WHEN api_key IS NOT NULL AND trim(api_key) <> '' THEN 1 ELSE 0 END,base_url,default_model,headers,config FROM provider_credentials ORDER BY provider_id COLLATE NOCASE ASC,label COLLATE NOCASE ASC,id ASC",
         )
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
     let rows = statement
@@ -841,9 +849,11 @@ fn plan_legacy_provider_models_with_limits(
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, Option<String>>(5)?,
                 row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<String>>(7)?,
             ))
         })
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let mut skipped = Vec::new();
     let mut provider_accounts = Vec::new();
     for row in rows {
         let (
@@ -853,6 +863,7 @@ fn plan_legacy_provider_models_with_limits(
             api_key_present,
             endpoint,
             default_model,
+            headers_json,
             config_json,
         ) = row.map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
         let id = ProviderAccountId::from_str(&source_id).map_err(|_| provider_malformed("id"))?;
@@ -862,7 +873,28 @@ fn plan_legacy_provider_models_with_limits(
             .ok_or_else(|| provider_malformed("provider_id"))?;
         let endpoint = normalized_optional(endpoint);
         let default_model = normalized_optional(default_model);
-        let config_value = parse_optional_object(config_json, "config", provider_malformed)?;
+        let config_value = match lenient_legacy_json(
+            config_json,
+            "provider_credentials.config",
+            &source_id,
+            &mut skipped,
+            Value::is_object,
+        ) {
+            Some(Value::Object(object)) => object,
+            _ => Map::new(),
+        };
+        let headers_present = lenient_legacy_json(
+            headers_json,
+            "provider_credentials.headers",
+            &source_id,
+            &mut skipped,
+            |value| {
+                value
+                    .as_object()
+                    .is_some_and(|object| object.values().all(Value::is_string))
+            },
+        )
+        .is_some();
         let streaming_enabled = optional_bool(&config_value, "streamingEnabled", true)?;
         let allow_invalid_tls = optional_bool(&config_value, "allowInvalidTls", false)?;
         let (config, mapped_config_fields) = legacy_provider_config(&provider_kind, &config_value)?;
@@ -872,7 +904,9 @@ fn plan_legacy_provider_models_with_limits(
         } else if api_key_present != 0 {
             return Err(provider_malformed("api_key"));
         }
-        pending_secrets.extend(read_pending_headers(connection, &source_id)?);
+        if headers_present {
+            pending_secrets.extend(read_pending_headers(connection, &source_id)?);
+        }
         let deferred_config_fields = deferred_fields(&config_value, &mapped_config_fields);
         let secret_headers = pending_secrets
             .iter()
@@ -963,7 +997,6 @@ fn plan_legacy_provider_models_with_limits(
                 .then_with(|| left.id.cmp(&right.id))
         });
     }
-    let mut skipped = Vec::new();
     let default_provider_account_id = match default_provider_account_id {
         Some(id) if !provider_accounts.iter().any(|provider| provider.id == id) => {
             skipped.push(lettuce_transfer::LegacyImportSkip {
@@ -1017,7 +1050,8 @@ fn plan_legacy_provider_models_with_limits(
             prompt_template_id,
             deprecated_system_prompt,
         ) = row.map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
-        let id = ModelProfileId::from_str(&id).map_err(|_| model_malformed("id"))?;
+        let source_id = id;
+        let id = ModelProfileId::from_str(&source_id).map_err(|_| model_malformed("id"))?;
         require_model_non_blank(&external_model_id, "name")?;
         require_model_non_blank(&provider_kind, "provider_id")?;
         require_model_non_blank(&provider_label, "provider_label")?;
@@ -1036,10 +1070,36 @@ fn plan_legacy_provider_models_with_limits(
             &external_model_id,
             default_provider_account_id,
         )?;
-        let input_modalities = parse_modalities(input_scopes, "input_scopes")?;
-        let output_modalities = parse_modalities(output_scopes, "output_scopes")?;
-        let advanced =
-            parse_optional_object(advanced_json, "advanced_model_settings", model_malformed)?;
+        let input_modalities = parse_modalities(
+            lenient_legacy_json(
+                input_scopes,
+                "models.input_scopes",
+                &source_id,
+                &mut skipped,
+                Value::is_array,
+            ),
+            "input_scopes",
+        )?;
+        let output_modalities = parse_modalities(
+            lenient_legacy_json(
+                output_scopes,
+                "models.output_scopes",
+                &source_id,
+                &mut skipped,
+                Value::is_array,
+            ),
+            "output_scopes",
+        )?;
+        let advanced = match lenient_legacy_json(
+            advanced_json,
+            "models.advanced_model_settings",
+            &source_id,
+            &mut skipped,
+            Value::is_object,
+        ) {
+            Some(Value::Object(object)) => object,
+            _ => Map::new(),
+        };
         let (chat_parameters, mapped_advanced_fields) =
             legacy_chat_parameters(&provider_kind, &advanced)?;
         let account = provider_accounts
@@ -1677,20 +1737,6 @@ fn normalized_optional(value: Option<String>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn parse_optional_object(
-    value: Option<String>,
-    field: &'static str,
-    malformed: fn(&'static str) -> LegacyDatabasePreflightError,
-) -> Result<Map<String, Value>, LegacyDatabasePreflightError> {
-    match value {
-        None => Ok(Map::new()),
-        Some(value) => serde_json::from_str::<Value>(&value)
-            .ok()
-            .and_then(|value| value.as_object().cloned())
-            .ok_or_else(|| malformed(field)),
-    }
-}
-
 fn optional_bool(
     object: &Map<String, Value>,
     key: &'static str,
@@ -1883,7 +1929,7 @@ fn read_pending_headers(
     }
     let mut statement = connection
         .prepare(
-            "SELECT key,type,length(value) FROM json_each((SELECT headers FROM provider_credentials WHERE id=?1)) ORDER BY lower(key) ASC,key ASC",
+            "SELECT key,type,length(value) FROM json_each((SELECT headers FROM provider_credentials WHERE id=?1)) ORDER BY lower(key) ASC,key ASC,id DESC",
         )
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
     let rows = statement
@@ -1898,6 +1944,12 @@ fn read_pending_headers(
     let mut names = Vec::new();
     for row in rows {
         let (name, value_type, value_len) = row.map_err(|_| provider_malformed("headers"))?;
+        if names
+            .last()
+            .is_some_and(|last: &HeaderName| last.as_str() == name)
+        {
+            continue;
+        }
         if value_type != "text" || value_len == 0 {
             return Err(provider_malformed("headers"));
         }
@@ -1987,15 +2039,34 @@ fn legacy_builtin_llama_account_id() -> ProviderAccountId {
         .expect("static legacy llama account id")
 }
 
-fn parse_modalities(
+fn lenient_legacy_json(
     value: Option<String>,
+    field: &str,
+    row_id: &str,
+    skipped: &mut Vec<lettuce_transfer::LegacyImportSkip>,
+    accept: fn(&Value) -> bool,
+) -> Option<Value> {
+    match serde_json::from_str::<Value>(&value?) {
+        Ok(Value::Null) => None,
+        Ok(value) if accept(&value) => Some(value),
+        _ => {
+            skipped.push(legacy_value_skip(
+                field,
+                row_id,
+                lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+            None
+        }
+    }
+}
+
+fn parse_modalities(
+    value: Option<Value>,
     field: &'static str,
 ) -> Result<ModalityCapabilities, LegacyDatabasePreflightError> {
     let values = match value {
-        None => vec![Value::String("text".to_owned())],
-        Some(value) => {
-            serde_json::from_str::<Vec<Value>>(&value).map_err(|_| model_malformed(field))?
-        }
+        Some(Value::Array(values)) => values,
+        _ => vec![Value::String("text".to_owned())],
     };
     let mut modalities = ModalityCapabilities {
         text: CapabilityStatus::Unsupported,
@@ -2892,20 +2963,10 @@ mod tests {
             .expect("insert settings");
         connection
             .execute(
-                "INSERT INTO provider_credentials (id,provider_id,label,headers) VALUES (?1,'openai','Primary','not-json')",
+                "INSERT INTO provider_credentials (id,provider_id,label) VALUES (?1,'openai','Primary')",
                 [provider_id.to_string()],
             )
-            .expect("insert malformed provider");
-        assert_eq!(
-            plan_legacy_provider_models(&path),
-            Err(provider_malformed("headers"))
-        );
-        connection
-            .execute(
-                "UPDATE provider_credentials SET headers=NULL WHERE id=?1",
-                [provider_id.to_string()],
-            )
-            .expect("fix provider");
+            .expect("insert provider");
         connection
             .execute(
                 "INSERT INTO models (id,name,provider_id,provider_credential_id,provider_label,display_name,created_at) VALUES (?1,'model-a','anthropic',NULL,'Missing','Model A',20)",
@@ -2973,6 +3034,130 @@ mod tests {
             ]
         );
         drop(connection);
+        std::fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn provider_model_plan_falls_back_on_malformed_json_like_legacy() {
+        let path = provider_model_database();
+        let unparseable = ProviderAccountId::new();
+        let non_text = ProviderAccountId::new();
+        let repeated = ProviderAccountId::new();
+        let malformed_model = ModelProfileId::new();
+        let null_model = ModelProfileId::new();
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute("INSERT INTO settings VALUES (1,NULL,NULL,92,10,10)", [])
+            .expect("insert settings");
+        connection
+            .execute(
+                "INSERT INTO provider_credentials (id,provider_id,label,headers,config) VALUES (?1,'openai','Primary','not-json','[true]'),(?2,'anthropic','Secondary','{\"X-Key\":1}','null'),(?3,'openrouter','Router','{\"X-Key\":\"first\",\"X-Key\":\"last\"}',NULL)",
+                rusqlite::params![
+                    unparseable.to_string(),
+                    non_text.to_string(),
+                    repeated.to_string()
+                ],
+            )
+            .expect("insert providers");
+        connection
+            .execute(
+                "INSERT INTO models (id,name,provider_id,provider_credential_id,provider_label,display_name,created_at,input_scopes,output_scopes,advanced_model_settings) VALUES (?1,'model-a','openai',?2,'Primary','Model A',10,'text','{\"image\":true}','[1]'),(?3,'model-b','anthropic',?4,'Secondary','Model B',20,'null','[\"image\"]','null')",
+                rusqlite::params![
+                    malformed_model.to_string(),
+                    unparseable.to_string(),
+                    null_model.to_string(),
+                    non_text.to_string()
+                ],
+            )
+            .expect("insert models");
+        drop(connection);
+
+        let plan = plan_legacy_provider_models(&path).expect("malformed JSON falls back");
+        assert!(plan.provider_accounts.iter().all(|provider| {
+            provider.deferred_config_fields.is_empty() && provider.streaming_enabled
+        }));
+        let header = LegacyImportProviderSecretSource {
+            provider_account_id: repeated,
+            secret: LegacyPendingProviderSecret::Header {
+                name: HeaderName::new("X-Key").expect("header name"),
+            },
+        };
+        let source = LegacyDatabaseProviderSecretSource::new(&path);
+        assert_eq!(
+            source.sources().expect("list secret sources"),
+            vec![header.clone()]
+        );
+        assert!(
+            source
+                .load(&header)
+                .expect("load repeated header")
+                .with(|value| value == "last")
+        );
+        let malformed = &plan.model_profiles[0];
+        assert_eq!(malformed.id, malformed_model);
+        assert_eq!(malformed.kind, ModelKind::Chat);
+        assert_eq!(
+            malformed.config.capabilities.input_modalities.text,
+            CapabilityStatus::Supported
+        );
+        assert_eq!(
+            malformed.config.capabilities.output_modalities.image,
+            CapabilityStatus::Unsupported
+        );
+        assert!(malformed.deferred_advanced_fields.is_empty());
+        let null_values = &plan.model_profiles[1];
+        assert_eq!(null_values.id, null_model);
+        assert_eq!(null_values.kind, ModelKind::Image);
+        assert_eq!(
+            null_values.config.capabilities.input_modalities.text,
+            CapabilityStatus::Supported
+        );
+        let mut expected = vec![
+            legacy_value_skip(
+                "provider_credentials.config",
+                &unparseable.to_string(),
+                lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+            legacy_value_skip(
+                "provider_credentials.headers",
+                &unparseable.to_string(),
+                lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+            legacy_value_skip(
+                "provider_credentials.headers",
+                &non_text.to_string(),
+                lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+            legacy_value_skip(
+                "models.input_scopes",
+                &malformed_model.to_string(),
+                lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+            legacy_value_skip(
+                "models.output_scopes",
+                &malformed_model.to_string(),
+                lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+            legacy_value_skip(
+                "models.advanced_model_settings",
+                &malformed_model.to_string(),
+                lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+        ];
+        expected.sort();
+        assert_eq!(plan.skipped, expected);
+        let connection = Connection::open(&path).expect("reopen legacy database");
+        connection
+            .execute(
+                "UPDATE models SET output_scopes='[\"video\"]' WHERE id=?1",
+                [null_model.to_string()],
+            )
+            .expect("set unknown scope");
+        drop(connection);
+        assert_eq!(
+            plan_legacy_provider_models(&path),
+            Err(model_malformed("output_scopes"))
+        );
         std::fs::remove_file(path).expect("remove legacy database");
     }
 

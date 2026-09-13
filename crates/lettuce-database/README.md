@@ -783,5 +783,17 @@ valid array the new types cannot read still aborts), malformed persona
 design reference or lorebook id lists (empty; a non-UUID lorebook id is recorded
 as a missing lorebook binding), an unknown lorebook detection mode (recent
 message window), malformed entry keywords JSON (empty) and an unknown keyword
-match mode (literal). Every
+match mode (literal). Provider `config` and `headers` and model `input_scopes`,
+`output_scopes` and `advanced_model_settings` that are not valid JSON fall back
+like the legacy settings reader, which omitted them (empty config, no headers,
+text-only scopes, empty advanced settings); JSON `null` counts as absent. The
+same fallback applies when the JSON has the wrong shape (a non-object config,
+headers or advanced settings, non-text header values): legacy's frontend salvage
+dropped the whole provider (with every model on it) or model, and wrong headers
+or advanced settings also failed its typed Rust settings read, so keeping the
+record and recording the field is a deliberate correction; non-array scopes
+were already omitted by the legacy reader. A header repeated with the same
+name keeps its last value like legacy's JSON parsing. Unknown scope names,
+invalid advanced setting values and header names or values the new types
+reject still abort. Every
 other malformed record still aborts.

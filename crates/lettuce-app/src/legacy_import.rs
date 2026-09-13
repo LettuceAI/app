@@ -269,7 +269,12 @@ fn validate_plan(
 
 fn legacy_value_skip(skip: &lettuce_transfer::LegacyImportSkip, prefixes: &[&str]) -> bool {
     use lettuce_transfer::LegacyImportSkipReason::{MalformedLegacyValue, UnknownLegacyValue};
-    const FALLBACKS: [(&str, lettuce_transfer::LegacyImportSkipReason); 7] = [
+    const FALLBACKS: [(&str, lettuce_transfer::LegacyImportSkipReason); 12] = [
+        ("provider_credentials.config", MalformedLegacyValue),
+        ("provider_credentials.headers", MalformedLegacyValue),
+        ("models.input_scopes", MalformedLegacyValue),
+        ("models.output_scopes", MalformedLegacyValue),
+        ("models.advanced_model_settings", MalformedLegacyValue),
         ("prompt_templates.prompt_type", UnknownLegacyValue),
         ("prompt_templates.entries", MalformedLegacyValue),
         ("personas.design_reference_image_ids", MalformedLegacyValue),
@@ -599,7 +604,7 @@ fn valid_provider_model_plan(plan: &LegacyProviderModelPlan) -> bool {
                 skip.kind,
                 lettuce_transfer::LegacyImportSkipKind::SettingsDefaultProviderAccount
                     | lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile
-            )
+            ) || legacy_value_skip(skip, &["provider_credentials.", "models."])
         })
 }
 
@@ -1951,11 +1956,21 @@ mod tests {
             total_bytes: 0,
         };
         let mut models = provider_models();
-        models.skipped = vec![LegacyImportSkip {
-            kind: LegacyImportSkipKind::SettingsDefaultModelProfile,
-            source_key: ModelProfileId::new().to_string(),
-            reason: LegacyImportSkipReason::MissingModelProfile,
-        }];
+        let malformed_headers =
+            format!("provider_credentials.headers:{}", ProviderAccountId::new());
+        models.skipped = vec![
+            LegacyImportSkip {
+                kind: LegacyImportSkipKind::SettingsDefaultModelProfile,
+                source_key: ModelProfileId::new().to_string(),
+                reason: LegacyImportSkipReason::MissingModelProfile,
+            },
+            LegacyImportSkip {
+                kind: LegacyImportSkipKind::LegacyValue,
+                source_key: malformed_headers.clone(),
+                reason: LegacyImportSkipReason::MalformedLegacyValue,
+            },
+        ];
+        models.skipped.sort();
         let media = LegacyMediaPlan {
             skipped: vec![LegacyImportSkip {
                 kind: LegacyImportSkipKind::PersonaAvatar,
@@ -1978,6 +1993,21 @@ mod tests {
         expected.extend(media.skipped.iter().cloned());
         expected.sort();
         assert_eq!(admitted.skips, expected);
+        let mut unknown_headers = models.clone();
+        for skip in &mut unknown_headers.skipped {
+            if skip.source_key == malformed_headers {
+                skip.reason = LegacyImportSkipReason::UnknownLegacyValue;
+            }
+        }
+        assert_eq!(
+            backend.legacy_import_admission().admit(
+                LegacyImportRunId::new(),
+                &inventory,
+                &import_plan(&unknown_headers, &personas, &lorebooks, &media),
+                TimestampMillis::new(25),
+            ),
+            Err(LegacyImportRepositoryError::InvalidInput)
+        );
         let mut unpruned = personas.clone();
         unpruned.personas[0].avatar = Some(lettuce_transfer::LegacyMediaReference {
             locator: "still-here.webp".into(),
