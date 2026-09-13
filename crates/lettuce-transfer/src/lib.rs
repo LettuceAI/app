@@ -415,6 +415,8 @@ pub enum LegacyImportSkipKind {
     PersonaLorebookBinding,
     LorebookEntryKeyword,
     LegacyValue,
+    ModelReference,
+    PromptReference,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -426,6 +428,7 @@ pub enum LegacyImportSkipReason {
     InvalidRegex,
     MalformedLegacyValue,
     UnknownLegacyValue,
+    MissingPrompt,
 }
 
 pub fn legacy_value_skip(

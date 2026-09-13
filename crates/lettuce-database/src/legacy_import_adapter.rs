@@ -1870,6 +1870,8 @@ fn skip_kind_name(kind: lettuce_transfer::LegacyImportSkipKind) -> &'static str 
         }
         lettuce_transfer::LegacyImportSkipKind::LorebookEntryKeyword => "lorebook_entry_keyword",
         lettuce_transfer::LegacyImportSkipKind::LegacyValue => "legacy_value",
+        lettuce_transfer::LegacyImportSkipKind::ModelReference => "model_reference",
+        lettuce_transfer::LegacyImportSkipKind::PromptReference => "prompt_reference",
     }
 }
 
@@ -1884,6 +1886,7 @@ fn skip_reason_name(reason: lettuce_transfer::LegacyImportSkipReason) -> &'stati
         lettuce_transfer::LegacyImportSkipReason::InvalidRegex => "invalid_regex",
         lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue => "malformed_legacy_value",
         lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue => "unknown_legacy_value",
+        lettuce_transfer::LegacyImportSkipReason::MissingPrompt => "missing_prompt",
     }
 }
 
@@ -1928,6 +1931,8 @@ fn load_skips(
                     lettuce_transfer::LegacyImportSkipKind::LorebookEntryKeyword
                 }
                 "legacy_value" => lettuce_transfer::LegacyImportSkipKind::LegacyValue,
+                "model_reference" => lettuce_transfer::LegacyImportSkipKind::ModelReference,
+                "prompt_reference" => lettuce_transfer::LegacyImportSkipKind::PromptReference,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             let reason = match reason.as_str() {
@@ -1946,6 +1951,7 @@ fn load_skips(
                 "unknown_legacy_value" => {
                     lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue
                 }
+                "missing_prompt" => lettuce_transfer::LegacyImportSkipReason::MissingPrompt,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             Ok(lettuce_transfer::LegacyImportSkip {

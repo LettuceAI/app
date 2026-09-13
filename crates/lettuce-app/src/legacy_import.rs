@@ -304,10 +304,18 @@ fn valid_prompt_plan(plan: &LegacyPromptPlan) -> bool {
             .skipped
             .windows(2)
             .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
-        && plan
-            .skipped
-            .iter()
-            .all(|skip| legacy_value_skip(skip, &["prompt_templates."]))
+        && plan.skipped.iter().all(|skip| {
+            legacy_value_skip(skip, &["prompt_templates."])
+                || (skip.kind == lettuce_transfer::LegacyImportSkipKind::PromptReference
+                    && skip.reason == lettuce_transfer::LegacyImportSkipReason::MissingPrompt
+                    && plan.default_prompt_source_id.is_none()
+                    && skip
+                        .source_key
+                        .strip_prefix("settings.prompt_template_id:")
+                        .is_some_and(|stale| {
+                            !stale.trim().is_empty() && !prompt_ids.contains(stale)
+                        }))
+        })
         && plan.prompts.iter().all(|prompt| {
             !prompt.source_id.trim().is_empty()
                 && prompt.purpose != lettuce_context::PromptPurpose::Undefined
@@ -558,6 +566,8 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipKind::PersonaLorebookBinding => 7,
             lettuce_transfer::LegacyImportSkipKind::LorebookEntryKeyword => 8,
             lettuce_transfer::LegacyImportSkipKind::LegacyValue => 9,
+            lettuce_transfer::LegacyImportSkipKind::ModelReference => 10,
+            lettuce_transfer::LegacyImportSkipKind::PromptReference => 11,
         });
         hash.text(&skip.source_key);
         hash.u32(match skip.reason {
@@ -568,6 +578,7 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipReason::InvalidRegex => 5,
             lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue => 6,
             lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue => 7,
+            lettuce_transfer::LegacyImportSkipReason::MissingPrompt => 8,
         });
     }
 }
@@ -1053,6 +1064,19 @@ mod tests {
             default_prompt_source_id: None,
             deprecated_system_prompt: None,
         }
+    }
+
+    #[test]
+    fn stale_default_prompt_skip_requires_the_default_to_be_cleared() {
+        let mut plan = prompts();
+        plan.skipped = vec![lettuce_transfer::LegacyImportSkip {
+            kind: lettuce_transfer::LegacyImportSkipKind::PromptReference,
+            source_key: "settings.prompt_template_id:deleted-template".to_owned(),
+            reason: lettuce_transfer::LegacyImportSkipReason::MissingPrompt,
+        }];
+        assert!(super::valid_prompt_plan(&plan));
+        plan.default_prompt_source_id = Some("deleted-template".to_owned());
+        assert!(!super::valid_prompt_plan(&plan));
     }
 
     fn asr() -> LegacyAsrPlan {

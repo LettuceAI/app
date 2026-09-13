@@ -377,9 +377,9 @@ pub fn plan_legacy_backup_configuration(
     let mut provider_models =
         map_provider_models(provider_rows, model_rows, &settings_candidate, &mut notices)?;
     let prompts = map_prompts(prompt_rows, &settings_candidate, &mut notices)?;
-    provider_models.default_provider_account_id = settings_candidate.default_provider_account_id;
-    provider_models.default_model_profile_id = settings_candidate.default_model_profile_id;
-    validate_selections(&settings_candidate, &provider_models, &prompts)?;
+    let mut prompts = prompts;
+    let mut settings_candidate = settings_candidate;
+    reconcile_selections(&mut settings_candidate, &mut provider_models, &mut prompts);
     let audio = map_audio(audio_rows, voice_rows, &mut notices)?;
     let audio_providers = audio.providers;
     let user_voices = audio.voices;
@@ -1998,11 +1998,15 @@ fn map_chat_templates(
     Ok(result)
 }
 
-fn validate_selections(
-    settings: &LegacyBackupSettingsCandidate,
-    providers: &LegacyProviderModelPlan,
-    prompts: &LegacyPromptPlan,
-) -> Result<(), LegacyBackupConfigurationError> {
+/// Legacy never cleared these ids when their target was deleted: prompt
+/// references fell back to the default prompt and most model references failed
+/// until the user picked another model. The stale id is cleared and recorded.
+fn reconcile_selections(
+    settings: &mut LegacyBackupSettingsCandidate,
+    providers: &mut LegacyProviderModelPlan,
+    prompts: &mut LegacyPromptPlan,
+) {
+    use crate::{LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason};
     let provider_ids = providers
         .provider_accounts
         .iter()
@@ -2016,113 +2020,126 @@ fn validate_selections(
     let prompt_ids = prompts
         .prompts
         .iter()
-        .map(|prompt| prompt.source_id.as_str())
+        .map(|prompt| prompt.source_id.clone())
         .collect::<BTreeSet<_>>();
-    if settings
+    let reference = |kind, field: &str, row: &str, reason| LegacyImportSkip {
+        kind,
+        source_key: format!("{field}:{row}"),
+        reason,
+    };
+    if let Some(stale) = settings
         .default_provider_account_id
-        .is_some_and(|id| !provider_ids.contains(&id))
+        .take_if(|id| !provider_ids.contains(id))
     {
-        return Err(orphan(
-            LegacyBackupDocumentKind::Settings,
-            "default_provider_credential_id",
-        ));
+        providers.skipped.push(LegacyImportSkip {
+            kind: LegacyImportSkipKind::SettingsDefaultProviderAccount,
+            source_key: stale.to_string(),
+            reason: LegacyImportSkipReason::MissingProviderAccount,
+        });
     }
-    for (field, value) in [
-        ("default_model_id", settings.default_model_profile_id),
-        (
-            "advanced_settings.summarisationModelId",
-            settings.dynamic_memory_model_profile_id,
-        ),
-        (
-            "advanced_settings.groupSpeakerSelectionModelId",
-            settings.group_speaker_model_profile_id,
-        ),
-        (
-            "advanced_settings.lorebookGeneratorModelId",
-            settings.lorebook_generator_model_profile_id,
-        ),
-        (
-            "advanced_settings.helpMeReplyModelId",
-            settings.help_me_reply_model_profile_id,
-        ),
-    ] {
-        if value.is_some_and(|id| !model_ids.contains(&id)) {
-            return Err(orphan(LegacyBackupDocumentKind::Settings, field));
-        }
-    }
-    if settings
-        .default_prompt_source_id
-        .as_deref()
-        .is_some_and(|id| !prompt_ids.contains(id))
+    if let Some(stale) = settings
+        .default_model_profile_id
+        .take_if(|id| !model_ids.contains(id))
     {
-        return Err(orphan(
-            LegacyBackupDocumentKind::Settings,
-            "prompt_template_id",
-        ));
+        providers.skipped.push(LegacyImportSkip {
+            kind: LegacyImportSkipKind::SettingsDefaultModelProfile,
+            source_key: stale.to_string(),
+            reason: LegacyImportSkipReason::MissingModelProfile,
+        });
     }
+    providers.default_provider_account_id = settings.default_provider_account_id;
+    providers.default_model_profile_id = settings.default_model_profile_id;
     for (field, value) in [
         (
-            "planner",
-            &settings.lorebook_generator_prompt_source_ids.planner,
+            "settings.advanced_settings.summarisationModelId",
+            &mut settings.dynamic_memory_model_profile_id,
         ),
         (
-            "writer",
-            &settings.lorebook_generator_prompt_source_ids.writer,
+            "settings.advanced_settings.groupSpeakerSelectionModelId",
+            &mut settings.group_speaker_model_profile_id,
         ),
         (
-            "refine",
-            &settings.lorebook_generator_prompt_source_ids.refine,
+            "settings.advanced_settings.lorebookGeneratorModelId",
+            &mut settings.lorebook_generator_model_profile_id,
         ),
         (
-            "coherence",
-            &settings.lorebook_generator_prompt_source_ids.coherence,
+            "settings.advanced_settings.helpMeReplyModelId",
+            &mut settings.help_me_reply_model_profile_id,
         ),
     ] {
-        if value.as_deref().is_some_and(|id| !prompt_ids.contains(id)) {
-            return Err(orphan(
-                LegacyBackupDocumentKind::Settings,
-                format!("advanced_settings.lorebookGenerator.{field}"),
+        if let Some(stale) = value.take_if(|id| !model_ids.contains(id)) {
+            providers.skipped.push(reference(
+                LegacyImportSkipKind::ModelReference,
+                field,
+                &stale.to_string(),
+                LegacyImportSkipReason::MissingModelProfile,
             ));
         }
     }
     for (field, value) in [
         (
-            "dynamicMemorySummarizerPromptTemplateId",
-            &settings.dynamic_memory_prompt_source_ids.summarizer,
+            "settings.prompt_template_id",
+            &mut settings.default_prompt_source_id,
         ),
         (
-            "dynamicMemoryManagerPromptTemplateId",
-            &settings.dynamic_memory_prompt_source_ids.manager,
+            "settings.advanced_settings.lorebookGeneratorPlannerPromptTemplateId",
+            &mut settings.lorebook_generator_prompt_source_ids.planner,
         ),
         (
-            "helpMeReplyRoleplayPromptTemplateId",
-            &settings.help_me_reply_prompt_source_ids.roleplay,
+            "settings.advanced_settings.lorebookGeneratorWriterPromptTemplateId",
+            &mut settings.lorebook_generator_prompt_source_ids.writer,
         ),
         (
-            "helpMeReplyConversationalPromptTemplateId",
-            &settings.help_me_reply_prompt_source_ids.conversational,
+            "settings.advanced_settings.lorebookGeneratorRefinePromptTemplateId",
+            &mut settings.lorebook_generator_prompt_source_ids.refine,
+        ),
+        (
+            "settings.advanced_settings.lorebookGeneratorCoherencePromptTemplateId",
+            &mut settings.lorebook_generator_prompt_source_ids.coherence,
+        ),
+        (
+            "settings.advanced_settings.dynamicMemorySummarizerPromptTemplateId",
+            &mut settings.dynamic_memory_prompt_source_ids.summarizer,
+        ),
+        (
+            "settings.advanced_settings.dynamicMemoryManagerPromptTemplateId",
+            &mut settings.dynamic_memory_prompt_source_ids.manager,
+        ),
+        (
+            "settings.advanced_settings.helpMeReplyRoleplayPromptTemplateId",
+            &mut settings.help_me_reply_prompt_source_ids.roleplay,
+        ),
+        (
+            "settings.advanced_settings.helpMeReplyConversationalPromptTemplateId",
+            &mut settings.help_me_reply_prompt_source_ids.conversational,
         ),
     ] {
-        if value.as_deref().is_some_and(|id| !prompt_ids.contains(id)) {
-            return Err(orphan(
-                LegacyBackupDocumentKind::Settings,
-                format!("advanced_settings.{field}"),
+        if let Some(stale) = value.take_if(|id| !prompt_ids.contains(id)) {
+            prompts.skipped.push(reference(
+                LegacyImportSkipKind::PromptReference,
+                field,
+                &stale,
+                LegacyImportSkipReason::MissingPrompt,
             ));
         }
     }
-    for (index, model) in providers.model_profiles.iter().enumerate() {
+    prompts.default_prompt_source_id = settings.default_prompt_source_id.clone();
+    for model in &mut providers.model_profiles {
         if model
             .prompt_template_id
-            .as_deref()
-            .is_some_and(|id| !prompt_ids.contains(id))
+            .take_if(|id| !prompt_ids.contains(id))
+            .is_some()
         {
-            return Err(orphan(
-                LegacyBackupDocumentKind::Models,
-                format!("[{index}].prompt_template_id"),
+            prompts.skipped.push(reference(
+                LegacyImportSkipKind::PromptReference,
+                "models.prompt_template_id",
+                &model.id.to_string(),
+                LegacyImportSkipReason::MissingPrompt,
             ));
         }
     }
-    Ok(())
+    providers.skipped.sort();
+    prompts.skipped.sort();
 }
 
 fn source_ids(
@@ -3160,6 +3177,105 @@ mod tests {
         ];
         expected.sort();
         assert_eq!(plan.skipped, expected);
+    }
+
+    #[test]
+    fn stale_settings_and_model_references_are_cleared_and_recorded() {
+        let provider_id = ProviderAccountId::new();
+        let model_id = ModelProfileId::new();
+        let stale_provider = ProviderAccountId::new();
+        let stale_model = ModelProfileId::new();
+        let stale_summary_model = ModelProfileId::new();
+        let plan = plan_legacy_backup_configuration(inventory(vec![
+            document(
+                LegacyBackupDocumentKind::Settings,
+                json!({
+                    "default_provider_credential_id": stale_provider,
+                    "default_model_id": stale_model,
+                    "prompt_template_id": "deleted-default",
+                    "advanced_settings": {
+                        "summarisationModelId": stale_summary_model,
+                        "helpMeReplyRoleplayPromptTemplateId": "deleted-helper"
+                    },
+                    "created_at": 10,
+                    "updated_at": 20
+                }),
+            ),
+            document(
+                LegacyBackupDocumentKind::ProviderCredentials,
+                json!([{"id": provider_id, "provider_id": "openai", "label": "Primary"}]),
+            ),
+            document(
+                LegacyBackupDocumentKind::Models,
+                json!([{
+                    "id": model_id,
+                    "name": "model-a",
+                    "provider_id": "openai",
+                    "provider_credential_id": provider_id,
+                    "provider_label": "Primary",
+                    "display_name": "Model A",
+                    "created_at": 10,
+                    "prompt_template_id": "deleted-model-prompt"
+                }]),
+            ),
+        ]))
+        .expect("stale references are cleared");
+        assert_eq!(plan.settings.default_provider_account_id, None);
+        assert_eq!(plan.settings.default_model_profile_id, None);
+        assert_eq!(plan.settings.default_prompt_source_id, None);
+        assert_eq!(plan.settings.dynamic_memory_model_profile_id, None);
+        assert_eq!(plan.settings.help_me_reply_prompt_source_ids.roleplay, None);
+        assert_eq!(plan.provider_models.default_provider_account_id, None);
+        assert_eq!(plan.provider_models.default_model_profile_id, None);
+        assert_eq!(
+            plan.provider_models.model_profiles[0].prompt_template_id,
+            None
+        );
+        assert_eq!(plan.prompts.default_prompt_source_id, None);
+        let skip = |kind, source_key: String, reason| crate::LegacyImportSkip {
+            kind,
+            source_key,
+            reason,
+        };
+        let mut provider_skips = vec![
+            skip(
+                crate::LegacyImportSkipKind::SettingsDefaultProviderAccount,
+                stale_provider.to_string(),
+                crate::LegacyImportSkipReason::MissingProviderAccount,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::SettingsDefaultModelProfile,
+                stale_model.to_string(),
+                crate::LegacyImportSkipReason::MissingModelProfile,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::ModelReference,
+                format!("settings.advanced_settings.summarisationModelId:{stale_summary_model}"),
+                crate::LegacyImportSkipReason::MissingModelProfile,
+            ),
+        ];
+        provider_skips.sort();
+        assert_eq!(plan.provider_models.skipped, provider_skips);
+        let mut prompt_skips = vec![
+            skip(
+                crate::LegacyImportSkipKind::PromptReference,
+                "settings.prompt_template_id:deleted-default".to_owned(),
+                crate::LegacyImportSkipReason::MissingPrompt,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::PromptReference,
+                "settings.advanced_settings.helpMeReplyRoleplayPromptTemplateId:deleted-helper"
+                    .to_owned(),
+                crate::LegacyImportSkipReason::MissingPrompt,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::PromptReference,
+                format!("models.prompt_template_id:{model_id}"),
+                crate::LegacyImportSkipReason::MissingPrompt,
+            ),
+        ];
+        prompt_skips.sort();
+        assert_eq!(plan.prompts.skipped, prompt_skips);
     }
 
     #[test]

@@ -489,7 +489,14 @@ prompt store's exact type table (camelCase names plus its snake_case lorebook
 aliases, no runtime text) and is shared with the SQLite import. Prompt entries that are missing or null
 are empty; a string that is not a JSON array, or any other non-array value, is
 empty and recorded (the content entry then applies); a valid array the new
-types cannot read still aborts. All model, prompt, audio-voice, chat-character, scene and lorebook links are
+types cannot read still aborts. Settings and model references legacy never
+cleaned up after a delete are cleared and recorded instead of rejecting the
+backup: the default provider and model, the summarisation, group speaker,
+lorebook generator and help-me-reply models (model references; legacy failed
+those features until another model was chosen, so clearing is a recorded
+correction), and the default prompt, every advanced prompt template id and a
+model's prompt template (prompt references; legacy fell back to the default).
+All other model, prompt, audio-voice, chat-character, scene and lorebook links are
 checked when their owning legacy document is present. The complete decrypted
 source inventory remains attached to the plan, including converted documents,
 so later slices can recover fields that do not yet have a canonical owner without

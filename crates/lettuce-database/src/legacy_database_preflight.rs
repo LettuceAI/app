@@ -714,10 +714,20 @@ fn plan_legacy_prompts_with_limit(
     {
         return Err(prompt_malformed("id"));
     }
+    let mut default_prompt_source_id = normalized_optional(default_prompt_source_id);
+    if let Some(stale) = default_prompt_source_id
+        .take_if(|source_id| !prompts.iter().any(|prompt| &prompt.source_id == source_id))
+    {
+        skipped.push(lettuce_transfer::LegacyImportSkip {
+            kind: lettuce_transfer::LegacyImportSkipKind::PromptReference,
+            source_key: format!("settings.prompt_template_id:{stale}"),
+            reason: lettuce_transfer::LegacyImportSkipReason::MissingPrompt,
+        });
+    }
     skipped.sort();
     Ok(LegacyPromptPlan {
         prompts,
-        default_prompt_source_id: normalized_optional(default_prompt_source_id),
+        default_prompt_source_id,
         deprecated_system_prompt: normalized_optional(deprecated_system_prompt),
         skipped,
     })
@@ -2415,7 +2425,8 @@ mod tests {
                  );
                  INSERT INTO prompt_templates VALUES (
                    'mystery-template','Mystery','mystery','Stay in character.','not-json',0,1,2
-                 );"#,
+                 );
+                 UPDATE settings SET prompt_template_id='deleted-template';"#,
             )
             .expect("insert malformed prompt");
         drop(connection);
@@ -2441,8 +2452,13 @@ mod tests {
                     "prompt_templates.prompt_type:mystery-template",
                     lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue
                 ),
+                (
+                    "settings.prompt_template_id:deleted-template",
+                    lettuce_transfer::LegacyImportSkipReason::MissingPrompt
+                ),
             ]
         );
+        assert_eq!(plan.default_prompt_source_id, None);
         std::fs::remove_file(path).expect("remove legacy database");
     }
 
