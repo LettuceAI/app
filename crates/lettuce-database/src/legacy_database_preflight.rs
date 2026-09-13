@@ -30,7 +30,8 @@ use lettuce_transfer::{
     LegacyModelProfileCandidate, LegacyPendingProviderSecret, LegacyPersonaCandidate,
     LegacyPersonaPlan, LegacyPromptCandidate, LegacyPromptEntryCandidate, LegacyPromptPlan,
     LegacyProviderAccountCandidate, LegacyProviderAccountOrigin, LegacyProviderModelPlan,
-    LegacyProviderSecretSource, LegacyProviderSecretSourceError,
+    LegacyProviderSecretSource, LegacyProviderSecretSourceError, legacy_value_skip,
+    lenient_legacy_json,
 };
 use lettuce_types::{
     LorebookEntryId, LorebookId, ModelProfileId, PersonaId, ProviderAccountId, Revision,
@@ -874,7 +875,7 @@ fn plan_legacy_provider_models_with_limits(
         let endpoint = normalized_optional(endpoint);
         let default_model = normalized_optional(default_model);
         let config_value = match lenient_legacy_json(
-            config_json,
+            config_json.as_deref(),
             "provider_credentials.config",
             &source_id,
             &mut skipped,
@@ -884,7 +885,7 @@ fn plan_legacy_provider_models_with_limits(
             _ => Map::new(),
         };
         let headers_present = lenient_legacy_json(
-            headers_json,
+            headers_json.as_deref(),
             "provider_credentials.headers",
             &source_id,
             &mut skipped,
@@ -1072,7 +1073,7 @@ fn plan_legacy_provider_models_with_limits(
         )?;
         let input_modalities = parse_modalities(
             lenient_legacy_json(
-                input_scopes,
+                input_scopes.as_deref(),
                 "models.input_scopes",
                 &source_id,
                 &mut skipped,
@@ -1082,7 +1083,7 @@ fn plan_legacy_provider_models_with_limits(
         )?;
         let output_modalities = parse_modalities(
             lenient_legacy_json(
-                output_scopes,
+                output_scopes.as_deref(),
                 "models.output_scopes",
                 &source_id,
                 &mut skipped,
@@ -1091,7 +1092,7 @@ fn plan_legacy_provider_models_with_limits(
             "output_scopes",
         )?;
         let advanced = match lenient_legacy_json(
-            advanced_json,
+            advanced_json.as_deref(),
             "models.advanced_model_settings",
             &source_id,
             &mut skipped,
@@ -1606,18 +1607,6 @@ fn parse_media_references(
         .collect()
 }
 
-fn legacy_value_skip(
-    field: &str,
-    row_id: &str,
-    reason: lettuce_transfer::LegacyImportSkipReason,
-) -> lettuce_transfer::LegacyImportSkip {
-    lettuce_transfer::LegacyImportSkip {
-        kind: lettuce_transfer::LegacyImportSkipKind::LegacyValue,
-        source_key: format!("{field}:{row_id}"),
-        reason,
-    }
-}
-
 fn legacy_image_recommendation(
     name: Option<String>,
     strength: Option<f64>,
@@ -2037,27 +2026,6 @@ fn resolve_legacy_provider_account(
 fn legacy_builtin_llama_account_id() -> ProviderAccountId {
     ProviderAccountId::from_str("6c657474-7563-652d-6c6c-616d61637070")
         .expect("static legacy llama account id")
-}
-
-fn lenient_legacy_json(
-    value: Option<String>,
-    field: &str,
-    row_id: &str,
-    skipped: &mut Vec<lettuce_transfer::LegacyImportSkip>,
-    accept: fn(&Value) -> bool,
-) -> Option<Value> {
-    match serde_json::from_str::<Value>(&value?) {
-        Ok(Value::Null) => None,
-        Ok(value) if accept(&value) => Some(value),
-        _ => {
-            skipped.push(legacy_value_skip(
-                field,
-                row_id,
-                lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
-            ));
-            None
-        }
-    }
 }
 
 fn parse_modalities(

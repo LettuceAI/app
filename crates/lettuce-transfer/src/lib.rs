@@ -428,6 +428,41 @@ pub enum LegacyImportSkipReason {
     UnknownLegacyValue,
 }
 
+pub fn legacy_value_skip(
+    field: &str,
+    row_id: &str,
+    reason: LegacyImportSkipReason,
+) -> LegacyImportSkip {
+    LegacyImportSkip {
+        kind: LegacyImportSkipKind::LegacyValue,
+        source_key: format!("{field}:{row_id}"),
+        reason,
+    }
+}
+
+/// Reads a legacy JSON column the old settings reader parsed leniently: JSON
+/// `null` is absent, and an unparseable or rejected value is absent and recorded.
+pub fn lenient_legacy_json(
+    value: Option<&str>,
+    field: &str,
+    row_id: &str,
+    skipped: &mut Vec<LegacyImportSkip>,
+    accept: fn(&serde_json::Value) -> bool,
+) -> Option<serde_json::Value> {
+    match serde_json::from_str::<serde_json::Value>(value?) {
+        Ok(serde_json::Value::Null) => None,
+        Ok(value) if accept(&value) => Some(value),
+        _ => {
+            skipped.push(legacy_value_skip(
+                field,
+                row_id,
+                LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyPromptEntryCandidate {
     pub source_id: String,

@@ -475,7 +475,14 @@ prompt content fallback and TTS provider defaults. Provider headers, inline or
 legacy-table API keys and audio API keys become scoped zeroizing secret values;
 machine-specific Kokoro asset roots never become canonical configuration.
 Defaults and every absent, unsupported or lossy field are reported explicitly.
-All model, prompt, audio-voice, chat-character, scene and lorebook links are
+Provider `config` and `headers` and model `advanced_model_settings` that are not
+valid JSON or have the wrong shape fall back exactly like the SQLite import
+(empty config, no headers, empty settings) through the shared
+`lenient_legacy_json`, recorded as `legacy_value` skips in the plan; legacy
+restore wrote them back raw and its settings reader omitted them. Model scopes
+that are not a JSON array become text-only and non-string scope items are
+dropped and recorded, matching legacy restore normalization; JSON `null` counts
+as absent. All model, prompt, audio-voice, chat-character, scene and lorebook links are
 checked when their owning legacy document is present. The complete decrypted
 source inventory remains attached to the plan, including converted documents,
 so later slices can recover fields that do not yet have a canonical owner without

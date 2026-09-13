@@ -927,6 +927,7 @@ fn map_provider_models(
     settings: &LegacyBackupSettingsCandidate,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<LegacyProviderModelPlan, LegacyBackupConfigurationError> {
+    let mut skipped = Vec::new();
     let mut providers = Vec::with_capacity(provider_rows.len());
     let mut source_provider_ids = BTreeMap::new();
     for (index, row) in provider_rows.into_iter().enumerate() {
@@ -969,11 +970,16 @@ fn map_provider_models(
                 format!("[{index}].provider_id"),
             )
         })?;
-        let config_value = parse_string_object(
+        let config_value = match crate::lenient_legacy_json(
             row.config.as_deref(),
-            LegacyBackupDocumentKind::ProviderCredentials,
-            &format!("[{index}].config"),
-        )?;
+            "provider_credentials.config",
+            &row.id,
+            &mut skipped,
+            Value::is_object,
+        ) {
+            Some(Value::Object(object)) => object,
+            _ => Map::new(),
+        };
         let streaming_enabled = optional_bool_value(
             &config_value,
             "streamingEnabled",
@@ -1007,7 +1013,19 @@ fn map_provider_models(
         {
             pending_secrets.push(LegacyPendingProviderSecret::ApiKey);
         }
-        let headers = parse_headers(row.headers.as_deref(), index)?;
+        let headers_accepted = crate::lenient_legacy_json(
+            row.headers.as_deref(),
+            "provider_credentials.headers",
+            &row.id,
+            &mut skipped,
+            |value| {
+                value
+                    .as_object()
+                    .is_some_and(|object| object.values().all(Value::is_string))
+            },
+        )
+        .is_some();
+        let headers = parse_headers(row.headers.as_deref().filter(|_| headers_accepted), index)?;
         pending_secrets.extend(
             headers
                 .keys()
@@ -1113,21 +1131,28 @@ fn map_provider_models(
             row.input_scopes.as_deref(),
             row.model_type.as_deref(),
             true,
-            index,
+            (index, &row.id),
+            &mut skipped,
             notices,
         )?;
         let output = legacy_scopes(
             row.output_scopes.as_deref(),
             row.model_type.as_deref(),
             false,
-            index,
+            (index, &row.id),
+            &mut skipped,
             notices,
         )?;
-        let advanced = parse_string_object(
+        let advanced = match crate::lenient_legacy_json(
             row.advanced_model_settings.as_deref(),
-            LegacyBackupDocumentKind::Models,
-            &format!("[{index}].advanced_model_settings"),
-        )?;
+            "models.advanced_model_settings",
+            &row.id,
+            &mut skipped,
+            Value::is_object,
+        ) {
+            Some(Value::Object(object)) => object,
+            _ => Map::new(),
+        };
         let (chat_parameters, mapped) = legacy_chat_parameters(&row.provider_id, &advanced)?;
         let deferred = advanced
             .keys()
@@ -1232,12 +1257,13 @@ fn map_provider_models(
             .then_with(|| left.id.cmp(&right.id))
     });
     models.sort_by_key(|model| (model.created_at, model.id));
+    skipped.sort();
     Ok(LegacyProviderModelPlan {
         provider_accounts: providers,
         model_profiles: models,
         default_provider_account_id: None,
         default_model_profile_id: None,
-        skipped: Vec::new(),
+        skipped,
     })
 }
 
@@ -1682,7 +1708,16 @@ fn map_provider_secrets(
                 })?,
             });
         }
-        for (name, value) in parse_headers(row.headers.as_deref(), index)? {
+        let headers = if provider
+            .pending_secrets
+            .iter()
+            .any(|secret| matches!(secret, LegacyPendingProviderSecret::Header { .. }))
+        {
+            parse_headers(row.headers.as_deref(), index)?
+        } else {
+            BTreeMap::new()
+        };
+        for (name, value) in headers {
             let reference = deterministic_secret_ref(&format!(
                 "provider:{}:header:{}",
                 id,
@@ -2250,7 +2285,8 @@ fn legacy_scopes(
     value: Option<&str>,
     model_type: Option<&str>,
     input: bool,
-    index: usize,
+    (index, row_id): (usize, &str),
+    skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<ModalityCapabilities, LegacyBackupConfigurationError> {
     let fallback = if input && model_type == Some("multimodel")
@@ -2260,16 +2296,30 @@ fn legacy_scopes(
     } else {
         vec!["text"]
     };
+    let field = if input {
+        "models.input_scopes"
+    } else {
+        "models.output_scopes"
+    };
     let values: Vec<String> = match value {
-        Some(value) => serde_json::from_str(value).map_err(|_| {
-            malformed(
-                LegacyBackupDocumentKind::Models,
-                format!(
-                    "[{index}].{}_scopes",
-                    if input { "input" } else { "output" }
-                ),
-            )
-        })?,
+        Some(value) => {
+            match crate::lenient_legacy_json(Some(value), field, row_id, skipped, Value::is_array) {
+                Some(Value::Array(items)) => {
+                    if items.iter().any(|item| !item.is_string()) {
+                        skipped.push(crate::legacy_value_skip(
+                            field,
+                            row_id,
+                            crate::LegacyImportSkipReason::MalformedLegacyValue,
+                        ));
+                    }
+                    items
+                        .into_iter()
+                        .filter_map(|item| item.as_str().map(str::to_owned))
+                        .collect()
+                }
+                _ => Vec::new(),
+            }
+        }
         None => {
             notices.push(notice(
                 LegacyBackupConversionNoticeKind::Lossy,
@@ -2860,20 +2910,6 @@ fn optional_bool_value(
         .transpose()
         .map(|value| value.unwrap_or(default))
 }
-fn parse_string_object(
-    value: Option<&str>,
-    document: LegacyBackupDocumentKind,
-    field: &str,
-) -> Result<Map<String, Value>, LegacyBackupConfigurationError> {
-    match value {
-        None => Ok(Map::new()),
-        Some(value) => serde_json::from_str::<Value>(value)
-            .map_err(|_| malformed(document, field))?
-            .as_object()
-            .cloned()
-            .ok_or_else(|| malformed(document, field)),
-    }
-}
 fn object_or_empty<'a>(
     value: &'a Value,
     document: LegacyBackupDocumentKind,
@@ -2991,6 +3027,74 @@ mod tests {
             LegacyBackupConfigurationError::Malformed { ref field, .. }
                 if field == "advanced_settings.dynamicMemoryStructuredFallbackFormat"
         ));
+    }
+
+    #[test]
+    fn malformed_provider_and_model_json_falls_back_like_legacy_restore() {
+        let unparseable = ProviderAccountId::new();
+        let non_text = ProviderAccountId::new();
+        let malformed_model = ModelProfileId::new();
+        let null_model = ModelProfileId::new();
+        let plan = plan_legacy_backup_configuration(inventory(vec![
+            document(
+                LegacyBackupDocumentKind::ProviderCredentials,
+                json!([
+                    {"id": unparseable, "provider_id": "openai", "label": "Primary", "headers": "not-json", "config": "[true]"},
+                    {"id": non_text, "provider_id": "anthropic", "label": "Secondary", "headers": "{\"X-Key\":1}", "config": "null"}
+                ]),
+            ),
+            document(
+                LegacyBackupDocumentKind::Models,
+                json!([
+                    {"id": malformed_model, "name": "model-a", "provider_id": "openai", "provider_credential_id": unparseable, "provider_label": "Primary", "display_name": "Model A", "created_at": 10, "input_scopes": "nope", "output_scopes": "[\"text\",3]", "advanced_model_settings": "[1]"},
+                    {"id": null_model, "name": "model-b", "provider_id": "anthropic", "provider_credential_id": non_text, "provider_label": "Secondary", "display_name": "Model B", "created_at": 20, "model_type": "multimodel", "input_scopes": "null", "advanced_model_settings": "null"}
+                ]),
+            ),
+        ]))
+        .expect("malformed JSON falls back");
+        let plan = plan.provider_models;
+        assert!(plan.provider_accounts.iter().all(|provider| {
+            provider.pending_secrets.is_empty()
+                && provider.deferred_config_fields.is_empty()
+                && provider.streaming_enabled
+        }));
+        let malformed = &plan.model_profiles[0];
+        assert_eq!(malformed.id, malformed_model);
+        assert_eq!(
+            malformed.config.capabilities.input_modalities.text,
+            CapabilityStatus::Supported
+        );
+        assert_eq!(
+            malformed.config.capabilities.output_modalities.text,
+            CapabilityStatus::Supported
+        );
+        assert!(malformed.deferred_advanced_fields.is_empty());
+        let null_values = &plan.model_profiles[1];
+        assert_eq!(null_values.id, null_model);
+        assert_eq!(
+            null_values.config.capabilities.input_modalities.image,
+            CapabilityStatus::Unsupported
+        );
+        let skip = |field: &str, row_id: String| {
+            crate::legacy_value_skip(
+                field,
+                &row_id,
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            )
+        };
+        let mut expected = vec![
+            skip("provider_credentials.config", unparseable.to_string()),
+            skip("provider_credentials.headers", unparseable.to_string()),
+            skip("provider_credentials.headers", non_text.to_string()),
+            skip("models.input_scopes", malformed_model.to_string()),
+            skip("models.output_scopes", malformed_model.to_string()),
+            skip(
+                "models.advanced_model_settings",
+                malformed_model.to_string(),
+            ),
+        ];
+        expected.sort();
+        assert_eq!(plan.skipped, expected);
     }
 
     #[test]
