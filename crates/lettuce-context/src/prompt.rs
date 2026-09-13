@@ -11,9 +11,9 @@ use crate::lorebook::keyword_matches;
 
 pub const MAX_LABEL_SCALARS: usize = 256;
 pub const MAX_LABEL_BYTES: usize = 1024;
-pub const MAX_PROSE_BYTES: usize = 1024 * 1024;
-pub const MAX_AUTHORED_BYTES: usize = 8 * 1024 * 1024;
-pub const MAX_PROMPT_ENTRIES: usize = 512;
+pub const MAX_PROSE_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_AUTHORED_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_PROMPT_ENTRIES: usize = 4_096;
 pub const MAX_CHILDREN: usize = 10_000;
 pub const MAX_CONDITION_DEPTH: usize = 16;
 pub const MAX_CONDITION_NODES: usize = 256;

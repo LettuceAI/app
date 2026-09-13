@@ -17,9 +17,9 @@ use crate::prompt::{
 
 /// The legacy runtime always inspected this many recent messages.
 pub const LEGACY_RECENT_MESSAGE_LIMIT: usize = 10;
-pub const MAX_LOREBOOK_ENTRIES: usize = 512;
-pub const MAX_KEYWORDS_PER_ENTRY: usize = 128;
-pub const MAX_REGEX_KEYWORDS_PER_BOOK: usize = 64;
+pub const MAX_LOREBOOK_ENTRIES: usize = 10_000;
+pub const MAX_KEYWORDS_PER_ENTRY: usize = 16_384;
+pub const MAX_REGEX_KEYWORDS_PER_BOOK: usize = 10_000;
 pub const MAX_LOREBOOK_SOURCES: usize = 128;
 pub const MAX_ACTIVE_LOREBOOK_ENTRIES: usize = MAX_LOREBOOK_ENTRIES;
 pub const MAX_ACTIVE_LOREBOOK_CONTENT_BYTES: usize = 4 * 1024 * 1024;
@@ -1019,6 +1019,7 @@ pub fn resolve_lorebook_activation(
     let mut resolved_sources = Vec::new();
     let mut skipped = Vec::new();
     let mut active_entries = Vec::new();
+    let mut active_content_bytes = 0_usize;
 
     for (source_order, source) in sources.iter().enumerate() {
         if !seen_books.insert(source.lorebook_id) {
@@ -1067,17 +1068,8 @@ pub fn resolve_lorebook_activation(
             if active_entries.len() >= MAX_ACTIVE_LOREBOOK_ENTRIES {
                 return Err(MultiLorebookActivationError::TooManyActiveEntries);
             }
-            let active_content_bytes = active_entries
-                .iter()
-                .map(
-                    |(_, _, _, item): &(u32, TimestampMillis, usize, ResolvedLorebookEntry)| {
-                        item.entry.content.len()
-                    },
-                )
-                .sum::<usize>();
-            if active_content_bytes.saturating_add(matched.entry.content.len())
-                > MAX_ACTIVE_LOREBOOK_CONTENT_BYTES
-            {
+            active_content_bytes = active_content_bytes.saturating_add(matched.entry.content.len());
+            if active_content_bytes > MAX_ACTIVE_LOREBOOK_CONTENT_BYTES {
                 return Err(MultiLorebookActivationError::ActiveContentTooLarge);
             }
             active_entries.push((

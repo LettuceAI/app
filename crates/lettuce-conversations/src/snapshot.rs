@@ -75,7 +75,7 @@ impl ProtectedSnapshotRef {
         if self.schema_version == 0 || self.source_revision.get() == 0 {
             return Err(ValidationError::ZeroRevision);
         }
-        if self.byte_size > 16 * 1024 * 1024 {
+        if self.byte_size > crate::artifact::MAX_PROTECTED_ARTIFACT_BYTES as u64 {
             return Err(ValidationError::TooLarge {
                 field: "snapshot_ref.byte_size",
             });

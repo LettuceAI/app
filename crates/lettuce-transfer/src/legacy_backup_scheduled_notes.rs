@@ -13,7 +13,7 @@ use crate::{
 };
 
 const NOTE_LIMIT: usize = 100_000;
-const TEXT_LIMIT: usize = 1_000_000;
+const TEXT_LIMIT: usize = 8 * 1024 * 1024;
 
 #[derive(Debug)]
 pub struct LegacyBackupScheduledNotePlan {

@@ -870,7 +870,7 @@ mod tests {
         assert_eq!(bytes.len(), secret.len());
         assert_eq!(bytes.digest().as_str().len(), 64);
         assert!(matches!(
-            ProtectedArtifactBytes::new(vec![0; 16 * 1024 * 1024 + 1]),
+            ProtectedArtifactBytes::new(vec![0; crate::artifact::MAX_PROTECTED_ARTIFACT_BYTES + 1]),
             Err(ArtifactError::TooLarge { .. })
         ));
     }
@@ -1287,7 +1287,7 @@ mod tests {
             artifact_id: ReplayArtifactId::new(),
             digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
             schema_version: 1,
-            byte_size: 16 * 1024 * 1024 + 1,
+            byte_size: crate::artifact::MAX_PROTECTED_ARTIFACT_BYTES as u64 + 1,
             retention: ReplayRetention::Conversation,
             codec: ReplayCodec::Cbor,
         };

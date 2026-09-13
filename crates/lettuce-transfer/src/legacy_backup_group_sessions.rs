@@ -12,8 +12,8 @@ const SESSION_LIMIT: usize = 10_000;
 const PARTICIPATION_LIMIT: usize = 100_000;
 const MESSAGE_LIMIT: usize = 200_000;
 const VARIANT_LIMIT: usize = 400_000;
-const TEXT_LIMIT: usize = 1_000_000;
-const JSON_LIMIT: usize = 16 * 1024 * 1024;
+const TEXT_LIMIT: usize = 8 * 1024 * 1024;
+const JSON_LIMIT: usize = 128 * 1024 * 1024;
 
 #[derive(Debug)]
 pub struct LegacyBackupGroupSessionPlan {

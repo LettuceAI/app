@@ -27,7 +27,7 @@ use crate::{
 
 const CHARACTER_LIMIT: usize = 10_000;
 const SCENE_LIMIT: usize = 100_000;
-const CHILD_LIMIT: usize = 512;
+const CHILD_LIMIT: usize = 10_000;
 
 #[derive(Debug)]
 pub struct LegacyBackupAuthoredPlan {

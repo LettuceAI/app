@@ -22,7 +22,7 @@ use crate::{
     ValidationError,
 };
 
-pub(crate) const MAX_PROTECTED_ARTIFACT_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) const MAX_PROTECTED_ARTIFACT_BYTES: usize = 128 * 1024 * 1024;
 
 /// Secret-adjacent or provider-returned bytes which must not be serialized or
 /// displayed.  The backing allocation is zeroized when this value is dropped.

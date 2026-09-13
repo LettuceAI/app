@@ -214,8 +214,8 @@ CREATE TABLE conversation_turns (
         json_valid(prompt_entry_ids_json)
         AND json_extract(prompt_entry_ids_json, '$.format_version') = 1
         AND json_type(prompt_entry_ids_json, '$.value') = 'array'
-        AND json_array_length(json_extract(prompt_entry_ids_json, '$.value')) <= 512
-        AND length(CAST(prompt_entry_ids_json AS BLOB)) <= 65536
+        AND json_array_length(json_extract(prompt_entry_ids_json, '$.value')) <= 10000
+        AND length(CAST(prompt_entry_ids_json AS BLOB)) <= 1048576
     )),
     memory_revision_id TEXT,
     selected_candidate_id TEXT,
@@ -332,7 +332,7 @@ CREATE TABLE conversation_snapshot_artifacts (
     source_revision INTEGER NOT NULL CHECK (source_revision >= 1),
     digest TEXT NOT NULL CHECK (length(digest) = 64 AND lower(digest) = digest AND digest NOT GLOB '*[^0-9a-f]*'),
     schema_version INTEGER NOT NULL CHECK (schema_version >= 1),
-    byte_size INTEGER NOT NULL CHECK (byte_size > 0 AND byte_size <= 16777216),
+    byte_size INTEGER NOT NULL CHECK (byte_size > 0 AND byte_size <= 134217728),
     codec TEXT NOT NULL CHECK (codec IN ('json', 'cbor', 'binary')),
     retention TEXT NOT NULL CHECK (retention = 'conversation'),
     bytes BLOB NOT NULL CHECK (length(bytes) = byte_size),
@@ -345,7 +345,7 @@ CREATE TABLE conversation_replay_artifacts (
     artifact_id TEXT PRIMARY KEY,
     digest TEXT NOT NULL CHECK (length(digest) = 64 AND lower(digest) = digest AND digest NOT GLOB '*[^0-9a-f]*'),
     schema_version INTEGER NOT NULL CHECK (schema_version >= 1),
-    byte_size INTEGER NOT NULL CHECK (byte_size > 0 AND byte_size <= 16777216),
+    byte_size INTEGER NOT NULL CHECK (byte_size > 0 AND byte_size <= 134217728),
     codec TEXT NOT NULL CHECK (codec IN ('json', 'cbor', 'binary')),
     retention TEXT NOT NULL CHECK (retention IN ('conversation', 'ephemeral')),
     bytes BLOB NOT NULL CHECK (length(bytes) = byte_size),
@@ -677,8 +677,8 @@ CREATE TABLE turn_lorebooks (
         json_valid(activated_entry_ids_json)
         AND json_extract(activated_entry_ids_json, '$.format_version') = 1
         AND json_type(activated_entry_ids_json, '$.value') = 'array'
-        AND json_array_length(json_extract(activated_entry_ids_json, '$.value')) <= 512
-        AND length(CAST(activated_entry_ids_json AS BLOB)) <= 65536
+        AND json_array_length(json_extract(activated_entry_ids_json, '$.value')) <= 10000
+        AND length(CAST(activated_entry_ids_json AS BLOB)) <= 1048576
     ),
     PRIMARY KEY (conversation_id, turn_id, lorebook_id),
     UNIQUE (conversation_id, turn_id, ordinal),
