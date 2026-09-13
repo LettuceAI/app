@@ -426,6 +426,8 @@ pub enum LegacyImportSkipKind {
     ModelProfile,
     GroupProfile,
     GroupReference,
+    CharacterMedia,
+    GroupMedia,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

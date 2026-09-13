@@ -4,8 +4,9 @@ use lettuce_types::ContentHash;
 
 use crate::{
     LEGACY_MEDIA_OBJECT_BYTES_LIMIT, LEGACY_MEDIA_REFERENCE_LIMIT, LEGACY_MEDIA_TOTAL_BYTES_LIMIT,
-    LegacyBackupAuthoredPlan, LegacyBackupMedia, LegacyBackupMediaRoot, LegacyMediaCandidate,
-    LegacyMediaPlan, LegacyMediaReference, LegacyMediaUse,
+    LegacyBackupAuthoredPlan, LegacyBackupMedia, LegacyBackupMediaRoot, LegacyImportSkip,
+    LegacyImportSkipKind, LegacyImportSkipReason, LegacyMediaCandidate, LegacyMediaPlan,
+    LegacyMediaReference, LegacyMediaUse,
 };
 
 #[derive(Debug)]
@@ -36,8 +37,9 @@ struct PlannedMedia<'a> {
 }
 
 pub fn plan_legacy_backup_authored_media(
-    authored: LegacyBackupAuthoredPlan,
+    mut authored: LegacyBackupAuthoredPlan,
 ) -> Result<LegacyBackupAuthoredMediaPlan, LegacyBackupMediaPlanError> {
+    let skipped = prune_missing_media(&mut authored)?;
     let mut planned = BTreeMap::<String, PlannedMedia<'_>>::new();
     let mut references = 0_u32;
     for persona in &authored.personas.personas {
@@ -189,7 +191,7 @@ pub fn plan_legacy_backup_authored_media(
         media: LegacyMediaPlan {
             media,
             total_bytes,
-            skipped: Vec::new(),
+            skipped,
         },
         authored,
     })
@@ -203,20 +205,12 @@ fn add_avatar<'a>(
     media_use: LegacyMediaUse,
     references: &mut u32,
 ) -> Result<(), LegacyBackupMediaPlanError> {
-    if !safe_component(&reference.locator, true) || !image_extension(&reference.locator) {
-        return Err(LegacyBackupMediaPlanError::Unsafe {
-            locator: reference.locator.clone(),
-        });
-    }
-    let expected = [owner_directory, reference.locator.as_str()];
-    let media = exact_media(
+    let media = avatar_media(
         &authored.configuration.source.media,
-        LegacyBackupMediaRoot::Avatars,
-        &expected,
-    )
-    .ok_or_else(|| LegacyBackupMediaPlanError::Missing {
-        locator: reference.locator.clone(),
-    })?;
+        reference,
+        owner_directory,
+    )?
+    .ok_or_else(|| missing(reference))?;
     add_planned(planned, media, media_use, references)
 }
 
@@ -227,35 +221,186 @@ fn add_image<'a>(
     media_use: LegacyMediaUse,
     references: &mut u32,
 ) -> Result<(), LegacyBackupMediaPlanError> {
+    let media = image_media(&authored.configuration.source.media, reference)?
+        .ok_or_else(|| missing(reference))?;
+    add_planned(planned, media, media_use, references)
+}
+
+fn missing(reference: &LegacyMediaReference) -> LegacyBackupMediaPlanError {
+    LegacyBackupMediaPlanError::Missing {
+        locator: reference.locator.clone(),
+    }
+}
+
+fn avatar_media<'a>(
+    source: &'a [LegacyBackupMedia],
+    reference: &LegacyMediaReference,
+    owner_directory: &str,
+) -> Result<Option<&'a LegacyBackupMedia>, LegacyBackupMediaPlanError> {
+    if !safe_component(&reference.locator, true) || !image_extension(&reference.locator) {
+        return Err(LegacyBackupMediaPlanError::Unsafe {
+            locator: reference.locator.clone(),
+        });
+    }
+    Ok(exact_media(
+        source,
+        LegacyBackupMediaRoot::Avatars,
+        &[owner_directory, reference.locator.as_str()],
+    ))
+}
+
+fn image_media<'a>(
+    source: &'a [LegacyBackupMedia],
+    reference: &LegacyMediaReference,
+) -> Result<Option<&'a LegacyBackupMedia>, LegacyBackupMediaPlanError> {
     if !safe_component(&reference.locator, false) {
         return Err(LegacyBackupMediaPlanError::Unsafe {
             locator: reference.locator.clone(),
         });
     }
-    let matches = authored
-        .configuration
-        .source
-        .media
+    let matches = source
         .iter()
         .filter(|media| media.root == LegacyBackupMediaRoot::Images)
         .filter(|media| {
             matches!(media.relative_segments.as_slice(), [filename] if image_stem(filename) == Some(reference.locator.as_str()))
         })
         .collect::<Vec<_>>();
-    let media = match matches.as_slice() {
-        [media] => *media,
-        [] => {
-            return Err(LegacyBackupMediaPlanError::Missing {
-                locator: reference.locator.clone(),
-            });
+    match matches.as_slice() {
+        [media] => Ok(Some(*media)),
+        [] => Ok(None),
+        _ => Err(LegacyBackupMediaPlanError::Ambiguous {
+            locator: reference.locator.clone(),
+        }),
+    }
+}
+
+fn prune_missing_media(
+    authored: &mut LegacyBackupAuthoredPlan,
+) -> Result<Vec<LegacyImportSkip>, LegacyBackupMediaPlanError> {
+    let source = &authored.configuration.source.media;
+    let mut skipped = Vec::new();
+    for persona in &mut authored.personas.personas {
+        let persona_id = persona.id;
+        if let Some(avatar) = &persona.avatar
+            && avatar_media(source, avatar, &format!("persona-{persona_id}"))?.is_none()
+        {
+            skipped.push(missing_skip(
+                LegacyImportSkipKind::PersonaAvatar,
+                persona_id.to_string(),
+            ));
+            persona.avatar = None;
+            persona.avatar_crop = None;
         }
-        _ => {
-            return Err(LegacyBackupMediaPlanError::Ambiguous {
-                locator: reference.locator.clone(),
-            });
+        retain_present(
+            source,
+            &mut persona.design_references,
+            &mut skipped,
+            |locator| {
+                missing_skip(
+                    LegacyImportSkipKind::PersonaDesignReference,
+                    format!("{persona_id}:{locator}"),
+                )
+            },
+        )?;
+    }
+    for lorebook in &mut authored.lorebooks.lorebooks {
+        if let Some(avatar) = &lorebook.avatar
+            && image_media(source, avatar)?.is_none()
+        {
+            skipped.push(missing_skip(
+                LegacyImportSkipKind::LorebookAvatar,
+                lorebook.id.to_string(),
+            ));
+            lorebook.avatar = None;
         }
-    };
-    add_planned(planned, media, media_use, references)
+    }
+    for character in &mut authored.characters {
+        let character_id = character.id;
+        let skip = |slot: String| {
+            missing_skip(
+                LegacyImportSkipKind::CharacterMedia,
+                format!("{character_id}:{slot}"),
+            )
+        };
+        if let Some(avatar) = &character.media.avatar
+            && avatar_media(source, avatar, &format!("character-{character_id}"))?.is_none()
+        {
+            skipped.push(skip("avatar".into()));
+            character.media.avatar = None;
+            character.presentation.avatar_crop = None;
+        }
+        if let Some(background) = &character.media.background
+            && image_media(source, background)?.is_none()
+        {
+            skipped.push(skip("background".into()));
+            character.media.background = None;
+        }
+        retain_present(
+            source,
+            &mut character.media.design_references,
+            &mut skipped,
+            |locator| skip(format!("design:{locator}")),
+        )?;
+        for scene in &mut character.scenes {
+            if let Some(background) = &scene.background
+                && image_media(source, background)?.is_none()
+            {
+                skipped.push(skip(format!("scene:{}", scene.id)));
+                scene.background = None;
+            }
+        }
+    }
+    for group in &mut authored.groups {
+        let group_id = group.id;
+        if let Some(background) = &group.background
+            && image_media(source, background)?.is_none()
+        {
+            skipped.push(missing_skip(
+                LegacyImportSkipKind::GroupMedia,
+                format!("{group_id}:background"),
+            ));
+            group.background = None;
+        }
+        if let Some(scene) = &mut group.starting_scene
+            && let Some(background) = &scene.background
+            && image_media(source, background)?.is_none()
+        {
+            skipped.push(missing_skip(
+                LegacyImportSkipKind::GroupMedia,
+                format!("{group_id}:scene:{}", scene.id),
+            ));
+            scene.background = None;
+        }
+    }
+    skipped.sort();
+    skipped.dedup();
+    Ok(skipped)
+}
+
+fn retain_present(
+    source: &[LegacyBackupMedia],
+    references: &mut Vec<LegacyMediaReference>,
+    skipped: &mut Vec<LegacyImportSkip>,
+    skip: impl Fn(&str) -> LegacyImportSkip,
+) -> Result<(), LegacyBackupMediaPlanError> {
+    let mut kept = Vec::with_capacity(references.len());
+    for reference in std::mem::take(references) {
+        if image_media(source, &reference)?.is_some() {
+            kept.push(reference);
+        } else {
+            skipped.push(skip(&reference.locator));
+        }
+    }
+    *references = kept;
+    Ok(())
+}
+
+fn missing_skip(kind: LegacyImportSkipKind, source_key: String) -> LegacyImportSkip {
+    LegacyImportSkip {
+        kind,
+        source_key,
+        reason: LegacyImportSkipReason::MissingMediaFile,
+    }
 }
 
 fn add_planned<'a>(
@@ -502,25 +647,91 @@ mod tests {
     }
 
     #[test]
-    fn missing_and_ambiguous_authored_images_fail_closed() {
+    fn missing_authored_media_is_cleared_and_recorded_while_ambiguous_images_fail_closed() {
         let persona = id(20);
-        let documents = vec![document(
-            LegacyBackupDocumentKind::Personas,
-            json!([{
-                "id": persona,
-                "title": "User",
-                "description": "User profile",
-                "design_reference_image_ids": "[\"shared\"]",
-                "created_at": 1,
-                "updated_at": 1
-            }]),
-        )];
-        let missing = plan_legacy_backup_authored_media(authored(documents.clone(), Vec::new()))
-            .expect_err("missing image should fail");
-        assert!(matches!(
-            missing,
-            LegacyBackupMediaPlanError::Missing { .. }
-        ));
+        let character = id(21);
+        let scene = id(22);
+        let documents = vec![
+            document(
+                LegacyBackupDocumentKind::Personas,
+                json!([{
+                    "id": persona,
+                    "title": "User",
+                    "description": "User profile",
+                    "avatar_path": "gone.png",
+                    "avatar_crop_x": 0.1,
+                    "avatar_crop_y": 0.1,
+                    "avatar_crop_scale": 1.0,
+                    "design_reference_image_ids": "[\"shared\"]",
+                    "created_at": 1,
+                    "updated_at": 1
+                }]),
+            ),
+            document(
+                LegacyBackupDocumentKind::Characters,
+                json!([{
+                    "id": character,
+                    "name": "Mira",
+                    "avatar_path": "mira.png",
+                    "background_image_path": "gone",
+                    "design_reference_image_ids": "[\"kept\",\"gone\"]",
+                    "scenes": [{
+                        "id": scene,
+                        "content": "Scene",
+                        "background_image_path": "gone",
+                        "created_at": 1
+                    }],
+                    "created_at": 1,
+                    "updated_at": 1
+                }]),
+            ),
+        ];
+        let plan = plan_legacy_backup_authored_media(authored(
+            documents.clone(),
+            vec![media(LegacyBackupMediaRoot::Images, &["kept.png"], b"kept")],
+        ))
+        .expect("missing media is pruned");
+        let persona_plan = &plan.authored.personas.personas[0];
+        assert!(persona_plan.avatar.is_none() && persona_plan.avatar_crop.is_none());
+        assert!(persona_plan.design_references.is_empty());
+        let character_plan = &plan.authored.characters[0];
+        assert!(character_plan.media.avatar.is_none());
+        assert!(character_plan.media.background.is_none());
+        assert_eq!(character_plan.media.design_references.len(), 1);
+        assert!(character_plan.scenes[0].background.is_none());
+        assert_eq!(plan.media.media.len(), 1);
+        let keys = plan
+            .media
+            .skipped
+            .iter()
+            .map(|skip| (skip.kind, skip.source_key.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            keys,
+            vec![
+                (LegacyImportSkipKind::PersonaAvatar, persona.clone()),
+                (
+                    LegacyImportSkipKind::PersonaDesignReference,
+                    format!("{persona}:shared")
+                ),
+                (
+                    LegacyImportSkipKind::CharacterMedia,
+                    format!("{character}:avatar")
+                ),
+                (
+                    LegacyImportSkipKind::CharacterMedia,
+                    format!("{character}:background")
+                ),
+                (
+                    LegacyImportSkipKind::CharacterMedia,
+                    format!("{character}:design:gone")
+                ),
+                (
+                    LegacyImportSkipKind::CharacterMedia,
+                    format!("{character}:scene:{scene}")
+                ),
+            ]
+        );
         let ambiguous = plan_legacy_backup_authored_media(authored(
             documents,
             vec![

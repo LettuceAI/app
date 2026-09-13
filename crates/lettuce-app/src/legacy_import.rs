@@ -505,6 +505,13 @@ fn valid_media_skips(
                     LorebookAvatar => lorebooks.lorebooks.iter().any(|lorebook| {
                         lorebook.id.to_string() == skip.source_key && lorebook.avatar.is_none()
                     }),
+                    lettuce_transfer::LegacyImportSkipKind::CharacterMedia
+                    | lettuce_transfer::LegacyImportSkipKind::GroupMedia => skip
+                        .source_key
+                        .split_once(':')
+                        .is_some_and(|(id, slot)| {
+                            uuid::Uuid::parse_str(id).is_ok() && !slot.is_empty()
+                        }),
                     _ => false,
                 }
         })
@@ -584,6 +591,8 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipKind::ModelProfile => 18,
             lettuce_transfer::LegacyImportSkipKind::GroupProfile => 19,
             lettuce_transfer::LegacyImportSkipKind::GroupReference => 20,
+            lettuce_transfer::LegacyImportSkipKind::CharacterMedia => 21,
+            lettuce_transfer::LegacyImportSkipKind::GroupMedia => 22,
         });
         hash.text(&skip.source_key);
         hash.u32(match skip.reason {

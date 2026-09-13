@@ -291,9 +291,12 @@ Authored version-1 media locators now resolve directly against those retained
 archive bytes before any ingest. Persona and character avatars use their exact
 owner directories; lorebook icons, design references and character/group/scene
 backgrounds use the legacy image-reference convention. Shared archive objects
-are hashed once and retain every typed owner and ordinal use. Missing,
-ambiguous, unsafe, oversized or over-limit references reject the whole media
-plan. Conversation attachments, generated images and other later-domain media
+are hashed once and retain every typed owner and ordinal use. A reference whose
+file is absent is cleared and recorded as a `MissingMediaFile` skip, like the
+legacy SQLite import: persona avatar (with its crop) and design references,
+lorebook avatars, and `CharacterMedia`/`GroupMedia` slots keyed
+`<id>:avatar|background|design:<locator>|scene:<scene id>`. Ambiguous, unsafe,
+oversized or over-limit references still reject the whole media plan. Conversation attachments, generated images and other later-domain media
 stay attached to the source inventory and are not misclassified as orphaned by
 this authored-only slice.
 

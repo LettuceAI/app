@@ -1883,6 +1883,8 @@ fn skip_kind_name(kind: lettuce_transfer::LegacyImportSkipKind) -> &'static str 
         lettuce_transfer::LegacyImportSkipKind::ModelProfile => "model_profile",
         lettuce_transfer::LegacyImportSkipKind::GroupProfile => "group_profile",
         lettuce_transfer::LegacyImportSkipKind::GroupReference => "group_reference",
+        lettuce_transfer::LegacyImportSkipKind::CharacterMedia => "character_media",
+        lettuce_transfer::LegacyImportSkipKind::GroupMedia => "group_media",
     }
 }
 
@@ -1967,6 +1969,8 @@ fn load_skips(
                 "model_profile" => lettuce_transfer::LegacyImportSkipKind::ModelProfile,
                 "group_profile" => lettuce_transfer::LegacyImportSkipKind::GroupProfile,
                 "group_reference" => lettuce_transfer::LegacyImportSkipKind::GroupReference,
+                "character_media" => lettuce_transfer::LegacyImportSkipKind::CharacterMedia,
+                "group_media" => lettuce_transfer::LegacyImportSkipKind::GroupMedia,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             let reason = match reason.as_str() {
