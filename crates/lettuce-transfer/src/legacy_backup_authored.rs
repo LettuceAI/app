@@ -468,15 +468,16 @@ pub fn plan_legacy_backup_authored(
         &mut configuration.notices,
     )?;
     validate_starter_owners(&characters, &configuration.chat_templates)?;
-    let groups = map_groups(
+    let (groups, group_skips) = map_groups(
         &characters,
         &personas,
-        &lorebooks,
+        &lorebook_ids,
         &configuration.provider_models,
         &configuration.prompts,
         group_rows,
         &mut configuration.notices,
     )?;
+    skipped.extend(group_skips);
     let group_lorebooks = map_group_bindings(&groups);
     configuration.notices.sort();
     configuration.notices.dedup();
@@ -1195,12 +1196,19 @@ fn map_starters(
 fn map_groups(
     characters: &[LegacyBackupCharacterCandidate],
     personas: &LegacyPersonaPlan,
-    lorebooks: &LegacyLorebookPlan,
+    lorebook_ids: &BTreeSet<LorebookId>,
     provider_models: &crate::LegacyProviderModelPlan,
     prompts: &crate::LegacyPromptPlan,
     rows: Vec<GroupRow>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
-) -> Result<Vec<LegacyBackupGroupCandidate>, LegacyBackupAuthoredError> {
+) -> Result<
+    (
+        Vec<LegacyBackupGroupCandidate>,
+        Vec<crate::LegacyImportSkip>,
+    ),
+    LegacyBackupAuthoredError,
+> {
+    let mut skipped = Vec::new();
     let character_ids = characters
         .iter()
         .map(|character| character.id)
@@ -1209,11 +1217,6 @@ fn map_groups(
         .personas
         .iter()
         .map(|persona| persona.id)
-        .collect::<BTreeSet<_>>();
-    let lorebook_ids = lorebooks
-        .lorebooks
-        .iter()
-        .map(|lorebook| lorebook.id)
         .collect::<BTreeSet<_>>();
     let model_ids = provider_models
         .model_profiles
@@ -1233,7 +1236,7 @@ fn map_groups(
             &row.extra,
             notices,
         );
-        let id = parse_id(&row.id, LegacyBackupDocumentKind::GroupCharacters, "id")?;
+        let id: GroupId = parse_id(&row.id, LegacyBackupDocumentKind::GroupCharacters, "id")?;
         require_unique(
             &mut group_ids,
             id,
@@ -1246,28 +1249,39 @@ fn map_groups(
             row.updated_at,
             LegacyBackupDocumentKind::GroupCharacters,
         )?;
-        let member_ids = id_list::<CharacterId>(
+        let group_key = id.to_string();
+        let mut member_ids = id_list::<CharacterId>(
             &row.character_ids,
             LegacyBackupDocumentKind::GroupCharacters,
             "character_ids",
         )?;
-        validate_ids(
-            &member_ids,
-            &character_ids,
-            LegacyBackupDocumentKind::GroupCharacters,
-            "character_ids",
-        )?;
-        let muted_ids = id_list::<CharacterId>(
+        member_ids.retain(|member| {
+            let present = character_ids.contains(member);
+            if !present {
+                skipped.push(reference_skip(
+                    crate::LegacyImportSkipKind::CharacterReference,
+                    format!("group_characters.character_ids:{group_key}:{member}"),
+                    crate::LegacyImportSkipReason::MissingCharacter,
+                ));
+            }
+            present
+        });
+        let mut muted_ids = id_list::<CharacterId>(
             &row.muted_character_ids,
             LegacyBackupDocumentKind::GroupCharacters,
             "muted_character_ids",
         )?;
-        if muted_ids.iter().any(|member| !member_ids.contains(member)) {
-            return Err(orphan(
-                LegacyBackupDocumentKind::GroupCharacters,
-                "muted_character_ids",
-            ));
-        }
+        muted_ids.retain(|muted| {
+            let member = member_ids.contains(muted);
+            if !member {
+                skipped.push(reference_skip(
+                    crate::LegacyImportSkipKind::CharacterReference,
+                    format!("group_characters.muted_character_ids:{group_key}:{muted}"),
+                    crate::LegacyImportSkipReason::MissingCharacter,
+                ));
+            }
+            member
+        });
         let raw_overrides = row
             .character_model_overrides
             .map(|value| {
@@ -1287,11 +1301,14 @@ fn map_groups(
                 LegacyBackupDocumentKind::GroupCharacters,
                 "character_model_overrides.character_id",
             )?;
+            let key = format!("group_characters.character_model_overrides:{group_key}:{member}");
             if !member_ids.contains(&member) {
-                return Err(orphan(
-                    LegacyBackupDocumentKind::GroupCharacters,
-                    "character_model_overrides.character_id",
+                skipped.push(reference_skip(
+                    crate::LegacyImportSkipKind::CharacterReference,
+                    key,
+                    crate::LegacyImportSkipReason::MissingCharacter,
                 ));
+                continue;
             }
             let model = crate::legacy_backup_configuration::canonical_model_id(
                 &model_source,
@@ -1299,10 +1316,12 @@ fn map_groups(
                 "group_characters.character_model_overrides",
             );
             if !model_ids.contains(&model) {
-                return Err(orphan(
-                    LegacyBackupDocumentKind::GroupCharacters,
-                    "character_model_overrides.model_id",
+                skipped.push(reference_skip(
+                    crate::LegacyImportSkipKind::ModelReference,
+                    key,
+                    crate::LegacyImportSkipReason::MissingModelProfile,
                 ));
+                continue;
             }
             overrides.insert(member, model);
         }
@@ -1317,7 +1336,7 @@ fn map_groups(
                 model_profile_override: overrides.get(&character_id).copied(),
             })
             .collect::<Vec<_>>();
-        let persona = optional_id::<PersonaId>(
+        let mut persona = optional_id::<PersonaId>(
             row.persona_id,
             LegacyBackupDocumentKind::GroupCharacters,
             "persona_id",
@@ -1327,10 +1346,12 @@ fn map_groups(
         if let Selection::Explicit(persona_id) = persona
             && !persona_ids.contains(&persona_id)
         {
-            return Err(orphan(
-                LegacyBackupDocumentKind::GroupCharacters,
-                "persona_id",
+            skipped.push(reference_skip(
+                crate::LegacyImportSkipKind::PersonaReference,
+                format!("group_characters.persona_id:{group_key}"),
+                crate::LegacyImportSkipReason::MissingPersona,
             ));
+            persona = Selection::Inherit;
         }
         let chat_mode = match row.chat_type.as_str() {
             "conversation" => ChatMode::Conversation,
@@ -1365,32 +1386,48 @@ fn map_groups(
                 ));
             }
         };
+        let mut group_conversation_prompt_source_id = normalize(row.group_chat_prompt_template_id);
+        let mut group_roleplay_prompt_source_id =
+            normalize(row.group_chat_roleplay_prompt_template_id);
         for (field, prompt) in [
             (
                 "group_chat_prompt_template_id",
-                row.group_chat_prompt_template_id.as_deref(),
+                &mut group_conversation_prompt_source_id,
             ),
             (
                 "group_chat_roleplay_prompt_template_id",
-                row.group_chat_roleplay_prompt_template_id.as_deref(),
+                &mut group_roleplay_prompt_source_id,
             ),
         ] {
-            if prompt.is_some_and(|prompt| !prompt_ids.contains(prompt)) {
-                return Err(orphan(LegacyBackupDocumentKind::GroupCharacters, field));
+            if prompt
+                .take_if(|prompt| !prompt_ids.contains(prompt.as_str()))
+                .is_some()
+            {
+                skipped.push(reference_skip(
+                    crate::LegacyImportSkipKind::PromptReference,
+                    format!("group_characters.{field}:{group_key}"),
+                    crate::LegacyImportSkipReason::MissingPrompt,
+                ));
             }
         }
-        let bound_lorebooks = id_list::<LorebookId>(
+        let mut bound_lorebooks = id_list::<LorebookId>(
             &row.lorebook_ids,
             LegacyBackupDocumentKind::GroupCharacters,
             "lorebook_ids",
         )?;
-        validate_ids(
-            &bound_lorebooks,
-            &lorebook_ids,
-            LegacyBackupDocumentKind::GroupCharacters,
-            "lorebook_ids",
-        )?;
-        let starting_scene = map_group_starting_scene(row.starting_scene, notices)?;
+        bound_lorebooks.retain(|lorebook| {
+            let present = lorebook_ids.contains(lorebook);
+            if !present {
+                skipped.push(reference_skip(
+                    crate::LegacyImportSkipKind::LorebookReference,
+                    format!("group_characters.lorebook_ids:{group_key}:{lorebook}"),
+                    crate::LegacyImportSkipReason::MissingLorebook,
+                ));
+            }
+            present
+        });
+        let starting_scene =
+            map_group_starting_scene(row.starting_scene, &group_key, &mut skipped, notices)?;
         let status = if row.archived {
             LifecycleStatus::Archived
         } else {
@@ -1427,8 +1464,8 @@ fn map_groups(
             speaker_selection,
             memory_policy,
             disable_character_lorebooks: row.disable_character_lorebooks,
-            group_conversation_prompt_source_id: normalize(row.group_chat_prompt_template_id),
-            group_roleplay_prompt_source_id: normalize(row.group_chat_roleplay_prompt_template_id),
+            group_conversation_prompt_source_id,
+            group_roleplay_prompt_source_id,
             chat_appearance: parse_json_document(
                 row.chat_appearance,
                 LegacyBackupDocumentKind::GroupCharacters,
@@ -1446,11 +1483,25 @@ fn map_groups(
             updated_at: TimestampMillis::new(row.updated_at),
         });
     }
-    Ok(result)
+    Ok((result, skipped))
+}
+
+fn reference_skip(
+    kind: crate::LegacyImportSkipKind,
+    source_key: String,
+    reason: crate::LegacyImportSkipReason,
+) -> crate::LegacyImportSkip {
+    crate::LegacyImportSkip {
+        kind,
+        source_key,
+        reason,
+    }
 }
 
 fn map_group_starting_scene(
     value: Option<String>,
+    group_key: &str,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Option<LegacyBackupSceneCandidate>, LegacyBackupAuthoredError> {
     let Some(value) = normalize(value) else {
@@ -1471,7 +1522,7 @@ fn map_group_starting_scene(
         LegacyBackupDocumentKind::GroupCharacters,
         "starting_scene.id",
     )?;
-    let selected_variant_id = optional_id(
+    let mut selected_variant_id: Option<SceneVariantId> = optional_id(
         row.selected_variant_id,
         LegacyBackupDocumentKind::GroupCharacters,
         "starting_scene.selected_variant_id",
@@ -1511,10 +1562,14 @@ fn map_group_starting_scene(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    if selected_variant_id.is_some_and(|selected| !variant_ids.contains(&selected)) {
-        return Err(orphan(
-            LegacyBackupDocumentKind::GroupCharacters,
-            "starting_scene.selected_variant_id",
+    if selected_variant_id
+        .take_if(|selected| !variant_ids.contains(selected))
+        .is_some()
+    {
+        skipped.push(reference_skip(
+            crate::LegacyImportSkipKind::SceneReference,
+            format!("group_characters.starting_scene.selected_variant_id:{group_key}"),
+            crate::LegacyImportSkipReason::MissingSceneVariant,
         ));
     }
     Ok(Some(LegacyBackupSceneCandidate {
@@ -2724,6 +2779,125 @@ mod tests {
         ];
         character_skips.sort();
         assert_eq!(plan.skipped, character_skips);
+    }
+
+    #[test]
+    fn stale_group_references_are_pruned_and_recorded() {
+        let first = id(60);
+        let second = id(61);
+        let missing_member = id(62);
+        let group_id = id(63);
+        let missing_persona = id(64);
+        let missing_lorebook = id(65);
+        let missing_model = id(66);
+        let scene_id = id(67);
+        let missing_variant = id(68);
+        let character = |character_id: &str| json!({"id": character_id, "name": "Member", "created_at": 1, "updated_at": 1});
+        let starting_scene = json!({
+            "id": scene_id,
+            "content": "The harbor",
+            "created_at": 1,
+            "selected_variant_id": missing_variant
+        })
+        .to_string();
+        let plan = plan(vec![
+            document(
+                LegacyBackupDocumentKind::Characters,
+                json!([character(&first), character(&second)]),
+            ),
+            document(
+                LegacyBackupDocumentKind::GroupCharacters,
+                json!([{
+                    "id": group_id,
+                    "name": "Crew",
+                    "character_ids": format!("[\"{first}\",\"{second}\",\"{missing_member}\"]"),
+                    "muted_character_ids": format!("[\"{missing_member}\"]"),
+                    "persona_id": missing_persona,
+                    "chat_type": "roleplay",
+                    "starting_scene": starting_scene,
+                    "lorebook_ids": format!("[\"{missing_lorebook}\"]"),
+                    "character_model_overrides": format!(
+                        "{{\"{first}\":\"{missing_model}\",\"{missing_member}\":\"{missing_model}\"}}"
+                    ),
+                    "group_chat_prompt_template_id": "deleted-group-prompt",
+                    "created_at": 1,
+                    "updated_at": 1
+                }]),
+            ),
+        ])
+        .expect("stale group references are pruned");
+        let group = &plan.groups[0];
+        assert_eq!(
+            group
+                .members
+                .iter()
+                .map(|member| (
+                    member.character_id.to_string(),
+                    member.muted,
+                    member.model_profile_override
+                ))
+                .collect::<Vec<_>>(),
+            vec![(first.clone(), false, None), (second.clone(), false, None)]
+        );
+        assert!(matches!(group.persona, Selection::Inherit));
+        assert_eq!(group.group_conversation_prompt_source_id, None);
+        assert!(group.lorebook_ids.is_empty());
+        assert_eq!(
+            group
+                .starting_scene
+                .as_ref()
+                .map(|scene| scene.selected_variant_id),
+            Some(None)
+        );
+        let skip = |kind, source_key: String, reason| crate::LegacyImportSkip {
+            kind,
+            source_key,
+            reason,
+        };
+        let mut expected = vec![
+            skip(
+                crate::LegacyImportSkipKind::CharacterReference,
+                format!("group_characters.character_ids:{group_id}:{missing_member}"),
+                crate::LegacyImportSkipReason::MissingCharacter,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::CharacterReference,
+                format!("group_characters.muted_character_ids:{group_id}:{missing_member}"),
+                crate::LegacyImportSkipReason::MissingCharacter,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::CharacterReference,
+                format!("group_characters.character_model_overrides:{group_id}:{missing_member}"),
+                crate::LegacyImportSkipReason::MissingCharacter,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::ModelReference,
+                format!("group_characters.character_model_overrides:{group_id}:{first}"),
+                crate::LegacyImportSkipReason::MissingModelProfile,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::PersonaReference,
+                format!("group_characters.persona_id:{group_id}"),
+                crate::LegacyImportSkipReason::MissingPersona,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::PromptReference,
+                format!("group_characters.group_chat_prompt_template_id:{group_id}"),
+                crate::LegacyImportSkipReason::MissingPrompt,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::LorebookReference,
+                format!("group_characters.lorebook_ids:{group_id}:{missing_lorebook}"),
+                crate::LegacyImportSkipReason::MissingLorebook,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::SceneReference,
+                format!("group_characters.starting_scene.selected_variant_id:{group_id}"),
+                crate::LegacyImportSkipReason::MissingSceneVariant,
+            ),
+        ];
+        expected.sort();
+        assert_eq!(plan.skipped, expected);
     }
 
     #[test]

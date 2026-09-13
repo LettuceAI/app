@@ -179,9 +179,9 @@ END;
 
 CREATE TABLE legacy_import_skips (
     run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
-    source_kind TEXT NOT NULL CHECK (source_kind IN ('settings_default_provider_account','settings_default_model_profile','persona_avatar','persona_design_reference','lorebook_avatar','persona_lorebook_binding','lorebook_entry_keyword','legacy_value','model_reference','prompt_reference','scene_reference','chat_template_reference','lorebook_reference')),
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('settings_default_provider_account','settings_default_model_profile','persona_avatar','persona_design_reference','lorebook_avatar','persona_lorebook_binding','lorebook_entry_keyword','legacy_value','model_reference','prompt_reference','scene_reference','chat_template_reference','lorebook_reference','character_reference','persona_reference')),
     source_key TEXT NOT NULL CHECK (length(trim(source_key)) > 0),
-    reason TEXT NOT NULL CHECK (reason IN ('missing_provider_account','missing_model_profile','missing_media_file','missing_lorebook','invalid_regex','malformed_legacy_value','unknown_legacy_value','missing_prompt','missing_scene','missing_scene_variant','missing_chat_template')),
+    reason TEXT NOT NULL CHECK (reason IN ('missing_provider_account','missing_model_profile','missing_media_file','missing_lorebook','invalid_regex','malformed_legacy_value','unknown_legacy_value','missing_prompt','missing_scene','missing_scene_variant','missing_chat_template','missing_character','missing_persona')),
     PRIMARY KEY (run_id, source_kind, source_key)
 ) STRICT;
 

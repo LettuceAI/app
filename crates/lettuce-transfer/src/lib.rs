@@ -420,6 +420,8 @@ pub enum LegacyImportSkipKind {
     SceneReference,
     ChatTemplateReference,
     LorebookReference,
+    CharacterReference,
+    PersonaReference,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -435,6 +437,8 @@ pub enum LegacyImportSkipReason {
     MissingScene,
     MissingSceneVariant,
     MissingChatTemplate,
+    MissingCharacter,
+    MissingPersona,
 }
 
 pub fn legacy_value_skip(

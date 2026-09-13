@@ -544,7 +544,14 @@ prompt selections, lorebook order and policy, raw appearance, starting-scene
 variants and both unresolved background locators remain intact. Director and
 Director Action are stored policies and require no persisted selected speaker;
 the legacy UI supplied that choice per send or continuation. Current group and
-member validation rejects duplicate or missing members, all-muted and undersized
-groups, orphan overrides and invalid selections before restore writes. Group
+member validation rejects duplicate members, all-muted and undersized groups and
+invalid selections before restore writes. References legacy never cleaned up are
+pruned and recorded in the authored plan's `skipped` list instead: members whose
+character is gone (legacy speaker selection skipped them), muted ids and model
+overrides for non-members, overrides whose model is gone (legacy fell back), a
+deleted persona (legacy's foreign key set it to null, so it inherits), stale
+group prompt and lorebook ids, and a starting scene's missing selected variant
+(legacy group prompts used only the scene content). A group left undersized or
+all-muted by that pruning still aborts until the user decides how to keep it. Group
 lorebooks use the canonical ordered binding document. Group sessions remain in
 the attached inventory for the later conversation/runtime conversion slice.

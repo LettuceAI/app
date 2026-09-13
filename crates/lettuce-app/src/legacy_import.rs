@@ -571,6 +571,8 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipKind::SceneReference => 12,
             lettuce_transfer::LegacyImportSkipKind::ChatTemplateReference => 13,
             lettuce_transfer::LegacyImportSkipKind::LorebookReference => 14,
+            lettuce_transfer::LegacyImportSkipKind::CharacterReference => 15,
+            lettuce_transfer::LegacyImportSkipKind::PersonaReference => 16,
         });
         hash.text(&skip.source_key);
         hash.u32(match skip.reason {
@@ -585,6 +587,8 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipReason::MissingScene => 9,
             lettuce_transfer::LegacyImportSkipReason::MissingSceneVariant => 10,
             lettuce_transfer::LegacyImportSkipReason::MissingChatTemplate => 11,
+            lettuce_transfer::LegacyImportSkipReason::MissingCharacter => 12,
+            lettuce_transfer::LegacyImportSkipReason::MissingPersona => 13,
         });
     }
 }
