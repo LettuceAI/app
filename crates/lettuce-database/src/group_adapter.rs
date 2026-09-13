@@ -735,36 +735,44 @@ fn write_presentation(
     Ok(())
 }
 
+pub(crate) fn insert_group_plan(
+    tx: &rusqlite::Transaction<'_>,
+    plan: &CreateGroupPlan,
+) -> Result<GroupDetails, RepositoryError> {
+    plan.validate()?;
+    if load_details(tx, plan.group.id)
+        .map_err(db_error)?
+        .is_some()
+    {
+        return Err(RepositoryError::AlreadyExists);
+    }
+    validate_member_assignments(tx, &plan.group.members)?;
+    if let Selection::Explicit(persona) = &plan.group.persona {
+        ensure_active_persona(tx, *persona)?;
+    }
+    if let Some(asset) = plan.group.background_asset_id {
+        ensure_image_asset(tx, asset)?;
+    }
+    tx.execute("INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,'image',?15,?16,?17,?18)", params![plan.group.id.to_string(), status_name(plan.group.status), plan.group.name, canonical_name(&plan.group.name), chat_mode_name(plan.group.chat_mode), selection_kind(&plan.group.persona), match &plan.group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(plan.group.speaker_selection), memory_name(plan.group.memory_policy), plan.group.disable_character_lorebooks, plan.group.group_conversation_prompt_id.map(|id| id.to_string()), plan.group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&plan.group.presentation, PRESENTATION_VERSION)?, plan.group.background_asset_id.map(|id| id.to_string()), plan.group.starting_scene_id.map(|id| id.to_string()), sql_revision(plan.group.revision)?, plan.group.created_at.get(), plan.group.updated_at.get()]).map_err(db_error)?;
+    write_members(tx, plan.group.id, &plan.group.members)?;
+    write_presentation(tx, plan.group.id, &plan.group.presentation)?;
+    if let Some(starting) = &plan.starting_scene {
+        insert_scene(tx, plan.group.id, starting)?;
+    }
+    let details = load_details(tx, plan.group.id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::Storage)?;
+    details.validate()?;
+    Ok(details)
+}
+
 impl GroupRepository for Database {
     fn create(&self, plan: CreateGroupPlan) -> Result<GroupDetails, RepositoryError> {
-        plan.validate()?;
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        if load_details(&tx, plan.group.id)
-            .map_err(db_error)?
-            .is_some()
-        {
-            return Err(RepositoryError::AlreadyExists);
-        }
-        validate_member_assignments(&tx, &plan.group.members)?;
-        if let Selection::Explicit(persona) = plan.group.persona {
-            ensure_active_persona(&tx, persona)?;
-        }
-        if let Some(asset) = plan.group.background_asset_id {
-            ensure_image_asset(&tx, asset)?;
-        }
-        tx.execute("INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,'image',?15,?16,?17,?18)", params![plan.group.id.to_string(), status_name(plan.group.status), plan.group.name, canonical_name(&plan.group.name), chat_mode_name(plan.group.chat_mode), selection_kind(&plan.group.persona), match plan.group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(plan.group.speaker_selection), memory_name(plan.group.memory_policy), plan.group.disable_character_lorebooks, plan.group.group_conversation_prompt_id.map(|id| id.to_string()), plan.group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&plan.group.presentation, PRESENTATION_VERSION)?, plan.group.background_asset_id.map(|id| id.to_string()), plan.group.starting_scene_id.map(|id| id.to_string()), sql_revision(plan.group.revision)?, plan.group.created_at.get(), plan.group.updated_at.get()]).map_err(db_error)?;
-        write_members(&tx, plan.group.id, &plan.group.members)?;
-        write_presentation(&tx, plan.group.id, &plan.group.presentation)?;
-        if let Some(starting) = &plan.starting_scene {
-            insert_scene(&tx, plan.group.id, starting)?;
-        }
-        let details = load_details(&tx, plan.group.id)
-            .map_err(db_error)?
-            .ok_or(RepositoryError::Storage)?;
-        details.validate()?;
+        let details = insert_group_plan(&tx, &plan)?;
         tx.commit().map_err(db_error)?;
         Ok(details)
     }
