@@ -368,7 +368,7 @@ fn map_sessions(
         let mut group_source_id = row.group_character_id.clone();
         if group_source_id
             .as_ref()
-            .is_some_and(|id| !contains_case_insensitive(&group_ids, id))
+            .is_none_or(|id| !contains_case_insensitive(&group_ids, id))
         {
             group_source_id = None;
             skipped.push(crate::LegacyImportSkip {

@@ -796,6 +796,7 @@ impl LegacyImportRepository for Database {
         &self,
         run_id: LegacyImportRunId,
         stage: LegacyImportStage,
+        (plan_fingerprint, source_fingerprint): (&ContentHash, &ContentHash),
     ) -> Result<Option<LegacyImportStageReceipt>, LegacyImportRepositoryError> {
         let mut connection = self
             .connection()
@@ -803,6 +804,14 @@ impl LegacyImportRepository for Database {
         let transaction = connection
             .transaction()
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let Some(admission) = load_admission(&transaction, run_id)? else {
+            return Ok(None);
+        };
+        if admission.plan_fingerprint != *plan_fingerprint
+            || admission.source_fingerprint.as_ref() != Some(source_fingerprint)
+        {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
         Ok(
             load_stage_receipt(&transaction, run_id, stage)?.map(|mut receipt| {
                 receipt.replayed = true;
@@ -2096,6 +2105,8 @@ fn materialize_conversations(
                 usage: &record.usage,
                 snapshots: record.snapshots,
                 operation,
+                memory: record.memory.as_ref(),
+                memory_projections: &record.memory_projections,
             },
         )
         .map_err(|error| match error {

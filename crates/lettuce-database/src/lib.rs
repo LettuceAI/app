@@ -1475,7 +1475,7 @@ fn hex_encode(bytes: &[u8]) -> String {
     encoded
 }
 
-fn hex_decode(value: &str) -> Result<Vec<u8>, ()> {
+pub(crate) fn hex_decode(value: &str) -> Result<Vec<u8>, ()> {
     if value.is_empty() || value.len() % 2 != 0 {
         return Err(());
     }

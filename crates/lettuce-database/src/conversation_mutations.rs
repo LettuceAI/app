@@ -11788,6 +11788,8 @@ mod tests {
                     usage: &usage,
                     snapshots: snapshot_drafts(&fixture.database),
                     operation: token("history-restore", "ef"),
+                    memory: None,
+                    memory_projections: &[],
                 },
             )
             .expect("restore conversation");

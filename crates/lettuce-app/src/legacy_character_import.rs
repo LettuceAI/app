@@ -652,12 +652,52 @@ mod tests {
                 ),
             ],
         };
+        let memory_id = lettuce_types::MemoryId::new();
+        let session_memory = lettuce_transfer::LegacyBackupMemoryEmbeddingOwner {
+            ordinal: 0,
+            source_id: session_id.to_string(),
+            kind: lettuce_transfer::LegacyBackupMemoryOwnerKind::DirectConversation,
+            memory_embeddings_json: "[]".to_owned(),
+            memories: vec![lettuce_transfer::LegacyBackupMemoryEmbedding {
+                ordinal: 0,
+                id: memory_id.to_string(),
+                text: "The user likes night shifts".to_owned(),
+                embedding: vec![0.25; 64],
+                created_at: 115,
+                token_count: 6,
+                is_cold: false,
+                last_accessed_at: 118,
+                importance_score: 0.8,
+                persistence_importance: 0.6,
+                prompt_importance: 0.7,
+                volatility: 0.4,
+                is_pinned: true,
+                access_count: 2,
+                embedding_source_version: Some("v4".to_owned()),
+                embedding_dimensions: Some(64),
+                match_score: None,
+                category: Some("preference".to_owned()),
+                observed_at: None,
+                observed_time_precision: None,
+                canonical_entities: Vec::new(),
+                fact_signature: None,
+                fact_polarity: None,
+                source_role: None,
+                source_message_id: None,
+                superseded_by: None,
+                superseded_at: None,
+                supersedes: Vec::new(),
+                materialization:
+                    lettuce_transfer::LegacyBackupMemoryMaterialization::InitialItemAndProjection,
+            }],
+        };
         let conversation_receipt = backend
             .legacy_direct_conversation_importer()
             .execute(
                 &admission,
                 &plan,
                 std::slice::from_ref(&session),
+                std::slice::from_ref(&session_memory),
                 TimestampMillis::new(57),
             )
             .expect("materialize direct conversations");
@@ -677,6 +717,16 @@ mod tests {
             )
         );
         assert_eq!(graph.conversation_runtime.conversations[0].turns.len(), 2);
+        let space = graph
+            .memory
+            .spaces
+            .iter()
+            .find(|space| space.conversation_id == session_id)
+            .expect("imported memory space");
+        assert_eq!(space.snapshot.items.len(), 1);
+        assert_eq!(space.snapshot.items[0].id, memory_id);
+        assert!(space.snapshot.items[0].is_pinned);
+        assert_eq!(graph.memory_projections.projections.len(), 1);
 
         let group_session_id = lettuce_types::ConversationId::new();
         let deleted_speaker = CharacterId::new();
@@ -802,6 +852,7 @@ mod tests {
                 &admission,
                 &plan,
                 std::slice::from_ref(&group_session),
+                &[],
                 TimestampMillis::new(58),
             )
             .expect("materialize group conversations");
@@ -875,6 +926,7 @@ mod tests {
                 &replayed_admission,
                 &plan,
                 std::slice::from_ref(&session),
+                std::slice::from_ref(&session_memory),
                 TimestampMillis::new(95),
             )
             .expect("replay direct conversations");
@@ -886,6 +938,7 @@ mod tests {
                 &replayed_admission,
                 &plan,
                 std::slice::from_ref(&group_session),
+                &[],
                 TimestampMillis::new(96),
             )
             .expect("replay group conversations");

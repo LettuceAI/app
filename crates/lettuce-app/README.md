@@ -58,7 +58,16 @@ imported group profile and rewrites the cast to the session's members, reusing
 planned member snapshots, snapshotting members the profile no longer lists, and
 turning speakers whose character is gone into disabled, muted "Unknown" members
 (user decision 2026-09-11) so their messages keep an author. Group sessions
-whose group profile is gone are not importable yet. Candidates always carry the
+whose group profile is gone are recorded as `GroupReference`/`MissingGroup` and
+left out of the stage for now. An all-muted legacy cast unmutes one member
+(legacy refused to generate in that state), a message's author follows its
+active candidate, and members without a model inherit the group model or the
+first member override. Both conversation importers also import the session's
+memory: legacy memories that fit the rewrite's memory item become the
+conversation's memory space with deterministic short ids, stored embeddings of
+64-768 dimensions become ready projections under their legacy source version,
+and a legacy summary covers the latest imported messages (legacy kept no
+window). Memories in an incompatible shape stay in sealed evidence. Candidates always carry the
 launch model snapshot; the legacy message model is kept only in usage. Session settings
 (author note, prompt and lorebook overrides, generation settings, background,
 voice autoplay), memory fields, companion state and attachments are not mapped

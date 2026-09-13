@@ -19,7 +19,7 @@ use lettuce_types::{
 use crate::launch::documents;
 use crate::legacy_direct_conversation_import::{
     ImportContext, LegacyConversationSource, TimelineMessage, TimelineVariant, committed_stage,
-    conversation_record, derived, import_context, launch_key, legacy_user, parse,
+    conversation_record, derived, import_context, launch_key, legacy_user, memory_owner, parse,
     persona_selection, selected_model,
 };
 use crate::{
@@ -50,6 +50,7 @@ where
         admission: &LegacyImportAdmission,
         plan: &LegacyImportPlan,
         sessions: &[LegacyBackupGroupSession],
+        memories: &[lettuce_transfer::LegacyBackupMemoryEmbeddingOwner],
         completed_at: TimestampMillis,
     ) -> Result<LegacyImportStageReceipt, Error> {
         let plan_fingerprint = crate::legacy_import::plan_fingerprint(plan);
@@ -57,9 +58,14 @@ where
             return Err(Error::Conflict);
         }
         let source_fingerprint = plan.source_fingerprint.clone().ok_or(Error::InvalidInput)?;
+        let sessions = sessions
+            .iter()
+            .filter(|session| session.group_source_id.is_some())
+            .collect::<Vec<_>>();
         if let Some(receipt) = committed_stage(
             self.sources,
             admission,
+            &source_fingerprint,
             lettuce_transfer::LegacyImportStage::GroupConversations,
             sessions.len(),
         )? {
@@ -68,7 +74,14 @@ where
         let context = import_context(admission, plan);
         let conversations = sessions
             .iter()
-            .map(|session| self.map_session(session, &context, completed_at))
+            .map(|session| {
+                let memory = memory_owner(
+                    memories,
+                    lettuce_transfer::LegacyBackupMemoryOwnerKind::GroupConversation,
+                    &session.source_id,
+                );
+                self.map_session(session, memory, &context, completed_at)
+            })
             .collect::<Result<Vec<_>, _>>()?;
         self.sources.materialize_group_conversations(
             LegacyDirectConversationMaterializationRequest {
@@ -91,6 +104,7 @@ where
             admission,
             &import.plan,
             &import.compatibility.group_sessions().sessions,
+            &import.compatibility.memory_embeddings().owners,
             completed_at,
         )
     }
@@ -98,6 +112,7 @@ where
     fn map_session(
         &self,
         session: &LegacyBackupGroupSession,
+        memory: Option<&lettuce_transfer::LegacyBackupMemoryEmbeddingOwner>,
         context: &ImportContext,
         now: TimestampMillis,
     ) -> Result<lettuce_transfer::LegacyConversationRecord, Error> {
@@ -190,6 +205,9 @@ where
                 created_at: session.created_at,
                 updated_at: session.updated_at,
                 messages,
+                memory,
+                memory_summary: Some(session.memory_summary.as_str()),
+                memory_summary_token_count: session.memory_summary_token_count,
             },
             context,
         )
@@ -275,8 +293,34 @@ fn session_cast<S: DirectLaunchSources>(
         members.push(member);
         cast.push(participant);
     }
-    if members.iter().all(|member| member.muted || !member.enabled) {
+    if members.is_empty() {
         return Err(Error::InvalidInput);
+    }
+    if members.iter().all(|member| member.muted) {
+        let index = members
+            .iter()
+            .position(|member| member.enabled)
+            .unwrap_or(0);
+        members[index].muted = false;
+        cast[index + 1].muted = false;
+    }
+    let fallback_model = crate::legacy_direct_conversation_import::selected_model(
+        &details.group.model,
+    )
+    .or_else(|| {
+        members.iter().find_map(|member| {
+            crate::legacy_direct_conversation_import::selected_model(&member.model_override)
+        })
+    });
+    if !details.group.model.is_resolved()
+        && let Some(model) = fallback_model
+    {
+        for (index, member) in members.iter_mut().enumerate() {
+            if !member.model_override.is_resolved() {
+                member.model_override = SnapshotSelection::Inherited(model.clone());
+                cast[index + 1].model_selection = member.model_override.clone();
+            }
+        }
     }
     details.group.members = members;
     details.initial_participant_policy.members = cast

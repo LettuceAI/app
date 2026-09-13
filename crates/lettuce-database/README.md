@@ -612,8 +612,11 @@ replay artifacts are rejected for now; candidate media refs are written active.
 The direct conversations stage (after the characters stage) and the group
 conversations stage (after the groups stage) write every legacy session through
 it with one shared stage body; `stage_receipt` lets a caller return a committed
-receipt before rebuilding stage input. Turns targeting one message are inserted
-in input order.
+receipt before rebuilding stage input; it checks the run's stored plan and
+source fingerprints. Turns targeting one message are inserted in input order.
+The writer also restores a conversation's memory space with its own id,
+revision and items (`memory_adapter::insert_space_in`), its summary and its
+embedding projections, after the messages the summary cites.
 
 The read-only legacy provider-secret adapter lists only planned API-key/header
 metadata, then loads one exact value into `SecretValue` on demand. It ignores the

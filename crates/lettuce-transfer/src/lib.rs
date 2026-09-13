@@ -1188,6 +1188,8 @@ pub struct LegacyConversationRecord {
     pub turns: Vec<lettuce_conversations::GenerationTurn>,
     pub usage: Vec<lettuce_usage::UsageEvent>,
     pub snapshots: Vec<lettuce_conversations::SnapshotArtifactDraft>,
+    pub memory: Option<BackupMemorySpace>,
+    pub memory_projections: Vec<BackupMemoryProjection>,
 }
 
 #[derive(Debug)]
@@ -1299,6 +1301,7 @@ pub trait LegacyImportRepository: Send + Sync {
         &self,
         run_id: LegacyImportRunId,
         stage: LegacyImportStage,
+        fingerprints: (&ContentHash, &ContentHash),
     ) -> Result<Option<LegacyImportStageReceipt>, LegacyImportRepositoryError>;
 
     fn materialize_direct_conversations(

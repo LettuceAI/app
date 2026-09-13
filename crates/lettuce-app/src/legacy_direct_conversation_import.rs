@@ -10,16 +10,24 @@ use lettuce_conversations::{
     ParticipantRole, SnapshotArtifactDraft, SnapshotSelection, UsageCounters, UsageOutcome,
     UsageRecord, UsageUnavailableReason,
 };
+use lettuce_memory::{
+    MAX_MEMORY_SUMMARY_SOURCE_MESSAGES, MemoryCategory, MemoryItem, MemoryShortId,
+    MemorySpaceSnapshot, MemorySummary, Score,
+};
 use lettuce_transfer::{
-    BackupConversation, BackupMessage, LEGACY_ID_NAMESPACE, LegacyBackupDirectSession,
-    LegacyConversationRecord, LegacyDirectConversationMaterializationRequest,
-    LegacyImportAdmission, LegacyImportAssignment, LegacyImportPlan, LegacyImportRepository,
-    LegacyImportRepositoryError, LegacyImportStageReceipt,
+    BackupConversation, BackupMemoryProjection, BackupMemoryProjectionState, BackupMemorySpace,
+    BackupMessage, LEGACY_ID_NAMESPACE, LegacyBackupDirectSession,
+    LegacyBackupMemoryEmbeddingOwner, LegacyBackupMemoryMaterialization,
+    LegacyBackupMemoryOwnerKind, LegacyConversationRecord,
+    LegacyDirectConversationMaterializationRequest, LegacyImportAdmission, LegacyImportAssignment,
+    LegacyImportPlan, LegacyImportRepository, LegacyImportRepositoryError,
+    LegacyImportStageReceipt,
 };
 use lettuce_types::{
     CharacterId, ConversationBranchId, ConversationId, ConversationParticipantId,
-    GenerationAttemptId, GenerationTurnId, MessageCandidateId, MessageId, MessageRevisionId,
-    ModelProfileId, PersonaId, ProviderAccountId, Revision, SceneId, TimestampMillis, UsageEventId,
+    GenerationAttemptId, GenerationTurnId, MemoryId, MemorySpaceId, MessageCandidateId, MessageId,
+    MessageRevisionId, ModelProfileId, PersonaId, ProviderAccountId, Revision, SceneId,
+    TimestampMillis, UsageEventId,
 };
 use lettuce_usage::UsageEvent;
 use uuid::Uuid;
@@ -80,6 +88,9 @@ pub(crate) struct LegacyConversationSource<'a> {
     pub created_at: u64,
     pub updated_at: u64,
     pub messages: Vec<TimelineMessage<'a>>,
+    pub memory: Option<&'a LegacyBackupMemoryEmbeddingOwner>,
+    pub memory_summary: Option<&'a str>,
+    pub memory_summary_token_count: u64,
 }
 
 impl<'a, S> LegacyDirectConversationImportCoordinator<'a, S>
@@ -99,6 +110,7 @@ where
         admission: &LegacyImportAdmission,
         plan: &LegacyImportPlan,
         sessions: &[LegacyBackupDirectSession],
+        memories: &[LegacyBackupMemoryEmbeddingOwner],
         completed_at: TimestampMillis,
     ) -> Result<LegacyImportStageReceipt, Error> {
         let plan_fingerprint = crate::legacy_import::plan_fingerprint(plan);
@@ -109,6 +121,7 @@ where
         if let Some(receipt) = committed_stage(
             self.sources,
             admission,
+            &source_fingerprint,
             lettuce_transfer::LegacyImportStage::DirectConversations,
             sessions.len(),
         )? {
@@ -117,7 +130,14 @@ where
         let context = import_context(admission, plan);
         let conversations = sessions
             .iter()
-            .map(|session| self.map_session(session, &context))
+            .map(|session| {
+                let memory = memory_owner(
+                    memories,
+                    LegacyBackupMemoryOwnerKind::DirectConversation,
+                    &session.source_id,
+                );
+                self.map_session(session, memory, &context)
+            })
             .collect::<Result<Vec<_>, _>>()?;
         self.sources.materialize_direct_conversations(
             LegacyDirectConversationMaterializationRequest {
@@ -140,6 +160,7 @@ where
             admission,
             &import.plan,
             &import.compatibility.direct_sessions().sessions,
+            &import.compatibility.memory_embeddings().owners,
             completed_at,
         )
     }
@@ -147,6 +168,7 @@ where
     fn map_session(
         &self,
         session: &LegacyBackupDirectSession,
+        memory: Option<&LegacyBackupMemoryEmbeddingOwner>,
         context: &ImportContext,
     ) -> Result<LegacyConversationRecord, Error> {
         let mut rows = session.messages.iter().collect::<Vec<_>>();
@@ -240,19 +262,172 @@ where
                 created_at: session.created_at,
                 updated_at: session.updated_at,
                 messages,
+                memory,
+                memory_summary: session.memory_summary.as_deref(),
+                memory_summary_token_count: session.memory_summary_token_count,
             },
             context,
         )
     }
 }
 
+pub(crate) fn memory_owner<'a>(
+    owners: &'a [LegacyBackupMemoryEmbeddingOwner],
+    kind: LegacyBackupMemoryOwnerKind,
+    source_id: &str,
+) -> Option<&'a LegacyBackupMemoryEmbeddingOwner> {
+    owners
+        .iter()
+        .find(|owner| owner.kind == kind && owner.source_id == source_id)
+}
+
+/// Legacy session memories that fit the rewrite's memory item become the
+/// conversation's memory space, their stored embeddings become ready
+/// projections, and the rolling summary covers the latest imported messages.
+/// Memories legacy stored in an incompatible shape stay in sealed evidence.
+fn memory_space(
+    conversation_id: ConversationId,
+    source_id: &str,
+    owner: Option<&LegacyBackupMemoryEmbeddingOwner>,
+    summary: Option<&str>,
+    summary_token_count: u64,
+    messages: &[BackupMessage],
+    updated_at: TimestampMillis,
+) -> Result<(Option<BackupMemorySpace>, Vec<BackupMemoryProjection>), Error> {
+    let space_id = MemorySpaceId::from_uuid(derived(source_id, "memory"));
+    let mut items: Vec<MemoryItem> = Vec::new();
+    let mut projections = Vec::new();
+    for memory in owner.into_iter().flat_map(|owner| &owner.memories) {
+        if memory.materialization == LegacyBackupMemoryMaterialization::RetainedEvidence {
+            continue;
+        }
+        let id = parse::<MemoryId>(&memory.id)?;
+        let short_id = MemoryShortId::allocate(id, |candidate| {
+            items.iter().any(|item| item.short_id == candidate)
+        });
+        let score = |value: f32| {
+            Score::from_ratio(if value.is_finite() {
+                f64::from(value).clamp(0.0, 1.0)
+            } else {
+                0.0
+            })
+            .map_err(|_| Error::InvalidInput)
+        };
+        let created_at = timestamp(memory.created_at)?;
+        let last_accessed_at = timestamp(memory.last_accessed_at)?.max(created_at);
+        items.push(MemoryItem {
+            id,
+            short_id,
+            text: memory.text.clone(),
+            category: match memory.category.as_deref() {
+                Some("character_trait") => MemoryCategory::CharacterTrait,
+                Some("relationship") => MemoryCategory::Relationship,
+                Some("plot_event") => MemoryCategory::PlotEvent,
+                Some("world_detail") => MemoryCategory::WorldDetail,
+                Some("preference") => MemoryCategory::Preference,
+                _ => MemoryCategory::Other,
+            },
+            source_message_id: memory
+                .source_message_id
+                .as_deref()
+                .map(|value| MessageId::from_uuid(legacy_uuid(value))),
+            source_role: match memory.source_role.as_deref() {
+                Some("user") => Some(MessageRole::User),
+                Some("assistant") => Some(MessageRole::Assistant),
+                _ => None,
+            },
+            observed_at: memory.observed_at.map(timestamp).transpose()?,
+            observed_time_precision: memory.observed_time_precision.clone(),
+            superseded_by: memory.superseded_by.as_deref().map(parse).transpose()?,
+            superseded_at: memory.superseded_at.map(timestamp).transpose()?,
+            supersedes: memory
+                .supersedes
+                .iter()
+                .map(|value| parse(value))
+                .collect::<Result<_, _>>()?,
+            token_count: memory.token_count,
+            is_cold: memory.is_cold && !memory.is_pinned,
+            is_pinned: memory.is_pinned,
+            importance: score(memory.importance_score)?,
+            persistence_importance: score(memory.persistence_importance)?,
+            prompt_importance: score(memory.prompt_importance)?,
+            volatility: score(memory.volatility)?,
+            access_count: memory.access_count,
+            created_at,
+            last_accessed_at,
+        });
+        let dimensions = memory.embedding.len();
+        if memory.materialization == LegacyBackupMemoryMaterialization::InitialItemAndProjection
+            && matches!(dimensions, 64 | 128 | 256 | 512 | 768)
+            && let Some(source_revision) = &memory.embedding_source_version
+        {
+            projections.push(BackupMemoryProjection {
+                space_id,
+                memory_id: id,
+                source_revision: source_revision.clone(),
+                dimensions: u16::try_from(dimensions).map_err(|_| Error::InvalidInput)?,
+                source_text: memory.text.clone(),
+                state: BackupMemoryProjectionState::Ready {
+                    vector_le_hex: memory
+                        .embedding
+                        .iter()
+                        .flat_map(|value| value.to_le_bytes())
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect(),
+                },
+                updated_at: last_accessed_at,
+            });
+        }
+    }
+    let summary = summary
+        .filter(|text| !text.trim().is_empty() && !messages.is_empty())
+        .map(|text| {
+            let window = messages.len().min(MAX_MEMORY_SUMMARY_SOURCE_MESSAGES);
+            let start = messages.len() - window;
+            Ok::<_, Error>(MemorySummary {
+                space_id,
+                text: text.to_owned(),
+                token_count: u32::try_from(summary_token_count).unwrap_or(u32::MAX),
+                window_start: u64::try_from(start).map_err(|_| Error::InvalidInput)?,
+                window_end: u64::try_from(messages.len()).map_err(|_| Error::InvalidInput)?,
+                source_message_ids: messages[start..]
+                    .iter()
+                    .map(|message| message.message.id)
+                    .collect(),
+                updated_at,
+            })
+        })
+        .transpose()?;
+    if items.is_empty() && summary.is_none() {
+        return Ok((None, Vec::new()));
+    }
+    Ok((
+        Some(BackupMemorySpace {
+            conversation_id,
+            snapshot: MemorySpaceSnapshot {
+                id: space_id,
+                revision: Revision::INITIAL,
+                items,
+            },
+            summary,
+        }),
+        projections,
+    ))
+}
+
 pub(crate) fn committed_stage<S: LegacyImportRepository>(
     sources: &S,
     admission: &LegacyImportAdmission,
+    source_fingerprint: &lettuce_types::ContentHash,
     stage: lettuce_transfer::LegacyImportStage,
     record_count: usize,
 ) -> Result<Option<LegacyImportStageReceipt>, Error> {
-    let Some(receipt) = sources.stage_receipt(admission.run_id, stage)? else {
+    let Some(receipt) = sources.stage_receipt(
+        admission.run_id,
+        stage,
+        (&admission.plan_fingerprint, source_fingerprint),
+    )?
+    else {
         return Ok(None);
     };
     if receipt.record_count != u64::try_from(record_count).map_err(|_| Error::InvalidInput)? {
@@ -394,6 +569,15 @@ pub(crate) fn conversation_record(
         created_at,
         updated_at,
     };
+    let (memory, memory_projections) = memory_space(
+        conversation_id,
+        source.source_id,
+        source.memory,
+        source.memory_summary,
+        source.memory_summary_token_count,
+        &writer.messages,
+        updated_at,
+    )?;
     Ok(LegacyConversationRecord {
         history: BackupConversation {
             aggregate: ConversationAggregate {
@@ -405,6 +589,8 @@ pub(crate) fn conversation_record(
         turns: writer.turns,
         usage: writer.usage,
         snapshots: source.snapshots,
+        memory,
+        memory_projections,
     })
 }
 
@@ -487,7 +673,12 @@ impl SessionWriter<'_> {
                     sequence: Revision::new(
                         u64::try_from(index + 1).map_err(|_| Error::InvalidInput)?,
                     ),
-                    parts: parts(variant.content, variant.reasoning.or(legacy.reasoning)),
+                    parts: parts(
+                        variant.content,
+                        variant.reasoning.or((index == active_variant_index(legacy))
+                            .then_some(legacy.reasoning)
+                            .flatten()),
+                    ),
                     authored_at: timestamp(variant.created_at)?,
                     source_turn_id: None,
                     provider_replay: None,
@@ -498,6 +689,14 @@ impl SessionWriter<'_> {
                 revisions.push(revision);
             }
             MessageRenderSource::Revision(active.ok_or(Error::InvalidInput)?)
+        };
+        let author = match active_render_source {
+            MessageRenderSource::Candidate(active) => candidates
+                .iter()
+                .find(|candidate| candidate.id == active)
+                .map(|candidate| candidate.author_participant_id)
+                .or(author),
+            MessageRenderSource::Revision(_) => author,
         };
         let timeline_ordinal =
             u64::try_from(self.messages.len() + 1).map_err(|_| Error::InvalidInput)?;

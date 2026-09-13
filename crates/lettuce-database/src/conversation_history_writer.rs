@@ -16,7 +16,10 @@ use lettuce_conversations::{
     MessageRevision, OperationKind, OperationResultRef, OperationToken, ProtectedSnapshotRef,
     SnapshotArtifactDraft, SnapshotSelection, ValidationError,
 };
-use lettuce_transfer::{BackupConversation, BackupMessage};
+use lettuce_transfer::{
+    BackupConversation, BackupMemoryProjection, BackupMemoryProjectionState, BackupMemorySpace,
+    BackupMessage,
+};
 use lettuce_types::{
     ConversationBranchId, ConversationId, GenerationAttemptId, MessageId, OutboxEventId, Revision,
     SnapshotArtifactId,
@@ -35,6 +38,8 @@ pub(crate) struct HistoricalConversation<'a> {
     pub usage: &'a [UsageEvent],
     pub snapshots: Vec<SnapshotArtifactDraft>,
     pub operation: OperationToken,
+    pub memory: Option<&'a BackupMemorySpace>,
+    pub memory_projections: &'a [BackupMemoryProjection],
 }
 
 fn invalid(field: &'static str) -> ConversationRepositoryError {
@@ -61,8 +66,15 @@ pub(crate) fn insert_historical_conversation(
         .map_err(ConversationRepositoryError::ArtifactReference)?;
     }
     slice::save_conversation(transaction, conversation)?;
-    if conversation_creator::conversation_uses_memory(&conversation.kind) {
-        crate::memory_adapter::create_conversation_space_in(transaction, conversation_id)?;
+    match input.memory {
+        Some(space) if space.conversation_id == conversation_id => {
+            crate::memory_adapter::insert_space_in(transaction, conversation_id, &space.snapshot)?;
+        }
+        Some(_) => return Err(invalid("history.memory_space")),
+        None if conversation_creator::conversation_uses_memory(&conversation.kind) => {
+            crate::memory_adapter::create_conversation_space_in(transaction, conversation_id)?;
+        }
+        None => {}
     }
     insert_snapshot_refs(transaction, input.history)?;
 
@@ -138,6 +150,7 @@ pub(crate) fn insert_historical_conversation(
         )
         .map_err(slice::db)?;
 
+    insert_memory_state(transaction, input.memory, input.memory_projections)?;
     insert_creation_record(transaction, aggregate, &messages, &input.operation)?;
     let stored = slice::hydrate_conversation(transaction, conversation_id, || {})?;
     let mut expected = aggregate.clone();
@@ -152,6 +165,56 @@ pub(crate) fn insert_historical_conversation(
         return Err(ConversationRepositoryError::Storage);
     }
     Ok(stored)
+}
+
+fn insert_memory_state(
+    transaction: &Transaction<'_>,
+    memory: Option<&BackupMemorySpace>,
+    projections: &[BackupMemoryProjection],
+) -> Result<(), ConversationRepositoryError> {
+    let Some(space) = memory else {
+        return if projections.is_empty() {
+            Ok(())
+        } else {
+            Err(invalid("history.memory_projections"))
+        };
+    };
+    let space_id = space.snapshot.id;
+    if let Some(summary) = &space.summary {
+        crate::memory_adapter::replace_summary_in(transaction, space_id, Some(summary))
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+    }
+    for projection in projections {
+        if projection.space_id != space_id {
+            return Err(invalid("history.memory_projection_space"));
+        }
+        let (status, vector) = match &projection.state {
+            BackupMemoryProjectionState::Ready { vector_le_hex } => (
+                "ready",
+                Some(
+                    crate::hex_decode(vector_le_hex)
+                        .map_err(|()| invalid("history.memory_projection_vector"))?,
+                ),
+            ),
+            BackupMemoryProjectionState::RepairNeeded => ("repair_needed", None),
+        };
+        transaction
+            .execute(
+                "INSERT INTO memory_embedding_projections (space_id, memory_id, source_revision, dimensions, source_text, status, vector, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    space_id.to_string(),
+                    projection.memory_id.to_string(),
+                    projection.source_revision,
+                    i64::from(projection.dimensions),
+                    projection.source_text,
+                    status,
+                    vector,
+                    projection.updated_at.get(),
+                ],
+            )
+            .map_err(kernel::map_constraint)?;
+    }
+    Ok(())
 }
 
 fn validate_turn(

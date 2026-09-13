@@ -115,6 +115,37 @@ pub(super) fn insert_items(
     Ok(())
 }
 
+fn space_storage_error<E>(_: E) -> lettuce_conversations::ConversationRepositoryError {
+    lettuce_conversations::ConversationRepositoryError::Storage
+}
+
+/// Creates a conversation's memory space with its restored id, revision and
+/// items on the caller's transaction.
+pub(crate) fn insert_space_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    space: &lettuce_memory::MemorySpaceSnapshot,
+) -> Result<(), lettuce_conversations::ConversationRepositoryError> {
+    space.validate().map_err(space_storage_error)?;
+    transaction
+        .execute(
+            "INSERT INTO memory_spaces (id, revision) VALUES (?1, ?2)",
+            params![
+                space.id.to_string(),
+                i64::try_from(space.revision.get()).map_err(space_storage_error)?
+            ],
+        )
+        .map_err(space_storage_error)?;
+    transaction
+        .execute(
+            "INSERT INTO conversation_memory_spaces (conversation_id, space_id)
+             VALUES (?1, ?2)",
+            params![conversation_id.to_string(), space.id.to_string()],
+        )
+        .map_err(space_storage_error)?;
+    insert_items(transaction, space.id, &space.items).map_err(space_storage_error)
+}
+
 pub(crate) fn create_conversation_space_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
