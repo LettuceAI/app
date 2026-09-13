@@ -92,6 +92,7 @@ CREATE TABLE legacy_import_runs (
     source_schema_version INTEGER NOT NULL CHECK (source_schema_version > 0),
     inventory_fingerprint TEXT NOT NULL CHECK (length(inventory_fingerprint) = 64),
     plan_fingerprint TEXT NOT NULL CHECK (length(plan_fingerprint) = 64),
+    source_fingerprint TEXT CHECK (source_fingerprint IS NULL OR length(source_fingerprint) = 64),
     status TEXT NOT NULL CHECK (status IN ('admitting','admitted','importing','completed','partial','failed')),
     admitted_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -136,7 +137,7 @@ CREATE TABLE legacy_import_secret_completions (
 ) STRICT;
 
 CREATE TRIGGER legacy_import_runs_binding_immutable
-BEFORE UPDATE OF id, source_schema_version, inventory_fingerprint, plan_fingerprint, admitted_at ON legacy_import_runs
+BEFORE UPDATE OF id, source_schema_version, inventory_fingerprint, plan_fingerprint, source_fingerprint, admitted_at ON legacy_import_runs
 BEGIN
     SELECT RAISE(ABORT, 'legacy import binding is immutable');
 END;
@@ -152,7 +153,8 @@ BEFORE UPDATE OF status ON legacy_import_runs
 WHEN NOT (
     (OLD.status = 'admitting' AND NEW.status = 'admitted') OR
     (OLD.status = 'admitted' AND NEW.status IN ('importing','failed')) OR
-    (OLD.status = 'importing' AND NEW.status IN ('completed','partial','failed'))
+    (OLD.status = 'importing' AND NEW.status IN ('completed','partial','failed')) OR
+    (OLD.status = 'partial' AND NEW.status IN ('completed','failed'))
 )
 BEGIN
     SELECT RAISE(ABORT, 'invalid legacy import status transition');

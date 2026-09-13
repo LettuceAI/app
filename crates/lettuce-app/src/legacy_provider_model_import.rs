@@ -42,14 +42,7 @@ where
         plan: &LegacyImportPlan,
         completed_at: TimestampMillis,
     ) -> Result<LegacyProviderModelReceipt, LegacyProviderModelImportError> {
-        let fingerprint = super::legacy_import::plan_fingerprint(
-            &plan.provider_models,
-            &plan.prompts,
-            &plan.personas,
-            &plan.lorebooks,
-            &plan.asr,
-            &plan.media,
-        );
+        let fingerprint = super::legacy_import::plan_fingerprint(plan);
         if fingerprint != admission.plan_fingerprint {
             return Err(LegacyProviderModelImportError::InvalidAdmission);
         }

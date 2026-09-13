@@ -407,6 +407,8 @@ mod tests {
             lorebooks: lorebooks.clone(),
             asr: asr(),
             media: media.clone(),
+            source_fingerprint: None,
+            later_skips: Vec::new(),
         }
     }
 
@@ -648,6 +650,7 @@ mod tests {
         let run_id = LegacyImportRunId::new();
         let admission = database
             .admit(LegacyImportAdmissionRequest {
+                source_fingerprint: None,
                 skips: Vec::new(),
                 run_id,
                 source_schema_version: lettuce_transfer::LEGACY_DATABASE_SCHEMA_VERSION,

@@ -69,6 +69,7 @@ impl LegacyImportRepository for Database {
             if existing.source_schema_version != request.source_schema_version
                 || existing.inventory_fingerprint != request.inventory_fingerprint
                 || existing.plan_fingerprint != request.plan_fingerprint
+                || existing.source_fingerprint != request.source_fingerprint
                 || assignment_sources(&existing.assignments) != request.sources
                 || existing.skips != request.skips
             {
@@ -83,12 +84,13 @@ impl LegacyImportRepository for Database {
 
         transaction
             .execute(
-                "INSERT INTO legacy_import_runs (id,source_schema_version,inventory_fingerprint,plan_fingerprint,status,admitted_at,updated_at) VALUES (?1,?2,?3,?4,'admitting',?5,?5)",
+                "INSERT INTO legacy_import_runs (id,source_schema_version,inventory_fingerprint,plan_fingerprint,source_fingerprint,status,admitted_at,updated_at) VALUES (?1,?2,?3,?4,?5,'admitting',?6,?6)",
                 params![
                     request.run_id.to_string(),
                     request.source_schema_version,
                     request.inventory_fingerprint.as_str(),
                     request.plan_fingerprint.as_str(),
+                    request.source_fingerprint.as_ref().map(ContentHash::as_str),
                     request.admitted_at.get(),
                 ],
             )
@@ -1820,7 +1822,7 @@ fn load_admission(
 ) -> Result<Option<LegacyImportAdmission>, LegacyImportRepositoryError> {
     let row = transaction
         .query_row(
-            "SELECT source_schema_version,inventory_fingerprint,plan_fingerprint,status,admitted_at FROM legacy_import_runs WHERE id=?1",
+            "SELECT source_schema_version,inventory_fingerprint,plan_fingerprint,status,admitted_at,source_fingerprint FROM legacy_import_runs WHERE id=?1",
             [run_id.to_string()],
             |row| {
                 Ok((
@@ -1829,12 +1831,13 @@ fn load_admission(
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, i64>(4)?,
+                    row.get::<_, Option<String>>(5)?,
                 ))
             },
         )
         .optional()
         .map_err(|_| LegacyImportRepositoryError::Storage)?;
-    let Some((source_schema_version, inventory, plan, status, admitted_at)) = row else {
+    let Some((source_schema_version, inventory, plan, status, admitted_at, source)) = row else {
         return Ok(None);
     };
     Ok(Some(LegacyImportAdmission {
@@ -1843,6 +1846,10 @@ fn load_admission(
         inventory_fingerprint: ContentHash::parse(inventory)
             .map_err(|_| LegacyImportRepositoryError::Storage)?,
         plan_fingerprint: ContentHash::parse(plan)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?,
+        source_fingerprint: source
+            .map(ContentHash::parse)
+            .transpose()
             .map_err(|_| LegacyImportRepositoryError::Storage)?,
         status: parse_status(&status)?,
         assignments: load_assignments(transaction, run_id)?,
@@ -2367,6 +2374,7 @@ mod tests {
     fn request(run_id: LegacyImportRunId) -> LegacyImportAdmissionRequest {
         let provider_account_id = ProviderAccountId::new();
         LegacyImportAdmissionRequest {
+            source_fingerprint: None,
             skips: Vec::new(),
             run_id,
             source_schema_version: LEGACY_DATABASE_SCHEMA_VERSION,

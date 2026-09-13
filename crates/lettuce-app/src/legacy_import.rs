@@ -37,14 +37,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyAsrImportCoordinator<'a, R> {
         plan: &LegacyImportPlan,
         completed_at: TimestampMillis,
     ) -> Result<LegacyAsrReceipt, LegacyImportRepositoryError> {
-        let fingerprint = plan_fingerprint(
-            &plan.provider_models,
-            &plan.prompts,
-            &plan.personas,
-            &plan.lorebooks,
-            &plan.asr,
-            &plan.media,
-        );
+        let fingerprint = plan_fingerprint(plan);
         if fingerprint != admission.plan_fingerprint {
             return Err(LegacyImportRepositoryError::Conflict);
         }
@@ -71,14 +64,7 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportExecutionCoordinator<'a
         plan: &LegacyImportPlan,
         completed_at: TimestampMillis,
     ) -> Result<LegacyImportReceipt, LegacyImportRepositoryError> {
-        let fingerprint = plan_fingerprint(
-            &plan.provider_models,
-            &plan.prompts,
-            &plan.personas,
-            &plan.lorebooks,
-            &plan.asr,
-            &plan.media,
-        );
+        let fingerprint = plan_fingerprint(plan);
         if fingerprint != admission.plan_fingerprint {
             return Err(LegacyImportRepositoryError::Conflict);
         }
@@ -115,6 +101,8 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
             lorebooks,
             asr,
             media,
+            source_fingerprint,
+            later_skips,
         } = plan;
         validate_plan(
             inventory,
@@ -125,18 +113,15 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
             asr,
             media,
         )?;
+        if !valid_later_skips(plan) {
+            return Err(LegacyImportRepositoryError::InvalidInput);
+        }
         self.repository.admit(LegacyImportAdmissionRequest {
             run_id,
             source_schema_version: inventory.schema_version,
             inventory_fingerprint: inventory_fingerprint(inventory),
-            plan_fingerprint: plan_fingerprint(
-                provider_models,
-                prompts,
-                personas,
-                lorebooks,
-                asr,
-                media,
-            ),
+            plan_fingerprint: plan_fingerprint(plan),
+            source_fingerprint: source_fingerprint.clone(),
             sources: LegacyImportSources {
                 provider_account_ids: provider_models
                     .provider_accounts
@@ -212,12 +197,34 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImportAdmissionCoordinator<'a
                 skips.extend(personas.skipped.iter().cloned());
                 skips.extend(lorebooks.skipped.iter().cloned());
                 skips.extend(prompts.skipped.iter().cloned());
+                skips.extend(later_skips.iter().cloned());
                 skips.sort();
                 skips
             },
             admitted_at,
         })
     }
+}
+
+fn valid_later_skips(plan: &LegacyImportPlan) -> bool {
+    let sealed = [
+        &plan.provider_models.skipped,
+        &plan.prompts.skipped,
+        &plan.personas.skipped,
+        &plan.lorebooks.skipped,
+        &plan.media.skipped,
+    ]
+    .into_iter()
+    .flatten()
+    .map(|skip| (skip.kind, skip.source_key.as_str()))
+    .collect::<std::collections::BTreeSet<_>>();
+    plan.later_skips
+        .windows(2)
+        .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
+        && plan.later_skips.iter().all(|skip| {
+            !skip.source_key.trim().is_empty()
+                && !sealed.contains(&(skip.kind, skip.source_key.as_str()))
+        })
 }
 
 fn validate_plan(
@@ -506,12 +513,11 @@ fn valid_media_skips(
                         lorebook.id.to_string() == skip.source_key && lorebook.avatar.is_none()
                     }),
                     lettuce_transfer::LegacyImportSkipKind::CharacterMedia
-                    | lettuce_transfer::LegacyImportSkipKind::GroupMedia => skip
-                        .source_key
-                        .split_once(':')
-                        .is_some_and(|(id, slot)| {
+                    | lettuce_transfer::LegacyImportSkipKind::GroupMedia => {
+                        skip.source_key.split_once(':').is_some_and(|(id, slot)| {
                             uuid::Uuid::parse_str(id).is_ok() && !slot.is_empty()
-                        }),
+                        })
+                    }
                     _ => false,
                 }
         })
@@ -693,15 +699,18 @@ fn inventory_fingerprint(inventory: &LegacyDatabaseInventory) -> ContentHash {
     hash.finish()
 }
 
-pub(crate) fn plan_fingerprint(
-    provider_models: &LegacyProviderModelPlan,
-    prompts: &LegacyPromptPlan,
-    personas: &LegacyPersonaPlan,
-    lorebooks: &LegacyLorebookPlan,
-    asr: &LegacyAsrPlan,
-    media: &LegacyMediaPlan,
-) -> ContentHash {
-    let mut hash = Fingerprint::new("lettuce-legacy-import-plan-v5");
+pub(crate) fn plan_fingerprint(plan: &LegacyImportPlan) -> ContentHash {
+    let LegacyImportPlan {
+        provider_models,
+        prompts,
+        personas,
+        lorebooks,
+        asr,
+        media,
+        source_fingerprint,
+        later_skips,
+    } = plan;
+    let mut hash = Fingerprint::new("lettuce-legacy-import-plan-v6");
     hash.u64(provider_models.provider_accounts.len() as u64);
     for provider in &provider_models.provider_accounts {
         hash.text(&provider.id.to_string());
@@ -857,6 +866,10 @@ pub(crate) fn plan_fingerprint(
     write_skips(&mut hash, &lorebooks.skipped);
     write_asr_plan(&mut hash, asr);
     write_skips(&mut hash, &media.skipped);
+    hash.option(source_fingerprint.as_ref(), |hash, value| {
+        hash.text(value.as_str())
+    });
+    write_skips(&mut hash, later_skips);
     hash.u64(media.media.len() as u64);
     for candidate in &media.media {
         hash.text(&candidate.relative_path);
@@ -1152,6 +1165,8 @@ mod tests {
             lorebooks: lorebooks.clone(),
             asr: asr(),
             media: media.clone(),
+            source_fingerprint: None,
+            later_skips: Vec::new(),
         }
     }
 
@@ -1572,6 +1587,8 @@ mod tests {
             lorebooks: lorebooks.clone(),
             asr: asr(),
             media: media.clone(),
+            source_fingerprint: None,
+            later_skips: Vec::new(),
         };
         let inventory = LegacyDatabaseInventory {
             prompts: 1,

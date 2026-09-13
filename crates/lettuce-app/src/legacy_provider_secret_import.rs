@@ -247,6 +247,7 @@ mod tests {
         let admission = backend
             .database()
             .admit(LegacyImportAdmissionRequest {
+                source_fingerprint: None,
                 skips: Vec::new(),
                 run_id,
                 source_schema_version: LEGACY_DATABASE_SCHEMA_VERSION,
@@ -328,6 +329,7 @@ mod tests {
         let replayed_admission = reopened
             .database()
             .admit(LegacyImportAdmissionRequest {
+                source_fingerprint: None,
                 skips: Vec::new(),
                 run_id,
                 source_schema_version: LEGACY_DATABASE_SCHEMA_VERSION,

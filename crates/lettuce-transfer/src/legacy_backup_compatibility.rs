@@ -68,14 +68,44 @@ impl LegacyBackupCompatibilityPlan {
             .source
             .source;
         let authored = &asr.source.authored;
-        crate::LegacyImportPlan {
+        let group_sessions = &self.creation_helpers.source.source.source.source;
+        let direct_sessions = &group_sessions.source;
+        let mut plan = crate::LegacyImportPlan {
             provider_models: authored.configuration.provider_models.clone(),
             prompts: authored.configuration.prompts.clone(),
             personas: authored.personas.clone(),
             lorebooks: authored.lorebooks.clone(),
             asr: asr.asr.clone(),
             media: asr.source.media.clone(),
-        }
+            source_fingerprint: Some(self.fingerprint.clone()),
+            later_skips: Vec::new(),
+        };
+        let sealed = [
+            &plan.provider_models.skipped,
+            &plan.prompts.skipped,
+            &plan.personas.skipped,
+            &plan.lorebooks.skipped,
+            &plan.media.skipped,
+        ]
+        .into_iter()
+        .flatten()
+        .map(|skip| (skip.kind, skip.source_key.clone()))
+        .collect::<BTreeSet<_>>();
+        let mut later_skips = authored
+            .configuration
+            .skipped
+            .iter()
+            .chain(&authored.skipped)
+            .chain(&direct_sessions.skipped)
+            .chain(&group_sessions.skipped)
+            .filter(|skip| !sealed.contains(&(skip.kind, skip.source_key.clone())))
+            .cloned()
+            .collect::<Vec<_>>();
+        later_skips.sort();
+        later_skips
+            .dedup_by(|left, right| left.kind == right.kind && left.source_key == right.source_key);
+        plan.later_skips = later_skips;
+        plan
     }
 
     pub(crate) fn inventory(&self) -> &LegacyBackupInventory {

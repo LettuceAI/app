@@ -553,7 +553,12 @@ immutable. Existing get/record methods persist and replay the enriched basis;
 no schema change is needed. App file-backed tests cover differing raw/native
 counts and cost amounts surviving reopen without a second lookup.
 
-Migration 1 also stores sealed legacy import admissions and their stable destination ID assignments. Admission is one immediate transaction: the source schema, inventory and plan fingerprints are immutable, assignments can only be inserted while the run is being admitted, and a rollback leaves neither the run nor a partial mapping. Exact replay survives reopen; a changed binding or source set conflicts. Provider accounts additionally receive stable secret-owner IDs, and pending API keys and ordered header names receive opaque secret references. The assignment schema has no secret-value column and admission does not create provider, model, persona, lorebook, entry, asset, or blob rows. Graph materialization leaves a provider-bearing run importing so later provider transfer can complete the same sealed run.
+Migration 1 also stores sealed legacy import admissions and their stable destination ID assignments. Admission is one immediate transaction: the source schema, inventory and plan fingerprints are immutable, assignments can only be inserted while the run is being admitted, and a rollback leaves neither the run nor a partial mapping. Exact replay survives reopen; a changed binding or source set conflicts. Provider accounts additionally receive stable secret-owner IDs, and pending API keys and ordered header names receive opaque secret references. The assignment schema has no secret-value column and admission does not create provider, model, persona, lorebook, entry, asset, or blob rows. Graph materialization leaves a provider-bearing run importing so later provider transfer can complete the same sealed run. A run admitted
+from the shared legacy backup planner also seals that compatibility plan's
+fingerprint as its immutable `source_fingerprint`. It seals the skips of the
+domains later stages write (chat templates, characters, groups, direct and group
+sessions) together with the admitted sub-plan skips. A `partial` run may still
+advance to `completed` or `failed` once those later stages finish.
 
 The read-only legacy provider-secret adapter lists only planned API-key/header
 metadata, then loads one exact value into `SecretValue` on demand. It ignores the

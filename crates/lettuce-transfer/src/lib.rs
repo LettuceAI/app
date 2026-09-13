@@ -925,6 +925,7 @@ pub struct LegacyImportAdmissionRequest {
     pub source_schema_version: u32,
     pub inventory_fingerprint: ContentHash,
     pub plan_fingerprint: ContentHash,
+    pub source_fingerprint: Option<ContentHash>,
     pub sources: LegacyImportSources,
     pub skips: Vec<LegacyImportSkip>,
     pub admitted_at: TimestampMillis,
@@ -938,6 +939,10 @@ pub struct LegacyImportPlan {
     pub lorebooks: LegacyLorebookPlan,
     pub asr: LegacyAsrPlan,
     pub media: LegacyMediaPlan,
+    /// The sealed legacy compatibility plan every later import stage binds to.
+    pub source_fingerprint: Option<ContentHash>,
+    /// Skips for domains later import stages write, sealed at admission.
+    pub later_skips: Vec<LegacyImportSkip>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1001,6 +1006,7 @@ pub struct LegacyImportAdmission {
     pub source_schema_version: u32,
     pub inventory_fingerprint: ContentHash,
     pub plan_fingerprint: ContentHash,
+    pub source_fingerprint: Option<ContentHash>,
     pub status: LegacyImportRunStatus,
     pub assignments: Vec<LegacyImportAssignment>,
     pub skips: Vec<LegacyImportSkip>,
