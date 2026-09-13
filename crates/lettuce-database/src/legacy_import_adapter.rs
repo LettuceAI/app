@@ -1880,6 +1880,7 @@ fn skip_kind_name(kind: lettuce_transfer::LegacyImportSkipKind) -> &'static str 
         lettuce_transfer::LegacyImportSkipKind::MessageVariantReference => {
             "message_variant_reference"
         }
+        lettuce_transfer::LegacyImportSkipKind::ModelProfile => "model_profile",
     }
 }
 
@@ -1959,6 +1960,7 @@ fn load_skips(
                 "message_variant_reference" => {
                     lettuce_transfer::LegacyImportSkipKind::MessageVariantReference
                 }
+                "model_profile" => lettuce_transfer::LegacyImportSkipKind::ModelProfile,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             let reason = match reason.as_str() {

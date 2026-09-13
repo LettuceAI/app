@@ -551,6 +551,13 @@ fn valid_provider_model_plan(plan: &LegacyProviderModelPlan) -> bool {
                 lettuce_transfer::LegacyImportSkipKind::SettingsDefaultProviderAccount
                     | lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile
             ) || legacy_value_skip(skip, &["provider_credentials.", "models."])
+                || (skip.kind == lettuce_transfer::LegacyImportSkipKind::ModelProfile
+                    && skip.reason
+                        == lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount
+                    && skip
+                        .source_key
+                        .parse::<lettuce_types::ModelProfileId>()
+                        .is_ok_and(|id| !model_ids.contains(&id)))
         })
 }
 
@@ -574,6 +581,7 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipKind::CharacterReference => 15,
             lettuce_transfer::LegacyImportSkipKind::PersonaReference => 16,
             lettuce_transfer::LegacyImportSkipKind::MessageVariantReference => 17,
+            lettuce_transfer::LegacyImportSkipKind::ModelProfile => 18,
         });
         hash.text(&skip.source_key);
         hash.u32(match skip.reason {
@@ -1089,6 +1097,22 @@ mod tests {
         assert!(super::valid_prompt_plan(&plan));
         plan.default_prompt_source_id = Some("deleted-template".to_owned());
         assert!(!super::valid_prompt_plan(&plan));
+    }
+
+    #[test]
+    fn models_skipped_for_a_deleted_provider_must_be_absent_from_the_plan() {
+        let skip = |id: String| lettuce_transfer::LegacyImportSkip {
+            kind: lettuce_transfer::LegacyImportSkipKind::ModelProfile,
+            source_key: id,
+            reason: lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount,
+        };
+        let mut plan = provider_models();
+        plan.skipped = vec![skip(lettuce_types::ModelProfileId::new().to_string())];
+        assert!(super::valid_provider_model_plan(&plan));
+        if let Some(model) = provider_models().model_profiles.first() {
+            plan.skipped = vec![skip(model.id.to_string())];
+            assert!(!super::valid_provider_model_plan(&plan));
+        }
     }
 
     fn asr() -> LegacyAsrPlan {

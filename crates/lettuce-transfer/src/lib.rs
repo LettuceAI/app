@@ -423,6 +423,7 @@ pub enum LegacyImportSkipKind {
     CharacterReference,
     PersonaReference,
     MessageVariantReference,
+    ModelProfile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

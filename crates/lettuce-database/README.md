@@ -763,8 +763,9 @@ longer exists (legacy `provider_delete` and `model_delete` never cleared them an
 the old app ignored a stale id), and a settings default prompt that no longer
 exists (recorded as a prompt reference; legacy fell back to the built-in default,
 while the execution step used to drop it silently). A model whose provider credential no longer
-resolves still aborts the import: the old app kept listing and editing such a
-model, so dropping it would lose data. The media planner also prunes and records
+resolves is skipped and recorded as a `model_profile` skip keyed by the model
+id (user decision 2026-09-13: models of a deleted provider are not imported);
+references to it are cleared like any other stale model reference. The media planner also prunes and records
 references whose file is gone: a persona avatar (with its crop), each persona
 design reference and a lorebook avatar, since the old app showed no image for
 them and the stale id stays in the untouched legacy database; the reference

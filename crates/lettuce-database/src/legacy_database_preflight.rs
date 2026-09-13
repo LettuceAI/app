@@ -1073,14 +1073,21 @@ fn plan_legacy_provider_models_with_limits(
             .map(ProviderAccountId::from_str)
             .transpose()
             .map_err(|_| model_malformed("provider_credential_id"))?;
-        let provider_account_id = resolve_legacy_provider_account(
+        let Some(provider_account_id) = resolve_legacy_provider_account(
             &provider_accounts,
             &provider_kind,
             explicit_provider_id,
             &provider_label,
             &external_model_id,
             default_provider_account_id,
-        )?;
+        ) else {
+            skipped.push(lettuce_transfer::LegacyImportSkip {
+                kind: lettuce_transfer::LegacyImportSkipKind::ModelProfile,
+                source_key: id.to_string(),
+                reason: lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount,
+            });
+            continue;
+        };
         let input_modalities = parse_modalities(
             lenient_legacy_json(
                 input_scopes.as_deref(),
@@ -1987,16 +1994,16 @@ fn resolve_legacy_provider_account(
     provider_label: &str,
     model_name: &str,
     default_id: Option<ProviderAccountId>,
-) -> Result<ProviderAccountId, LegacyDatabasePreflightError> {
+) -> Option<ProviderAccountId> {
     if provider_kind.eq_ignore_ascii_case("llamacpp") {
-        return Ok(legacy_builtin_llama_account_id());
+        return Some(legacy_builtin_llama_account_id());
     }
     if let Some(provider) = explicit_id.and_then(|id| {
         providers
             .iter()
             .find(|provider| provider.id == id && provider.provider_kind == provider_kind)
     }) {
-        return Ok(provider.id);
+        return Some(provider.id);
     }
     let candidates = providers
         .iter()
@@ -2008,29 +2015,22 @@ fn resolve_legacy_provider_account(
             .copied()
             .find(|provider| provider.id == id)
     }) {
-        return Ok(provider.id);
+        return Some(provider.id);
     }
     if let [provider] = candidates.as_slice() {
-        return Ok(provider.id);
+        return Some(provider.id);
     }
-    if let Some(provider) = candidates
+    candidates
         .iter()
         .copied()
         .find(|provider| provider.label == provider_label)
-    {
-        return Ok(provider.id);
-    }
-    if let Some(provider) = candidates
-        .iter()
-        .copied()
-        .find(|provider| provider.default_model.as_deref() == Some(model_name))
-    {
-        return Ok(provider.id);
-    }
-    Err(LegacyDatabasePreflightError::OrphanRecord {
-        table: "models",
-        parent_table: "provider_credentials",
-    })
+        .or_else(|| {
+            candidates
+                .iter()
+                .copied()
+                .find(|provider| provider.default_model.as_deref() == Some(model_name))
+        })
+        .map(|provider| provider.id)
 }
 
 fn legacy_builtin_llama_account_id() -> ProviderAccountId {
@@ -2957,12 +2957,16 @@ mod tests {
                 [model_id.to_string()],
             )
             .expect("insert orphan model");
+        let plan =
+            plan_legacy_provider_models(&path).expect("a model without a provider is skipped");
+        assert!(plan.model_profiles.is_empty());
         assert_eq!(
-            plan_legacy_provider_models(&path),
-            Err(LegacyDatabasePreflightError::OrphanRecord {
-                table: "models",
-                parent_table: "provider_credentials"
-            })
+            plan.skipped,
+            vec![lettuce_transfer::LegacyImportSkip {
+                kind: lettuce_transfer::LegacyImportSkipKind::ModelProfile,
+                source_key: model_id.to_string(),
+                reason: lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount,
+            }]
         );
         connection
             .execute("DELETE FROM models", [])

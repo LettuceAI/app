@@ -1125,14 +1125,21 @@ fn map_provider_models(
             .as_ref()
             .and_then(|value| source_provider_ids.get(value))
             .copied();
-        let provider_id = resolve_provider(
+        let Some(provider_id) = resolve_provider(
             &providers,
             &row.provider_id,
             explicit,
             &row.provider_label,
             &row.name,
             settings.default_provider_account_id,
-        )?;
+        ) else {
+            skipped.push(crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::ModelProfile,
+                source_key: id.to_string(),
+                reason: crate::LegacyImportSkipReason::MissingProviderAccount,
+            });
+            continue;
+        };
         let input = legacy_scopes(
             row.input_scopes.as_deref(),
             row.model_type.as_deref(),
@@ -2332,20 +2339,19 @@ fn resolve_provider(
     label: &str,
     model: &str,
     default: Option<ProviderAccountId>,
-) -> Result<ProviderAccountId, LegacyBackupConfigurationError> {
+) -> Option<ProviderAccountId> {
     if kind.eq_ignore_ascii_case("llamacpp") {
         return providers
             .iter()
             .find(|provider| provider.origin == LegacyProviderAccountOrigin::BuiltInLlamaCpp)
-            .map(|provider| provider.id)
-            .ok_or_else(|| orphan(LegacyBackupDocumentKind::Models, "provider_id"));
+            .map(|provider| provider.id);
     }
     if let Some(provider) = explicit.and_then(|id| {
         providers
             .iter()
             .find(|provider| provider.id == id && provider.provider_kind == kind)
     }) {
-        return Ok(provider.id);
+        return Some(provider.id);
     }
     let candidates = providers
         .iter()
@@ -2357,29 +2363,22 @@ fn resolve_provider(
             .copied()
             .find(|provider| provider.id == id)
     }) {
-        return Ok(provider.id);
+        return Some(provider.id);
     }
     if let [provider] = candidates.as_slice() {
-        return Ok(provider.id);
+        return Some(provider.id);
     }
-    if let Some(provider) = candidates
+    candidates
         .iter()
         .copied()
         .find(|provider| provider.label == label)
-    {
-        return Ok(provider.id);
-    }
-    if let Some(provider) = candidates
-        .iter()
-        .copied()
-        .find(|provider| provider.default_model.as_deref() == Some(model))
-    {
-        return Ok(provider.id);
-    }
-    Err(orphan(
-        LegacyBackupDocumentKind::Models,
-        "provider_credential_id",
-    ))
+        .or_else(|| {
+            candidates
+                .iter()
+                .copied()
+                .find(|provider| provider.default_model.as_deref() == Some(model))
+        })
+        .map(|provider| provider.id)
 }
 
 fn legacy_scopes(
@@ -3128,6 +3127,32 @@ mod tests {
             LegacyBackupConfigurationError::Malformed { ref field, .. }
                 if field == "advanced_settings.dynamicMemoryStructuredFallbackFormat"
         ));
+    }
+
+    #[test]
+    fn models_whose_provider_was_deleted_are_skipped() {
+        let orphan_model = ModelProfileId::new();
+        let plan = plan_legacy_backup_configuration(inventory(vec![document(
+            LegacyBackupDocumentKind::Models,
+            json!([{
+                "id": orphan_model,
+                "name": "model-a",
+                "provider_id": "anthropic",
+                "provider_label": "Deleted",
+                "display_name": "Model A",
+                "created_at": 10
+            }]),
+        )]))
+        .expect("a model without a provider is skipped");
+        assert!(plan.provider_models.model_profiles.is_empty());
+        assert_eq!(
+            plan.provider_models.skipped,
+            vec![crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::ModelProfile,
+                source_key: orphan_model.to_string(),
+                reason: crate::LegacyImportSkipReason::MissingProviderAccount,
+            }]
+        );
     }
 
     #[test]
