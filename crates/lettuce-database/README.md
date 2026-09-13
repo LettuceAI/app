@@ -601,6 +601,17 @@ assignments, as are the dynamic-memory and group-speaker model columns. The
 default model and prompt stay as the provider/prompt stage wrote them. The
 settings revision advances once and a replay changes nothing.
 
+`conversation_history_writer` inserts a finished conversation from the backup
+v2 history shapes with its own ids and timestamps: snapshot drafts, the
+conversation and its participants, branches, messages, revisions, initial
+origins, turns walked through their legal statuses, attempts, usage references
+and events, and candidates, then the create operation and `conversation_created`
+outbox event so later live mutations work. Failed or cancelled turns without a
+candidate, turns carrying speaker, lorebook or memory attribution, and provider
+replay artifacts are rejected for now; candidate media refs are written active.
+The direct conversations stage (after the characters stage) writes every legacy
+direct session through it.
+
 The read-only legacy provider-secret adapter lists only planned API-key/header
 metadata, then loads one exact value into `SecretValue` on demand. It ignores the
 obsolete pre-v7 API-key reference and never opens the source writable. Migration

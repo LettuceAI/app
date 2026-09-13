@@ -124,6 +124,11 @@ impl LegacyBackupCompatibilityPlan {
             .authored
     }
 
+    #[must_use]
+    pub fn direct_sessions(&self) -> &crate::LegacyBackupDirectSessionPlan {
+        &self.creation_helpers.source.source.source.source.source
+    }
+
     pub(crate) fn inventory(&self) -> &LegacyBackupInventory {
         &self.configuration().source
     }

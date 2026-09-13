@@ -108,13 +108,61 @@ mod tests {
         ));
         let prompt_source = "legacy-direct-prompt".to_owned();
         let legacy_lorebook = LorebookId::new();
+        let legacy_provider = lettuce_types::ProviderAccountId::new();
+        let legacy_model = lettuce_types::ModelProfileId::new();
         let plan = LegacyImportPlan {
             provider_models: LegacyProviderModelPlan {
                 skipped: Vec::new(),
-                provider_accounts: Vec::new(),
-                model_profiles: Vec::new(),
-                default_provider_account_id: None,
-                default_model_profile_id: None,
+                provider_accounts: vec![lettuce_transfer::LegacyProviderAccountCandidate {
+                    id: legacy_provider,
+                    origin: lettuce_transfer::LegacyProviderAccountOrigin::Stored,
+                    secret_owner_id: lettuce_settings::SecretOwnerId::from_uuid(
+                        legacy_provider.as_uuid(),
+                    ),
+                    provider_kind: "openai".to_owned(),
+                    protocol: lettuce_models::ProviderProtocol::OpenAiCompatible,
+                    label: "Primary".to_owned(),
+                    endpoint: None,
+                    enabled: true,
+                    streaming_enabled: true,
+                    allow_invalid_tls: false,
+                    default_model: None,
+                    config: lettuce_models::ProviderConfig::Standard,
+                    pending_secrets: Vec::new(),
+                    deferred_config_fields: Vec::new(),
+                    created_at: TimestampMillis::new(1),
+                    updated_at: TimestampMillis::new(1),
+                }],
+                model_profiles: vec![lettuce_transfer::LegacyModelProfileCandidate {
+                    id: legacy_model,
+                    provider_account_id: legacy_provider,
+                    source_provider_kind: "openai".to_owned(),
+                    source_provider_label: "Primary".to_owned(),
+                    external_model_id: "gpt-example".to_owned(),
+                    display_name: "Example Chat".to_owned(),
+                    kind: lettuce_models::ModelKind::Chat,
+                    config: lettuce_models::ModelProfileConfig {
+                        chat_parameters: Default::default(),
+                        lorebook_generator_parameters: Default::default(),
+                        capabilities: lettuce_models::ModelCapabilities {
+                            input_modalities: lettuce_models::ModalityCapabilities {
+                                text: lettuce_models::CapabilityStatus::Supported,
+                                ..Default::default()
+                            },
+                            output_modalities: lettuce_models::ModalityCapabilities {
+                                text: lettuce_models::CapabilityStatus::Supported,
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                    },
+                    prompt_template_id: None,
+                    deprecated_system_prompt: None,
+                    deferred_advanced_fields: Vec::new(),
+                    created_at: TimestampMillis::new(1),
+                }],
+                default_provider_account_id: Some(legacy_provider),
+                default_model_profile_id: Some(legacy_model),
             },
             prompts: LegacyPromptPlan {
                 skipped: Vec::new(),
@@ -179,8 +227,8 @@ mod tests {
         };
         let inventory = LegacyDatabaseInventory {
             schema_version: 92,
-            provider_accounts: 0,
-            models: 0,
+            provider_accounts: 1,
+            models: 1,
             prompts: 1,
             personas: 0,
             characters: 2,
@@ -498,6 +546,132 @@ mod tests {
                 .expect("group bindings");
         assert_eq!(group_bound.len(), 1);
         assert_eq!(group_bound[0].lorebook_id, lorebook_id);
+
+        let session_id = lettuce_types::ConversationId::new();
+        let first_variant = lettuce_types::MessageCandidateId::new().to_string();
+        let second_variant = lettuce_types::MessageCandidateId::new().to_string();
+        let usage = |prompt_tokens, completion_tokens| lettuce_transfer::LegacyBackupMessageUsage {
+            prompt_tokens,
+            completion_tokens,
+            total_tokens: None,
+            first_token_ms: None,
+            tokens_per_second: None,
+            mtp_stats_json: None,
+        };
+        let message = |role: &str, ordinal, content: &str, created_at, variants, selected| {
+            lettuce_transfer::LegacyBackupDirectMessage {
+                source_id: lettuce_types::MessageId::new().to_string(),
+                ordinal,
+                role: role.to_owned(),
+                content: content.to_owned(),
+                created_at,
+                effective_at: None,
+                visible_in_chat: false,
+                scene_edited: false,
+                usage: usage(None, None),
+                model_source_id: None,
+                selected_variant_source_id: selected,
+                pinned: false,
+                memory_refs_json: "[]".to_owned(),
+                used_lorebook_entries_json: "[]".to_owned(),
+                attachments_json: "[]".to_owned(),
+                reasoning: None,
+                parent_message_source_id: None,
+                variants,
+            }
+        };
+        let session = lettuce_transfer::LegacyBackupDirectSession {
+            source_id: session_id.to_string(),
+            character_source_id: second_id.to_string(),
+            title: "Night shift".to_owned(),
+            parent_session_source_id: None,
+            branched_from_message_source_id: None,
+            root_session_source_id: session_id.to_string(),
+            background_image_locator: None,
+            deprecated_system_prompt: None,
+            mode: "roleplay".to_owned(),
+            selected_scene_source_id: None,
+            author_note: None,
+            persona_source_id: None,
+            persona_disabled: false,
+            voice_autoplay: None,
+            prompt_source_id: None,
+            lorebook_source_ids_override: None,
+            generation_settings: lettuce_transfer::LegacyBackupSessionGenerationSettings {
+                temperature: None,
+                top_p: None,
+                max_output_tokens: None,
+                frequency_penalty: None,
+                presence_penalty: None,
+                top_k: None,
+                advanced_json: None,
+            },
+            companion_state_json: None,
+            memories_json: "[]".to_owned(),
+            memory_embeddings_json: "[]".to_owned(),
+            memory_summary: None,
+            memory_summary_token_count: 0,
+            memory_tool_events_json: "[]".to_owned(),
+            memory_status: None,
+            memory_error: None,
+            memory_progress_step: None,
+            archived: false,
+            created_at: 100,
+            updated_at: 130,
+            messages: vec![
+                message("user", 0, "Hello", 110, Vec::new(), None),
+                message(
+                    "assistant",
+                    1,
+                    "Second take",
+                    120,
+                    vec![
+                        lettuce_transfer::LegacyBackupDirectMessageVariant {
+                            source_id: first_variant.clone(),
+                            ordinal: 0,
+                            content: "First take".to_owned(),
+                            created_at: 120,
+                            usage: usage(Some(12), Some(4)),
+                            reasoning: None,
+                        },
+                        lettuce_transfer::LegacyBackupDirectMessageVariant {
+                            source_id: second_variant.clone(),
+                            ordinal: 1,
+                            content: "Second take".to_owned(),
+                            created_at: 125,
+                            usage: usage(None, None),
+                            reasoning: None,
+                        },
+                    ],
+                    Some(second_variant.clone()),
+                ),
+            ],
+        };
+        let conversation_receipt = backend
+            .legacy_direct_conversation_importer()
+            .execute(
+                &admission,
+                &plan,
+                std::slice::from_ref(&session),
+                TimestampMillis::new(57),
+            )
+            .expect("materialize direct conversations");
+        assert_eq!(conversation_receipt.record_count, 1);
+        let graph =
+            lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(backend.database())
+                .expect("backup graph");
+        let history = &graph.conversation_history.conversations[0];
+        assert_eq!(history.aggregate.conversation.id, session_id);
+        assert_eq!(history.messages.len(), 2);
+        let reply = &history.messages[1];
+        assert_eq!(reply.candidates.len(), 2);
+        assert_eq!(
+            reply.message.active_render_source,
+            lettuce_conversations::MessageRenderSource::Candidate(
+                second_variant.parse().expect("candidate id")
+            )
+        );
+        assert_eq!(graph.conversation_runtime.conversations[0].turns.len(), 2);
         drop(backend);
 
         let reopened = AppBackend::open(&path, TimestampMillis::new(60)).expect("reopen backend");
@@ -529,6 +703,17 @@ mod tests {
             .expect("replay groups");
         assert!(group_replay.replayed);
         assert_eq!(group_replay.completed_at, TimestampMillis::new(55));
+        let conversation_replay = reopened
+            .legacy_direct_conversation_importer()
+            .execute(
+                &replayed_admission,
+                &plan,
+                std::slice::from_ref(&session),
+                TimestampMillis::new(95),
+            )
+            .expect("replay direct conversations");
+        assert!(conversation_replay.replayed);
+        assert_eq!(conversation_replay.completed_at, TimestampMillis::new(57));
         drop(reopened);
         fs::remove_file(path).expect("remove database");
     }

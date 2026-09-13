@@ -7,7 +7,6 @@ mod character_adapter;
 mod consolidation_adapter;
 mod conversation_artifact_adapter;
 mod conversation_creator;
-#[cfg_attr(not(test), allow(dead_code))]
 mod conversation_history_writer;
 mod conversation_mutation_kernel;
 mod conversation_mutations;

@@ -1144,6 +1144,7 @@ pub enum LegacyImportStage {
     Groups,
     Audio,
     Settings,
+    DirectConversations,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1175,6 +1176,25 @@ pub struct LegacyAudioMaterializationRequest {
     pub source_fingerprint: ContentHash,
     pub audio_providers: Vec<lettuce_speech::AudioProvider>,
     pub user_voices: Vec<lettuce_speech::UserVoice>,
+    pub completed_at: TimestampMillis,
+}
+
+/// One finished legacy conversation in the backup v2 history shapes, with the
+/// launch snapshot drafts it references.
+#[derive(Debug)]
+pub struct LegacyConversationRecord {
+    pub history: BackupConversation,
+    pub turns: Vec<lettuce_conversations::GenerationTurn>,
+    pub usage: Vec<lettuce_usage::UsageEvent>,
+    pub snapshots: Vec<lettuce_conversations::SnapshotArtifactDraft>,
+}
+
+#[derive(Debug)]
+pub struct LegacyDirectConversationMaterializationRequest {
+    pub run_id: LegacyImportRunId,
+    pub plan_fingerprint: ContentHash,
+    pub source_fingerprint: ContentHash,
+    pub conversations: Vec<LegacyConversationRecord>,
     pub completed_at: TimestampMillis,
 }
 
@@ -1270,5 +1290,10 @@ pub trait LegacyImportRepository: Send + Sync {
     fn materialize_settings(
         &self,
         request: LegacySettingsMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
+
+    fn materialize_direct_conversations(
+        &self,
+        request: LegacyDirectConversationMaterializationRequest,
     ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
 }

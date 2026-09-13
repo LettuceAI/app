@@ -36,6 +36,20 @@ loads and compares the key instead of rewriting it. It then runs the audio stage
 for the providers and user voices.
 `AppBackend::legacy_settings_importer` runs the settings stage for the planned
 global settings and their remapped feature model and prompt selections.
+`AppBackend::legacy_direct_conversation_importer` turns each legacy direct
+session into a finished conversation. The launch snapshots come from
+`ConversationLaunchPlanner::prepare_direct` against the imported character,
+persona, scene and default model; the conversation keeps the legacy session id.
+Each assistant variant becomes a candidate of its own succeeded turn (send or
+continue for the first, regenerate for the rest), with a usage event that keeps
+the legacy prompt/completion tokens when both are present, and the selected
+variant stays active. Without a parent message or a chat model the variants are
+kept as ordered revisions instead. An opening scene row becomes a scene message
+with its selected-scene origin; template rows stay plain messages; hidden system
+rows stay hidden. Branch sessions stay separate conversations. Session settings
+(author note, prompt and lorebook overrides, generation settings, background,
+voice autoplay), memory fields, companion state and attachments are not mapped
+yet.
 `AppBackend::plan_legacy_personas` exposes the bounded persona candidates and
 their explicit default owner while leaving all source media unresolved.
 `AppBackend::plan_legacy_lorebooks` exposes the bounded root and ordered-entry

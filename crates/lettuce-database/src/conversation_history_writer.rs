@@ -81,7 +81,7 @@ pub(crate) fn insert_historical_conversation(
         turns_by_message.entry(target).or_default().push(turn);
     }
     for turns in turns_by_message.values_mut() {
-        turns.sort_by_key(|turn| (turn.created_at, turn.id));
+        turns.sort_by_key(|turn| turn.created_at);
     }
     let usage = input
         .usage
@@ -143,7 +143,15 @@ pub(crate) fn insert_historical_conversation(
 
     insert_creation_record(transaction, aggregate, &messages, &input.operation)?;
     let stored = slice::hydrate_conversation(transaction, conversation_id, || {})?;
-    if stored != *aggregate {
+    let mut expected = aggregate.clone();
+    expected
+        .conversation
+        .participants
+        .sort_by_key(|participant| (participant.ordinal, participant.id));
+    expected
+        .branches
+        .sort_by_key(|branch| (branch.created_at, branch.id));
+    if stored != expected {
         return Err(ConversationRepositoryError::Storage);
     }
     Ok(stored)
@@ -284,7 +292,15 @@ fn insert_message_with_turns(
         .iter()
         .flat_map(|turn| turn.candidate_ids.iter().copied())
         .collect::<BTreeSet<_>>();
+    let attempts = turns
+        .iter()
+        .flat_map(|turn| turn.attempts.iter().map(|attempt| (turn.id, attempt.id)))
+        .collect::<BTreeSet<_>>();
     if candidate_ids != turn_candidate_ids
+        || backup
+            .candidates
+            .iter()
+            .any(|candidate| !attempts.contains(&(candidate.turn_id, candidate.attempt_id)))
         || backup
             .revisions
             .iter()
