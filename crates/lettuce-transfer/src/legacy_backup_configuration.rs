@@ -40,7 +40,7 @@ const AUDIO_PROVIDER_LIMIT: usize = 256;
 const USER_VOICE_LIMIT: usize = 10_000;
 const CHAT_TEMPLATE_LIMIT: usize = 10_000;
 const SECRET_LIMIT: usize = 1_024;
-const LEGACY_ID_NAMESPACE: Uuid = Uuid::from_u128(0x6c657474_7563_652d_6261_636b75707631);
+pub(crate) const LEGACY_ID_NAMESPACE: Uuid = Uuid::from_u128(0x6c657474_7563_652d_6261_636b75707631);
 
 #[derive(Debug)]
 pub struct LegacyBackupConfigurationPlan {

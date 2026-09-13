@@ -20,6 +20,7 @@ mod legacy_backup_asr;
 mod legacy_backup_authored;
 mod legacy_backup_companion_shared_memory;
 mod legacy_backup_compatibility;
+mod legacy_backup_json_values;
 mod legacy_backup_configuration;
 mod legacy_backup_creation_helper;
 mod legacy_backup_group_sessions;
@@ -428,6 +429,7 @@ pub enum LegacyImportSkipKind {
     GroupReference,
     CharacterMedia,
     GroupMedia,
+    VoiceReference,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -448,6 +450,7 @@ pub enum LegacyImportSkipReason {
     MissingMessageVariant,
     UndersizedGroup,
     MissingGroup,
+    MissingUserVoice,
 }
 
 pub fn legacy_value_skip(

@@ -1885,6 +1885,7 @@ fn skip_kind_name(kind: lettuce_transfer::LegacyImportSkipKind) -> &'static str 
         lettuce_transfer::LegacyImportSkipKind::GroupReference => "group_reference",
         lettuce_transfer::LegacyImportSkipKind::CharacterMedia => "character_media",
         lettuce_transfer::LegacyImportSkipKind::GroupMedia => "group_media",
+        lettuce_transfer::LegacyImportSkipKind::VoiceReference => "voice_reference",
     }
 }
 
@@ -1910,6 +1911,7 @@ fn skip_reason_name(reason: lettuce_transfer::LegacyImportSkipReason) -> &'stati
         }
         lettuce_transfer::LegacyImportSkipReason::UndersizedGroup => "undersized_group",
         lettuce_transfer::LegacyImportSkipReason::MissingGroup => "missing_group",
+        lettuce_transfer::LegacyImportSkipReason::MissingUserVoice => "missing_user_voice",
     }
 }
 
@@ -1971,6 +1973,7 @@ fn load_skips(
                 "group_reference" => lettuce_transfer::LegacyImportSkipKind::GroupReference,
                 "character_media" => lettuce_transfer::LegacyImportSkipKind::CharacterMedia,
                 "group_media" => lettuce_transfer::LegacyImportSkipKind::GroupMedia,
+                "voice_reference" => lettuce_transfer::LegacyImportSkipKind::VoiceReference,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             let reason = match reason.as_str() {
@@ -2004,6 +2007,7 @@ fn load_skips(
                 }
                 "undersized_group" => lettuce_transfer::LegacyImportSkipReason::UndersizedGroup,
                 "missing_group" => lettuce_transfer::LegacyImportSkipReason::MissingGroup,
+                "missing_user_voice" => lettuce_transfer::LegacyImportSkipReason::MissingUserVoice,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             Ok(lettuce_transfer::LegacyImportSkip {

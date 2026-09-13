@@ -70,8 +70,9 @@ pub struct LegacyBackupCharacterDefaults {
     pub group_conversation_prompt_source_id: Option<String>,
     pub group_roleplay_prompt_source_id: Option<String>,
     pub system_prompt: Option<String>,
-    pub companion: Option<Value>,
-    pub voice_config: Option<Value>,
+    pub companion_soul: Option<lettuce_companions::CompanionSoulConfig>,
+    pub companion_prompt_source_id: Option<String>,
+    pub voice: Option<lettuce_characters::VoicePreference>,
     pub voice_autoplay: bool,
 }
 
@@ -86,7 +87,7 @@ pub struct LegacyBackupCharacterPresentation {
     pub custom_gradient_colors: Vec<String>,
     pub primary_text_color: Option<String>,
     pub secondary_text_color: Option<String>,
-    pub chat_appearance: Option<Value>,
+    pub chat_appearance: lettuce_characters::ChatAppearanceV1,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -142,7 +143,7 @@ pub struct LegacyBackupGroupCandidate {
     pub disable_character_lorebooks: bool,
     pub group_conversation_prompt_source_id: Option<String>,
     pub group_roleplay_prompt_source_id: Option<String>,
-    pub chat_appearance: Option<Value>,
+    pub chat_appearance: lettuce_characters::ChatAppearanceV1,
     pub members: Vec<GroupMember>,
     pub starting_scene: Option<LegacyBackupSceneCandidate>,
     pub background: Option<LegacyMediaReference>,
@@ -450,12 +451,15 @@ pub fn plan_legacy_backup_authored(
     crate::reconcile_legacy_persona_lorebooks(&mut personas, &lorebooks);
     let persona_lorebooks = map_persona_bindings(&personas);
     let mut skipped = Vec::new();
+    let json_context =
+        crate::legacy_backup_json_values::LegacyJsonContext::new(&configuration, &mut skipped);
     let characters = map_characters(
         &configuration.provider_models,
         &configuration.prompts,
         &configuration.chat_templates,
         character_rows,
         &lorebook_ids,
+        &json_context,
         &mut skipped,
         &mut configuration.notices,
     )?;
@@ -473,6 +477,7 @@ pub fn plan_legacy_backup_authored(
         &configuration.provider_models,
         &configuration.prompts,
         group_rows,
+        &json_context,
         &mut configuration.notices,
     )?;
     skipped.extend(group_skips);
@@ -716,12 +721,14 @@ fn map_lorebooks(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn map_characters(
     provider_models: &crate::LegacyProviderModelPlan,
     prompts: &crate::LegacyPromptPlan,
     chat_templates: &[crate::LegacyBackupChatTemplateCandidate],
     rows: Vec<CharacterRow>,
     lorebook_ids: &BTreeSet<LorebookId>,
+    json_context: &crate::legacy_backup_json_values::LegacyJsonContext,
     skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupCharacterCandidate>, LegacyBackupAuthoredError> {
@@ -907,6 +914,12 @@ fn map_characters(
         if scenes.len() > CHILD_LIMIT {
             return Err(limit(LegacyBackupDocumentKind::Characters));
         }
+        let companion = crate::legacy_backup_json_values::legacy_companion(
+            row.companion,
+            &character_key,
+            row.mode == "companion",
+            skipped,
+        );
         let defaults = LegacyBackupCharacterDefaults {
             interaction_mode: match row.mode.as_str() {
                 "roleplay" => InteractionMode::Roleplay,
@@ -930,8 +943,14 @@ fn map_characters(
             group_conversation_prompt_source_id,
             group_roleplay_prompt_source_id,
             system_prompt: normalize(row.system_prompt),
-            companion: row.companion.and_then(normalize_value),
-            voice_config: parse_json(row.voice_config, "voice_config")?,
+            companion_soul: companion.soul,
+            companion_prompt_source_id: companion.prompt_source_id,
+            voice: crate::legacy_backup_json_values::legacy_voice(
+                row.voice_config,
+                &character_key,
+                json_context,
+                skipped,
+            ),
             voice_autoplay: row.voice_autoplay,
         };
         let presentation = LegacyBackupCharacterPresentation {
@@ -960,7 +979,13 @@ fn map_characters(
             )?,
             primary_text_color: normalize(row.custom_text_color),
             secondary_text_color: normalize(row.custom_text_secondary),
-            chat_appearance: parse_json(row.chat_appearance, "chat_appearance")?,
+            chat_appearance: crate::legacy_backup_json_values::legacy_chat_appearance(
+                row.chat_appearance.as_deref(),
+                "characters.chat_appearance",
+                &character_key,
+                json_context,
+                skipped,
+            ),
         };
         validate_presentation(&presentation)?;
         characters.push(LegacyBackupCharacterCandidate {
@@ -1186,6 +1211,7 @@ fn map_starters(
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn map_groups(
     characters: &[LegacyBackupCharacterCandidate],
     personas: &LegacyPersonaPlan,
@@ -1193,6 +1219,7 @@ fn map_groups(
     provider_models: &crate::LegacyProviderModelPlan,
     prompts: &crate::LegacyPromptPlan,
     rows: Vec<GroupRow>,
+    json_context: &crate::legacy_backup_json_values::LegacyJsonContext,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<
     (
@@ -1471,11 +1498,13 @@ fn map_groups(
             disable_character_lorebooks: row.disable_character_lorebooks,
             group_conversation_prompt_source_id,
             group_roleplay_prompt_source_id,
-            chat_appearance: parse_json_document(
-                row.chat_appearance,
-                LegacyBackupDocumentKind::GroupCharacters,
-                "chat_appearance",
-            )?,
+            chat_appearance: crate::legacy_backup_json_values::legacy_chat_appearance(
+                row.chat_appearance.as_deref(),
+                "group_characters.chat_appearance",
+                &group_key,
+                json_context,
+                &mut skipped,
+            ),
             members,
             starting_scene,
             background: media(
@@ -1898,7 +1927,7 @@ fn validate_presentation(
         custom_gradient_colors: value.custom_gradient_colors.clone(),
         primary_text_color: value.primary_text_color.clone(),
         secondary_text_color: value.secondary_text_color.clone(),
-        ..CharacterPresentationV1::default()
+        chat_appearance: value.chat_appearance.clone(),
     }
     .validate()
     .map_err(|_| malformed(LegacyBackupDocumentKind::Characters, "presentation"))
@@ -1928,34 +1957,6 @@ fn parse_string_vec(
         })
         .transpose()
         .map(Option::unwrap_or_default)
-}
-
-fn parse_json(
-    value: Option<String>,
-    field: &str,
-) -> Result<Option<Value>, LegacyBackupAuthoredError> {
-    value
-        .map(|value| {
-            serde_json::from_str(&value)
-                .map_err(|_| malformed(LegacyBackupDocumentKind::Characters, field))
-        })
-        .transpose()
-        .map(|value| value.and_then(normalize_value))
-}
-
-fn parse_json_document(
-    value: Option<String>,
-    document: LegacyBackupDocumentKind,
-    field: &str,
-) -> Result<Option<Value>, LegacyBackupAuthoredError> {
-    value
-        .map(|value| serde_json::from_str(&value).map_err(|_| malformed(document, field)))
-        .transpose()
-        .map(|value| value.and_then(normalize_value))
-}
-
-fn normalize_value(value: Value) -> Option<Value> {
-    (!value.is_null()).then_some(value)
 }
 
 fn id_list<T: FromStr + Ord>(

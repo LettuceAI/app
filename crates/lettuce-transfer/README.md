@@ -300,6 +300,20 @@ oversized or over-limit references still reject the whole media plan. Conversati
 stay attached to the source inventory and are not misclassified as orphaned by
 this authored-only slice.
 
+Legacy character and group JSON columns now become typed domain values instead
+of raw JSON:
+- **Companion.** `companion` becomes a `CompanionSoulConfig`:
+  - keys the rewrite has no field for (`memory`, `timeAwareness`, `context`, stray nested keys) are dropped and recorded;
+  - missing affect, regulation and relationship values take the legacy defaults;
+  - authored facts follow legacy storage normalization: default policy by category, slot from category, `authored` kind, deterministic ids for blank ids;
+  - facts with an unknown category, blank value or invalid validity are dropped and recorded;
+  - `prompting.promptTemplateId` is kept as a prompt source id for remapping;
+  - a companion value on a roleplay character is recorded and dropped.
+- **Voice.** A `voice_config` user voice resolves to the imported `VoiceProfileId`; a missing voice records `VoiceReference`/`MissingUserVoice`. A provider voice is kept verbatim as an unresolved legacy locator.
+- **Chat appearance.** `chat_appearance` becomes the complete appearance legacy displayed: defaults, then the legacy global `advancedSettings.chatAppearance`, then the sparse override.
+  - Keys are applied one at a time with dependency retries; a key that cannot be represented keeps the inherited value and is recorded.
+  - Widget nodes convert camelCase keys and `12h`/`24h`; library and upload images become unresolved legacy tokens.
+
 The version-1 ASR backup document now maps into the same bounded read-only plan
 used by SQLite migration. It preserves the exported authored and normalized
 text, language, scope, category, priority, confidence, approval, counters and
