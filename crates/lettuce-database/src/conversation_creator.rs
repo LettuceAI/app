@@ -550,7 +550,7 @@ where
     })
 }
 
-fn conversation_uses_memory(kind: &lettuce_conversations::ConversationKind) -> bool {
+pub(crate) fn conversation_uses_memory(kind: &lettuce_conversations::ConversationKind) -> bool {
     use lettuce_conversations::{ConversationKind, MemoryModeSnapshot, SnapshotSelection};
 
     let selection = match kind {

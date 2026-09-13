@@ -11656,4 +11656,180 @@ mod tests {
             GenerationTurnStatus::Cancelled
         );
     }
+
+    fn snapshot_drafts(database: &Database) -> Vec<SnapshotArtifactDraft> {
+        let connection = database.connection().expect("connection");
+        let mut statement = connection
+            .prepare("SELECT artifact_id, source_kind, source_id, source_revision, digest, schema_version, byte_size, bytes FROM conversation_snapshot_artifacts ORDER BY artifact_id")
+            .expect("prepare");
+        statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, Vec<u8>>(7)?,
+                ))
+            })
+            .expect("query")
+            .map(|row| {
+                let (id, kind, source_id, revision, digest, schema, size, bytes) =
+                    row.expect("row");
+                SnapshotArtifactDraft {
+                    source: crate::conversation_artifact_adapter::source_from_parts(
+                        &kind, &source_id,
+                    )
+                    .expect("source"),
+                    source_revision: Revision::new(u64::try_from(revision).expect("revision")),
+                    artifact_id: id.parse().expect("artifact id"),
+                    digest: ContentHash::parse(digest).expect("digest"),
+                    schema_version: u32::try_from(schema).expect("schema"),
+                    byte_size: u64::try_from(size).expect("size"),
+                    codec: ArtifactCodec::Json,
+                    retention: ArtifactRetention::Conversation,
+                    bytes: ProtectedArtifactBytes::new(bytes).expect("bytes"),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn historical_writer_restores_an_exported_conversation_with_regenerated_candidates() {
+        let mut fixture = direct_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "history-send", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let (message_id, first_candidate) = settle_succeeded(&fixture, &send.value.turn, 21);
+        fixture.revision = conversation_revision(&fixture);
+        let regenerate = fixture
+            .database
+            .begin_regenerate(
+                &RegenerateCandidate {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    message_id,
+                    turn_id: send.value.turn.id,
+                    expected_revision: fixture.revision,
+                    expected_turn_revision: turn_revision(&fixture, send.value.turn.id),
+                    operation: token("history-regen", "cd"),
+                    active_candidate_id: first_candidate,
+                    guidance: None,
+                    model_override: None,
+                    forced_speaker: None,
+                    swap_roles: false,
+                },
+                TimestampMillis::new(80),
+            )
+            .expect("regenerate");
+        let attempt_id = regenerate.value.attempt.id;
+        let revision = drive(
+            &fixture,
+            regenerate.value.turn.id,
+            attempt_id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "history-drive",
+            81,
+        );
+        fixture
+            .database
+            .finalize_generation(
+                regenerate.value.turn.id,
+                attempt_id,
+                conversation_revision(&fixture),
+                revision,
+                &token("history-finalize", "cd"),
+                finalization_draft(text("second take"), 1),
+                UsageEventId::new(),
+                TimestampMillis::new(90),
+            )
+            .expect("finalize regenerate");
+
+        let source = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(
+            fixture.database.as_ref(),
+        )
+        .expect("source graph");
+        let history = source.conversation_history.conversations[0].clone();
+        let turns = source.conversation_runtime.conversations[0]
+            .turns
+            .iter()
+            .map(|turn| turn.turn.clone())
+            .collect::<Vec<_>>();
+        let usage = source
+            .conversation_usage
+            .events
+            .iter()
+            .map(|event| event.event.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(turns.len(), 2);
+
+        let target = std::rc::Rc::new(Database::open_in_memory().expect("target database"));
+        {
+            let mut connection = target.connection().expect("connection");
+            let transaction = connection
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .expect("transaction");
+            crate::conversation_history_writer::insert_historical_conversation(
+                &transaction,
+                crate::conversation_history_writer::HistoricalConversation {
+                    history: &history,
+                    turns: &turns,
+                    usage: &usage,
+                    snapshots: snapshot_drafts(&fixture.database),
+                    operation: token("history-restore", "ef"),
+                },
+            )
+            .expect("restore conversation");
+            transaction.commit().expect("commit");
+        }
+
+        let restored =
+            lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(target.as_ref())
+                .expect("restored graph");
+        assert_eq!(restored.conversation_history.conversations, vec![history]);
+        assert_eq!(
+            restored.conversation_runtime.conversations[0]
+                .turns
+                .iter()
+                .map(|turn| turn.turn.clone())
+                .collect::<Vec<_>>(),
+            turns
+        );
+        assert_eq!(
+            restored
+                .conversation_usage
+                .events
+                .iter()
+                .map(|event| event.event.clone())
+                .collect::<Vec<_>>(),
+            usage
+        );
+
+        let mut live = Fixture {
+            database: target,
+            conversation_id: fixture.conversation_id,
+            branch_id: fixture.branch_id,
+            user_participant: fixture.user_participant,
+            characters: fixture.characters.clone(),
+            revision: fixture.revision,
+        };
+        live.revision = conversation_revision(&live);
+        live.database
+            .begin_send(
+                &send_command(&live, "history-live-send", "cd", text("after restore")),
+                TimestampMillis::new(120),
+            )
+            .expect("live send after restore");
+    }
 }

@@ -451,6 +451,88 @@ pub(crate) fn load_all_usage_in(
         .collect()
 }
 
+/// Inserts one usage event on the caller's transaction; the historical
+/// conversation writer uses it for events it restores with their ids.
+pub(crate) fn insert_usage_event_in(
+    transaction: &rusqlite::Transaction<'_>,
+    conversation_id: &str,
+    event: &UsageEvent,
+) -> Result<(), UsageLedgerError> {
+    let provider_reported_cost = match &event.record.usage {
+        UsageCounters::Known(usage) => usage
+            .provider_reported_cost
+            .map(lettuce_conversations::ProviderReportedCost::get),
+        UsageCounters::Unavailable(_) => None,
+    };
+    let (cached, reasoning, cache_write, web_search) = match &event.record.usage {
+        UsageCounters::Known(usage) => (
+            usage.cached_input_tokens,
+            usage.reasoning_tokens,
+            usage.cache_write_tokens,
+            usage.web_search_requests,
+        ),
+        UsageCounters::Unavailable(_) => (None, None, None, None),
+    };
+    let cached = cached
+        .map(i64::try_from)
+        .transpose()
+        .map_err(|_| UsageLedgerError::Invalid)?;
+    let reasoning = reasoning
+        .map(i64::try_from)
+        .transpose()
+        .map_err(|_| UsageLedgerError::Invalid)?;
+    let (kind, input, output, unavailable) = match event.record.usage {
+        UsageCounters::Known(ref usage) => (
+            "known",
+            Some(i64::try_from(usage.input_tokens).map_err(|_| UsageLedgerError::Invalid)?),
+            Some(i64::try_from(usage.output_tokens).map_err(|_| UsageLedgerError::Invalid)?),
+            None,
+        ),
+        UsageCounters::Unavailable(reason) => {
+            ("unavailable", None, None, Some(unavailable_name(reason)))
+        }
+    };
+    transaction
+            .execute(
+                "INSERT INTO usage_events (id, conversation_id, turn_id, attempt_id, outcome,
+                    counters_kind, input_tokens, output_tokens, unavailable_reason,
+                    model_profile_id, model_revision, provider_account_id,
+                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+                params![
+                    event.id.to_string(),
+                    conversation_id,
+                    event.record.turn_id.to_string(),
+                    event.record.attempt_id.to_string(),
+                    outcome_name(event.record.outcome),
+                    kind,
+                    input,
+                    output,
+                    unavailable,
+                    event.record.model_profile_id.map(|value| value.to_string()),
+                    event.record
+                        .model_revision
+                        .map(|value| i64::try_from(value.get())
+                            .map_err(|_| UsageLedgerError::Invalid))
+                        .transpose()?,
+                    event.record.provider_account_id.map(|value| value.to_string()),
+                    event.record
+                        .provider_account_revision
+                        .map(|value| i64::try_from(value.get())
+                            .map_err(|_| UsageLedgerError::Invalid))
+                        .transpose()?,
+                    event.record.recorded_at.get(),
+                    cached,
+                    reasoning,
+                    cache_write.map(i64::try_from).transpose().map_err(|_| UsageLedgerError::Invalid)?,
+                    web_search.map(i64::try_from).transpose().map_err(|_| UsageLedgerError::Invalid)?,
+                    provider_reported_cost,
+                ],
+            )
+            .map_err(|_| UsageLedgerError::Storage)?;
+    Ok(())
+}
+
 impl UsageLedger for Database {
     fn record(&self, record: UsageRecord) -> Result<UsageEvent, UsageLedgerError> {
         record.validate().map_err(|_| UsageLedgerError::Invalid)?;
@@ -492,83 +574,15 @@ impl UsageLedger for Database {
                 .map_err(|_| UsageLedgerError::Storage)?;
             return Ok(existing);
         }
-        let id = UsageEventId::new();
-        let provider_reported_cost = match &record.usage {
-            UsageCounters::Known(usage) => usage
-                .provider_reported_cost
-                .map(lettuce_conversations::ProviderReportedCost::get),
-            UsageCounters::Unavailable(_) => None,
+        let event = UsageEvent {
+            id: UsageEventId::new(),
+            record,
         };
-        let (cached, reasoning, cache_write, web_search) = match &record.usage {
-            UsageCounters::Known(usage) => (
-                usage.cached_input_tokens,
-                usage.reasoning_tokens,
-                usage.cache_write_tokens,
-                usage.web_search_requests,
-            ),
-            UsageCounters::Unavailable(_) => (None, None, None, None),
-        };
-        let cached = cached
-            .map(i64::try_from)
-            .transpose()
-            .map_err(|_| UsageLedgerError::Invalid)?;
-        let reasoning = reasoning
-            .map(i64::try_from)
-            .transpose()
-            .map_err(|_| UsageLedgerError::Invalid)?;
-        let (kind, input, output, unavailable) = match record.usage {
-            UsageCounters::Known(ref usage) => (
-                "known",
-                Some(i64::try_from(usage.input_tokens).map_err(|_| UsageLedgerError::Invalid)?),
-                Some(i64::try_from(usage.output_tokens).map_err(|_| UsageLedgerError::Invalid)?),
-                None,
-            ),
-            UsageCounters::Unavailable(reason) => {
-                ("unavailable", None, None, Some(unavailable_name(reason)))
-            }
-        };
-        transaction
-            .execute(
-                "INSERT INTO usage_events (id, conversation_id, turn_id, attempt_id, outcome,
-                    counters_kind, input_tokens, output_tokens, unavailable_reason,
-                    model_profile_id, model_revision, provider_account_id,
-                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
-                params![
-                    id.to_string(),
-                    conversation_id,
-                    record.turn_id.to_string(),
-                    record.attempt_id.to_string(),
-                    outcome_name(record.outcome),
-                    kind,
-                    input,
-                    output,
-                    unavailable,
-                    record.model_profile_id.map(|value| value.to_string()),
-                    record
-                        .model_revision
-                        .map(|value| i64::try_from(value.get())
-                            .map_err(|_| UsageLedgerError::Invalid))
-                        .transpose()?,
-                    record.provider_account_id.map(|value| value.to_string()),
-                    record
-                        .provider_account_revision
-                        .map(|value| i64::try_from(value.get())
-                            .map_err(|_| UsageLedgerError::Invalid))
-                        .transpose()?,
-                    record.recorded_at.get(),
-                    cached,
-                    reasoning,
-                    cache_write.map(i64::try_from).transpose().map_err(|_| UsageLedgerError::Invalid)?,
-                    web_search.map(i64::try_from).transpose().map_err(|_| UsageLedgerError::Invalid)?,
-                    provider_reported_cost,
-                ],
-            )
-            .map_err(|_| UsageLedgerError::Storage)?;
+        insert_usage_event_in(&transaction, &conversation_id, &event)?;
         transaction
             .commit()
             .map_err(|_| UsageLedgerError::Storage)?;
-        Ok(UsageEvent { id, record })
+        Ok(event)
     }
 
     fn get(&self, id: UsageEventId) -> Result<Option<UsageEvent>, UsageLedgerError> {
