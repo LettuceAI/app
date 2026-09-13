@@ -523,7 +523,19 @@ match modes become recent message window or literal, malformed keywords become
 empty and regex keywords the legacy matcher could never compile are pruned by
 `reconcile_legacy_lorebook_keywords` (both reconcile functions now live here and
 are shared with the SQLite import). Non-string JSON values in these string
-fields, and character lorebook links, still abort.
+fields still abort. Character and starter references legacy never cleaned up
+are cleared or pruned and recorded in the authored and configuration plans'
+`skipped` lists: a character's default scene, default model (legacy failed with
+"model not found"; clearing is a recorded correction), prompt templates, default
+starter and missing or non-UUID active lorebook ids (repeats are dropped; legacy
+injected them twice in direct chats), a scene's selected variant (legacy fell
+back to the scene content), and a starter's scene (when the characters document
+is present), prompt and override lorebook ids. Character and starter lorebook
+links are pruned the same way whether or not the lorebooks document exists, so
+both planners agree. A JSON `null` override means no override silently and
+malformed override JSON means no override with a recorded value, like the
+legacy session reader. A starter whose character is missing
+still aborts because legacy's foreign key cascade made that impossible.
 
 Legacy reusable group profiles now join that same read-only plan. Ordered and
 muted members, explicit or inherited persona selection, archived state, chat and

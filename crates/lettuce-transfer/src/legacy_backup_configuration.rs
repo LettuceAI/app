@@ -51,6 +51,7 @@ pub struct LegacyBackupConfigurationPlan {
     pub user_voices: Vec<UserVoice>,
     pub secrets: Vec<ProviderBackupSecret>,
     pub chat_templates: Vec<LegacyBackupChatTemplateCandidate>,
+    pub skipped: Vec<crate::LegacyImportSkip>,
     pub notices: Vec<LegacyBackupConversionNotice>,
     pub source: LegacyBackupInventory,
 }
@@ -418,7 +419,11 @@ pub fn plan_legacy_backup_configuration(
     {
         return Err(malformed(LegacyBackupDocumentKind::Secrets, "reference"));
     }
-    let chat_templates = map_chat_templates(chat_rows, &source, &prompts, &mut notices)?;
+    let mut skipped = Vec::new();
+    let chat_templates =
+        map_chat_templates(chat_rows, &source, &prompts, &mut skipped, &mut notices)?;
+    skipped.sort();
+    skipped.dedup();
     notices.sort();
     notices.dedup();
     Ok(LegacyBackupConfigurationPlan {
@@ -429,6 +434,7 @@ pub fn plan_legacy_backup_configuration(
         user_voices,
         secrets,
         chat_templates,
+        skipped,
         notices,
         source,
     })
@@ -1819,6 +1825,7 @@ fn map_chat_templates(
     rows: Vec<ChatTemplateRow>,
     source: &LegacyBackupInventory,
     prompts: &LegacyPromptPlan,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupChatTemplateCandidate>, LegacyBackupConfigurationError> {
     let characters = source_ids(source, LegacyBackupDocumentKind::Characters)?;
@@ -1850,54 +1857,66 @@ fn map_chat_templates(
                 format!("[{index}].character_id"),
             ));
         }
-        if let Some(scene_id) = row
-            .scene_id
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            if !characters.is_empty()
+        let template_id = row.id.clone();
+        let reference = |kind, field: &str, reason| crate::LegacyImportSkip {
+            kind,
+            source_key: format!("chat_templates.{field}:{template_id}"),
+            reason,
+        };
+        let mut scene_source_id = normalize_option(row.scene_id);
+        if scene_source_id.as_deref().is_some_and(|scene_id| {
+            !characters.is_empty()
                 && !character_scenes
                     .get(&row.character_id)
                     .is_some_and(|scenes| scenes.contains(scene_id))
-            {
-                return Err(orphan(
-                    LegacyBackupDocumentKind::ChatTemplates,
-                    format!("[{index}].scene_id"),
-                ));
-            }
-        }
-        if let Some(prompt) = row
-            .prompt_template_id
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            if !prompt_ids.contains(prompt) {
-                return Err(orphan(
-                    LegacyBackupDocumentKind::ChatTemplates,
-                    format!("[{index}].prompt_template_id"),
-                ));
-            }
-        }
-        let has_lorebook_override = row.lorebook_ids_override.is_some();
-        let lorebook_ids: Vec<String> = row
-            .lorebook_ids_override
-            .as_deref()
-            .map(|value| {
-                serde_json::from_str(value).map_err(|_| {
-                    malformed(
-                        LegacyBackupDocumentKind::ChatTemplates,
-                        format!("[{index}].lorebook_ids_override"),
-                    )
-                })
-            })
-            .transpose()?
-            .unwrap_or_default();
-        if !lorebooks.is_empty() && lorebook_ids.iter().any(|id| !lorebooks.contains(id)) {
-            return Err(orphan(
-                LegacyBackupDocumentKind::ChatTemplates,
-                format!("[{index}].lorebook_ids_override"),
+        }) {
+            scene_source_id = None;
+            skipped.push(reference(
+                crate::LegacyImportSkipKind::SceneReference,
+                "scene_id",
+                crate::LegacyImportSkipReason::MissingScene,
             ));
         }
+        let mut prompt_source_id = normalize_option(row.prompt_template_id);
+        if prompt_source_id
+            .take_if(|prompt| !prompt_ids.contains(prompt.as_str()))
+            .is_some()
+        {
+            skipped.push(reference(
+                crate::LegacyImportSkipKind::PromptReference,
+                "prompt_template_id",
+                crate::LegacyImportSkipReason::MissingPrompt,
+            ));
+        }
+        let parsed_override = crate::lenient_legacy_json(
+            row.lorebook_ids_override.as_deref(),
+            "chat_templates.lorebook_ids_override",
+            &template_id,
+            skipped,
+            |value| {
+                value
+                    .as_array()
+                    .is_some_and(|items| items.iter().all(Value::is_string))
+            },
+        );
+        let has_lorebook_override = parsed_override.is_some();
+        let mut lorebook_ids = parsed_override
+            .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok())
+            .unwrap_or_default();
+        let mentions_lorebooks = !lorebook_ids.is_empty();
+        lorebook_ids.retain(|lorebook_id| {
+            let present = lorebooks.contains(lorebook_id);
+            if !present {
+                skipped.push(crate::LegacyImportSkip {
+                    kind: crate::LegacyImportSkipKind::LorebookReference,
+                    source_key: format!(
+                        "chat_templates.lorebook_ids_override:{template_id}:{lorebook_id}"
+                    ),
+                    reason: crate::LegacyImportSkipReason::MissingLorebook,
+                });
+            }
+            present
+        });
         let mut messages = Vec::with_capacity(row.messages.len());
         for (fallback, message) in row.messages.into_iter().enumerate() {
             report_extra(
@@ -1975,7 +1994,7 @@ fn map_chat_templates(
                 format!("chat_templates[{index}].character_id"),
             ));
         }
-        if !lorebook_ids.is_empty() && lorebooks.is_empty() {
+        if mentions_lorebooks && lorebooks.is_empty() {
             notices.push(notice(
                 LegacyBackupConversionNoticeKind::Absent,
                 LegacyBackupDocumentKind::Lorebooks,
@@ -1986,8 +2005,8 @@ fn map_chat_templates(
             source_id: row.id,
             character_source_id: row.character_id,
             name: row.name,
-            scene_source_id: normalize_option(row.scene_id),
-            prompt_source_id: normalize_option(row.prompt_template_id),
+            scene_source_id,
+            prompt_source_id,
             has_lorebook_override,
             lorebook_source_ids: lorebook_ids,
             messages,

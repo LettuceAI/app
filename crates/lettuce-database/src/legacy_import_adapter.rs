@@ -1872,6 +1872,9 @@ fn skip_kind_name(kind: lettuce_transfer::LegacyImportSkipKind) -> &'static str 
         lettuce_transfer::LegacyImportSkipKind::LegacyValue => "legacy_value",
         lettuce_transfer::LegacyImportSkipKind::ModelReference => "model_reference",
         lettuce_transfer::LegacyImportSkipKind::PromptReference => "prompt_reference",
+        lettuce_transfer::LegacyImportSkipKind::SceneReference => "scene_reference",
+        lettuce_transfer::LegacyImportSkipKind::ChatTemplateReference => "chat_template_reference",
+        lettuce_transfer::LegacyImportSkipKind::LorebookReference => "lorebook_reference",
     }
 }
 
@@ -1887,6 +1890,9 @@ fn skip_reason_name(reason: lettuce_transfer::LegacyImportSkipReason) -> &'stati
         lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue => "malformed_legacy_value",
         lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue => "unknown_legacy_value",
         lettuce_transfer::LegacyImportSkipReason::MissingPrompt => "missing_prompt",
+        lettuce_transfer::LegacyImportSkipReason::MissingScene => "missing_scene",
+        lettuce_transfer::LegacyImportSkipReason::MissingSceneVariant => "missing_scene_variant",
+        lettuce_transfer::LegacyImportSkipReason::MissingChatTemplate => "missing_chat_template",
     }
 }
 
@@ -1933,6 +1939,11 @@ fn load_skips(
                 "legacy_value" => lettuce_transfer::LegacyImportSkipKind::LegacyValue,
                 "model_reference" => lettuce_transfer::LegacyImportSkipKind::ModelReference,
                 "prompt_reference" => lettuce_transfer::LegacyImportSkipKind::PromptReference,
+                "scene_reference" => lettuce_transfer::LegacyImportSkipKind::SceneReference,
+                "chat_template_reference" => {
+                    lettuce_transfer::LegacyImportSkipKind::ChatTemplateReference
+                }
+                "lorebook_reference" => lettuce_transfer::LegacyImportSkipKind::LorebookReference,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             let reason = match reason.as_str() {
@@ -1952,6 +1963,13 @@ fn load_skips(
                     lettuce_transfer::LegacyImportSkipReason::UnknownLegacyValue
                 }
                 "missing_prompt" => lettuce_transfer::LegacyImportSkipReason::MissingPrompt,
+                "missing_scene" => lettuce_transfer::LegacyImportSkipReason::MissingScene,
+                "missing_scene_variant" => {
+                    lettuce_transfer::LegacyImportSkipReason::MissingSceneVariant
+                }
+                "missing_chat_template" => {
+                    lettuce_transfer::LegacyImportSkipReason::MissingChatTemplate
+                }
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             Ok(lettuce_transfer::LegacyImportSkip {
