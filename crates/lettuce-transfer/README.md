@@ -610,9 +610,8 @@ overrides for non-members, overrides whose model is gone (legacy fell back), a
 deleted persona (legacy's foreign key set it to null, so it inherits), stale
 group lorebook ids (stale group prompt ids are kept and recorded because
 sessions copied them as explicit choices), and a starting scene's missing selected variant
-(legacy group prompts used only the scene content). A group that pruning leaves
-with fewer than two members or with every member muted is skipped and recorded
-(`group_profile`/`undersized_group`, user decision 2026-09-13); an invalid group
-that lost no members still aborts. Group
+(legacy group prompts used only the scene content). A group with fewer than two
+members or with every member muted, before or after pruning, is skipped and
+recorded (`group_profile`/`undersized_group`, user decision 2026-09-13). Group
 lorebooks use the canonical ordered binding document. Group sessions remain in
 the attached inventory for the later conversation/runtime conversion slice.

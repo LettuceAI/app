@@ -517,6 +517,18 @@ mod tests {
             .expect("replay characters");
         assert!(replay.replayed);
         assert_eq!(replay.completed_at, TimestampMillis::new(50));
+        let group_replay = reopened
+            .legacy_group_importer()
+            .execute(
+                &replayed_admission,
+                &plan,
+                std::slice::from_ref(&group),
+                &group_bindings,
+                TimestampMillis::new(90),
+            )
+            .expect("replay groups");
+        assert!(group_replay.replayed);
+        assert_eq!(group_replay.completed_at, TimestampMillis::new(55));
         drop(reopened);
         fs::remove_file(path).expect("remove database");
     }

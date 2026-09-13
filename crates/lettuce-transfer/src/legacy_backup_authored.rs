@@ -1324,7 +1324,6 @@ fn map_groups(
             LegacyBackupDocumentKind::GroupCharacters,
             "character_ids",
         )?;
-        let listed_members = member_ids.len();
         member_ids.retain(|member| {
             let present = character_ids.contains(member);
             if !present {
@@ -1531,7 +1530,7 @@ fn map_groups(
         };
         if validation.validate().is_err() {
             let undersized = members.len() < 2 || members.iter().all(|member| member.muted);
-            if member_ids.len() < listed_members && undersized {
+            if undersized {
                 skipped.push(reference_skip(
                     crate::LegacyImportSkipKind::GroupProfile,
                     group_key.clone(),
