@@ -740,6 +740,58 @@ impl LegacyImportRepository for Database {
         Ok(receipt)
     }
 
+    fn materialize_audio(
+        &self,
+        request: lettuce_transfer::LegacyAudioMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let record_count = request
+            .audio_providers
+            .len()
+            .checked_add(request.user_voices.len())
+            .and_then(|count| u64::try_from(count).ok())
+            .ok_or(LegacyImportRepositoryError::InvalidInput)?;
+        if let StageStart::Replayed(receipt) = start_stage(
+            &transaction,
+            request.run_id,
+            (&request.plan_fingerprint, &request.source_fingerprint),
+            LegacyImportStage::Audio,
+            record_count,
+            None,
+        )? {
+            transaction
+                .commit()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            return Ok(receipt);
+        }
+        for provider in &request.audio_providers {
+            crate::tts_adapter::insert_audio_provider(&transaction, provider)
+                .map_err(audio_insert_error)?;
+        }
+        for voice in &request.user_voices {
+            crate::tts_adapter::insert_user_voice(&transaction, voice)
+                .map_err(audio_insert_error)?;
+        }
+        insert_stage_result(
+            &transaction,
+            request.run_id,
+            LegacyImportStage::Audio,
+            record_count,
+            request.completed_at,
+        )?;
+        let receipt = load_stage_receipt(&transaction, request.run_id, LegacyImportStage::Audio)?
+            .ok_or(LegacyImportRepositoryError::Storage)?;
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(receipt)
+    }
+
     fn materialize_groups(
         &self,
         request: lettuce_transfer::LegacyGroupMaterializationRequest,
@@ -1705,6 +1757,21 @@ fn start_stage(
     Ok(StageStart::Ready(admission))
 }
 
+fn audio_insert_error(
+    error: lettuce_speech::TtsConfigurationRepositoryError,
+) -> LegacyImportRepositoryError {
+    match error {
+        lettuce_speech::TtsConfigurationRepositoryError::AlreadyExists
+        | lettuce_speech::TtsConfigurationRepositoryError::ProviderMissing => {
+            LegacyImportRepositoryError::Conflict
+        }
+        lettuce_speech::TtsConfigurationRepositoryError::InvalidData => {
+            LegacyImportRepositoryError::InvalidInput
+        }
+        _ => LegacyImportRepositoryError::Storage,
+    }
+}
+
 fn stage_insert_error(error: lettuce_characters::RepositoryError) -> LegacyImportRepositoryError {
     match error {
         lettuce_characters::RepositoryError::AlreadyExists
@@ -1846,6 +1913,7 @@ const fn stage_name(stage: LegacyImportStage) -> &'static str {
     match stage {
         LegacyImportStage::Characters => "characters",
         LegacyImportStage::Groups => "groups",
+        LegacyImportStage::Audio => "audio",
     }
 }
 

@@ -30,6 +30,10 @@ straight from a `plan_legacy_database_import` result. It requires the plan's
 source fingerprint and runs after the persona/lorebook, media and
 provider/prompt stages. `AppBackend::legacy_group_importer` does the same for
 reusable groups and their lorebook bindings once the characters stage finished.
+`AppBackend::legacy_audio_importer` first stores each legacy audio provider API
+key in the native secret store under its deterministic reference. On retry it
+loads and compares the key instead of rewriting it. It then runs the audio stage
+for the providers and user voices.
 `AppBackend::plan_legacy_personas` exposes the bounded persona candidates and
 their explicit default owner while leaving all source media unresolved.
 `AppBackend::plan_legacy_lorebooks` exposes the bounded root and ordered-entry

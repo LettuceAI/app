@@ -587,6 +587,12 @@ the characters stage receipt. It writes every planned reusable group through
 - remaps group prompts (a missing one becomes the app default) and the group and starting-scene backgrounds;
 - writes the group lorebook bindings.
 
+The audio stage needs no earlier stage, since characters reference voice
+profiles without a foreign key. It inserts every planned legacy audio provider
+and user voice through the TTS adapter's insert helpers inside the stage
+transaction. A provider keeps its deterministic API key reference; the key
+itself lives only in the native secret store.
+
 The read-only legacy provider-secret adapter lists only planned API-key/header
 metadata, then loads one exact value into `SecretValue` on demand. It ignores the
 obsolete pre-v7 API-key reference and never opens the source writable. Migration

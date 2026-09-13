@@ -177,6 +177,16 @@ impl AppBackend {
         crate::LegacyGroupImportCoordinator::new(self.database.as_ref())
     }
 
+    pub fn legacy_audio_importer<'a, V>(
+        &'a self,
+        secret_store: &'a V,
+    ) -> crate::LegacyAudioImportCoordinator<'a, Database, V>
+    where
+        V: lettuce_settings::SecretStore + ?Sized,
+    {
+        crate::LegacyAudioImportCoordinator::new(self.database.as_ref(), secret_store)
+    }
+
     pub fn legacy_provider_secret_importer<'a, S, V>(
         &'a self,
         source: &'a S,
