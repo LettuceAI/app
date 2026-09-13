@@ -376,11 +376,15 @@ fn map_sessions(
         if members.len() < 2 {
             return Err(malformed(format!("{path}.character_ids")));
         }
-        if members
+        for member in members
             .iter()
-            .any(|id| !contains_case_insensitive(&character_ids, id))
+            .filter(|id| !contains_case_insensitive(&character_ids, id))
         {
-            return Err(orphan(format!("{path}.character_ids")));
+            skipped.push(crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::CharacterReference,
+                source_key: format!("group_sessions.character_ids:{}:{member}", row.id),
+                reason: crate::LegacyImportSkipReason::MissingCharacter,
+            });
         }
         let muted = string_array(
             &row.muted_character_ids,
@@ -525,6 +529,7 @@ fn map_sessions(
             &path,
             &members,
             &mut participation_ids,
+            skipped,
             notices,
         )?;
         let (messages, message_skips) = map_messages(
@@ -618,6 +623,7 @@ fn map_participation(
     session_path: &str,
     members: &[String],
     all_ids: &mut BTreeSet<String>,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupGroupParticipation>, LegacyBackupGroupSessionError> {
     if rows.len() > 1 {
@@ -637,7 +643,11 @@ fn map_participation(
                 return Err(malformed(format!("{path}.id")));
             }
             if !contains_case_insensitive_slice(members, &row.character_id) {
-                return Err(orphan(format!("{path}.character_id")));
+                skipped.push(crate::LegacyImportSkip {
+                    kind: crate::LegacyImportSkipKind::CharacterReference,
+                    source_key: format!("group_participation.character_id:{}", row.id),
+                    reason: crate::LegacyImportSkipReason::MissingCharacter,
+                });
             }
             if !character_ids.insert(row.character_id.to_ascii_lowercase()) {
                 return Err(malformed(format!("{path}.character_id")));
@@ -690,11 +700,17 @@ fn map_messages(
         if !matches!(row.role.as_str(), "user" | "assistant" | "system" | "scene") {
             return Err(malformed(format!("{path}.role")));
         }
-        validate_speaker(
-            row.speaker_character_id.as_deref(),
-            members,
-            &format!("{path}.speaker_character_id"),
-        )?;
+        if row
+            .speaker_character_id
+            .as_deref()
+            .is_some_and(|speaker| !contains_case_insensitive_slice(members, speaker))
+        {
+            skipped.push(crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::CharacterReference,
+                source_key: format!("group_messages.speaker_character_id:{}", row.id),
+                reason: crate::LegacyImportSkipReason::MissingCharacter,
+            });
+        }
         let mut model_source_id = row.model_id.clone();
         if model_source_id
             .take_if(|id| !contains_case_insensitive(model_ids, id))
@@ -811,11 +827,17 @@ fn map_variants(
                 return Err(malformed(format!("{path}.id")));
             }
             validate_text(&row.content, &format!("{path}.content"))?;
-            validate_speaker(
-                row.speaker_character_id.as_deref(),
-                members,
-                &format!("{path}.speaker_character_id"),
-            )?;
+            if row
+                .speaker_character_id
+                .as_deref()
+                .is_some_and(|speaker| !contains_case_insensitive_slice(members, speaker))
+            {
+                skipped.push(crate::LegacyImportSkip {
+                    kind: crate::LegacyImportSkipKind::CharacterReference,
+                    source_key: format!("group_message_variants.speaker_character_id:{}", row.id),
+                    reason: crate::LegacyImportSkipReason::MissingCharacter,
+                });
+            }
             let mut model_source_id = row.model_id.clone();
             if model_source_id
                 .take_if(|id| !contains_case_insensitive(model_ids, id))
@@ -1203,19 +1225,6 @@ fn string_map(
         }
     }
     Ok(values)
-}
-
-fn validate_speaker(
-    value: Option<&str>,
-    members: &[String],
-    field: &str,
-) -> Result<(), LegacyBackupGroupSessionError> {
-    if let Some(value) = value {
-        if !contains_case_insensitive_slice(members, value) {
-            return Err(orphan(field));
-        }
-    }
-    Ok(())
 }
 
 fn validate_optional_reference(
@@ -1713,6 +1722,76 @@ mod tests {
     }
 
     #[test]
+    fn group_sessions_keep_deleted_members_as_unknown_participants() {
+        let characters = vec![id(60), id(61)];
+        let deleted = id(62);
+        let group = id(63);
+        let root = id(64);
+        let message_id = id(65);
+        let members = vec![
+            characters[0].clone(),
+            characters[1].clone(),
+            deleted.clone(),
+        ];
+        let row = session(
+            &root,
+            &group,
+            &members,
+            None,
+            &root,
+            None,
+            vec![message(&message_id, Some(&deleted), None, None)],
+        );
+        let plan = plan_legacy_backup_group_sessions(source(json!([row]), &characters, &group))
+            .expect("deleted members are kept");
+        assert_eq!(plan.sessions[0].member_source_ids, members);
+        assert_eq!(
+            plan.sessions[0].messages[0]
+                .speaker_character_source_id
+                .as_deref(),
+            Some(deleted.as_str())
+        );
+        assert_eq!(
+            plan.skipped,
+            vec![crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::CharacterReference,
+                source_key: format!("group_sessions.character_ids:{root}:{deleted}"),
+                reason: crate::LegacyImportSkipReason::MissingCharacter,
+            }]
+        );
+    }
+
+    #[test]
+    fn group_sessions_keep_participation_of_removed_members() {
+        let characters = vec![id(70), id(71)];
+        let removed = id(72);
+        let group = id(73);
+        let root = id(74);
+        let mut row = session(&root, &group, &characters, None, &root, None, Vec::new());
+        row["participation"]
+            .as_array_mut()
+            .expect("participation fixture")
+            .push(json!({
+                "id": "removed-participation",
+                "character_id": removed,
+                "speak_count": 3,
+                "last_spoke_turn": 1,
+                "last_spoke_at": 5
+            }));
+        let plan = plan_legacy_backup_group_sessions(source(json!([row]), &characters, &group))
+            .expect("participation of a removed member is kept");
+        assert_eq!(plan.sessions[0].participation.len(), 3);
+        assert_eq!(
+            plan.skipped,
+            vec![crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::CharacterReference,
+                source_key: "group_participation.character_id:removed-participation".to_owned(),
+                reason: crate::LegacyImportSkipReason::MissingCharacter,
+            }]
+        );
+    }
+
+    #[test]
     fn group_sessions_reject_orphaned_links_and_malformed_nested_usage() {
         let characters = vec![id(30), id(31)];
         let group = id(32);
@@ -1727,11 +1806,17 @@ mod tests {
             None,
             vec![message(&message_id, Some(&id(99)), None, None)],
         );
-        assert!(matches!(
-            plan_legacy_backup_group_sessions(source(json!([orphaned]), &characters, &group)),
-            Err(LegacyBackupGroupSessionError::Orphan { ref field })
-                if field == "[0].messages[0].speaker_character_id"
-        ));
+        let plan =
+            plan_legacy_backup_group_sessions(source(json!([orphaned]), &characters, &group))
+                .expect("a non-member speaker is kept");
+        assert_eq!(
+            plan.skipped,
+            vec![crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::CharacterReference,
+                source_key: format!("group_messages.speaker_character_id:{message_id}"),
+                reason: crate::LegacyImportSkipReason::MissingCharacter,
+            }]
+        );
 
         orphaned = session(
             &root,
