@@ -507,7 +507,16 @@ also retains disabled rows instead of repeating the legacy importer’s silent
 drop. Defaults, selected variants, starter ownership, model, prompt, scene and
 lorebook links must resolve inside the complete retained plan. Missing documents,
 unknown fields and normalized legacy binding order remain visible as conversion
-notices, and malformed or orphaned graphs reject before any mutation.
+notices, and malformed or orphaned graphs reject before any mutation. Persona and
+lorebook values legacy read leniently follow the SQLite import exactly and are
+recorded as skips: persona design reference or lorebook id lists that are not
+string arrays become empty, non-UUID and missing or repeated persona lorebook
+ids are pruned by `reconcile_legacy_persona_lorebooks`, unknown detection or
+match modes become recent message window or literal, malformed keywords become
+empty and regex keywords the legacy matcher could never compile are pruned by
+`reconcile_legacy_lorebook_keywords` (both reconcile functions now live here and
+are shared with the SQLite import). Non-string JSON values in these string
+fields, and character lorebook links, still abort.
 
 Legacy reusable group profiles now join that same read-only plan. Ordered and
 muted members, explicit or inherited persona selection, archived state, chat and

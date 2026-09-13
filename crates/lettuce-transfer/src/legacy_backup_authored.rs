@@ -440,14 +440,15 @@ pub fn plan_legacy_backup_authored(
         }
     }
 
-    let personas = map_personas(persona_rows, &mut configuration.notices)?;
-    let lorebooks = map_lorebooks(lorebook_rows, &mut configuration.notices)?;
+    let mut personas = map_personas(persona_rows, &mut configuration.notices)?;
+    let mut lorebooks = map_lorebooks(lorebook_rows, &mut configuration.notices)?;
+    crate::reconcile_legacy_lorebook_keywords(&mut lorebooks);
     let lorebook_ids = lorebooks
         .lorebooks
         .iter()
         .map(|book| book.id)
         .collect::<BTreeSet<_>>();
-    validate_persona_lorebooks(&personas, &lorebook_ids)?;
+    crate::reconcile_legacy_persona_lorebooks(&mut personas, &lorebooks);
     let persona_lorebooks = map_persona_bindings(&personas);
     let characters = map_characters(
         &configuration.provider_models,
@@ -493,12 +494,13 @@ fn map_personas(
     rows: Vec<PersonaRow>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<LegacyPersonaPlan, LegacyBackupAuthoredError> {
+    let mut skipped = Vec::new();
     let mut personas = Vec::with_capacity(rows.len());
     let mut ids = BTreeSet::new();
     let mut default_persona_id = None;
     for row in rows {
         report_extra(LegacyBackupDocumentKind::Personas, &row.extra, notices);
-        let id = parse_id(&row.id, LegacyBackupDocumentKind::Personas, "id")?;
+        let id: PersonaId = parse_id(&row.id, LegacyBackupDocumentKind::Personas, "id")?;
         require_unique(&mut ids, id, LegacyBackupDocumentKind::Personas, "id")?;
         require_nonblank(&row.title, LegacyBackupDocumentKind::Personas, "title")?;
         require_nonblank(
@@ -514,6 +516,50 @@ fn map_personas(
         if row.is_default && default_persona_id.replace(id).is_some() {
             return Err(malformed(LegacyBackupDocumentKind::Personas, "is_default"));
         }
+        let persona_key = id.to_string();
+        let design_references = if row
+            .design_reference_image_ids
+            .as_deref()
+            .is_some_and(|value| serde_json::from_str::<Vec<String>>(value).is_err())
+        {
+            skipped.push(crate::legacy_value_skip(
+                "personas.design_reference_image_ids",
+                &persona_key,
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+            Vec::new()
+        } else {
+            media_list(
+                row.design_reference_image_ids,
+                LegacyBackupDocumentKind::Personas,
+                "design_reference_image_ids",
+            )?
+        };
+        let active_lorebook_ids =
+            match serde_json::from_str::<Vec<String>>(&row.active_lorebook_ids) {
+                Ok(values) => values
+                    .into_iter()
+                    .filter_map(|value| match LorebookId::from_str(&value) {
+                        Ok(lorebook_id) => Some(lorebook_id),
+                        Err(_) => {
+                            skipped.push(crate::LegacyImportSkip {
+                                kind: crate::LegacyImportSkipKind::PersonaLorebookBinding,
+                                source_key: format!("{persona_key}:{value}"),
+                                reason: crate::LegacyImportSkipReason::MissingLorebook,
+                            });
+                            None
+                        }
+                    })
+                    .collect(),
+                Err(_) => {
+                    skipped.push(crate::legacy_value_skip(
+                        "personas.active_lorebook_ids",
+                        &persona_key,
+                        crate::LegacyImportSkipReason::MalformedLegacyValue,
+                    ));
+                    Vec::new()
+                }
+            };
         personas.push(LegacyPersonaCandidate {
             id,
             title: row.title,
@@ -531,27 +577,21 @@ fn map_personas(
                 LegacyBackupDocumentKind::Personas,
             )?,
             design_description: normalize(row.design_description),
-            design_references: media_list(
-                row.design_reference_image_ids,
-                LegacyBackupDocumentKind::Personas,
-                "design_reference_image_ids",
-            )?,
+            design_references,
             image_recommendation: recommendation(
                 row.lora_name,
                 row.lora_strength,
                 LegacyBackupDocumentKind::Personas,
             )?,
-            active_lorebook_ids: id_list(
-                &row.active_lorebook_ids,
-                LegacyBackupDocumentKind::Personas,
-                "active_lorebook_ids",
-            )?,
+            active_lorebook_ids,
             created_at: TimestampMillis::new(row.created_at),
             updated_at: TimestampMillis::new(row.updated_at),
         });
     }
+    skipped.sort();
+    skipped.dedup();
     Ok(LegacyPersonaPlan {
-        skipped: Vec::new(),
+        skipped,
         personas,
         default_persona_id,
     })
@@ -561,12 +601,13 @@ fn map_lorebooks(
     rows: Vec<LorebookRow>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<LegacyLorebookPlan, LegacyBackupAuthoredError> {
+    let mut skipped = Vec::new();
     let mut books = Vec::with_capacity(rows.len());
     let mut book_ids = BTreeSet::new();
     let mut entry_count = 0usize;
     for row in rows {
         report_extra(LegacyBackupDocumentKind::Lorebooks, &row.extra, notices);
-        let id = parse_id(&row.id, LegacyBackupDocumentKind::Lorebooks, "id")?;
+        let id: LorebookId = parse_id(&row.id, LegacyBackupDocumentKind::Lorebooks, "id")?;
         require_unique(&mut book_ids, id, LegacyBackupDocumentKind::Lorebooks, "id")?;
         require_nonblank(&row.name, LegacyBackupDocumentKind::Lorebooks, "name")?;
         validate_timestamps(
@@ -587,17 +628,20 @@ fn map_lorebooks(
             "recent_message_window" => LegacyLorebookDetectionPolicy::RecentMessageWindow,
             "latest_user_message" => LegacyLorebookDetectionPolicy::LatestUserMessage,
             _ => {
-                return Err(malformed(
-                    LegacyBackupDocumentKind::Lorebooks,
-                    "keyword_detection_mode",
+                skipped.push(crate::legacy_value_skip(
+                    "lorebooks.keyword_detection_mode",
+                    &id.to_string(),
+                    crate::LegacyImportSkipReason::UnknownLegacyValue,
                 ));
+                LegacyLorebookDetectionPolicy::RecentMessageWindow
             }
         };
         let mut entry_ids = BTreeSet::new();
         let mut entries = Vec::with_capacity(row.entries.len());
         for entry in row.entries {
             report_extra(LegacyBackupDocumentKind::Lorebooks, &entry.extra, notices);
-            let entry_id = parse_id(&entry.id, LegacyBackupDocumentKind::Lorebooks, "entries.id")?;
+            let entry_id: lettuce_types::LorebookEntryId =
+                parse_id(&entry.id, LegacyBackupDocumentKind::Lorebooks, "entries.id")?;
             require_unique(
                 &mut entry_ids,
                 entry_id,
@@ -609,16 +653,25 @@ fn map_lorebooks(
                 entry.updated_at,
                 LegacyBackupDocumentKind::Lorebooks,
             )?;
-            let keywords = serde_json::from_str::<Vec<String>>(&entry.keywords)
-                .map_err(|_| malformed(LegacyBackupDocumentKind::Lorebooks, "entries.keywords"))?;
+            let keywords =
+                serde_json::from_str::<Vec<String>>(&entry.keywords).unwrap_or_else(|_| {
+                    skipped.push(crate::legacy_value_skip(
+                        "lorebook_entries.keywords",
+                        &entry_id.to_string(),
+                        crate::LegacyImportSkipReason::MalformedLegacyValue,
+                    ));
+                    Vec::new()
+                });
             let match_mode = match entry.keyword_match_mode.as_str() {
                 "literal" => LegacyKeywordMatchMode::Literal,
                 "regex" => LegacyKeywordMatchMode::Regex,
                 _ => {
-                    return Err(malformed(
-                        LegacyBackupDocumentKind::Lorebooks,
-                        "entries.keyword_match_mode",
+                    skipped.push(crate::legacy_value_skip(
+                        "lorebook_entries.keyword_match_mode",
+                        &entry_id.to_string(),
+                        crate::LegacyImportSkipReason::UnknownLegacyValue,
                     ));
+                    LegacyKeywordMatchMode::Literal
                 }
             };
             entries.push(LegacyLorebookEntryCandidate {
@@ -651,9 +704,10 @@ fn map_lorebooks(
             updated_at: TimestampMillis::new(row.updated_at),
         });
     }
+    skipped.sort();
     Ok(LegacyLorebookPlan {
         lorebooks: books,
-        skipped: Vec::new(),
+        skipped,
     })
 }
 
@@ -1544,21 +1598,6 @@ fn map_character_bindings(
     Ok(result)
 }
 
-fn validate_persona_lorebooks(
-    plan: &LegacyPersonaPlan,
-    known: &BTreeSet<LorebookId>,
-) -> Result<(), LegacyBackupAuthoredError> {
-    for persona in &plan.personas {
-        validate_ids(
-            &persona.active_lorebook_ids,
-            known,
-            LegacyBackupDocumentKind::Personas,
-            "active_lorebook_ids",
-        )?;
-    }
-    Ok(())
-}
-
 fn map_persona_bindings(personas: &LegacyPersonaPlan) -> Vec<BackupLorebookBindings<PersonaId>> {
     personas
         .personas
@@ -2199,6 +2238,132 @@ mod tests {
         assert!(!plan.character_lorebooks[0].bindings[0].enabled);
         assert_eq!(plan.persona_lorebooks[0].bindings.len(), 1);
         assert!(plan.persona_lorebooks[0].bindings[0].enabled);
+    }
+
+    #[test]
+    fn malformed_persona_and_lorebook_values_fall_back_like_legacy() {
+        let persona_id = id(40);
+        let lorebook_id = id(41);
+        let missing_lorebook = id(42);
+        let malformed_keywords = id(43);
+        let regex_entry = id(44);
+        let unknown_mode = id(45);
+        let entry = |entry_id: &str, keywords: &str, mode: &str| {
+            json!({
+                "id": entry_id,
+                "keywords": keywords,
+                "keyword_match_mode": mode,
+                "content": "Lore",
+                "created_at": 1,
+                "updated_at": 1
+            })
+        };
+        let plan = plan(vec![
+            document(
+                LegacyBackupDocumentKind::Personas,
+                json!([{
+                    "id": persona_id,
+                    "title": "Reader",
+                    "description": "Reads stories",
+                    "design_reference_image_ids": "not-json",
+                    "active_lorebook_ids": format!(
+                        "[\"{lorebook_id}\",\"{lorebook_id}\",\"not-a-uuid\",\"{missing_lorebook}\"]"
+                    ),
+                    "created_at": 1,
+                    "updated_at": 1
+                }]),
+            ),
+            document(
+                LegacyBackupDocumentKind::Lorebooks,
+                json!([{
+                    "id": lorebook_id,
+                    "name": "World",
+                    "keyword_detection_mode": "sometimes",
+                    "created_at": 1,
+                    "updated_at": 1,
+                    "entries": [
+                        entry(&malformed_keywords, "bad", "literal"),
+                        entry(&regex_entry, "[\"(\",\"ok\"]", "regex"),
+                        entry(&unknown_mode, "[\"harbor\"]", "fuzzy")
+                    ]
+                }]),
+            ),
+        ])
+        .expect("malformed values fall back");
+        let persona = &plan.personas.personas[0];
+        assert!(persona.design_references.is_empty());
+        assert_eq!(
+            persona
+                .active_lorebook_ids
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec![lorebook_id.clone()]
+        );
+        let book = &plan.lorebooks.lorebooks[0];
+        assert_eq!(
+            book.detection_policy,
+            LegacyLorebookDetectionPolicy::RecentMessageWindow
+        );
+        let keywords = |entry_id: &str| {
+            book.entries
+                .iter()
+                .find(|entry| entry.id.to_string() == entry_id)
+                .map(|entry| (entry.keywords.clone(), entry.match_mode))
+                .expect("entry")
+        };
+        assert_eq!(
+            keywords(&malformed_keywords),
+            (Vec::new(), LegacyKeywordMatchMode::Literal)
+        );
+        assert_eq!(
+            keywords(&regex_entry),
+            (vec!["ok".to_owned()], LegacyKeywordMatchMode::Regex)
+        );
+        assert_eq!(
+            keywords(&unknown_mode),
+            (vec!["harbor".to_owned()], LegacyKeywordMatchMode::Literal)
+        );
+        let binding = |value: &str| crate::LegacyImportSkip {
+            kind: crate::LegacyImportSkipKind::PersonaLorebookBinding,
+            source_key: format!("{persona_id}:{value}"),
+            reason: crate::LegacyImportSkipReason::MissingLorebook,
+        };
+        let mut persona_skips = vec![
+            binding("not-a-uuid"),
+            binding(&missing_lorebook),
+            crate::legacy_value_skip(
+                "personas.design_reference_image_ids",
+                &persona_id,
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+        ];
+        persona_skips.sort();
+        assert_eq!(plan.personas.skipped, persona_skips);
+        let mut lorebook_skips = vec![
+            crate::legacy_value_skip(
+                "lorebooks.keyword_detection_mode",
+                &lorebook_id,
+                crate::LegacyImportSkipReason::UnknownLegacyValue,
+            ),
+            crate::legacy_value_skip(
+                "lorebook_entries.keywords",
+                &malformed_keywords,
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+            crate::legacy_value_skip(
+                "lorebook_entries.keyword_match_mode",
+                &unknown_mode,
+                crate::LegacyImportSkipReason::UnknownLegacyValue,
+            ),
+            crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::LorebookEntryKeyword,
+                source_key: format!("{regex_entry}:0"),
+                reason: crate::LegacyImportSkipReason::InvalidRegex,
+            },
+        ];
+        lorebook_skips.sort();
+        assert_eq!(plan.lorebooks.skipped, lorebook_skips);
     }
 
     #[test]
