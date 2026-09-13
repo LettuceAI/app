@@ -366,6 +366,70 @@ struct GroupRow {
     extra: BTreeMap<String, Value>,
 }
 
+const GROUP_SESSION_LIMIT: usize = 10_000;
+
+/// A legacy group session saved before sessions linked a reusable group. The
+/// legacy v42 migration created a group from such a session under the session
+/// id and linked it; a backup or database that skipped that migration gets the
+/// same group here.
+#[derive(Deserialize)]
+struct UnlinkedGroupSessionRow {
+    id: String,
+    group_character_id: Option<String>,
+    name: String,
+    #[serde(default = "empty_json_array")]
+    character_ids: String,
+    #[serde(default = "empty_json_array")]
+    muted_character_ids: String,
+    persona_id: Option<String>,
+    created_at: i64,
+    updated_at: i64,
+    #[serde(default, deserialize_with = "nullable_bool")]
+    archived: bool,
+    #[serde(default = "default_chat_type")]
+    chat_type: String,
+    starting_scene: Option<String>,
+    background_image_path: Option<String>,
+    #[serde(default = "empty_json_array")]
+    lorebook_ids: String,
+    #[serde(default, deserialize_with = "nullable_bool")]
+    disable_character_lorebooks: bool,
+    speaker_selection_method: Option<String>,
+    memory_type: Option<String>,
+    character_model_overrides: Option<String>,
+    group_chat_prompt_template_id: Option<String>,
+    group_chat_roleplay_prompt_template_id: Option<String>,
+}
+
+impl UnlinkedGroupSessionRow {
+    fn into_group_row(self) -> GroupRow {
+        GroupRow {
+            id: self.id,
+            name: self.name,
+            character_ids: self.character_ids,
+            muted_character_ids: self.muted_character_ids,
+            persona_id: self.persona_id,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+            archived: self.archived,
+            chat_type: self.chat_type,
+            starting_scene: self.starting_scene,
+            background_image_path: self.background_image_path,
+            lorebook_ids: self.lorebook_ids,
+            disable_character_lorebooks: self.disable_character_lorebooks,
+            chat_appearance: None,
+            speaker_selection_method: self
+                .speaker_selection_method
+                .unwrap_or_else(default_speaker_selection),
+            memory_type: self.memory_type.unwrap_or_else(default_memory),
+            character_model_overrides: self.character_model_overrides,
+            group_chat_prompt_template_id: self.group_chat_prompt_template_id,
+            group_chat_roleplay_prompt_template_id: self.group_chat_roleplay_prompt_template_id,
+            extra: BTreeMap::new(),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct GroupStartingSceneRow {
     id: String,
@@ -412,11 +476,29 @@ pub fn plan_legacy_backup_authored(
         LegacyBackupDocumentKind::Characters,
         CHARACTER_LIMIT,
     )?;
-    let group_rows: Vec<GroupRow> = document_rows(
+    let mut group_rows: Vec<GroupRow> = document_rows(
         &configuration,
         LegacyBackupDocumentKind::GroupCharacters,
         CHARACTER_LIMIT,
     )?;
+    let unlinked_sessions: Vec<UnlinkedGroupSessionRow> = document_rows(
+        &configuration,
+        LegacyBackupDocumentKind::GroupSessions,
+        GROUP_SESSION_LIMIT,
+    )?;
+    let listed_groups = group_rows
+        .iter()
+        .map(|row| row.id.to_ascii_lowercase())
+        .collect::<BTreeSet<_>>();
+    group_rows.extend(
+        unlinked_sessions
+            .into_iter()
+            .filter(|session| {
+                session.group_character_id.is_none()
+                    && !listed_groups.contains(&session.id.to_ascii_lowercase())
+            })
+            .map(UnlinkedGroupSessionRow::into_group_row),
+    );
     let explicit_binding_rows: Option<Vec<CharacterLorebookRow>> = optional_rows(
         &configuration,
         LegacyBackupDocumentKind::CharacterLorebooks,

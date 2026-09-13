@@ -365,7 +365,10 @@ fn map_sessions(
         if !session_ids.insert(row.id.clone()) {
             return Err(malformed(format!("{path}.id")));
         }
-        let mut group_source_id = row.group_character_id.clone();
+        let mut group_source_id = row
+            .group_character_id
+            .clone()
+            .or_else(|| contains_case_insensitive(&group_ids, &row.id).then(|| row.id.clone()));
         if group_source_id
             .as_ref()
             .is_none_or(|id| !contains_case_insensitive(&group_ids, id))
@@ -1764,6 +1767,22 @@ mod tests {
                 reason: crate::LegacyImportSkipReason::MissingCharacter,
             }]
         );
+    }
+
+    #[test]
+    fn unlinked_group_sessions_link_the_group_legacy_created_for_them() {
+        let characters = vec![id(80), id(81)];
+        let group = id(82);
+        let root = id(83);
+        let mut row = session(&root, &group, &characters, None, &root, None, Vec::new());
+        row["group_character_id"] = Value::Null;
+        let plan = plan_legacy_backup_group_sessions(source(json!([row]), &characters, &group))
+            .expect("an unlinked session gets its own group");
+        assert_eq!(
+            plan.sessions[0].group_source_id.as_deref(),
+            Some(root.as_str())
+        );
+        assert!(plan.skipped.is_empty());
     }
 
     #[test]

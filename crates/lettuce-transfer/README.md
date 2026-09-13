@@ -613,6 +613,11 @@ group lorebook ids (stale group prompt ids are kept and recorded because
 sessions copied them as explicit choices), and a starting scene's missing selected variant
 (legacy group prompts used only the scene content). A group with fewer than two
 members or with every member muted, before or after pruning, is skipped and
-recorded (`group_profile`/`undersized_group`, user decision 2026-09-13). Group
+recorded (`group_profile`/`undersized_group`, user decision 2026-09-13). A group
+session saved before sessions linked a reusable group gets the group the legacy
+v42 migration created for it: a group under the session id built from the
+session's cast, mode, scene, background, lorebooks and prompts, which the
+session then links to. A session linking a deleted group stays recorded as
+`GroupReference`/`MissingGroup`. Group
 lorebooks use the canonical ordered binding document. Group sessions remain in
 the attached inventory for the later conversation/runtime conversion slice.
