@@ -314,6 +314,19 @@ of raw JSON:
   - Keys are applied one at a time with dependency retries; a key that cannot be represented keeps the inherited value and is recorded.
   - Widget nodes convert camelCase keys and `12h`/`24h`; library and upload images become unresolved legacy tokens.
 
+References the rewrite would refuse to launch with are cleared and recorded as
+`IncompatibleReference`:
+- a character direct, group, companion or starter prompt, or a group profile prompt, whose purpose differs from the one the launch planner looks up;
+- a character default model or group member override that is not a chat model.
+
+A missing prompt still stays referenced and resolves to the app default like
+legacy. Character lorebook rows follow the legacy restore rule: only enabled
+`character_lorebooks` rows count, they replace the character's list only when
+the character has one, and rows naming a deleted character or lorebook are
+recorded instead of aborting. A design reference that repeats the background or
+another reference is dropped and recorded, since one image cannot hold two
+character media slots.
+
 The version-1 ASR backup document now maps into the same bounded read-only plan
 used by SQLite migration. It preserves the exported authored and normalized
 text, language, scope, category, priority, confidence, approval, counters and

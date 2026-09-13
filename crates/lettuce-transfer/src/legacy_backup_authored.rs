@@ -9,7 +9,7 @@ use lettuce_characters::{
     LifecycleStatus, MemoryPolicy, SceneDocumentV1, ScenePart, Selection, SpeakerSelection,
     StarterMessage, StarterRole,
 };
-use lettuce_context::LorebookBinding;
+use lettuce_context::{LorebookBinding, PromptPurpose};
 use lettuce_types::{
     CharacterId, ConversationStarterId, GroupId, LorebookId, ModelProfileId, PersonaId, Revision,
     SceneId, SceneVariantId, StarterMessageId, TimestampMillis,
@@ -467,6 +467,7 @@ pub fn plan_legacy_backup_authored(
         &characters,
         &lorebook_ids,
         explicit_binding_rows,
+        &mut skipped,
         &mut configuration.notices,
     )?;
     validate_starter_owners(&characters, &configuration.chat_templates)?;
@@ -737,11 +738,8 @@ fn map_characters(
         .iter()
         .map(|model| model.id)
         .collect::<BTreeSet<_>>();
-    let prompt_ids = prompts
-        .prompts
-        .iter()
-        .map(|prompt| prompt.source_id.as_str())
-        .collect::<BTreeSet<_>>();
+    let chat_model_ids = chat_model_ids(provider_models);
+    let prompt_purposes = prompt_purposes(prompts);
     let mut ids = BTreeSet::new();
     let mut characters = Vec::with_capacity(rows.len());
     for row in rows {
@@ -831,37 +829,42 @@ fn map_characters(
                 crate::LegacyImportSkipReason::MissingModelProfile,
             ));
         }
-        let direct_prompt_source_id = normalize(row.prompt_template_id);
-        if direct_prompt_source_id
-            .as_deref()
-            .is_some_and(|prompt| !prompt_ids.contains(prompt))
+        if model_profile_id
+            .take_if(|model| !chat_model_ids.contains(model))
+            .is_some()
         {
             skipped.push(reference(
-                crate::LegacyImportSkipKind::PromptReference,
-                "prompt_template_id",
-                crate::LegacyImportSkipReason::MissingPrompt,
+                crate::LegacyImportSkipKind::ModelReference,
+                "default_model_id",
+                crate::LegacyImportSkipReason::IncompatibleReference,
             ));
         }
-        let group_conversation_prompt_source_id = normalize(row.group_chat_prompt_template_id);
-        let group_roleplay_prompt_source_id = normalize(row.group_chat_roleplay_prompt_template_id);
-        for (field, prompt) in [
+        let mut direct_prompt_source_id = normalize(row.prompt_template_id);
+        let mut group_conversation_prompt_source_id = normalize(row.group_chat_prompt_template_id);
+        let mut group_roleplay_prompt_source_id =
+            normalize(row.group_chat_roleplay_prompt_template_id);
+        for (field, prompt, purpose) in [
+            (
+                "prompt_template_id",
+                &mut direct_prompt_source_id,
+                PromptPurpose::DirectChat,
+            ),
             (
                 "group_chat_prompt_template_id",
-                &group_conversation_prompt_source_id,
+                &mut group_conversation_prompt_source_id,
+                PromptPurpose::GroupChatConversational,
             ),
             (
                 "group_chat_roleplay_prompt_template_id",
-                &group_roleplay_prompt_source_id,
+                &mut group_roleplay_prompt_source_id,
+                PromptPurpose::GroupChatRoleplay,
             ),
         ] {
-            if prompt
-                .as_deref()
-                .is_some_and(|prompt| !prompt_ids.contains(prompt))
-            {
+            if let Some(reason) = prompt_reference_issue(prompt, purpose, &prompt_purposes) {
                 skipped.push(reference(
                     crate::LegacyImportSkipKind::PromptReference,
                     field,
-                    crate::LegacyImportSkipReason::MissingPrompt,
+                    reason,
                 ));
             }
         }
@@ -899,7 +902,7 @@ fn map_characters(
                 Vec::new()
             }
         };
-        let starters = map_starters(chat_templates, id, &scene_ids, lorebook_ids)?;
+        let mut starters = map_starters(chat_templates, id, &scene_ids, lorebook_ids)?;
         let mut default_starter_source_id = normalize(row.default_chat_template_id);
         if default_starter_source_id
             .take_if(|default| !starters.iter().any(|starter| &starter.source_id == default))
@@ -921,6 +924,37 @@ fn map_characters(
             TimestampMillis::new(row.created_at),
             skipped,
         );
+        let mut companion_prompt_source_id = companion.prompt_source_id;
+        if let Some(reason) = prompt_reference_issue(
+            &mut companion_prompt_source_id,
+            PromptPurpose::CompanionChat,
+            &prompt_purposes,
+        ) {
+            skipped.push(reference(
+                crate::LegacyImportSkipKind::PromptReference,
+                "companion.prompting.promptTemplateId",
+                reason,
+            ));
+        }
+        let starter_purpose = if companion.soul.is_some() {
+            PromptPurpose::CompanionChat
+        } else {
+            PromptPurpose::DirectChat
+        };
+        for starter in &mut starters {
+            if prompt_reference_issue(
+                &mut starter.prompt_source_id,
+                starter_purpose,
+                &prompt_purposes,
+            ) == Some(crate::LegacyImportSkipReason::IncompatibleReference)
+            {
+                skipped.push(crate::LegacyImportSkip {
+                    kind: crate::LegacyImportSkipKind::PromptReference,
+                    source_key: format!("chat_templates.prompt_template_id:{}", starter.source_id),
+                    reason: crate::LegacyImportSkipReason::IncompatibleReference,
+                });
+            }
+        }
         let defaults = LegacyBackupCharacterDefaults {
             interaction_mode: match row.mode.as_str() {
                 "roleplay" => InteractionMode::Roleplay,
@@ -945,7 +979,7 @@ fn map_characters(
             group_roleplay_prompt_source_id,
             system_prompt: normalize(row.system_prompt),
             companion_soul: companion.soul,
-            companion_prompt_source_id: companion.prompt_source_id,
+            companion_prompt_source_id,
             voice: crate::legacy_backup_json_values::legacy_voice(
                 row.voice_config,
                 &character_key,
@@ -989,6 +1023,31 @@ fn map_characters(
             ),
         };
         validate_presentation(&presentation)?;
+        let background = media(
+            row.background_image_path,
+            LegacyBackupDocumentKind::Characters,
+            "background_image_path",
+        )?;
+        let mut design_references = media_list(
+            row.design_reference_image_ids,
+            LegacyBackupDocumentKind::Characters,
+            "design_reference_image_ids",
+        )?;
+        let listed_design_references = design_references.len();
+        let mut seen_design_references = BTreeSet::new();
+        design_references.retain(|reference| {
+            background
+                .as_ref()
+                .is_none_or(|background| background.locator != reference.locator)
+                && seen_design_references.insert(reference.locator.clone())
+        });
+        if design_references.len() != listed_design_references {
+            skipped.push(crate::legacy_value_skip(
+                "characters.design_reference_image_ids",
+                &character_key,
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+        }
         characters.push(LegacyBackupCharacterCandidate {
             id,
             profile,
@@ -1001,16 +1060,8 @@ fn map_characters(
                     LegacyBackupDocumentKind::Characters,
                     "avatar_path",
                 )?,
-                background: media(
-                    row.background_image_path,
-                    LegacyBackupDocumentKind::Characters,
-                    "background_image_path",
-                )?,
-                design_references: media_list(
-                    row.design_reference_image_ids,
-                    LegacyBackupDocumentKind::Characters,
-                    "design_reference_image_ids",
-                )?,
+                background,
+                design_references,
             },
             image_recommendation: recommendation(
                 row.lora_name,
@@ -1244,11 +1295,8 @@ fn map_groups(
         .iter()
         .map(|model| model.id)
         .collect::<BTreeSet<_>>();
-    let prompt_ids = prompts
-        .prompts
-        .iter()
-        .map(|prompt| prompt.source_id.as_str())
-        .collect::<BTreeSet<_>>();
+    let chat_model_ids = chat_model_ids(provider_models);
+    let prompt_purposes = prompt_purposes(prompts);
     let mut group_ids = BTreeSet::new();
     let mut result = Vec::with_capacity(rows.len());
     for row in rows {
@@ -1345,6 +1393,14 @@ fn map_groups(
                 ));
                 continue;
             }
+            if !chat_model_ids.contains(&model) {
+                skipped.push(reference_skip(
+                    crate::LegacyImportSkipKind::ModelReference,
+                    key,
+                    crate::LegacyImportSkipReason::IncompatibleReference,
+                ));
+                continue;
+            }
             overrides.insert(member, model);
         }
         let members = member_ids
@@ -1408,26 +1464,26 @@ fn map_groups(
                 ));
             }
         };
-        let group_conversation_prompt_source_id = normalize(row.group_chat_prompt_template_id);
-        let group_roleplay_prompt_source_id = normalize(row.group_chat_roleplay_prompt_template_id);
-        for (field, prompt) in [
+        let mut group_conversation_prompt_source_id = normalize(row.group_chat_prompt_template_id);
+        let mut group_roleplay_prompt_source_id =
+            normalize(row.group_chat_roleplay_prompt_template_id);
+        for (field, prompt, purpose) in [
             (
                 "group_chat_prompt_template_id",
-                &group_conversation_prompt_source_id,
+                &mut group_conversation_prompt_source_id,
+                PromptPurpose::GroupChatConversational,
             ),
             (
                 "group_chat_roleplay_prompt_template_id",
-                &group_roleplay_prompt_source_id,
+                &mut group_roleplay_prompt_source_id,
+                PromptPurpose::GroupChatRoleplay,
             ),
         ] {
-            if prompt
-                .as_deref()
-                .is_some_and(|prompt| !prompt_ids.contains(prompt))
-            {
+            if let Some(reason) = prompt_reference_issue(prompt, purpose, &prompt_purposes) {
                 skipped.push(reference_skip(
                     crate::LegacyImportSkipKind::PromptReference,
                     format!("group_characters.{field}:{group_key}"),
-                    crate::LegacyImportSkipReason::MissingPrompt,
+                    reason,
                 ));
             }
         }
@@ -1519,6 +1575,42 @@ fn map_groups(
         });
     }
     Ok((result, skipped))
+}
+
+fn chat_model_ids(provider_models: &crate::LegacyProviderModelPlan) -> BTreeSet<ModelProfileId> {
+    provider_models
+        .model_profiles
+        .iter()
+        .filter(|model| model.kind == lettuce_models::ModelKind::Chat)
+        .map(|model| model.id)
+        .collect()
+}
+
+fn prompt_purposes(prompts: &crate::LegacyPromptPlan) -> BTreeMap<&str, PromptPurpose> {
+    prompts
+        .prompts
+        .iter()
+        .map(|prompt| (prompt.source_id.as_str(), prompt.purpose))
+        .collect()
+}
+
+/// A missing prompt stays referenced and resolves to the app default like
+/// legacy; a prompt of another purpose is cleared because the rewrite would
+/// refuse to launch with it.
+fn prompt_reference_issue(
+    prompt: &mut Option<String>,
+    purpose: PromptPurpose,
+    purposes: &BTreeMap<&str, PromptPurpose>,
+) -> Option<crate::LegacyImportSkipReason> {
+    let actual = purposes.get(prompt.as_deref()?).copied();
+    match actual {
+        None => Some(crate::LegacyImportSkipReason::MissingPrompt),
+        Some(actual) if actual != purpose => {
+            *prompt = None;
+            Some(crate::LegacyImportSkipReason::IncompatibleReference)
+        }
+        Some(_) => None,
+    }
 }
 
 fn reference_skip(
@@ -1652,6 +1744,7 @@ fn map_character_bindings(
     characters: &[LegacyBackupCharacterCandidate],
     lorebook_ids: &BTreeSet<LorebookId>,
     explicit: Option<Vec<CharacterLorebookRow>>,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<BackupLorebookBindings<CharacterId>>, LegacyBackupAuthoredError> {
     let character_ids = characters
@@ -1666,6 +1759,9 @@ fn map_character_bindings(
                 &row.extra,
                 notices,
             );
+            if !row.enabled {
+                continue;
+            }
             let character_id = parse_id(
                 &row.character_id,
                 LegacyBackupDocumentKind::CharacterLorebooks,
@@ -1676,17 +1772,28 @@ fn map_character_bindings(
                 LegacyBackupDocumentKind::CharacterLorebooks,
                 "lorebook_id",
             )?;
-            if !character_ids.contains(&character_id) || !lorebook_ids.contains(&lorebook_id) {
-                return Err(orphan(
-                    LegacyBackupDocumentKind::CharacterLorebooks,
-                    "ownership",
+            let key = format!("character_lorebooks:{character_id}:{lorebook_id}");
+            if !character_ids.contains(&character_id) {
+                skipped.push(reference_skip(
+                    crate::LegacyImportSkipKind::CharacterReference,
+                    key,
+                    crate::LegacyImportSkipReason::MissingCharacter,
                 ));
+                continue;
+            }
+            if !lorebook_ids.contains(&lorebook_id) {
+                skipped.push(reference_skip(
+                    crate::LegacyImportSkipKind::LorebookReference,
+                    key,
+                    crate::LegacyImportSkipReason::MissingLorebook,
+                ));
+                continue;
             }
             grouped.entry(character_id).or_default().push((
                 row.display_order,
                 source_index,
                 lorebook_id,
-                row.enabled,
+                true,
             ));
         }
     } else {
@@ -1695,16 +1802,17 @@ fn map_character_bindings(
             LegacyBackupDocumentKind::CharacterLorebooks,
             "$",
         ));
-        for character in characters {
-            let ids = character.active_lorebook_ids.clone();
-            grouped.insert(
-                character.id,
-                ids.into_iter()
-                    .enumerate()
-                    .map(|(index, id)| (index as i64, index, id, true))
-                    .collect(),
-            );
-        }
+    }
+    for character in characters {
+        grouped.entry(character.id).or_insert_with(|| {
+            character
+                .active_lorebook_ids
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(index, id)| (index as i64, index, id, true))
+                .collect()
+        });
     }
     let mut result = Vec::new();
     for character in characters {
@@ -2217,7 +2325,7 @@ mod tests {
     }
 
     #[test]
-    fn authored_plan_preserves_profiles_children_media_and_disabled_bindings() {
+    fn authored_plan_preserves_profiles_children_media_and_ignores_disabled_binding_rows() {
         let persona_id = id(1);
         let character_id = id(2);
         let lorebook_id = id(3);
@@ -2358,7 +2466,7 @@ mod tests {
         assert_eq!(character.starters[0].lorebook_ids, Some(Vec::new()));
         assert!(character.defaults.voice_autoplay);
         assert_eq!(plan.character_lorebooks[0].bindings.len(), 1);
-        assert!(!plan.character_lorebooks[0].bindings[0].enabled);
+        assert!(plan.character_lorebooks[0].bindings[0].enabled);
         assert_eq!(plan.persona_lorebooks[0].bindings.len(), 1);
         assert!(plan.persona_lorebooks[0].bindings[0].enabled);
     }
@@ -2642,6 +2750,237 @@ mod tests {
             assert!(plan.notices.iter().any(|notice| notice.kind
                 == LegacyBackupConversionNoticeKind::Absent
                 && notice.document == kind));
+        }
+    }
+
+    #[test]
+    fn references_the_rewrite_cannot_launch_are_cleared_and_recorded() {
+        let provider_id = id(40);
+        let chat_model = id(41);
+        let image_model = id(42);
+        let first = id(43);
+        let second = id(44);
+        let group_id = id(45);
+        let lorebook_id = id(46);
+        let missing_lorebook = id(47);
+        let plan = plan(vec![
+            document(
+                LegacyBackupDocumentKind::ProviderCredentials,
+                json!([{
+                    "id": provider_id,
+                    "provider_id": "openai",
+                    "label": "OpenAI",
+                    "api_key": "sk-test",
+                    "config": "{}"
+                }]),
+            ),
+            document(
+                LegacyBackupDocumentKind::Models,
+                json!([
+                    {
+                        "id": chat_model,
+                        "name": "gpt-4o",
+                        "provider_id": "openai",
+                        "provider_credential_id": provider_id,
+                        "provider_label": "OpenAI",
+                        "display_name": "GPT-4o",
+                        "created_at": 1,
+                        "model_type": "chat",
+                        "input_scopes": "[\"text\"]",
+                        "output_scopes": "[\"text\"]"
+                    },
+                    {
+                        "id": image_model,
+                        "name": "gpt-image-1",
+                        "provider_id": "openai",
+                        "provider_credential_id": provider_id,
+                        "provider_label": "OpenAI",
+                        "display_name": "GPT Image",
+                        "created_at": 1,
+                        "model_type": "imagegeneration",
+                        "input_scopes": "[\"text\"]",
+                        "output_scopes": "[\"image\"]"
+                    }
+                ]),
+            ),
+            document(
+                LegacyBackupDocumentKind::PromptTemplates,
+                json!([
+                    {
+                        "id": "direct",
+                        "name": "Direct",
+                        "prompt_type": "directChat",
+                        "content": "Stay in character",
+                        "entries": [],
+                        "condense_prompt_entries": false,
+                        "created_at": 1,
+                        "updated_at": 1
+                    },
+                    {
+                        "id": "group-rp",
+                        "name": "Group roleplay",
+                        "prompt_type": "groupChatRoleplay",
+                        "content": "Share the scene",
+                        "entries": [],
+                        "condense_prompt_entries": false,
+                        "created_at": 1,
+                        "updated_at": 1
+                    }
+                ]),
+            ),
+            document(
+                LegacyBackupDocumentKind::Lorebooks,
+                json!([{
+                    "id": lorebook_id,
+                    "name": "World",
+                    "created_at": 1,
+                    "updated_at": 1
+                }]),
+            ),
+            document(
+                LegacyBackupDocumentKind::Characters,
+                json!([
+                    {
+                        "id": first,
+                        "name": "Mira",
+                        "default_model_id": image_model,
+                        "prompt_template_id": "group-rp",
+                        "group_chat_roleplay_prompt_template_id": "direct",
+                        "background_image_path": "shared",
+                        "design_reference_image_ids": "[\"shared\",\"other\",\"other\"]",
+                        "created_at": 1,
+                        "updated_at": 1
+                    },
+                    {
+                        "id": second,
+                        "name": "Sol",
+                        "active_lorebook_ids": format!("[\"{lorebook_id}\"]"),
+                        "created_at": 1,
+                        "updated_at": 1
+                    }
+                ]),
+            ),
+            document(
+                LegacyBackupDocumentKind::ChatTemplates,
+                json!([{
+                    "id": "starter-b",
+                    "character_id": first,
+                    "name": "Arrival",
+                    "prompt_template_id": "group-rp",
+                    "created_at": 2,
+                    "messages": [{
+                        "id": "message-b",
+                        "idx": 0,
+                        "role": "assistant",
+                        "content": "Welcome"
+                    }]
+                }]),
+            ),
+            document(
+                LegacyBackupDocumentKind::CharacterLorebooks,
+                json!([
+                    {
+                        "character_id": first,
+                        "lorebook_id": lorebook_id,
+                        "enabled": true,
+                        "display_order": 1
+                    },
+                    {
+                        "character_id": first,
+                        "lorebook_id": missing_lorebook,
+                        "enabled": true,
+                        "display_order": 0
+                    },
+                    {
+                        "character_id": second,
+                        "lorebook_id": missing_lorebook,
+                        "enabled": false,
+                        "display_order": 0
+                    }
+                ]),
+            ),
+            document(
+                LegacyBackupDocumentKind::GroupCharacters,
+                json!([{
+                    "id": group_id,
+                    "name": "Crew",
+                    "character_ids": format!("[\"{first}\",\"{second}\"]"),
+                    "muted_character_ids": "[]",
+                    "character_model_overrides": format!("{{\"{first}\":\"{image_model}\"}}"),
+                    "created_at": 1,
+                    "updated_at": 1
+                }]),
+            ),
+        ])
+        .expect("incompatible references are cleared");
+
+        let character = &plan.characters[0];
+        assert_eq!(character.defaults.model_profile_id, None);
+        assert_eq!(character.defaults.direct_prompt_source_id, None);
+        assert_eq!(character.defaults.group_roleplay_prompt_source_id, None);
+        assert_eq!(character.starters[0].prompt_source_id, None);
+        assert_eq!(
+            character
+                .media
+                .design_references
+                .iter()
+                .map(|reference| reference.locator.as_str())
+                .collect::<Vec<_>>(),
+            ["other"]
+        );
+        assert_eq!(plan.groups[0].members[0].model_profile_override, None);
+        let bound = |index: usize| {
+            plan.character_lorebooks[index]
+                .bindings
+                .iter()
+                .map(|binding| binding.lorebook_id.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(bound(0), vec![lorebook_id.clone()]);
+        assert_eq!(bound(1), vec![lorebook_id.clone()]);
+        let skip = |kind, source_key: String, reason| crate::LegacyImportSkip {
+            kind,
+            source_key,
+            reason,
+        };
+        for expected in [
+            skip(
+                crate::LegacyImportSkipKind::ModelReference,
+                format!("characters.default_model_id:{first}"),
+                crate::LegacyImportSkipReason::IncompatibleReference,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::PromptReference,
+                format!("characters.prompt_template_id:{first}"),
+                crate::LegacyImportSkipReason::IncompatibleReference,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::PromptReference,
+                format!("characters.group_chat_roleplay_prompt_template_id:{first}"),
+                crate::LegacyImportSkipReason::IncompatibleReference,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::PromptReference,
+                "chat_templates.prompt_template_id:starter-b".to_owned(),
+                crate::LegacyImportSkipReason::IncompatibleReference,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::ModelReference,
+                format!("group_characters.character_model_overrides:{group_id}:{first}"),
+                crate::LegacyImportSkipReason::IncompatibleReference,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::LorebookReference,
+                format!("character_lorebooks:{first}:{missing_lorebook}"),
+                crate::LegacyImportSkipReason::MissingLorebook,
+            ),
+            crate::legacy_value_skip(
+                "characters.design_reference_image_ids",
+                &first,
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+        ] {
+            assert!(plan.skipped.contains(&expected), "missing {expected:?}");
         }
     }
 

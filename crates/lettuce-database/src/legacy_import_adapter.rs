@@ -2316,6 +2316,7 @@ fn skip_reason_name(reason: lettuce_transfer::LegacyImportSkipReason) -> &'stati
         lettuce_transfer::LegacyImportSkipReason::UndersizedGroup => "undersized_group",
         lettuce_transfer::LegacyImportSkipReason::MissingGroup => "missing_group",
         lettuce_transfer::LegacyImportSkipReason::MissingUserVoice => "missing_user_voice",
+        lettuce_transfer::LegacyImportSkipReason::IncompatibleReference => "incompatible_reference",
     }
 }
 
@@ -2412,6 +2413,7 @@ fn load_skips(
                 "undersized_group" => lettuce_transfer::LegacyImportSkipReason::UndersizedGroup,
                 "missing_group" => lettuce_transfer::LegacyImportSkipReason::MissingGroup,
                 "missing_user_voice" => lettuce_transfer::LegacyImportSkipReason::MissingUserVoice,
+                "incompatible_reference" => lettuce_transfer::LegacyImportSkipReason::IncompatibleReference,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             Ok(lettuce_transfer::LegacyImportSkip {

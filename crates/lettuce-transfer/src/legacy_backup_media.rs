@@ -673,7 +673,7 @@ mod tests {
                     "id": character,
                     "name": "Mira",
                     "avatar_path": "mira.png",
-                    "background_image_path": "gone",
+                    "background_image_path": "absent",
                     "design_reference_image_ids": "[\"kept\",\"gone\"]",
                     "scenes": [{
                         "id": scene,

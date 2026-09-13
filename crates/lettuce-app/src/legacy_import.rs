@@ -620,6 +620,7 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipReason::UndersizedGroup => 15,
             lettuce_transfer::LegacyImportSkipReason::MissingGroup => 16,
             lettuce_transfer::LegacyImportSkipReason::MissingUserVoice => 17,
+            lettuce_transfer::LegacyImportSkipReason::IncompatibleReference => 18,
         });
     }
 }

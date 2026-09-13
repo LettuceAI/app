@@ -451,6 +451,7 @@ pub enum LegacyImportSkipReason {
     UndersizedGroup,
     MissingGroup,
     MissingUserVoice,
+    IncompatibleReference,
 }
 
 pub fn legacy_value_skip(
