@@ -18,9 +18,9 @@ use lettuce_types::{
 
 use crate::launch::documents;
 use crate::legacy_direct_conversation_import::{
-    ImportContext, LegacyConversationSource, TimelineMessage, TimelineVariant, committed_stage,
-    conversation_record, derived, import_context, launch_key, legacy_user, memory_owner, parse,
-    persona_selection, selected_model,
+    ImportContext, LegacyConversationSource, SessionSettingsSource, TimelineMessage,
+    TimelineVariant, committed_stage, conversation_record, derived, import_context, launch_key,
+    legacy_user, memory_owner, parse, persona_selection, selected_model, session_settings,
 };
 use crate::{
     ConversationLaunchPlanner, DirectLaunchSources, GROUP_LAUNCH_REQUEST_FORMAT_V1,
@@ -144,6 +144,44 @@ where
         let ConversationKind::Group(details) = &plan.kind else {
             return Err(Error::InvalidInput);
         };
+        let (prompt_source_id, prompt_purpose, prompt_snapshot_purpose) =
+            match details.group.chat_mode {
+                lettuce_conversations::GroupChatModeSnapshot::Conversation => (
+                    session.group_conversation_prompt_source_id.as_deref(),
+                    lettuce_context::PromptPurpose::GroupChatConversational,
+                    lettuce_conversations::PromptPurposeSnapshot::GroupConversational,
+                ),
+                lettuce_conversations::GroupChatModeSnapshot::Roleplay => (
+                    session.group_roleplay_prompt_source_id.as_deref(),
+                    lettuce_context::PromptPurpose::GroupChatRoleplay,
+                    lettuce_conversations::PromptPurposeSnapshot::GroupRoleplay,
+                ),
+            };
+        let speaker_selection = match session.speaker_selection.as_str() {
+            "llm" => lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm,
+            "heuristic" => lettuce_conversations::GroupSpeakerSelectionSnapshot::Heuristic,
+            "round_robin" => lettuce_conversations::GroupSpeakerSelectionSnapshot::RoundRobin,
+            "director" => lettuce_conversations::GroupSpeakerSelectionSnapshot::Director,
+            "director_action" => {
+                lettuce_conversations::GroupSpeakerSelectionSnapshot::DirectorAction
+            }
+            _ => return Err(Error::InvalidInput),
+        };
+        let (settings, settings_snapshots) = session_settings(
+            self.sources,
+            &session.source_id,
+            context,
+            SessionSettingsSource {
+                author_note: session.author_note.as_deref(),
+                prompt_source_id,
+                prompt_purposes: &[prompt_purpose],
+                prompt_snapshot_purpose,
+                lorebook_source_ids: Some(&session.lorebook_source_ids),
+                speaker_selection: (speaker_selection != details.group.speaker_selection)
+                    .then_some(speaker_selection),
+            },
+        )?;
+        snapshots.extend(settings_snapshots);
         let model = selected_model(&details.group.model).or_else(|| {
             details
                 .group
@@ -208,6 +246,7 @@ where
                 memory,
                 memory_summary: Some(session.memory_summary.as_str()),
                 memory_summary_token_count: session.memory_summary_token_count,
+                settings,
             },
             context,
         )

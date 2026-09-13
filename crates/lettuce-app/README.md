@@ -67,7 +67,14 @@ memory: legacy memories that fit the rewrite's memory item become the
 conversation's memory space with deterministic short ids, stored embeddings of
 64-768 dimensions become ready projections under their legacy source version,
 and a legacy summary covers the latest imported messages (legacy kept no
-window). Memories in an incompatible shape stay in sealed evidence. Candidates always carry the
+window). Memories in an incompatible shape stay in sealed evidence. Session settings become
+current conversation settings: the author note, the session prompt override
+(snapshotted when the imported prompt is available with the conversation's
+purpose, otherwise the launch prompt stays like legacy's fallback), the lorebook
+override (an empty legacy list disables lorebooks) and, for groups, a speaker
+selection that differs from the profile. Legacy per-session sampler values,
+background, voice autoplay and group chat mode or starting scene differing from
+the profile have no destination yet. Candidates always carry the
 launch model snapshot; the legacy message model is kept only in usage. Session settings
 (author note, prompt and lorebook overrides, generation settings, background,
 voice autoplay), memory fields, companion state and attachments are not mapped

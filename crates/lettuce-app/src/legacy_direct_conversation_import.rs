@@ -47,6 +47,19 @@ pub struct LegacyDirectConversationImportCoordinator<'a, S> {
 pub(crate) struct ImportContext {
     models: BTreeMap<ModelProfileId, (ModelProfileId, ProviderAccountId)>,
     pub(crate) personas: BTreeMap<PersonaId, PersonaId>,
+    prompts: BTreeMap<String, lettuce_types::PromptDocumentId>,
+    lorebooks: BTreeMap<lettuce_types::LorebookId, lettuce_types::LorebookId>,
+}
+
+/// The per-session values legacy let a chat override on top of its launch
+/// sources.
+pub(crate) struct SessionSettingsSource<'a> {
+    pub author_note: Option<&'a str>,
+    pub prompt_source_id: Option<&'a str>,
+    pub prompt_purposes: &'a [lettuce_context::PromptPurpose],
+    pub prompt_snapshot_purpose: lettuce_conversations::PromptPurposeSnapshot,
+    pub lorebook_source_ids: Option<&'a [String]>,
+    pub speaker_selection: Option<lettuce_conversations::GroupSpeakerSelectionSnapshot>,
 }
 
 /// One legacy chat row in the shape both direct and group sessions share.
@@ -91,6 +104,7 @@ pub(crate) struct LegacyConversationSource<'a> {
     pub memory: Option<&'a LegacyBackupMemoryEmbeddingOwner>,
     pub memory_summary: Option<&'a str>,
     pub memory_summary_token_count: u64,
+    pub settings: Option<lettuce_conversations::CurrentConversationSettings>,
 }
 
 impl<'a, S> LegacyDirectConversationImportCoordinator<'a, S>
@@ -205,7 +219,7 @@ where
             persona,
             operation_key: launch_key(&session.source_id)?,
         };
-        let (plan, snapshots) = ConversationLaunchPlanner::new(self.sources)
+        let (plan, mut snapshots) = ConversationLaunchPlanner::new(self.sources)
             .prepare_direct(&request)
             .map_err(|_| Error::Conflict)?
             .into_parts();
@@ -218,6 +232,23 @@ where
         let ConversationKind::Direct(details) = &plan.kind else {
             return Err(Error::InvalidInput);
         };
+        let (settings, settings_snapshots) = session_settings(
+            self.sources,
+            &session.source_id,
+            context,
+            SessionSettingsSource {
+                author_note: session.author_note.as_deref(),
+                prompt_source_id: session.prompt_source_id.as_deref(),
+                prompt_purposes: &[
+                    lettuce_context::PromptPurpose::DirectChat,
+                    lettuce_context::PromptPurpose::CompanionChat,
+                ],
+                prompt_snapshot_purpose: lettuce_conversations::PromptPurposeSnapshot::Direct,
+                lorebook_source_ids: session.lorebook_source_ids_override.as_deref(),
+                speaker_selection: None,
+            },
+        )?;
+        snapshots.extend(settings_snapshots);
         let model = selected_model(&details.model);
         let messages = rows
             .iter()
@@ -265,10 +296,160 @@ where
                 memory,
                 memory_summary: session.memory_summary.as_deref(),
                 memory_summary_token_count: session.memory_summary_token_count,
+                settings,
             },
             context,
         )
     }
+}
+
+/// A legacy session's author note, prompt and lorebook overrides and group
+/// speaker selection as current conversation settings, snapshotting the
+/// imported prompt and lorebooks they name. A prompt that is missing, archived
+/// or of another purpose keeps the launch prompt, like legacy's fallback.
+pub(crate) fn session_settings<S: DirectLaunchSources>(
+    sources: &S,
+    source_id: &str,
+    context: &ImportContext,
+    input: SessionSettingsSource<'_>,
+) -> Result<
+    (
+        Option<lettuce_conversations::CurrentConversationSettings>,
+        Vec<SnapshotArtifactDraft>,
+    ),
+    Error,
+> {
+    use lettuce_context::{LorebookRepository, PromptLookupResult, PromptRepository};
+    use lettuce_conversations::{
+        CurrentConversationSettings, LorebookLaunchSnapshot, PromptLaunchSnapshot,
+        SettingProvenance,
+    };
+    use lettuce_types::SnapshotArtifactId;
+
+    let provenance = |present: bool| {
+        if present {
+            SettingProvenance::CurrentOverride
+        } else {
+            SettingProvenance::LaunchInherited
+        }
+    };
+    let mut drafts = Vec::new();
+    let author_note = input
+        .author_note
+        .filter(|note| !note.trim().is_empty())
+        .map(str::to_owned);
+    let mut prompt = None;
+    if let Some(destination) = input
+        .prompt_source_id
+        .and_then(|id| context.prompts.get(id))
+    {
+        for purpose in input.prompt_purposes {
+            if let PromptLookupResult::Available { document } =
+                PromptRepository::lookup_exact(sources, *destination, *purpose)
+                    .map_err(|_| Error::Storage)?
+            {
+                let draft = crate::launch::documents::draft(
+                    SnapshotArtifactId::from_uuid(derived(source_id, "settings:prompt")),
+                    document.revision,
+                    crate::launch::documents::prompt_body(&document),
+                )
+                .map_err(|_| Error::InvalidInput)?;
+                prompt = Some(PromptLaunchSnapshot {
+                    snapshot_ref: draft.reference(),
+                    source_id: document.id,
+                    source_revision: document.revision,
+                    title: document.name.clone(),
+                    purpose: input.prompt_snapshot_purpose,
+                });
+                drafts.push(draft);
+                break;
+            }
+        }
+    }
+    let lorebooks = input
+        .lorebook_source_ids
+        .map(|ids| {
+            let mut books = Vec::new();
+            for id in ids {
+                let Some(destination) = id
+                    .parse::<lettuce_types::LorebookId>()
+                    .ok()
+                    .and_then(|id| context.lorebooks.get(&id))
+                else {
+                    continue;
+                };
+                let Some(details) = LorebookRepository::get(sources, *destination)
+                    .map_err(|_| Error::Storage)?
+                    .filter(|details| {
+                        details.book.status != lettuce_context::LifecycleStatus::Archived
+                    })
+                else {
+                    continue;
+                };
+                if books
+                    .iter()
+                    .any(|book: &LorebookLaunchSnapshot| book.source_id == details.book.id)
+                {
+                    continue;
+                }
+                let draft = crate::launch::documents::draft(
+                    SnapshotArtifactId::from_uuid(derived(
+                        source_id,
+                        &format!("settings:lorebook:{}", details.book.id),
+                    )),
+                    details.book.revision,
+                    crate::launch::documents::lorebook_body(&details),
+                )
+                .map_err(|_| Error::InvalidInput)?;
+                books.push(LorebookLaunchSnapshot {
+                    snapshot_ref: draft.reference(),
+                    source_id: details.book.id,
+                    source_revision: details.book.revision,
+                    name: details.book.name.clone(),
+                });
+                drafts.push(draft);
+            }
+            Ok::<_, Error>(books)
+        })
+        .transpose()?;
+    let lorebooks_provenance = match &lorebooks {
+        Some(books) if books.is_empty() => SettingProvenance::Disabled,
+        Some(_) => SettingProvenance::CurrentOverride,
+        None => SettingProvenance::LaunchInherited,
+    };
+    let lorebooks = lorebooks.filter(|books| !books.is_empty());
+    if author_note.is_none()
+        && prompt.is_none()
+        && lorebooks_provenance == SettingProvenance::LaunchInherited
+        && input.speaker_selection.is_none()
+    {
+        return Ok((None, drafts));
+    }
+    Ok((
+        Some(CurrentConversationSettings {
+            companion_clock: None,
+            revision: Revision::INITIAL,
+            author_note_provenance: provenance(author_note.is_some()),
+            author_note,
+            memory: None,
+            memory_provenance: SettingProvenance::LaunchInherited,
+            model_override: None,
+            model_provenance: SettingProvenance::LaunchInherited,
+            voice: None,
+            voice_provenance: SettingProvenance::LaunchInherited,
+            prompt_provenance: provenance(prompt.is_some()),
+            prompt,
+            lorebooks_provenance,
+            lorebooks,
+            persona: None,
+            persona_provenance: SettingProvenance::LaunchInherited,
+            scene: None,
+            scene_provenance: SettingProvenance::LaunchInherited,
+            speaker_selection_provenance: provenance(input.speaker_selection.is_some()),
+            speaker_selection: input.speaker_selection,
+        }),
+        drafts,
+    ))
 }
 
 pub(crate) fn memory_owner<'a>(
@@ -553,7 +734,7 @@ pub(crate) fn conversation_record(
                 updated_at: created_at,
             })
             .collect(),
-        current_settings: None,
+        current_settings: source.settings,
         revision: Revision::INITIAL,
         created_at,
         updated_at,
@@ -927,8 +1108,22 @@ pub(crate) fn import_context(
     let mut providers = BTreeMap::new();
     let mut models = BTreeMap::new();
     let mut personas = BTreeMap::new();
+    let mut prompts = BTreeMap::new();
+    let mut lorebooks = BTreeMap::new();
     for assignment in &admission.assignments {
         match assignment {
+            LegacyImportAssignment::Prompt {
+                legacy_id,
+                destination_id,
+            } => {
+                prompts.insert(legacy_id.clone(), *destination_id);
+            }
+            LegacyImportAssignment::Lorebook {
+                legacy_id,
+                destination_id,
+            } => {
+                lorebooks.insert(*legacy_id, *destination_id);
+            }
             LegacyImportAssignment::ProviderAccount {
                 legacy_id,
                 destination_id,
@@ -965,7 +1160,12 @@ pub(crate) fn import_context(
             ))
         })
         .collect();
-    ImportContext { models, personas }
+    ImportContext {
+        models,
+        personas,
+        prompts,
+        lorebooks,
+    }
 }
 
 pub(crate) fn legacy_uuid(value: &str) -> Uuid {

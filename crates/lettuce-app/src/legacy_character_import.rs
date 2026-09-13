@@ -596,12 +596,12 @@ mod tests {
             deprecated_system_prompt: None,
             mode: "roleplay".to_owned(),
             selected_scene_source_id: None,
-            author_note: None,
+            author_note: Some("Keep replies short".to_owned()),
             persona_source_id: None,
             persona_disabled: false,
             voice_autoplay: None,
             prompt_source_id: None,
-            lorebook_source_ids_override: None,
+            lorebook_source_ids_override: Some(vec![legacy_lorebook.to_string()]),
             generation_settings: lettuce_transfer::LegacyBackupSessionGenerationSettings {
                 temperature: None,
                 top_p: None,
@@ -708,6 +708,20 @@ mod tests {
         let history = &graph.conversation_history.conversations[0];
         assert_eq!(history.aggregate.conversation.id, session_id);
         assert_eq!(history.messages.len(), 2);
+        let settings = history
+            .aggregate
+            .conversation
+            .current_settings
+            .as_ref()
+            .expect("session settings");
+        assert_eq!(settings.author_note.as_deref(), Some("Keep replies short"));
+        assert_eq!(
+            settings
+                .lorebooks
+                .as_ref()
+                .map(|books| books.iter().map(|book| book.source_id).collect::<Vec<_>>()),
+            Some(vec![lorebook_id])
+        );
         let reply = &history.messages[1];
         assert_eq!(reply.candidates.len(), 2);
         assert_eq!(
