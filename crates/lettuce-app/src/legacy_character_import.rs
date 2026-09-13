@@ -738,7 +738,7 @@ mod tests {
             .find(|space| space.conversation_id == session_id)
             .expect("imported memory space");
         assert_eq!(space.snapshot.items.len(), 1);
-        assert_eq!(space.snapshot.items[0].id, memory_id);
+        assert_eq!(space.snapshot.items[0].text, "The user likes night shifts");
         assert!(space.snapshot.items[0].is_pinned);
         assert_eq!(graph.memory_projections.projections.len(), 1);
 

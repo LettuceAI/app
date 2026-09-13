@@ -64,10 +64,11 @@ left out of the stage for now. An all-muted legacy cast unmutes one member
 active candidate, and members without a model inherit the group model or the
 first member override. Both conversation importers also import the session's
 memory: legacy memories that fit the rewrite's memory item become the
-conversation's memory space with deterministic short ids, stored embeddings of
+conversation's memory space with ids derived per session (legacy branches
+copied memories with the same ids) and deterministic short ids, stored embeddings of
 64-768 dimensions become ready projections under their legacy source version,
-and a legacy summary covers the latest imported messages (legacy kept no
-window). Memories in an incompatible shape stay in sealed evidence. Session settings become
+and a legacy summary covers the latest visible user and assistant messages,
+the messages the runtime summary cursor counts. Memories in an incompatible shape stay in sealed evidence. Session settings become
 current conversation settings: the author note, the session prompt override
 (snapshotted when the imported prompt is available with the conversation's
 purpose, otherwise the launch prompt stays like legacy's fallback), the lorebook

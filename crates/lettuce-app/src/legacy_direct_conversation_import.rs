@@ -482,7 +482,7 @@ fn memory_space(
         if memory.materialization == LegacyBackupMemoryMaterialization::RetainedEvidence {
             continue;
         }
-        let id = parse::<MemoryId>(&memory.id)?;
+        let id = memory_item_id(source_id, &memory.id);
         let short_id = MemoryShortId::allocate(id, |candidate| {
             items.iter().any(|item| item.short_id == candidate)
         });
@@ -519,13 +519,16 @@ fn memory_space(
             },
             observed_at: memory.observed_at.map(timestamp).transpose()?,
             observed_time_precision: memory.observed_time_precision.clone(),
-            superseded_by: memory.superseded_by.as_deref().map(parse).transpose()?,
+            superseded_by: memory
+                .superseded_by
+                .as_deref()
+                .map(|value| memory_item_id(source_id, value)),
             superseded_at: memory.superseded_at.map(timestamp).transpose()?,
             supersedes: memory
                 .supersedes
                 .iter()
-                .map(|value| parse(value))
-                .collect::<Result<_, _>>()?,
+                .map(|value| memory_item_id(source_id, value))
+                .collect(),
             token_count: memory.token_count,
             is_cold: memory.is_cold && !memory.is_pinned,
             is_pinned: memory.is_pinned,
@@ -560,21 +563,29 @@ fn memory_space(
             });
         }
     }
+    let dialogue = messages
+        .iter()
+        .filter(|message| {
+            message.message.visibility == MessageVisibility::Visible
+                && matches!(
+                    message.message.role,
+                    MessageRole::User | MessageRole::Assistant
+                )
+        })
+        .map(|message| message.message.id)
+        .collect::<Vec<_>>();
     let summary = summary
-        .filter(|text| !text.trim().is_empty() && !messages.is_empty())
+        .filter(|text| !text.trim().is_empty() && !dialogue.is_empty())
         .map(|text| {
-            let window = messages.len().min(MAX_MEMORY_SUMMARY_SOURCE_MESSAGES);
-            let start = messages.len() - window;
+            let window = dialogue.len().min(MAX_MEMORY_SUMMARY_SOURCE_MESSAGES);
+            let start = dialogue.len() - window;
             Ok::<_, Error>(MemorySummary {
                 space_id,
                 text: text.to_owned(),
                 token_count: u32::try_from(summary_token_count).unwrap_or(u32::MAX),
                 window_start: u64::try_from(start).map_err(|_| Error::InvalidInput)?,
-                window_end: u64::try_from(messages.len()).map_err(|_| Error::InvalidInput)?,
-                source_message_ids: messages[start..]
-                    .iter()
-                    .map(|message| message.message.id)
-                    .collect(),
+                window_end: u64::try_from(dialogue.len()).map_err(|_| Error::InvalidInput)?,
+                source_message_ids: dialogue[start..].to_vec(),
                 updated_at,
             })
         })
@@ -594,6 +605,12 @@ fn memory_space(
         }),
         projections,
     ))
+}
+
+/// Legacy branch sessions copied their parent's memories with the same ids,
+/// and memory ids are unique across spaces, so each owner derives its own.
+fn memory_item_id(source_id: &str, legacy_id: &str) -> MemoryId {
+    MemoryId::from_uuid(derived(source_id, &format!("memory-item:{legacy_id}")))
 }
 
 pub(crate) fn committed_stage<S: LegacyImportRepository>(
