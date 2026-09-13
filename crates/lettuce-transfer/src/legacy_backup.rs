@@ -91,6 +91,37 @@ pub enum LegacyBackupDocumentKind {
     CharacterLorebooks,
 }
 
+impl LegacyBackupDocumentKind {
+    #[must_use]
+    pub const fn archive_stem(self) -> &'static str {
+        match self {
+            Self::Meta => "meta",
+            Self::Settings => "settings",
+            Self::ProviderCredentials => "provider_credentials",
+            Self::Models => "models",
+            Self::AudioProviders => "audio_providers",
+            Self::UserVoices => "user_voices",
+            Self::ModelPricingCache => "model_pricing_cache",
+            Self::Secrets => "secrets",
+            Self::PromptTemplates => "prompt_templates",
+            Self::ChatTemplates => "chat_templates",
+            Self::Personas => "personas",
+            Self::Characters => "characters",
+            Self::CompanionScheduledNotes => "companion_scheduled_notes",
+            Self::CompanionSharedMemory => "companion_shared_memory",
+            Self::MemoryEmbeddings => "memory_embeddings",
+            Self::Sessions => "sessions",
+            Self::CreationHelperSessions => "creation_helper_sessions",
+            Self::AsrLearning => "asr_learning",
+            Self::GroupCharacters => "group_characters",
+            Self::GroupSessions => "group_sessions",
+            Self::UsageRecords => "usage_records",
+            Self::Lorebooks => "lorebooks",
+            Self::CharacterLorebooks => "character_lorebooks",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LegacyBackupMediaRoot {
@@ -99,6 +130,19 @@ pub enum LegacyBackupMediaRoot {
     Attachments,
     Sessions,
     GeneratedImages,
+}
+
+impl LegacyBackupMediaRoot {
+    #[must_use]
+    pub const fn archive_name(self) -> &'static str {
+        match self {
+            Self::Images => "images",
+            Self::Avatars => "avatars",
+            Self::Attachments => "attachments",
+            Self::Sessions => "sessions",
+            Self::GeneratedImages => "generated_images",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

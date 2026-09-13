@@ -1207,7 +1207,9 @@ fn plan_legacy_provider_models_with_limits(
     })
 }
 
-fn open_validated(path: impl AsRef<Path>) -> Result<Connection, LegacyDatabasePreflightError> {
+pub(crate) fn open_validated(
+    path: impl AsRef<Path>,
+) -> Result<Connection, LegacyDatabasePreflightError> {
     let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|_| LegacyDatabasePreflightError::Unavailable)?;
     for (table, _) in ROOT_TABLES {
@@ -1660,7 +1662,7 @@ fn malformed(field: &'static str) -> LegacyDatabasePreflightError {
     }
 }
 
-fn require_table(
+pub(crate) fn require_table(
     connection: &Connection,
     table: &'static str,
 ) -> Result<(), LegacyDatabasePreflightError> {

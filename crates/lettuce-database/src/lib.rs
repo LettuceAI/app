@@ -22,6 +22,7 @@ mod legacy_import_adapter;
 mod lorebook_adapter;
 mod lorebook_entry_run_adapter;
 mod lorebook_keyword_run_adapter;
+mod legacy_database_documents;
 mod legacy_database_preflight;
 mod memory_adapter;
 mod memory_embedding_adapter;
@@ -44,6 +45,7 @@ mod tts_synthesis_adapter;
 mod usage_adapter;
 mod whisper_model_adapter;
 
+pub use legacy_database_documents::read_legacy_database_documents;
 pub use legacy_database_preflight::{
     LegacyDatabaseProviderSecretSource, plan_legacy_asr, plan_legacy_lorebooks,
     plan_legacy_personas, plan_legacy_prompts, plan_legacy_provider_models,

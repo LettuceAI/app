@@ -100,6 +100,14 @@ The legacy migration boundary can open an old `app.db` read-only, require the
 actual version-92 schema roots, and return a bounded typed import inventory.
 It performs no source migration or destination writes during preflight.
 
+`read_legacy_database_documents` reproduces the 22 documents the legacy backup
+exporter writes, with the exporter's exact column lists, ordering, COALESCE
+defaults, boolean conversions and pretty JSON, so a live legacy database and a
+legacy backup archive feed one shared backup planner. Memory embedding copies
+use one canonicalization for session, group, companion and owner documents,
+serializing normalized rows in the legacy `MemoryEmbedding` field order and f32
+text and falling back to the legacy column only when no rows exist.
+
 Legacy model rows always carry `model_type = 'chat'` once saved by the modern
 editor, so a model whose output scopes are image-only plans as an image model;
 text-and-image outputs stay chat models with image output retained in their

@@ -88,6 +88,16 @@ impl AppBackend {
         lettuce_database::preflight_legacy_database(path)
     }
 
+    pub fn read_legacy_database_inventory(
+        &self,
+        app_data_dir: impl AsRef<Path>,
+    ) -> Result<
+        lettuce_transfer::LegacyBackupInventory,
+        lettuce_transfer::LegacyDatabasePreflightError,
+    > {
+        crate::read_legacy_database_inventory(app_data_dir)
+    }
+
     pub fn plan_legacy_personas(
         &self,
         path: impl AsRef<Path>,

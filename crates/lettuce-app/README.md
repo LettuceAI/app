@@ -10,6 +10,13 @@ optional local OpenAI-compatible host API.
 `AppBackend::preflight_legacy_database` exposes the read-only legacy SQLite
 inventory boundary before any import is attempted. Compatibility types live in
 `lettuce-transfer`, while all source SQL remains in `lettuce-database`.
+`AppBackend::read_legacy_database_inventory` turns a legacy app data directory
+into the same `LegacyBackupInventory` a legacy backup archive decodes to: the
+database documents plus every regular file under `lettuce/{images,avatars,
+attachments,sessions}` and `generated_images`, in archive order and bounded by
+the archive entry, object and total limits. Unlike the legacy exporter, symbolic
+links are never followed and names that cannot form a safe archive path are left
+out, so the walk cannot read outside the legacy roots.
 `AppBackend::plan_legacy_personas` exposes the bounded persona candidates and
 their explicit default owner while leaving all source media unresolved.
 `AppBackend::plan_legacy_lorebooks` exposes the bounded root and ordered-entry
