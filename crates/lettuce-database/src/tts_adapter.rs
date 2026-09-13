@@ -102,6 +102,98 @@ pub(crate) const PROVIDER_SELECT: &str = "SELECT id, secret_owner_id, provider_k
 pub(crate) const VOICE_SELECT: &str = "SELECT id, provider_id, name, model_id, voice_id, prompt,
     revision, created_at, updated_at FROM user_voices";
 
+pub(crate) fn insert_audio_provider(
+    connection: &rusqlite::Connection,
+    provider: &AudioProvider,
+) -> Result<(), TtsConfigurationRepositoryError> {
+    provider.validate().map_err(corrupt)?;
+    if provider.revision != Revision::INITIAL {
+        return Err(TtsConfigurationRepositoryError::InvalidData);
+    }
+    let config_json = encode_versioned(&provider.config, AUDIO_PROVIDER_CONFIG_FORMAT_VERSION)
+        .map_err(corrupt)?;
+    let exists = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM audio_providers WHERE id=?1)",
+            [provider.id.to_string()],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(storage)?;
+    if exists {
+        return Err(TtsConfigurationRepositoryError::AlreadyExists);
+    }
+    connection
+        .execute(
+            "INSERT INTO audio_providers (
+                id, secret_owner_id, provider_kind, label, api_key_secret_ref,
+                config_json, revision, created_at, updated_at
+             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![
+                provider.id.to_string(),
+                provider.secret_owner_id.as_uuid().to_string(),
+                kind_name(provider.config.provider_kind()),
+                provider.label,
+                provider.api_key_ref.map(|value| value.to_string()),
+                config_json,
+                i64::try_from(provider.revision.get()).map_err(corrupt)?,
+                provider.created_at.get(),
+                provider.updated_at.get(),
+            ],
+        )
+        .map_err(storage)?;
+    Ok(())
+}
+
+pub(crate) fn insert_user_voice(
+    connection: &rusqlite::Connection,
+    voice: &UserVoice,
+) -> Result<(), TtsConfigurationRepositoryError> {
+    voice.validate().map_err(corrupt)?;
+    if voice.revision != Revision::INITIAL {
+        return Err(TtsConfigurationRepositoryError::InvalidData);
+    }
+    let provider_exists = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM audio_providers WHERE id=?1)",
+            [voice.provider_id.to_string()],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(storage)?;
+    if !provider_exists {
+        return Err(TtsConfigurationRepositoryError::ProviderMissing);
+    }
+    let exists = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM user_voices WHERE id=?1)",
+            [voice.id.to_string()],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(storage)?;
+    if exists {
+        return Err(TtsConfigurationRepositoryError::AlreadyExists);
+    }
+    connection
+        .execute(
+            "INSERT INTO user_voices (
+                id, provider_id, name, model_id, voice_id, prompt,
+                revision, created_at, updated_at
+             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![
+                voice.id.to_string(),
+                voice.provider_id.to_string(),
+                voice.name,
+                voice.model_id,
+                voice.voice_id,
+                voice.prompt,
+                i64::try_from(voice.revision.get()).map_err(corrupt)?,
+                voice.created_at.get(),
+                voice.updated_at.get(),
+            ],
+        )
+        .map_err(storage)?;
+    Ok(())
+}
+
 impl TtsConfigurationRepository for Database {
     fn upsert_audio_provider(
         &self,
@@ -137,38 +229,8 @@ impl TtsConfigurationRepository for Database {
                 )
                 .map_err(storage)?
         } else {
-            if provider.revision != Revision::INITIAL {
-                return Err(TtsConfigurationRepositoryError::InvalidData);
-            }
-            let exists = connection
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM audio_providers WHERE id=?1)",
-                    [provider.id.to_string()],
-                    |row| row.get::<_, bool>(0),
-                )
-                .map_err(storage)?;
-            if exists {
-                return Err(TtsConfigurationRepositoryError::AlreadyExists);
-            }
-            connection
-                .execute(
-                    "INSERT INTO audio_providers (
-                        id, secret_owner_id, provider_kind, label, api_key_secret_ref,
-                        config_json, revision, created_at, updated_at
-                     ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
-                    params![
-                        provider.id.to_string(),
-                        provider.secret_owner_id.as_uuid().to_string(),
-                        kind_name(provider.config.provider_kind()),
-                        provider.label,
-                        provider.api_key_ref.map(|value| value.to_string()),
-                        config_json,
-                        i64::try_from(provider.revision.get()).map_err(corrupt)?,
-                        provider.created_at.get(),
-                        provider.updated_at.get(),
-                    ],
-                )
-                .map_err(storage)?
+            insert_audio_provider(&connection, &provider)?;
+            1
         };
         if changed == 0 {
             return Err(TtsConfigurationRepositoryError::StaleRevision);
@@ -283,38 +345,8 @@ impl TtsConfigurationRepository for Database {
                 )
                 .map_err(storage)?
         } else {
-            if voice.revision != Revision::INITIAL {
-                return Err(TtsConfigurationRepositoryError::InvalidData);
-            }
-            let exists = connection
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM user_voices WHERE id=?1)",
-                    [voice.id.to_string()],
-                    |row| row.get::<_, bool>(0),
-                )
-                .map_err(storage)?;
-            if exists {
-                return Err(TtsConfigurationRepositoryError::AlreadyExists);
-            }
-            connection
-                .execute(
-                    "INSERT INTO user_voices (
-                        id, provider_id, name, model_id, voice_id, prompt,
-                        revision, created_at, updated_at
-                     ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
-                    params![
-                        voice.id.to_string(),
-                        voice.provider_id.to_string(),
-                        voice.name,
-                        voice.model_id,
-                        voice.voice_id,
-                        voice.prompt,
-                        i64::try_from(voice.revision.get()).map_err(corrupt)?,
-                        voice.created_at.get(),
-                        voice.updated_at.get(),
-                    ],
-                )
-                .map_err(storage)?
+            insert_user_voice(&connection, &voice)?;
+            1
         };
         if changed == 0 {
             return Err(TtsConfigurationRepositoryError::StaleRevision);
