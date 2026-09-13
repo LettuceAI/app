@@ -422,6 +422,7 @@ pub enum LegacyImportSkipKind {
     LorebookReference,
     CharacterReference,
     PersonaReference,
+    MessageVariantReference,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -439,6 +440,7 @@ pub enum LegacyImportSkipReason {
     MissingChatTemplate,
     MissingCharacter,
     MissingPersona,
+    MissingMessageVariant,
 }
 
 pub fn legacy_value_skip(

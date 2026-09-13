@@ -1877,6 +1877,9 @@ fn skip_kind_name(kind: lettuce_transfer::LegacyImportSkipKind) -> &'static str 
         lettuce_transfer::LegacyImportSkipKind::LorebookReference => "lorebook_reference",
         lettuce_transfer::LegacyImportSkipKind::CharacterReference => "character_reference",
         lettuce_transfer::LegacyImportSkipKind::PersonaReference => "persona_reference",
+        lettuce_transfer::LegacyImportSkipKind::MessageVariantReference => {
+            "message_variant_reference"
+        }
     }
 }
 
@@ -1897,6 +1900,9 @@ fn skip_reason_name(reason: lettuce_transfer::LegacyImportSkipReason) -> &'stati
         lettuce_transfer::LegacyImportSkipReason::MissingChatTemplate => "missing_chat_template",
         lettuce_transfer::LegacyImportSkipReason::MissingCharacter => "missing_character",
         lettuce_transfer::LegacyImportSkipReason::MissingPersona => "missing_persona",
+        lettuce_transfer::LegacyImportSkipReason::MissingMessageVariant => {
+            "missing_message_variant"
+        }
     }
 }
 
@@ -1950,6 +1956,9 @@ fn load_skips(
                 "lorebook_reference" => lettuce_transfer::LegacyImportSkipKind::LorebookReference,
                 "character_reference" => lettuce_transfer::LegacyImportSkipKind::CharacterReference,
                 "persona_reference" => lettuce_transfer::LegacyImportSkipKind::PersonaReference,
+                "message_variant_reference" => {
+                    lettuce_transfer::LegacyImportSkipKind::MessageVariantReference
+                }
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             let reason = match reason.as_str() {
@@ -1978,6 +1987,9 @@ fn load_skips(
                 }
                 "missing_character" => lettuce_transfer::LegacyImportSkipReason::MissingCharacter,
                 "missing_persona" => lettuce_transfer::LegacyImportSkipReason::MissingPersona,
+                "missing_message_variant" => {
+                    lettuce_transfer::LegacyImportSkipReason::MissingMessageVariant
+                }
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             Ok(lettuce_transfer::LegacyImportSkip {

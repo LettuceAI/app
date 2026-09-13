@@ -341,7 +341,15 @@ lorebook references, attachments and effective timestamps remain explicit.
 The planner validates authored references, root/parent topology, message
 ancestry, selected-variant ownership, JSON shapes, counters and finite sampling
 values before any write. Equal message timestamps and unordered legacy variant
-queries are reported as ordering loss. Legacy rows contain no current
+queries are reported as ordering loss. References legacy never cleaned up are
+cleared and recorded in the plan's `skipped` list instead of rejecting the
+backup: a deleted session prompt (legacy fell back to the character and app
+prompt), deleted override lorebooks (legacy looked each up and found nothing),
+a scene the character no longer has (legacy used an empty scene), a message's
+deleted model (only the debug view read it) and a missing selected variant,
+which falls back to the last variant like the legacy chat view. A missing
+character or persona still aborts because legacy's foreign keys made those
+impossible and its restore enforced them. Legacy rows contain no current
 generation attempts or protected model/provider snapshots, so those identities
 are reported absent instead of fabricated. Group sessions and attachment bytes
 remain attached for their following slices; no conversation or media store is
