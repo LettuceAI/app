@@ -318,6 +318,7 @@ References the rewrite would refuse to launch with are cleared and recorded as
 `IncompatibleReference`:
 - a character direct, group, companion or starter prompt, or a group profile prompt, whose purpose differs from the one the launch planner looks up;
 - a character default model or group member override that is not a chat model.
+- an app default, dynamic-memory, speaker, lorebook-generator or help-me-reply model that is not a chat model, and a lorebook-generator, dynamic-memory or help-me-reply prompt of another purpose (legacy loaded any template by id; the feature now uses its built-in document). Import admission accepts these settings skips, which previously made a legacy database with a stale feature reference fail admission.
 
 A missing prompt still stays referenced and resolves to the app default like
 legacy. Character lorebook rows follow the legacy restore rule: only enabled

@@ -322,6 +322,17 @@ fn valid_prompt_plan(plan: &LegacyPromptPlan) -> bool {
                         .is_some_and(|stale| {
                             !stale.trim().is_empty() && !prompt_ids.contains(stale)
                         }))
+                || (skip.kind == lettuce_transfer::LegacyImportSkipKind::PromptReference
+                    && matches!(
+                        skip.reason,
+                        lettuce_transfer::LegacyImportSkipReason::MissingPrompt
+                            | lettuce_transfer::LegacyImportSkipReason::IncompatibleReference
+                    )
+                    && skip.source_key.split_once(':').is_some_and(|(field, row)| {
+                        !row.trim().is_empty()
+                            && (field.starts_with("settings.advanced_settings.")
+                                || field == "models.prompt_template_id")
+                    }))
         })
         && plan.prompts.iter().all(|prompt| {
             !prompt.source_id.trim().is_empty()
@@ -564,6 +575,15 @@ fn valid_provider_model_plan(plan: &LegacyProviderModelPlan) -> bool {
                 lettuce_transfer::LegacyImportSkipKind::SettingsDefaultProviderAccount
                     | lettuce_transfer::LegacyImportSkipKind::SettingsDefaultModelProfile
             ) || legacy_value_skip(skip, &["provider_credentials.", "models."])
+                || (skip.kind == lettuce_transfer::LegacyImportSkipKind::ModelReference
+                    && matches!(
+                        skip.reason,
+                        lettuce_transfer::LegacyImportSkipReason::MissingModelProfile
+                            | lettuce_transfer::LegacyImportSkipReason::IncompatibleReference
+                    )
+                    && skip.source_key.split_once(':').is_some_and(|(field, row)| {
+                        field.starts_with("settings.advanced_settings.") && !row.trim().is_empty()
+                    }))
                 || (skip.kind == lettuce_transfer::LegacyImportSkipKind::ModelProfile
                     && skip.reason
                         == lettuce_transfer::LegacyImportSkipReason::MissingProviderAccount
@@ -1126,6 +1146,28 @@ mod tests {
         assert!(super::valid_prompt_plan(&plan));
         plan.default_prompt_source_id = Some("deleted-template".to_owned());
         assert!(!super::valid_prompt_plan(&plan));
+    }
+
+    #[test]
+    fn cleared_settings_feature_references_pass_admission() {
+        let mut prompt_plan = prompts();
+        prompt_plan.skipped = vec![lettuce_transfer::LegacyImportSkip {
+            kind: lettuce_transfer::LegacyImportSkipKind::PromptReference,
+            source_key: "settings.advanced_settings.helpMeReplyRoleplayPromptTemplateId:direct"
+                .to_owned(),
+            reason: lettuce_transfer::LegacyImportSkipReason::IncompatibleReference,
+        }];
+        assert!(super::valid_prompt_plan(&prompt_plan));
+        let mut provider_plan = provider_models();
+        provider_plan.skipped = vec![lettuce_transfer::LegacyImportSkip {
+            kind: lettuce_transfer::LegacyImportSkipKind::ModelReference,
+            source_key: format!(
+                "settings.advanced_settings.summarisationModelId:{}",
+                lettuce_types::ModelProfileId::new()
+            ),
+            reason: lettuce_transfer::LegacyImportSkipReason::MissingModelProfile,
+        }];
+        assert!(super::valid_provider_model_plan(&provider_plan));
     }
 
     #[test]

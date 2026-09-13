@@ -40,7 +40,8 @@ const AUDIO_PROVIDER_LIMIT: usize = 256;
 const USER_VOICE_LIMIT: usize = 10_000;
 const CHAT_TEMPLATE_LIMIT: usize = 10_000;
 const SECRET_LIMIT: usize = 1_024;
-pub(crate) const LEGACY_ID_NAMESPACE: Uuid = Uuid::from_u128(0x6c657474_7563_652d_6261_636b75707631);
+pub(crate) const LEGACY_ID_NAMESPACE: Uuid =
+    Uuid::from_u128(0x6c657474_7563_652d_6261_636b75707631);
 
 #[derive(Debug)]
 pub struct LegacyBackupConfigurationPlan {
@@ -2043,11 +2044,17 @@ fn reconcile_selections(
         .iter()
         .map(|model| model.id)
         .collect::<BTreeSet<_>>();
-    let prompt_ids = prompts
+    let chat_model_ids = providers
+        .model_profiles
+        .iter()
+        .filter(|model| model.kind == ModelKind::Chat)
+        .map(|model| model.id)
+        .collect::<BTreeSet<_>>();
+    let prompt_purposes = prompts
         .prompts
         .iter()
-        .map(|prompt| prompt.source_id.clone())
-        .collect::<BTreeSet<_>>();
+        .map(|prompt| (prompt.source_id.clone(), prompt.purpose))
+        .collect::<BTreeMap<_, _>>();
     let reference = |kind, field: &str, row: &str, reason| LegacyImportSkip {
         kind,
         source_key: format!("{field}:{row}"),
@@ -2073,6 +2080,16 @@ fn reconcile_selections(
             reason: LegacyImportSkipReason::MissingModelProfile,
         });
     }
+    if let Some(incompatible) = settings
+        .default_model_profile_id
+        .take_if(|id| !chat_model_ids.contains(id))
+    {
+        providers.skipped.push(LegacyImportSkip {
+            kind: LegacyImportSkipKind::SettingsDefaultModelProfile,
+            source_key: incompatible.to_string(),
+            reason: LegacyImportSkipReason::IncompatibleReference,
+        });
+    }
     providers.default_provider_account_id = settings.default_provider_account_id;
     providers.default_model_profile_id = settings.default_model_profile_id;
     for (field, value) in [
@@ -2093,67 +2110,96 @@ fn reconcile_selections(
             &mut settings.help_me_reply_model_profile_id,
         ),
     ] {
-        if let Some(stale) = value.take_if(|id| !model_ids.contains(id)) {
-            providers.skipped.push(reference(
-                LegacyImportSkipKind::ModelReference,
-                field,
-                &stale.to_string(),
-                LegacyImportSkipReason::MissingModelProfile,
-            ));
-        }
+        let Some(id) = *value else {
+            continue;
+        };
+        let reason = if !model_ids.contains(&id) {
+            LegacyImportSkipReason::MissingModelProfile
+        } else if !chat_model_ids.contains(&id) {
+            LegacyImportSkipReason::IncompatibleReference
+        } else {
+            continue;
+        };
+        *value = None;
+        providers.skipped.push(reference(
+            LegacyImportSkipKind::ModelReference,
+            field,
+            &id.to_string(),
+            reason,
+        ));
     }
-    for (field, value) in [
+    for (field, value, purpose) in [
         (
             "settings.prompt_template_id",
             &mut settings.default_prompt_source_id,
+            None,
         ),
         (
             "settings.advanced_settings.lorebookGeneratorPlannerPromptTemplateId",
             &mut settings.lorebook_generator_prompt_source_ids.planner,
+            Some(PromptPurpose::LorebookGeneratorPlanner),
         ),
         (
             "settings.advanced_settings.lorebookGeneratorWriterPromptTemplateId",
             &mut settings.lorebook_generator_prompt_source_ids.writer,
+            Some(PromptPurpose::LorebookGeneratorWriter),
         ),
         (
             "settings.advanced_settings.lorebookGeneratorRefinePromptTemplateId",
             &mut settings.lorebook_generator_prompt_source_ids.refine,
+            Some(PromptPurpose::LorebookGeneratorRefine),
         ),
         (
             "settings.advanced_settings.lorebookGeneratorCoherencePromptTemplateId",
             &mut settings.lorebook_generator_prompt_source_ids.coherence,
+            Some(PromptPurpose::LorebookGeneratorCoherence),
         ),
         (
             "settings.advanced_settings.dynamicMemorySummarizerPromptTemplateId",
             &mut settings.dynamic_memory_prompt_source_ids.summarizer,
+            Some(PromptPurpose::DynamicMemorySummarizer),
         ),
         (
             "settings.advanced_settings.dynamicMemoryManagerPromptTemplateId",
             &mut settings.dynamic_memory_prompt_source_ids.manager,
+            Some(PromptPurpose::DynamicMemoryManager),
         ),
         (
             "settings.advanced_settings.helpMeReplyRoleplayPromptTemplateId",
             &mut settings.help_me_reply_prompt_source_ids.roleplay,
+            Some(PromptPurpose::ReplyHelperRoleplay),
         ),
         (
             "settings.advanced_settings.helpMeReplyConversationalPromptTemplateId",
             &mut settings.help_me_reply_prompt_source_ids.conversational,
+            Some(PromptPurpose::ReplyHelperConversational),
         ),
     ] {
-        if let Some(stale) = value.take_if(|id| !prompt_ids.contains(id)) {
-            prompts.skipped.push(reference(
-                LegacyImportSkipKind::PromptReference,
-                field,
-                &stale,
-                LegacyImportSkipReason::MissingPrompt,
-            ));
-        }
+        let Some(id) = value.take() else {
+            continue;
+        };
+        let reason = match prompt_purposes.get(&id) {
+            None => LegacyImportSkipReason::MissingPrompt,
+            Some(actual) if purpose.is_some_and(|purpose| purpose != *actual) => {
+                LegacyImportSkipReason::IncompatibleReference
+            }
+            Some(_) => {
+                *value = Some(id);
+                continue;
+            }
+        };
+        prompts.skipped.push(reference(
+            LegacyImportSkipKind::PromptReference,
+            field,
+            &id,
+            reason,
+        ));
     }
     prompts.default_prompt_source_id = settings.default_prompt_source_id.clone();
     for model in &mut providers.model_profiles {
         if model
             .prompt_template_id
-            .take_if(|id| !prompt_ids.contains(id))
+            .take_if(|id| !prompt_purposes.contains_key(id))
             .is_some()
         {
             prompts.skipped.push(reference(
@@ -3323,6 +3369,87 @@ mod tests {
     }
 
     #[test]
+    fn settings_references_the_rewrite_cannot_run_are_cleared_and_recorded() {
+        let provider_id = ProviderAccountId::new();
+        let chat_model = ModelProfileId::new();
+        let image_model = ModelProfileId::new();
+        let plan = plan_legacy_backup_configuration(inventory(vec![
+            document(
+                LegacyBackupDocumentKind::Settings,
+                json!({
+                    "default_model_id": image_model,
+                    "advanced_settings": {
+                        "summarisationModelId": image_model,
+                        "helpMeReplyModelId": chat_model,
+                        "helpMeReplyRoleplayPromptTemplateId": "direct",
+                        "dynamicMemorySummarizerPromptTemplateId": "summary"
+                    },
+                    "created_at": 10,
+                    "updated_at": 20
+                }),
+            ),
+            document(
+                LegacyBackupDocumentKind::ProviderCredentials,
+                json!([{"id": provider_id, "provider_id": "openai", "label": "Primary"}]),
+            ),
+            document(
+                LegacyBackupDocumentKind::Models,
+                json!([
+                    {"id": chat_model, "name": "chat", "provider_id": "openai", "provider_credential_id": provider_id, "provider_label": "Primary", "display_name": "Chat", "created_at": 10},
+                    {"id": image_model, "name": "image", "provider_id": "openai", "provider_credential_id": provider_id, "provider_label": "Primary", "display_name": "Image", "model_type": "imagegeneration", "created_at": 10}
+                ]),
+            ),
+            document(
+                LegacyBackupDocumentKind::PromptTemplates,
+                json!([
+                    {"id": "direct", "name": "Direct", "prompt_type": "directChat", "content": ""},
+                    {"id": "summary", "name": "Summary", "prompt_type": "dynamicMemorySummarizer", "content": ""}
+                ]),
+            ),
+        ]))
+        .expect("incompatible references are cleared");
+        assert_eq!(plan.settings.default_model_profile_id, None);
+        assert_eq!(plan.provider_models.default_model_profile_id, None);
+        assert_eq!(plan.settings.dynamic_memory_model_profile_id, None);
+        assert_eq!(
+            plan.settings.help_me_reply_model_profile_id,
+            Some(chat_model)
+        );
+        assert_eq!(plan.settings.help_me_reply_prompt_source_ids.roleplay, None);
+        assert_eq!(
+            plan.settings
+                .dynamic_memory_prompt_source_ids
+                .summarizer
+                .as_deref(),
+            Some("summary")
+        );
+        let skip = |kind, source_key: String| crate::LegacyImportSkip {
+            kind,
+            source_key,
+            reason: crate::LegacyImportSkipReason::IncompatibleReference,
+        };
+        let mut provider_skips = vec![
+            skip(
+                crate::LegacyImportSkipKind::SettingsDefaultModelProfile,
+                image_model.to_string(),
+            ),
+            skip(
+                crate::LegacyImportSkipKind::ModelReference,
+                format!("settings.advanced_settings.summarisationModelId:{image_model}"),
+            ),
+        ];
+        provider_skips.sort();
+        assert_eq!(plan.provider_models.skipped, provider_skips);
+        assert_eq!(
+            plan.prompts.skipped,
+            vec![skip(
+                crate::LegacyImportSkipKind::PromptReference,
+                "settings.advanced_settings.helpMeReplyRoleplayPromptTemplateId:direct".to_owned(),
+            )]
+        );
+    }
+
+    #[test]
     fn malformed_prompt_type_and_entries_fall_back_like_legacy_restore() {
         let plan = plan_legacy_backup_configuration(inventory(vec![document(
             LegacyBackupDocumentKind::PromptTemplates,
@@ -3647,10 +3774,16 @@ mod tests {
         }));
         assert_eq!(
             plan.settings.dynamic_memory_prompt_source_ids,
-            DynamicMemoryPromptSources {
-                summarizer: Some("prompt-main".into()),
-                manager: None,
-            }
+            DynamicMemoryPromptSources::default()
+        );
+        assert!(
+            plan.prompts.skipped.contains(&crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::PromptReference,
+                source_key:
+                    "settings.advanced_settings.dynamicMemorySummarizerPromptTemplateId:prompt-main"
+                        .to_owned(),
+                reason: crate::LegacyImportSkipReason::IncompatibleReference,
+            })
         );
         assert!(
             !plan
@@ -3666,11 +3799,15 @@ mod tests {
         assert_eq!(plan.settings.help_me_reply_model_profile_id, Some(model_id));
         assert_eq!(
             plan.settings.help_me_reply_prompt_source_ids,
-            HelpMeReplyPromptSources {
-                roleplay: None,
-                conversational: Some("prompt-main".into()),
-            }
+            HelpMeReplyPromptSources::default()
         );
+        assert!(plan.prompts.skipped.contains(&crate::LegacyImportSkip {
+            kind: crate::LegacyImportSkipKind::PromptReference,
+            source_key:
+                "settings.advanced_settings.helpMeReplyConversationalPromptTemplateId:prompt-main"
+                    .to_owned(),
+            reason: crate::LegacyImportSkipReason::IncompatibleReference,
+        }));
         assert!(plan.notices.iter().any(|notice| notice.kind
             == LegacyBackupConversionNoticeKind::Lossy
             && notice.field == "advanced_settings.helpMeReplyHistoryCount"));
