@@ -202,7 +202,7 @@ END;
 
 CREATE TABLE legacy_import_stage_results (
     run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
-    stage TEXT NOT NULL CHECK (stage IN ('characters','groups','audio')),
+    stage TEXT NOT NULL CHECK (stage IN ('characters','groups','audio','settings')),
     record_count INTEGER NOT NULL CHECK (record_count >= 0),
     completed_at INTEGER NOT NULL,
     PRIMARY KEY (run_id, stage)

@@ -792,6 +792,105 @@ impl LegacyImportRepository for Database {
         Ok(receipt)
     }
 
+    fn materialize_settings(
+        &self,
+        request: lettuce_transfer::LegacySettingsMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let admission = match start_stage(
+            &transaction,
+            request.run_id,
+            (&request.plan_fingerprint, &request.source_fingerprint),
+            LegacyImportStage::Settings,
+            1,
+            None,
+        )? {
+            StageStart::Replayed(receipt) => {
+                transaction
+                    .commit()
+                    .map_err(|_| LegacyImportRepositoryError::Storage)?;
+                return Ok(receipt);
+            }
+            StageStart::Ready(admission) => admission,
+        };
+        let assignments = AssignmentMaps::from_admission(&admission)?;
+        let model = |id: Option<ModelProfileId>| {
+            id.map(|id| {
+                assignments
+                    .models
+                    .get(&id)
+                    .copied()
+                    .ok_or(LegacyImportRepositoryError::Conflict)
+            })
+            .transpose()
+        };
+        let prompt = |id: &Option<String>| {
+            id.as_ref()
+                .map(|id| {
+                    assignments
+                        .prompts
+                        .get(id)
+                        .copied()
+                        .ok_or(LegacyImportRepositoryError::Conflict)
+                })
+                .transpose()
+        };
+        let candidate = &request.settings;
+        let mut settings = candidate.value.clone();
+        settings.lorebook_generator.selection = lettuce_settings::LorebookGeneratorSelection {
+            model_profile_id: model(candidate.lorebook_generator_model_profile_id)?,
+            planner_prompt_id: prompt(&candidate.lorebook_generator_prompt_source_ids.planner)?,
+            writer_prompt_id: prompt(&candidate.lorebook_generator_prompt_source_ids.writer)?,
+            refine_prompt_id: prompt(&candidate.lorebook_generator_prompt_source_ids.refine)?,
+            coherence_prompt_id: prompt(&candidate.lorebook_generator_prompt_source_ids.coherence)?,
+        };
+        settings.dynamic_memory_prompts = lettuce_settings::DynamicMemoryPromptSelection {
+            summarizer_prompt_id: prompt(&candidate.dynamic_memory_prompt_source_ids.summarizer)?,
+            manager_prompt_id: prompt(&candidate.dynamic_memory_prompt_source_ids.manager)?,
+        };
+        settings.help_me_reply.model_profile_id = model(candidate.help_me_reply_model_profile_id)?;
+        settings.help_me_reply.roleplay_prompt_id =
+            prompt(&candidate.help_me_reply_prompt_source_ids.roleplay)?;
+        settings.help_me_reply.conversational_prompt_id =
+            prompt(&candidate.help_me_reply_prompt_source_ids.conversational)?;
+        let payload = serde_json::to_string(&settings)
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        let changed = transaction
+            .execute(
+                "UPDATE app_settings SET payload_json=?1,dynamic_memory_model_profile_id=?2,group_speaker_model_profile_id=?3,revision=revision+1,created_at=MIN(created_at,?5),updated_at=?4 WHERE id=1",
+                params![
+                    payload,
+                    model(candidate.dynamic_memory_model_profile_id)?.map(|id| id.to_string()),
+                    model(candidate.group_speaker_model_profile_id)?.map(|id| id.to_string()),
+                    request.completed_at.get(),
+                    candidate.created_at.get()
+                ],
+            )
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        if changed != 1 {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        insert_stage_result(
+            &transaction,
+            request.run_id,
+            LegacyImportStage::Settings,
+            1,
+            request.completed_at,
+        )?;
+        let receipt =
+            load_stage_receipt(&transaction, request.run_id, LegacyImportStage::Settings)?
+                .ok_or(LegacyImportRepositoryError::Storage)?;
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(receipt)
+    }
+
     fn materialize_groups(
         &self,
         request: lettuce_transfer::LegacyGroupMaterializationRequest,
@@ -1914,6 +2013,7 @@ const fn stage_name(stage: LegacyImportStage) -> &'static str {
         LegacyImportStage::Characters => "characters",
         LegacyImportStage::Groups => "groups",
         LegacyImportStage::Audio => "audio",
+        LegacyImportStage::Settings => "settings",
     }
 }
 

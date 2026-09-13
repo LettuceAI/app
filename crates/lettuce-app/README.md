@@ -34,6 +34,8 @@ reusable groups and their lorebook bindings once the characters stage finished.
 key in the native secret store under its deterministic reference. On retry it
 loads and compares the key instead of rewriting it. It then runs the audio stage
 for the providers and user voices.
+`AppBackend::legacy_settings_importer` runs the settings stage for the planned
+global settings and their remapped feature model and prompt selections.
 `AppBackend::plan_legacy_personas` exposes the bounded persona candidates and
 their explicit default owner while leaving all source media unresolved.
 `AppBackend::plan_legacy_lorebooks` exposes the bounded root and ordered-entry

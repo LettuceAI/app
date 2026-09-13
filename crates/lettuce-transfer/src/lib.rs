@@ -1143,6 +1143,7 @@ pub enum LegacyImportStage {
     Characters,
     Groups,
     Audio,
+    Settings,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1174,6 +1175,15 @@ pub struct LegacyAudioMaterializationRequest {
     pub source_fingerprint: ContentHash,
     pub audio_providers: Vec<lettuce_speech::AudioProvider>,
     pub user_voices: Vec<lettuce_speech::UserVoice>,
+    pub completed_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacySettingsMaterializationRequest {
+    pub run_id: LegacyImportRunId,
+    pub plan_fingerprint: ContentHash,
+    pub source_fingerprint: ContentHash,
+    pub settings: LegacyBackupSettingsCandidate,
     pub completed_at: TimestampMillis,
 }
 
@@ -1255,5 +1265,10 @@ pub trait LegacyImportRepository: Send + Sync {
     fn materialize_audio(
         &self,
         request: LegacyAudioMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
+
+    fn materialize_settings(
+        &self,
+        request: LegacySettingsMaterializationRequest,
     ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
 }

@@ -593,6 +593,14 @@ and user voice through the TTS adapter's insert helpers inside the stage
 transaction. A provider keeps its deterministic API key reference; the key
 itself lives only in the native secret store.
 
+The settings stage also needs no earlier stage beyond the provider and prompt
+receipt the stage guard already requires. It rewrites the `app_settings`
+payload with the legacy global settings. Lorebook-generator, dynamic-memory and
+help-me-reply model and prompt selections are remapped through the admission
+assignments, as are the dynamic-memory and group-speaker model columns. The
+default model and prompt stay as the provider/prompt stage wrote them. The
+settings revision advances once and a replay changes nothing.
+
 The read-only legacy provider-secret adapter lists only planned API-key/header
 metadata, then loads one exact value into `SecretValue` on demand. It ignores the
 obsolete pre-v7 API-key reference and never opens the source writable. Migration
