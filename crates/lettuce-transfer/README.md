@@ -366,9 +366,20 @@ legacy send path selected explicit mentions and the continue path accepted an
 explicit member per request, including muted members, while automatic selection
 excluded muted members. Session snapshots may therefore retain an all-muted
 cast even though newly authored reusable groups require an active member. The
-planner rejects duplicate identities, orphaned group/member/model/prompt/
-lorebook/branch links, message cycles, invalid selected variants and malformed
-nested scene, usage, MTP or attachment JSON. Participation and variant queries
+planner rejects duplicate identities, orphaned group, persona, member, speaker
+and branch links, message cycles and malformed nested scene, usage, MTP or
+attachment JSON. A deleted session prompt is kept and recorded: legacy treated
+it as an explicit choice and went straight to the app group template instead of
+the character's group or direct prompt, so the materializer must resolve a
+missing explicit prompt to the app default rather than inherit. References
+legacy never cleaned up are otherwise cleared and recorded in the plan's
+`skipped` list: deleted lorebooks, model overrides for
+non-members or deleted models (legacy fell back to the character's model),
+deleted message and variant models, a missing selected message variant (falls
+back to the last variant like the legacy group chat view) and a starting scene
+snapshot's missing selected variant (nulled in the snapshot; legacy used only
+the scene content). Members and speakers whose character was deleted still
+abort until they can be kept as unknown participants. Participation and variant queries
 had no stable database order, and messages with equal timestamp and turn-number
 keys cannot recover their relative order; those losses are reported while
 archive array order remains as an ordinal. Finite historical API costs remain

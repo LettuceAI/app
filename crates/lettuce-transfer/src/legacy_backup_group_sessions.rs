@@ -18,6 +18,7 @@ const JSON_LIMIT: usize = 16 * 1024 * 1024;
 #[derive(Debug)]
 pub struct LegacyBackupGroupSessionPlan {
     pub sessions: Vec<LegacyBackupGroupSession>,
+    pub skipped: Vec<crate::LegacyImportSkip>,
     pub notices: Vec<LegacyBackupConversionNotice>,
     pub source: LegacyBackupDirectSessionPlan,
 }
@@ -279,11 +280,12 @@ pub fn plan_legacy_backup_group_sessions(
         .iter()
         .find(|document| document.kind == LegacyBackupDocumentKind::GroupSessions);
     let mut notices = source.notices.clone();
+    let mut skipped = Vec::new();
     let sessions = match document {
         Some(document) => {
             let rows: Vec<SessionRow> =
                 serde_json::from_slice(&document.bytes).map_err(|_| malformed("$"))?;
-            map_sessions(rows, &source, &mut notices)?
+            map_sessions(rows, &source, &mut skipped, &mut notices)?
         }
         None => {
             notices.push(notice(LegacyBackupConversionNoticeKind::Absent, "$"));
@@ -292,8 +294,11 @@ pub fn plan_legacy_backup_group_sessions(
     };
     notices.sort();
     notices.dedup();
+    skipped.sort();
+    skipped.dedup();
     Ok(LegacyBackupGroupSessionPlan {
         sessions,
+        skipped,
         notices,
         source,
     })
@@ -302,6 +307,7 @@ pub fn plan_legacy_backup_group_sessions(
 fn map_sessions(
     rows: Vec<SessionRow>,
     source: &LegacyBackupDirectSessionPlan,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupGroupSession>, LegacyBackupGroupSessionError> {
     if rows.len() > SESSION_LIMIT {
@@ -391,37 +397,72 @@ fn map_sessions(
             &persona_ids,
             &format!("{path}.persona_id"),
         )?;
-        validate_optional_exact_reference(
-            row.group_chat_prompt_template_id.as_deref(),
-            &prompt_ids,
-            &format!("{path}.group_chat_prompt_template_id"),
-        )?;
-        validate_optional_exact_reference(
-            row.group_chat_roleplay_prompt_template_id.as_deref(),
-            &prompt_ids,
-            &format!("{path}.group_chat_roleplay_prompt_template_id"),
-        )?;
-        let lorebooks = string_array(&row.lorebook_ids, &format!("{path}.lorebook_ids"))?;
-        if lorebooks
-            .iter()
-            .any(|id| !contains_case_insensitive(&lorebook_ids, id))
-        {
-            return Err(orphan(format!("{path}.lorebook_ids")));
+        let session_key = row.id.clone();
+        let reference = |kind, key: String, reason| crate::LegacyImportSkip {
+            kind,
+            source_key: key,
+            reason,
+        };
+        let group_conversation_prompt_source_id = row.group_chat_prompt_template_id.clone();
+        let group_roleplay_prompt_source_id = row.group_chat_roleplay_prompt_template_id.clone();
+        for (field, prompt) in [
+            (
+                "group_chat_prompt_template_id",
+                &group_conversation_prompt_source_id,
+            ),
+            (
+                "group_chat_roleplay_prompt_template_id",
+                &group_roleplay_prompt_source_id,
+            ),
+        ] {
+            if prompt
+                .as_deref()
+                .is_some_and(|prompt| !prompt_ids.contains(prompt))
+            {
+                skipped.push(reference(
+                    crate::LegacyImportSkipKind::PromptReference,
+                    format!("group_sessions.{field}:{session_key}"),
+                    crate::LegacyImportSkipReason::MissingPrompt,
+                ));
+            }
         }
-        let overrides = string_map(
+        let mut lorebooks = string_array(&row.lorebook_ids, &format!("{path}.lorebook_ids"))?;
+        lorebooks.retain(|lorebook_id| {
+            let present = contains_case_insensitive(&lorebook_ids, lorebook_id);
+            if !present {
+                skipped.push(reference(
+                    crate::LegacyImportSkipKind::LorebookReference,
+                    format!("group_sessions.lorebook_ids:{session_key}:{lorebook_id}"),
+                    crate::LegacyImportSkipReason::MissingLorebook,
+                ));
+            }
+            present
+        });
+        let mut overrides = string_map(
             &row.character_model_overrides,
             &format!("{path}.character_model_overrides"),
         )?;
-        for (character_id, model_id) in &overrides {
+        overrides.retain(|character_id, model_id| {
+            let key =
+                format!("group_sessions.character_model_overrides:{session_key}:{character_id}");
             if !contains_case_insensitive_slice(&members, character_id) {
-                return Err(orphan(format!(
-                    "{path}.character_model_overrides.character_id"
-                )));
+                skipped.push(reference(
+                    crate::LegacyImportSkipKind::CharacterReference,
+                    key,
+                    crate::LegacyImportSkipReason::MissingCharacter,
+                ));
+                return false;
             }
             if !contains_case_insensitive(&model_ids, model_id) {
-                return Err(orphan(format!("{path}.character_model_overrides.model_id")));
+                skipped.push(reference(
+                    crate::LegacyImportSkipKind::ModelReference,
+                    key,
+                    crate::LegacyImportSkipReason::MissingModelProfile,
+                ));
+                return false;
             }
-        }
+            true
+        });
         validate_text(&row.name, &format!("{path}.name"))?;
         if row.name.trim().is_empty() {
             return Err(malformed(format!("{path}.name")));
@@ -460,8 +501,19 @@ fn map_sessions(
         ] {
             validate_json(raw, Some(shape), &format!("{path}.{field}"))?;
         }
-        if let Some(raw) = &row.starting_scene {
-            validate_starting_scene(raw, &format!("{path}.starting_scene"), notices)?;
+        let mut starting_scene_json = row.starting_scene.clone();
+        if let Some(raw) = &starting_scene_json
+            && validate_starting_scene(raw, &format!("{path}.starting_scene"), notices)?
+        {
+            starting_scene_json = Some(clear_starting_scene_variant(
+                raw,
+                &format!("{path}.starting_scene"),
+            )?);
+            skipped.push(reference(
+                crate::LegacyImportSkipKind::SceneReference,
+                format!("group_sessions.starting_scene.selected_variant_id:{session_key}"),
+                crate::LegacyImportSkipReason::MissingSceneVariant,
+            ));
         }
         let created_at = timestamp(row.created_at, &format!("{path}.created_at"))?;
         let updated_at = timestamp(row.updated_at, &format!("{path}.updated_at"))?;
@@ -475,7 +527,7 @@ fn map_sessions(
             &mut participation_ids,
             notices,
         )?;
-        let messages = map_messages(
+        let (messages, message_skips) = map_messages(
             row.messages,
             &path,
             &members,
@@ -484,6 +536,7 @@ fn map_sessions(
             &mut variant_ids,
             notices,
         )?;
+        skipped.extend(message_skips);
         participation_count = checked_total(participation_count, participation.len())?;
         message_count = checked_total(message_count, messages.len())?;
         variant_count = messages.iter().try_fold(variant_count, |total, message| {
@@ -510,9 +563,9 @@ fn map_sessions(
             speaker_selection,
             memory_policy,
             character_model_overrides: overrides,
-            group_conversation_prompt_source_id: row.group_chat_prompt_template_id,
-            group_roleplay_prompt_source_id: row.group_chat_roleplay_prompt_template_id,
-            starting_scene_json: row.starting_scene,
+            group_conversation_prompt_source_id,
+            group_roleplay_prompt_source_id,
+            starting_scene_json,
             background_image_locator: row.background_image_path,
             lorebook_source_ids: lorebooks,
             disable_character_lorebooks: row.disable_character_lorebooks,
@@ -613,7 +666,11 @@ fn map_messages(
     all_message_ids: &mut BTreeSet<String>,
     all_variant_ids: &mut BTreeSet<String>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
-) -> Result<Vec<LegacyBackupGroupMessage>, LegacyBackupGroupSessionError> {
+) -> Result<
+    (Vec<LegacyBackupGroupMessage>, Vec<crate::LegacyImportSkip>),
+    LegacyBackupGroupSessionError,
+> {
+    let mut skipped = Vec::new();
     let local_ids = rows
         .iter()
         .map(|row| row.id.clone())
@@ -638,11 +695,17 @@ fn map_messages(
             members,
             &format!("{path}.speaker_character_id"),
         )?;
-        validate_optional_reference(
-            row.model_id.as_deref(),
-            model_ids,
-            &format!("{path}.model_id"),
-        )?;
+        let mut model_source_id = row.model_id.clone();
+        if model_source_id
+            .take_if(|id| !contains_case_insensitive(model_ids, id))
+            .is_some()
+        {
+            skipped.push(crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::ModelReference,
+                source_key: format!("group_messages.model_id:{}", row.id),
+                reason: crate::LegacyImportSkipReason::MissingModelProfile,
+            });
+        }
         if row
             .parent_message_id
             .as_ref()
@@ -680,14 +743,20 @@ fn map_messages(
             members,
             model_ids,
             all_variant_ids,
+            &mut skipped,
             notices,
         )?;
-        if row
-            .selected_variant_id
+        let mut selected_variant_source_id = row.selected_variant_id.clone();
+        if selected_variant_source_id
             .as_ref()
             .is_some_and(|id| !variants.iter().any(|variant| variant.source_id == *id))
         {
-            return Err(orphan(format!("{path}.selected_variant_id")));
+            selected_variant_source_id = variants.last().map(|variant| variant.source_id.clone());
+            skipped.push(crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::MessageVariantReference,
+                source_key: format!("group_messages.selected_variant_id:{}", row.id),
+                reason: crate::LegacyImportSkipReason::MissingMessageVariant,
+            });
         }
         messages.push(LegacyBackupGroupMessage {
             source_id: row.id,
@@ -699,14 +768,14 @@ fn map_messages(
             turn_number: count(row.turn_number, &format!("{path}.turn_number"))?,
             created_at,
             usage,
-            selected_variant_source_id: row.selected_variant_id,
+            selected_variant_source_id,
             pinned: row.is_pinned,
             attachments_json: row.attachments,
             used_lorebook_entries_json: row.used_lorebook_entries,
             memory_refs_json: row.memory_refs,
             reasoning: row.reasoning,
             selection_reasoning: row.selection_reasoning,
-            model_source_id: row.model_id,
+            model_source_id,
             gemini_content_json: row.gemini_content,
             usage_json: row.usage_json,
             parent_message_source_id: row.parent_message_id,
@@ -714,7 +783,7 @@ fn map_messages(
         });
     }
     validate_message_cycles(&messages, session_path)?;
-    Ok(messages)
+    Ok((messages, skipped))
 }
 
 fn map_variants(
@@ -723,6 +792,7 @@ fn map_variants(
     members: &[String],
     model_ids: &BTreeSet<String>,
     all_ids: &mut BTreeSet<String>,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupGroupMessageVariant>, LegacyBackupGroupSessionError> {
     if rows.len() > 1 {
@@ -746,11 +816,17 @@ fn map_variants(
                 members,
                 &format!("{path}.speaker_character_id"),
             )?;
-            validate_optional_reference(
-                row.model_id.as_deref(),
-                model_ids,
-                &format!("{path}.model_id"),
-            )?;
+            let mut model_source_id = row.model_id.clone();
+            if model_source_id
+                .take_if(|id| !contains_case_insensitive(model_ids, id))
+                .is_some()
+            {
+                skipped.push(crate::LegacyImportSkip {
+                    kind: crate::LegacyImportSkipKind::ModelReference,
+                    source_key: format!("group_message_variants.model_id:{}", row.id),
+                    reason: crate::LegacyImportSkipReason::MissingModelProfile,
+                });
+            }
             validate_json(
                 &row.attachments,
                 Some(JsonShape::Array),
@@ -791,7 +867,7 @@ fn map_variants(
                 usage,
                 reasoning: row.reasoning,
                 selection_reasoning: row.selection_reasoning,
-                model_source_id: row.model_id,
+                model_source_id,
                 attachments_json: row.attachments,
                 gemini_content_json: row.gemini_content,
                 usage_json: row.usage_json,
@@ -903,11 +979,28 @@ fn validate_message_cycles(
     Ok(())
 }
 
+fn clear_starting_scene_variant(
+    raw: &str,
+    field: &str,
+) -> Result<String, LegacyBackupGroupSessionError> {
+    let mut value: Value = serde_json::from_str(raw).map_err(|_| malformed(field))?;
+    if let Some(object) = value.as_object_mut() {
+        for key in ["selected_variant_id", "selectedVariantId"] {
+            if let Some(slot) = object.get_mut(key) {
+                *slot = Value::Null;
+            }
+        }
+    }
+    serde_json::to_string(&value).map_err(|_| malformed(field))
+}
+
+/// Validates a group starting scene snapshot and reports whether its selected
+/// variant no longer exists.
 fn validate_starting_scene(
     raw: &str,
     field: &str,
     notices: &mut Vec<LegacyBackupConversionNotice>,
-) -> Result<(), LegacyBackupGroupSessionError> {
+) -> Result<bool, LegacyBackupGroupSessionError> {
     if raw.len() > JSON_LIMIT {
         return Err(LegacyBackupGroupSessionError::LimitExceeded);
     }
@@ -936,14 +1029,10 @@ fn validate_starting_scene(
         timestamp(variant.created_at, &format!("{variant_field}.created_at"))?;
         report_extra(&variant_field, &variant.extra, notices);
     }
-    if row
+    Ok(row
         .selected_variant_id
         .as_deref()
-        .is_some_and(|id| !variant_ids.contains(id))
-    {
-        return Err(orphan(format!("{field}.selected_variant_id")));
-    }
-    Ok(())
+        .is_some_and(|id| !variant_ids.contains(id)))
 }
 
 #[derive(Clone, Copy)]
@@ -1135,17 +1224,6 @@ fn validate_optional_reference(
     field: &str,
 ) -> Result<(), LegacyBackupGroupSessionError> {
     if value.is_some_and(|value| !contains_case_insensitive(values, value)) {
-        return Err(orphan(field));
-    }
-    Ok(())
-}
-
-fn validate_optional_exact_reference(
-    value: Option<&str>,
-    values: &BTreeSet<String>,
-    field: &str,
-) -> Result<(), LegacyBackupGroupSessionError> {
-    if value.is_some_and(|value| !values.contains(value)) {
         return Err(orphan(field));
     }
     Ok(())
@@ -1512,6 +1590,126 @@ mod tests {
             .expect("director session without selected speaker");
         assert_eq!(plan.sessions[0].speaker_selection, "director_action");
         assert_eq!(plan.sessions[0].muted_member_source_ids, characters);
+    }
+
+    #[test]
+    fn group_sessions_clear_and_record_stale_references() {
+        let characters = vec![id(40), id(41)];
+        let group = id(42);
+        let root = id(43);
+        let message_id = id(44);
+        let variant_id = id(45);
+        let missing_lorebook = id(46);
+        let missing_model = id(47);
+        let former_member = id(48);
+        let missing_variant = id(49);
+        let mut row = session(
+            &root,
+            &group,
+            &characters,
+            None,
+            &root,
+            None,
+            vec![message(
+                &message_id,
+                Some(&characters[0]),
+                None,
+                Some(&variant_id),
+            )],
+        );
+        row["group_chat_prompt_template_id"] = json!("deleted-prompt");
+        row["lorebook_ids"] = json!(format!("[\"{missing_lorebook}\"]"));
+        row["character_model_overrides"] = json!(format!(
+            "{{\"{}\":\"{missing_model}\",\"{former_member}\":\"{missing_model}\"}}",
+            characters[0]
+        ));
+        row["messages"][0]["model_id"] = json!(missing_model);
+        row["messages"][0]["variants"][0]["model_id"] = json!(missing_model);
+        row["messages"][0]["selected_variant_id"] = json!(missing_variant);
+        let mut scene: Value = serde_json::from_str(
+            row["starting_scene"]
+                .as_str()
+                .expect("starting scene fixture"),
+        )
+        .expect("starting scene json");
+        scene["selectedVariantId"] = json!(id(50));
+        row["starting_scene"] = json!(scene.to_string());
+        let plan = plan_legacy_backup_group_sessions(source(json!([row]), &characters, &group))
+            .expect("stale group session references are cleared");
+        let session = &plan.sessions[0];
+        assert_eq!(
+            session.group_conversation_prompt_source_id.as_deref(),
+            Some("deleted-prompt")
+        );
+        assert!(session.lorebook_source_ids.is_empty());
+        assert!(session.character_model_overrides.is_empty());
+        let message = &session.messages[0];
+        assert_eq!(message.model_source_id, None);
+        assert_eq!(message.variants[0].model_source_id, None);
+        assert_eq!(
+            message.selected_variant_source_id.as_deref(),
+            Some(variant_id.as_str())
+        );
+        let scene: Value = serde_json::from_str(
+            session
+                .starting_scene_json
+                .as_deref()
+                .expect("starting scene kept"),
+        )
+        .expect("starting scene json");
+        assert!(scene["selectedVariantId"].is_null());
+        let skip = |kind, source_key: String, reason| crate::LegacyImportSkip {
+            kind,
+            source_key,
+            reason,
+        };
+        let mut expected = vec![
+            skip(
+                crate::LegacyImportSkipKind::PromptReference,
+                format!("group_sessions.group_chat_prompt_template_id:{root}"),
+                crate::LegacyImportSkipReason::MissingPrompt,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::LorebookReference,
+                format!("group_sessions.lorebook_ids:{root}:{missing_lorebook}"),
+                crate::LegacyImportSkipReason::MissingLorebook,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::ModelReference,
+                format!(
+                    "group_sessions.character_model_overrides:{root}:{}",
+                    characters[0]
+                ),
+                crate::LegacyImportSkipReason::MissingModelProfile,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::CharacterReference,
+                format!("group_sessions.character_model_overrides:{root}:{former_member}"),
+                crate::LegacyImportSkipReason::MissingCharacter,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::SceneReference,
+                format!("group_sessions.starting_scene.selected_variant_id:{root}"),
+                crate::LegacyImportSkipReason::MissingSceneVariant,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::ModelReference,
+                format!("group_messages.model_id:{message_id}"),
+                crate::LegacyImportSkipReason::MissingModelProfile,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::ModelReference,
+                format!("group_message_variants.model_id:{variant_id}"),
+                crate::LegacyImportSkipReason::MissingModelProfile,
+            ),
+            skip(
+                crate::LegacyImportSkipKind::MessageVariantReference,
+                format!("group_messages.selected_variant_id:{message_id}"),
+                crate::LegacyImportSkipReason::MissingMessageVariant,
+            ),
+        ];
+        expected.sort();
+        assert_eq!(plan.skipped, expected);
     }
 
     #[test]
