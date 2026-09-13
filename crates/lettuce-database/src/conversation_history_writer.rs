@@ -80,9 +80,6 @@ pub(crate) fn insert_historical_conversation(
         };
         turns_by_message.entry(target).or_default().push(turn);
     }
-    for turns in turns_by_message.values_mut() {
-        turns.sort_by_key(|turn| turn.created_at);
-    }
     let usage = input
         .usage
         .iter()

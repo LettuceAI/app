@@ -1145,6 +1145,7 @@ pub enum LegacyImportStage {
     Audio,
     Settings,
     DirectConversations,
+    GroupConversations,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1292,7 +1293,20 @@ pub trait LegacyImportRepository: Send + Sync {
         request: LegacySettingsMaterializationRequest,
     ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
 
+    /// The committed receipt of one later stage, so a replay can return it
+    /// before rebuilding stage input from sources that may have changed since.
+    fn stage_receipt(
+        &self,
+        run_id: LegacyImportRunId,
+        stage: LegacyImportStage,
+    ) -> Result<Option<LegacyImportStageReceipt>, LegacyImportRepositoryError>;
+
     fn materialize_direct_conversations(
+        &self,
+        request: LegacyDirectConversationMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
+
+    fn materialize_group_conversations(
         &self,
         request: LegacyDirectConversationMaterializationRequest,
     ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;

@@ -609,8 +609,11 @@ and events, and candidates, then the create operation and `conversation_created`
 outbox event so later live mutations work. Failed or cancelled turns without a
 candidate, turns carrying speaker, lorebook or memory attribution, and provider
 replay artifacts are rejected for now; candidate media refs are written active.
-The direct conversations stage (after the characters stage) writes every legacy
-direct session through it.
+The direct conversations stage (after the characters stage) and the group
+conversations stage (after the groups stage) write every legacy session through
+it with one shared stage body; `stage_receipt` lets a caller return a committed
+receipt before rebuilding stage input. Turns targeting one message are inserted
+in input order.
 
 The read-only legacy provider-secret adapter lists only planned API-key/header
 metadata, then loads one exact value into `SecretValue` on demand. It ignores the

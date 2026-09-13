@@ -46,7 +46,20 @@ the legacy prompt/completion tokens when both are present, and the selected
 variant stays active. Without a parent message or a chat model the variants are
 kept as ordered revisions instead. An opening scene row becomes a scene message
 with its selected-scene origin; template rows stay plain messages; hidden system
-rows stay hidden. Branch sessions stay separate conversations. Session settings
+rows stay hidden. A blank legacy title falls back to the character name, the
+launch key is derived from the session id's UUID, the message reasoning goes to
+the active variant (legacy kept it only on the message), and without a selected
+variant the variant matching the message content is active (legacy rendered the
+content). A replay returns the committed stage receipt before any launch
+planning, so sources changed after the stage cannot block it. Branch sessions
+stay separate conversations. `AppBackend::legacy_group_conversation_importer`
+does the same for group sessions after the groups stage: it launches from the
+imported group profile and rewrites the cast to the session's members, reusing
+planned member snapshots, snapshotting members the profile no longer lists, and
+turning speakers whose character is gone into disabled, muted "Unknown" members
+(user decision 2026-09-11) so their messages keep an author. Group sessions
+whose group profile is gone are not importable yet. Candidates always carry the
+launch model snapshot; the legacy message model is kept only in usage. Session settings
 (author note, prompt and lorebook overrides, generation settings, background,
 voice autoplay), memory fields, companion state and attachments are not mapped
 yet.

@@ -7,11 +7,11 @@
 //! on the same conversation row instead of creating a second one.
 
 mod digest;
-mod documents;
+pub(crate) mod documents;
 mod error;
 mod identity;
 mod planner;
-mod policy;
+pub(crate) mod policy;
 mod request;
 
 pub use error::{ConversationLaunchError, LaunchSourceError};

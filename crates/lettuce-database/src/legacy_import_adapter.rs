@@ -792,79 +792,47 @@ impl LegacyImportRepository for Database {
         Ok(receipt)
     }
 
-    fn materialize_direct_conversations(
+    fn stage_receipt(
         &self,
-        request: lettuce_transfer::LegacyDirectConversationMaterializationRequest,
-    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError> {
+        run_id: LegacyImportRunId,
+        stage: LegacyImportStage,
+    ) -> Result<Option<LegacyImportStageReceipt>, LegacyImportRepositoryError> {
         let mut connection = self
             .connection()
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
         let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .transaction()
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
-        let record_count = u64::try_from(request.conversations.len())
-            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
-        if let StageStart::Replayed(receipt) = start_stage(
-            &transaction,
-            request.run_id,
-            (&request.plan_fingerprint, &request.source_fingerprint),
+        Ok(
+            load_stage_receipt(&transaction, run_id, stage)?.map(|mut receipt| {
+                receipt.replayed = true;
+                receipt
+            }),
+        )
+    }
+
+    fn materialize_direct_conversations(
+        &self,
+        request: lettuce_transfer::LegacyDirectConversationMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError> {
+        materialize_conversations(
+            self,
+            request,
             LegacyImportStage::DirectConversations,
-            record_count,
-            Some(LegacyImportStage::Characters),
-        )? {
-            transaction
-                .commit()
-                .map_err(|_| LegacyImportRepositoryError::Storage)?;
-            return Ok(receipt);
-        }
-        for record in request.conversations {
-            let conversation_id = record.history.aggregate.conversation.id;
-            let operation = lettuce_conversations::OperationToken {
-                key: lettuce_conversations::IdempotencyKey::new(format!(
-                    "legacy-import.{}.{conversation_id}",
-                    request.run_id
-                ))
-                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
-                request_digest: request.source_fingerprint.clone(),
-            };
-            crate::conversation_history_writer::insert_historical_conversation(
-                &transaction,
-                crate::conversation_history_writer::HistoricalConversation {
-                    history: &record.history,
-                    turns: &record.turns,
-                    usage: &record.usage,
-                    snapshots: record.snapshots,
-                    operation,
-                },
-            )
-            .map_err(|error| match error {
-                lettuce_conversations::ConversationRepositoryError::Conflict => {
-                    LegacyImportRepositoryError::Conflict
-                }
-                lettuce_conversations::ConversationRepositoryError::Invalid(_)
-                | lettuce_conversations::ConversationRepositoryError::ArtifactReference(_) => {
-                    LegacyImportRepositoryError::InvalidInput
-                }
-                _ => LegacyImportRepositoryError::Storage,
-            })?;
-        }
-        insert_stage_result(
-            &transaction,
-            request.run_id,
-            LegacyImportStage::DirectConversations,
-            record_count,
-            request.completed_at,
-        )?;
-        let receipt = load_stage_receipt(
-            &transaction,
-            request.run_id,
-            LegacyImportStage::DirectConversations,
-        )?
-        .ok_or(LegacyImportRepositoryError::Storage)?;
-        transaction
-            .commit()
-            .map_err(|_| LegacyImportRepositoryError::Storage)?;
-        Ok(receipt)
+            LegacyImportStage::Characters,
+        )
+    }
+
+    fn materialize_group_conversations(
+        &self,
+        request: lettuce_transfer::LegacyDirectConversationMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError> {
+        materialize_conversations(
+            self,
+            request,
+            LegacyImportStage::GroupConversations,
+            LegacyImportStage::Groups,
+        )
     }
 
     fn materialize_settings(
@@ -2083,6 +2051,79 @@ fn legacy_group_plan(
     })
 }
 
+fn materialize_conversations(
+    database: &Database,
+    request: lettuce_transfer::LegacyDirectConversationMaterializationRequest,
+    stage: LegacyImportStage,
+    previous: LegacyImportStage,
+) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError> {
+    let mut connection = database
+        .connection()
+        .map_err(|_| LegacyImportRepositoryError::Storage)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|_| LegacyImportRepositoryError::Storage)?;
+    let record_count = u64::try_from(request.conversations.len())
+        .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+    if let StageStart::Replayed(receipt) = start_stage(
+        &transaction,
+        request.run_id,
+        (&request.plan_fingerprint, &request.source_fingerprint),
+        stage,
+        record_count,
+        Some(previous),
+    )? {
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        return Ok(receipt);
+    }
+    for record in request.conversations {
+        let conversation_id = record.history.aggregate.conversation.id;
+        let operation = lettuce_conversations::OperationToken {
+            key: lettuce_conversations::IdempotencyKey::new(format!(
+                "legacy-import.{}.{conversation_id}",
+                request.run_id
+            ))
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+            request_digest: request.source_fingerprint.clone(),
+        };
+        crate::conversation_history_writer::insert_historical_conversation(
+            &transaction,
+            crate::conversation_history_writer::HistoricalConversation {
+                history: &record.history,
+                turns: &record.turns,
+                usage: &record.usage,
+                snapshots: record.snapshots,
+                operation,
+            },
+        )
+        .map_err(|error| match error {
+            lettuce_conversations::ConversationRepositoryError::Conflict => {
+                LegacyImportRepositoryError::Conflict
+            }
+            lettuce_conversations::ConversationRepositoryError::Invalid(_)
+            | lettuce_conversations::ConversationRepositoryError::ArtifactReference(_) => {
+                LegacyImportRepositoryError::InvalidInput
+            }
+            _ => LegacyImportRepositoryError::Storage,
+        })?;
+    }
+    insert_stage_result(
+        &transaction,
+        request.run_id,
+        stage,
+        record_count,
+        request.completed_at,
+    )?;
+    let receipt = load_stage_receipt(&transaction, request.run_id, stage)?
+        .ok_or(LegacyImportRepositoryError::Storage)?;
+    transaction
+        .commit()
+        .map_err(|_| LegacyImportRepositoryError::Storage)?;
+    Ok(receipt)
+}
+
 const fn stage_name(stage: LegacyImportStage) -> &'static str {
     match stage {
         LegacyImportStage::Characters => "characters",
@@ -2090,6 +2131,7 @@ const fn stage_name(stage: LegacyImportStage) -> &'static str {
         LegacyImportStage::Audio => "audio",
         LegacyImportStage::Settings => "settings",
         LegacyImportStage::DirectConversations => "direct_conversations",
+        LegacyImportStage::GroupConversations => "group_conversations",
     }
 }
 

@@ -185,6 +185,13 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn legacy_group_conversation_importer(
+        &self,
+    ) -> crate::LegacyGroupConversationImportCoordinator<'_, Database> {
+        crate::LegacyGroupConversationImportCoordinator::new(self.database.as_ref())
+    }
+
+    #[must_use]
     pub fn legacy_settings_importer(&self) -> crate::LegacySettingsImportCoordinator<'_, Database> {
         crate::LegacySettingsImportCoordinator::new(self.database.as_ref())
     }

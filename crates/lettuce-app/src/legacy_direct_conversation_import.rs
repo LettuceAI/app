@@ -2,19 +2,19 @@ use std::collections::BTreeMap;
 
 use lettuce_conversations::{
     BranchStatus, Conversation, ConversationAggregate, ConversationBranch, ConversationKind,
-    ConversationLifecycle, ConversationParticipant, GenerationAttempt, GenerationAttemptStatus,
-    GenerationInput, GenerationOperation, GenerationTarget, GenerationTurn, GenerationTurnStatus,
-    IdempotencyKey, InferenceUsage, InitialMessageOrigin, Message, MessageCandidate, MessagePart,
+    ConversationLifecycle, ConversationParticipant, ConversationParticipantDraft,
+    GenerationAttempt, GenerationAttemptStatus, GenerationInput, GenerationOperation,
+    GenerationTarget, GenerationTurn, GenerationTurnStatus, IdempotencyKey, InferenceUsage,
+    InitialMessageDraft, InitialMessageOrigin, Message, MessageCandidate, MessagePart,
     MessageRenderSource, MessageRevision, MessageRole, MessageVisibility, ModelSelectionSnapshot,
-    ParticipantRole, SnapshotSelection, UsageCounters, UsageOutcome, UsageRecord,
-    UsageUnavailableReason,
+    ParticipantRole, SnapshotArtifactDraft, SnapshotSelection, UsageCounters, UsageOutcome,
+    UsageRecord, UsageUnavailableReason,
 };
 use lettuce_transfer::{
-    BackupConversation, BackupMessage, LEGACY_ID_NAMESPACE, LegacyBackupDirectMessage,
-    LegacyBackupDirectSession, LegacyConversationRecord,
-    LegacyDirectConversationMaterializationRequest, LegacyImportAdmission, LegacyImportAssignment,
-    LegacyImportPlan, LegacyImportRepository, LegacyImportRepositoryError,
-    LegacyImportStageReceipt,
+    BackupConversation, BackupMessage, LEGACY_ID_NAMESPACE, LegacyBackupDirectSession,
+    LegacyConversationRecord, LegacyDirectConversationMaterializationRequest,
+    LegacyImportAdmission, LegacyImportAssignment, LegacyImportPlan, LegacyImportRepository,
+    LegacyImportRepositoryError, LegacyImportStageReceipt,
 };
 use lettuce_types::{
     CharacterId, ConversationBranchId, ConversationId, ConversationParticipantId,
@@ -36,9 +36,50 @@ pub struct LegacyDirectConversationImportCoordinator<'a, S> {
     sources: &'a S,
 }
 
-struct ImportContext {
+pub(crate) struct ImportContext {
     models: BTreeMap<ModelProfileId, (ModelProfileId, ProviderAccountId)>,
-    personas: BTreeMap<PersonaId, PersonaId>,
+    pub(crate) personas: BTreeMap<PersonaId, PersonaId>,
+}
+
+/// One legacy chat row in the shape both direct and group sessions share.
+pub(crate) struct TimelineMessage<'a> {
+    pub source_id: &'a str,
+    pub role: &'a str,
+    pub content: &'a str,
+    pub created_at: u64,
+    pub effective_at: Option<u64>,
+    pub visible_in_chat: bool,
+    pub pinned: bool,
+    pub scene_edited: bool,
+    pub author: Option<ConversationParticipantId>,
+    pub model_source_id: Option<&'a str>,
+    pub selected_variant_source_id: Option<&'a str>,
+    pub reasoning: Option<&'a str>,
+    pub variants: Vec<TimelineVariant<'a>>,
+}
+
+pub(crate) struct TimelineVariant<'a> {
+    pub source_id: &'a str,
+    pub content: &'a str,
+    pub created_at: u64,
+    pub prompt_tokens: Option<u64>,
+    pub completion_tokens: Option<u64>,
+    pub reasoning: Option<&'a str>,
+    pub author: Option<ConversationParticipantId>,
+}
+
+pub(crate) struct LegacyConversationSource<'a> {
+    pub source_id: &'a str,
+    pub title: String,
+    pub kind: ConversationKind,
+    pub participants: Vec<ConversationParticipantDraft>,
+    pub initial_timeline: &'a [InitialMessageDraft],
+    pub snapshots: Vec<SnapshotArtifactDraft>,
+    pub model: Option<ModelSelectionSnapshot>,
+    pub archived: bool,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub messages: Vec<TimelineMessage<'a>>,
 }
 
 impl<'a, S> LegacyDirectConversationImportCoordinator<'a, S>
@@ -65,6 +106,14 @@ where
             return Err(Error::Conflict);
         }
         let source_fingerprint = plan.source_fingerprint.clone().ok_or(Error::InvalidInput)?;
+        if let Some(receipt) = committed_stage(
+            self.sources,
+            admission,
+            lettuce_transfer::LegacyImportStage::DirectConversations,
+            sessions.len(),
+        )? {
+            return Ok(receipt);
+        }
         let context = import_context(admission, plan);
         let conversations = sessions
             .iter()
@@ -100,161 +149,269 @@ where
         session: &LegacyBackupDirectSession,
         context: &ImportContext,
     ) -> Result<LegacyConversationRecord, Error> {
-        let mut messages = session.messages.iter().collect::<Vec<_>>();
-        messages.sort_by_key(|message| message.ordinal);
-        let opens_with_scene = messages
-            .first()
-            .is_some_and(|message| message.role == "scene" && !message.content.trim().is_empty());
-        let persona = if session.persona_disabled {
-            LaunchSelection::Disabled
-        } else {
-            match &session.persona_source_id {
-                Some(id) => LaunchSelection::Explicit(
-                    context
-                        .personas
-                        .get(&parse(id)?)
-                        .copied()
-                        .ok_or(Error::InvalidInput)?,
-                ),
-                None => LaunchSelection::Inherit,
-            }
-        };
+        let mut rows = session.messages.iter().collect::<Vec<_>>();
+        rows.sort_by_key(|message| message.ordinal);
+        let opens_with_scene = opens_with_scene(
+            rows.first()
+                .map(|row| (row.role.as_str(), row.content.as_str())),
+        );
+        let persona = persona_selection(
+            session.persona_disabled,
+            session.persona_source_id.as_deref(),
+            context,
+        )?;
         let scene = match (&session.selected_scene_source_id, opens_with_scene) {
             (Some(id), true) => LaunchSelection::Explicit(parse::<SceneId>(id)?),
             _ => LaunchSelection::Disabled,
         };
+        let character_id = parse::<CharacterId>(&session.character_source_id)?;
+        let title = if session.title.trim().is_empty() {
+            lettuce_characters::CharacterRepository::get(self.sources, character_id)
+                .map_err(|_| Error::Storage)?
+                .map(|details| crate::launch::policy::character_display_name(&details.character))
+                .ok_or(Error::InvalidInput)?
+        } else {
+            session.title.clone()
+        };
         let request = DirectConversationLaunchRequest {
             format_version: DIRECT_LAUNCH_REQUEST_FORMAT_V1,
-            title: session.title.clone(),
-            user: DirectUserParticipant {
-                display_name: "User".to_owned(),
-                authored_description: None,
-            },
-            character_id: parse::<CharacterId>(&session.character_source_id)?,
+            title,
+            user: legacy_user(),
+            character_id,
             scene,
             starter: LaunchSelection::Disabled,
             persona,
-            operation_key: IdempotencyKey::new(format!("legacy-import.{}", session.source_id))
-                .map_err(|_| Error::InvalidInput)?,
+            operation_key: launch_key(&session.source_id)?,
         };
         let (plan, snapshots) = ConversationLaunchPlanner::new(self.sources)
             .prepare_direct(&request)
             .map_err(|_| Error::Conflict)?
             .into_parts();
-        let conversation_id = ConversationId::from_uuid(legacy_uuid(&session.source_id));
-        let branch_id = ConversationBranchId::from_uuid(derived(&session.source_id, "branch"));
-        let created_at = timestamp(session.created_at)?;
-        let updated_at = timestamp(session.updated_at)?.max(created_at);
-        let participant = |role| {
-            plan.participants
-                .iter()
-                .find(|participant| participant.role == role)
-                .map(|participant| participant.id)
-                .ok_or(Error::InvalidInput)
-        };
-        let user = participant(ParticipantRole::User)?;
-        let character = participant(ParticipantRole::Character)?;
-        let scene_origin =
-            plan.initial_timeline
-                .entries
-                .iter()
-                .find_map(|entry| match &entry.origin {
-                    origin @ InitialMessageOrigin::SelectedScene { .. } => Some(origin.clone()),
-                    InitialMessageOrigin::StarterMessage { .. } => None,
-                });
+        let character = plan
+            .participants
+            .iter()
+            .find(|participant| participant.role == ParticipantRole::Character)
+            .map(|participant| participant.id)
+            .ok_or(Error::InvalidInput)?;
         let ConversationKind::Direct(details) = &plan.kind else {
             return Err(Error::InvalidInput);
         };
-        let model = match &details.model {
-            SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => {
-                Some(model.clone())
-            }
-            _ => None,
-        };
-        let mut writer = SessionWriter {
-            conversation_id,
-            branch_id,
-            user,
-            character,
-            model,
+        let model = selected_model(&details.model);
+        let messages = rows
+            .iter()
+            .map(|row| TimelineMessage {
+                source_id: &row.source_id,
+                role: &row.role,
+                content: &row.content,
+                created_at: row.created_at,
+                effective_at: row.effective_at,
+                visible_in_chat: row.visible_in_chat,
+                pinned: row.pinned,
+                scene_edited: row.scene_edited,
+                author: (row.role == "assistant").then_some(character),
+                model_source_id: row.model_source_id.as_deref(),
+                selected_variant_source_id: row.selected_variant_source_id.as_deref(),
+                reasoning: row.reasoning.as_deref(),
+                variants: row
+                    .variants
+                    .iter()
+                    .map(|variant| TimelineVariant {
+                        source_id: &variant.source_id,
+                        content: &variant.content,
+                        created_at: variant.created_at,
+                        prompt_tokens: variant.usage.prompt_tokens,
+                        completion_tokens: variant.usage.completion_tokens,
+                        reasoning: variant.reasoning.as_deref(),
+                        author: Some(character),
+                    })
+                    .collect(),
+            })
+            .collect();
+        conversation_record(
+            LegacyConversationSource {
+                source_id: &session.source_id,
+                title: plan.title.clone(),
+                kind: plan.kind.clone(),
+                participants: plan.participants.clone(),
+                initial_timeline: &plan.initial_timeline.entries,
+                snapshots,
+                model,
+                archived: session.archived,
+                created_at: session.created_at,
+                updated_at: session.updated_at,
+                messages,
+            },
             context,
-            messages: Vec::new(),
-            turns: Vec::new(),
-            usage: Vec::new(),
-        };
-        let mut parent: Option<(MessageId, MessageRole)> = None;
-        for (index, legacy) in messages.iter().enumerate() {
-            let origin = (index == 0 && opens_with_scene)
-                .then(|| scene_origin.clone())
-                .flatten();
-            let next = writer.push(legacy, parent, origin)?;
-            parent = Some(next);
-        }
-        let head_message_id = parent.map(|(id, _)| id);
-        let conversation = Conversation {
-            id: conversation_id,
-            lifecycle: if session.archived {
-                ConversationLifecycle::Archived
-            } else {
-                ConversationLifecycle::Active
-            },
-            title: plan.title.clone(),
-            kind: plan.kind.clone(),
-            active_branch_id: branch_id,
-            participants: plan
-                .participants
-                .iter()
-                .map(|draft| ConversationParticipant {
-                    id: draft.id,
-                    role: draft.role,
-                    ordinal: draft.ordinal,
-                    enabled: draft.enabled,
-                    muted: draft.muted,
-                    source: draft.source,
-                    display_name: draft.display_name.clone(),
-                    authored_description: draft.authored_description.clone(),
-                    model_selection: draft.model_selection.clone(),
-                    revision: Revision::INITIAL,
-                    created_at,
-                    updated_at: created_at,
-                })
-                .collect(),
-            current_settings: None,
-            revision: Revision::INITIAL,
-            created_at,
-            updated_at,
-        };
-        let branch = ConversationBranch {
-            id: branch_id,
-            conversation_id,
-            parent_branch_id: None,
-            fork_message_id: None,
-            head_message_id,
-            status: BranchStatus::Active,
-            revision: Revision::INITIAL,
-            created_at,
-            updated_at,
-        };
-        Ok(LegacyConversationRecord {
-            history: BackupConversation {
-                aggregate: ConversationAggregate {
-                    conversation,
-                    branches: vec![branch],
-                },
-                messages: writer.messages,
-            },
-            turns: writer.turns,
-            usage: writer.usage,
-            snapshots,
-        })
+        )
     }
+}
+
+pub(crate) fn committed_stage<S: LegacyImportRepository>(
+    sources: &S,
+    admission: &LegacyImportAdmission,
+    stage: lettuce_transfer::LegacyImportStage,
+    record_count: usize,
+) -> Result<Option<LegacyImportStageReceipt>, Error> {
+    let Some(receipt) = sources.stage_receipt(admission.run_id, stage)? else {
+        return Ok(None);
+    };
+    if receipt.record_count != u64::try_from(record_count).map_err(|_| Error::InvalidInput)? {
+        return Err(Error::Conflict);
+    }
+    Ok(Some(receipt))
+}
+
+pub(crate) fn launch_key(source_id: &str) -> Result<IdempotencyKey, Error> {
+    IdempotencyKey::new(format!("legacy-import.{}", legacy_uuid(source_id)))
+        .map_err(|_| Error::InvalidInput)
+}
+
+pub(crate) fn opens_with_scene(first: Option<(&str, &str)>) -> bool {
+    first.is_some_and(|(role, content)| role == "scene" && !content.trim().is_empty())
+}
+
+pub(crate) fn legacy_user() -> DirectUserParticipant {
+    DirectUserParticipant {
+        display_name: "User".to_owned(),
+        authored_description: None,
+    }
+}
+
+pub(crate) fn persona_selection(
+    disabled: bool,
+    persona_source_id: Option<&str>,
+    context: &ImportContext,
+) -> Result<LaunchSelection<PersonaId>, Error> {
+    if disabled {
+        return Ok(LaunchSelection::Disabled);
+    }
+    persona_source_id.map_or(Ok(LaunchSelection::Inherit), |id| {
+        context
+            .personas
+            .get(&parse(id)?)
+            .copied()
+            .map(LaunchSelection::Explicit)
+            .ok_or(Error::InvalidInput)
+    })
+}
+
+pub(crate) fn selected_model(
+    selection: &SnapshotSelection<ModelSelectionSnapshot>,
+) -> Option<ModelSelectionSnapshot> {
+    match selection {
+        SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => {
+            Some(model.clone())
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn conversation_record(
+    source: LegacyConversationSource<'_>,
+    context: &ImportContext,
+) -> Result<LegacyConversationRecord, Error> {
+    let conversation_id = ConversationId::from_uuid(legacy_uuid(source.source_id));
+    let branch_id = ConversationBranchId::from_uuid(derived(source.source_id, "branch"));
+    let created_at = timestamp(source.created_at)?;
+    let updated_at = timestamp(source.updated_at)?.max(created_at);
+    let user = source
+        .participants
+        .iter()
+        .find(|participant| participant.role == ParticipantRole::User)
+        .map(|participant| participant.id)
+        .ok_or(Error::InvalidInput)?;
+    let scene_origin = source
+        .initial_timeline
+        .iter()
+        .find_map(|entry| match &entry.origin {
+            origin @ InitialMessageOrigin::SelectedScene { .. } => Some(origin.clone()),
+            InitialMessageOrigin::StarterMessage { .. } => None,
+        });
+    let opens = opens_with_scene(
+        source
+            .messages
+            .first()
+            .map(|message| (message.role, message.content)),
+    );
+    let mut writer = SessionWriter {
+        conversation_id,
+        branch_id,
+        user,
+        model: source.model,
+        context,
+        messages: Vec::new(),
+        turns: Vec::new(),
+        usage: Vec::new(),
+    };
+    let mut parent: Option<(MessageId, MessageRole)> = None;
+    for (index, message) in source.messages.iter().enumerate() {
+        let origin = (index == 0 && opens)
+            .then(|| scene_origin.clone())
+            .flatten();
+        parent = Some(writer.push(message, parent, origin)?);
+    }
+    let conversation = Conversation {
+        id: conversation_id,
+        lifecycle: if source.archived {
+            ConversationLifecycle::Archived
+        } else {
+            ConversationLifecycle::Active
+        },
+        title: source.title,
+        kind: source.kind,
+        active_branch_id: branch_id,
+        participants: source
+            .participants
+            .iter()
+            .map(|draft| ConversationParticipant {
+                id: draft.id,
+                role: draft.role,
+                ordinal: draft.ordinal,
+                enabled: draft.enabled,
+                muted: draft.muted,
+                source: draft.source,
+                display_name: draft.display_name.clone(),
+                authored_description: draft.authored_description.clone(),
+                model_selection: draft.model_selection.clone(),
+                revision: Revision::INITIAL,
+                created_at,
+                updated_at: created_at,
+            })
+            .collect(),
+        current_settings: None,
+        revision: Revision::INITIAL,
+        created_at,
+        updated_at,
+    };
+    let branch = ConversationBranch {
+        id: branch_id,
+        conversation_id,
+        parent_branch_id: None,
+        fork_message_id: None,
+        head_message_id: parent.map(|(id, _)| id),
+        status: BranchStatus::Active,
+        revision: Revision::INITIAL,
+        created_at,
+        updated_at,
+    };
+    Ok(LegacyConversationRecord {
+        history: BackupConversation {
+            aggregate: ConversationAggregate {
+                conversation,
+                branches: vec![branch],
+            },
+            messages: writer.messages,
+        },
+        turns: writer.turns,
+        usage: writer.usage,
+        snapshots: source.snapshots,
+    })
 }
 
 struct SessionWriter<'a> {
     conversation_id: ConversationId,
     branch_id: ConversationBranchId,
     user: ConversationParticipantId,
-    character: ConversationParticipantId,
     model: Option<ModelSelectionSnapshot>,
     context: &'a ImportContext,
     messages: Vec<BackupMessage>,
@@ -265,18 +422,18 @@ struct SessionWriter<'a> {
 impl SessionWriter<'_> {
     fn push(
         &mut self,
-        legacy: &LegacyBackupDirectMessage,
+        legacy: &TimelineMessage<'_>,
         parent: Option<(MessageId, MessageRole)>,
         origin: Option<InitialMessageOrigin>,
     ) -> Result<(MessageId, MessageRole), Error> {
-        let message_id = MessageId::from_uuid(legacy_uuid(&legacy.source_id));
+        let message_id = MessageId::from_uuid(legacy_uuid(legacy.source_id));
         let created_at = timestamp(legacy.created_at)?;
         let effective_time = legacy
             .effective_at
             .map(timestamp)
             .transpose()?
             .unwrap_or(created_at);
-        let (role, author, visibility) = match (legacy.role.as_str(), origin.is_some()) {
+        let (role, author, visibility) = match (legacy.role, origin.is_some()) {
             ("scene", true) => (MessageRole::Scene, None, MessageVisibility::Visible),
             ("scene", false) => (MessageRole::System, None, MessageVisibility::Visible),
             ("user", _) => (
@@ -286,7 +443,7 @@ impl SessionWriter<'_> {
             ),
             ("assistant", _) => (
                 MessageRole::Assistant,
-                Some(self.character),
+                Some(legacy.author.ok_or(Error::InvalidInput)?),
                 MessageVisibility::Visible,
             ),
             ("system", _) => (
@@ -310,10 +467,10 @@ impl SessionWriter<'_> {
             self.push_candidates(legacy, message_id, parent, &mut candidates)?
         } else if legacy.variants.is_empty() {
             let revision = MessageRevision {
-                id: MessageRevisionId::from_uuid(derived(&legacy.source_id, "revision")),
+                id: MessageRevisionId::from_uuid(derived(legacy.source_id, "revision")),
                 message_id,
                 sequence: Revision::INITIAL,
-                parts: parts(&legacy.content, legacy.reasoning.as_deref()),
+                parts: parts(legacy.content, legacy.reasoning),
                 authored_at: created_at,
                 source_turn_id: None,
                 provider_replay: None,
@@ -325,19 +482,17 @@ impl SessionWriter<'_> {
             let mut active = None;
             for (index, variant) in legacy.variants.iter().enumerate() {
                 let revision = MessageRevision {
-                    id: MessageRevisionId::from_uuid(derived(&variant.source_id, "revision")),
+                    id: MessageRevisionId::from_uuid(derived(variant.source_id, "revision")),
                     message_id,
                     sequence: Revision::new(
                         u64::try_from(index + 1).map_err(|_| Error::InvalidInput)?,
                     ),
-                    parts: parts(&variant.content, variant.reasoning.as_deref()),
+                    parts: parts(variant.content, variant.reasoning.or(legacy.reasoning)),
                     authored_at: timestamp(variant.created_at)?,
                     source_turn_id: None,
                     provider_replay: None,
                 };
-                if legacy.selected_variant_source_id.as_deref() == Some(variant.source_id.as_str())
-                    || (active.is_none() && index + 1 == legacy.variants.len())
-                {
+                if index == active_variant_index(legacy) {
                     active = Some(revision.id);
                 }
                 revisions.push(revision);
@@ -374,7 +529,7 @@ impl SessionWriter<'_> {
 
     fn push_candidates(
         &mut self,
-        legacy: &LegacyBackupDirectMessage,
+        legacy: &TimelineMessage<'_>,
         message_id: MessageId,
         parent: Option<(MessageId, MessageRole)>,
         candidates: &mut Vec<MessageCandidate>,
@@ -383,7 +538,6 @@ impl SessionWriter<'_> {
         let model = self.model.clone().ok_or(Error::InvalidInput)?;
         let (usage_model, usage_provider, usage_model_revision, usage_provider_revision) = legacy
             .model_source_id
-            .as_deref()
             .and_then(|id| id.parse::<ModelProfileId>().ok())
             .and_then(|id| self.context.models.get(&id))
             .map_or(
@@ -404,11 +558,12 @@ impl SessionWriter<'_> {
             );
         let mut previous: Option<MessageCandidateId> = None;
         let mut active = None;
+        let active_index = active_variant_index(legacy);
         for (index, variant) in legacy.variants.iter().enumerate() {
-            let candidate_id = MessageCandidateId::from_uuid(legacy_uuid(&variant.source_id));
-            let turn_id = GenerationTurnId::from_uuid(derived(&variant.source_id, "turn"));
-            let attempt_id = GenerationAttemptId::from_uuid(derived(&variant.source_id, "attempt"));
-            let usage_event_id = UsageEventId::from_uuid(derived(&variant.source_id, "usage"));
+            let candidate_id = MessageCandidateId::from_uuid(legacy_uuid(variant.source_id));
+            let turn_id = GenerationTurnId::from_uuid(derived(variant.source_id, "turn"));
+            let attempt_id = GenerationAttemptId::from_uuid(derived(variant.source_id, "attempt"));
+            let usage_event_id = UsageEventId::from_uuid(derived(variant.source_id, "usage"));
             let at = timestamp(variant.created_at)?;
             let (operation, input, target) = match previous {
                 None if parent_role == MessageRole::User => (
@@ -488,7 +643,7 @@ impl SessionWriter<'_> {
                 created_at: at,
                 updated_at: at,
             });
-            let counters = match (variant.usage.prompt_tokens, variant.usage.completion_tokens) {
+            let counters = match (variant.prompt_tokens, variant.completion_tokens) {
                 (Some(input_tokens), Some(output_tokens)) => UsageCounters::Known(InferenceUsage {
                     provider_reported_cost: None,
                     cache_write_tokens: None,
@@ -519,14 +674,22 @@ impl SessionWriter<'_> {
                 message_id,
                 turn_id,
                 attempt_id,
-                author_participant_id: self.character,
+                author_participant_id: variant
+                    .author
+                    .or(legacy.author)
+                    .ok_or(Error::InvalidInput)?,
                 ordinal: u16::try_from(index).map_err(|_| Error::InvalidInput)?,
-                parts: parts(&variant.content, variant.reasoning.as_deref()),
+                parts: parts(
+                    variant.content,
+                    variant.reasoning.or((index == active_index)
+                        .then_some(legacy.reasoning)
+                        .flatten()),
+                ),
                 model: model.clone(),
                 created_at: at,
                 provider_replay: None,
             });
-            if legacy.selected_variant_source_id.as_deref() == Some(variant.source_id.as_str()) {
+            if index == active_index {
                 active = Some(candidate_id);
             }
             previous = Some(candidate_id);
@@ -537,7 +700,31 @@ impl SessionWriter<'_> {
     }
 }
 
-fn import_context(admission: &LegacyImportAdmission, plan: &LegacyImportPlan) -> ImportContext {
+/// Legacy rendered the selected variant, and without a selection the message
+/// content, which edits kept equal to one variant; the last one is the
+/// fallback when neither matches.
+fn active_variant_index(legacy: &TimelineMessage<'_>) -> usize {
+    legacy
+        .selected_variant_source_id
+        .and_then(|selected| {
+            legacy
+                .variants
+                .iter()
+                .position(|variant| variant.source_id == selected)
+        })
+        .or_else(|| {
+            legacy
+                .variants
+                .iter()
+                .rposition(|variant| variant.content == legacy.content)
+        })
+        .unwrap_or_else(|| legacy.variants.len().saturating_sub(1))
+}
+
+pub(crate) fn import_context(
+    admission: &LegacyImportAdmission,
+    plan: &LegacyImportPlan,
+) -> ImportContext {
     let mut providers = BTreeMap::new();
     let mut models = BTreeMap::new();
     let mut personas = BTreeMap::new();
@@ -582,15 +769,15 @@ fn import_context(admission: &LegacyImportAdmission, plan: &LegacyImportPlan) ->
     ImportContext { models, personas }
 }
 
-fn legacy_uuid(value: &str) -> Uuid {
+pub(crate) fn legacy_uuid(value: &str) -> Uuid {
     Uuid::parse_str(value).unwrap_or_else(|_| Uuid::new_v5(&LEGACY_ID_NAMESPACE, value.as_bytes()))
 }
 
-fn derived(value: &str, suffix: &str) -> Uuid {
+pub(crate) fn derived(value: &str, suffix: &str) -> Uuid {
     Uuid::new_v5(&LEGACY_ID_NAMESPACE, format!("{value}:{suffix}").as_bytes())
 }
 
-fn parse<T: std::str::FromStr>(value: &str) -> Result<T, Error> {
+pub(crate) fn parse<T: std::str::FromStr>(value: &str) -> Result<T, Error> {
     value.parse().map_err(|_| Error::InvalidInput)
 }
 

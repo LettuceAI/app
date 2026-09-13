@@ -231,7 +231,7 @@ mod tests {
             models: 1,
             prompts: 1,
             personas: 0,
-            characters: 2,
+            characters: 3,
             lorebooks: 1,
             chat_templates: 1,
             direct_conversations: 0,
@@ -345,7 +345,12 @@ mod tests {
             starters: Vec::new(),
             ..character.clone()
         };
-        let characters = vec![character.clone(), second];
+        let third_id = CharacterId::new();
+        let third = LegacyBackupCharacterCandidate {
+            id: third_id,
+            ..second.clone()
+        };
+        let characters = vec![character.clone(), second, third];
         let group_id = GroupId::new();
         let group_scene = SceneId::new();
         let group_variant = SceneVariantId::new();
@@ -363,13 +368,13 @@ mod tests {
             chat_appearance: ChatAppearanceV1::default(),
             members: vec![
                 GroupMember {
-                    character_id,
+                    character_id: second_id,
                     ordinal: 0,
                     muted: false,
                     model_profile_override: None,
                 },
                 GroupMember {
-                    character_id: second_id,
+                    character_id: third_id,
                     ordinal: 1,
                     muted: true,
                     model_profile_override: None,
@@ -482,7 +487,7 @@ mod tests {
             )
             .expect("materialize characters");
 
-        assert_eq!(receipt.record_count, 2);
+        assert_eq!(receipt.record_count, 3);
         assert!(!receipt.replayed);
         let details = CharacterRepository::get(backend.database(), character_id)
             .expect("read character")
@@ -672,6 +677,167 @@ mod tests {
             )
         );
         assert_eq!(graph.conversation_runtime.conversations[0].turns.len(), 2);
+
+        let group_session_id = lettuce_types::ConversationId::new();
+        let deleted_speaker = CharacterId::new();
+        let group_first = lettuce_types::MessageCandidateId::new().to_string();
+        let group_second = lettuce_types::MessageCandidateId::new().to_string();
+        let group_usage = || lettuce_transfer::LegacyBackupGroupMessageUsage {
+            prompt_tokens: None,
+            completion_tokens: None,
+            total_tokens: None,
+            first_token_ms: None,
+            tokens_per_second: None,
+            mtp_stats_json: None,
+        };
+        let group_variant = |source_id: &str, content: &str, created_at| {
+            lettuce_transfer::LegacyBackupGroupMessageVariant {
+                source_id: source_id.to_owned(),
+                ordinal: 0,
+                content: content.to_owned(),
+                speaker_character_source_id: Some(second_id.to_string()),
+                created_at,
+                usage: group_usage(),
+                reasoning: None,
+                selection_reasoning: None,
+                model_source_id: None,
+                attachments_json: "[]".to_owned(),
+                gemini_content_json: None,
+                usage_json: None,
+            }
+        };
+        let group_message = |role: &str,
+                             ordinal,
+                             content: &str,
+                             speaker: Option<CharacterId>,
+                             variants,
+                             selected| {
+            lettuce_transfer::LegacyBackupGroupMessage {
+                source_id: lettuce_types::MessageId::new().to_string(),
+                ordinal,
+                role: role.to_owned(),
+                content: content.to_owned(),
+                speaker_character_source_id: speaker.map(|id| id.to_string()),
+                turn_number: ordinal,
+                created_at: 200 + ordinal,
+                usage: group_usage(),
+                selected_variant_source_id: selected,
+                pinned: false,
+                attachments_json: "[]".to_owned(),
+                used_lorebook_entries_json: "[]".to_owned(),
+                memory_refs_json: "[]".to_owned(),
+                reasoning: None,
+                selection_reasoning: None,
+                model_source_id: None,
+                gemini_content_json: None,
+                usage_json: None,
+                parent_message_source_id: None,
+                variants,
+            }
+        };
+        let group_session = lettuce_transfer::LegacyBackupGroupSession {
+            source_id: group_session_id.to_string(),
+            group_source_id: Some(group_id.to_string()),
+            name: String::new(),
+            member_source_ids: vec![
+                second_id.to_string(),
+                third_id.to_string(),
+                deleted_speaker.to_string(),
+            ],
+            muted_member_source_ids: vec![third_id.to_string()],
+            persona_source_id: None,
+            parent_session_source_id: None,
+            branched_from_message_source_id: None,
+            root_session_source_id: group_session_id.to_string(),
+            chat_mode: "roleplay".to_owned(),
+            speaker_selection: "director".to_owned(),
+            memory_policy: "manual".to_owned(),
+            character_model_overrides: std::collections::BTreeMap::new(),
+            group_conversation_prompt_source_id: None,
+            group_roleplay_prompt_source_id: None,
+            starting_scene_json: None,
+            background_image_locator: None,
+            lorebook_source_ids: Vec::new(),
+            disable_character_lorebooks: false,
+            author_note: None,
+            config_overrides_json: "{}".to_owned(),
+            memories_json: "[]".to_owned(),
+            memory_embeddings_json: "[]".to_owned(),
+            memory_summary: String::new(),
+            memory_summary_token_count: 0,
+            memory_tool_events_json: "[]".to_owned(),
+            memory_status: None,
+            memory_error: None,
+            memory_progress_step: None,
+            archived: false,
+            created_at: 190,
+            updated_at: 230,
+            participation: Vec::new(),
+            messages: vec![
+                group_message("user", 0, "Hi crew", None, Vec::new(), None),
+                group_message(
+                    "assistant",
+                    1,
+                    "Aye",
+                    Some(second_id),
+                    vec![
+                        group_variant(&group_first, "Aye", 201),
+                        group_variant(&group_second, "Nay", 202),
+                    ],
+                    Some(group_first.clone()),
+                ),
+                group_message(
+                    "assistant",
+                    2,
+                    "A voice from the past",
+                    Some(deleted_speaker),
+                    Vec::new(),
+                    None,
+                ),
+            ],
+        };
+        let group_conversation_receipt = backend
+            .legacy_group_conversation_importer()
+            .execute(
+                &admission,
+                &plan,
+                std::slice::from_ref(&group_session),
+                TimestampMillis::new(58),
+            )
+            .expect("materialize group conversations");
+        assert_eq!(group_conversation_receipt.record_count, 1);
+        let graph =
+            lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(backend.database())
+                .expect("backup graph with group conversation");
+        let group_history = graph
+            .conversation_history
+            .conversations
+            .iter()
+            .find(|history| history.aggregate.conversation.id == group_session_id)
+            .expect("group conversation");
+        let cast = &group_history.aggregate.conversation.participants;
+        assert_eq!(cast.len(), 4);
+        let unknown = cast
+            .iter()
+            .find(|participant| {
+                participant.source
+                    == lettuce_conversations::ParticipantSource::Character(deleted_speaker)
+            })
+            .expect("unknown participant");
+        assert_eq!(unknown.display_name, "Unknown");
+        assert!(!unknown.enabled && unknown.muted);
+        assert_eq!(group_history.messages.len(), 3);
+        assert_eq!(group_history.messages[1].candidates.len(), 2);
+        assert_eq!(
+            group_history.messages[1].message.active_render_source,
+            lettuce_conversations::MessageRenderSource::Candidate(
+                group_first.parse().expect("candidate id")
+            )
+        );
+        assert_eq!(
+            group_history.messages[2].message.author_participant_id,
+            Some(unknown.id)
+        );
         drop(backend);
 
         let reopened = AppBackend::open(&path, TimestampMillis::new(60)).expect("reopen backend");
@@ -714,6 +880,16 @@ mod tests {
             .expect("replay direct conversations");
         assert!(conversation_replay.replayed);
         assert_eq!(conversation_replay.completed_at, TimestampMillis::new(57));
+        let group_conversation_replay = reopened
+            .legacy_group_conversation_importer()
+            .execute(
+                &replayed_admission,
+                &plan,
+                std::slice::from_ref(&group_session),
+                TimestampMillis::new(96),
+            )
+            .expect("replay group conversations");
+        assert!(group_conversation_replay.replayed);
         drop(reopened);
         fs::remove_file(path).expect("remove database");
     }

@@ -125,6 +125,11 @@ impl LegacyBackupCompatibilityPlan {
     }
 
     #[must_use]
+    pub fn group_sessions(&self) -> &crate::LegacyBackupGroupSessionPlan {
+        &self.creation_helpers.source.source.source.source
+    }
+
+    #[must_use]
     pub fn direct_sessions(&self) -> &crate::LegacyBackupDirectSessionPlan {
         &self.creation_helpers.source.source.source.source.source
     }
