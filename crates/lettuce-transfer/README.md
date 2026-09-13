@@ -365,8 +365,9 @@ legacy send path selected explicit mentions and the continue path accepted an
 explicit member per request, including muted members, while automatic selection
 excluded muted members. Session snapshots may therefore retain an all-muted
 cast even though newly authored reusable groups require an active member. The
-planner rejects duplicate identities, orphaned group, persona, muted, participation
-and branch links, message cycles and malformed nested scene, usage, MTP or
+planner rejects duplicate identities, orphaned persona, muted and branch links (a
+missing reusable group link is cleared and recorded like legacy's foreign key
+set it to null), message cycles and malformed nested scene, usage, MTP or
 attachment JSON. A deleted session prompt is kept and recorded: legacy treated
 it as an explicit choice and went straight to the app group template instead of
 the character's group or direct prompt, so the materializer must resolve a
@@ -579,7 +580,9 @@ overrides for non-members, overrides whose model is gone (legacy fell back), a
 deleted persona (legacy's foreign key set it to null, so it inherits), stale
 group lorebook ids (stale group prompt ids are kept and recorded because
 sessions copied them as explicit choices), and a starting scene's missing selected variant
-(legacy group prompts used only the scene content). A group left undersized or
-all-muted by that pruning still aborts until the user decides how to keep it. Group
+(legacy group prompts used only the scene content). A group that pruning leaves
+with fewer than two members or with every member muted is skipped and recorded
+(`group_profile`/`undersized_group`, user decision 2026-09-13); an invalid group
+that lost no members still aborts. Group
 lorebooks use the canonical ordered binding document. Group sessions remain in
 the attached inventory for the later conversation/runtime conversion slice.

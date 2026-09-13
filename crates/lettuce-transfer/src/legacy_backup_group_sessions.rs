@@ -365,12 +365,17 @@ fn map_sessions(
         if !session_ids.insert(row.id.clone()) {
             return Err(malformed(format!("{path}.id")));
         }
-        if row
-            .group_character_id
+        let mut group_source_id = row.group_character_id.clone();
+        if group_source_id
             .as_ref()
             .is_some_and(|id| !contains_case_insensitive(&group_ids, id))
         {
-            return Err(orphan(format!("{path}.group_character_id")));
+            group_source_id = None;
+            skipped.push(crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::GroupReference,
+                source_key: format!("group_sessions.group_character_id:{}", row.id),
+                reason: crate::LegacyImportSkipReason::MissingGroup,
+            });
         }
         let members = string_array(&row.character_ids, &format!("{path}.character_ids"))?;
         if members.len() < 2 {
@@ -556,7 +561,7 @@ fn map_sessions(
         let root_session_source_id = row.root_session_id.unwrap_or_else(|| row.id.clone());
         sessions.push(LegacyBackupGroupSession {
             source_id: row.id,
-            group_source_id: row.group_character_id,
+            group_source_id,
             name: row.name,
             member_source_ids: members,
             muted_member_source_ids: muted,
@@ -1757,6 +1762,26 @@ mod tests {
                 kind: crate::LegacyImportSkipKind::CharacterReference,
                 source_key: format!("group_sessions.character_ids:{root}:{deleted}"),
                 reason: crate::LegacyImportSkipReason::MissingCharacter,
+            }]
+        );
+    }
+
+    #[test]
+    fn group_sessions_clear_links_to_missing_groups() {
+        let characters = vec![id(90), id(91)];
+        let group = id(92);
+        let root = id(93);
+        let mut row = session(&root, &group, &characters, None, &root, None, Vec::new());
+        row["group_character_id"] = json!(id(94));
+        let plan = plan_legacy_backup_group_sessions(source(json!([row]), &characters, &group))
+            .expect("a missing group link is cleared");
+        assert_eq!(plan.sessions[0].group_source_id, None);
+        assert_eq!(
+            plan.skipped,
+            vec![crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::GroupReference,
+                source_key: format!("group_sessions.group_character_id:{root}"),
+                reason: crate::LegacyImportSkipReason::MissingGroup,
             }]
         );
     }

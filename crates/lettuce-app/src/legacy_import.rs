@@ -582,6 +582,8 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipKind::PersonaReference => 16,
             lettuce_transfer::LegacyImportSkipKind::MessageVariantReference => 17,
             lettuce_transfer::LegacyImportSkipKind::ModelProfile => 18,
+            lettuce_transfer::LegacyImportSkipKind::GroupProfile => 19,
+            lettuce_transfer::LegacyImportSkipKind::GroupReference => 20,
         });
         hash.text(&skip.source_key);
         hash.u32(match skip.reason {
@@ -599,6 +601,8 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipReason::MissingCharacter => 12,
             lettuce_transfer::LegacyImportSkipReason::MissingPersona => 13,
             lettuce_transfer::LegacyImportSkipReason::MissingMessageVariant => 14,
+            lettuce_transfer::LegacyImportSkipReason::UndersizedGroup => 15,
+            lettuce_transfer::LegacyImportSkipReason::MissingGroup => 16,
         });
     }
 }

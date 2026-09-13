@@ -1881,6 +1881,8 @@ fn skip_kind_name(kind: lettuce_transfer::LegacyImportSkipKind) -> &'static str 
             "message_variant_reference"
         }
         lettuce_transfer::LegacyImportSkipKind::ModelProfile => "model_profile",
+        lettuce_transfer::LegacyImportSkipKind::GroupProfile => "group_profile",
+        lettuce_transfer::LegacyImportSkipKind::GroupReference => "group_reference",
     }
 }
 
@@ -1904,6 +1906,8 @@ fn skip_reason_name(reason: lettuce_transfer::LegacyImportSkipReason) -> &'stati
         lettuce_transfer::LegacyImportSkipReason::MissingMessageVariant => {
             "missing_message_variant"
         }
+        lettuce_transfer::LegacyImportSkipReason::UndersizedGroup => "undersized_group",
+        lettuce_transfer::LegacyImportSkipReason::MissingGroup => "missing_group",
     }
 }
 
@@ -1961,6 +1965,8 @@ fn load_skips(
                     lettuce_transfer::LegacyImportSkipKind::MessageVariantReference
                 }
                 "model_profile" => lettuce_transfer::LegacyImportSkipKind::ModelProfile,
+                "group_profile" => lettuce_transfer::LegacyImportSkipKind::GroupProfile,
+                "group_reference" => lettuce_transfer::LegacyImportSkipKind::GroupReference,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             let reason = match reason.as_str() {
@@ -1992,6 +1998,8 @@ fn load_skips(
                 "missing_message_variant" => {
                     lettuce_transfer::LegacyImportSkipReason::MissingMessageVariant
                 }
+                "undersized_group" => lettuce_transfer::LegacyImportSkipReason::UndersizedGroup,
+                "missing_group" => lettuce_transfer::LegacyImportSkipReason::MissingGroup,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             Ok(lettuce_transfer::LegacyImportSkip {

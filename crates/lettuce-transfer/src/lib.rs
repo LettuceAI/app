@@ -424,6 +424,8 @@ pub enum LegacyImportSkipKind {
     PersonaReference,
     MessageVariantReference,
     ModelProfile,
+    GroupProfile,
+    GroupReference,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -442,6 +444,8 @@ pub enum LegacyImportSkipReason {
     MissingCharacter,
     MissingPersona,
     MissingMessageVariant,
+    UndersizedGroup,
+    MissingGroup,
 }
 
 pub fn legacy_value_skip(
