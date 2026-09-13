@@ -101,6 +101,7 @@ pub(crate) fn legacy_companion(
     value: Option<Value>,
     character_key: &str,
     companion_mode: bool,
+    created_at: TimestampMillis,
     skipped: &mut Vec<LegacyImportSkip>,
 ) -> LegacyCompanion {
     const FIELD: &str = "characters.companion";
@@ -128,12 +129,21 @@ pub(crate) fn legacy_companion(
         object.remove(&key);
         skipped.push(unknown(&format!("{FIELD}.{key}"), character_key));
     }
-    let prompt_source_id = object
+    let prompt_source_id = match object
         .get_mut("prompting")
         .and_then(Value::as_object_mut)
         .and_then(|prompting| prompting.remove("promptTemplateId"))
-        .and_then(|value| value.as_str().map(str::to_owned))
-        .filter(|value| !value.trim().is_empty());
+    {
+        None | Some(Value::Null) => None,
+        Some(Value::String(value)) => Some(value).filter(|value| !value.trim().is_empty()),
+        Some(_) => {
+            skipped.push(malformed(
+                &format!("{FIELD}.prompting.promptTemplateId"),
+                character_key,
+            ));
+            None
+        }
+    };
     let mut config = CompanionSoulConfig::default();
     if let Some(soul) = object.remove("soul") {
         config.soul = merged_section::<CompanionSoulIdentity>(
@@ -161,34 +171,70 @@ pub(crate) fn legacy_companion(
     }
     match object.remove("authoredFacts") {
         Some(Value::Array(items)) => {
+            let mut ids = BTreeSet::new();
             for (index, item) in items.into_iter().enumerate() {
-                if let Some(fact) = legacy_soul_fact(item, character_key, index, skipped) {
+                let Some(fact) = legacy_soul_fact(item, character_key, index, created_at, skipped)
+                else {
+                    continue;
+                };
+                if ids.insert(fact.id.clone()) {
                     config.authored_facts.push(fact);
+                } else {
+                    skipped.push(malformed(
+                        &format!("{FIELD}.authoredFacts[{index}].id"),
+                        character_key,
+                    ));
                 }
             }
         }
         None | Some(Value::Null) => {}
         Some(_) => skipped.push(malformed(&format!("{FIELD}.authoredFacts"), character_key)),
     }
-    let defaults = CharacterDefaults {
-        interaction_mode: InteractionMode::Companion,
-        companion_soul: Some(config),
-        ..CharacterDefaults::default()
-    };
-    if defaults.validate().is_err() {
+    if !valid_companion(&config, created_at) && !config.authored_facts.is_empty() {
+        config.authored_facts.clear();
+        skipped.push(malformed(&format!("{FIELD}.authoredFacts"), character_key));
+    }
+    if !valid_companion(&config, created_at) {
+        config.relationship_defaults = RelationshipDefaults::default();
+        skipped.push(malformed(
+            &format!("{FIELD}.relationshipDefaults"),
+            character_key,
+        ));
+    }
+    if !valid_companion(&config, created_at) {
+        config.prompting = CompanionPromptingConfig::default();
+        skipped.push(malformed(&format!("{FIELD}.prompting"), character_key));
+    }
+    if !valid_companion(&config, created_at) {
+        config.soul = CompanionSoulIdentity::default();
+        skipped.push(malformed(&format!("{FIELD}.soul"), character_key));
+    }
+    if !valid_companion(&config, created_at) {
         skipped.push(malformed(FIELD, character_key));
         return none();
     }
     LegacyCompanion {
-        soul: defaults.companion_soul,
+        soul: Some(config),
         prompt_source_id,
     }
+}
+
+fn valid_companion(config: &CompanionSoulConfig, created_at: TimestampMillis) -> bool {
+    CharacterDefaults {
+        interaction_mode: InteractionMode::Companion,
+        companion_soul: Some(config.clone()),
+        ..CharacterDefaults::default()
+    }
+    .validate()
+    .is_ok()
+        && initial_soul_state(Some(config), created_at).is_ok()
 }
 
 fn legacy_soul_fact(
     item: Value,
     character_key: &str,
     index: usize,
+    created_at: TimestampMillis,
     skipped: &mut Vec<LegacyImportSkip>,
 ) -> Option<SoulFact> {
     let field = format!("characters.companion.authoredFacts[{index}]");
@@ -278,45 +324,48 @@ fn legacy_soul_fact(
             object.remove(key);
         }
     }
-    if let Some(Value::Array(ids)) = object.get_mut("sourceMemoryIds") {
-        let before = ids.len();
-        ids.retain(|id| id.as_str().is_some_and(|id| !id.trim().is_empty()));
-        if ids.len() != before {
-            skipped.push(malformed(
-                &format!("{field}.sourceMemoryIds"),
-                character_key,
-            ));
+    for key in ["sourceMemoryIds", "supersedes"] {
+        if let Some(Value::Array(ids)) = object.get_mut(key) {
+            let before = ids.len();
+            ids.retain(|id| id.as_str().is_some_and(|id| !id.trim().is_empty()));
+            if ids.len() != before {
+                skipped.push(malformed(&format!("{field}.{key}"), character_key));
+            }
         }
     }
     let Ok(mut fact) = serde_json::from_value::<SoulFact>(Value::Object(object)) else {
         skipped.push(malformed(&field, character_key));
         return None;
     };
-    if !valid_fact(&fact) && fact.superseded_by.is_some() != fact.superseded_at.is_some() {
-        fact.superseded_by = None;
+    if fact.superseded_by.is_some() && fact.superseded_at.is_none() {
+        fact.superseded_at = Some(if fact.created_at.get() > 0 {
+            fact.created_at
+        } else {
+            created_at
+        });
+        skipped.push(malformed(&format!("{field}.supersededAt"), character_key));
+    } else if fact.superseded_by.is_none() && fact.superseded_at.is_some() {
         fact.superseded_at = None;
-        skipped.push(malformed(&format!("{field}.supersededBy"), character_key));
+        skipped.push(malformed(&format!("{field}.supersededAt"), character_key));
     }
-    if !valid_fact(&fact) && fact.valid_until.is_some() {
+    if !valid_fact(&fact, created_at) && fact.valid_until.is_some() {
         fact.valid_until = None;
         skipped.push(malformed(&format!("{field}.validUntil"), character_key));
     }
-    if !valid_fact(&fact) {
+    if !valid_fact(&fact, created_at) {
         skipped.push(malformed(&field, character_key));
         return None;
     }
     Some(fact)
 }
 
-fn valid_fact(fact: &SoulFact) -> bool {
-    initial_soul_state(
-        Some(&CompanionSoulConfig {
-            authored_facts: vec![fact.clone()],
-            ..CompanionSoulConfig::default()
-        }),
-        TimestampMillis::new(1),
-    )
-    .is_ok()
+fn valid_fact(fact: &SoulFact, created_at: TimestampMillis) -> bool {
+    let config = CompanionSoulConfig {
+        authored_facts: vec![fact.clone()],
+        ..CompanionSoulConfig::default()
+    };
+    initial_soul_state(Some(&config), TimestampMillis::new(1)).is_ok()
+        && initial_soul_state(Some(&config), created_at).is_ok()
 }
 
 fn merged_section<T: Default + Serialize + DeserializeOwned>(
@@ -464,12 +513,36 @@ fn apply_appearance(
             skipped.push(unknown(&format!("{field}.{key}"), row));
             continue;
         }
-        let converted = if snake == "chat_widget_slots" {
-            legacy_widget_slots(item, &format!("{field}.{key}"), row, skipped)
-        } else {
-            item.clone()
+        let converted = match (snake.as_str(), item) {
+            ("chat_widget_slots", _) => {
+                legacy_widget_slots(item, &format!("{field}.{key}"), row, skipped)
+            }
+            ("message_info_placement", Value::String(value)) => json!(camel_to_snake(value)),
+            (name, Value::String(value))
+                if name.ends_with("_color_hex") && value.trim().is_empty() =>
+            {
+                Value::Null
+            }
+            _ => item.clone(),
         };
         pending.push((key.clone(), snake, converted));
+    }
+    let custom_width = pending
+        .iter()
+        .any(|(_, snake, item)| snake == "chat_column_width" && item.as_str() == Some("custom"));
+    if custom_width
+        && current
+            .get("chat_column_width_px")
+            .is_none_or(Value::is_null)
+        && !pending
+            .iter()
+            .any(|(_, snake, _)| snake == "chat_column_width_px")
+    {
+        pending.push((
+            "chatColumnWidthPx".to_owned(),
+            "chat_column_width_px".to_owned(),
+            json!(800),
+        ));
     }
     loop {
         let before = pending.len();
@@ -509,13 +582,12 @@ fn legacy_widget_slots(
             Some(Value::Array(items)) => {
                 let mut nodes = Vec::with_capacity(items.len());
                 for (index, item) in items.iter().enumerate() {
-                    let node = legacy_widget_node(item);
-                    if serde_json::from_value::<WidgetNode>(node.clone())
-                        .is_ok_and(|parsed| parsed.validate().is_ok())
-                    {
+                    let path = format!("{field}.{side}[{index}]");
+                    let node = legacy_widget_node(item, &path, row, skipped);
+                    if valid_widget(&node) {
                         nodes.push(node);
                     } else {
-                        skipped.push(malformed(&format!("{field}.{side}[{index}]"), row));
+                        skipped.push(malformed(&path, row));
                     }
                 }
                 nodes
@@ -530,7 +602,16 @@ fn legacy_widget_slots(
     Value::Object(slots)
 }
 
-fn legacy_widget_node(value: &Value) -> Value {
+fn valid_widget(node: &Value) -> bool {
+    serde_json::from_value::<WidgetNode>(node.clone()).is_ok_and(|parsed| parsed.validate().is_ok())
+}
+
+fn legacy_widget_node(
+    value: &Value,
+    field: &str,
+    row: &str,
+    skipped: &mut Vec<LegacyImportSkip>,
+) -> Value {
     let Value::Object(object) = value else {
         return value.clone();
     };
@@ -538,11 +619,33 @@ fn legacy_widget_node(value: &Value) -> Value {
     for (key, item) in object {
         match key.as_str() {
             "children" => {
-                let children = item
-                    .as_array()
-                    .map(|items| items.iter().map(legacy_widget_node).collect())
-                    .unwrap_or_default();
+                let mut children = Vec::new();
+                for (index, child) in item.as_array().into_iter().flatten().enumerate() {
+                    let path = format!("{field}.children[{index}]");
+                    let converted = legacy_widget_node(child, &path, row, skipped);
+                    if valid_widget(&converted) {
+                        children.push(converted);
+                    } else {
+                        skipped.push(malformed(&path, row));
+                    }
+                }
                 node.insert("children".into(), Value::Array(children));
+            }
+            "stats" | "snippets" => {
+                let mut entries = Vec::new();
+                for (index, entry) in item.as_array().into_iter().flatten().enumerate() {
+                    if ["id", "label"].iter().all(|name| {
+                        entry
+                            .get(name)
+                            .and_then(Value::as_str)
+                            .is_some_and(|text| !text.trim().is_empty())
+                    }) {
+                        entries.push(entry.clone());
+                    } else {
+                        skipped.push(malformed(&format!("{field}.{key}[{index}]"), row));
+                    }
+                }
+                node.insert(key.clone(), Value::Array(entries));
             }
             "source" => {
                 node.insert("source".into(), legacy_widget_source(item));
@@ -561,6 +664,8 @@ fn legacy_widget_node(value: &Value) -> Value {
                     .is_some_and(|id| CharacterId::from_str(id).is_ok())
                 {
                     node.insert("character_id".into(), item.clone());
+                } else if !item.is_null() {
+                    skipped.push(malformed(&format!("{field}.characterId"), row));
                 }
             }
             _ => {
@@ -660,6 +765,7 @@ mod tests {
             })),
             "character-1",
             true,
+            TimestampMillis::new(1),
             &mut skipped,
         );
 
@@ -683,6 +789,7 @@ mod tests {
             Some(json!({"soul": {}})),
             "character-2",
             false,
+            TimestampMillis::new(1),
             &mut roleplay,
         );
         assert!(dropped.soul.is_none());
@@ -792,5 +899,99 @@ mod tests {
             } if token == "img-1"
         ));
         assert_eq!(skipped.len(), 3);
+    }
+
+    #[test]
+    fn legacy_appearance_converts_placements_blank_colors_and_unsized_custom_widths() {
+        let (context, _) = context(None);
+        let mut skipped = Vec::new();
+
+        let appearance = legacy_chat_appearance(
+            Some(
+                r#"{"messageInfoPlacement": "belowHeaderOutside", "userBubbleColorHex": "", "chatColumnWidth": "custom"}"#,
+            ),
+            "group_characters.chat_appearance",
+            "group-1",
+            &context,
+            &mut skipped,
+        );
+
+        assert_eq!(
+            serde_json::to_value(appearance.message_info_placement).expect("placement"),
+            json!("below_header_outside")
+        );
+        assert_eq!(appearance.user_bubble_color_hex, None);
+        assert_eq!(appearance.chat_column_width_px, Some(800));
+        assert!(skipped.is_empty());
+    }
+
+    #[test]
+    fn legacy_widget_conversion_drops_only_the_invalid_child_or_entry() {
+        let (context, _) = context(None);
+        let mut skipped = Vec::new();
+
+        let appearance = legacy_chat_appearance(
+            Some(
+                r#"{"chatWidgetSlots": {"right": [
+                    {"id": "group", "type": "box", "children": [
+                        {"id": "who", "type": "character_info", "characterId": "not-a-uuid"},
+                        {"type": "divider"}
+                    ]},
+                    {"id": "stats", "type": "stat_tracker", "stats": [
+                        {"id": "hp", "label": "HP", "value": 3},
+                        {"id": "mp", "label": "", "value": 1}
+                    ]}
+                ]}}"#,
+            ),
+            "characters.chat_appearance",
+            "character-1",
+            &context,
+            &mut skipped,
+        );
+
+        let right = &appearance.chat_widget_slots.right;
+        assert_eq!(right.len(), 2);
+        assert!(matches!(&right[0], WidgetNode::Box { children, .. } if children.len() == 1));
+        assert!(matches!(&right[1], WidgetNode::StatTracker { stats, .. } if stats.len() == 1));
+        assert_eq!(skipped.len(), 3);
+    }
+
+    #[test]
+    fn legacy_companion_keeps_the_soul_when_facts_collide_or_expire_before_creation() {
+        let mut skipped = Vec::new();
+        let companion = legacy_companion(
+            Some(json!({
+                "soul": {"essence": "Kind"},
+                "prompting": {"promptTemplateId": 7},
+                "authoredFacts": [
+                    {"id": "fact-1", "category": "likes", "value": "tea"},
+                    {"id": "fact-1", "category": "goals", "value": "travel"},
+                    {"id": "fact-2", "category": "habits", "value": "reads", "validUntil": 5},
+                    {
+                        "id": "fact-3",
+                        "category": "fears",
+                        "value": "storms",
+                        "supersededBy": "fact-9",
+                        "supersedes": ["", "fact-0"]
+                    }
+                ]
+            })),
+            "character-1",
+            true,
+            TimestampMillis::new(1_000),
+            &mut skipped,
+        );
+
+        let soul = companion.soul.expect("companion soul");
+        assert_eq!(soul.soul.essence, "Kind");
+        assert_eq!(soul.authored_facts.len(), 3);
+        assert!(soul.authored_facts[1].valid_until.is_none());
+        assert_eq!(
+            soul.authored_facts[2].superseded_at,
+            Some(TimestampMillis::new(1_000))
+        );
+        assert_eq!(soul.authored_facts[2].supersedes, ["fact-0"]);
+        assert!(companion.prompt_source_id.is_none());
+        assert_eq!(skipped.len(), 5);
     }
 }

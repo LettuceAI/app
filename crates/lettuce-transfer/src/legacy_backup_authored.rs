@@ -918,6 +918,7 @@ fn map_characters(
             row.companion,
             &character_key,
             row.mode == "companion",
+            TimestampMillis::new(row.created_at),
             skipped,
         );
         let defaults = LegacyBackupCharacterDefaults {
