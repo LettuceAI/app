@@ -11792,6 +11792,7 @@ mod tests {
                     ),
                     memory: None,
                     memory_projections: &[],
+                    runtime: &[],
                     companion: None,
                 },
             )

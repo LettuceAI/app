@@ -358,6 +358,101 @@ pub(super) fn insert_in(
     get_in(transaction, execution.id)
 }
 
+/// Writes a backed-up tool execution by walking it from `requested` to its
+/// stored status; the stored revision tells which legal path it took. A tool
+/// left unsettled by an attempt restored as interrupted is settled with it.
+pub(crate) fn insert_restored_in(
+    transaction: &Transaction<'_>,
+    execution: &ToolExecution,
+) -> Result<(), ConversationRepositoryError> {
+    use ToolExecutionStatus as Status;
+    let mut execution = execution.clone();
+    match execution.status {
+        Status::Running => {
+            execution.status = Status::Interrupted;
+            execution.finished_at = Some(execution.updated_at);
+            execution.revision = Revision::new(4);
+        }
+        Status::Requested | Status::Validated => {
+            execution.status = Status::Cancelled;
+            execution.finished_at = Some(execution.updated_at);
+            execution.revision = Revision::new(execution.revision.get() + 1);
+        }
+        _ => {}
+    }
+    let path: Vec<Status> = match (execution.status, execution.revision.get()) {
+        (Status::Succeeded | Status::Failed | Status::Interrupted, _) => {
+            vec![Status::Validated, Status::Running, execution.status]
+        }
+        (Status::Rejected | Status::Cancelled, 2) => vec![execution.status],
+        (Status::Rejected | Status::Cancelled, 3) => vec![Status::Validated, execution.status],
+        (Status::Cancelled, _) => vec![Status::Validated, Status::Running, Status::Cancelled],
+        _ => {
+            return Err(ConversationRepositoryError::Invalid(
+                lettuce_conversations::ValidationError::Invariant {
+                    field: "tool_execution.restore",
+                },
+            ));
+        }
+    };
+    let requested = ToolExecution {
+        status: Status::Requested,
+        output: None,
+        failure: None,
+        revision: Revision::INITIAL,
+        started_at: None,
+        finished_at: None,
+        updated_at: execution.requested_at,
+        ..execution.clone()
+    };
+    insert_in(transaction, &requested)?;
+    let mut revision = 1_u64;
+    for (index, status) in path.iter().enumerate() {
+        revision += 1;
+        let last = index + 1 == path.len();
+        let started = !matches!(status, Status::Validated | Status::Rejected)
+            && !(matches!(status, Status::Cancelled) && path.len() < 3);
+        let started_at = started.then(|| execution.started_at.unwrap_or(execution.requested_at));
+        let finished_at = if last { execution.finished_at } else { None };
+        let updated_at = if last {
+            execution.updated_at
+        } else {
+            started_at.unwrap_or(execution.requested_at)
+        };
+        let output_json = if last {
+            execution
+                .output
+                .as_ref()
+                .map(|value| encode_versioned(value, TOOL_JSON_VERSION).map_err(storage))
+                .transpose()?
+        } else {
+            None
+        };
+        let failure = if last {
+            execution.failure.as_ref()
+        } else {
+            None
+        };
+        transaction
+            .execute(
+                "UPDATE tool_executions SET status = ?2, output_json = ?3, failure_code = ?4, failure_message = ?5, revision = ?6, started_at = ?7, finished_at = ?8, updated_at = ?9 WHERE id = ?1",
+                params![
+                    execution.id.to_string(),
+                    status_name(*status),
+                    output_json,
+                    failure.map(|failure| failure_name(failure.code)),
+                    failure.and_then(|failure| failure.message.as_deref()),
+                    sql_u64(revision)?,
+                    started_at.map(TimestampMillis::get),
+                    finished_at.map(TimestampMillis::get),
+                    updated_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+    }
+    Ok(())
+}
+
 impl ToolExecutionRepository for Database {
     fn append_tool_executions(
         &self,

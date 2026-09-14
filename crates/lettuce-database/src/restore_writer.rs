@@ -317,6 +317,16 @@ impl ProviderBackupRestoreWriter for Database {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
+            let attempt_runtime = runtime
+                .get(&conversation_id)
+                .map(|runtime| {
+                    runtime
+                        .turns
+                        .iter()
+                        .flat_map(|turn| turn.attempts.iter().cloned())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
             let events = turns
                 .iter()
                 .flat_map(|turn| usage.get(&turn.id).into_iter().flatten().cloned())
@@ -354,10 +364,30 @@ impl ProviderBackupRestoreWriter for Database {
                     },
                     memory,
                     memory_projections: &projections,
+                    runtime: &attempt_runtime,
                     companion: None,
                 },
             )
             .map_err(invalid)?;
+        }
+        for receipt in &graph.memory.retrieval_accesses {
+            let access = &receipt.access;
+            transaction
+                .execute(
+                    "INSERT INTO memory_retrieval_accesses (conversation_id, turn_id, attempt_id, space_id, expected_revision, resulting_revision, selected_memory_ids_json, promoted_memory_ids_json, accessed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    params![
+                        access.conversation_id.to_string(),
+                        access.turn_id.to_string(),
+                        access.attempt_id.to_string(),
+                        access.space_id.to_string(),
+                        sql_revision(access.expected_revision)?,
+                        sql_revision(receipt.resulting_revision)?,
+                        serde_json::to_string(&access.selected_memory_ids).map_err(invalid)?,
+                        serde_json::to_string(&receipt.promoted_memory_ids).map_err(invalid)?,
+                        access.accessed_at.get()
+                    ],
+                )
+                .map_err(invalid)?;
         }
         for entry in &graph.conversation_usage.events {
             if let Some(basis) = &entry.cost_basis {

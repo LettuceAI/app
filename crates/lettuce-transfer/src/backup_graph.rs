@@ -483,7 +483,7 @@ fn media_sections(
     Ok(sections)
 }
 
-pub(crate) fn canonicalize_and_validate(
+pub fn canonicalize_and_validate(
     graph: &mut ProviderBackupGraph,
 ) -> Result<(), ProviderBackupGraphError> {
     if graph.version != PROVIDER_BACKUP_GRAPH_VERSION {

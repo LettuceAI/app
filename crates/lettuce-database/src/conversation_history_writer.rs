@@ -41,6 +41,7 @@ pub(crate) struct HistoricalConversation<'a> {
     pub creation: HistoricalCreation<'a>,
     pub memory: Option<&'a BackupMemorySpace>,
     pub memory_projections: &'a [BackupMemoryProjection],
+    pub runtime: &'a [lettuce_transfer::BackupGenerationAttemptRuntime],
     pub companion: Option<&'a lettuce_transfer::LegacyCompanionConversation>,
 }
 
@@ -52,6 +53,11 @@ pub(crate) enum HistoricalCreation<'a> {
         operations: &'a [OperationRecord],
         events: &'a [ConversationOutboxRecord],
     },
+}
+
+struct Evidence<'a> {
+    usage: BTreeMap<GenerationAttemptId, &'a UsageEvent>,
+    runtime: BTreeMap<GenerationAttemptId, &'a lettuce_transfer::BackupGenerationAttemptRuntime>,
 }
 
 fn invalid(field: &'static str) -> ConversationRepositoryError {
@@ -172,6 +178,14 @@ pub(crate) fn insert_historical_conversation(
     if usage.len() != input.usage.len() {
         return Err(invalid("history.usage"));
     }
+    let evidence = Evidence {
+        usage,
+        runtime: input
+            .runtime
+            .iter()
+            .map(|runtime| (runtime.attempt_id, runtime))
+            .collect(),
+    };
 
     let mut messages = input.history.messages.iter().collect::<Vec<_>>();
     messages.sort_by_key(|message| (message.timeline_ordinal, message.message.id));
@@ -186,7 +200,7 @@ pub(crate) fn insert_historical_conversation(
         let turns = turns_by_message
             .remove(&backup.message.id)
             .unwrap_or_default();
-        insert_message_with_turns(transaction, backup, &turns, &usage)?;
+        insert_message_with_turns(transaction, backup, &turns, &evidence)?;
         set_branch_head(
             transaction,
             conversation_id,
@@ -198,7 +212,7 @@ pub(crate) fn insert_historical_conversation(
             .unwrap_or_default()
         {
             insert_turn(transaction, turn)?;
-            settle_turn(transaction, None, turn, &usage)?;
+            settle_turn(transaction, None, turn, &evidence)?;
         }
     }
     if !turns_by_message.is_empty() || !turns_by_input.is_empty() {
@@ -449,7 +463,7 @@ fn insert_message_with_turns(
     transaction: &Transaction<'_>,
     backup: &BackupMessage,
     turns: &[&GenerationTurn],
-    usage: &BTreeMap<GenerationAttemptId, &UsageEvent>,
+    evidence: &Evidence<'_>,
 ) -> Result<(), ConversationRepositoryError> {
     let candidate_ids = backup
         .candidates
@@ -484,7 +498,7 @@ fn insert_message_with_turns(
         if later.is_empty() && matches!(turn.target, GenerationTarget::NewAssistant { .. }) {
             insert_turn(transaction, turn)?;
             if turn.candidate_ids.is_empty() {
-                settle_turn(transaction, None, turn, usage)?;
+                settle_turn(transaction, None, turn, evidence)?;
             } else {
                 creators.push(*turn);
             }
@@ -500,11 +514,11 @@ fn insert_message_with_turns(
         insert_origin(transaction, backup, origin)?;
     }
     for turn in creators {
-        settle_turn(transaction, Some(backup), turn, usage)?;
+        settle_turn(transaction, Some(backup), turn, evidence)?;
     }
     for turn in later {
         insert_turn(transaction, turn)?;
-        settle_turn(transaction, Some(backup), turn, usage)?;
+        settle_turn(transaction, Some(backup), turn, evidence)?;
     }
     Ok(())
 }
@@ -738,16 +752,221 @@ fn insert_turn(
     Ok(())
 }
 
+const TURN_TRANSITIONS: &[(&str, &[&str])] = &[
+    (
+        "created",
+        &["preparing", "cancellation_requested", "cancelled"],
+    ),
+    (
+        "preparing",
+        &[
+            "selecting_speaker",
+            "context_prepared",
+            "cancellation_requested",
+            "failed",
+            "interrupted",
+        ],
+    ),
+    (
+        "selecting_speaker",
+        &[
+            "context_prepared",
+            "cancellation_requested",
+            "failed",
+            "interrupted",
+        ],
+    ),
+    (
+        "context_prepared",
+        &["running", "cancellation_requested", "failed", "interrupted"],
+    ),
+    (
+        "running",
+        &[
+            "interrupted",
+            "finalizing",
+            "cancellation_requested",
+            "failed",
+        ],
+    ),
+    (
+        "cancellation_requested",
+        &["cancelled", "failed", "interrupted"],
+    ),
+    (
+        "finalizing",
+        &[
+            "succeeded",
+            "failed",
+            "cancelled",
+            "interrupted",
+            "recovering",
+        ],
+    ),
+    ("interrupted", &["recovering", "failed", "cancelled"]),
+    (
+        "recovering",
+        &["preparing", "running", "failed", "cancelled"],
+    ),
+];
+
+/// The shortest legal status path between two turn statuses, excluding the
+/// start, in the order the 0008 transition trigger allows.
+fn turn_path(from: &'static str, to: &'static str) -> Option<Vec<&'static str>> {
+    let mut previous = BTreeMap::<&'static str, &'static str>::new();
+    let mut queue = std::collections::VecDeque::from([from]);
+    while let Some(status) = queue.pop_front() {
+        if status == to {
+            let mut path = vec![to];
+            let mut cursor = to;
+            while let Some(before) = previous.get(cursor).copied() {
+                if before == from {
+                    break;
+                }
+                path.push(before);
+                cursor = before;
+            }
+            path.reverse();
+            return Some(path);
+        }
+        let next = TURN_TRANSITIONS
+            .iter()
+            .find(|(name, _)| *name == status)
+            .map_or(&[][..], |(_, next)| *next);
+        for candidate in next {
+            if *candidate != from && !previous.contains_key(candidate) {
+                previous.insert(candidate, status);
+                queue.push_back(candidate);
+            }
+        }
+    }
+    None
+}
+
+/// Walks the turn to `target`; with `stop_before` the last step is left to the
+/// final turn update.
+fn walk_turn(
+    transaction: &Transaction<'_>,
+    turn: &GenerationTurn,
+    current: &mut &'static str,
+    target: &'static str,
+    stop_before: bool,
+) -> Result<(), ConversationRepositoryError> {
+    if *current == target {
+        return Ok(());
+    }
+    let path = turn_path(current, target).ok_or_else(|| invalid("history.turn_status"))?;
+    let steps = if stop_before {
+        &path[..path.len() - 1]
+    } else {
+        &path[..]
+    };
+    for status in steps {
+        transaction
+            .execute(
+                "UPDATE conversation_turns SET status = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                params![
+                    *status,
+                    turn.conversation_id.to_string(),
+                    turn.id.to_string()
+                ],
+            )
+            .map_err(kernel::map_constraint)?;
+        *current = status;
+    }
+    Ok(())
+}
+
+fn set_attempt_status(
+    transaction: &Transaction<'_>,
+    turn: &GenerationTurn,
+    attempt: &GenerationAttempt,
+    status: &str,
+    started_at: Option<lettuce_types::TimestampMillis>,
+) -> Result<(), ConversationRepositoryError> {
+    transaction
+        .execute(
+            "UPDATE generation_attempts SET status = ?1, started_at = ?2 WHERE conversation_id = ?3 AND turn_id = ?4 AND id = ?5",
+            params![
+                status,
+                started_at.map(lettuce_types::TimestampMillis::get),
+                turn.conversation_id.to_string(),
+                turn.id.to_string(),
+                attempt.id.to_string(),
+            ],
+        )
+        .map_err(kernel::map_constraint)?;
+    Ok(())
+}
+
 fn settle_turn(
     transaction: &Transaction<'_>,
     backup: Option<&BackupMessage>,
     turn: &GenerationTurn,
-    usage: &BTreeMap<GenerationAttemptId, &UsageEvent>,
+    evidence: &Evidence<'_>,
 ) -> Result<(), ConversationRepositoryError> {
+    let mut current = "created";
     let mut attempts = turn.attempts.iter().collect::<Vec<_>>();
     attempts.sort_by_key(|attempt| attempt.ordinal);
     for attempt in attempts {
+        if attempt.ordinal > 0 {
+            walk_turn(transaction, turn, &mut current, "recovering", false)?;
+        }
         insert_attempt(transaction, turn, attempt)?;
+        if let Some(runtime) = evidence.runtime.get(&attempt.id) {
+            if let Some(speaker) = &runtime.speaker_inference {
+                walk_turn(transaction, turn, &mut current, "selecting_speaker", false)?;
+                set_attempt_status(transaction, turn, attempt, "preparing", None)?;
+                crate::speaker_inference_adapter::insert_restored_in(transaction, speaker)?;
+            }
+            if runtime.initial_inference.is_some() || !runtime.tools.is_empty() {
+                if runtime.initial_inference.is_some() {
+                    transaction
+                        .execute(
+                            "UPDATE conversation_turns SET resolved_model_json = ?1 WHERE conversation_id = ?2 AND id = ?3",
+                            params![
+                                turn.resolved_model.as_ref().map(slice::encode).transpose()?,
+                                turn.conversation_id.to_string(),
+                                turn.id.to_string(),
+                            ],
+                        )
+                        .map_err(kernel::map_constraint)?;
+                }
+                walk_turn(transaction, turn, &mut current, "running", false)?;
+                let started_at = attempt
+                    .started_at
+                    .or(attempt.finished_at)
+                    .unwrap_or(turn.created_at);
+                set_attempt_status(transaction, turn, attempt, "running", Some(started_at))?;
+                if let Some(initial) = &runtime.initial_inference {
+                    crate::initial_inference_adapter::insert_restored_in(transaction, initial)?;
+                }
+                for tool in &runtime.tools {
+                    crate::tool_adapter::insert_restored_in(transaction, tool)?;
+                }
+            }
+            let mut checkpoints = runtime.checkpoints.iter().collect::<Vec<_>>();
+            checkpoints.sort_by_key(|checkpoint| checkpoint.envelope.sequence);
+            for checkpoint in checkpoints {
+                let envelope = &checkpoint.envelope;
+                transaction
+                    .execute(
+                        "INSERT INTO generation_checkpoints (conversation_id, turn_id, attempt_id, sequence, job_id, correlation_id, event_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                        params![
+                            turn.conversation_id.to_string(),
+                            envelope.turn_id.to_string(),
+                            envelope.attempt_id.to_string(),
+                            i64::try_from(envelope.sequence)
+                                .map_err(|_| invalid("history.checkpoint"))?,
+                            envelope.job_id.map(|id| id.to_string()),
+                            envelope.correlation_id.map(|id| id.to_string()),
+                            slice::encode(&envelope.event)?,
+                            checkpoint.created_at.get(),
+                        ],
+                    )
+                    .map_err(kernel::map_constraint)?;
+            }
+        }
         if let Some(backup) = backup {
             for candidate in backup
                 .candidates
@@ -760,35 +979,21 @@ fn settle_turn(
                 insert_candidate(transaction, backup, candidate)?;
             }
         }
-        settle_attempt(transaction, turn, attempt, usage.get(&attempt.id).copied())?;
+        settle_attempt(
+            transaction,
+            turn,
+            attempt,
+            evidence.usage.get(&attempt.id).copied(),
+        )?;
     }
-    let path: &[&str] = match (turn.status, turn.selected_speaker.is_some()) {
-        (GenerationTurnStatus::Succeeded, false) => {
-            &["preparing", "context_prepared", "running", "finalizing"]
-        }
-        (GenerationTurnStatus::Succeeded, true) => &[
-            "preparing",
-            "selecting_speaker",
-            "context_prepared",
-            "running",
-            "finalizing",
-        ],
-        (GenerationTurnStatus::Failed | GenerationTurnStatus::Interrupted, _) => &["preparing"],
-        (GenerationTurnStatus::Cancelled, _) => &["cancellation_requested"],
+    let target = match turn.status {
+        GenerationTurnStatus::Succeeded => "succeeded",
+        GenerationTurnStatus::Failed => "failed",
+        GenerationTurnStatus::Cancelled => "cancelled",
+        GenerationTurnStatus::Interrupted => "interrupted",
         _ => return Err(invalid("history.turn_status")),
     };
-    for status in path {
-        transaction
-            .execute(
-                "UPDATE conversation_turns SET status = ?1 WHERE conversation_id = ?2 AND id = ?3",
-                params![
-                    *status,
-                    turn.conversation_id.to_string(),
-                    turn.id.to_string()
-                ],
-            )
-            .map_err(kernel::map_constraint)?;
-    }
+    walk_turn(transaction, turn, &mut current, target, true)?;
     for (ordinal, lorebook) in turn.lorebooks.iter().enumerate() {
         transaction
             .execute(

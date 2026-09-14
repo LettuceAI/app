@@ -178,6 +178,32 @@ fn load(
     Ok(Some(record))
 }
 
+/// Writes a backed-up initial dispatch while its attempt is running, then its
+/// replay references and settlement when it had one.
+pub(crate) fn insert_restored_in(
+    transaction: &Transaction<'_>,
+    record: &InitialInferenceRecord,
+) -> Result<(), ConversationRepositoryError> {
+    let binding = &record.binding;
+    transaction.execute(
+        "INSERT INTO generation_initial_dispatches (conversation_id, turn_id, attempt_id, job_id, request_fingerprint, request_json, admitted_at, usage_event_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![binding.conversation_id.to_string(), binding.turn_id.to_string(), binding.attempt_id.to_string(), binding.job_id.to_string(), &binding.request_fingerprint[..], slice::encode(&record.request)?, record.admitted_at.get(), record.usage_event_id.to_string()],
+    ).map_err(slice::db)?;
+    if let (Some(result), Some(settled_at)) = (&record.result, record.settled_at) {
+        for id in replay_references(result).keys() {
+            transaction.execute(
+                "INSERT INTO generation_initial_replay_refs (conversation_id, turn_id, attempt_id, artifact_id, retention) VALUES (?1, ?2, ?3, ?4, 'conversation')",
+                params![binding.conversation_id.to_string(), binding.turn_id.to_string(), binding.attempt_id.to_string(), id],
+            ).map_err(slice::db)?;
+        }
+        transaction.execute(
+            "UPDATE generation_initial_dispatches SET result_json = ?4, settled_at = ?5 WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3",
+            params![binding.conversation_id.to_string(), binding.turn_id.to_string(), binding.attempt_id.to_string(), slice::encode(result)?, settled_at.get()],
+        ).map_err(slice::db)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn load_for_attempt_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,

@@ -97,6 +97,30 @@ fn load(
     Ok(Some(record))
 }
 
+/// Writes a backed-up speaker dispatch while its attempt is selecting a speaker,
+/// then its settlement when it had one.
+pub(crate) fn insert_restored_in(
+    transaction: &Transaction<'_>,
+    record: &lettuce_conversations::SpeakerInferenceRecord,
+) -> Result<(), ConversationRepositoryError> {
+    let binding = &record.binding;
+    transaction
+        .execute(
+            "INSERT INTO generation_speaker_dispatches (usage_event_id, conversation_id, turn_id, attempt_id, job_id, request_fingerprint, admitted_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![record.usage_event_id.to_string(), binding.conversation_id.to_string(), binding.turn_id.to_string(), binding.attempt_id.to_string(), binding.job_id.to_string(), &binding.request_fingerprint[..], record.admitted_at.get()],
+        )
+        .map_err(slice::db)?;
+    if let (Some(decision), Some(settled_at)) = (&record.decision, record.settled_at) {
+        transaction
+            .execute(
+                "UPDATE generation_speaker_dispatches SET decision_json = ?4, settled_at = ?5 WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3",
+                params![binding.conversation_id.to_string(), binding.turn_id.to_string(), binding.attempt_id.to_string(), slice::encode(decision)?, settled_at.get()],
+            )
+            .map_err(slice::db)?;
+    }
+    Ok(())
+}
+
 impl SpeakerInferenceRepository for Database {
     fn speaker_inference(
         &self,

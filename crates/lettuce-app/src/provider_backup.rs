@@ -1808,9 +1808,11 @@ mod tests {
             &restore_plan.artifacts,
         )
         .expect("restore graph");
-        let round_trip =
+        let mut round_trip =
             lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(&restored)
                 .expect("read restored graph");
+        lettuce_transfer::canonicalize_and_validate(&mut round_trip)
+            .expect("canonical restored graph");
         assert_eq!(round_trip.accounts, restore_plan.graph.accounts);
         assert_eq!(round_trip.profiles, restore_plan.graph.profiles);
         assert_eq!(round_trip.prompts, restore_plan.graph.prompts);
@@ -1825,19 +1827,12 @@ mod tests {
             restore_plan.graph.conversation_history
         );
         assert_eq!(
-            round_trip
-                .conversation_runtime
-                .conversations
-                .iter()
-                .map(|runtime| runtime.turns.iter().map(|turn| &turn.turn).collect::<Vec<_>>())
-                .collect::<Vec<_>>(),
-            restore_plan
-                .graph
-                .conversation_runtime
-                .conversations
-                .iter()
-                .map(|runtime| runtime.turns.iter().map(|turn| &turn.turn).collect::<Vec<_>>())
-                .collect::<Vec<_>>()
+            round_trip.conversation_runtime,
+            restore_plan.graph.conversation_runtime
+        );
+        assert_eq!(
+            round_trip.memory.retrieval_accesses,
+            restore_plan.graph.memory.retrieval_accesses
         );
         assert_eq!(
             round_trip.conversation_outbox,

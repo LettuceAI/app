@@ -116,8 +116,13 @@ interrupted with a derived usage event id and turns without attempts are left
 out. Jobs and job events are written as exported through the job store's
 validation (in-flight jobs keep their state so the normal lease-expiry recovery
 handles them like after a restart), with job inference usage and cost bases.
-Generation checkpoints, tool executions, speaker and initial dispatches,
-retrieval accesses, dynamic memory runs, companion state and effects,
+Each turn walks the shortest legal status path of the 0008 transition graph,
+and per attempt the writer restores its speaker dispatch while the turn is
+selecting a speaker, its initial dispatch with replay references and tool
+executions while the attempt is running (a tool walks from `requested` along
+the path its revision implies; a tool left unsettled by an interrupted attempt
+is settled with it), and its generation checkpoints. Memory retrieval accesses
+follow the conversations. Dynamic memory runs, companion state and effects,
 secrets, media bytes and the cutover are later restore slices.
 
 The legacy migration boundary can open an old `app.db` read-only, require the
