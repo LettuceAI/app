@@ -19,11 +19,10 @@ use lettuce_memory::{
 };
 use lettuce_transfer::{
     BackupConversation, BackupMemoryProjection, BackupMemoryProjectionState, BackupMemorySpace,
-    BackupMessage, LEGACY_ID_NAMESPACE, LegacyBackupDirectSession,
-    LegacyBackupMemoryEmbeddingOwner, LegacyBackupMemoryMaterialization,
-    LegacyBackupMemoryOwnerKind, LegacyConversationRecord,
-    LegacyDirectConversationMaterializationRequest, LegacyImportAdmission, LegacyImportAssignment,
-    LegacyImportPlan, LegacyImportRepository, LegacyImportRepositoryError,
+    BackupMessage, LegacyBackupDirectSession, LegacyBackupMemoryEmbeddingOwner,
+    LegacyBackupMemoryMaterialization, LegacyBackupMemoryOwnerKind, LegacyConversationRecord,
+    LegacyDirectConversationMaterializationRequest, LegacyIdScope, LegacyImportAdmission,
+    LegacyImportAssignment, LegacyImportPlan, LegacyImportRepository, LegacyImportRepositoryError,
     LegacyImportStageReceipt,
 };
 use lettuce_transfer::{
@@ -37,7 +36,6 @@ use lettuce_types::{
     TimestampMillis, UsageEventId,
 };
 use lettuce_usage::UsageEvent;
-use uuid::Uuid;
 
 use crate::{
     ConversationLaunchPlanner, DIRECT_LAUNCH_REQUEST_FORMAT_V1, DirectConversationLaunchRequest,
@@ -56,6 +54,7 @@ pub(crate) struct ImportContext {
     pub(crate) personas: BTreeMap<PersonaId, PersonaId>,
     prompts: BTreeMap<String, lettuce_types::PromptDocumentId>,
     lorebooks: BTreeMap<lettuce_types::LorebookId, lettuce_types::LorebookId>,
+    pub(crate) scope: LegacyIdScope,
 }
 
 /// The per-session values legacy let a chat override on top of its launch
@@ -151,7 +150,7 @@ where
         )? {
             return Ok(receipt);
         }
-        let context = import_context(admission, plan);
+        let context = import_context(admission, plan, &source_fingerprint);
         let mut mapped = Vec::with_capacity(sessions.len());
         for session in sessions {
             let memory = memory_owner(
@@ -161,7 +160,7 @@ where
             );
             mapped.push(self.map_session(session, memory, companions, &context)?);
         }
-        attach_companion_pools(&mut mapped, sessions, memories, companions)?;
+        attach_companion_pools(&mut mapped, sessions, memories, companions, context.scope)?;
         let mut conversations = assign_companion_episodes(mapped)?;
         conversations.sort_by_key(|record| {
             let episode = record
@@ -183,21 +182,27 @@ where
             .map(|companion| companion.owner.character_id)
             .collect::<std::collections::BTreeSet<_>>();
         let mut companion_souls = Vec::new();
+        let character = |id: CharacterId| CharacterId::from_uuid(context.scope.uuid(id.as_uuid()));
         for state in companions {
             if state.soul_materialization
                 == LegacyBackupCompanionMaterialization::ExactInitialSnapshot
-                && self.is_companion(state.character_id, &companion_characters)?
+                && self.is_companion(character(state.character_id), &companion_characters)?
                 && let Some(facts) = state.soul_facts.clone()
             {
-                companion_souls.push((state.character_id, facts));
+                companion_souls.push((character(state.character_id), facts));
             }
         }
         let mut notes = Vec::new();
         for note in scheduled_notes {
-            if note.note.clone().normalize().is_ok()
-                && self.is_companion(note.note.character_id, &companion_characters)?
+            let note = lettuce_companions::CompanionScheduledNote {
+                id: context.scope.uuid(note.note.id),
+                character_id: character(note.note.character_id),
+                ..note.note.clone()
+            };
+            if note.clone().normalize().is_ok()
+                && self.is_companion(note.character_id, &companion_characters)?
             {
-                notes.push(note.note.clone());
+                notes.push(note);
             }
         }
         let scheduled_notes = notes;
@@ -269,10 +274,13 @@ where
             context,
         )?;
         let scene = match (&session.selected_scene_source_id, opens_with_scene) {
-            (Some(id), true) => LaunchSelection::Explicit(parse::<SceneId>(id)?),
+            (Some(id), true) => LaunchSelection::Explicit(SceneId::from_uuid(
+                context.scope.uuid(parse::<SceneId>(id)?.as_uuid()),
+            )),
             _ => LaunchSelection::Disabled,
         };
-        let character_id = parse::<CharacterId>(&session.character_source_id)?;
+        let legacy_character = parse::<CharacterId>(&session.character_source_id)?;
+        let character_id = CharacterId::from_uuid(context.scope.uuid(legacy_character.as_uuid()));
         let title = if session.title.trim().is_empty() {
             lettuce_characters::CharacterRepository::get(self.sources, character_id)
                 .map_err(|_| Error::Storage)?
@@ -289,13 +297,13 @@ where
             scene,
             starter: LaunchSelection::Disabled,
             persona,
-            operation_key: launch_key(&session.source_id)?,
+            operation_key: launch_key(context.scope, &session.source_id)?,
         };
         let (prepared, launch_companion) = ConversationLaunchPlanner::new(self.sources)
             .prepare_direct_parts(&request)
             .map_err(|_| Error::Conflict)?;
         let (plan, mut snapshots) = prepared.into_parts();
-        let conversation_id = ConversationId::from_uuid(legacy_uuid(&session.source_id));
+        let conversation_id = ConversationId::from_uuid(context.scope.source(&session.source_id));
         let companion = launch_companion.map(|(owner, initial)| {
             let owner = CompanionStateOwner {
                 conversation_id,
@@ -303,7 +311,7 @@ where
             };
             let shared = companions
                 .iter()
-                .find(|state| state.character_id == owner.character_id);
+                .find(|state| state.character_id == legacy_character);
             let mut initial = session
                 .companion_state_json
                 .as_deref()
@@ -340,6 +348,7 @@ where
                 owner,
                 initial,
                 legacy_episode,
+                legacy_character_id: legacy_character,
                 created_at: timestamp(session.created_at)?,
             })
         });
@@ -434,6 +443,7 @@ struct PendingCompanion {
     owner: CompanionStateOwner,
     initial: CompanionRuntimeState,
     legacy_episode: Option<LegacyCompanionEpisodeRecord>,
+    legacy_character_id: CharacterId,
     created_at: TimestampMillis,
 }
 
@@ -533,15 +543,20 @@ fn attach_companion_pools(
     sessions: &[LegacyBackupDirectSession],
     memories: &[LegacyBackupMemoryEmbeddingOwner],
     companions: &[LegacyBackupCompanionSharedMemory],
+    scope: LegacyIdScope,
 ) -> Result<(), Error> {
     let character_of = |pending: &Option<PendingCompanion>| {
         pending.as_ref().map(|pending| pending.owner.character_id)
     };
     let characters = mapped
         .iter()
-        .filter_map(|(_, pending)| character_of(pending))
+        .filter_map(|(_, pending)| {
+            pending
+                .as_ref()
+                .map(|pending| (pending.owner.character_id, pending.legacy_character_id))
+        })
         .collect::<std::collections::BTreeSet<_>>();
-    for character_id in characters {
+    for (character_id, legacy_character_id) in characters {
         let mut candidates = mapped
             .iter()
             .enumerate()
@@ -551,11 +566,11 @@ fn attach_companion_pools(
         candidates.sort_by_key(|index| std::cmp::Reverse((sessions[*index].updated_at, *index)));
         let shared_state = companions
             .iter()
-            .find(|state| state.character_id == character_id);
+            .find(|state| state.character_id == legacy_character_id);
         let shared_owner = memory_owner(
             memories,
             LegacyBackupMemoryOwnerKind::CompanionShared,
-            &character_id.to_string(),
+            &legacy_character_id.to_string(),
         )
         .filter(|owner| {
             owner.memories.iter().any(|memory| {
@@ -583,8 +598,9 @@ fn attach_companion_pools(
             };
             let record = &mapped[carrier].0;
             let (space, projections) = memory_space(
+                scope,
                 record.history.aggregate.conversation.id,
-                &format!("companion-pool:{character_id}"),
+                &format!("companion-pool:{legacy_character_id}"),
                 owner,
                 summary,
                 summary_token_count,
@@ -797,7 +813,9 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
                     .map_err(|_| Error::Storage)?
             {
                 let draft = crate::launch::documents::draft(
-                    SnapshotArtifactId::from_uuid(derived(source_id, "settings:prompt")),
+                    SnapshotArtifactId::from_uuid(
+                        context.scope.derived(source_id, "settings:prompt"),
+                    ),
                     document.revision,
                     crate::launch::documents::prompt_body(&document),
                 )
@@ -841,10 +859,11 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
                     continue;
                 }
                 let draft = crate::launch::documents::draft(
-                    SnapshotArtifactId::from_uuid(derived(
-                        source_id,
-                        &format!("settings:lorebook:{}", details.book.id),
-                    )),
+                    SnapshotArtifactId::from_uuid(
+                        context
+                            .scope
+                            .derived(source_id, &format!("settings:lorebook:{}", details.book.id)),
+                    ),
                     details.book.revision,
                     crate::launch::documents::lorebook_body(&details),
                 )
@@ -914,7 +933,9 @@ pub(crate) fn memory_owner<'a>(
 /// conversation's memory space, their stored embeddings become ready
 /// projections, and the rolling summary covers the latest imported messages.
 /// Memories legacy stored in an incompatible shape stay in sealed evidence.
+#[allow(clippy::too_many_arguments)]
 fn memory_space(
+    scope: LegacyIdScope,
     conversation_id: ConversationId,
     source_id: &str,
     owner: Option<&LegacyBackupMemoryEmbeddingOwner>,
@@ -923,14 +944,14 @@ fn memory_space(
     messages: &[BackupMessage],
     updated_at: TimestampMillis,
 ) -> Result<(Option<BackupMemorySpace>, Vec<BackupMemoryProjection>), Error> {
-    let space_id = MemorySpaceId::from_uuid(derived(source_id, "memory"));
+    let space_id = MemorySpaceId::from_uuid(scope.derived(source_id, "memory"));
     let mut items: Vec<MemoryItem> = Vec::new();
     let mut projections = Vec::new();
     for memory in owner.into_iter().flat_map(|owner| &owner.memories) {
         if memory.materialization == LegacyBackupMemoryMaterialization::RetainedEvidence {
             continue;
         }
-        let id = memory_item_id(source_id, &memory.id);
+        let id = memory_item_id(scope, source_id, &memory.id);
         let short_id = MemoryShortId::allocate(id, |candidate| {
             items.iter().any(|item| item.short_id == candidate)
         });
@@ -959,7 +980,7 @@ fn memory_space(
             source_message_id: memory
                 .source_message_id
                 .as_deref()
-                .map(|value| MessageId::from_uuid(legacy_uuid(value))),
+                .map(|value| MessageId::from_uuid(scope.source(value))),
             source_role: match memory.source_role.as_deref() {
                 Some("user") => Some(MessageRole::User),
                 Some("assistant") => Some(MessageRole::Assistant),
@@ -970,12 +991,12 @@ fn memory_space(
             superseded_by: memory
                 .superseded_by
                 .as_deref()
-                .map(|value| memory_item_id(source_id, value)),
+                .map(|value| memory_item_id(scope, source_id, value)),
             superseded_at: memory.superseded_at.map(timestamp).transpose()?,
             supersedes: memory
                 .supersedes
                 .iter()
-                .map(|value| memory_item_id(source_id, value))
+                .map(|value| memory_item_id(scope, source_id, value))
                 .collect(),
             token_count: memory.token_count,
             is_cold: memory.is_cold && !memory.is_pinned,
@@ -1058,8 +1079,8 @@ fn memory_space(
 
 /// Legacy branch sessions copied their parent's memories with the same ids,
 /// and memory ids are unique across spaces, so each owner derives its own.
-fn memory_item_id(source_id: &str, legacy_id: &str) -> MemoryId {
-    MemoryId::from_uuid(derived(source_id, &format!("memory-item:{legacy_id}")))
+fn memory_item_id(scope: LegacyIdScope, source_id: &str, legacy_id: &str) -> MemoryId {
+    MemoryId::from_uuid(scope.derived(source_id, &format!("memory-item:{legacy_id}")))
 }
 
 pub(crate) fn committed_stage<S: LegacyImportRepository>(
@@ -1083,8 +1104,8 @@ pub(crate) fn committed_stage<S: LegacyImportRepository>(
     Ok(Some(receipt))
 }
 
-pub(crate) fn launch_key(source_id: &str) -> Result<IdempotencyKey, Error> {
-    IdempotencyKey::new(format!("legacy-import.{}", legacy_uuid(source_id)))
+pub(crate) fn launch_key(scope: LegacyIdScope, source_id: &str) -> Result<IdempotencyKey, Error> {
+    IdempotencyKey::new(format!("legacy-import.{}", scope.source(source_id)))
         .map_err(|_| Error::InvalidInput)
 }
 
@@ -1132,8 +1153,9 @@ pub(crate) fn conversation_record(
     source: LegacyConversationSource<'_>,
     context: &ImportContext,
 ) -> Result<LegacyConversationRecord, Error> {
-    let conversation_id = ConversationId::from_uuid(legacy_uuid(source.source_id));
-    let branch_id = ConversationBranchId::from_uuid(derived(source.source_id, "branch"));
+    let conversation_id = ConversationId::from_uuid(context.scope.source(source.source_id));
+    let branch_id =
+        ConversationBranchId::from_uuid(context.scope.derived(source.source_id, "branch"));
     let created_at = timestamp(source.created_at)?;
     let updated_at = timestamp(source.updated_at)?.max(created_at);
     let user = source
@@ -1217,6 +1239,7 @@ pub(crate) fn conversation_record(
         updated_at,
     };
     let (memory, memory_projections) = memory_space(
+        context.scope,
         conversation_id,
         source.source_id,
         source.memory,
@@ -1260,7 +1283,7 @@ impl SessionWriter<'_> {
         parent: Option<(MessageId, MessageRole)>,
         origin: Option<InitialMessageOrigin>,
     ) -> Result<(MessageId, MessageRole), Error> {
-        let message_id = MessageId::from_uuid(legacy_uuid(legacy.source_id));
+        let message_id = MessageId::from_uuid(self.context.scope.source(legacy.source_id));
         let created_at = timestamp(legacy.created_at)?;
         let effective_time = legacy
             .effective_at
@@ -1301,7 +1324,9 @@ impl SessionWriter<'_> {
             self.push_candidates(legacy, message_id, parent, &mut candidates)?
         } else if legacy.variants.is_empty() {
             let revision = MessageRevision {
-                id: MessageRevisionId::from_uuid(derived(legacy.source_id, "revision")),
+                id: MessageRevisionId::from_uuid(
+                    self.context.scope.derived(legacy.source_id, "revision"),
+                ),
                 message_id,
                 sequence: Revision::INITIAL,
                 parts: parts(legacy.content, legacy.reasoning),
@@ -1316,7 +1341,9 @@ impl SessionWriter<'_> {
             let mut active = None;
             for (index, variant) in legacy.variants.iter().enumerate() {
                 let revision = MessageRevision {
-                    id: MessageRevisionId::from_uuid(derived(variant.source_id, "revision")),
+                    id: MessageRevisionId::from_uuid(
+                        self.context.scope.derived(variant.source_id, "revision"),
+                    ),
                     message_id,
                     sequence: Revision::new(
                         u64::try_from(index + 1).map_err(|_| Error::InvalidInput)?,
@@ -1407,10 +1434,15 @@ impl SessionWriter<'_> {
         let mut active = None;
         let active_index = active_variant_index(legacy);
         for (index, variant) in legacy.variants.iter().enumerate() {
-            let candidate_id = MessageCandidateId::from_uuid(legacy_uuid(variant.source_id));
-            let turn_id = GenerationTurnId::from_uuid(derived(variant.source_id, "turn"));
-            let attempt_id = GenerationAttemptId::from_uuid(derived(variant.source_id, "attempt"));
-            let usage_event_id = UsageEventId::from_uuid(derived(variant.source_id, "usage"));
+            let candidate_id =
+                MessageCandidateId::from_uuid(self.context.scope.source(variant.source_id));
+            let turn_id =
+                GenerationTurnId::from_uuid(self.context.scope.derived(variant.source_id, "turn"));
+            let attempt_id = GenerationAttemptId::from_uuid(
+                self.context.scope.derived(variant.source_id, "attempt"),
+            );
+            let usage_event_id =
+                UsageEventId::from_uuid(self.context.scope.derived(variant.source_id, "usage"));
             let at = timestamp(variant.created_at)?;
             let (operation, input, target) = match previous {
                 None if parent_role == MessageRole::User => (
@@ -1571,6 +1603,7 @@ fn active_variant_index(legacy: &TimelineMessage<'_>) -> usize {
 pub(crate) fn import_context(
     admission: &LegacyImportAdmission,
     plan: &LegacyImportPlan,
+    source_fingerprint: &lettuce_types::ContentHash,
 ) -> ImportContext {
     let mut providers = BTreeMap::new();
     let mut models = BTreeMap::new();
@@ -1632,15 +1665,8 @@ pub(crate) fn import_context(
         personas,
         prompts,
         lorebooks,
+        scope: LegacyIdScope::new(source_fingerprint),
     }
-}
-
-pub(crate) fn legacy_uuid(value: &str) -> Uuid {
-    Uuid::parse_str(value).unwrap_or_else(|_| Uuid::new_v5(&LEGACY_ID_NAMESPACE, value.as_bytes()))
-}
-
-pub(crate) fn derived(value: &str, suffix: &str) -> Uuid {
-    Uuid::new_v5(&LEGACY_ID_NAMESPACE, format!("{value}:{suffix}").as_bytes())
 }
 
 pub(crate) fn parse<T: std::str::FromStr>(value: &str) -> Result<T, Error> {

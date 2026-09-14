@@ -110,7 +110,7 @@ CREATE TABLE legacy_usage_records (
     success INTEGER NOT NULL CHECK (success IN (0, 1)),
     error_message TEXT,
     metadata_json TEXT NOT NULL CHECK (json_valid(metadata_json)),
-    PRIMARY KEY (source_id)
+    PRIMARY KEY (run_id, source_id)
 ) STRICT;
 CREATE INDEX legacy_usage_records_recorded_at_idx ON legacy_usage_records(recorded_at, source_id);
 

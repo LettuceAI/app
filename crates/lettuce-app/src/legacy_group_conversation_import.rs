@@ -19,8 +19,8 @@ use lettuce_types::{
 use crate::launch::documents;
 use crate::legacy_direct_conversation_import::{
     ImportContext, LegacyConversationSource, SessionSettingsSource, TimelineMessage,
-    TimelineVariant, committed_stage, conversation_record, derived, import_context, launch_key,
-    legacy_user, memory_owner, parse, persona_selection, selected_model, session_settings,
+    TimelineVariant, committed_stage, conversation_record, import_context, launch_key, legacy_user,
+    memory_owner, parse, persona_selection, selected_model, session_settings,
 };
 use crate::{
     ConversationLaunchPlanner, DirectLaunchSources, GROUP_LAUNCH_REQUEST_FORMAT_V1,
@@ -71,7 +71,7 @@ where
         )? {
             return Ok(receipt);
         }
-        let context = import_context(admission, plan);
+        let context = import_context(admission, plan, &source_fingerprint);
         let conversations = sessions
             .iter()
             .map(|session| {
@@ -118,19 +118,20 @@ where
         context: &ImportContext,
         now: TimestampMillis,
     ) -> Result<lettuce_transfer::LegacyConversationRecord, Error> {
-        let group_id = parse::<GroupId>(
+        let legacy_group = parse::<GroupId>(
             session
                 .group_source_id
                 .as_deref()
                 .ok_or(Error::InvalidInput)?,
         )?;
+        let group_id = GroupId::from_uuid(context.scope.uuid(legacy_group.as_uuid()));
         let request = GroupConversationLaunchRequest {
             format_version: GROUP_LAUNCH_REQUEST_FORMAT_V1,
             title: session.name.clone(),
             user: legacy_user(),
             group_id,
             persona: persona_selection(false, session.persona_source_id.as_deref(), context)?,
-            operation_key: launch_key(&session.source_id)?,
+            operation_key: launch_key(context.scope, &session.source_id)?,
         };
         let (mut plan, mut snapshots) = ConversationLaunchPlanner::new(self.sources)
             .prepare_group(&request, now)
@@ -138,6 +139,7 @@ where
             .into_parts();
         let authors = session_cast(
             self.sources,
+            context.scope,
             session,
             &mut plan.kind,
             &mut plan.participants,
@@ -194,7 +196,7 @@ where
         let author = |id: Option<&String>| -> Result<Option<ConversationParticipantId>, Error> {
             id.map(|id| {
                 authors
-                    .get(&parse::<CharacterId>(id)?)
+                    .get(&parse_character(context.scope, id)?)
                     .copied()
                     .ok_or(Error::InvalidInput)
             })
@@ -262,6 +264,7 @@ where
 /// messages keep an author without ever being selected again.
 fn session_cast<S: DirectLaunchSources>(
     sources: &S,
+    scope: lettuce_transfer::LegacyIdScope,
     session: &LegacyBackupGroupSession,
     kind: &mut ConversationKind,
     participants: &mut Vec<ConversationParticipantDraft>,
@@ -273,7 +276,7 @@ fn session_cast<S: DirectLaunchSources>(
     let muted = session
         .muted_member_source_ids
         .iter()
-        .map(|id| parse_character(id))
+        .map(|id| parse_character(scope, id))
         .collect::<Result<BTreeSet<_>, _>>()?;
     let mut wanted = Vec::new();
     for id in session
@@ -288,7 +291,7 @@ fn session_cast<S: DirectLaunchSources>(
             )
         }))
     {
-        let id = parse_character(id)?;
+        let id = parse_character(scope, id)?;
         if !wanted.contains(&id) {
             wanted.push(id);
         }
@@ -296,7 +299,7 @@ fn session_cast<S: DirectLaunchSources>(
     let listed = session
         .member_source_ids
         .iter()
-        .map(|id| parse_character(id))
+        .map(|id| parse_character(scope, id))
         .collect::<Result<BTreeSet<_>, _>>()?;
     let user = participants
         .iter()
@@ -321,7 +324,7 @@ fn session_cast<S: DirectLaunchSources>(
         let ordinal = u32::try_from(ordinal).map_err(|_| Error::InvalidInput)?;
         let (mut member, mut participant) = match planned.remove(&character_id) {
             Some(value) => value,
-            None => new_member(sources, session, character_id, snapshots)?,
+            None => new_member(sources, scope, session, character_id, snapshots)?,
         };
         let known = participant.display_name != UNKNOWN_NAME;
         member.ordinal = ordinal;
@@ -384,6 +387,7 @@ const UNKNOWN_NAME: &str = "Unknown";
 
 fn new_member<S: DirectLaunchSources>(
     sources: &S,
+    scope: lettuce_transfer::LegacyIdScope,
     session: &LegacyBackupGroupSession,
     character_id: CharacterId,
     snapshots: &mut Vec<SnapshotArtifactDraft>,
@@ -407,10 +411,9 @@ fn new_member<S: DirectLaunchSources>(
         ),
     };
     let draft = documents::draft(
-        SnapshotArtifactId::from_uuid(derived(
-            &session.source_id,
-            &format!("member:{character_id}"),
-        )),
+        SnapshotArtifactId::from_uuid(
+            scope.derived(&session.source_id, &format!("member:{character_id}")),
+        ),
         revision,
         body,
     )
@@ -431,10 +434,9 @@ fn new_member<S: DirectLaunchSources>(
         prompt: SnapshotSelection::Disabled,
     };
     let participant = ConversationParticipantDraft {
-        id: ConversationParticipantId::from_uuid(derived(
-            &session.source_id,
-            &format!("participant:{character_id}"),
-        )),
+        id: ConversationParticipantId::from_uuid(
+            scope.derived(&session.source_id, &format!("participant:{character_id}")),
+        ),
         role: ParticipantRole::Character,
         ordinal: 0,
         source: ParticipantSource::Character(character_id),
@@ -490,6 +492,9 @@ fn referenced_artifacts(
     references
 }
 
-fn parse_character(value: &str) -> Result<CharacterId, Error> {
-    parse(value)
+fn parse_character(
+    scope: lettuce_transfer::LegacyIdScope,
+    value: &str,
+) -> Result<CharacterId, Error> {
+    parse::<CharacterId>(value).map(|legacy| CharacterId::from_uuid(scope.uuid(legacy.as_uuid())))
 }

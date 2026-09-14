@@ -72,7 +72,7 @@ mod tests {
 
     use lettuce_creation::CreationWorkflowRepository;
     use lettuce_transfer::{
-        LEGACY_ID_NAMESPACE, LegacyAsrPlan, LegacyBackupCreationDraft, LegacyBackupCreationGoal,
+        LegacyAsrPlan, LegacyBackupCreationDraft, LegacyBackupCreationGoal,
         LegacyBackupCreationMode, LegacyBackupCreationScene, LegacyBackupCreationSessionState,
         LegacyBackupCreationStatus, LegacyDatabaseInventory, LegacyLorebookPlan, LegacyMediaPlan,
         LegacyPersonaPlan, LegacyPromptPlan, LegacyProviderModelPlan,
@@ -204,10 +204,14 @@ mod tests {
             .execute(&admission, &plan, &sessions, TimestampMillis::new(40))
             .expect("materialize creation workflows");
         assert_eq!(receipt.record_count, 1);
-        let workflow_id = CreationWorkflowId::from_uuid(uuid::Uuid::new_v5(
-            &LEGACY_ID_NAMESPACE,
-            b"creation-1:creation-workflow",
-        ));
+        let workflow_id = CreationWorkflowId::from_uuid(
+            lettuce_transfer::LegacyIdScope::new(
+                plan.source_fingerprint
+                    .as_ref()
+                    .expect("source fingerprint"),
+            )
+            .derived("creation-1", "creation-workflow"),
+        );
         let workflow = CreationWorkflowRepository::load_workflow(backend.database(), workflow_id)
             .expect("seeded workflow");
         assert_eq!(workflow.created_at, TimestampMillis::new(5));

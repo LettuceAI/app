@@ -1,5 +1,6 @@
 use lettuce_settings::{
-    SecretPurpose, SecretRecord, SecretState, SecretStore, SecretStoreError, SecretValue,
+    SecretOwnerId, SecretPurpose, SecretRecord, SecretRef, SecretState, SecretStore,
+    SecretStoreError, SecretValue,
 };
 use lettuce_speech::{AudioProvider, UserVoice};
 use lettuce_transfer::{
@@ -56,16 +57,47 @@ where
             .source_fingerprint
             .clone()
             .ok_or(LegacyAudioImportError::InvalidAdmission)?;
-        for provider in audio_providers {
-            let Some(reference) = provider.api_key_ref else {
+        let scope = lettuce_transfer::LegacyIdScope::new(&source_fingerprint);
+        let scoped_providers = audio_providers
+            .iter()
+            .map(|provider| AudioProvider {
+                id: lettuce_types::AudioProviderId::from_uuid(scope.uuid(provider.id.as_uuid())),
+                secret_owner_id: SecretOwnerId::from_uuid(
+                    scope.uuid(provider.secret_owner_id.as_uuid()),
+                ),
+                api_key_ref: provider
+                    .api_key_ref
+                    .map(|reference| SecretRef::from_uuid(scope.uuid(reference.as_uuid()))),
+                ..provider.clone()
+            })
+            .collect::<Vec<_>>();
+        let scoped_voices = user_voices
+            .iter()
+            .map(|voice| UserVoice {
+                id: lettuce_types::VoiceProfileId::from_uuid(scope.uuid(voice.id.as_uuid())),
+                provider_id: lettuce_types::AudioProviderId::from_uuid(
+                    scope.uuid(voice.provider_id.as_uuid()),
+                ),
+                ..voice.clone()
+            })
+            .collect::<Vec<_>>();
+        for (legacy, provider) in audio_providers.iter().zip(&scoped_providers) {
+            let (Some(legacy_reference), Some(reference)) =
+                (legacy.api_key_ref, provider.api_key_ref)
+            else {
                 continue;
+            };
+            let legacy_purpose = SecretPurpose::AudioApiKey {
+                owner: legacy.secret_owner_id,
             };
             let purpose = SecretPurpose::AudioApiKey {
                 owner: provider.secret_owner_id,
             };
             let secret = secrets
                 .iter()
-                .find(|secret| secret.reference == reference && secret.purpose == purpose)
+                .find(|secret| {
+                    secret.reference == legacy_reference && secret.purpose == legacy_purpose
+                })
                 .ok_or(LegacyAudioImportError::InvalidAdmission)?;
             let status = self
                 .secret_store
@@ -105,8 +137,8 @@ where
                 run_id: admission.run_id,
                 plan_fingerprint,
                 source_fingerprint,
-                audio_providers: audio_providers.to_vec(),
-                user_voices: user_voices.to_vec(),
+                audio_providers: scoped_providers,
+                user_voices: scoped_voices,
                 completed_at,
             })
             .map_err(LegacyAudioImportError::Repository)
@@ -135,7 +167,7 @@ where
 mod tests {
     use std::fs;
 
-    use lettuce_settings::{InMemorySecretStore, SecretOwnerId, SecretRef};
+    use lettuce_settings::InMemorySecretStore;
     use lettuce_speech::{AudioProviderConfig, TtsConfigurationRepository};
     use lettuce_transfer::{
         LegacyAsrPlan, LegacyDatabaseInventory, LegacyLorebookPlan, LegacyMediaPlan,
@@ -265,19 +297,37 @@ mod tests {
 
         assert_eq!(receipt.record_count, 2);
         assert!(!receipt.replayed);
+        let scope = lettuce_transfer::LegacyIdScope::new(
+            plan.source_fingerprint
+                .as_ref()
+                .expect("source fingerprint"),
+        );
+        let scoped_reference = SecretRef::from_uuid(scope.uuid(reference.as_uuid()));
+        let scoped_owner = SecretOwnerId::from_uuid(scope.uuid(owner.as_uuid()));
         assert_eq!(
-            TtsConfigurationRepository::get_audio_provider(backend.database(), provider.id)
-                .expect("read provider")
-                .map(|stored| stored.api_key_ref),
-            Some(Some(reference))
+            TtsConfigurationRepository::get_audio_provider(
+                backend.database(),
+                AudioProviderId::from_uuid(scope.uuid(provider.id.as_uuid())),
+            )
+            .expect("read provider")
+            .map(|stored| stored.api_key_ref),
+            Some(Some(scoped_reference))
         );
         assert!(
-            TtsConfigurationRepository::get_user_voice(backend.database(), voice.id)
-                .expect("read voice")
-                .is_some()
+            TtsConfigurationRepository::get_user_voice(
+                backend.database(),
+                VoiceProfileId::from_uuid(scope.uuid(voice.id.as_uuid())),
+            )
+            .expect("read voice")
+            .is_some()
         );
         let stored = secret_store
-            .load(&reference, &SecretPurpose::AudioApiKey { owner })
+            .load(
+                &scoped_reference,
+                &SecretPurpose::AudioApiKey {
+                    owner: scoped_owner,
+                },
+            )
             .await
             .expect("stored key");
         assert!(stored.with(|value| value == "xi-legacy-key"));

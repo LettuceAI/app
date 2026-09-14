@@ -39,7 +39,10 @@ global settings and their remapped feature model and prompt selections.
 `AppBackend::legacy_direct_conversation_importer` turns each legacy direct
 session into a finished conversation. The launch snapshots come from
 `ConversationLaunchPlanner::prepare_direct` against the imported character,
-persona, scene and default model; the conversation keeps the legacy session id.
+persona, scene and default model; conversation, message, candidate, memory,
+companion note and audio ids derive from the legacy ids within the run's
+`LegacyIdScope`, so importing a different legacy source never collides with an
+earlier import.
 Each assistant variant becomes a candidate of its own succeeded turn (send or
 continue for the first, regenerate for the rest), with a usage event that keeps
 the legacy prompt/completion tokens when both are present, and the selected

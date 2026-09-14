@@ -497,10 +497,19 @@ mod tests {
                 TimestampMillis::new(50),
             )
             .expect("materialize characters");
+        let scope = lettuce_transfer::LegacyIdScope::new(
+            plan.source_fingerprint
+                .as_ref()
+                .expect("source fingerprint"),
+        );
+        let conv = |id: lettuce_types::ConversationId| {
+            lettuce_types::ConversationId::from_uuid(scope.uuid(id.as_uuid()))
+        };
+        let character = |id: CharacterId| CharacterId::from_uuid(scope.uuid(id.as_uuid()));
 
         assert_eq!(receipt.record_count, 4);
         assert!(!receipt.replayed);
-        let details = CharacterRepository::get(backend.database(), character_id)
+        let details = CharacterRepository::get(backend.database(), character(character_id))
             .expect("read character")
             .expect("character exists");
         assert_eq!(
@@ -511,8 +520,16 @@ mod tests {
         let defaults = &details.character.defaults;
         assert_eq!(defaults.direct_prompt_id, Some(prompt_id));
         assert_eq!(defaults.group_conversation_prompt_id, None);
-        assert_eq!(defaults.default_scene_id, Some(scene_id));
-        assert_eq!(defaults.default_starter_id, Some(starter_id));
+        assert_eq!(
+            defaults.default_scene_id,
+            Some(SceneId::from_uuid(scope.uuid(scene_id.as_uuid())))
+        );
+        assert_eq!(
+            defaults.default_starter_id,
+            Some(ConversationStarterId::from_uuid(
+                scope.uuid(starter_id.as_uuid())
+            ))
+        );
         assert_eq!(
             defaults
                 .companion_soul
@@ -528,7 +545,7 @@ mod tests {
         );
         let bound = CharacterLorebookBindingRepository::list_character_bindings(
             backend.database(),
-            character_id,
+            character(character_id),
         )
         .expect("character bindings");
         assert_eq!(bound.len(), 1);
@@ -544,9 +561,12 @@ mod tests {
             )
             .expect("materialize groups");
         assert_eq!(group_receipt.record_count, 1);
-        let group_details = GroupRepository::get(backend.database(), group_id)
-            .expect("read group")
-            .expect("group exists");
+        let group_details = GroupRepository::get(
+            backend.database(),
+            GroupId::from_uuid(scope.uuid(group_id.as_uuid())),
+        )
+        .expect("read group")
+        .expect("group exists");
         assert_eq!(group_details.group.members.len(), 2);
         assert!(group_details.group.members[1].muted);
         assert_eq!(group_details.group.group_conversation_prompt_id, None);
@@ -557,9 +577,11 @@ mod tests {
                 .map(|scene| scene.variants.len()),
             Some(1)
         );
-        let group_bound =
-            GroupLorebookBindingRepository::list_group_bindings(backend.database(), group_id)
-                .expect("group bindings");
+        let group_bound = GroupLorebookBindingRepository::list_group_bindings(
+            backend.database(),
+            GroupId::from_uuid(scope.uuid(group_id.as_uuid())),
+        )
+        .expect("group bindings");
         assert_eq!(group_bound.len(), 1);
         assert_eq!(group_bound[0].lorebook_id, lorebook_id);
 
@@ -800,9 +822,9 @@ mod tests {
             .conversation_history
             .conversations
             .iter()
-            .find(|history| history.aggregate.conversation.id == session_id)
+            .find(|history| history.aggregate.conversation.id == conv(session_id))
             .expect("direct conversation history");
-        assert_eq!(history.aggregate.conversation.id, session_id);
+        assert_eq!(history.aggregate.conversation.id, conv(session_id));
         assert_eq!(history.messages.len(), 2);
         let settings = history
             .aggregate
@@ -823,7 +845,7 @@ mod tests {
         assert_eq!(
             reply.message.active_render_source,
             lettuce_conversations::MessageRenderSource::Candidate(
-                second_variant.parse().expect("candidate id")
+                lettuce_types::MessageCandidateId::from_uuid(scope.source(&second_variant))
             )
         );
         assert_eq!(
@@ -831,7 +853,7 @@ mod tests {
                 .conversation_runtime
                 .conversations
                 .iter()
-                .find(|runtime| runtime.conversation_id == session_id)
+                .find(|runtime| runtime.conversation_id == conv(session_id))
                 .expect("direct runtime")
                 .turns
                 .len(),
@@ -841,33 +863,35 @@ mod tests {
             .memory
             .spaces
             .iter()
-            .find(|space| space.conversation_id == session_id)
+            .find(|space| space.conversation_id == conv(session_id))
             .expect("imported memory space");
         assert_eq!(space.snapshot.items.len(), 1);
         assert_eq!(space.snapshot.items[0].text, "The user likes night shifts");
         assert!(space.snapshot.items[0].is_pinned);
         assert_eq!(graph.memory_projections.projections.len(), 2);
-        let episodes = [companion_first_id, companion_second_id, companion_third_id].map(|id| {
-            graph
-                .companion_state
-                .episodes
-                .iter()
-                .find(|episode| episode.conversation_id == id)
-                .map(|episode| {
-                    (
-                        episode.episode_index,
-                        episode.previous_conversation_id,
-                        episode.ended_at.map(TimestampMillis::get),
-                    )
-                })
-                .expect("companion episode")
-        });
+        let episodes = [companion_first_id, companion_second_id, companion_third_id]
+            .map(conv)
+            .map(|id| {
+                graph
+                    .companion_state
+                    .episodes
+                    .iter()
+                    .find(|episode| episode.conversation_id == id)
+                    .map(|episode| {
+                        (
+                            episode.episode_index,
+                            episode.previous_conversation_id,
+                            episode.ended_at.map(TimestampMillis::get),
+                        )
+                    })
+                    .expect("companion episode")
+            });
         assert_eq!(
             episodes,
             [
                 (1, None, Some(400)),
-                (2, Some(companion_first_id), None),
-                (3, Some(companion_second_id), None),
+                (2, Some(conv(companion_first_id)), None),
+                (3, Some(conv(companion_second_id)), None),
             ]
         );
         let pool = graph
@@ -885,15 +909,19 @@ mod tests {
         let mut bound = pool.shared_conversation_ids.clone();
         bound.push(pool.conversation_id);
         bound.sort();
-        let mut expected_bound = vec![companion_first_id, companion_second_id, companion_third_id];
+        let mut expected_bound = vec![
+            conv(companion_first_id),
+            conv(companion_second_id),
+            conv(companion_third_id),
+        ];
         expected_bound.sort();
         assert_eq!(bound, expected_bound);
         assert!(
             lettuce_companions::CompanionStateRepository::get(
                 backend.database(),
                 lettuce_companions::CompanionStateOwner {
-                    conversation_id: companion_first_id,
-                    character_id: companion_id,
+                    conversation_id: conv(companion_first_id),
+                    character_id: character(companion_id),
                     persona_id: None,
                 },
             )
@@ -1037,7 +1065,7 @@ mod tests {
             .conversation_history
             .conversations
             .iter()
-            .find(|history| history.aggregate.conversation.id == group_session_id)
+            .find(|history| history.aggregate.conversation.id == conv(group_session_id))
             .expect("group conversation");
         let cast = &group_history.aggregate.conversation.participants;
         assert_eq!(cast.len(), 4);
@@ -1045,7 +1073,9 @@ mod tests {
             .iter()
             .find(|participant| {
                 participant.source
-                    == lettuce_conversations::ParticipantSource::Character(deleted_speaker)
+                    == lettuce_conversations::ParticipantSource::Character(character(
+                        deleted_speaker,
+                    ))
             })
             .expect("unknown participant");
         assert_eq!(unknown.display_name, "Unknown");
@@ -1055,7 +1085,7 @@ mod tests {
         assert_eq!(
             group_history.messages[1].message.active_render_source,
             lettuce_conversations::MessageRenderSource::Candidate(
-                group_first.parse().expect("candidate id")
+                lettuce_types::MessageCandidateId::from_uuid(scope.source(&group_first))
             )
         );
         assert_eq!(
@@ -1122,6 +1152,89 @@ mod tests {
             reopened.complete_legacy_import(run_id, TimestampMillis::new(97)),
             Err(LegacyImportRepositoryError::Conflict)
         );
+        let second_plan = LegacyImportPlan {
+            source_fingerprint: Some(
+                ContentHash::parse("56".repeat(32)).expect("second source hash"),
+            ),
+            ..plan.clone()
+        };
+        let second = reopened
+            .legacy_import_admission()
+            .admit(
+                LegacyImportRunId::new(),
+                &inventory,
+                &second_plan,
+                TimestampMillis::new(100),
+            )
+            .expect("admit a second legacy source");
+        assert!(!second.replayed);
+        reopened
+            .legacy_import_executor()
+            .execute(&second, &second_plan, TimestampMillis::new(101))
+            .expect("materialize the second authored graph");
+        reopened
+            .legacy_provider_model_importer(&InMemorySecretStore::new())
+            .execute(&second, &second_plan, TimestampMillis::new(102))
+            .await
+            .expect("materialize the second providers next to the first defaults");
+        reopened
+            .legacy_character_importer()
+            .execute(
+                &second,
+                &second_plan,
+                &characters,
+                &bindings,
+                TimestampMillis::new(103),
+            )
+            .expect("characters of a second source import alongside");
+        reopened
+            .legacy_group_importer()
+            .execute(
+                &second,
+                &second_plan,
+                std::slice::from_ref(&group),
+                &group_bindings,
+                TimestampMillis::new(104),
+            )
+            .expect("groups of a second source import alongside");
+        reopened
+            .legacy_direct_conversation_importer()
+            .execute(
+                &second,
+                &second_plan,
+                &direct_sessions,
+                &direct_memories,
+                &[],
+                &[],
+                TimestampMillis::new(105),
+            )
+            .expect("direct conversations of a second source import alongside");
+        reopened
+            .legacy_group_conversation_importer()
+            .execute(
+                &second,
+                &second_plan,
+                std::slice::from_ref(&group_session),
+                &[],
+                TimestampMillis::new(106),
+            )
+            .expect("group conversations of a second source import alongside");
+        let second_scope = lettuce_transfer::LegacyIdScope::new(
+            second_plan
+                .source_fingerprint
+                .as_ref()
+                .expect("second source fingerprint"),
+        );
+        for id in [
+            character(character_id),
+            CharacterId::from_uuid(second_scope.uuid(character_id.as_uuid())),
+        ] {
+            assert!(
+                CharacterRepository::get(reopened.database(), id)
+                    .expect("read imported character")
+                    .is_some()
+            );
+        }
         drop(reopened);
         fs::remove_file(path).expect("remove database");
     }

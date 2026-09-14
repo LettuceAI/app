@@ -1888,7 +1888,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authored_default_conflict_rolls_back_imported_provider_graph() {
+    async fn authored_default_survives_a_legacy_provider_import() {
         let path = std::env::temp_dir().join(format!(
             "lettuce-app-legacy-provider-default-conflict-{}.sqlite3",
             LegacyImportRunId::new()
@@ -1974,15 +1974,11 @@ mod tests {
             .execute(&admission, &plan, TimestampMillis::new(30))
             .expect("materialize graph");
         let store = InMemorySecretStore::new();
-        assert_eq!(
-            backend
-                .legacy_provider_model_importer(&store)
-                .execute(&admission, &plan, TimestampMillis::new(40))
-                .await,
-            Err(crate::LegacyProviderModelImportError::Repository(
-                LegacyImportRepositoryError::Conflict
-            ))
-        );
+        backend
+            .legacy_provider_model_importer(&store)
+            .execute(&admission, &plan, TimestampMillis::new(40))
+            .await
+            .expect("materialize providers next to the authored default");
         for destination_id in admission
             .assignments
             .iter()
@@ -1995,8 +1991,8 @@ mod tests {
         {
             assert!(
                 ProviderAccountRepository::get(backend.database(), destination_id)
-                    .expect("read rolled back provider")
-                    .is_none()
+                    .expect("read imported provider")
+                    .is_some()
             );
         }
         assert_eq!(

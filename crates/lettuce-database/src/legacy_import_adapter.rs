@@ -469,15 +469,12 @@ impl LegacyImportRepository for Database {
                 .personas
                 .get(&legacy_default_id)
                 .ok_or(LegacyImportRepositoryError::Conflict)?;
-            let changed = transaction
+            transaction
                 .execute(
-                    "UPDATE persona_defaults SET default_persona_id=?1,revision=2,updated_at=?2 WHERE id=1 AND revision=1 AND default_persona_id IS NULL",
+                    "UPDATE persona_defaults SET default_persona_id=?1,revision=revision+1,updated_at=?2 WHERE id=1 AND default_persona_id IS NULL",
                     params![destination_id.to_string(), request.completed_at.get()],
                 )
                 .map_err(|_| LegacyImportRepositoryError::Storage)?;
-            if changed != 1 {
-                return Err(LegacyImportRepositoryError::Conflict);
-            }
         }
 
         let persona_count = i64::try_from(request.personas.personas.len())
@@ -737,8 +734,9 @@ impl LegacyImportRepository for Database {
         let assignments = AssignmentMaps::from_admission(&admission)?;
         let media_by_use =
             completed_media_assets(&transaction, request.run_id, &request.media, &assignments)?;
+        let scope = lettuce_transfer::LegacyIdScope::new(&request.source_fingerprint);
         for candidate in &request.characters {
-            let plan = legacy_character_plan(candidate, &assignments, &media_by_use)?;
+            let plan = legacy_character_plan(candidate, &assignments, &media_by_use, scope)?;
             crate::character_adapter::insert_character_plan(&transaction, &plan)
                 .map_err(stage_insert_error)?;
         }
@@ -746,7 +744,7 @@ impl LegacyImportRepository for Database {
             insert_owner_lorebook_bindings(
                 &transaction,
                 "INSERT INTO character_lorebook_bindings (character_id,lorebook_id,enabled,ordinal,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                &owner.owner_id.to_string(),
+                &scope.uuid(owner.owner_id.as_uuid()).to_string(),
                 &owner.bindings,
                 &assignments.lorebooks,
             )?;
@@ -866,9 +864,7 @@ impl LegacyImportRepository for Database {
         use lettuce_creation::{
             CreationDraft, CreationProposal, CreationScene, CreationTarget, NewCreationWorkflow,
         };
-        use lettuce_transfer::{
-            LEGACY_ID_NAMESPACE, LegacyBackupCreationGoal, LegacyBackupCreationMaterialization,
-        };
+        use lettuce_transfer::{LegacyBackupCreationGoal, LegacyBackupCreationMaterialization};
 
         let mut connection = self
             .connection()
@@ -891,12 +887,8 @@ impl LegacyImportRepository for Database {
                 .map_err(|_| LegacyImportRepositoryError::Storage)?;
             return Ok(receipt);
         }
-        let derived = |source: &str, suffix: &str| {
-            uuid::Uuid::new_v5(
-                &LEGACY_ID_NAMESPACE,
-                format!("{source}:{suffix}").as_bytes(),
-            )
-        };
+        let scope = lettuce_transfer::LegacyIdScope::new(&request.source_fingerprint);
+        let derived = |source: &str, suffix: &str| scope.derived(source, suffix);
         for session in &request.sessions {
             if session.materialization != LegacyBackupCreationMaterialization::InitialDraftSeed {
                 return Err(LegacyImportRepositoryError::InvalidInput);
@@ -913,9 +905,10 @@ impl LegacyImportRepository for Database {
                             .iter()
                             .map(|scene| CreationScene {
                                 id: lettuce_types::SceneId::from_uuid(
-                                    uuid::Uuid::parse_str(&scene.source_id).unwrap_or_else(|_| {
-                                        derived(&session.source_id, &scene.source_id)
-                                    }),
+                                    uuid::Uuid::parse_str(&scene.source_id).map_or_else(
+                                        |_| derived(&session.source_id, &scene.source_id),
+                                        |legacy| scope.uuid(legacy),
+                                    ),
                                 ),
                                 content: scene.content.clone(),
                                 direction: scene.direction.clone(),
@@ -1269,8 +1262,9 @@ impl LegacyImportRepository for Database {
         let assignments = AssignmentMaps::from_admission(&admission)?;
         let media_by_use =
             completed_media_assets(&transaction, request.run_id, &request.media, &assignments)?;
+        let scope = lettuce_transfer::LegacyIdScope::new(&request.source_fingerprint);
         for candidate in &request.groups {
-            let plan = legacy_group_plan(candidate, &assignments, &media_by_use)?;
+            let plan = legacy_group_plan(candidate, &assignments, &media_by_use, scope)?;
             crate::group_adapter::insert_group_plan(&transaction, &plan)
                 .map_err(stage_insert_error)?;
         }
@@ -1278,7 +1272,7 @@ impl LegacyImportRepository for Database {
             insert_owner_lorebook_bindings(
                 &transaction,
                 "INSERT INTO group_lorebook_bindings (group_id,lorebook_id,enabled,ordinal,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                &owner.owner_id.to_string(),
+                &scope.uuid(owner.owner_id.as_uuid()).to_string(),
                 &owner.bindings,
                 &assignments.lorebooks,
             )?;
@@ -1489,15 +1483,12 @@ impl LegacyImportRepository for Database {
                 .models
                 .get(&legacy_default_id)
                 .ok_or(LegacyImportRepositoryError::Conflict)?;
-            let changed = transaction
+            transaction
                 .execute(
-                    "UPDATE app_settings SET default_model_profile_id=?1,revision=2,updated_at=?2 WHERE id=1 AND revision=1 AND default_model_profile_id IS NULL",
+                    "UPDATE app_settings SET default_model_profile_id=?1,revision=revision+1,updated_at=?2 WHERE id=1 AND default_model_profile_id IS NULL",
                     params![destination_id.to_string(), request.completed_at.get()],
                 )
                 .map_err(|_| LegacyImportRepositoryError::Storage)?;
-            if changed != 1 {
-                return Err(LegacyImportRepositoryError::Conflict);
-            }
         }
 
         if let Some(destination_id) = request
@@ -1506,15 +1497,12 @@ impl LegacyImportRepository for Database {
             .as_ref()
             .and_then(|source_id| assignments.prompts.get(source_id))
         {
-            let changed = transaction
+            transaction
                 .execute(
                     "UPDATE app_settings SET default_prompt_document_id=?1,revision=revision+1,updated_at=?2 WHERE id=1 AND default_prompt_document_id IS NULL",
                     params![destination_id.to_string(), request.completed_at.get()],
                 )
                 .map_err(|_| LegacyImportRepositoryError::Storage)?;
-            if changed != 1 {
-                return Err(LegacyImportRepositoryError::Conflict);
-            }
         }
 
         let provider_account_count = i64::try_from(request.provider_models.provider_accounts.len())
@@ -1926,8 +1914,16 @@ fn legacy_character_plan(
     candidate: &LegacyBackupCharacterCandidate,
     assignments: &AssignmentMaps,
     media_by_use: &BTreeMap<LegacyMediaUse, AssetId>,
+    scope: lettuce_transfer::LegacyIdScope,
 ) -> Result<CreateCharacterPlan, LegacyImportRepositoryError> {
     let character_id = candidate.id;
+    let destination_character =
+        lettuce_types::CharacterId::from_uuid(scope.uuid(character_id.as_uuid()));
+    let scene_id =
+        |id: lettuce_types::SceneId| lettuce_types::SceneId::from_uuid(scope.uuid(id.as_uuid()));
+    let variant_id = |id: lettuce_types::SceneVariantId| {
+        lettuce_types::SceneVariantId::from_uuid(scope.uuid(id.as_uuid()))
+    };
     let asset = |media_use: LegacyMediaUse| {
         media_by_use
             .get(&media_use)
@@ -1990,7 +1986,7 @@ fn legacy_character_plan(
     }
     let presentation = &candidate.presentation;
     let character = Character {
-        id: character_id,
+        id: destination_character,
         status: LifecycleStatus::Active,
         profile: candidate.profile.clone(),
         provenance: candidate.provenance.clone(),
@@ -1998,7 +1994,7 @@ fn legacy_character_plan(
             interaction_mode: candidate.defaults.interaction_mode,
             memory_policy: candidate.defaults.memory_policy,
             model_profile_id,
-            default_scene_id: candidate.defaults.default_scene_id,
+            default_scene_id: candidate.defaults.default_scene_id.map(scene_id),
             default_starter_id: candidate
                 .defaults
                 .default_starter_source_id
@@ -2009,13 +2005,24 @@ fn legacy_character_plan(
                         .iter()
                         .find(|starter| &starter.source_id == source_id)
                 })
-                .map(|starter| starter.id),
+                .map(|starter| {
+                    lettuce_types::ConversationStarterId::from_uuid(
+                        scope.uuid(starter.id.as_uuid()),
+                    )
+                }),
             direct_prompt_id: prompt(&candidate.defaults.direct_prompt_source_id),
             group_conversation_prompt_id: prompt(
                 &candidate.defaults.group_conversation_prompt_source_id,
             ),
             group_roleplay_prompt_id: prompt(&candidate.defaults.group_roleplay_prompt_source_id),
-            voice: candidate.defaults.voice.clone(),
+            voice: candidate.defaults.voice.clone().map(|voice| match voice {
+                lettuce_characters::VoicePreference::VoiceProfile(id) => {
+                    lettuce_characters::VoicePreference::VoiceProfile(
+                        lettuce_types::VoiceProfileId::from_uuid(scope.uuid(id.as_uuid())),
+                    )
+                }
+                unresolved => unresolved,
+            }),
             voice_autoplay: candidate.defaults.voice_autoplay,
             companion_soul,
         },
@@ -2051,7 +2058,7 @@ fn legacy_character_plan(
         if scene.background.is_some() {
             assets.push(SceneAssetLink {
                 id: SceneAssetLinkId::from_uuid(uuid::Uuid::new_v5(
-                    &scene.id.as_uuid(),
+                    &scene_id(scene.id).as_uuid(),
                     b"legacy-background",
                 )),
                 asset_id: asset(LegacyMediaUse::CharacterSceneBackground {
@@ -2063,21 +2070,21 @@ fn legacy_character_plan(
             });
         }
         scenes.push(Scene {
-            id: scene.id,
-            owner: SceneOwner::Character(character_id),
+            id: scene_id(scene.id),
+            owner: SceneOwner::Character(destination_character),
             status: LifecycleStatus::Active,
             ordinal: scene.ordinal,
             content: scene.content.clone(),
             direction: scene.direction.clone(),
-            selected_variant_id: scene.selected_variant_id,
+            selected_variant_id: scene.selected_variant_id.map(variant_id),
             assets,
             revision: Revision::INITIAL,
             created_at: scene.created_at,
             updated_at: scene.created_at,
         });
         variants.extend(scene.variants.iter().map(|variant| SceneVariant {
-            id: variant.id,
-            scene_id: scene.id,
+            id: variant_id(variant.id),
+            scene_id: scene_id(scene.id),
             ordinal: variant.ordinal,
             content: variant.content.clone(),
             direction: variant.direction.clone(),
@@ -2091,12 +2098,23 @@ fn legacy_character_plan(
         .iter()
         .map(|starter| {
             Ok(ConversationStarter {
-                id: starter.id,
-                character_id,
+                id: lettuce_types::ConversationStarterId::from_uuid(
+                    scope.uuid(starter.id.as_uuid()),
+                ),
+                character_id: destination_character,
                 name: starter.name.clone(),
                 ordinal: starter.ordinal,
-                messages: starter.messages.clone(),
-                scene_id: starter.scene_id,
+                messages: starter
+                    .messages
+                    .iter()
+                    .map(|message| lettuce_characters::StarterMessage {
+                        id: lettuce_types::StarterMessageId::from_uuid(
+                            scope.uuid(message.id.as_uuid()),
+                        ),
+                        ..message.clone()
+                    })
+                    .collect(),
+                scene_id: starter.scene_id.map(scene_id),
                 prompt_id: prompt(&starter.prompt_source_id),
                 lorebooks: match &starter.lorebook_ids {
                     None => Selection::Inherit,
@@ -2234,8 +2252,12 @@ fn legacy_group_plan(
     candidate: &lettuce_transfer::LegacyBackupGroupCandidate,
     assignments: &AssignmentMaps,
     media_by_use: &BTreeMap<LegacyMediaUse, AssetId>,
+    scope: lettuce_transfer::LegacyIdScope,
 ) -> Result<lettuce_characters::CreateGroupPlan, LegacyImportRepositoryError> {
     let group_id = candidate.id;
+    let destination_group = lettuce_types::GroupId::from_uuid(scope.uuid(group_id.as_uuid()));
+    let scene_id =
+        |id: lettuce_types::SceneId| lettuce_types::SceneId::from_uuid(scope.uuid(id.as_uuid()));
     let asset = |media_use: LegacyMediaUse| {
         media_by_use
             .get(&media_use)
@@ -2263,6 +2285,9 @@ fn legacy_group_plan(
         .iter()
         .map(|member| {
             Ok(lettuce_characters::GroupMember {
+                character_id: lettuce_types::CharacterId::from_uuid(
+                    scope.uuid(member.character_id.as_uuid()),
+                ),
                 model_profile_override: member
                     .model_profile_override
                     .map(|legacy_id| {
@@ -2285,7 +2310,7 @@ fn legacy_group_plan(
             if scene.background.is_some() {
                 assets.push(SceneAssetLink {
                     id: SceneAssetLinkId::from_uuid(uuid::Uuid::new_v5(
-                        &scene.id.as_uuid(),
+                        &scene_id(scene.id).as_uuid(),
                         b"legacy-background",
                     )),
                     asset_id: asset(LegacyMediaUse::GroupSceneBackground {
@@ -2296,15 +2321,18 @@ fn legacy_group_plan(
                     ordinal: 0,
                 });
             }
+            let variant_id = |id: lettuce_types::SceneVariantId| {
+                lettuce_types::SceneVariantId::from_uuid(scope.uuid(id.as_uuid()))
+            };
             Ok(lettuce_characters::GroupStartingScene {
                 scene: Scene {
-                    id: scene.id,
-                    owner: SceneOwner::Group(group_id),
+                    id: scene_id(scene.id),
+                    owner: SceneOwner::Group(destination_group),
                     status: LifecycleStatus::Active,
                     ordinal: 0,
                     content: scene.content.clone(),
                     direction: scene.direction.clone(),
-                    selected_variant_id: scene.selected_variant_id,
+                    selected_variant_id: scene.selected_variant_id.map(variant_id),
                     assets,
                     revision: Revision::INITIAL,
                     created_at: scene.created_at,
@@ -2314,8 +2342,8 @@ fn legacy_group_plan(
                     .variants
                     .iter()
                     .map(|variant| SceneVariant {
-                        id: variant.id,
-                        scene_id: scene.id,
+                        id: variant_id(variant.id),
+                        scene_id: scene_id(scene.id),
                         ordinal: variant.ordinal,
                         content: variant.content.clone(),
                         direction: variant.direction.clone(),
@@ -2329,7 +2357,7 @@ fn legacy_group_plan(
         .transpose()?;
     Ok(lettuce_characters::CreateGroupPlan {
         group: lettuce_characters::GroupProfile {
-            id: group_id,
+            id: destination_group,
             status: candidate.status,
             name: candidate.name.clone(),
             chat_mode: candidate.chat_mode,
@@ -2341,7 +2369,10 @@ fn legacy_group_plan(
             group_roleplay_prompt_id: prompt(&candidate.group_roleplay_prompt_source_id),
             presentation: candidate.chat_appearance.clone(),
             members,
-            starting_scene_id: candidate.starting_scene.as_ref().map(|scene| scene.id),
+            starting_scene_id: candidate
+                .starting_scene
+                .as_ref()
+                .map(|scene| scene_id(scene.id)),
             background_asset_id: candidate
                 .background
                 .as_ref()
