@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fmt,
     path::{Path, PathBuf},
 };
@@ -6,10 +7,11 @@ use std::{
 use lettuce_database::Database;
 use lettuce_media::LocalMediaBlobStore;
 use lettuce_platform::{FilesystemAuthority, ManagedRoot, PlatformError};
-use lettuce_settings::SecretStore;
+use lettuce_settings::{SecretPurpose, SecretRef, SecretStore};
 use lettuce_transfer::{
     BackupRestoreAdmission, BackupRestoreAdmissionRepository, BackupRestoreAdmissionRequest,
-    BackupRestoreWorkspace, LegacyImportRunStatus,
+    BackupRestoreWorkspace, LegacyImportAssignment, LegacyImportRunStatus,
+    LegacyPendingProviderSecret,
 };
 use lettuce_types::{LegacyImportRunId, OperationId, TimestampMillis};
 
@@ -66,9 +68,9 @@ fn stage<E: fmt::Debug>(name: &'static str) -> impl FnOnce(E) -> LegacyRestoreEr
 /// Replaces the app data with a legacy source (user decision 2026-09-14: a
 /// legacy backup replaces, never imports alongside). The whole legacy import
 /// chain runs into a new database file; only a completed run switches the
-/// active database, and the previous file is never deleted. Secrets the import
-/// writes use the deterministic legacy references, which the previous database
-/// may share, so a failed attempt leaves them in place.
+/// active database, and the previous file is never deleted. Provider secrets
+/// admitted by a failed attempt are deleted again; audio secret references are
+/// scoped by the legacy source and may be shared with the previous database.
 pub struct LegacyRestoreCoordinator<'a, S: ?Sized> {
     location: &'a AppDatabaseLocation,
     authority: &'a FilesystemAuthority,
@@ -112,9 +114,10 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .map_err(LegacyRestoreError::Inventory)?;
         let compatibility = lettuce_transfer::plan_legacy_backup_compatibility(inventory)
             .map_err(LegacyRestoreError::Compatibility)?;
-        let staging = BackupRestoreWorkspace::open(self.workspace_root)
-            .and_then(|workspace| workspace.stage_legacy(&compatibility))
-            .map_err(LegacyRestoreError::Workspace)?;
+        let staging =
+            BackupRestoreWorkspace::open(self.workspace_root.join(restore_id.to_string()))
+                .and_then(|workspace| workspace.stage_legacy(&compatibility))
+                .map_err(LegacyRestoreError::Workspace)?;
         let admission = lettuce_transfer::legacy_backup_restore_admission(
             restore_id,
             &compatibility,
@@ -187,32 +190,47 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         let backend =
             AppBackend::open(&database_path, restored_at).map_err(LegacyRestoreError::Open)?;
         let run_id = LegacyImportRunId::new();
-        self.import(
-            &backend,
-            &database_path,
-            import,
-            storage_root,
-            run_id,
-            restored_at,
-        )
-        .await?;
-        if previous_database_path
-            .try_exists()
-            .map_err(|_| LegacyRestoreError::TargetDirectory)?
-        {
-            backend
-                .database()
-                .carry_device_local_state_from(&previous_database_path)
-                .map_err(LegacyRestoreError::Database)?;
+        let mut written = Vec::new();
+        let outcome = async {
+            self.import(
+                &backend,
+                &database_path,
+                import,
+                storage_root,
+                run_id,
+                restored_at,
+                &mut written,
+            )
+            .await?;
+            if previous_database_path
+                .try_exists()
+                .map_err(|_| LegacyRestoreError::TargetDirectory)?
+            {
+                backend
+                    .database()
+                    .carry_device_local_state_from(&previous_database_path)
+                    .map_err(LegacyRestoreError::Database)?;
+            }
+            let admission = admission
+                .map(|request| backend.database().admit_backup_restore(request))
+                .transpose()
+                .map_err(LegacyRestoreError::Admission)?;
+            self.location
+                .activate(&name)
+                .map_err(LegacyRestoreError::Location)?;
+            Ok(admission)
         }
-        let admission = admission
-            .map(|request| backend.database().admit_backup_restore(request))
-            .transpose()
-            .map_err(LegacyRestoreError::Admission)?;
+        .await;
         drop(backend);
-        self.location
-            .activate(&name)
-            .map_err(LegacyRestoreError::Location)?;
+        let admission = match outcome {
+            Ok(admission) => admission,
+            Err(error) => {
+                for (reference, purpose) in written {
+                    let _ = self.secrets.delete(&reference, &purpose, None).await;
+                }
+                return Err(error);
+            }
+        };
         Ok(LegacyRestoreReceipt {
             database_path,
             previous_database_path,
@@ -221,6 +239,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn import(
         &self,
         backend: &AppBackend,
@@ -229,6 +248,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         storage_root: Option<&Path>,
         run_id: LegacyImportRunId,
         at: TimestampMillis,
+        written: &mut Vec<(SecretRef, SecretPurpose)>,
     ) -> Result<(), LegacyRestoreError> {
         let source = &import.compatibility;
         let plan = &import.plan;
@@ -236,6 +256,43 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .legacy_import_admission()
             .admit(run_id, &source.database_inventory(), plan, at)
             .map_err(stage("admission"))?;
+        let owners = admission
+            .assignments
+            .iter()
+            .filter_map(|assignment| match assignment {
+                LegacyImportAssignment::ProviderAccount {
+                    legacy_id,
+                    secret_owner_id,
+                    ..
+                } => Some((*legacy_id, *secret_owner_id)),
+                _ => None,
+            })
+            .collect::<BTreeMap<_, _>>();
+        written.extend(
+            admission
+                .assignments
+                .iter()
+                .filter_map(|assignment| match assignment {
+                    LegacyImportAssignment::ProviderSecret {
+                        source,
+                        destination_ref,
+                    } => owners.get(&source.provider_account_id).map(|owner| {
+                        let purpose = match &source.secret {
+                            LegacyPendingProviderSecret::ApiKey => {
+                                SecretPurpose::ProviderApiKey { owner: *owner }
+                            }
+                            LegacyPendingProviderSecret::Header { name } => {
+                                SecretPurpose::ProviderSecretHeader {
+                                    owner: *owner,
+                                    name: name.clone(),
+                                }
+                            }
+                        };
+                        (*destination_ref, purpose)
+                    }),
+                    _ => None,
+                }),
+        );
         let media_store = LocalMediaBlobStore::new(
             self.authority.managed_files(),
             self.authority

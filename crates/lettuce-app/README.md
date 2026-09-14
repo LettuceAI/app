@@ -1497,9 +1497,12 @@ authored graph, ASR learning, provider models and prompts, characters, groups,
 audio, settings, direct and group conversations, usage records and creation
 helper sessions. Only a run that completes carries device-local state from the
 previous database, records the backup admission and switches the active database
-pointer; the previous file is never deleted. Legacy secret references are
-deterministic and may be shared with the previous database, so a failed attempt
-does not delete them.
+pointer; the previous file is never deleted. Each restore stages into its own
+`<workspace>/<restore_id>` directory, so a later restore of a different backup
+never conflicts with an earlier receipt (the version-2 coordinator does the
+same). Provider secrets get fresh references at admission, so a failed attempt
+deletes the ones it admitted; audio secret references are scoped by the legacy
+source and may be shared with the previous database, so they are left alone.
 
 The same export includes the conversation-owned generation runtime: turns,
 attempts, checkpoint timestamps, speaker and initial inference dispatches,
