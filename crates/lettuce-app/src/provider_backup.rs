@@ -1794,10 +1794,18 @@ mod tests {
         let restore_plan =
             lettuce_transfer::decode_provider_backup_restore_plan(&envelope, "backup password")
                 .expect("restore plan");
+        assert!(
+            !restore_plan
+                .graph
+                .conversation_history
+                .conversations
+                .is_empty()
+        );
         let restored = Database::open_in_memory().expect("restore target");
         lettuce_transfer::ProviderBackupRestoreWriter::restore_provider_backup_graph(
             &restored,
             &restore_plan.graph,
+            &restore_plan.artifacts,
         )
         .expect("restore graph");
         let round_trip =
@@ -1813,9 +1821,38 @@ mod tests {
         assert_eq!(round_trip.authored, restore_plan.graph.authored);
         assert_eq!(round_trip.asr_learning, restore_plan.graph.asr_learning);
         assert_eq!(
+            round_trip.conversation_history,
+            restore_plan.graph.conversation_history
+        );
+        assert_eq!(
+            round_trip
+                .conversation_runtime
+                .conversations
+                .iter()
+                .map(|runtime| runtime.turns.iter().map(|turn| &turn.turn).collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+            restore_plan
+                .graph
+                .conversation_runtime
+                .conversations
+                .iter()
+                .map(|runtime| runtime.turns.iter().map(|turn| &turn.turn).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            round_trip.conversation_outbox,
+            restore_plan.graph.conversation_outbox
+        );
+        assert_eq!(round_trip.memory.spaces, restore_plan.graph.memory.spaces);
+        assert_eq!(
+            round_trip.memory_projections,
+            restore_plan.graph.memory_projections
+        );
+        assert_eq!(
             lettuce_transfer::ProviderBackupRestoreWriter::restore_provider_backup_graph(
                 &restored,
                 &restore_plan.graph,
+                &restore_plan.artifacts,
             ),
             Err(lettuce_transfer::ProviderBackupRestoreWriteError::TargetNotEmpty)
         );

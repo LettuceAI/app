@@ -104,8 +104,18 @@ exported ids, revisions, timestamps and states, sets the persona default and
 global settings and selections to the exported rows, and inserts ASR learning
 records. Reading the restored database back yields the same sections. Companion
 characters still receive a fresh Soul state from their authored config because
-the export carries no Soul rows yet; conversations, runtime, usage, memory,
-companion state, secrets, media bytes and the cutover are later restore slices.
+the export carries no Soul rows yet. Protected snapshot and replay artifacts are
+written from their verified backup bytes, and every conversation goes through
+`conversation_history_writer` in exact mode: exported operations and outbox
+events instead of a generated create record, provider replay references,
+selected speaker, lorebook and memory attribution, failed or interrupted turns
+without candidates, companion memory pools shared by several conversations,
+usage events and cost bases. Work that was in progress when the backup was taken
+is restored as interrupted (user decision 2026-09-14): unfinished attempts are
+interrupted with a derived usage event id and turns without attempts are left
+out. Generation checkpoints, tool executions, speaker and initial dispatches,
+jobs, retrieval accesses, dynamic memory runs, companion state and effects,
+secrets, media bytes and the cutover are later restore slices.
 
 The legacy migration boundary can open an old `app.db` read-only, require the
 actual version-92 schema roots, and return a bounded typed import inventory.

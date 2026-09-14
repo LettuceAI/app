@@ -136,6 +136,7 @@ pub trait ProviderBackupRestoreWriter: Send + Sync {
     fn restore_provider_backup_graph(
         &self,
         graph: &ProviderBackupGraph,
+        artifacts: &[BackupConversationArtifact],
     ) -> Result<(), ProviderBackupRestoreWriteError>;
 }
 

@@ -13,8 +13,9 @@ use lettuce_conversations::{
     ConversationOutboxEvent, ConversationOutboxRecord, ConversationRepositoryError,
     GenerationAttempt, GenerationAttemptStatus, GenerationInput, GenerationTarget, GenerationTurn,
     GenerationTurnStatus, InitialMessageOrigin, MessageCandidate, MessagePart, MessageRenderSource,
-    MessageRevision, OperationKind, OperationResultRef, OperationToken, ProtectedSnapshotRef,
-    SnapshotArtifactDraft, SnapshotSelection, ValidationError,
+    MessageRevision, OperationKind, OperationRecord, OperationResultRef, OperationToken,
+    ProtectedSnapshotRef, ReplayArtifactRef, ReplayRetention, SnapshotArtifactDraft,
+    SnapshotSelection, ValidationError,
 };
 use lettuce_transfer::{
     BackupConversation, BackupMemoryProjection, BackupMemoryProjectionState, BackupMemorySpace,
@@ -37,10 +38,20 @@ pub(crate) struct HistoricalConversation<'a> {
     pub turns: &'a [GenerationTurn],
     pub usage: &'a [UsageEvent],
     pub snapshots: Vec<SnapshotArtifactDraft>,
-    pub operation: OperationToken,
+    pub creation: HistoricalCreation<'a>,
     pub memory: Option<&'a BackupMemorySpace>,
     pub memory_projections: &'a [BackupMemoryProjection],
     pub companion: Option<&'a lettuce_transfer::LegacyCompanionConversation>,
+}
+
+/// A legacy import creates the conversation's create operation; a backup
+/// restore writes the exported operations and outbox events.
+pub(crate) enum HistoricalCreation<'a> {
+    Generated(OperationToken),
+    Exact {
+        operations: &'a [OperationRecord],
+        events: &'a [ConversationOutboxRecord],
+    },
 }
 
 fn invalid(field: &'static str) -> ConversationRepositoryError {
@@ -92,27 +103,23 @@ pub(crate) fn insert_historical_conversation(
                 if space.conversation_id == conversation_id
                     || space.shared_conversation_ids.contains(&conversation_id) =>
             {
-                let exists = transaction
-                    .query_row(
-                        "SELECT EXISTS(SELECT 1 FROM memory_spaces WHERE id = ?1)",
-                        [space.snapshot.id.to_string()],
-                        |row| row.get::<_, bool>(0),
-                    )
-                    .map_err(slice::db)?;
-                if exists {
-                    transaction
-                    .execute(
-                        "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
-                        params![conversation_id.to_string(), space.snapshot.id.to_string()],
-                    )
-                    .map_err(kernel::map_constraint)?;
-                } else {
+                if space.shared_conversation_ids.is_empty() {
                     crate::memory_adapter::insert_space_in(
                         transaction,
                         conversation_id,
                         &space.snapshot,
                     )?;
                     memory_created = true;
+                } else {
+                    let ConversationKind::Direct(details) = &conversation.kind else {
+                        return Err(invalid("history.memory_pool"));
+                    };
+                    memory_created = crate::memory_adapter::insert_pool_space_in(
+                        transaction,
+                        conversation_id,
+                        details.character.source_id,
+                        &space.snapshot,
+                    )?;
                 }
             }
             Some(_) => return Err(invalid("history.memory_space")),
@@ -129,14 +136,33 @@ pub(crate) fn insert_historical_conversation(
         .iter()
         .map(|branch| (branch.id, branch))
         .collect::<BTreeMap<_, _>>();
+    let history_messages = input
+        .history
+        .messages
+        .iter()
+        .map(|message| message.message.id)
+        .collect::<BTreeSet<_>>();
     let mut turns_by_message = BTreeMap::<MessageId, Vec<&GenerationTurn>>::new();
+    let mut turns_by_input = BTreeMap::<MessageId, Vec<&GenerationTurn>>::new();
     for turn in input.turns {
         validate_turn(turn, conversation_id, is_group)?;
         let target = match turn.target {
             GenerationTarget::NewAssistant { message_id, .. }
             | GenerationTarget::ExistingCandidate { message_id, .. } => message_id,
         };
-        turns_by_message.entry(target).or_default().push(turn);
+        if history_messages.contains(&target) {
+            turns_by_message.entry(target).or_default().push(turn);
+        } else {
+            if !turn.candidate_ids.is_empty() {
+                return Err(invalid("history.turn_target"));
+            }
+            let source = match turn.input {
+                GenerationInput::UserMessage { message_id }
+                | GenerationInput::ExistingCandidate { message_id, .. } => message_id,
+                GenerationInput::ExistingHead { head_message_id } => head_message_id,
+            };
+            turns_by_input.entry(source).or_default().push(turn);
+        }
     }
     let usage = input
         .usage
@@ -167,8 +193,15 @@ pub(crate) fn insert_historical_conversation(
             branch.id,
             Some(backup.message.id),
         )?;
+        for turn in turns_by_input
+            .remove(&backup.message.id)
+            .unwrap_or_default()
+        {
+            insert_turn(transaction, turn)?;
+            settle_turn(transaction, None, turn, &usage)?;
+        }
     }
-    if !turns_by_message.is_empty() {
+    if !turns_by_message.is_empty() || !turns_by_input.is_empty() {
         return Err(invalid("history.turn_target"));
     }
     for branch in &aggregate.branches {
@@ -218,7 +251,14 @@ pub(crate) fn insert_historical_conversation(
         )
         .map_err(crate::state_adapter::conversation_state_error)?;
     }
-    insert_creation_record(transaction, aggregate, &messages, &input.operation)?;
+    match input.creation {
+        HistoricalCreation::Generated(token) => {
+            insert_creation_record(transaction, aggregate, &messages, &token)?;
+        }
+        HistoricalCreation::Exact { operations, events } => {
+            insert_exact_creation(transaction, conversation_id, operations, events)?;
+        }
+    }
     let stored = slice::hydrate_conversation(transaction, conversation_id, || {})?;
     let mut expected = aggregate.clone();
     expected
@@ -301,11 +341,8 @@ fn validate_turn(
             GenerationTurnStatus::Succeeded
                 | GenerationTurnStatus::Failed
                 | GenerationTurnStatus::Cancelled
+                | GenerationTurnStatus::Interrupted
         )
-        || turn.selected_speaker.is_some()
-        || !turn.lorebooks.is_empty()
-        || turn.memory.is_some()
-        || turn.candidate_ids.is_empty()
     {
         return Err(invalid("history.turn"));
     }
@@ -432,14 +469,6 @@ fn insert_message_with_turns(
             .candidates
             .iter()
             .any(|candidate| !attempts.contains(&(candidate.turn_id, candidate.attempt_id)))
-        || backup
-            .revisions
-            .iter()
-            .any(|revision| revision.provider_replay.is_some())
-        || backup
-            .candidates
-            .iter()
-            .any(|candidate| candidate.provider_replay.is_some())
     {
         return Err(invalid("history.message_candidates"));
     }
@@ -460,7 +489,7 @@ fn insert_message_with_turns(
         if index > 0 {
             insert_turn(transaction, turn)?;
         }
-        settle_turn(transaction, backup, turn, usage)?;
+        settle_turn(transaction, Some(backup), turn, usage)?;
     }
     Ok(())
 }
@@ -510,7 +539,7 @@ fn insert_revision(
     let message = &backup.message;
     transaction
         .execute(
-            "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, source_turn_id, provider_replay_artifact_id, provider_replay_retention) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL)",
+            "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, source_turn_id, provider_replay_artifact_id, provider_replay_retention) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 message.conversation_id.to_string(),
                 revision.id.to_string(),
@@ -520,6 +549,8 @@ fn insert_revision(
                 slice::encode(&revision.parts)?,
                 revision.authored_at.get(),
                 revision.source_turn_id.map(|id| id.to_string()),
+                replay_id(revision.provider_replay.as_ref()),
+                replay_retention(revision.provider_replay.as_ref()),
             ],
         )
         .map_err(kernel::map_constraint)?;
@@ -539,6 +570,17 @@ fn insert_revision(
             .map_err(kernel::map_constraint)?;
     }
     Ok(())
+}
+
+fn replay_id(replay: Option<&ReplayArtifactRef>) -> Option<String> {
+    replay.map(|replay| replay.artifact_id.to_string())
+}
+
+fn replay_retention(replay: Option<&ReplayArtifactRef>) -> Option<&'static str> {
+    replay.map(|replay| match replay.retention {
+        ReplayRetention::Conversation => "conversation",
+        ReplayRetention::Ephemeral => "ephemeral",
+    })
 }
 
 fn media_parts(
@@ -683,7 +725,7 @@ fn insert_turn(
 
 fn settle_turn(
     transaction: &Transaction<'_>,
-    backup: &BackupMessage,
+    backup: Option<&BackupMessage>,
     turn: &GenerationTurn,
     usage: &BTreeMap<GenerationAttemptId, &UsageEvent>,
 ) -> Result<(), ConversationRepositoryError> {
@@ -691,24 +733,33 @@ fn settle_turn(
     attempts.sort_by_key(|attempt| attempt.ordinal);
     for attempt in attempts {
         insert_attempt(transaction, turn, attempt)?;
-        for candidate in backup
-            .candidates
-            .iter()
-            .filter(|candidate| candidate.attempt_id == attempt.id)
-        {
-            if candidate.turn_id != turn.id || !attempt.candidate_ids.contains(&candidate.id) {
-                return Err(invalid("history.candidate_attempt"));
+        if let Some(backup) = backup {
+            for candidate in backup
+                .candidates
+                .iter()
+                .filter(|candidate| candidate.attempt_id == attempt.id)
+            {
+                if candidate.turn_id != turn.id || !attempt.candidate_ids.contains(&candidate.id) {
+                    return Err(invalid("history.candidate_attempt"));
+                }
+                insert_candidate(transaction, backup, candidate)?;
             }
-            insert_candidate(transaction, backup, candidate)?;
         }
         settle_attempt(transaction, turn, attempt, usage.get(&attempt.id).copied())?;
     }
-    let path: &[&str] = match turn.status {
-        GenerationTurnStatus::Succeeded => {
+    let path: &[&str] = match (turn.status, turn.selected_speaker.is_some()) {
+        (GenerationTurnStatus::Succeeded, false) => {
             &["preparing", "context_prepared", "running", "finalizing"]
         }
-        GenerationTurnStatus::Failed => &["preparing"],
-        GenerationTurnStatus::Cancelled => &["cancellation_requested"],
+        (GenerationTurnStatus::Succeeded, true) => &[
+            "preparing",
+            "selecting_speaker",
+            "context_prepared",
+            "running",
+            "finalizing",
+        ],
+        (GenerationTurnStatus::Failed | GenerationTurnStatus::Interrupted, _) => &["preparing"],
+        (GenerationTurnStatus::Cancelled, _) => &["cancellation_requested"],
         _ => return Err(invalid("history.turn_status")),
     };
     for status in path {
@@ -723,6 +774,21 @@ fn settle_turn(
             )
             .map_err(kernel::map_constraint)?;
     }
+    for (ordinal, lorebook) in turn.lorebooks.iter().enumerate() {
+        transaction
+            .execute(
+                "INSERT INTO turn_lorebooks (conversation_id, turn_id, lorebook_id, revision, ordinal, activated_entry_ids_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    turn.conversation_id.to_string(),
+                    turn.id.to_string(),
+                    lorebook.lorebook_id.to_string(),
+                    slice::sql_revision(lorebook.revision)?,
+                    i64::try_from(ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
+                    slice::encode(&lorebook.activated_entry_ids)?,
+                ],
+            )
+            .map_err(kernel::map_constraint)?;
+    }
     let prompt_entry_ids = turn
         .prompt
         .as_ref()
@@ -730,7 +796,7 @@ fn settle_turn(
         .transpose()?;
     transaction
         .execute(
-            "UPDATE conversation_turns SET status = ?1, selected_candidate_id = ?2, failure = ?3, resolved_model_json = ?4, prompt_document_id = ?5, prompt_revision = ?6, prompt_entry_ids_json = ?7, revision = ?8, updated_at = ?9 WHERE conversation_id = ?10 AND id = ?11",
+            "UPDATE conversation_turns SET status = ?1, selected_candidate_id = ?2, failure = ?3, resolved_model_json = ?4, prompt_document_id = ?5, prompt_revision = ?6, prompt_entry_ids_json = ?7, revision = ?8, updated_at = ?9, selected_speaker_participant_id = ?12, selected_speaker_details_json = ?13, memory_revision_id = ?14 WHERE conversation_id = ?10 AND id = ?11",
             params![
                 kernel::generation_status_name(turn.status),
                 turn.selected_candidate_id.map(|id| id.to_string()),
@@ -746,6 +812,14 @@ fn settle_turn(
                 turn.updated_at.get(),
                 turn.conversation_id.to_string(),
                 turn.id.to_string(),
+                turn.selected_speaker
+                    .as_ref()
+                    .map(|speaker| speaker.participant_id.to_string()),
+                turn.selected_speaker
+                    .as_ref()
+                    .map(crate::conversation_mutations::encode_speaker_details)
+                    .transpose()?,
+                turn.memory.as_ref().map(|memory| memory.revision_id.to_string()),
             ],
         )
         .map_err(kernel::map_constraint)?;
@@ -846,7 +920,7 @@ fn insert_candidate(
     let message = &backup.message;
     transaction
         .execute(
-            "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, NULL)",
+            "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 message.conversation_id.to_string(),
                 candidate.id.to_string(),
@@ -859,6 +933,8 @@ fn insert_candidate(
                 slice::encode(&candidate.parts)?,
                 slice::encode(&candidate.model)?,
                 candidate.created_at.get(),
+                replay_id(candidate.provider_replay.as_ref()),
+                replay_retention(candidate.provider_replay.as_ref()),
             ],
         )
         .map_err(kernel::map_constraint)?;
@@ -928,4 +1004,43 @@ fn insert_creation_record(
         },
     };
     kernel::insert_outbox(transaction, &outbox)
+}
+
+fn insert_exact_creation(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    operations: &[OperationRecord],
+    events: &[ConversationOutboxRecord],
+) -> Result<(), ConversationRepositoryError> {
+    for operation in operations {
+        if operation.conversation_id != conversation_id {
+            return Err(invalid("history.operation"));
+        }
+        let (result_kind, result_id) = kernel::result_projection(&operation.result);
+        transaction
+            .execute(
+                "INSERT INTO conversation_operations (id, conversation_id, kind, operation_key, request_digest, result_kind, result_id, result_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    operation.id.to_string(),
+                    conversation_id.to_string(),
+                    kernel::operation_kind_name(operation.kind),
+                    operation.operation.key.as_str(),
+                    operation.operation.request_digest.as_str(),
+                    result_kind,
+                    result_id,
+                    slice::encode(&operation.result)?,
+                    operation.created_at.get(),
+                ],
+            )
+            .map_err(kernel::map_constraint)?;
+    }
+    let mut events = events.iter().collect::<Vec<_>>();
+    events.sort_by_key(|event| event.sequence);
+    for event in events {
+        if event.conversation_id != conversation_id {
+            return Err(invalid("history.outbox"));
+        }
+        kernel::insert_outbox(transaction, event)?;
+    }
+    Ok(())
 }

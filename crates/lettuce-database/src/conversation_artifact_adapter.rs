@@ -132,6 +132,66 @@ fn retention_from_name(value: &str) -> Result<ArtifactRetention, ArtifactError> 
     }
 }
 
+/// Writes a backed-up protected artifact row with its verified bytes.
+pub(crate) fn insert_trusted_artifact_in(
+    transaction: &Transaction<'_>,
+    descriptor: &lettuce_conversations::TrustedArtifactDescriptor,
+    bytes: &[u8],
+    created_at: lettuce_types::TimestampMillis,
+) -> Result<(), ArtifactError> {
+    match descriptor {
+        lettuce_conversations::TrustedArtifactDescriptor::Snapshot(reference) => {
+            verify_payload(bytes, &reference.digest, reference.byte_size)?;
+            let (source_kind, source_id) = source_parts(reference.source);
+            transaction
+                .execute(
+                    "INSERT INTO conversation_snapshot_artifacts (artifact_id, source_kind, source_id, source_revision, digest, schema_version, byte_size, codec, retention, bytes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'conversation', ?9, ?10)",
+                    params![
+                        reference.artifact_id.to_string(),
+                        source_kind,
+                        source_id,
+                        sql_u64(reference.source_revision.get())?,
+                        reference.digest.as_str(),
+                        i64::from(reference.schema_version),
+                        sql_u64(reference.byte_size)?,
+                        codec_name(ArtifactCodec::Json),
+                        bytes,
+                        created_at.get()
+                    ],
+                )
+                .map_err(db_error)?;
+        }
+        lettuce_conversations::TrustedArtifactDescriptor::Replay(reference) => {
+            verify_payload(bytes, &reference.digest, reference.byte_size)?;
+            let codec = match reference.codec {
+                ReplayCodec::Json => ArtifactCodec::Json,
+                ReplayCodec::Cbor => ArtifactCodec::Cbor,
+                ReplayCodec::Binary => ArtifactCodec::Binary,
+            };
+            let retention = match reference.retention {
+                ReplayRetention::Conversation => ArtifactRetention::Conversation,
+                ReplayRetention::Ephemeral => ArtifactRetention::Ephemeral,
+            };
+            transaction
+                .execute(
+                    "INSERT INTO conversation_replay_artifacts (artifact_id, digest, schema_version, byte_size, codec, retention, bytes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![
+                        reference.artifact_id.to_string(),
+                        reference.digest.as_str(),
+                        i64::from(reference.schema_version),
+                        sql_u64(reference.byte_size)?,
+                        codec_name(codec),
+                        retention_name(retention),
+                        bytes,
+                        created_at.get()
+                    ],
+                )
+                .map_err(db_error)?;
+        }
+    }
+    Ok(())
+}
+
 fn sql_u64(value: u64) -> Result<i64, ArtifactError> {
     i64::try_from(value).map_err(|_| ArtifactError::Storage)
 }

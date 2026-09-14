@@ -2439,7 +2439,9 @@ fn materialize_conversations(
                 turns: &record.turns,
                 usage: &record.usage,
                 snapshots: record.snapshots,
-                operation,
+                creation: crate::conversation_history_writer::HistoricalCreation::Generated(
+                    operation,
+                ),
                 memory: record.memory.as_ref(),
                 memory_projections: &record.memory_projections,
                 companion: record.companion.as_ref(),

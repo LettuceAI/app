@@ -1,8 +1,12 @@
+use std::collections::BTreeMap;
+
 use lettuce_characters::{CreateCharacterPlan, CreateGroupPlan};
+use lettuce_conversations::{GenerationAttemptStatus, GenerationTurn, GenerationTurnStatus};
 use lettuce_transfer::{
-    ProviderBackupGraph, ProviderBackupRestoreWriteError, ProviderBackupRestoreWriter,
+    BackupConversationArtifact, ProviderBackupGraph, ProviderBackupRestoreWriteError,
+    ProviderBackupRestoreWriter,
 };
-use lettuce_types::Revision;
+use lettuce_types::{Revision, UsageEventId};
 use rusqlite::{TransactionBehavior, params};
 
 use crate::Database;
@@ -22,8 +26,58 @@ fn sql_revision(revision: Revision) -> Result<i64, Error> {
     i64::try_from(revision.get()).map_err(invalid)
 }
 
+/// Work that was in progress when the backup was taken is restored as
+/// interrupted (user decision 2026-09-14); a turn that never started an attempt
+/// did no work and is left out.
+fn settled_turn(turn: &GenerationTurn) -> Option<GenerationTurn> {
+    let terminal_turn = matches!(
+        turn.status,
+        GenerationTurnStatus::Succeeded
+            | GenerationTurnStatus::Failed
+            | GenerationTurnStatus::Cancelled
+            | GenerationTurnStatus::Interrupted
+    );
+    if !terminal_turn && turn.attempts.is_empty() {
+        return None;
+    }
+    let mut turn = turn.clone();
+    let updated_at = turn.updated_at;
+    for attempt in &mut turn.attempts {
+        if matches!(
+            attempt.status,
+            GenerationAttemptStatus::Succeeded
+                | GenerationAttemptStatus::Failed
+                | GenerationAttemptStatus::Cancelled
+                | GenerationAttemptStatus::Interrupted
+        ) {
+            continue;
+        }
+        let started_at = attempt.started_at.unwrap_or(updated_at);
+        attempt.status = GenerationAttemptStatus::Interrupted;
+        attempt.failure = None;
+        attempt.started_at = Some(started_at);
+        attempt.finished_at = Some(updated_at.max(started_at));
+        attempt.usage_event_id.get_or_insert_with(|| {
+            UsageEventId::from_uuid(uuid::Uuid::new_v5(
+                &attempt.id.as_uuid(),
+                b"restore-interrupted",
+            ))
+        });
+    }
+    if !terminal_turn {
+        turn.status = GenerationTurnStatus::Interrupted;
+        turn.failure = None;
+        turn.selected_candidate_id = None;
+    }
+    Some(turn)
+}
+
 impl ProviderBackupRestoreWriter for Database {
-    fn restore_provider_backup_graph(&self, graph: &ProviderBackupGraph) -> Result<(), Error> {
+    fn restore_provider_backup_graph(
+        &self,
+        graph: &ProviderBackupGraph,
+        artifacts: &[BackupConversationArtifact],
+    ) -> Result<(), Error> {
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -168,6 +222,113 @@ impl ProviderBackupRestoreWriter for Database {
             },
         )
         .map_err(invalid)?;
+        let restored_at = lettuce_types::TimestampMillis::now().map_err(storage)?;
+        for artifact in artifacts {
+            crate::conversation_artifact_adapter::insert_trusted_artifact_in(
+                &transaction,
+                &artifact.descriptor,
+                &artifact.bytes,
+                restored_at,
+            )
+            .map_err(invalid)?;
+        }
+        let runtime = graph
+            .conversation_runtime
+            .conversations
+            .iter()
+            .map(|runtime| (runtime.conversation_id, runtime))
+            .collect::<BTreeMap<_, _>>();
+        let outbox = graph
+            .conversation_outbox
+            .conversations
+            .iter()
+            .map(|outbox| (outbox.conversation_id, outbox))
+            .collect::<BTreeMap<_, _>>();
+        let mut usage = BTreeMap::<_, Vec<_>>::new();
+        for entry in &graph.conversation_usage.events {
+            usage
+                .entry(entry.event.record.turn_id)
+                .or_default()
+                .push(entry.event.clone());
+        }
+        let mut histories = graph
+            .conversation_history
+            .conversations
+            .iter()
+            .collect::<Vec<_>>();
+        histories.sort_by_key(|history| {
+            (
+                history.aggregate.conversation.created_at,
+                history.aggregate.conversation.id,
+            )
+        });
+        for history in histories {
+            let conversation_id = history.aggregate.conversation.id;
+            let turns = runtime
+                .get(&conversation_id)
+                .map(|runtime| {
+                    runtime
+                        .turns
+                        .iter()
+                        .filter_map(|turn| settled_turn(&turn.turn))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let events = turns
+                .iter()
+                .flat_map(|turn| usage.get(&turn.id).into_iter().flatten().cloned())
+                .collect::<Vec<_>>();
+            let memory = graph.memory.spaces.iter().find(|space| {
+                space.conversation_id == conversation_id
+                    || space.shared_conversation_ids.contains(&conversation_id)
+            });
+            let projections = memory
+                .map(|space| {
+                    graph
+                        .memory_projections
+                        .projections
+                        .iter()
+                        .filter(|projection| projection.space_id == space.snapshot.id)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let (operations, events_out) = outbox
+                .get(&conversation_id)
+                .map_or((&[][..], &[][..]), |outbox| {
+                    (outbox.operations.as_slice(), outbox.events.as_slice())
+                });
+            crate::conversation_history_writer::insert_historical_conversation(
+                &transaction,
+                crate::conversation_history_writer::HistoricalConversation {
+                    history,
+                    turns: &turns,
+                    usage: &events,
+                    snapshots: Vec::new(),
+                    creation: crate::conversation_history_writer::HistoricalCreation::Exact {
+                        operations,
+                        events: events_out,
+                    },
+                    memory,
+                    memory_projections: &projections,
+                    companion: None,
+                },
+            )
+            .map_err(invalid)?;
+        }
+        for entry in &graph.conversation_usage.events {
+            if let Some(basis) = &entry.cost_basis {
+                transaction
+                    .execute(
+                        "INSERT INTO usage_costs (event_id, basis_json) VALUES (?1, ?2)",
+                        params![
+                            entry.event.id.to_string(),
+                            crate::encode_versioned(basis, 1).map_err(invalid)?
+                        ],
+                    )
+                    .map_err(invalid)?;
+            }
+        }
         transaction.commit().map_err(|error| match error {
             rusqlite::Error::SqliteFailure(failure, _)
                 if failure.code == rusqlite::ErrorCode::ConstraintViolation =>

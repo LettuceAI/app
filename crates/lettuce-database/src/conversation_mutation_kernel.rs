@@ -259,7 +259,7 @@ pub(crate) fn bump_conversation(
     slice::rev(revision)
 }
 
-fn result_projection(result: &OperationResultRef) -> (&'static str, String) {
+pub(crate) fn result_projection(result: &OperationResultRef) -> (&'static str, String) {
     match result {
         OperationResultRef::Conversation(id) => ("conversation", id.to_string()),
         OperationResultRef::Turn(id) => ("turn", id.to_string()),

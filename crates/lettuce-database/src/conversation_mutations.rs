@@ -1599,7 +1599,7 @@ struct StoredSpeakerDetails {
     usage_event_id: Option<lettuce_types::UsageEventId>,
 }
 
-fn encode_speaker_details(
+pub(crate) fn encode_speaker_details(
     decision: &SelectedSpeakerDecision,
 ) -> Result<String, ConversationRepositoryError> {
     slice::encode(&StoredSpeakerDetails {
@@ -11787,7 +11787,9 @@ mod tests {
                     turns: &turns,
                     usage: &usage,
                     snapshots: snapshot_drafts(&fixture.database),
-                    operation: token("history-restore", "ef"),
+                    creation: crate::conversation_history_writer::HistoricalCreation::Generated(
+                        token("history-restore", "ef"),
+                    ),
                     memory: None,
                     memory_projections: &[],
                     companion: None,
