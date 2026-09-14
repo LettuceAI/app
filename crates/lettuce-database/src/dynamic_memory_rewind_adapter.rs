@@ -17,6 +17,55 @@ fn storage(_: impl std::fmt::Debug) -> DynamicMemorySuffixRewindError {
     DynamicMemorySuffixRewindError::Storage
 }
 
+/// Writes a backed-up suffix rewind and the effects it invalidated.
+pub(crate) fn insert_restored_rewind_in(
+    transaction: &Transaction<'_>,
+    rewind: &lettuce_transfer::BackupDynamicMemoryRewind,
+) -> Result<(), DynamicMemorySuffixRewindError> {
+    transaction
+        .execute(
+            "INSERT INTO dynamic_memory_suffix_rewinds
+                (operation_id,request_digest,conversation_id,invalid_run_id,space_id,
+                 source_memory_revision,resulting_memory_revision,restored_summary_run_id,
+                 resulting_memory_json,resulting_summary_json,applied_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![
+                rewind.operation_id.to_string(),
+                rewind.request_digest.as_str(),
+                rewind.conversation_id.to_string(),
+                rewind.invalid_run_id.map(|id| id.to_string()),
+                rewind.space_id.to_string(),
+                i64::try_from(rewind.source_memory_revision.get()).map_err(storage)?,
+                i64::try_from(rewind.resulting_memory_revision.get()).map_err(storage)?,
+                rewind.restored_summary_run_id.map(|id| id.to_string()),
+                encode_versioned(&rewind.resulting_memory, JSON_VERSION).map_err(storage)?,
+                rewind
+                    .resulting_summary
+                    .as_ref()
+                    .map(|summary| encode_versioned(summary, JSON_VERSION).map_err(storage))
+                    .transpose()?,
+                rewind.applied_at.get(),
+            ],
+        )
+        .map_err(storage)?;
+    for (ordinal, effect_id) in rewind.invalidated_effect_ids.iter().enumerate() {
+        transaction
+            .execute(
+                "INSERT INTO companion_turn_effect_invalidations
+                    (operation_id,conversation_id,effect_id,ordinal)
+                 VALUES (?1,?2,?3,?4)",
+                params![
+                    rewind.operation_id.to_string(),
+                    rewind.conversation_id.to_string(),
+                    effect_id.to_string(),
+                    i64::try_from(ordinal).map_err(storage)?,
+                ],
+            )
+            .map_err(storage)?;
+    }
+    Ok(())
+}
+
 fn memory_error(error: MemoryRepositoryError) -> DynamicMemorySuffixRewindError {
     match error {
         MemoryRepositoryError::NotFound => DynamicMemorySuffixRewindError::NotFound,

@@ -994,6 +994,137 @@ pub(crate) fn insert_effect_draft_in(
     Ok(())
 }
 
+/// Writes a backed-up companion turn effect: its draft, the effect while
+/// processing with its memory changes and source window, then its settled
+/// status. An effect still processing at backup time stays processing; an
+/// invalidated effect keeps the settled status its source window implies.
+pub(crate) fn insert_restored_effect_in(
+    tx: &Transaction<'_>,
+    effect: &CompanionTurnEffect,
+) -> Result<(), CompanionTurnEffectRepositoryError> {
+    let seed = &effect.seed;
+    let delta = &seed.relationship_delta;
+    tx.execute(
+        "INSERT INTO companion_turn_effect_drafts (
+           conversation_id, turn_id, effect_id, user_message_id, closeness_delta,
+           trust_delta, affection_delta, tension_delta, stability_delta, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            effect.conversation_id.to_string(),
+            effect.turn_id.to_string(),
+            effect.id.to_string(),
+            effect.user_message_id.map(|value| value.to_string()),
+            delta.closeness,
+            delta.trust,
+            delta.affection,
+            delta.tension,
+            delta.stability,
+            effect.created_at.get()
+        ],
+    )
+    .map_err(effect_failure)?;
+    for (kind, vector) in [
+        ("felt", &seed.emotion_delta.felt),
+        ("expressed", &seed.emotion_delta.expressed),
+        ("blocked", &seed.emotion_delta.blocked),
+    ] {
+        insert_effect_vector(tx, effect.conversation_id, effect.turn_id, kind, vector)?;
+    }
+    for (change_kind, values) in [
+        ("added", &seed.signal_changes.added),
+        ("removed", &seed.signal_changes.removed),
+    ] {
+        for (ordinal, value) in values.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO companion_turn_effect_signal_changes
+                   (conversation_id, turn_id, change_kind, ordinal, value)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    effect.conversation_id.to_string(),
+                    effect.turn_id.to_string(),
+                    change_kind,
+                    i64::try_from(ordinal).map_err(effect_corrupt)?,
+                    value
+                ],
+            )
+            .map_err(effect_failure)?;
+        }
+    }
+    tx.execute(
+        "INSERT INTO companion_turn_effects (
+           id, conversation_id, turn_id, user_message_id, assistant_message_id,
+           status, summary, enqueued_at, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, 'processing', NULL, NULL, ?6, ?6)",
+        params![
+            effect.id.to_string(),
+            effect.conversation_id.to_string(),
+            effect.turn_id.to_string(),
+            effect.user_message_id.map(|value| value.to_string()),
+            effect.assistant_message_id.to_string(),
+            effect.created_at.get()
+        ],
+    )
+    .map_err(effect_failure)?;
+    for (kind, values) in [
+        ("added", &effect.memory_changes.added),
+        ("updated", &effect.memory_changes.updated),
+        ("superseded", &effect.memory_changes.superseded),
+    ] {
+        for (ordinal, memory_id) in values.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO companion_turn_effect_memory_changes
+                   (effect_id, change_kind, ordinal, memory_id) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    effect.id.to_string(),
+                    kind,
+                    i64::try_from(ordinal).map_err(effect_corrupt)?,
+                    memory_id.to_string()
+                ],
+            )
+            .map_err(effect_failure)?;
+        }
+    }
+    if let Some(window) = &effect.source_window {
+        for (ordinal, message_id) in window.message_ids.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO companion_turn_effect_source_messages
+                   (effect_id, ordinal, message_id) VALUES (?1, ?2, ?3)",
+                params![
+                    effect.id.to_string(),
+                    i64::try_from(ordinal).map_err(effect_corrupt)?,
+                    message_id.to_string()
+                ],
+            )
+            .map_err(effect_failure)?;
+        }
+    }
+    let enqueued_at = effect
+        .source_window
+        .as_ref()
+        .map(|window| window.enqueued_at.get());
+    let status = match (effect.status, enqueued_at) {
+        (CompanionTurnEffectStatus::Processing, _) => return Ok(()),
+        (CompanionTurnEffectStatus::Ready | CompanionTurnEffectStatus::Invalidated, Some(_)) => {
+            "ready"
+        }
+        _ => "failed",
+    };
+    tx.execute(
+        "UPDATE companion_turn_effects
+         SET status = ?2, summary = ?3, enqueued_at = ?4, updated_at = ?5
+         WHERE id = ?1 AND status = 'processing'",
+        params![
+            effect.id.to_string(),
+            status,
+            effect.summary,
+            enqueued_at,
+            effect.updated_at.get()
+        ],
+    )
+    .map_err(effect_failure)?;
+    Ok(())
+}
+
 pub(crate) fn finalize_turn_effect_in(
     tx: &Transaction<'_>,
     conversation_id: ConversationId,

@@ -305,8 +305,18 @@ impl ProviderBackupRestoreWriter for Database {
                 history.aggregate.conversation.id,
             )
         });
+        let mut tombstoned = Vec::new();
         for history in histories {
             let conversation_id = history.aggregate.conversation.id;
+            let mut restored_history = history.clone();
+            for message in &mut restored_history.messages {
+                if message.message.visibility
+                    == lettuce_conversations::MessageVisibility::Tombstoned
+                {
+                    message.message.visibility = lettuce_conversations::MessageVisibility::Hidden;
+                    tombstoned.push((conversation_id, message.message.id));
+                }
+            }
             let turns = runtime
                 .get(&conversation_id)
                 .map(|runtime| {
@@ -354,7 +364,7 @@ impl ProviderBackupRestoreWriter for Database {
             crate::conversation_history_writer::insert_historical_conversation(
                 &transaction,
                 crate::conversation_history_writer::HistoricalConversation {
-                    history,
+                    history: &restored_history,
                     turns: &turns,
                     usage: &events,
                     snapshots: Vec::new(),
@@ -485,6 +495,44 @@ impl ProviderBackupRestoreWriter for Database {
                         serde_json::to_string(&receipt.promoted_memory_ids).map_err(invalid)?,
                         access.accessed_at.get()
                     ],
+                )
+                .map_err(invalid)?;
+        }
+        for approval in &graph.dynamic_memory.pending_approvals {
+            transaction
+                .execute(
+                    "INSERT INTO dynamic_memory_pending_approvals (conversation_id, prompted_message_count, pending, skipped, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        approval.conversation_id.to_string(),
+                        i64::try_from(approval.prompted_message_count).map_err(invalid)?,
+                        approval.pending,
+                        approval.skipped,
+                        approval.updated_at.get()
+                    ],
+                )
+                .map_err(invalid)?;
+        }
+        let mut runs = graph.dynamic_memory.runs.iter().collect::<Vec<_>>();
+        runs.sort_by_key(|entry| (entry.run.created_at, entry.run.id));
+        for entry in runs {
+            crate::dynamic_memory_run_adapter::insert_restored_run_in(&transaction, entry)
+                .map_err(invalid)?;
+        }
+        for effect in &graph.companion_effects.effects {
+            crate::state_adapter::insert_restored_effect_in(&transaction, effect)
+                .map_err(invalid)?;
+        }
+        let mut rewinds = graph.companion_effects.rewinds.iter().collect::<Vec<_>>();
+        rewinds.sort_by_key(|rewind| (rewind.applied_at, rewind.operation_id));
+        for rewind in rewinds {
+            crate::dynamic_memory_rewind_adapter::insert_restored_rewind_in(&transaction, rewind)
+                .map_err(invalid)?;
+        }
+        for (conversation_id, message_id) in tombstoned {
+            transaction
+                .execute(
+                    "UPDATE conversation_messages SET visibility = 'tombstoned' WHERE conversation_id = ?1 AND id = ?2",
+                    params![conversation_id.to_string(), message_id.to_string()],
                 )
                 .map_err(invalid)?;
         }

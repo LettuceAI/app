@@ -716,6 +716,185 @@ fn insert_round_in(
     Ok(())
 }
 
+/// Writes a backed-up dynamic-memory run. Each source row is inserted while
+/// its message briefly renders the source the run recorded, and attempts walk
+/// `created -> processing -> terminal` up to their stored status; an attempt
+/// still open at backup time stays open for its restored job to resume.
+pub(crate) fn insert_restored_run_in(
+    transaction: &Transaction<'_>,
+    backup: &lettuce_transfer::BackupDynamicMemoryRun,
+) -> Result<(), DynamicMemoryRunRepositoryError> {
+    let run = &backup.run;
+    transaction
+        .execute(
+            "INSERT INTO dynamic_memory_runs \
+             (id,conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+            params![
+                run.id.to_string(),
+                run.conversation_id.to_string(),
+                run.space_id.to_string(),
+                run.time_awareness_enabled,
+                run.supersession_enabled,
+                fallback_format_name(run.structured_fallback_format),
+                i64::from(run.summary_window.message_interval),
+                sql_u64(run.summary_window.start)?,
+                sql_u64(run.summary_window.end)?,
+                encode_versioned(&run.starting_memory, JSON_VERSION).map_err(storage)?,
+                encode_versioned(&run.profile, JSON_VERSION).map_err(storage)?,
+                encode_versioned(&run.tool_request, JSON_VERSION).map_err(storage)?,
+                run.created_at.get(),
+            ],
+        )
+        .map_err(storage)?;
+    for (ordinal, source) in run.source_messages.iter().enumerate() {
+        let (revision_id, candidate_id) = match source.render_source {
+            MessageRenderSource::Revision(id) => (Some(id.to_string()), None),
+            MessageRenderSource::Candidate(id) => (None, Some(id.to_string())),
+        };
+        let original: (Option<String>, Option<String>, String) = transaction
+            .query_row(
+                "SELECT active_revision_id, active_candidate_id, visibility FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2",
+                params![run.conversation_id.to_string(), source.message_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(storage)?;
+        let swapped =
+            original.0 != revision_id || original.1 != candidate_id || original.2 != "visible";
+        let render = |active_revision: &Option<String>,
+                      active_candidate: &Option<String>,
+                      visibility: &str| {
+            transaction
+                .execute(
+                    "UPDATE conversation_messages SET active_revision_id = ?1, active_candidate_id = ?2, visibility = ?3 WHERE conversation_id = ?4 AND id = ?5",
+                    params![
+                        active_revision,
+                        active_candidate,
+                        visibility,
+                        run.conversation_id.to_string(),
+                        source.message_id.to_string(),
+                    ],
+                )
+                .map_err(storage)
+        };
+        if swapped {
+            render(&revision_id, &candidate_id, "visible")?;
+        }
+        transaction
+            .execute(
+                "INSERT INTO dynamic_memory_run_source_messages \
+                 (run_id,conversation_id,message_id,role,revision_id,candidate_id,effective_time,ordinal) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![
+                    run.id.to_string(),
+                    run.conversation_id.to_string(),
+                    source.message_id.to_string(),
+                    match source.role {
+                        lettuce_conversations::MessageRole::User => "user",
+                        lettuce_conversations::MessageRole::Assistant => "assistant",
+                        _ => return Err(DynamicMemoryRunRepositoryError::Invalid),
+                    },
+                    revision_id,
+                    candidate_id,
+                    source.effective_time.get(),
+                    i64::try_from(ordinal).map_err(storage)?,
+                ],
+            )
+            .map_err(storage)?;
+        if swapped {
+            render(&original.0, &original.1, &original.2)?;
+        }
+    }
+    for entry in &backup.attempts {
+        let attempt = &entry.attempt;
+        transaction
+            .execute(
+                "INSERT INTO dynamic_memory_run_attempts \
+                 (run_id,id,ordinal,retry_parent_id,job_id,status,failure,revision,created_at,\
+                  started_at,finished_at,updated_at) \
+                 VALUES (?1,?2,?3,?4,?5,'created',NULL,1,?6,NULL,NULL,?6)",
+                params![
+                    attempt.run_id.to_string(),
+                    attempt.id.to_string(),
+                    i64::from(attempt.ordinal),
+                    attempt.retry_parent_id.map(|id| id.to_string()),
+                    attempt.job_id.to_string(),
+                    attempt.created_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        let mut revision = 1_u64;
+        if let Some(started_at) = attempt.started_at {
+            revision += 1;
+            transaction
+                .execute(
+                    "UPDATE dynamic_memory_run_attempts SET status = 'processing', revision = ?1, started_at = ?2, updated_at = ?2 WHERE id = ?3",
+                    params![sql_u64(revision)?, started_at.get(), attempt.id.to_string()],
+                )
+                .map_err(storage)?;
+        }
+        for round in &entry.rounds {
+            insert_round_in(transaction, &round.round)?;
+            if let (Some(settlement), Some(digest)) =
+                (&round.settlement, &round.settlement_change_digest)
+            {
+                copy_background_settlement_in(transaction, settlement, digest, attempt.id)?;
+            }
+        }
+        if attempt.status.is_terminal() {
+            revision += 1;
+            transaction
+                .execute(
+                    "UPDATE dynamic_memory_run_attempts SET status = ?1, failure = ?2, revision = ?3, finished_at = ?4, updated_at = ?5 WHERE id = ?6",
+                    params![
+                        status_name(attempt.status),
+                        attempt.failure.map(failure_name),
+                        sql_u64(revision)?,
+                        attempt.finished_at.map(TimestampMillis::get),
+                        attempt.updated_at.get(),
+                        attempt.id.to_string(),
+                    ],
+                )
+                .map_err(storage)?;
+        }
+    }
+    if let Some(checkpoint) = &backup.summary_checkpoint {
+        let usage = checkpoint.usage.as_ref();
+        transaction
+            .execute(
+                "INSERT INTO dynamic_memory_summary_checkpoints (
+                    run_id,attempt_id,space_id,expected_memory_revision,
+                    resulting_memory_revision,summary_text,token_count,
+                    request_context_json,input_tokens,output_tokens,
+                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost
+                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+                params![
+                    checkpoint.run_id.to_string(),
+                    checkpoint.attempt_id.to_string(),
+                    checkpoint.summary.space_id.to_string(),
+                    sql_u64(checkpoint.expected_memory_revision.get())?,
+                    sql_u64(checkpoint.resulting_memory_revision.get())?,
+                    checkpoint.summary.text,
+                    i64::from(checkpoint.summary.token_count),
+                    encode_versioned(&checkpoint.request_context, JSON_VERSION).map_err(storage)?,
+                    usage.map(|usage| sql_u64(usage.input_tokens)).transpose()?,
+                    usage.map(|usage| sql_u64(usage.output_tokens)).transpose()?,
+                    checkpoint.provider_request_id,
+                    checkpoint.settled_at.get(),
+                    usage.and_then(|usage| usage.cached_input_tokens).map(sql_u64).transpose()?,
+                    usage.and_then(|usage| usage.reasoning_tokens).map(sql_u64).transpose()?,
+                    usage.and_then(|usage| usage.cache_write_tokens).map(sql_u64).transpose()?,
+                    usage.and_then(|usage| usage.web_search_requests).map(sql_u64).transpose()?,
+                    usage
+                        .and_then(|usage| usage.provider_reported_cost)
+                        .map(lettuce_conversations::ProviderReportedCost::get),
+                ],
+            )
+            .map_err(storage)?;
+    }
+    Ok(())
+}
+
 impl DynamicMemoryRunRepository for Database {
     fn list_dynamic_memory_runs(
         &self,

@@ -124,8 +124,17 @@ the path its revision implies; a tool left unsettled by an interrupted attempt
 is settled with it), and its generation checkpoints. Memory retrieval accesses
 follow the conversations, then companion relationship states, session states
 with their emotion vectors and signals, continuity episodes and apply receipts
-at their exported revisions. Dynamic memory runs, companion effects,
-secrets, media bytes and the cutover are later restore slices.
+at their exported revisions. Dynamic memory pending approvals and runs follow:
+each source row is inserted while its message briefly renders the source the run
+recorded (messages tombstoned at backup time are written hidden and tombstoned
+after the runs, because a tombstone cannot be undone), attempts walk
+`created -> processing -> terminal` up to their stored status with their rounds,
+tool calls, settlements and summary checkpoints, and background work still open
+at backup time (created or processing attempts, processing companion effects)
+stays open for its restored job, like after a restart. Companion turn effects
+are written through their draft, processing status and children, then settled;
+suffix rewinds and effect invalidations come last. Secrets, media bytes and the
+cutover are later restore slices.
 
 The legacy migration boundary can open an old `app.db` read-only, require the
 actual version-92 schema roots, and return a bounded typed import inventory.

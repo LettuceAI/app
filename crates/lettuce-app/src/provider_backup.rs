@@ -1844,6 +1844,11 @@ mod tests {
             round_trip.companion_state,
             restore_plan.graph.companion_state
         );
+        assert_eq!(round_trip.dynamic_memory, restore_plan.graph.dynamic_memory);
+        assert_eq!(
+            round_trip.companion_effects,
+            restore_plan.graph.companion_effects
+        );
         assert_eq!(
             round_trip.memory_projections,
             restore_plan.graph.memory_projections
