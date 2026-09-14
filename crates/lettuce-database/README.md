@@ -614,6 +614,10 @@ conversations stage (after the groups stage) write every legacy session through
 it with one shared stage body; `stage_receipt` lets a caller return a committed
 receipt before rebuilding stage input; it checks the run's stored plan and
 source fingerprints. Turns targeting one message are inserted in input order.
+The usage records stage writes each legacy usage record unchanged into the
+immutable `legacy_usage_records` table (source ids, tokens, costs, success,
+error, metadata), linking the imported model when it exists; these rows are
+historical and are not `usage_events`, which belong to generation attempts.
 The writer also restores a conversation's memory space with its own id,
 revision and items (`memory_adapter::insert_space_in`), its summary and its
 embedding projections, after the messages the summary cites.

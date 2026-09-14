@@ -125,6 +125,11 @@ impl LegacyBackupCompatibilityPlan {
     }
 
     #[must_use]
+    pub fn usage_records(&self) -> &crate::LegacyBackupUsagePlan {
+        &self.direct_sessions().source.source
+    }
+
+    #[must_use]
     pub fn memory_embeddings(&self) -> &crate::LegacyBackupMemoryEmbeddingPlan {
         &self.creation_helpers.source
     }

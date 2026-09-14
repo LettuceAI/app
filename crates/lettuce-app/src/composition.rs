@@ -192,6 +192,11 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn legacy_usage_importer(&self) -> crate::LegacyUsageImportCoordinator<'_, Database> {
+        crate::LegacyUsageImportCoordinator::new(self.database.as_ref())
+    }
+
+    #[must_use]
     pub fn legacy_settings_importer(&self) -> crate::LegacySettingsImportCoordinator<'_, Database> {
         crate::LegacySettingsImportCoordinator::new(self.database.as_ref())
     }

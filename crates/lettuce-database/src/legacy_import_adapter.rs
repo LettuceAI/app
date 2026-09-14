@@ -832,6 +832,104 @@ impl LegacyImportRepository for Database {
         )
     }
 
+    fn materialize_usage_records(
+        &self,
+        request: lettuce_transfer::LegacyUsageMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let record_count = u64::try_from(request.records.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        let admission = match start_stage(
+            &transaction,
+            request.run_id,
+            (&request.plan_fingerprint, &request.source_fingerprint),
+            LegacyImportStage::UsageRecords,
+            record_count,
+            None,
+        )? {
+            StageStart::Replayed(receipt) => {
+                transaction
+                    .commit()
+                    .map_err(|_| LegacyImportRepositoryError::Storage)?;
+                return Ok(receipt);
+            }
+            StageStart::Ready(admission) => admission,
+        };
+        let assignments = AssignmentMaps::from_admission(&admission)?;
+        let tokens = |value: Option<u64>| {
+            value
+                .map(i64::try_from)
+                .transpose()
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)
+        };
+        for record in &request.records {
+            let model_profile_id = record
+                .model_id
+                .parse::<ModelProfileId>()
+                .ok()
+                .and_then(|id| assignments.models.get(&id))
+                .map(ToString::to_string);
+            transaction
+                .execute(
+                    "INSERT INTO legacy_usage_records (run_id, source_id, recorded_at, session_source_id, character_source_id, character_name, model_source_id, model_profile_id, model_name, provider_source_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, audio_tokens, prompt_cost, completion_cost, total_cost, success, error_message, metadata_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
+                    params![
+                        request.run_id.to_string(),
+                        record.source_id,
+                        i64::try_from(record.timestamp)
+                            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                        record.session_id,
+                        record.character_id,
+                        record.character_name,
+                        record.model_id,
+                        model_profile_id,
+                        record.model_name,
+                        record.provider_id,
+                        record.provider_label,
+                        record.operation_type,
+                        record.finish_reason,
+                        tokens(record.prompt_tokens)?,
+                        tokens(record.completion_tokens)?,
+                        tokens(record.total_tokens)?,
+                        tokens(record.memory_tokens)?,
+                        tokens(record.summary_tokens)?,
+                        tokens(record.reasoning_tokens)?,
+                        tokens(record.image_tokens)?,
+                        tokens(record.audio_tokens)?,
+                        record.prompt_cost,
+                        record.completion_cost,
+                        record.total_cost,
+                        i64::from(record.success),
+                        record.error_message,
+                        serde_json::to_string(&record.metadata)
+                            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                    ],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        }
+        insert_stage_result(
+            &transaction,
+            request.run_id,
+            LegacyImportStage::UsageRecords,
+            record_count,
+            request.completed_at,
+        )?;
+        let receipt = load_stage_receipt(
+            &transaction,
+            request.run_id,
+            LegacyImportStage::UsageRecords,
+        )?
+        .ok_or(LegacyImportRepositoryError::Storage)?;
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(receipt)
+    }
+
     fn materialize_group_conversations(
         &self,
         request: lettuce_transfer::LegacyDirectConversationMaterializationRequest,
@@ -2143,6 +2241,7 @@ const fn stage_name(stage: LegacyImportStage) -> &'static str {
         LegacyImportStage::Settings => "settings",
         LegacyImportStage::DirectConversations => "direct_conversations",
         LegacyImportStage::GroupConversations => "group_conversations",
+        LegacyImportStage::UsageRecords => "usage_records",
     }
 }
 

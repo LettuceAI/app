@@ -1146,6 +1146,7 @@ pub enum LegacyImportStage {
     Settings,
     DirectConversations,
     GroupConversations,
+    UsageRecords,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1198,6 +1199,15 @@ pub struct LegacyDirectConversationMaterializationRequest {
     pub plan_fingerprint: ContentHash,
     pub source_fingerprint: ContentHash,
     pub conversations: Vec<LegacyConversationRecord>,
+    pub completed_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyUsageMaterializationRequest {
+    pub run_id: LegacyImportRunId,
+    pub plan_fingerprint: ContentHash,
+    pub source_fingerprint: ContentHash,
+    pub records: Vec<LegacyBackupUsageRecord>,
     pub completed_at: TimestampMillis,
 }
 
@@ -1312,5 +1322,10 @@ pub trait LegacyImportRepository: Send + Sync {
     fn materialize_group_conversations(
         &self,
         request: LegacyDirectConversationMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
+
+    fn materialize_usage_records(
+        &self,
+        request: LegacyUsageMaterializationRequest,
     ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
 }

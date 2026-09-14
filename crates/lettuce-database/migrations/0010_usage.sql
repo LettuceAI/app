@@ -81,3 +81,43 @@ BEGIN SELECT RAISE(ABORT, 'usage event is immutable'); END;
 CREATE TRIGGER usage_events_immutable_delete
 BEFORE DELETE ON usage_events
 BEGIN SELECT RAISE(ABORT, 'usage event cannot be deleted'); END;
+
+CREATE TABLE legacy_usage_records (
+    run_id TEXT NOT NULL,
+    source_id TEXT NOT NULL CHECK (length(trim(source_id)) > 0),
+    recorded_at INTEGER NOT NULL,
+    session_source_id TEXT NOT NULL,
+    character_source_id TEXT NOT NULL,
+    character_name TEXT NOT NULL,
+    model_source_id TEXT NOT NULL,
+    model_profile_id TEXT,
+    model_name TEXT NOT NULL,
+    provider_source_id TEXT NOT NULL,
+    provider_label TEXT NOT NULL,
+    operation_type TEXT,
+    finish_reason TEXT,
+    prompt_tokens INTEGER CHECK (prompt_tokens IS NULL OR prompt_tokens >= 0),
+    completion_tokens INTEGER CHECK (completion_tokens IS NULL OR completion_tokens >= 0),
+    total_tokens INTEGER CHECK (total_tokens IS NULL OR total_tokens >= 0),
+    memory_tokens INTEGER CHECK (memory_tokens IS NULL OR memory_tokens >= 0),
+    summary_tokens INTEGER CHECK (summary_tokens IS NULL OR summary_tokens >= 0),
+    reasoning_tokens INTEGER CHECK (reasoning_tokens IS NULL OR reasoning_tokens >= 0),
+    image_tokens INTEGER CHECK (image_tokens IS NULL OR image_tokens >= 0),
+    audio_tokens INTEGER CHECK (audio_tokens IS NULL OR audio_tokens >= 0),
+    prompt_cost REAL,
+    completion_cost REAL,
+    total_cost REAL,
+    success INTEGER NOT NULL CHECK (success IN (0, 1)),
+    error_message TEXT,
+    metadata_json TEXT NOT NULL CHECK (json_valid(metadata_json)),
+    PRIMARY KEY (source_id)
+) STRICT;
+CREATE INDEX legacy_usage_records_recorded_at_idx ON legacy_usage_records(recorded_at, source_id);
+
+CREATE TRIGGER legacy_usage_records_immutable_update
+BEFORE UPDATE ON legacy_usage_records
+BEGIN SELECT RAISE(ABORT, 'legacy usage record is immutable'); END;
+
+CREATE TRIGGER legacy_usage_records_immutable_delete
+BEFORE DELETE ON legacy_usage_records
+BEGIN SELECT RAISE(ABORT, 'legacy usage record cannot be deleted'); END;
