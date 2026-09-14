@@ -84,7 +84,7 @@ impl ProviderBackupRestoreWriter for Database {
             .map_err(storage)?;
         let populated = transaction
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM provider_accounts) OR EXISTS(SELECT 1 FROM prompt_documents) OR EXISTS(SELECT 1 FROM personas) OR EXISTS(SELECT 1 FROM lorebooks) OR EXISTS(SELECT 1 FROM characters) OR EXISTS(SELECT 1 FROM groups) OR EXISTS(SELECT 1 FROM media_blobs) OR EXISTS(SELECT 1 FROM media_assets) OR EXISTS(SELECT 1 FROM model_profiles) OR EXISTS(SELECT 1 FROM audio_providers) OR EXISTS(SELECT 1 FROM user_voices) OR EXISTS(SELECT 1 FROM asr_vocabulary_terms) OR EXISTS(SELECT 1 FROM asr_corrections) OR EXISTS(SELECT 1 FROM asr_voice_examples) OR EXISTS(SELECT 1 FROM legacy_import_runs) OR EXISTS(SELECT 1 FROM backup_restore_admissions) OR EXISTS(SELECT 1 FROM conversations)",
+                "SELECT EXISTS(SELECT 1 FROM provider_accounts) OR EXISTS(SELECT 1 FROM prompt_documents) OR EXISTS(SELECT 1 FROM personas) OR EXISTS(SELECT 1 FROM lorebooks) OR EXISTS(SELECT 1 FROM characters) OR EXISTS(SELECT 1 FROM groups) OR EXISTS(SELECT 1 FROM media_blobs) OR EXISTS(SELECT 1 FROM media_assets) OR EXISTS(SELECT 1 FROM model_profiles) OR EXISTS(SELECT 1 FROM audio_providers) OR EXISTS(SELECT 1 FROM user_voices) OR EXISTS(SELECT 1 FROM asr_vocabulary_terms) OR EXISTS(SELECT 1 FROM asr_corrections) OR EXISTS(SELECT 1 FROM asr_voice_examples) OR EXISTS(SELECT 1 FROM legacy_import_runs) OR EXISTS(SELECT 1 FROM backup_restore_admissions) OR EXISTS(SELECT 1 FROM jobs) OR EXISTS(SELECT 1 FROM conversations)",
                 [],
                 |row| row.get::<_, bool>(0),
             )
@@ -222,6 +222,49 @@ impl ProviderBackupRestoreWriter for Database {
             },
         )
         .map_err(invalid)?;
+        let jobs = lettuce_jobs::InMemoryJobStore::restore(graph.job_backup.jobs.clone())
+            .map_err(invalid)?;
+        crate::job_adapter::persist_changes(
+            &transaction,
+            &BTreeMap::new(),
+            &crate::job_adapter::records_by_id(jobs.stored_records()),
+        )
+        .map_err(invalid)?;
+        for inference in &graph.job_backup.inference {
+            let evidence = &inference.evidence;
+            let record = lettuce_usage::JobInferenceUsage {
+                result: None,
+                ..evidence.clone()
+            };
+            transaction
+                .execute(
+                    "INSERT INTO job_inference_usage (id, job_id, admitted_at, record_json, result_json) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        evidence.id.to_string(),
+                        evidence.job_id.to_string(),
+                        evidence.admitted_at.get(),
+                        crate::encode_versioned(&record, 1).map_err(invalid)?,
+                        evidence
+                            .result
+                            .as_ref()
+                            .map(|result| crate::encode_versioned(result, 1))
+                            .transpose()
+                            .map_err(invalid)?
+                    ],
+                )
+                .map_err(invalid)?;
+            if let Some(basis) = &inference.cost_basis {
+                transaction
+                    .execute(
+                        "INSERT INTO job_usage_costs (event_id, basis_json) VALUES (?1, ?2)",
+                        params![
+                            evidence.id.to_string(),
+                            crate::encode_versioned(basis, 1).map_err(invalid)?
+                        ],
+                    )
+                    .map_err(invalid)?;
+            }
+        }
         let restored_at = lettuce_types::TimestampMillis::now().map_err(storage)?;
         for artifact in artifacts {
             crate::conversation_artifact_adapter::insert_trusted_artifact_in(

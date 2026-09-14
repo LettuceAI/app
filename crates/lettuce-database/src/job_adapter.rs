@@ -51,7 +51,7 @@ impl Database {
     }
 }
 
-fn records_by_id(records: Vec<StoredJobRecord>) -> BTreeMap<JobId, StoredJobRecord> {
+pub(crate) fn records_by_id(records: Vec<StoredJobRecord>) -> BTreeMap<JobId, StoredJobRecord> {
     records
         .into_iter()
         .map(|record| (record.snapshot.id, record))
@@ -222,7 +222,7 @@ pub(crate) fn load_store(transaction: &Transaction<'_>) -> Result<InMemoryJobSto
     InMemoryJobStore::restore(records.into_values().collect())
 }
 
-fn persist_changes(
+pub(crate) fn persist_changes(
     transaction: &Transaction<'_>,
     before: &BTreeMap<JobId, StoredJobRecord>,
     after: &BTreeMap<JobId, StoredJobRecord>,

@@ -113,8 +113,11 @@ without candidates, companion memory pools shared by several conversations,
 usage events and cost bases. Work that was in progress when the backup was taken
 is restored as interrupted (user decision 2026-09-14): unfinished attempts are
 interrupted with a derived usage event id and turns without attempts are left
-out. Generation checkpoints, tool executions, speaker and initial dispatches,
-jobs, retrieval accesses, dynamic memory runs, companion state and effects,
+out. Jobs and job events are written as exported through the job store's
+validation (in-flight jobs keep their state so the normal lease-expiry recovery
+handles them like after a restart), with job inference usage and cost bases.
+Generation checkpoints, tool executions, speaker and initial dispatches,
+retrieval accesses, dynamic memory runs, companion state and effects,
 secrets, media bytes and the cutover are later restore slices.
 
 The legacy migration boundary can open an old `app.db` read-only, require the
