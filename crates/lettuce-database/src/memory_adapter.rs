@@ -868,26 +868,40 @@ impl MemorySummaryRepository for Database {
         space_id: MemorySpaceId,
         conversation_id: ConversationId,
     ) -> Result<u64, MemoryRepositoryError> {
-        let connection = self.connection().map_err(storage)?;
-        let own = connection
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
+        let summary_owner = transaction
             .query_row(
-                "SELECT window_end FROM memory_summaries WHERE space_id = ?1 AND conversation_id = ?2",
-                params![space_id.to_string(), conversation_id.to_string()],
-                |row| row.get::<_, i64>(0),
+                "SELECT conversation_id, window_end FROM memory_summaries WHERE space_id = ?1",
+                [space_id.to_string()],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
             )
             .optional()
             .map_err(storage)?;
-        let settled_run = connection
-            .query_row(
-                "SELECT MAX(run.summary_window_end)
-                   FROM dynamic_memory_runs run
-                   JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id = run.id
-                  WHERE run.space_id = ?1 AND run.conversation_id = ?2",
-                params![space_id.to_string(), conversation_id.to_string()],
-                |row| row.get::<_, Option<i64>>(0),
-            )
-            .map_err(storage)?;
-        u64::try_from(own.or(settled_run).unwrap_or(0)).map_err(storage)
+        let cursor = match summary_owner {
+            None => 0,
+            Some((owner, window_end)) if owner == conversation_id.to_string() => window_end,
+            Some(_) => transaction
+                .query_row(
+                    "SELECT MAX(run.summary_window_end)
+                       FROM dynamic_memory_runs run
+                       JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id = run.id
+                      WHERE run.space_id = ?1 AND run.conversation_id = ?2
+                        AND NOT EXISTS (
+                            SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
+                             WHERE rewind.conversation_id = run.conversation_id
+                               AND rewind.applied_at >= checkpoint.settled_at
+                        )",
+                    params![space_id.to_string(), conversation_id.to_string()],
+                    |row| row.get::<_, Option<i64>>(0),
+                )
+                .map_err(storage)?
+                .unwrap_or(0),
+        };
+        transaction.commit().map_err(storage)?;
+        u64::try_from(cursor).map_err(storage)
     }
 
     fn compare_and_apply_summary(

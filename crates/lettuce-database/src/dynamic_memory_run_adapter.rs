@@ -2277,6 +2277,15 @@ mod tests {
             receipt.summary
         );
         assert_eq!(
+            lettuce_memory::MemorySummaryRepository::summary_cursor(
+                &database,
+                space_id,
+                conversation_id,
+            )
+            .expect("cursor"),
+            2
+        );
+        assert_eq!(
             database
                 .rewind_dynamic_memory_suffix(rewind.clone())
                 .expect("exact replay"),

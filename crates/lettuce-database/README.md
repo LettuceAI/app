@@ -628,8 +628,12 @@ instead of a fresh space, and `conversation_memory_spaces` allows a second
 binding only for a pool space. The summary row stays per space and records the
 conversation that wrote it; `replace_summary_in` takes that conversation from
 the summary's source messages when a space is shared. `summary_cursor` gives each
-conversation its own cursor (its own summary window, else its latest settled
-run, else 0), like legacy's per-session tool-event walk. Backups export a
+conversation its own cursor inside one read transaction: its own summary
+window; when another conversation of the pool wrote the summary, its latest
+settled run that no later suffix rewind of that conversation invalidated; with no
+summary, 0. A suffix rewind in a shared pool keeps the pool's memories and
+summary (legacy only rewound that session's own tool events) and still records
+the rewind and invalidates the conversation's effects. Backups export a
 shared space once with `shared_conversation_ids`.
 The history writer creates or binds a companion pool for a companion
 conversation (`memory_adapter::insert_pool_space_in`), creates its companion

@@ -187,6 +187,13 @@ impl DynamicMemorySuffixRewindRepository for Database {
         if current.revision != rewind.expected_memory_revision {
             return Err(DynamicMemorySuffixRewindError::Conflict);
         }
+        let shared_pool = transaction
+            .query_row(
+                "SELECT count(*) > 1 FROM conversation_memory_spaces WHERE space_id=?1",
+                [space_id.to_string()],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(storage)?;
 
         let (memory, restored_summary_run_id, summary) = match rewind.invalid_run_id {
             Some(invalid_run_id) => {
@@ -208,24 +215,33 @@ impl DynamicMemorySuffixRewindRepository for Database {
                 if run.conversation_id != rewind.conversation_id || run.space_id != space_id {
                     return Err(DynamicMemorySuffixRewindError::Conflict);
                 }
-                let (prior_run_id, summary) = prior_summary(
-                    &transaction,
-                    rewind.conversation_id,
-                    invalid_run_id,
-                    run.summary_window.start,
-                )?;
-                let memory = memory_adapter::compare_and_apply_in(
-                    &transaction,
-                    &MemoryChangeSet {
-                        space_id,
-                        expected_revision: rewind.expected_memory_revision,
-                        items: run.starting_memory.items,
-                    },
-                )
-                .map_err(memory_error)?;
-                memory_adapter::replace_summary_in(&transaction, space_id, summary.as_ref())
+                if shared_pool {
+                    (
+                        current.clone(),
+                        None,
+                        memory_adapter::get_summary_in(&transaction, space_id)
+                            .map_err(memory_error)?,
+                    )
+                } else {
+                    let (prior_run_id, summary) = prior_summary(
+                        &transaction,
+                        rewind.conversation_id,
+                        invalid_run_id,
+                        run.summary_window.start,
+                    )?;
+                    let memory = memory_adapter::compare_and_apply_in(
+                        &transaction,
+                        &MemoryChangeSet {
+                            space_id,
+                            expected_revision: rewind.expected_memory_revision,
+                            items: run.starting_memory.items,
+                        },
+                    )
                     .map_err(memory_error)?;
-                (memory, prior_run_id, summary)
+                    memory_adapter::replace_summary_in(&transaction, space_id, summary.as_ref())
+                        .map_err(memory_error)?;
+                    (memory, prior_run_id, summary)
+                }
             }
             None => (
                 current,
