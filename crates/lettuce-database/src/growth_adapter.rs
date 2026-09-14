@@ -23,7 +23,7 @@ fn corrupt(_: impl std::fmt::Debug) -> CompanionGrowthRunRepositoryError {
     CompanionGrowthRunRepositoryError::Corrupt
 }
 
-fn load_in(
+pub(crate) fn load_in(
     tx: &Transaction<'_>,
     job_id: JobId,
 ) -> Result<Option<CompanionGrowthRun>, CompanionGrowthRunRepositoryError> {
@@ -89,6 +89,45 @@ fn load_in(
     run.validate()
         .map_err(|_| CompanionGrowthRunRepositoryError::Corrupt)?;
     Ok(Some(run))
+}
+
+/// Writes a backed-up growth run with its proposal checkpoint.
+pub(crate) fn insert_restored_in(
+    tx: &Transaction<'_>,
+    run: &CompanionGrowthRun,
+) -> Result<(), CompanionGrowthRunRepositoryError> {
+    let checkpoint = run.proposal_checkpoint.as_ref();
+    let admitted = CompanionGrowthRun {
+        proposal_checkpoint: None,
+        ..run.clone()
+    };
+    tx.execute(
+        "INSERT INTO companion_growth_runs (
+            job_id, conversation_id, character_id, memory_run_id, memory_attempt_id,
+            operation_id, expected_soul_revision, created_at, run_json,
+            proposal_checkpoint_json, reduced_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        params![
+            run.job_id.to_string(),
+            run.conversation_id.to_string(),
+            run.character_id.to_string(),
+            run.memory_run_id.to_string(),
+            run.memory_attempt_id.to_string(),
+            run.operation_id.to_string(),
+            i64::try_from(run.soul.revision.get()).map_err(failure)?,
+            run.created_at.get(),
+            encode_versioned(&admitted, GROWTH_RUN_FORMAT_VERSION).map_err(failure)?,
+            checkpoint
+                .map(
+                    |value| encode_versioned(value, GROWTH_PROPOSAL_FORMAT_VERSION)
+                        .map_err(failure)
+                )
+                .transpose()?,
+            checkpoint.map(|value| value.reduced_at.get()),
+        ],
+    )
+    .map_err(failure)?;
+    Ok(())
 }
 
 impl CompanionGrowthRunRepository for Database {

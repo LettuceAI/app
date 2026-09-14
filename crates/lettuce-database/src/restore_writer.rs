@@ -572,6 +572,15 @@ impl ProviderBackupRestoreWriter for Database {
             crate::dynamic_memory_rewind_adapter::insert_restored_rewind_in(&transaction, rewind)
                 .map_err(invalid)?;
         }
+        for run in &companion.growth_runs {
+            crate::growth_adapter::insert_restored_in(&transaction, run).map_err(invalid)?;
+        }
+        for run in &companion.consolidation_runs {
+            crate::consolidation_adapter::insert_restored_in(&transaction, run).map_err(invalid)?;
+        }
+        for run in &companion.soul_writer_runs {
+            crate::soul_writer_adapter::insert_restored_in(&transaction, run).map_err(invalid)?;
+        }
         for (conversation_id, message_id) in tombstoned {
             transaction
                 .execute(

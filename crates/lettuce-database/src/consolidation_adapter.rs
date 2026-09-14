@@ -22,7 +22,7 @@ fn corrupt(_: impl std::fmt::Debug) -> CompanionConsolidationRunRepositoryError 
     CompanionConsolidationRunRepositoryError::Corrupt
 }
 
-fn load_in(
+pub(crate) fn load_in(
     tx: &Transaction<'_>,
     job_id: JobId,
 ) -> Result<Option<CompanionConsolidationRun>, CompanionConsolidationRunRepositoryError> {
@@ -86,6 +86,40 @@ fn load_in(
     run.validate()
         .map_err(|_| CompanionConsolidationRunRepositoryError::Corrupt)?;
     Ok(Some(run))
+}
+
+/// Writes a backed-up consolidation run with its proposal checkpoint.
+pub(crate) fn insert_restored_in(
+    tx: &Transaction<'_>,
+    run: &CompanionConsolidationRun,
+) -> Result<(), CompanionConsolidationRunRepositoryError> {
+    let checkpoint = run.proposal_checkpoint.as_ref();
+    let admitted = CompanionConsolidationRun {
+        proposal_checkpoint: None,
+        ..run.clone()
+    };
+    tx.execute(
+        "INSERT INTO companion_consolidation_runs (
+            job_id, growth_job_id, conversation_id, character_id, operation_id,
+            expected_soul_revision, created_at, run_json, proposal_checkpoint_json, reduced_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            run.job_id.to_string(),
+            run.growth_job_id.to_string(),
+            run.conversation_id.to_string(),
+            run.character_id.to_string(),
+            run.operation_id.to_string(),
+            i64::try_from(run.soul.revision.get()).map_err(failure)?,
+            run.created_at.get(),
+            encode_versioned(&admitted, RUN_FORMAT_VERSION).map_err(failure)?,
+            checkpoint
+                .map(|value| encode_versioned(value, PROPOSAL_FORMAT_VERSION).map_err(failure))
+                .transpose()?,
+            checkpoint.map(|value| value.reduced_at.get()),
+        ],
+    )
+    .map_err(failure)?;
+    Ok(())
 }
 
 impl CompanionConsolidationRunRepository for Database {

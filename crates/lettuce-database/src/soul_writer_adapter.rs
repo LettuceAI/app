@@ -20,7 +20,7 @@ fn corrupt(_: impl std::fmt::Debug) -> CompanionSoulWriterRunRepositoryError {
     CompanionSoulWriterRunRepositoryError::Corrupt
 }
 
-fn load_in(
+pub(crate) fn load_in(
     tx: &Transaction<'_>,
     request_id: RequestId,
 ) -> Result<Option<CompanionSoulWriterRun>, CompanionSoulWriterRunRepositoryError> {
@@ -70,6 +70,33 @@ fn load_in(
     run.validate()
         .map_err(|_| CompanionSoulWriterRunRepositoryError::Corrupt)?;
     Ok(Some(run))
+}
+
+/// Writes a backed-up soul-writer run with its committed rounds.
+pub(crate) fn insert_restored_in(
+    tx: &Transaction<'_>,
+    run: &CompanionSoulWriterRun,
+) -> Result<(), CompanionSoulWriterRunRepositoryError> {
+    let admitted = CompanionSoulWriterRun {
+        rounds: Vec::new(),
+        ..run.clone()
+    };
+    tx.execute(
+        "INSERT INTO companion_soul_writer_runs (
+            request_id, job_id, prompt_id, prompt_revision, created_at, run_json, rounds_json
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            run.request_id.to_string(),
+            run.job_id.to_string(),
+            run.prompt_id.to_string(),
+            i64::try_from(run.prompt_revision.get()).map_err(failure)?,
+            run.created_at.get(),
+            encode_versioned(&admitted, RUN_FORMAT_VERSION).map_err(failure)?,
+            encode_versioned(&run.rounds, ROUNDS_FORMAT_VERSION).map_err(failure)?,
+        ],
+    )
+    .map_err(failure)?;
+    Ok(())
 }
 
 impl CompanionSoulWriterRunRepository for Database {

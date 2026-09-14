@@ -1185,6 +1185,9 @@ mod tests {
             companion_state: crate::CompanionStateBackup {
                 souls: Vec::new(),
                 scheduled_notes: Vec::new(),
+                growth_runs: Vec::new(),
+                consolidation_runs: Vec::new(),
+                soul_writer_runs: Vec::new(),
                 version: crate::COMPANION_STATE_BACKUP_VERSION,
                 relationships: Vec::new(),
                 sessions: Vec::new(),

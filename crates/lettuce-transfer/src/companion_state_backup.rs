@@ -25,6 +25,12 @@ pub struct CompanionStateBackup {
     pub souls: Vec<BackupCompanionSoul>,
     #[serde(default)]
     pub scheduled_notes: Vec<lettuce_companions::CompanionScheduledNote>,
+    #[serde(default)]
+    pub growth_runs: Vec<lettuce_companions::CompanionGrowthRun>,
+    #[serde(default)]
+    pub consolidation_runs: Vec<lettuce_companions::CompanionConsolidationRun>,
+    #[serde(default)]
+    pub soul_writer_runs: Vec<lettuce_companions::CompanionSoulWriterRun>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -240,6 +246,24 @@ impl CompanionStateBackup {
             {
                 return Err(CompanionStateBackupError::InvalidData);
             }
+        }
+        self.growth_runs.sort_by_key(|run| run.job_id);
+        self.consolidation_runs.sort_by_key(|run| run.job_id);
+        self.soul_writer_runs.sort_by_key(|run| run.request_id);
+        if self.growth_runs.iter().any(|run| {
+            !character_ids.contains(&run.character_id)
+                || !conversations.contains_key(&run.conversation_id)
+                || run.validate().is_err()
+        }) || self.consolidation_runs.iter().any(|run| {
+            !character_ids.contains(&run.character_id)
+                || !conversations.contains_key(&run.conversation_id)
+                || run.validate().is_err()
+        }) || self
+            .soul_writer_runs
+            .iter()
+            .any(|run| run.validate().is_err())
+        {
+            return Err(CompanionStateBackupError::InvalidData);
         }
         Ok(())
     }

@@ -881,6 +881,39 @@ fn read_companion_state(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
+    let growth_runs = read_ids::<lettuce_types::JobId>(
+        transaction,
+        "SELECT job_id FROM companion_growth_runs ORDER BY job_id",
+    )?
+    .into_iter()
+    .map(|id| {
+        crate::growth_adapter::load_in(transaction, id)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?
+            .ok_or(ProviderBackupSourceError::InvalidData)
+    })
+    .collect::<Result<Vec<_>, _>>()?;
+    let consolidation_runs = read_ids::<lettuce_types::JobId>(
+        transaction,
+        "SELECT job_id FROM companion_consolidation_runs ORDER BY job_id",
+    )?
+    .into_iter()
+    .map(|id| {
+        crate::consolidation_adapter::load_in(transaction, id)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?
+            .ok_or(ProviderBackupSourceError::InvalidData)
+    })
+    .collect::<Result<Vec<_>, _>>()?;
+    let soul_writer_runs = read_ids::<lettuce_types::RequestId>(
+        transaction,
+        "SELECT request_id FROM companion_soul_writer_runs ORDER BY request_id",
+    )?
+    .into_iter()
+    .map(|id| {
+        crate::soul_writer_adapter::load_in(transaction, id)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?
+            .ok_or(ProviderBackupSourceError::InvalidData)
+    })
+    .collect::<Result<Vec<_>, _>>()?;
     Ok(CompanionStateBackup {
         version: COMPANION_STATE_BACKUP_VERSION,
         relationships,
@@ -889,6 +922,9 @@ fn read_companion_state(
         receipts,
         souls,
         scheduled_notes,
+        growth_runs,
+        consolidation_runs,
+        soul_writer_runs,
     })
 }
 
