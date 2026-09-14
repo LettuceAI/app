@@ -96,6 +96,17 @@ Loading verifies the reference rows against excerpt provenance in the run JSON.
 
 Epoch-2 SQLite schema, migrations, maintenance, and repository adapters.
 
+`restore_writer` implements `ProviderBackupRestoreWriter` for an empty database
+in one transaction with deferred foreign keys. It writes media blob and asset
+rows, provider accounts, model profiles, prompts, audio providers, user voices,
+personas, lorebooks, characters, groups and their lorebook bindings with their
+exported ids, revisions, timestamps and states, sets the persona default and
+global settings and selections to the exported rows, and inserts ASR learning
+records. Reading the restored database back yields the same sections. Companion
+characters still receive a fresh Soul state from their authored config because
+the export carries no Soul rows yet; conversations, runtime, usage, memory,
+companion state, secrets, media bytes and the cutover are later restore slices.
+
 The legacy migration boundary can open an old `app.db` read-only, require the
 actual version-92 schema roots, and return a bounded typed import inventory.
 It performs no source migration or destination writes during preflight.

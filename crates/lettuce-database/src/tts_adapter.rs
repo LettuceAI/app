@@ -106,10 +106,17 @@ pub(crate) fn insert_audio_provider(
     connection: &rusqlite::Connection,
     provider: &AudioProvider,
 ) -> Result<(), TtsConfigurationRepositoryError> {
-    provider.validate().map_err(corrupt)?;
     if provider.revision != Revision::INITIAL {
         return Err(TtsConfigurationRepositoryError::InvalidData);
     }
+    insert_audio_provider_row(connection, provider)
+}
+
+pub(crate) fn insert_audio_provider_row(
+    connection: &rusqlite::Connection,
+    provider: &AudioProvider,
+) -> Result<(), TtsConfigurationRepositoryError> {
+    provider.validate().map_err(corrupt)?;
     let config_json = encode_versioned(&provider.config, AUDIO_PROVIDER_CONFIG_FORMAT_VERSION)
         .map_err(corrupt)?;
     let exists = connection
@@ -148,10 +155,17 @@ pub(crate) fn insert_user_voice(
     connection: &rusqlite::Connection,
     voice: &UserVoice,
 ) -> Result<(), TtsConfigurationRepositoryError> {
-    voice.validate().map_err(corrupt)?;
     if voice.revision != Revision::INITIAL {
         return Err(TtsConfigurationRepositoryError::InvalidData);
     }
+    insert_user_voice_row(connection, voice)
+}
+
+pub(crate) fn insert_user_voice_row(
+    connection: &rusqlite::Connection,
+    voice: &UserVoice,
+) -> Result<(), TtsConfigurationRepositoryError> {
+    voice.validate().map_err(corrupt)?;
     let provider_exists = connection
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM audio_providers WHERE id=?1)",

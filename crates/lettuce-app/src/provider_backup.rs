@@ -1794,6 +1794,31 @@ mod tests {
         let restore_plan =
             lettuce_transfer::decode_provider_backup_restore_plan(&envelope, "backup password")
                 .expect("restore plan");
+        let restored = Database::open_in_memory().expect("restore target");
+        lettuce_transfer::ProviderBackupRestoreWriter::restore_provider_backup_graph(
+            &restored,
+            &restore_plan.graph,
+        )
+        .expect("restore graph");
+        let round_trip =
+            lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(&restored)
+                .expect("read restored graph");
+        assert_eq!(round_trip.accounts, restore_plan.graph.accounts);
+        assert_eq!(round_trip.profiles, restore_plan.graph.profiles);
+        assert_eq!(round_trip.prompts, restore_plan.graph.prompts);
+        assert_eq!(round_trip.selections, restore_plan.graph.selections);
+        assert_eq!(round_trip.settings, restore_plan.graph.settings);
+        assert_eq!(round_trip.audio_providers, restore_plan.graph.audio_providers);
+        assert_eq!(round_trip.user_voices, restore_plan.graph.user_voices);
+        assert_eq!(round_trip.authored, restore_plan.graph.authored);
+        assert_eq!(round_trip.asr_learning, restore_plan.graph.asr_learning);
+        assert_eq!(
+            lettuce_transfer::ProviderBackupRestoreWriter::restore_provider_backup_graph(
+                &restored,
+                &restore_plan.graph,
+            ),
+            Err(lettuce_transfer::ProviderBackupRestoreWriteError::TargetNotEmpty)
+        );
         assert_eq!(restore_plan.secrets.len(), 2);
         assert!(
             restore_plan

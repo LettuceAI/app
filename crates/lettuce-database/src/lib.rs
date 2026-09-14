@@ -30,6 +30,7 @@ mod memory_embedding_adapter;
 mod persona_adapter;
 mod prompt_adapter;
 mod restore_admission_adapter;
+mod restore_writer;
 mod scheduled_note_adapter;
 mod soul_adapter;
 mod soul_writer_adapter;
@@ -783,17 +784,7 @@ impl ProviderAccountRepository for Database {
                     account.allow_invalid_tls],
             ).map_err(model_error)?
         } else {
-            connection.execute(
-                "INSERT INTO provider_accounts (id, provider_kind, protocol, label, endpoint, enabled, \
-                 api_key_secret_ref, secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at, \
-                 streaming_enabled, allow_invalid_tls) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
-                params![account.id.to_string(), account.provider_kind, provider_protocol_name(account.protocol),
-                    account.label, account.endpoint, account.enabled, account.api_key_ref.map(|v| v.to_string()),
-                    account.secret_owner_id.as_uuid().to_string(), headers, config,
-                    to_i64(account.revision.get()).map_err(model_error)?, account.created_at.get(),
-                    account.updated_at.get(), account.streaming_enabled, account.allow_invalid_tls],
-            ).map_err(model_error)?
+            insert_provider_account_row(&connection, &account)?
         };
         if changed == 0 {
             return Err(ModelRepositoryError::StaleRevision);
@@ -996,13 +987,7 @@ impl ModelProfileRepository for Database {
                     profile.updated_at.get(), to_i64(expected.get()).map_err(model_error)?],
             ).map_err(model_error)?
         } else {
-            connection.execute(
-                "INSERT INTO model_profiles (id, provider_account_id, external_model_id, display_name, kind, \
-                 config_json, revision, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
-                params![profile.id.to_string(), profile.provider_account_id.to_string(), profile.external_model_id,
-                    profile.display_name, model_kind_name(profile.kind), config,
-                    to_i64(profile.revision.get()).map_err(model_error)?, profile.created_at.get(), profile.updated_at.get()],
-            ).map_err(model_error)?
+            insert_model_profile_row(&connection, &profile)?
         };
         if changed == 0 {
             return Err(ModelRepositoryError::StaleRevision);
@@ -1124,6 +1109,101 @@ fn blob_state_name(value: BlobState) -> &'static str {
     }
 }
 
+pub(crate) fn insert_provider_account_row(
+    connection: &Connection,
+    account: &ProviderAccount,
+) -> Result<usize, ModelRepositoryError> {
+    validate_account(account)?;
+    let headers = serde_json::to_string(&account.secret_headers)
+        .map_err(|_| ModelRepositoryError::InvalidData)?;
+    let config = encode_versioned(&account.config, PROVIDER_CONFIG_FORMAT_VERSION)
+        .map_err(|_| ModelRepositoryError::InvalidData)?;
+    connection.execute(
+        "INSERT INTO provider_accounts (id, provider_kind, protocol, label, endpoint, enabled, \
+         api_key_secret_ref, secret_owner_id, secret_headers_json, config_json, revision, created_at, updated_at, \
+         streaming_enabled, allow_invalid_tls) \
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
+        params![account.id.to_string(), account.provider_kind, provider_protocol_name(account.protocol),
+            account.label, account.endpoint, account.enabled, account.api_key_ref.map(|v| v.to_string()),
+            account.secret_owner_id.as_uuid().to_string(), headers, config,
+            to_i64(account.revision.get()).map_err(model_error)?, account.created_at.get(),
+            account.updated_at.get(), account.streaming_enabled, account.allow_invalid_tls],
+    ).map_err(model_error)
+}
+
+pub(crate) fn insert_model_profile_row(
+    connection: &Connection,
+    profile: &ModelProfile,
+) -> Result<usize, ModelRepositoryError> {
+    validate_profile(profile)?;
+    let config = encode_versioned(&profile.config, MODEL_PROFILE_CONFIG_FORMAT_VERSION)
+        .map_err(|_| ModelRepositoryError::InvalidData)?;
+    connection.execute(
+        "INSERT INTO model_profiles (id, provider_account_id, external_model_id, display_name, kind, \
+         config_json, revision, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+        params![profile.id.to_string(), profile.provider_account_id.to_string(), profile.external_model_id,
+            profile.display_name, model_kind_name(profile.kind), config,
+            to_i64(profile.revision.get()).map_err(model_error)?, profile.created_at.get(), profile.updated_at.get()],
+    ).map_err(model_error)
+}
+
+pub(crate) fn insert_media_blob_row(
+    connection: &Connection,
+    blob: &MediaBlob,
+) -> Result<(), MediaBlobRepositoryError> {
+    connection
+        .execute(
+            "INSERT INTO media_blobs (id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+            params![
+                blob.id.to_string(),
+                blob.content_hash.as_str(),
+                media_kind_name(blob.kind),
+                blob.mime_type,
+                to_i64(blob.byte_size).map_err(media_error)?,
+                blob.width.map(i64::from),
+                blob.height.map(i64::from),
+                blob.duration_ms
+                    .map(to_i64)
+                    .transpose()
+                    .map_err(media_error)?,
+                i64::from(blob.validation_version),
+                blob_state_name(blob.state),
+                blob.created_at.get(),
+                blob.updated_at.get()
+            ],
+        )
+        .map_err(media_error)?;
+    Ok(())
+}
+
+pub(crate) fn insert_media_asset_row(
+    connection: &Connection,
+    asset: &MediaAsset,
+) -> Result<(), MediaAssetRepositoryError> {
+    let (retention, expires_at) = retention_values(asset.retention);
+    let provenance = serde_json::to_string(&asset.provenance)
+        .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
+    connection
+        .execute(
+            "INSERT INTO media_assets (id, blob_id, blob_kind, kind, origin, retention, expires_at, provenance_json, revision, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![
+                asset.id.to_string(),
+                asset.blob_id.to_string(),
+                media_kind_name(asset.kind.blob_kind()),
+                asset_kind_name(asset.kind),
+                asset_origin_name(asset.origin),
+                retention,
+                expires_at,
+                provenance,
+                to_i64(asset.revision.get()).map_err(asset_error)?,
+                asset.created_at.get(),
+                asset.updated_at.get(),
+            ],
+        )
+        .map_err(asset_error)?;
+    Ok(())
+}
+
 pub(crate) const MEDIA_BLOB_COLUMNS: &str = "id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at";
 
 pub(crate) fn media_from_row(row: &Row<'_>) -> rusqlite::Result<MediaBlob> {
@@ -1235,28 +1315,7 @@ impl MediaBlobRepository for Database {
             return Err(MediaBlobRepositoryError::InvalidData);
         }
 
-        transaction
-            .execute(
-                "INSERT INTO media_blobs (id, content_hash, kind, mime_type, byte_size, width, height, duration_ms, validation_version, state, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
-                params![
-                    blob.id.to_string(),
-                    blob.content_hash.as_str(),
-                    media_kind_name(blob.kind),
-                    blob.mime_type,
-                    to_i64(blob.byte_size).map_err(media_error)?,
-                    blob.width.map(i64::from),
-                    blob.height.map(i64::from),
-                    blob.duration_ms
-                        .map(to_i64)
-                        .transpose()
-                        .map_err(media_error)?,
-                    i64::from(blob.validation_version),
-                    blob_state_name(blob.state),
-                    blob.created_at.get(),
-                    blob.updated_at.get()
-                ],
-            )
-            .map_err(media_error)?;
+        insert_media_blob_row(&transaction, &blob)?;
         let stored = transaction
             .query_row(
                 &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
@@ -1553,9 +1612,6 @@ impl MediaAssetRepository for Database {
         asset
             .validate()
             .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
-        let (retention, expires_at) = retention_values(asset.retention);
-        let provenance = serde_json::to_string(&asset.provenance)
-            .map_err(|_| MediaAssetRepositoryError::InvalidData)?;
         let mut connection = self
             .connection()
             .map_err(|_| MediaAssetRepositoryError::Storage)?;
@@ -1585,24 +1641,7 @@ impl MediaAssetRepository for Database {
         {
             return Err(MediaAssetRepositoryError::AlreadyExists);
         }
-        transaction
-            .execute(
-                "INSERT INTO media_assets (id, blob_id, blob_kind, kind, origin, retention, expires_at, provenance_json, revision, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
-                params![
-                    asset.id.to_string(),
-                    asset.blob_id.to_string(),
-                    media_kind_name(asset.kind.blob_kind()),
-                    asset_kind_name(asset.kind),
-                    asset_origin_name(asset.origin),
-                    retention,
-                    expires_at,
-                    provenance,
-                    to_i64(asset.revision.get()).map_err(asset_error)?,
-                    asset.created_at.get(),
-                    asset.updated_at.get(),
-                ],
-            )
-            .map_err(asset_error)?;
+        insert_media_asset_row(&transaction, &asset)?;
         let stored = load_asset_with_blob(&transaction, asset.id)
             .map_err(asset_error)?
             .ok_or(MediaAssetRepositoryError::InvalidData)?;

@@ -120,6 +120,25 @@ pub trait ProviderBackupSource: Send + Sync {
     fn read_provider_backup_graph(&self) -> Result<ProviderBackupGraph, ProviderBackupSourceError>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ProviderBackupRestoreWriteError {
+    #[error("backup restore target already holds data")]
+    TargetNotEmpty,
+    #[error("backup graph cannot be written")]
+    InvalidData,
+    #[error("backup restore target could not be written")]
+    Storage,
+}
+
+/// Writes a decoded backup graph into an empty database exactly as it was
+/// exported, keeping ids, revisions, timestamps and states.
+pub trait ProviderBackupRestoreWriter: Send + Sync {
+    fn restore_provider_backup_graph(
+        &self,
+        graph: &ProviderBackupGraph,
+    ) -> Result<(), ProviderBackupRestoreWriteError>;
+}
+
 pub struct ProviderBackupSecret {
     pub reference: SecretRef,
     pub purpose: SecretPurpose,

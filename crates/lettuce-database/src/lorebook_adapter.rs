@@ -830,6 +830,35 @@ impl OwnerKind {
     }
 }
 
+/// Inserts owner bindings with their stored revision and timestamps.
+pub(crate) fn insert_bindings_in(
+    tx: &Transaction<'_>,
+    kind: OwnerKind,
+    owner_id: &str,
+    bindings: &[LorebookBinding],
+) -> Result<(), rusqlite::Error> {
+    let sql = format!(
+        "INSERT INTO {} ({},lorebook_id,enabled,ordinal,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+        kind.binding_table(),
+        kind.owner_column()
+    );
+    for binding in bindings {
+        tx.execute(
+            &sql,
+            params![
+                owner_id,
+                binding.lorebook_id.to_string(),
+                binding.enabled,
+                i64::from(binding.ordinal),
+                i64::try_from(binding.revision.get()).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                binding.created_at.get(),
+                binding.updated_at.get()
+            ],
+        )?;
+    }
+    Ok(())
+}
+
 fn owner_revision(
     tx: &Transaction<'_>,
     kind: OwnerKind,

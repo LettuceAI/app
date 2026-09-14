@@ -899,42 +899,7 @@ impl AsrLearningRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        for term in batch.vocabulary {
-            term.validate().map_err(corrupt)?;
-            transaction
-                .execute(
-                    "INSERT INTO asr_vocabulary_terms (id,term,normalized_term,language,category,scope,priority,use_count,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
-                    params![term.id.to_string(), term.term, term.normalized_term, term.language, term.category, term.scope, term.priority, to_i64(term.use_count)?, term.created_at.get(), term.updated_at.get()],
-                )
-                .map_err(storage)?;
-        }
-        for correction in batch.corrections {
-            correction.validate().map_err(corrupt)?;
-            transaction
-                .execute(
-                    "INSERT INTO asr_corrections (id,wrong,normalized_wrong,correct,normalized_correct,language,scope,confidence,use_count,accepted_count,rejected_count,seen_count,last_seen_at,user_approved,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
-                    params![correction.id.to_string(), correction.wrong, correction.normalized_wrong, correction.correct, correction.normalized_correct, correction.language, correction.scope, correction.confidence, to_i64(correction.use_count)?, to_i64(correction.accepted_count)?, to_i64(correction.rejected_count)?, to_i64(correction.seen_count)?, correction.last_seen_at.map(TimestampMillis::get), correction.user_approved, correction.created_at.get(), correction.updated_at.get()],
-                )
-                .map_err(storage)?;
-        }
-        for ignored in batch.ignored_suggestions {
-            ignored.validate().map_err(corrupt)?;
-            transaction
-                .execute(
-                    "INSERT INTO asr_ignored_suggestions (id,wrong,normalized_wrong,correct,normalized_correct,language,scope,ignored_count,last_ignored_at,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
-                    params![ignored.id.to_string(), ignored.wrong, ignored.normalized_wrong, ignored.correct, ignored.normalized_correct, ignored.language, ignored.scope, to_i64(ignored.ignored_count)?, ignored.last_ignored_at.get(), ignored.created_at.get(), ignored.updated_at.get()],
-                )
-                .map_err(storage)?;
-        }
-        for example in batch.voice_examples {
-            example.validate().map_err(corrupt)?;
-            transaction
-                .execute(
-                    "INSERT INTO asr_voice_examples (id,audio_asset_id,expected_text,normalized_expected_text,whisper_output,normalized_whisper_output,language,scope,vocabulary_term_id,correction_id,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
-                    params![example.id.to_string(), example.audio_asset_id.to_string(), example.expected_text, example.normalized_expected_text, example.whisper_output, example.normalized_whisper_output, example.language, example.scope, example.vocabulary_term_id.map(|id| id.to_string()), example.correction_id.map(|id| id.to_string()), example.created_at.get(), example.updated_at.get()],
-                )
-                .map_err(storage)?;
-        }
+        insert_learning_batch_in(&transaction, batch)?;
         transaction.commit().map_err(storage)?;
         Ok(AsrLearningImportReceipt {
             vocabulary_count,
@@ -943,6 +908,49 @@ impl AsrLearningRepository for Database {
             voice_example_count,
         })
     }
+}
+
+pub(crate) fn insert_learning_batch_in(
+    transaction: &rusqlite::Connection,
+    batch: AsrLearningBatch,
+) -> Result<(), AsrLearningRepositoryError> {
+    for term in batch.vocabulary {
+        term.validate().map_err(corrupt)?;
+        transaction
+            .execute(
+                "INSERT INTO asr_vocabulary_terms (id,term,normalized_term,language,category,scope,priority,use_count,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                params![term.id.to_string(), term.term, term.normalized_term, term.language, term.category, term.scope, term.priority, to_i64(term.use_count)?, term.created_at.get(), term.updated_at.get()],
+            )
+            .map_err(storage)?;
+    }
+    for correction in batch.corrections {
+        correction.validate().map_err(corrupt)?;
+        transaction
+            .execute(
+                "INSERT INTO asr_corrections (id,wrong,normalized_wrong,correct,normalized_correct,language,scope,confidence,use_count,accepted_count,rejected_count,seen_count,last_seen_at,user_approved,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+                params![correction.id.to_string(), correction.wrong, correction.normalized_wrong, correction.correct, correction.normalized_correct, correction.language, correction.scope, correction.confidence, to_i64(correction.use_count)?, to_i64(correction.accepted_count)?, to_i64(correction.rejected_count)?, to_i64(correction.seen_count)?, correction.last_seen_at.map(TimestampMillis::get), correction.user_approved, correction.created_at.get(), correction.updated_at.get()],
+            )
+            .map_err(storage)?;
+    }
+    for ignored in batch.ignored_suggestions {
+        ignored.validate().map_err(corrupt)?;
+        transaction
+            .execute(
+                "INSERT INTO asr_ignored_suggestions (id,wrong,normalized_wrong,correct,normalized_correct,language,scope,ignored_count,last_ignored_at,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                params![ignored.id.to_string(), ignored.wrong, ignored.normalized_wrong, ignored.correct, ignored.normalized_correct, ignored.language, ignored.scope, to_i64(ignored.ignored_count)?, ignored.last_ignored_at.get(), ignored.created_at.get(), ignored.updated_at.get()],
+            )
+            .map_err(storage)?;
+    }
+    for example in batch.voice_examples {
+        example.validate().map_err(corrupt)?;
+        transaction
+            .execute(
+                "INSERT INTO asr_voice_examples (id,audio_asset_id,expected_text,normalized_expected_text,whisper_output,normalized_whisper_output,language,scope,vocabulary_term_id,correction_id,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                params![example.id.to_string(), example.audio_asset_id.to_string(), example.expected_text, example.normalized_expected_text, example.whisper_output, example.normalized_whisper_output, example.language, example.scope, example.vocabulary_term_id.map(|id| id.to_string()), example.correction_id.map(|id| id.to_string()), example.created_at.get(), example.updated_at.get()],
+            )
+            .map_err(storage)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

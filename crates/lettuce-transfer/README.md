@@ -276,6 +276,11 @@ exact retries replay while divergent bytes or receipts fail closed. Secret
 values never enter the workspace or receipt. This remains pre-cutover staging:
 live database, secret and media roots are not opened or changed.
 
+`ProviderBackupRestoreWriter` is the port that writes a decoded version-2 graph
+into an empty database exactly as it was exported (user decision 2026-09-14: a
+backup replaces the current data in a fresh database and the previous database
+file is kept). A target that already holds data is refused.
+
 Unversioned legacy ZIP backups are now opened by a separate read-only
 compatibility inventory decoder. It reproduces the legacy BLAKE3 password KDF
 and shared XChaCha nonce only to authenticate existing encrypted archives, then
