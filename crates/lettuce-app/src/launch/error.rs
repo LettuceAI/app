@@ -53,8 +53,6 @@ pub enum ConversationLaunchError {
     MemberCharacterNotFound { character_id: CharacterId },
     #[error("group member character {character_id} is archived")]
     MemberCharacterArchived { character_id: CharacterId },
-    #[error("group member character {character_id} runs in companion mode")]
-    MemberCharacterCompanion { character_id: CharacterId },
     #[error("a group launch needs at least {min} members")]
     TooFewMembers { min: usize },
     #[error("a group launch holds at most {max} members")]

@@ -52,7 +52,9 @@ the active variant (legacy kept it only on the message), and without a selected
 variant the variant matching the message content is active (legacy rendered the
 content). A replay returns the committed stage receipt before any launch
 planning, so sources changed after the stage cannot block it. Branch sessions
-stay separate conversations. `AppBackend::legacy_group_conversation_importer`
+stay separate conversations. A group launch accepts companion characters as ordinary members (user decision
+2026-09-14); companion state, prompt state, scheduled notes and the companion
+clock stay direct-conversation only. `AppBackend::legacy_group_conversation_importer`
 does the same for group sessions after the groups stage: it launches from the
 imported group profile and rewrites the cast to the session's members, reusing
 planned member snapshots, snapshotting members the profile no longer lists, and

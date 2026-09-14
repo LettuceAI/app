@@ -10108,7 +10108,7 @@ fn group_source_drift_between_the_two_reads_is_detected() {
 }
 
 #[test]
-fn a_companion_member_character_is_rejected() {
+fn a_companion_member_character_joins_as_a_normal_member() {
     let backend = backend();
     let database = backend.database();
     let first = seed_named_character(database, "Ada");
@@ -10121,14 +10121,12 @@ fn a_companion_member_character_is_rejected() {
         None,
         |_| {},
     );
-    assert_eq!(
-        ConversationLaunchPlanner::new(database)
-            .prepare_group(&group_request(group_id, "group-companion-member"), NOW)
-            .expect_err("companion member"),
-        ConversationLaunchError::MemberCharacterCompanion {
-            character_id: companion
-        }
-    );
+    let launch = ConversationLaunchPlanner::new(database)
+        .prepare_group(&group_request(group_id, "group-companion-member"), NOW)
+        .expect("companion member launches like any member");
+    assert!(launch.plan().participants.iter().any(|participant| {
+        participant.source == lettuce_conversations::ParticipantSource::Character(companion)
+    }));
 }
 
 #[test]

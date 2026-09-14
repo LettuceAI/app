@@ -884,9 +884,6 @@ where
             if details.character.status == lettuce_characters::LifecycleStatus::Archived {
                 return Err(ConversationLaunchError::MemberCharacterArchived { character_id });
             }
-            if policy::is_companion(&details.character.defaults) {
-                return Err(ConversationLaunchError::MemberCharacterCompanion { character_id });
-            }
             characters.push(details);
         }
 
