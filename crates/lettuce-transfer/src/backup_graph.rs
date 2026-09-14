@@ -1210,6 +1210,35 @@ pub fn rebind_provider_backup_secrets(
             rebind(reference);
         }
     }
+    let rebound = fresh
+        .iter()
+        .map(|(old, new)| (old.to_string(), new.to_string()))
+        .collect::<BTreeMap<_, _>>();
+    for entry in &mut graph.legacy_imports.runs {
+        let rows = entry
+            .assignments
+            .iter_mut()
+            .filter(|row| {
+                matches!(
+                    crate::backup_sql_text(row, "source_kind"),
+                    Some("provider_api_key" | "provider_secret_header")
+                )
+            })
+            .map(|row| (row, "destination_id"))
+            .chain(
+                entry
+                    .secret_completions
+                    .iter_mut()
+                    .map(|row| (row, "destination_ref")),
+            );
+        for (row, column) in rows {
+            if let Some(crate::BackupSqlValue::Text(value)) = row.get_mut(column)
+                && let Some(new) = rebound.get(value.as_str())
+            {
+                value.clone_from(new);
+            }
+        }
+    }
     if fresh.len() != secrets.len() {
         return Err(ProviderBackupGraphError::InvalidSecrets);
     }

@@ -1473,8 +1473,13 @@ discovered TTS voices) is carried from the previously active database file, and
 the restored graph must read back equal to the decoded graph before the
 admission is recorded. Only then does `AppDatabaseLocation` atomically point the
 active database at the new file; the previous file is never deleted, and secrets
-written by a failed attempt are removed again. A host opens
-`AppDatabaseLocation::active_path()` with `AppBackend::open` on the next launch.
+written by a failed attempt (including a failed pointer switch) are removed
+again. Legacy import secret assignments and completions inside the backup follow
+the same fresh references. Writes to the previous database after the device-local
+copy are not carried, so the host stops background work before a restore. A host
+opens `AppDatabaseLocation::active_path()` with `AppBackend::open` on the next
+launch. Media installs use their own `restore/<hash>.partial` so a concurrent
+sync download of the same blob is not truncated.
 
 The same export includes the conversation-owned generation runtime: turns,
 attempts, checkpoint timestamps, speaker and initial inference dispatches,

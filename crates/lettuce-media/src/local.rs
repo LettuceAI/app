@@ -1083,7 +1083,7 @@ pub fn install_backup_media_object(
     let byte_size = u64::try_from(bytes.len()).map_err(|_| MediaStoreError::InputTooLarge)?;
     match files
         .prepare(
-            sync_partial_key(content_hash)?,
+            restore_partial_key(content_hash)?,
             object_key(content_hash)?,
             byte_size,
         )
@@ -1125,6 +1125,11 @@ fn object_key(hash: &ContentHash) -> Result<ObjectKey, MediaStoreError> {
 
 fn sync_partial_key(hash: &ContentHash) -> Result<ObjectKey, MediaStoreError> {
     ObjectKey::from_segments(["sync", &format!("{}.partial", hash.as_str())])
+        .map_err(MediaStoreError::File)
+}
+
+fn restore_partial_key(hash: &ContentHash) -> Result<ObjectKey, MediaStoreError> {
+    ObjectKey::from_segments(["restore", &format!("{}.partial", hash.as_str())])
         .map_err(MediaStoreError::File)
 }
 

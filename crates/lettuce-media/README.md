@@ -61,6 +61,7 @@ logical assets with the same hash reuse one local blob. The adapter exposes no
 native path and has no delete operation.
 
 `install_backup_media_object` installs verified backup bytes at the same
-content-addressed object key through the fixed hash-owned partial. An object
+content-addressed object key through its own hash-owned `restore/` partial, so it
+never truncates a concurrent sync download of the same blob. An object
 that is already installed must match size and BLAKE3; catalog rows are not
 touched, because the restored database carries its own blob and asset rows.

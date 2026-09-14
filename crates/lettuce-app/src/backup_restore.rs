@@ -232,7 +232,13 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
                 admission,
                 &mut written,
             )
-            .await;
+            .await
+            .and_then(|admission| {
+                self.location
+                    .activate(&name)
+                    .map(|()| admission)
+                    .map_err(BackupRestoreError::from)
+            });
         let admission = match outcome {
             Ok(admission) => admission,
             Err(error) => {
@@ -242,7 +248,6 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
                 return Err(error);
             }
         };
-        self.location.activate(&name)?;
         Ok(BackupRestoreReceipt {
             database_path,
             previous_database_path,
