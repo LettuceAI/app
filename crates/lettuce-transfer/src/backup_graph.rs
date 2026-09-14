@@ -630,10 +630,22 @@ pub fn canonicalize_and_validate(
                 .proposals
                 .iter()
                 .any(|proposal| proposal.validate().is_err())
+            || entry
+                .turns
+                .iter()
+                .any(|turn| turn.workflow_id != entry.workflow.id)
             || entry.attempts.iter().any(|value| {
                 value.attempt.workflow_id != entry.workflow.id
+                    || value.attempt.validate().is_err()
                     || !turn_ordinals.contains_key(&value.attempt.turn_id)
-                    || value.rounds.iter().any(|round| round.validate().is_err())
+                    || value.rounds.iter().any(|round| {
+                        round.validate().is_err()
+                            || round.attempt_id != value.attempt.id
+                            || round
+                                .calls
+                                .iter()
+                                .any(|call| call.attempt_id != value.attempt.id)
+                    })
             })
         {
             return Err(ProviderBackupGraphError::InvalidGraph);

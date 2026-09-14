@@ -957,29 +957,35 @@ pub(crate) fn insert_restored_workflow_in(
         )
         .map_err(storage)?;
     let mut revision = 1_u64;
-    for turn in &backup.turns {
-        transaction
-            .execute(
-                "INSERT INTO creation_turns \
+    let mut current = first.id;
+    loop {
+        for turn in backup
+            .turns
+            .iter()
+            .filter(|turn| turn.base_proposal_id == current)
+        {
+            transaction
+                .execute(
+                    "INSERT INTO creation_turns \
                  (id,workflow_id,ordinal,base_proposal_id,user_message,created_at) \
                  VALUES (?1,?2,?3,?4,?5,?6)",
-                params![
-                    turn.id.to_string(),
-                    workflow.id.to_string(),
-                    i64::from(turn.ordinal),
-                    turn.base_proposal_id.to_string(),
-                    turn.user_message,
-                    turn.created_at.get(),
-                ],
-            )
-            .map_err(storage)?;
-        for value in backup
-            .attempts
-            .iter()
-            .filter(|value| value.attempt.turn_id == turn.id)
-        {
-            let attempt = &value.attempt;
-            transaction
+                    params![
+                        turn.id.to_string(),
+                        workflow.id.to_string(),
+                        i64::from(turn.ordinal),
+                        turn.base_proposal_id.to_string(),
+                        turn.user_message,
+                        turn.created_at.get(),
+                    ],
+                )
+                .map_err(storage)?;
+            for value in backup
+                .attempts
+                .iter()
+                .filter(|value| value.attempt.turn_id == turn.id)
+            {
+                let attempt = &value.attempt;
+                transaction
                 .execute(
                     "INSERT INTO creation_inference_attempts \
                      (workflow_id,turn_id,id,ordinal,retry_parent_id,base_proposal_id,\
@@ -1005,10 +1011,10 @@ pub(crate) fn insert_restored_workflow_in(
                     ],
                 )
                 .map_err(storage)?;
-            let mut attempt_revision = 1_u64;
-            if let Some(started_at) = attempt.started_at {
-                attempt_revision += 1;
-                transaction
+                let mut attempt_revision = 1_u64;
+                if let Some(started_at) = attempt.started_at {
+                    attempt_revision += 1;
+                    transaction
                     .execute(
                         "UPDATE creation_inference_attempts SET status='running',revision=?2,started_at=?3,updated_at=?3 WHERE id=?1",
                         params![
@@ -1018,16 +1024,16 @@ pub(crate) fn insert_restored_workflow_in(
                         ],
                     )
                     .map_err(storage)?;
-            }
-            for round in &value.rounds {
-                insert_round_rows_in(transaction, round)?;
-            }
-            if !matches!(
-                attempt.status,
-                CreationAttemptStatus::Created | CreationAttemptStatus::Running
-            ) {
-                attempt_revision += 1;
-                transaction
+                }
+                for round in &value.rounds {
+                    insert_round_rows_in(transaction, round)?;
+                }
+                if !matches!(
+                    attempt.status,
+                    CreationAttemptStatus::Created | CreationAttemptStatus::Running
+                ) {
+                    attempt_revision += 1;
+                    transaction
                     .execute(
                         "UPDATE creation_inference_attempts SET status=?2,failure=?3,revision=?4,finished_at=?5,updated_at=?6 WHERE id=?1",
                         params![
@@ -1040,30 +1046,33 @@ pub(crate) fn insert_restored_workflow_in(
                         ],
                     )
                     .map_err(storage)?;
-            }
-            if attempt_revision != attempt.revision.get() {
-                return Err(CreationRepositoryError::Invalid);
+                }
+                if attempt_revision != attempt.revision.get() {
+                    return Err(CreationRepositoryError::Invalid);
+                }
             }
         }
-        if let Some(proposal) = rest
+        let Some(proposal) = rest
             .iter()
-            .find(|proposal| proposal.turn_id == Some(turn.id))
-        {
-            insert_proposal(transaction, workflow.id, proposal)?;
-            revision += 1;
-            transaction
-                .execute(
-                    "UPDATE creation_workflows SET stage=?2,current_proposal_id=?3,revision=?4,updated_at=?5 WHERE id=?1",
-                    params![
-                        workflow.id.to_string(),
-                        stage_name(proposal.stage),
-                        proposal.id.to_string(),
-                        sql_u64(revision)?,
-                        proposal.created_at.get(),
-                    ],
-                )
-                .map_err(storage)?;
-        }
+            .find(|proposal| proposal.parent_id == Some(current))
+        else {
+            break;
+        };
+        insert_proposal(transaction, workflow.id, proposal)?;
+        revision += 1;
+        transaction
+            .execute(
+                "UPDATE creation_workflows SET stage=?2,current_proposal_id=?3,revision=?4,updated_at=?5 WHERE id=?1",
+                params![
+                    workflow.id.to_string(),
+                    stage_name(proposal.stage),
+                    proposal.id.to_string(),
+                    sql_u64(revision)?,
+                    proposal.created_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        current = proposal.id;
     }
     if revision != workflow.revision.get() {
         return Err(CreationRepositoryError::Invalid);
