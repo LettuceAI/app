@@ -472,11 +472,25 @@ fn insert_message_with_turns(
     {
         return Err(invalid("history.message_candidates"));
     }
-    if let Some(first) = turns.first() {
-        if !matches!(first.target, GenerationTarget::NewAssistant { .. }) {
-            return Err(invalid("history.first_turn"));
+    if turns
+        .first()
+        .is_some_and(|first| !matches!(first.target, GenerationTarget::NewAssistant { .. }))
+    {
+        return Err(invalid("history.first_turn"));
+    }
+    let mut creators = Vec::new();
+    let mut later = Vec::new();
+    for turn in turns {
+        if later.is_empty() && matches!(turn.target, GenerationTarget::NewAssistant { .. }) {
+            insert_turn(transaction, turn)?;
+            if turn.candidate_ids.is_empty() {
+                settle_turn(transaction, None, turn, usage)?;
+            } else {
+                creators.push(*turn);
+            }
+        } else {
+            later.push(*turn);
         }
-        insert_turn(transaction, first)?;
     }
     insert_message(transaction, backup)?;
     for revision in &backup.revisions {
@@ -485,10 +499,11 @@ fn insert_message_with_turns(
     if let Some(origin) = &backup.initial_origin {
         insert_origin(transaction, backup, origin)?;
     }
-    for (index, turn) in turns.iter().enumerate() {
-        if index > 0 {
-            insert_turn(transaction, turn)?;
-        }
+    for turn in creators {
+        settle_turn(transaction, Some(backup), turn, usage)?;
+    }
+    for turn in later {
+        insert_turn(transaction, turn)?;
         settle_turn(transaction, Some(backup), turn, usage)?;
     }
     Ok(())
