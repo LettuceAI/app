@@ -86,6 +86,87 @@ fn load_in(
     Ok(Some(record))
 }
 
+fn insert_pending_row(
+    transaction: &Transaction<'_>,
+    record: &TranscriptionRecord,
+) -> Result<usize, TranscriptionRepositoryError> {
+    let request_json =
+        encode_versioned(&record.request, TRANSCRIPTION_REQUEST_FORMAT_VERSION).map_err(storage)?;
+    transaction
+        .execute(
+            "INSERT OR IGNORE INTO speech_transcriptions (
+                job_id, request_id, audio_asset_id, model_id, model_artifact_hash,
+                admitted_at, request_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                record.job_id.to_string(),
+                record.request.id.to_string(),
+                record.request.audio_asset_id.to_string(),
+                record.request.model.id.as_str(),
+                record.request.model.artifact_hash.as_str(),
+                record.request.created_at.get(),
+                request_json,
+            ],
+        )
+        .map_err(storage)
+}
+
+fn settle_row(
+    transaction: &Transaction<'_>,
+    job_id: JobId,
+    result: &TranscriptionResult,
+) -> Result<usize, TranscriptionRepositoryError> {
+    let result_json =
+        encode_versioned(result, TRANSCRIPTION_RESULT_FORMAT_VERSION).map_err(storage)?;
+    transaction
+        .execute(
+            "UPDATE speech_transcriptions
+                SET result_json = ?2, completed_at = ?3
+              WHERE job_id = ?1 AND result_json IS NULL",
+            params![job_id.to_string(), result_json, result.completed_at.get()],
+        )
+        .map_err(storage)
+}
+
+pub(crate) fn list_in(
+    transaction: &Transaction<'_>,
+) -> Result<Vec<TranscriptionRecord>, TranscriptionRepositoryError> {
+    let job_ids = transaction
+        .prepare("SELECT job_id FROM speech_transcriptions ORDER BY admitted_at, job_id")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(storage)?;
+    job_ids
+        .iter()
+        .map(|job_id| {
+            load_in(transaction, JobId::from_str(job_id).map_err(corrupt)?)?
+                .ok_or(TranscriptionRepositoryError::Storage)
+        })
+        .collect()
+}
+
+pub(crate) fn insert_restored_in(
+    transaction: &Transaction<'_>,
+    record: &TranscriptionRecord,
+) -> Result<(), TranscriptionRepositoryError> {
+    record.validate().map_err(corrupt)?;
+    if insert_pending_row(transaction, record)? != 1 {
+        return Err(TranscriptionRepositoryError::Conflict);
+    }
+    if let TranscriptionState::Succeeded { result } = &record.state
+        && settle_row(transaction, record.job_id, result)? != 1
+    {
+        return Err(TranscriptionRepositoryError::Conflict);
+    }
+    if load_in(transaction, record.job_id)?.as_ref() != Some(record) {
+        return Err(TranscriptionRepositoryError::InvalidData);
+    }
+    Ok(())
+}
+
 impl TranscriptionRepository for Database {
     fn admit(
         &self,
@@ -95,29 +176,11 @@ impl TranscriptionRepository for Database {
         if !matches!(record.state, TranscriptionState::Pending) {
             return Err(TranscriptionRepositoryError::InvalidData);
         }
-        let request_json = encode_versioned(&record.request, TRANSCRIPTION_REQUEST_FORMAT_VERSION)
-            .map_err(storage)?;
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        let inserted = transaction
-            .execute(
-                "INSERT OR IGNORE INTO speech_transcriptions (
-                    job_id, request_id, audio_asset_id, model_id, model_artifact_hash,
-                    admitted_at, request_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![
-                    record.job_id.to_string(),
-                    record.request.id.to_string(),
-                    record.request.audio_asset_id.to_string(),
-                    record.request.model.id.as_str(),
-                    record.request.model.artifact_hash.as_str(),
-                    record.request.created_at.get(),
-                    request_json,
-                ],
-            )
-            .map_err(storage)?;
+        let inserted = insert_pending_row(&transaction, &record)?;
         let stored =
             load_in(&transaction, record.job_id)?.ok_or(TranscriptionRepositoryError::Storage)?;
         if inserted == 0 && (stored.job_id != record.job_id || stored.request != record.request) {
@@ -157,17 +220,7 @@ impl TranscriptionRepository for Database {
             }
             return Err(TranscriptionRepositoryError::Conflict);
         }
-        let result_json =
-            encode_versioned(&result, TRANSCRIPTION_RESULT_FORMAT_VERSION).map_err(storage)?;
-        let changed = transaction
-            .execute(
-                "UPDATE speech_transcriptions
-                    SET result_json = ?2, completed_at = ?3
-                  WHERE job_id = ?1 AND result_json IS NULL",
-                params![job_id.to_string(), result_json, result.completed_at.get()],
-            )
-            .map_err(storage)?;
-        if changed != 1 {
+        if settle_row(&transaction, job_id, &result)? != 1 {
             return Err(TranscriptionRepositoryError::Conflict);
         }
         let stored = load_in(&transaction, job_id)?.ok_or(TranscriptionRepositoryError::Storage)?;

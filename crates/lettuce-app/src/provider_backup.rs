@@ -1685,6 +1685,20 @@ mod tests {
             .database()
             .save_voice_example(voice_example.clone())
             .expect("store voice example");
+        crate::SpeechTranscriptionCoordinator::new(backend.database(), backend.database())
+            .admit(lettuce_speech::TranscriptionRequest {
+                id: lettuce_types::RequestId::new(),
+                audio_asset_id: voice_audio.asset.id,
+                model: lettuce_speech::AsrModelDescriptor {
+                    id: lettuce_speech::AsrModelId::new("small.en-q5_1").expect("model id"),
+                    artifact_hash: lettuce_types::ContentHash::parse("cd".repeat(32))
+                        .expect("model hash"),
+                    english_only: true,
+                },
+                options: lettuce_speech::TranscriptionOptions::default(),
+                created_at: TimestampMillis::new(2),
+            })
+            .expect("admit transcription");
         let backup_job = JobStore::create_or_get(
             backend.database(),
             JobSpec::new(
@@ -1841,6 +1855,7 @@ mod tests {
         assert_eq!(round_trip.memory, restore_plan.graph.memory);
         assert_eq!(round_trip.creation, restore_plan.graph.creation);
         assert_eq!(round_trip.job_backup, restore_plan.graph.job_backup);
+        assert_eq!(round_trip.job_backup.speech_transcriptions.len(), 1);
         assert_eq!(
             round_trip.companion_state,
             restore_plan.graph.companion_state

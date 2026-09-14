@@ -15,6 +15,10 @@ pub struct JobBackup {
     pub version: u32,
     pub jobs: Vec<StoredJobRecord>,
     pub inference: Vec<BackupJobInference>,
+    #[serde(default)]
+    pub speech_transcriptions: Vec<lettuce_speech::TranscriptionRecord>,
+    #[serde(default)]
+    pub speech_syntheses: Vec<lettuce_speech::SynthesisRecord>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -53,6 +57,30 @@ impl JobBackup {
                     .as_ref()
                     .is_some_and(|basis| basis.calculate_job(&entry.evidence).is_err())
             {
+                return Err(JobBackupError::InvalidData);
+            }
+        }
+        self.speech_transcriptions
+            .sort_by_key(|record| (record.request.created_at, record.job_id));
+        self.speech_syntheses
+            .sort_by_key(|record| (record.request.created_at, record.job_id));
+        let job_ids = self
+            .jobs
+            .iter()
+            .map(|job| job.snapshot.id)
+            .collect::<BTreeSet<_>>();
+        let mut speech_jobs = BTreeSet::new();
+        for (job_id, valid) in self
+            .speech_transcriptions
+            .iter()
+            .map(|record| (record.job_id, record.validate().is_ok()))
+            .chain(
+                self.speech_syntheses
+                    .iter()
+                    .map(|record| (record.job_id, record.validate().is_ok())),
+            )
+        {
+            if !valid || !job_ids.contains(&job_id) || !speech_jobs.insert(job_id) {
                 return Err(JobBackupError::InvalidData);
             }
         }
@@ -109,6 +137,8 @@ mod tests {
                 },
                 cost_basis: None,
             }],
+            speech_transcriptions: Vec::new(),
+            speech_syntheses: Vec::new(),
         };
         assert!(backup.canonicalize_and_validate().is_ok());
     }

@@ -116,6 +116,9 @@ interrupted with a derived usage event id and turns without attempts are left
 out. Jobs and job events are written as exported through the job store's
 validation (in-flight jobs keep their state so the normal lease-expiry recovery
 handles them like after a restart), with job inference usage and cost bases.
+Speech transcriptions and syntheses are inserted pending and settled through
+their settle-once triggers, so a restored synthesis is checked against its
+output asset and provenance like a live one.
 Each turn walks the shortest legal status path of the 0008 transition graph,
 and per attempt the writer restores its speaker dispatch while the turn is
 selecting a speaker, its initial dispatch with replay references and tool

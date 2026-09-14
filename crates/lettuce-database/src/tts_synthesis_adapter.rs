@@ -94,37 +94,104 @@ fn output_policy(policy: &TtsOutputPolicy) -> (&'static str, Option<i64>) {
     }
 }
 
+fn insert_pending_row(
+    transaction: &Transaction<'_>,
+    record: &SynthesisRecord,
+) -> Result<usize, SynthesisRepositoryError> {
+    let request_json =
+        encode_versioned(&record.request, REQUEST_FORMAT_VERSION).map_err(storage)?;
+    let (retention, expires_at) = output_policy(&record.request.output_policy);
+    transaction
+        .execute(
+            "INSERT OR IGNORE INTO speech_syntheses (
+                job_id, request_id, provider_id, output_asset_id, output_retention,
+                output_expires_at, admitted_at, request_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                record.job_id.to_string(),
+                record.request.id.to_string(),
+                record.request.provider.id.to_string(),
+                record.request.output_asset_id.to_string(),
+                retention,
+                expires_at,
+                record.request.created_at.get(),
+                request_json,
+            ],
+        )
+        .map_err(storage)
+}
+
+fn settle_row(
+    transaction: &Transaction<'_>,
+    job_id: JobId,
+    result: &SynthesisResult,
+) -> Result<usize, SynthesisRepositoryError> {
+    let result_json = encode_versioned(result, RESULT_FORMAT_VERSION).map_err(storage)?;
+    transaction
+        .execute(
+            "UPDATE speech_syntheses
+                SET result_json = ?2, result_asset_id = ?3, completed_at = ?4
+              WHERE job_id = ?1 AND result_json IS NULL",
+            params![
+                job_id.to_string(),
+                result_json,
+                result.audio_asset_id.to_string(),
+                result.completed_at.get(),
+            ],
+        )
+        .map_err(storage)
+}
+
+pub(crate) fn list_in(
+    transaction: &Transaction<'_>,
+) -> Result<Vec<SynthesisRecord>, SynthesisRepositoryError> {
+    let job_ids = transaction
+        .prepare("SELECT job_id FROM speech_syntheses ORDER BY admitted_at, job_id")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(storage)?;
+    job_ids
+        .iter()
+        .map(|job_id| {
+            load_in(transaction, JobId::from_str(job_id).map_err(corrupt)?)?
+                .ok_or(SynthesisRepositoryError::Storage)
+        })
+        .collect()
+}
+
+pub(crate) fn insert_restored_in(
+    transaction: &Transaction<'_>,
+    record: &SynthesisRecord,
+) -> Result<(), SynthesisRepositoryError> {
+    record.validate().map_err(corrupt)?;
+    if insert_pending_row(transaction, record)? != 1 {
+        return Err(SynthesisRepositoryError::Conflict);
+    }
+    if let SynthesisState::Succeeded { result } = &record.state
+        && settle_row(transaction, record.job_id, result)? != 1
+    {
+        return Err(SynthesisRepositoryError::Conflict);
+    }
+    if load_in(transaction, record.job_id)?.as_ref() != Some(record) {
+        return Err(SynthesisRepositoryError::InvalidData);
+    }
+    Ok(())
+}
+
 impl SynthesisRepository for Database {
     fn admit(&self, record: SynthesisRecord) -> Result<SynthesisRecord, SynthesisRepositoryError> {
         record.validate().map_err(corrupt)?;
         if !matches!(record.state, SynthesisState::Pending) {
             return Err(SynthesisRepositoryError::InvalidData);
         }
-        let request_json =
-            encode_versioned(&record.request, REQUEST_FORMAT_VERSION).map_err(storage)?;
-        let (retention, expires_at) = output_policy(&record.request.output_policy);
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        let inserted = transaction
-            .execute(
-                "INSERT OR IGNORE INTO speech_syntheses (
-                    job_id, request_id, provider_id, output_asset_id, output_retention,
-                    output_expires_at, admitted_at, request_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![
-                    record.job_id.to_string(),
-                    record.request.id.to_string(),
-                    record.request.provider.id.to_string(),
-                    record.request.output_asset_id.to_string(),
-                    retention,
-                    expires_at,
-                    record.request.created_at.get(),
-                    request_json,
-                ],
-            )
-            .map_err(storage)?;
+        let inserted = insert_pending_row(&transaction, &record)?;
         let stored =
             load_in(&transaction, record.job_id)?.ok_or(SynthesisRepositoryError::Storage)?;
         if inserted == 0 && stored != record {
@@ -162,21 +229,7 @@ impl SynthesisRepository for Database {
             }
             return Err(SynthesisRepositoryError::Conflict);
         }
-        let result_json = encode_versioned(&result, RESULT_FORMAT_VERSION).map_err(storage)?;
-        let changed = transaction
-            .execute(
-                "UPDATE speech_syntheses
-                    SET result_json = ?2, result_asset_id = ?3, completed_at = ?4
-                  WHERE job_id = ?1 AND result_json IS NULL",
-                params![
-                    job_id.to_string(),
-                    result_json,
-                    result.audio_asset_id.to_string(),
-                    result.completed_at.get(),
-                ],
-            )
-            .map_err(storage)?;
-        if changed != 1 {
+        if settle_row(&transaction, job_id, &result)? != 1 {
             return Err(SynthesisRepositoryError::Conflict);
         }
         let stored = load_in(&transaction, job_id)?.ok_or(SynthesisRepositoryError::Storage)?;

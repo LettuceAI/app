@@ -1634,6 +1634,10 @@ fn read_job_backup(
         version: JOB_BACKUP_VERSION,
         jobs: records,
         inference,
+        speech_transcriptions: crate::speech_adapter::list_in(transaction)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+        speech_syntheses: crate::tts_synthesis_adapter::list_in(transaction)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
     })
 }
 
