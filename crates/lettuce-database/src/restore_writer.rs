@@ -370,6 +370,105 @@ impl ProviderBackupRestoreWriter for Database {
             )
             .map_err(invalid)?;
         }
+        let persona_key = |persona_id: Option<lettuce_types::PersonaId>| {
+            persona_id.map_or_else(|| "__default__".to_owned(), |id| id.to_string())
+        };
+        let companion = &graph.companion_state;
+        for relationship in &companion.relationships {
+            let state = &relationship.state;
+            transaction
+                .execute(
+                    "INSERT INTO companion_relationship_states (character_id, persona_key, persona_id, closeness, trust, affection, tension, stability, interaction_count, last_interaction_at, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                    params![
+                        relationship.character_id.to_string(),
+                        persona_key(relationship.persona_id),
+                        relationship.persona_id.map(|id| id.to_string()),
+                        state.closeness,
+                        state.trust,
+                        state.affection,
+                        state.tension,
+                        state.stability,
+                        i64::from(state.interaction_count),
+                        state.last_interaction_at.get(),
+                        sql_revision(relationship.revision)?,
+                        relationship.created_at.get(),
+                        relationship.updated_at.get()
+                    ],
+                )
+                .map_err(invalid)?;
+        }
+        for session in &companion.sessions {
+            let owner = session.owner;
+            transaction
+                .execute(
+                    "INSERT INTO companion_session_states (conversation_id, character_id, persona_key, persona_id, initial_hash, confidence, emotional_updated_at, state_updated_at, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    params![
+                        owner.conversation_id.to_string(),
+                        owner.character_id.to_string(),
+                        persona_key(owner.persona_id),
+                        owner.persona_id.map(|id| id.to_string()),
+                        crate::hex_decode(session.initial_state_hash.as_str()).map_err(invalid)?,
+                        session.emotional_state.confidence,
+                        session.emotional_state.updated_at.get(),
+                        session.state_updated_at.get(),
+                        sql_revision(session.revision)?,
+                        session.created_at.get(),
+                        session.updated_at.get()
+                    ],
+                )
+                .map_err(invalid)?;
+            crate::state_adapter::replace_vectors(
+                &transaction,
+                owner.conversation_id,
+                &session.emotional_state,
+            )
+            .map_err(invalid)?;
+            crate::state_adapter::replace_signals(
+                &transaction,
+                owner.conversation_id,
+                &session.emotional_state,
+                &session.active_signals,
+            )
+            .map_err(invalid)?;
+        }
+        for episode in &companion.episodes {
+            transaction
+                .execute(
+                    "INSERT INTO companion_continuity_episodes (conversation_id, character_id, persona_key, persona_id, episode_index, previous_conversation_id, started_at, ended_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    params![
+                        episode.conversation_id.to_string(),
+                        episode.character_id.to_string(),
+                        persona_key(episode.persona_id),
+                        episode.persona_id.map(|id| id.to_string()),
+                        i64::from(episode.episode_index),
+                        episode.previous_conversation_id.map(|id| id.to_string()),
+                        episode.started_at.get(),
+                        episode.ended_at.map(lettuce_types::TimestampMillis::get),
+                        episode.updated_at.get()
+                    ],
+                )
+                .map_err(invalid)?;
+        }
+        for entry in &companion.receipts {
+            let receipt = &entry.receipt;
+            transaction
+                .execute(
+                    "INSERT INTO companion_state_apply_receipts (operation_id, conversation_id, character_id, persona_key, expected_session_revision, resulting_session_revision, expected_relationship_revision, resulting_relationship_revision, applied_at, change_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![
+                        receipt.operation_id.to_string(),
+                        receipt.owner.conversation_id.to_string(),
+                        receipt.owner.character_id.to_string(),
+                        persona_key(receipt.owner.persona_id),
+                        sql_revision(receipt.expected_session_revision)?,
+                        sql_revision(receipt.resulting_session_revision)?,
+                        sql_revision(receipt.expected_relationship_revision)?,
+                        sql_revision(receipt.resulting_relationship_revision)?,
+                        receipt.applied_at.get(),
+                        crate::hex_decode(entry.change_hash.as_str()).map_err(invalid)?
+                    ],
+                )
+                .map_err(invalid)?;
+        }
         for receipt in &graph.memory.retrieval_accesses {
             let access = &receipt.access;
             transaction

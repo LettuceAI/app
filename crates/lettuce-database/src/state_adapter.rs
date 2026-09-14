@@ -110,7 +110,7 @@ fn insert_vector(
     Ok(())
 }
 
-fn replace_vectors(
+pub(crate) fn replace_vectors(
     tx: &Transaction<'_>,
     conversation_id: ConversationId,
     emotional: &EmotionalState,
@@ -131,7 +131,7 @@ fn replace_vectors(
     Ok(())
 }
 
-fn replace_signals(
+pub(crate) fn replace_signals(
     tx: &Transaction<'_>,
     conversation_id: ConversationId,
     emotional: &EmotionalState,

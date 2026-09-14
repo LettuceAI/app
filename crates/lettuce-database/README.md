@@ -122,7 +122,9 @@ selecting a speaker, its initial dispatch with replay references and tool
 executions while the attempt is running (a tool walks from `requested` along
 the path its revision implies; a tool left unsettled by an interrupted attempt
 is settled with it), and its generation checkpoints. Memory retrieval accesses
-follow the conversations. Dynamic memory runs, companion state and effects,
+follow the conversations, then companion relationship states, session states
+with their emotion vectors and signals, continuity episodes and apply receipts
+at their exported revisions. Dynamic memory runs, companion effects,
 secrets, media bytes and the cutover are later restore slices.
 
 The legacy migration boundary can open an old `app.db` read-only, require the

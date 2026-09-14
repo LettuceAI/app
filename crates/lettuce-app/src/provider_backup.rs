@@ -1841,6 +1841,10 @@ mod tests {
         assert_eq!(round_trip.memory.spaces, restore_plan.graph.memory.spaces);
         assert_eq!(round_trip.job_backup, restore_plan.graph.job_backup);
         assert_eq!(
+            round_trip.companion_state,
+            restore_plan.graph.companion_state
+        );
+        assert_eq!(
             round_trip.memory_projections,
             restore_plan.graph.memory_projections
         );
