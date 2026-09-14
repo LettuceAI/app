@@ -442,7 +442,7 @@ fn exact_media<'a>(
     })
 }
 
-fn archive_path(media: &LegacyBackupMedia) -> String {
+pub(crate) fn archive_path(media: &LegacyBackupMedia) -> String {
     let root = match media.root {
         LegacyBackupMediaRoot::Images => "images",
         LegacyBackupMediaRoot::Avatars => "avatars",

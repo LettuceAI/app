@@ -1481,6 +1481,12 @@ opens `AppDatabaseLocation::active_path()` with `AppBackend::open` on the next
 launch. Media installs use their own `restore/<hash>.partial` so a concurrent
 sync download of the same blob is not truncated.
 
+`LegacyMediaImportCoordinator::execute_from_source` imports legacy media from the
+bytes a planned legacy source retained, with the same length and BLAKE3 checks as
+the file-based path; candidates the source does not hold (voice audio a live
+legacy database plans from its own files) are still read from the confined
+storage root.
+
 The same export includes the conversation-owned generation runtime: turns,
 attempts, checkpoint timestamps, speaker and initial inference dispatches,
 preparation attribution and tool executions. Its file-backed scenario advances a

@@ -62,6 +62,40 @@ where
         plan: &LegacyMediaPlan,
         completed_at: TimestampMillis,
     ) -> Result<Vec<LegacyImportMediaCompletion>, LegacyMediaImportError> {
+        let storage_root = canonical_storage_root(storage_root)?;
+        self.execute_with(admission, plan, completed_at, |candidate| {
+            read_verified_source(&storage_root, candidate)
+        })
+    }
+
+    /// Imports media from the bytes a planned legacy source retained. A
+    /// candidate the source does not hold (voice audio a live legacy database
+    /// planned from its own files) is read from `storage_root`.
+    pub fn execute_from_source(
+        &self,
+        source: &lettuce_transfer::LegacyBackupCompatibilityPlan,
+        storage_root: Option<&Path>,
+        admission: &LegacyImportAdmission,
+        plan: &LegacyMediaPlan,
+        completed_at: TimestampMillis,
+    ) -> Result<Vec<LegacyImportMediaCompletion>, LegacyMediaImportError> {
+        let storage_root = storage_root.map(canonical_storage_root).transpose()?;
+        self.execute_with(admission, plan, completed_at, |candidate| {
+            match (source.media_bytes(&candidate.relative_path), &storage_root) {
+                (Some(bytes), _) => verified_bytes(candidate, bytes.to_vec()),
+                (None, Some(root)) => read_verified_source(root, candidate),
+                (None, None) => Err(LegacyMediaImportError::SourceUnavailable),
+            }
+        })
+    }
+
+    fn execute_with(
+        &self,
+        admission: &LegacyImportAdmission,
+        plan: &LegacyMediaPlan,
+        completed_at: TimestampMillis,
+        read: impl Fn(&LegacyMediaCandidate) -> Result<Vec<u8>, LegacyMediaImportError>,
+    ) -> Result<Vec<LegacyImportMediaCompletion>, LegacyMediaImportError> {
         if !matches!(
             admission.status,
             LegacyImportRunStatus::Admitted | LegacyImportRunStatus::Importing
@@ -69,18 +103,13 @@ where
             return Err(LegacyMediaImportError::InvalidAdmission);
         }
         let assignments = media_assignments(admission, plan)?;
-        let storage_root = std::fs::canonicalize(storage_root)
-            .map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
-        if !storage_root.is_dir() {
-            return Err(LegacyMediaImportError::SourceUnavailable);
-        }
         let mut completions = Vec::with_capacity(plan.media.len());
         for candidate in &plan.media {
             let destination_asset_id = assignments
                 .get(candidate.relative_path.as_str())
                 .copied()
                 .ok_or(LegacyMediaImportError::InvalidAdmission)?;
-            let bytes = read_verified_source(&storage_root, candidate)?;
+            let bytes = read(candidate)?;
             let ingested = self
                 .media_store
                 .ingest_with_id(
@@ -192,7 +221,14 @@ fn read_verified_source(
         .take(candidate.byte_len.saturating_add(1))
         .read_to_end(&mut bytes)
         .map_err(|_| LegacyMediaImportError::SourceRead)?;
-    if bytes.len() as u64 != candidate.byte_len {
+    verified_bytes(candidate, bytes)
+}
+
+fn verified_bytes(
+    candidate: &LegacyMediaCandidate,
+    bytes: Vec<u8>,
+) -> Result<Vec<u8>, LegacyMediaImportError> {
+    if candidate.byte_len > MAX_MEDIA_BLOB_BYTES || bytes.len() as u64 != candidate.byte_len {
         return Err(LegacyMediaImportError::SourceChanged);
     }
     let content_hash = ContentHash::parse(blake3::hash(&bytes).to_hex().to_string())
@@ -201,6 +237,17 @@ fn read_verified_source(
         return Err(LegacyMediaImportError::SourceChanged);
     }
     Ok(bytes)
+}
+
+fn canonical_storage_root(
+    storage_root: impl AsRef<Path>,
+) -> Result<std::path::PathBuf, LegacyMediaImportError> {
+    let storage_root = std::fs::canonicalize(storage_root)
+        .map_err(|_| LegacyMediaImportError::SourceUnavailable)?;
+    if !storage_root.is_dir() {
+        return Err(LegacyMediaImportError::SourceUnavailable);
+    }
+    Ok(storage_root)
 }
 
 fn source_path(

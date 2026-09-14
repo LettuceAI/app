@@ -3013,6 +3013,55 @@ fn canonical_voice_id(
         ))
     })
 }
+/// Serves the provider API keys and secret headers a planned legacy source
+/// carried, keyed like the provider secret sources of a legacy import admission.
+impl crate::LegacyProviderSecretSource for LegacyBackupConfigurationPlan {
+    fn sources(
+        &self,
+    ) -> Result<Vec<crate::LegacyImportProviderSecretSource>, crate::LegacyProviderSecretSourceError>
+    {
+        let mut sources = self
+            .provider_models
+            .provider_accounts
+            .iter()
+            .filter(|provider| provider.origin == LegacyProviderAccountOrigin::Stored)
+            .flat_map(|provider| {
+                provider.pending_secrets.iter().cloned().map(|secret| {
+                    crate::LegacyImportProviderSecretSource {
+                        provider_account_id: provider.id,
+                        secret,
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        sources.sort();
+        Ok(sources)
+    }
+
+    fn load(
+        &self,
+        source: &crate::LegacyImportProviderSecretSource,
+    ) -> Result<SecretValue, crate::LegacyProviderSecretSourceError> {
+        let reference = match &source.secret {
+            LegacyPendingProviderSecret::ApiKey => {
+                deterministic_secret_ref(&format!("provider:{}:api", source.provider_account_id))
+            }
+            LegacyPendingProviderSecret::Header { name } => deterministic_secret_ref(&format!(
+                "provider:{}:header:{}",
+                source.provider_account_id,
+                name.as_str().to_ascii_lowercase()
+            )),
+        };
+        self.secrets
+            .iter()
+            .find(|secret| secret.reference == reference)
+            .ok_or(crate::LegacyProviderSecretSourceError::Unavailable)?
+            .value
+            .with(|value| SecretValue::new(value))
+            .map_err(|_| crate::LegacyProviderSecretSourceError::Invalid)
+    }
+}
+
 fn deterministic_secret_ref(value: &str) -> SecretRef {
     SecretRef::from_uuid(Uuid::new_v5(&LEGACY_ID_NAMESPACE, value.as_bytes()))
 }
@@ -3860,6 +3909,48 @@ mod tests {
             == LegacyBackupConversionNoticeKind::Lossy
             && notice.document == LegacyBackupDocumentKind::AudioProviders
             && notice.field == "[1].id"));
+    }
+
+    #[test]
+    fn planned_configuration_serves_provider_secrets_by_admission_source() {
+        use crate::LegacyProviderSecretSource;
+
+        let provider_id = ProviderAccountId::new();
+        let plan = plan_legacy_backup_configuration(inventory(vec![document(
+            LegacyBackupDocumentKind::ProviderCredentials,
+            json!([{
+                "id": provider_id,
+                "provider_id": "openrouter",
+                "label": "Router",
+                "api_key_ref": null,
+                "api_key": "provider-secret",
+                "base_url": "https://openrouter.ai/api/v1",
+                "default_model": null,
+                "headers": "{\"X-Client\":\"header-secret\"}",
+                "config": null
+            }]),
+        )]))
+        .expect("configuration plan");
+        let sources = plan.sources().expect("secret sources");
+        assert_eq!(sources.len(), 2);
+        let values = sources
+            .iter()
+            .map(|source| {
+                plan.load(source)
+                    .expect("secret value")
+                    .with(|value| value.to_owned())
+            })
+            .collect::<Vec<_>>();
+        assert!(values.iter().any(|value| value == "provider-secret"));
+        assert!(values.iter().any(|value| value == "header-secret"));
+        assert_eq!(
+            plan.load(&crate::LegacyImportProviderSecretSource {
+                provider_account_id: ProviderAccountId::new(),
+                secret: LegacyPendingProviderSecret::ApiKey,
+            })
+            .err(),
+            Some(crate::LegacyProviderSecretSourceError::Unavailable)
+        );
     }
 
     #[test]

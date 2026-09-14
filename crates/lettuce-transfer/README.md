@@ -522,6 +522,15 @@ audio API key reference of a decoded graph to a fresh `SecretRef` and rebinds th
 decoded secret values to them, so a restore writes new store entries instead of
 overwriting secrets the previous database file still references.
 
+A planned legacy source now serves the import stages without touching its
+origin. `LegacyBackupConfigurationPlan` implements `LegacyProviderSecretSource`
+over the provider API keys and secret headers it decoded (the same deterministic
+references its secret list uses), `LegacyBackupCompatibilityPlan::media_bytes`
+returns the retained bytes of a planned media object by archive path, and
+`database_inventory` derives the source counts a legacy import admission
+validates. Together they let a version-1 backup run the same import chain as a
+live legacy database.
+
 Current version-2 and legacy version-1 staging receipts can now produce the same
 validated restore-admission request. It binds the source version/hash, plan
 fingerprint, exact staging-receipt fingerprint and document, media, secret and

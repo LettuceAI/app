@@ -144,6 +144,47 @@ impl LegacyBackupCompatibilityPlan {
         &self.creation_helpers.source.source.source.source.source
     }
 
+    /// The retained bytes of one planned media object, by its archive path.
+    #[must_use]
+    pub fn media_bytes(&self, relative_path: &str) -> Option<&[u8]> {
+        self.inventory()
+            .media
+            .iter()
+            .find(|media| crate::legacy_backup_media::archive_path(media) == relative_path)
+            .map(|media| media.bytes.as_slice())
+    }
+
+    /// The source counts a legacy import admission validates, derived from the
+    /// planned source.
+    #[must_use]
+    pub fn database_inventory(&self) -> crate::LegacyDatabaseInventory {
+        let authored = self.authored_plan();
+        let configuration = &authored.configuration;
+        let count = |value: usize| u64::try_from(value).unwrap_or(u64::MAX);
+        crate::LegacyDatabaseInventory {
+            schema_version: crate::LEGACY_DATABASE_SCHEMA_VERSION,
+            provider_accounts: count(
+                configuration
+                    .provider_models
+                    .provider_accounts
+                    .iter()
+                    .filter(|provider| {
+                        provider.origin == crate::LegacyProviderAccountOrigin::Stored
+                    })
+                    .count(),
+            ),
+            models: count(configuration.provider_models.model_profiles.len()),
+            prompts: count(configuration.prompts.prompts.len()),
+            personas: count(authored.personas.personas.len()),
+            characters: count(authored.characters.len()),
+            lorebooks: count(authored.lorebooks.lorebooks.len()),
+            chat_templates: count(configuration.chat_templates.len()),
+            direct_conversations: count(self.direct_sessions().sessions.len()),
+            group_profiles: count(authored.groups.len()),
+            group_conversations: count(self.group_sessions().sessions.len()),
+        }
+    }
+
     pub(crate) fn inventory(&self) -> &LegacyBackupInventory {
         &self.configuration().source
     }
