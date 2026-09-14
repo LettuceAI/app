@@ -383,6 +383,23 @@ pub(crate) fn all_conversation_artifact_descriptors(
 ) -> Result<Vec<TrustedArtifactDescriptor>, ProviderBackupGraphError> {
     let mut snapshots = BTreeMap::new();
     let mut replays = BTreeMap::new();
+    let memory_replays = graph
+        .dynamic_memory
+        .runs
+        .iter()
+        .flat_map(|run| &run.attempts)
+        .flat_map(|attempt| &attempt.rounds)
+        .flat_map(|entry| {
+            entry.round.provider_replay.iter().cloned().chain(
+                entry
+                    .round
+                    .calls
+                    .iter()
+                    .filter_map(|call| call.call.provider_replay.clone()),
+            )
+        })
+        .map(TrustedArtifactDescriptor::Replay)
+        .collect::<Vec<_>>();
     let descriptors = graph
         .conversation_history
         .artifact_descriptors()
@@ -393,7 +410,8 @@ pub(crate) fn all_conversation_artifact_descriptors(
                 .conversation_runtime
                 .artifact_descriptors()
                 .map_err(|_| ProviderBackupGraphError::InvalidGraph)?,
-        );
+        )
+        .chain(memory_replays);
     for descriptor in descriptors {
         match descriptor {
             TrustedArtifactDescriptor::Snapshot(reference) => {
