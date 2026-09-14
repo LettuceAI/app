@@ -1200,20 +1200,29 @@ impl LegacyImportRepository for Database {
             prompt(&candidate.help_me_reply_prompt_source_ids.conversational)?;
         let payload = serde_json::to_string(&settings)
             .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
-        let changed = transaction
-            .execute(
-                "UPDATE app_settings SET payload_json=?1,dynamic_memory_model_profile_id=?2,group_speaker_model_profile_id=?3,revision=revision+1,created_at=MIN(created_at,?5),updated_at=?4 WHERE id=1",
-                params![
-                    payload,
-                    model(candidate.dynamic_memory_model_profile_id)?.map(|id| id.to_string()),
-                    model(candidate.group_speaker_model_profile_id)?.map(|id| id.to_string()),
-                    request.completed_at.get(),
-                    candidate.created_at.get()
-                ],
+        let earlier_settings = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM legacy_import_stage_results WHERE stage='settings' AND run_id<>?1)",
+                [request.run_id.to_string()],
+                |row| row.get::<_, bool>(0),
             )
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
-        if changed != 1 {
-            return Err(LegacyImportRepositoryError::Conflict);
+        if !earlier_settings {
+            let changed = transaction
+                .execute(
+                    "UPDATE app_settings SET payload_json=?1,dynamic_memory_model_profile_id=?2,group_speaker_model_profile_id=?3,revision=revision+1,created_at=MIN(created_at,?5),updated_at=?4 WHERE id=1",
+                    params![
+                        payload,
+                        model(candidate.dynamic_memory_model_profile_id)?.map(|id| id.to_string()),
+                        model(candidate.group_speaker_model_profile_id)?.map(|id| id.to_string()),
+                        request.completed_at.get(),
+                        candidate.created_at.get()
+                    ],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            if changed != 1 {
+                return Err(LegacyImportRepositoryError::Conflict);
+            }
         }
         insert_stage_result(
             &transaction,

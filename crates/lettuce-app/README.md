@@ -93,7 +93,8 @@ lazily and kept sessions without a persona under a separate `__default__` key,
 so indexes and previous links are renumbered along the merged chain (legacy
 episodes keep their timestamps; sessions legacy never recorded start at their
 creation and end where the next one starts). Legacy Soul facts that form an
-exact snapshot replace the imported character's authored Soul facts, and legacy
+exact snapshot replace the imported character's authored Soul facts (their
+source memory ids mapped to the imported pool memory ids), and legacy
 scheduled notes of imported companion characters are written in the same stage
 (notes the rewrite rejects, such as blank content, are left out). Conversations
 are written in episode order so episode links resolve.

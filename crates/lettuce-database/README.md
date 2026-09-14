@@ -575,7 +575,8 @@ take ids derived from their legacy ids within the run's `LegacyIdScope` (bound
 to the source fingerprint), so a different legacy source that reuses the same
 ids imports next to existing data and a replay derives the same ids. An
 already-selected default persona, model or prompt is kept instead of aborting
-the import, and legacy usage records are keyed by run and source id. Models,
+the import, the settings stage keeps the global settings an earlier run already
+imported, and legacy usage records are keyed by run and source id. Models,
 prompts, lorebooks and media are remapped through the sealed assignments. A
 stale prompt reference resolves to the app default, as legacy did. The
 deprecated character system prompt stays in the sealed source evidence like the

@@ -189,6 +189,18 @@ where
                 && self.is_companion(character(state.character_id), &companion_characters)?
                 && let Some(facts) = state.soul_facts.clone()
             {
+                let pool = format!("companion-pool:{}", state.character_id);
+                let facts = facts
+                    .into_iter()
+                    .map(|fact| lettuce_companions::SoulFact {
+                        source_memory_ids: fact
+                            .source_memory_ids
+                            .iter()
+                            .map(|id| memory_item_id(context.scope, &pool, id).to_string())
+                            .collect(),
+                        ..fact
+                    })
+                    .collect();
                 companion_souls.push((character(state.character_id), facts));
             }
         }
