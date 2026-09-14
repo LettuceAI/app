@@ -76,6 +76,8 @@ pub struct AuthoredProfileBackup {
 #[serde(deny_unknown_fields)]
 pub struct ProviderBackupGraph {
     pub version: u32,
+    #[serde(default)]
+    pub creation: CreationBackup,
     pub accounts: Vec<ProviderAccount>,
     pub profiles: Vec<ModelProfile>,
     pub prompts: Vec<PromptDocument>,
@@ -114,6 +116,34 @@ pub enum ProviderBackupSourceError {
     InvalidData,
     #[error("backup source could not be read")]
     Storage,
+}
+
+/// Creation runs that are not tied to a creation workflow's proposal chain.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreationBackup {
+    #[serde(default)]
+    pub lorebook_entry_runs: Vec<BackupLorebookEntryRun>,
+    #[serde(default)]
+    pub lorebook_keyword_runs: Vec<BackupLorebookKeywordRun>,
+    #[serde(default)]
+    pub staged_lorebooks: Vec<lettuce_creation::StagedLorebookPlanningRun>,
+    #[serde(default)]
+    pub staged_lorebook_writer_runs: Vec<lettuce_creation::StagedLorebookWriterRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupLorebookEntryRun {
+    pub run: lettuce_creation::LorebookEntryGenerationRun,
+    pub attempts: Vec<lettuce_creation::LorebookEntryAttemptCheckpoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupLorebookKeywordRun {
+    pub run: lettuce_creation::LorebookKeywordGenerationRun,
+    pub attempts: Vec<lettuce_creation::LorebookKeywordAttemptCheckpoint>,
 }
 
 pub trait ProviderBackupSource: Send + Sync {
@@ -511,6 +541,34 @@ pub fn canonicalize_and_validate(
         .sort_by_key(|provider| provider.id.to_string());
     graph.user_voices.sort_by_key(|voice| voice.id.to_string());
     canonicalize_authored(&mut graph.authored);
+    let creation = &mut graph.creation;
+    creation
+        .lorebook_entry_runs
+        .sort_by_key(|entry| entry.run.request_id);
+    creation
+        .lorebook_keyword_runs
+        .sort_by_key(|entry| entry.run.request_id);
+    creation.staged_lorebooks.sort_by_key(|run| run.request_id);
+    creation
+        .staged_lorebook_writer_runs
+        .sort_by_key(|run| run.request_id);
+    if creation.lorebook_entry_runs.iter().any(|entry| {
+        entry.run.validate().is_err()
+            || lettuce_creation::validate_lorebook_entry_attempts(&entry.attempts).is_err()
+    }) || creation.lorebook_keyword_runs.iter().any(|entry| {
+        entry.run.validate().is_err()
+            || lettuce_creation::validate_lorebook_keyword_attempts(&entry.attempts).is_err()
+    }) || creation
+        .staged_lorebooks
+        .iter()
+        .any(|run| run.validate().is_err())
+        || creation
+            .staged_lorebook_writer_runs
+            .iter()
+            .any(|run| run.validate().is_err())
+    {
+        return Err(ProviderBackupGraphError::InvalidGraph);
+    }
     graph.asr_learning.vocabulary.sort_by_key(|term| term.id);
     graph.asr_learning.corrections.sort_by_key(|rule| rule.id);
     graph
@@ -1102,6 +1160,7 @@ mod tests {
 
     fn graph(reference: SecretRef) -> ProviderBackupGraph {
         ProviderBackupGraph {
+            creation: CreationBackup::default(),
             version: PROVIDER_BACKUP_GRAPH_VERSION,
             accounts: vec![ProviderAccount {
                 id: ProviderAccountId::new(),

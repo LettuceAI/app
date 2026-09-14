@@ -55,7 +55,7 @@ fn stage(value: StagedLorebookStage) -> &'static str {
     }
 }
 
-fn load_in(
+pub(crate) fn load_in(
     transaction: &Transaction<'_>,
     request_id: RequestId,
 ) -> Result<Option<StagedLorebookPlanningRun>, StagedLorebookRepositoryError> {
@@ -149,6 +149,48 @@ fn positive_revision(value: i64) -> Result<Revision, StagedLorebookRepositoryErr
         .filter(|value| *value > 0)
         .map(Revision::new)
         .ok_or(StagedLorebookRepositoryError::Corrupt)
+}
+
+/// Writes a backed-up staged lorebook project with its source documents.
+pub(crate) fn insert_restored_in(
+    transaction: &Transaction<'_>,
+    run: &StagedLorebookPlanningRun,
+) -> Result<(), StagedLorebookRepositoryError> {
+    transaction
+        .execute(
+            "INSERT INTO creation_staged_lorebook_runs
+             (request_id, project_id, job_id, model_profile_id, prompt_id, prompt_revision, stage,
+              revision, created_at, updated_at, run_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                run.request_id.to_string(),
+                run.project.id.to_string(),
+                run.job_id.to_string(),
+                run.planner_profile
+                    .chat_profile
+                    .model_profile_id
+                    .to_string(),
+                run.planner_prompt_id.to_string(),
+                i64::try_from(run.planner_prompt_revision.get()).map_err(failure)?,
+                stage(run.project.stage),
+                i64::try_from(run.project.revision.get()).map_err(failure)?,
+                run.project.created_at.get(),
+                run.project.updated_at.get(),
+                encode_versioned(run, RUN_FORMAT_VERSION).map_err(failure)?
+            ],
+        )
+        .map_err(failure)?;
+    for excerpt in &run.project.excerpts {
+        if let Some(asset_id) = excerpt.asset_id {
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO creation_staged_lorebook_sources (project_id, source_id, asset_id) VALUES (?1, ?2, ?3)",
+                    params![run.project.id.to_string(), excerpt.source_id, asset_id.to_string()],
+                )
+                .map_err(failure)?;
+        }
+    }
+    Ok(())
 }
 
 impl StagedLorebookRepository for Database {

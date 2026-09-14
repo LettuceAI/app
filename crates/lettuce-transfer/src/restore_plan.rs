@@ -49,6 +49,8 @@ struct ProviderMetadata {
     audio_providers: Vec<AudioProvider>,
     user_voices: Vec<UserVoice>,
     authored: AuthoredProfileBackup,
+    #[serde(default)]
+    creation: crate::CreationBackup,
 }
 
 #[derive(Deserialize)]
@@ -207,6 +209,7 @@ pub fn decode_provider_backup_restore_plan(
         "dynamic-memory.v1",
     )?;
     let mut graph = ProviderBackupGraph {
+        creation: metadata.creation,
         version: metadata.version,
         accounts: metadata.accounts.into_iter().map(Into::into).collect(),
         profiles: metadata.profiles.into_iter().map(Into::into).collect(),

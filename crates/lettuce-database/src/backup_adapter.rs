@@ -41,6 +41,58 @@ fn backup_error(error: rusqlite::Error) -> ProviderBackupSourceError {
     }
 }
 
+fn read_creation(
+    transaction: &rusqlite::Transaction<'_>,
+) -> Result<lettuce_transfer::CreationBackup, ProviderBackupSourceError> {
+    let invalid = |_| ProviderBackupSourceError::InvalidData;
+    let request_ids = |table: &str| {
+        read_ids::<lettuce_types::RequestId>(
+            transaction,
+            &format!("SELECT request_id FROM {table} ORDER BY request_id"),
+        )
+    };
+    let mut creation = lettuce_transfer::CreationBackup::default();
+    for id in request_ids("creation_lorebook_entry_runs")? {
+        creation
+            .lorebook_entry_runs
+            .push(lettuce_transfer::BackupLorebookEntryRun {
+                run: crate::lorebook_entry_run_adapter::load_in(transaction, id)
+                    .map_err(invalid)?
+                    .ok_or(ProviderBackupSourceError::InvalidData)?,
+                attempts: crate::lorebook_entry_run_adapter::load_attempts_in(transaction, id)
+                    .map_err(invalid)?
+                    .ok_or(ProviderBackupSourceError::InvalidData)?,
+            });
+    }
+    for id in request_ids("creation_lorebook_keyword_runs")? {
+        creation
+            .lorebook_keyword_runs
+            .push(lettuce_transfer::BackupLorebookKeywordRun {
+                run: crate::lorebook_keyword_run_adapter::load_in(transaction, id)
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?
+                    .ok_or(ProviderBackupSourceError::InvalidData)?,
+                attempts: crate::lorebook_keyword_run_adapter::load_attempts_in(transaction, id)
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?
+                    .ok_or(ProviderBackupSourceError::InvalidData)?,
+            });
+    }
+    for id in request_ids("creation_staged_lorebook_runs")? {
+        creation.staged_lorebooks.push(
+            crate::staged_lorebook_adapter::load_in(transaction, id)
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?
+                .ok_or(ProviderBackupSourceError::InvalidData)?,
+        );
+    }
+    for id in request_ids("creation_staged_lorebook_writer_runs")? {
+        creation.staged_lorebook_writer_runs.push(
+            crate::staged_lorebook_writer_adapter::load_in(transaction, id)
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?
+                .ok_or(ProviderBackupSourceError::InvalidData)?,
+        );
+    }
+    Ok(creation)
+}
+
 fn read_companion_effects(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<CompanionEffectBackup, ProviderBackupSourceError> {
@@ -1240,8 +1292,10 @@ impl ProviderBackupSource for Database {
         let memory = read_memory(&transaction)?;
         let memory_projections = read_memory_projections(&transaction)?;
         let dynamic_memory = read_dynamic_memory(&transaction)?;
+        let creation = read_creation(&transaction)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
+            creation,
             version: PROVIDER_BACKUP_GRAPH_VERSION,
             accounts,
             profiles,

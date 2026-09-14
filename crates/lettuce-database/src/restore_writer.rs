@@ -597,6 +597,31 @@ impl ProviderBackupRestoreWriter for Database {
         for run in &companion.soul_writer_runs {
             crate::soul_writer_adapter::insert_restored_in(&transaction, run).map_err(invalid)?;
         }
+        let creation = &graph.creation;
+        for entry in &creation.lorebook_entry_runs {
+            crate::lorebook_entry_run_adapter::insert_restored_in(
+                &transaction,
+                &entry.run,
+                &entry.attempts,
+            )
+            .map_err(invalid)?;
+        }
+        for entry in &creation.lorebook_keyword_runs {
+            crate::lorebook_keyword_run_adapter::insert_restored_in(
+                &transaction,
+                &entry.run,
+                &entry.attempts,
+            )
+            .map_err(invalid)?;
+        }
+        for run in &creation.staged_lorebooks {
+            crate::staged_lorebook_adapter::insert_restored_in(&transaction, run)
+                .map_err(invalid)?;
+        }
+        for run in &creation.staged_lorebook_writer_runs {
+            crate::staged_lorebook_writer_adapter::insert_restored_in(&transaction, run)
+                .map_err(invalid)?;
+        }
         for (conversation_id, message_id) in tombstoned {
             transaction
                 .execute(

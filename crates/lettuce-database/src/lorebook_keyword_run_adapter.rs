@@ -28,7 +28,7 @@ fn parse_id<T: FromStr>(value: &str) -> Result<T, LorebookKeywordRunRepositoryEr
         .map_err(|_| LorebookKeywordRunRepositoryError::Corrupt)
 }
 
-fn load_in(
+pub(crate) fn load_in(
     transaction: &Transaction<'_>,
     request_id: RequestId,
 ) -> Result<Option<LorebookKeywordGenerationRun>, LorebookKeywordRunRepositoryError> {
@@ -75,7 +75,7 @@ fn load_in(
     Ok(Some(run))
 }
 
-fn load_attempts_in(
+pub(crate) fn load_attempts_in(
     transaction: &Transaction<'_>,
     request_id: RequestId,
 ) -> Result<Option<Vec<LorebookKeywordAttemptCheckpoint>>, LorebookKeywordRunRepositoryError> {
@@ -98,6 +98,33 @@ fn load_attempts_in(
     validate_lorebook_keyword_attempts(&attempts)
         .map_err(|_| LorebookKeywordRunRepositoryError::Corrupt)?;
     Ok(Some(attempts))
+}
+
+/// Writes a backed-up keyword generation run with its attempt checkpoints.
+pub(crate) fn insert_restored_in(
+    transaction: &Transaction<'_>,
+    run: &LorebookKeywordGenerationRun,
+    attempts: &[LorebookKeywordAttemptCheckpoint],
+) -> Result<(), LorebookKeywordRunRepositoryError> {
+    transaction
+        .execute(
+            "INSERT INTO creation_lorebook_keyword_runs (
+               request_id, job_id, model_profile_id, prompt_id, prompt_revision, created_at,
+               run_json, attempts_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                run.request_id.to_string(),
+                run.job_id.to_string(),
+                run.profile.chat_profile.model_profile_id.to_string(),
+                run.prompt_id.to_string(),
+                i64::try_from(run.prompt_revision.get()).map_err(failure)?,
+                run.created_at.get(),
+                encode_versioned(run, RUN_FORMAT_VERSION).map_err(failure)?,
+                encode_versioned(&attempts, ATTEMPTS_FORMAT_VERSION).map_err(failure)?,
+            ],
+        )
+        .map_err(failure)?;
+    Ok(())
 }
 
 impl LorebookKeywordRunRepository for Database {

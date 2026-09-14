@@ -36,7 +36,7 @@ fn positive_revision(value: i64) -> Result<Revision, StagedLorebookWriterRunRepo
         .ok_or(StagedLorebookWriterRunRepositoryError::Corrupt)
 }
 
-fn load_in(
+pub(crate) fn load_in(
     transaction: &Transaction<'_>,
     request_id: RequestId,
 ) -> Result<Option<StagedLorebookWriterRun>, StagedLorebookWriterRunRepositoryError> {
@@ -96,6 +96,35 @@ fn load_in(
         return Err(StagedLorebookWriterRunRepositoryError::Corrupt);
     }
     Ok(Some(run))
+}
+
+/// Writes a backed-up staged lorebook writer run.
+pub(crate) fn insert_restored_in(
+    transaction: &Transaction<'_>,
+    run: &StagedLorebookWriterRun,
+) -> Result<(), StagedLorebookWriterRunRepositoryError> {
+    transaction
+        .execute(
+            "INSERT INTO creation_staged_lorebook_writer_runs (
+               request_id, job_id, project_request_id, project_id, project_revision, plan_id,
+               model_profile_id, prompt_id, prompt_revision, created_at, run_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                run.request_id.to_string(),
+                run.job_id.to_string(),
+                run.project_request_id.to_string(),
+                run.project_id.to_string(),
+                i64::try_from(run.project_revision.get()).map_err(failure)?,
+                run.plan_id.to_string(),
+                run.profile.chat_profile.model_profile_id.to_string(),
+                run.prompt_id.to_string(),
+                i64::try_from(run.prompt_revision.get()).map_err(failure)?,
+                run.created_at.get(),
+                encode_versioned(run, RUN_FORMAT_VERSION).map_err(failure)?,
+            ],
+        )
+        .map_err(failure)?;
+    Ok(())
 }
 
 impl StagedLorebookWriterRunRepository for Database {
