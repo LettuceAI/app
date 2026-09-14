@@ -20,7 +20,7 @@ use lettuce_types::{OperationId, TimestampMillis};
 const ACTIVE_DATABASE_KEY: &str = "active-database";
 const DATABASE_DIRECTORY: &str = "databases";
 const INITIAL_DATABASE_NAME: &str = "lettuce.sqlite3";
-const DATABASE_EXTENSION: &str = ".sqlite3";
+pub(crate) const DATABASE_EXTENSION: &str = ".sqlite3";
 
 /// The app's database files under private persistent storage and the pointer
 /// naming the active one. Files are never deleted here: a restore adds a new
@@ -79,7 +79,7 @@ impl AppDatabaseLocation {
         self.database_path(&name)
     }
 
-    fn database_path(&self, name: &str) -> Result<PathBuf, AppDatabaseLocationError> {
+    pub(crate) fn database_path(&self, name: &str) -> Result<PathBuf, AppDatabaseLocationError> {
         let stem = name
             .strip_suffix(DATABASE_EXTENSION)
             .ok_or(AppDatabaseLocationError::Corrupt)?;
@@ -94,7 +94,7 @@ impl AppDatabaseLocation {
         Ok(self.private_persistent.join(DATABASE_DIRECTORY).join(name))
     }
 
-    fn activate(&self, name: &str) -> Result<(), AppDatabaseLocationError> {
+    pub(crate) fn activate(&self, name: &str) -> Result<(), AppDatabaseLocationError> {
         self.database_path(name)?;
         self.files.write_atomic(
             &self.write,

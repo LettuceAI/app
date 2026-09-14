@@ -1,0 +1,450 @@
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+};
+
+use lettuce_database::Database;
+use lettuce_media::LocalMediaBlobStore;
+use lettuce_platform::{FilesystemAuthority, ManagedRoot, PlatformError};
+use lettuce_settings::SecretStore;
+use lettuce_transfer::{
+    BackupRestoreAdmission, BackupRestoreAdmissionRepository, BackupRestoreAdmissionRequest,
+    BackupRestoreWorkspace, LegacyImportRunStatus,
+};
+use lettuce_types::{LegacyImportRunId, OperationId, TimestampMillis};
+
+use crate::{
+    AppBackend, AppDatabaseLocation, AppDatabaseLocationError, DATABASE_EXTENSION,
+    LegacyDatabaseImportPlan,
+};
+
+#[derive(Debug)]
+pub struct LegacyRestoreReceipt {
+    pub database_path: PathBuf,
+    pub previous_database_path: PathBuf,
+    pub run_id: LegacyImportRunId,
+    pub admission: Option<BackupRestoreAdmission>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum LegacyRestoreError {
+    #[error("legacy backup could not be decoded: {0:?}")]
+    Inventory(lettuce_transfer::LegacyBackupInventoryError),
+    #[error("legacy backup could not be planned: {0:?}")]
+    Compatibility(lettuce_transfer::LegacyBackupCompatibilityError),
+    #[error("legacy app data could not be planned: {0:?}")]
+    Plan(crate::LegacyDatabaseImportPlanError),
+    #[error("legacy backup could not be staged: {0:?}")]
+    Workspace(lettuce_transfer::BackupRestoreWorkspaceError),
+    #[error("restore admission is invalid: {0:?}")]
+    Admission(lettuce_transfer::BackupRestoreAdmissionError),
+    #[error("database location is unavailable: {0:?}")]
+    Location(AppDatabaseLocationError),
+    #[error("restore target database already exists")]
+    TargetExists,
+    #[error("restore target directory is unavailable")]
+    TargetDirectory,
+    #[error("restore database could not be opened: {0:?}")]
+    Open(crate::AppInitializationError),
+    #[error("restore database is unavailable: {0:?}")]
+    Database(lettuce_database::DatabaseError),
+    #[error("media store is unavailable: {0:?}")]
+    MediaStore(PlatformError),
+    #[error("legacy import stage {stage} failed: {detail}")]
+    Stage { stage: &'static str, detail: String },
+    #[error("legacy import did not complete")]
+    Incomplete,
+}
+
+fn stage<E: fmt::Debug>(name: &'static str) -> impl FnOnce(E) -> LegacyRestoreError {
+    move |error| LegacyRestoreError::Stage {
+        stage: name,
+        detail: format!("{error:?}"),
+    }
+}
+
+/// Replaces the app data with a legacy source (user decision 2026-09-14: a
+/// legacy backup replaces, never imports alongside). The whole legacy import
+/// chain runs into a new database file; only a completed run switches the
+/// active database, and the previous file is never deleted. Secrets the import
+/// writes use the deterministic legacy references, which the previous database
+/// may share, so a failed attempt leaves them in place.
+pub struct LegacyRestoreCoordinator<'a, S: ?Sized> {
+    location: &'a AppDatabaseLocation,
+    authority: &'a FilesystemAuthority,
+    workspace_root: &'a Path,
+    secrets: &'a S,
+}
+
+impl<S: ?Sized> fmt::Debug for LegacyRestoreCoordinator<'_, S> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LegacyRestoreCoordinator")
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
+    #[must_use]
+    pub const fn new(
+        location: &'a AppDatabaseLocation,
+        authority: &'a FilesystemAuthority,
+        workspace_root: &'a Path,
+        secrets: &'a S,
+    ) -> Self {
+        Self {
+            location,
+            authority,
+            workspace_root,
+            secrets,
+        }
+    }
+
+    /// Replaces the app data with a version-1 legacy backup archive.
+    pub async fn restore_backup(
+        &self,
+        restore_id: OperationId,
+        bytes: &[u8],
+        password: &str,
+        restored_at: TimestampMillis,
+    ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        let inventory = lettuce_transfer::decode_legacy_backup_inventory(bytes, password)
+            .map_err(LegacyRestoreError::Inventory)?;
+        let compatibility = lettuce_transfer::plan_legacy_backup_compatibility(inventory)
+            .map_err(LegacyRestoreError::Compatibility)?;
+        let staging = BackupRestoreWorkspace::open(self.workspace_root)
+            .and_then(|workspace| workspace.stage_legacy(&compatibility))
+            .map_err(LegacyRestoreError::Workspace)?;
+        let admission = lettuce_transfer::legacy_backup_restore_admission(
+            restore_id,
+            &compatibility,
+            &staging,
+            restored_at,
+        )
+        .map_err(LegacyRestoreError::Admission)?;
+        let plan = compatibility.legacy_import_plan();
+        self.replace(
+            restore_id,
+            &LegacyDatabaseImportPlan {
+                compatibility,
+                plan,
+            },
+            None,
+            Some(admission),
+            restored_at,
+        )
+        .await
+    }
+
+    /// Replaces the app data with a live legacy app data directory.
+    pub async fn restore_database(
+        &self,
+        restore_id: OperationId,
+        app_data_dir: &Path,
+        restored_at: TimestampMillis,
+    ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        let import =
+            crate::plan_legacy_database_import(app_data_dir).map_err(LegacyRestoreError::Plan)?;
+        self.replace(
+            restore_id,
+            &import,
+            Some(&app_data_dir.join("lettuce")),
+            None,
+            restored_at,
+        )
+        .await
+    }
+
+    async fn replace(
+        &self,
+        restore_id: OperationId,
+        import: &LegacyDatabaseImportPlan,
+        storage_root: Option<&Path>,
+        admission: Option<BackupRestoreAdmissionRequest>,
+        restored_at: TimestampMillis,
+    ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
+        let previous_database_path = self
+            .location
+            .active_path()
+            .map_err(LegacyRestoreError::Location)?;
+        let name = format!("{restore_id}{DATABASE_EXTENSION}");
+        let database_path = self
+            .location
+            .database_path(&name)
+            .map_err(LegacyRestoreError::Location)?;
+        if database_path
+            .try_exists()
+            .map_err(|_| LegacyRestoreError::TargetDirectory)?
+        {
+            return Err(LegacyRestoreError::TargetExists);
+        }
+        std::fs::create_dir_all(
+            database_path
+                .parent()
+                .ok_or(LegacyRestoreError::TargetDirectory)?,
+        )
+        .map_err(|_| LegacyRestoreError::TargetDirectory)?;
+        let backend =
+            AppBackend::open(&database_path, restored_at).map_err(LegacyRestoreError::Open)?;
+        let run_id = LegacyImportRunId::new();
+        self.import(
+            &backend,
+            &database_path,
+            import,
+            storage_root,
+            run_id,
+            restored_at,
+        )
+        .await?;
+        if previous_database_path
+            .try_exists()
+            .map_err(|_| LegacyRestoreError::TargetDirectory)?
+        {
+            backend
+                .database()
+                .carry_device_local_state_from(&previous_database_path)
+                .map_err(LegacyRestoreError::Database)?;
+        }
+        let admission = admission
+            .map(|request| backend.database().admit_backup_restore(request))
+            .transpose()
+            .map_err(LegacyRestoreError::Admission)?;
+        drop(backend);
+        self.location
+            .activate(&name)
+            .map_err(LegacyRestoreError::Location)?;
+        Ok(LegacyRestoreReceipt {
+            database_path,
+            previous_database_path,
+            run_id,
+            admission,
+        })
+    }
+
+    async fn import(
+        &self,
+        backend: &AppBackend,
+        database_path: &Path,
+        import: &LegacyDatabaseImportPlan,
+        storage_root: Option<&Path>,
+        run_id: LegacyImportRunId,
+        at: TimestampMillis,
+    ) -> Result<(), LegacyRestoreError> {
+        let source = &import.compatibility;
+        let plan = &import.plan;
+        let admission = backend
+            .legacy_import_admission()
+            .admit(run_id, &source.database_inventory(), plan, at)
+            .map_err(stage("admission"))?;
+        let media_store = LocalMediaBlobStore::new(
+            self.authority.managed_files(),
+            self.authority
+                .read_capability(ManagedRoot::MediaBlobs)
+                .map_err(LegacyRestoreError::MediaStore)?,
+            self.authority
+                .write_capability(ManagedRoot::MediaBlobs)
+                .map_err(LegacyRestoreError::MediaStore)?,
+            Database::open(database_path).map_err(LegacyRestoreError::Database)?,
+            Database::open(database_path).map_err(LegacyRestoreError::Database)?,
+        );
+        backend
+            .legacy_media_importer(&media_store)
+            .execute_from_source(source, storage_root, &admission, &plan.media, at)
+            .map_err(stage("media"))?;
+        backend
+            .legacy_provider_secret_importer(&source.authored_plan().configuration, self.secrets)
+            .execute(&admission, at)
+            .await
+            .map_err(stage("provider secrets"))?;
+        backend
+            .legacy_import_executor()
+            .execute(&admission, plan, at)
+            .map_err(stage("authored graph"))?;
+        backend
+            .legacy_asr_importer()
+            .execute(&admission, plan, at)
+            .map_err(stage("speech learning"))?;
+        backend
+            .legacy_provider_model_importer(self.secrets)
+            .execute(&admission, plan, at)
+            .await
+            .map_err(stage("provider models"))?;
+        backend
+            .legacy_character_importer()
+            .execute_database_import(&admission, import, at)
+            .map_err(stage("characters"))?;
+        backend
+            .legacy_group_importer()
+            .execute_database_import(&admission, import, at)
+            .map_err(stage("groups"))?;
+        backend
+            .legacy_audio_importer(self.secrets)
+            .execute_database_import(&admission, import, at)
+            .await
+            .map_err(stage("audio"))?;
+        backend
+            .legacy_settings_importer()
+            .execute_database_import(&admission, import, at)
+            .map_err(stage("settings"))?;
+        backend
+            .legacy_direct_conversation_importer()
+            .execute_database_import(&admission, import, at)
+            .map_err(stage("direct conversations"))?;
+        backend
+            .legacy_group_conversation_importer()
+            .execute_database_import(&admission, import, at)
+            .map_err(stage("group conversations"))?;
+        backend
+            .legacy_usage_importer()
+            .execute_database_import(&admission, import, at)
+            .map_err(stage("usage records"))?;
+        backend
+            .legacy_creation_importer()
+            .execute_database_import(&admission, import, at)
+            .map_err(stage("creation helper"))?;
+        match backend
+            .complete_legacy_import(run_id, at)
+            .map_err(stage("completion"))?
+        {
+            LegacyImportRunStatus::Completed => Ok(()),
+            _ => Err(LegacyRestoreError::Incomplete),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use lettuce_platform::DirectorySnapshot;
+    use lettuce_settings::InMemorySecretStore;
+    use lettuce_transfer::{LegacyBackupInventory, ProviderBackupSource};
+    use lettuce_types::ContentHash;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn a_legacy_source_with_provider_secrets_replaces_the_active_database() {
+        let root = std::env::temp_dir().join(format!("legacy-restore-{}", OperationId::new()));
+        std::fs::create_dir_all(&root).expect("fixture root");
+        let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+            .expect("filesystem authority");
+        let location = AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority)
+            .expect("database location");
+        let secrets = InMemorySecretStore::new();
+        let workspace = root.join("legacy-restore-workspace");
+        let coordinator =
+            LegacyRestoreCoordinator::new(&location, &authority, &workspace, &secrets);
+        let provider_id = lettuce_types::ProviderAccountId::new();
+        let credentials = serde_json::json!([{
+            "id": provider_id,
+            "provider_id": "openrouter",
+            "label": "Router",
+            "api_key_ref": null,
+            "api_key": "provider-secret",
+            "base_url": "https://openrouter.ai/api/v1",
+            "default_model": null,
+            "headers": "{\"X-Client\":\"header-secret\"}",
+            "config": null
+        }]);
+        let compatibility =
+            lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                version: 2,
+                created_at: 1_700_000_000_000,
+                app_version: "1.0.0".into(),
+                source_hash: ContentHash::parse("cd".repeat(32)).expect("source hash"),
+                documents: vec![lettuce_transfer::LegacyBackupDocument {
+                    kind: lettuce_transfer::LegacyBackupDocumentKind::ProviderCredentials,
+                    bytes: zeroize::Zeroizing::new(
+                        serde_json::to_vec(&credentials).expect("credentials document"),
+                    ),
+                }],
+                media: Vec::new(),
+            })
+            .expect("compatibility plan");
+        let plan = compatibility.legacy_import_plan();
+        let receipt = coordinator
+            .replace(
+                OperationId::new(),
+                &LegacyDatabaseImportPlan {
+                    compatibility,
+                    plan,
+                },
+                None,
+                None,
+                TimestampMillis::new(1_700_000_000_100),
+            )
+            .await
+            .expect("replace with legacy source");
+        let restored = Database::open(&receipt.database_path).expect("restored database");
+        let graph = restored
+            .read_provider_backup_graph()
+            .expect("restored graph");
+        assert_eq!(graph.accounts.len(), 1);
+        let account = &graph.accounts[0];
+        let api_key = secrets
+            .load(
+                &account.api_key_ref.expect("api key reference"),
+                &lettuce_settings::SecretPurpose::ProviderApiKey {
+                    owner: account.secret_owner_id,
+                },
+            )
+            .await
+            .expect("restored api key");
+        assert!(api_key.with(|value| value == "provider-secret"));
+        assert_eq!(account.secret_headers.len(), 1);
+        assert_eq!(
+            lettuce_transfer::backup_sql_text(&graph.legacy_imports.runs[0].run, "status"),
+            Some("completed")
+        );
+    }
+
+    #[tokio::test]
+    async fn an_empty_legacy_source_replaces_the_active_database_with_a_completed_run() {
+        let root = std::env::temp_dir().join(format!("legacy-restore-{}", OperationId::new()));
+        std::fs::create_dir_all(&root).expect("fixture root");
+        let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+            .expect("filesystem authority");
+        let location = AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority)
+            .expect("database location");
+        let secrets = InMemorySecretStore::new();
+        let workspace = root.join("legacy-restore-workspace");
+        let coordinator =
+            LegacyRestoreCoordinator::new(&location, &authority, &workspace, &secrets);
+        let compatibility =
+            lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                version: 2,
+                created_at: 1_700_000_000_000,
+                app_version: "1.0.0".into(),
+                source_hash: ContentHash::parse("ab".repeat(32)).expect("source hash"),
+                documents: Vec::new(),
+                media: Vec::new(),
+            })
+            .expect("compatibility plan");
+        let plan = compatibility.legacy_import_plan();
+        let receipt = coordinator
+            .replace(
+                OperationId::new(),
+                &LegacyDatabaseImportPlan {
+                    compatibility,
+                    plan,
+                },
+                None,
+                None,
+                TimestampMillis::new(1_700_000_000_100),
+            )
+            .await
+            .expect("replace with legacy source");
+        assert_eq!(
+            location.active_path().expect("active database"),
+            receipt.database_path
+        );
+        let restored = Database::open(&receipt.database_path).expect("restored database");
+        let graph = restored
+            .read_provider_backup_graph()
+            .expect("restored graph");
+        assert_eq!(graph.legacy_imports.runs.len(), 1);
+        assert_eq!(
+            lettuce_transfer::backup_sql_text(&graph.legacy_imports.runs[0].run, "status"),
+            Some("completed")
+        );
+    }
+}

@@ -1487,6 +1487,20 @@ the file-based path; candidates the source does not hold (voice audio a live
 legacy database plans from its own files) are still read from the confined
 storage root.
 
+`LegacyRestoreCoordinator` makes loading a legacy source a replacement too (user
+decision 2026-09-14). A version-1 backup is decoded, planned, staged and turned
+into a restore admission request; a live legacy app data directory is planned in
+place. Either way the whole legacy import chain runs into a new database file in
+stage order: admission against the derived source counts, media from the planned
+source's retained bytes, provider secrets from the planned configuration, the
+authored graph, ASR learning, provider models and prompts, characters, groups,
+audio, settings, direct and group conversations, usage records and creation
+helper sessions. Only a run that completes carries device-local state from the
+previous database, records the backup admission and switches the active database
+pointer; the previous file is never deleted. Legacy secret references are
+deterministic and may be shared with the previous database, so a failed attempt
+does not delete them.
+
 The same export includes the conversation-owned generation runtime: turns,
 attempts, checkpoint timestamps, speaker and initial inference dispatches,
 preparation attribution and tool executions. Its file-backed scenario advances a
