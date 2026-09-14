@@ -1295,9 +1295,12 @@ impl ProviderBackupSource for Database {
         let memory_projections = read_memory_projections(&transaction)?;
         let dynamic_memory = read_dynamic_memory(&transaction)?;
         let creation = read_creation(&transaction)?;
+        let legacy_imports = crate::legacy_import_backup_adapter::read_in(&transaction)
+            .map_err(backup_error)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             creation,
+            legacy_imports,
             version: PROVIDER_BACKUP_GRAPH_VERSION,
             accounts,
             profiles,

@@ -51,6 +51,8 @@ struct ProviderMetadata {
     authored: AuthoredProfileBackup,
     #[serde(default)]
     creation: crate::CreationBackup,
+    #[serde(default)]
+    legacy_imports: crate::LegacyImportBackup,
 }
 
 #[derive(Deserialize)]
@@ -210,6 +212,7 @@ pub fn decode_provider_backup_restore_plan(
     )?;
     let mut graph = ProviderBackupGraph {
         creation: metadata.creation,
+        legacy_imports: metadata.legacy_imports,
         version: metadata.version,
         accounts: metadata.accounts.into_iter().map(Into::into).collect(),
         profiles: metadata.profiles.into_iter().map(Into::into).collect(),

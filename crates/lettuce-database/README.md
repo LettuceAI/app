@@ -122,7 +122,13 @@ output asset and provenance like a live one. Revision and candidate media refs
 that were historical at backup time (retired by regenerate, candidate choice,
 edit or tombstone) are exported per owner and flipped back to historical after
 the history writer inserts them active; ref `created_at` still follows the
-revision or candidate timestamp.
+revision or candidate timestamp. Legacy import evidence (runs, assignments,
+skips, secret and media completions, stage, graph, provider-model and ASR
+results) and imported legacy usage records are exported as column rows by
+`legacy_import_backup_adapter`; each run is restored in admission order by
+walking its status guard (`admitting` for assignments and skips, `admitted` for
+completions and ASR results, `importing` for results, `partial` for stage
+results, then its final status), and the restored run row must read back equal.
 Each turn walks the shortest legal status path of the 0008 transition graph,
 and per attempt the writer restores its speaker dispatch while the turn is
 selecting a speaker, its initial dispatch with replay references and tool

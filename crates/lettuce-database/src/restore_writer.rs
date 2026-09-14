@@ -84,7 +84,7 @@ impl ProviderBackupRestoreWriter for Database {
             .map_err(storage)?;
         let populated = transaction
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM provider_accounts) OR EXISTS(SELECT 1 FROM prompt_documents) OR EXISTS(SELECT 1 FROM personas) OR EXISTS(SELECT 1 FROM lorebooks) OR EXISTS(SELECT 1 FROM characters) OR EXISTS(SELECT 1 FROM groups) OR EXISTS(SELECT 1 FROM media_blobs) OR EXISTS(SELECT 1 FROM media_assets) OR EXISTS(SELECT 1 FROM model_profiles) OR EXISTS(SELECT 1 FROM audio_providers) OR EXISTS(SELECT 1 FROM user_voices) OR EXISTS(SELECT 1 FROM asr_vocabulary_terms) OR EXISTS(SELECT 1 FROM asr_corrections) OR EXISTS(SELECT 1 FROM asr_voice_examples) OR EXISTS(SELECT 1 FROM legacy_import_runs) OR EXISTS(SELECT 1 FROM backup_restore_admissions) OR EXISTS(SELECT 1 FROM jobs) OR EXISTS(SELECT 1 FROM conversations)",
+                "SELECT EXISTS(SELECT 1 FROM provider_accounts) OR EXISTS(SELECT 1 FROM prompt_documents) OR EXISTS(SELECT 1 FROM personas) OR EXISTS(SELECT 1 FROM lorebooks) OR EXISTS(SELECT 1 FROM characters) OR EXISTS(SELECT 1 FROM groups) OR EXISTS(SELECT 1 FROM media_blobs) OR EXISTS(SELECT 1 FROM media_assets) OR EXISTS(SELECT 1 FROM model_profiles) OR EXISTS(SELECT 1 FROM audio_providers) OR EXISTS(SELECT 1 FROM user_voices) OR EXISTS(SELECT 1 FROM asr_vocabulary_terms) OR EXISTS(SELECT 1 FROM asr_corrections) OR EXISTS(SELECT 1 FROM asr_voice_examples) OR EXISTS(SELECT 1 FROM legacy_import_runs) OR EXISTS(SELECT 1 FROM legacy_usage_records) OR EXISTS(SELECT 1 FROM backup_restore_admissions) OR EXISTS(SELECT 1 FROM jobs) OR EXISTS(SELECT 1 FROM conversations)",
                 [],
                 |row| row.get::<_, bool>(0),
             )
@@ -633,6 +633,8 @@ impl ProviderBackupRestoreWriter for Database {
             crate::staged_lorebook_writer_adapter::insert_restored_in(&transaction, run)
                 .map_err(invalid)?;
         }
+        crate::legacy_import_backup_adapter::insert_restored_in(&transaction, &graph.legacy_imports)
+            .map_err(invalid)?;
         for (conversation_id, message_id) in tombstoned {
             transaction
                 .execute(

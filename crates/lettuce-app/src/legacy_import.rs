@@ -2358,6 +2358,53 @@ mod tests {
     }
 
     #[test]
+    fn legacy_import_evidence_round_trips_through_backup_restore() {
+        let path = std::env::temp_dir().join(format!(
+            "lettuce-app-legacy-evidence-backup-{}.sqlite3",
+            LegacyImportRunId::new()
+        ));
+        let backend = AppBackend::open(&path, TimestampMillis::new(10)).expect("open backend");
+        let media = LegacyMediaPlan {
+            skipped: Vec::new(),
+            media: Vec::new(),
+            total_bytes: 0,
+        };
+        let books = LegacyLorebookPlan {
+            skipped: Vec::new(),
+            lorebooks: Vec::new(),
+        };
+        let plan = import_plan(&provider_models(), &personas(), &books, &media);
+        let admission = backend
+            .legacy_import_admission()
+            .admit(
+                LegacyImportRunId::new(),
+                &inventory(),
+                &plan,
+                TimestampMillis::new(20),
+            )
+            .expect("admit legacy import");
+        backend
+            .legacy_import_executor()
+            .execute(&admission, &plan, TimestampMillis::new(30))
+            .expect("execute legacy import");
+        let graph =
+            lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(backend.database())
+                .expect("export graph");
+        assert_eq!(graph.legacy_imports.runs.len(), 1);
+        assert!(graph.legacy_imports.runs[0].results.is_some());
+        let restored = lettuce_database::Database::open_in_memory().expect("restore target");
+        lettuce_transfer::ProviderBackupRestoreWriter::restore_provider_backup_graph(
+            &restored,
+            &graph,
+            &[],
+        )
+        .expect("restore graph");
+        let round_trip = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(&restored)
+            .expect("read restored graph");
+        assert_eq!(round_trip.legacy_imports, graph.legacy_imports);
+    }
+
+    #[test]
     fn empty_media_graph_completes_and_collision_rolls_back_all_new_rows() {
         let path = std::env::temp_dir().join(format!(
             "lettuce-app-legacy-graph-rollback-{}.sqlite3",

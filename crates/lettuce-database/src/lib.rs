@@ -20,6 +20,7 @@ mod growth_adapter;
 mod initial_inference_adapter;
 mod job_adapter;
 mod legacy_import_adapter;
+mod legacy_import_backup_adapter;
 mod lorebook_adapter;
 mod lorebook_entry_run_adapter;
 mod lorebook_keyword_run_adapter;

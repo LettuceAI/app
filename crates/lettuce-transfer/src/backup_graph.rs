@@ -78,6 +78,8 @@ pub struct ProviderBackupGraph {
     pub version: u32,
     #[serde(default)]
     pub creation: CreationBackup,
+    #[serde(default)]
+    pub legacy_imports: crate::LegacyImportBackup,
     pub accounts: Vec<ProviderAccount>,
     pub profiles: Vec<ModelProfile>,
     pub prompts: Vec<PromptDocument>,
@@ -668,6 +670,15 @@ pub fn canonicalize_and_validate(
     {
         return Err(ProviderBackupGraphError::InvalidGraph);
     }
+    graph
+        .legacy_imports
+        .canonicalize_and_validate()
+        .map_err(|error| match error {
+            crate::LegacyImportBackupError::LimitExceeded => {
+                ProviderBackupGraphError::LimitExceeded
+            }
+            crate::LegacyImportBackupError::InvalidData => ProviderBackupGraphError::InvalidGraph,
+        })?;
     graph.asr_learning.vocabulary.sort_by_key(|term| term.id);
     graph.asr_learning.corrections.sort_by_key(|rule| rule.id);
     graph
@@ -1260,6 +1271,7 @@ mod tests {
     fn graph(reference: SecretRef) -> ProviderBackupGraph {
         ProviderBackupGraph {
             creation: CreationBackup::default(),
+            legacy_imports: crate::LegacyImportBackup::default(),
             version: PROVIDER_BACKUP_GRAPH_VERSION,
             accounts: vec![ProviderAccount {
                 id: ProviderAccountId::new(),
