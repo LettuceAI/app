@@ -1187,6 +1187,43 @@ fn validate_owner_bindings<Owner: Ord>(
     Ok(())
 }
 
+/// Moves every restored secret to a fresh reference, so a restore never
+/// overwrites a secret that the previous database file still points at.
+pub fn rebind_provider_backup_secrets(
+    graph: &mut ProviderBackupGraph,
+    secrets: Vec<ProviderBackupSecret>,
+) -> Result<Vec<ProviderBackupSecret>, ProviderBackupGraphError> {
+    let mut fresh = BTreeMap::new();
+    let mut rebind = |reference: &mut SecretRef| {
+        *reference = *fresh.entry(*reference).or_insert_with(SecretRef::new);
+    };
+    for account in &mut graph.accounts {
+        if let Some(reference) = account.api_key_ref.as_mut() {
+            rebind(reference);
+        }
+        for header in &mut account.secret_headers {
+            rebind(&mut header.secret_ref);
+        }
+    }
+    for provider in &mut graph.audio_providers {
+        if let Some(reference) = provider.api_key_ref.as_mut() {
+            rebind(reference);
+        }
+    }
+    if fresh.len() != secrets.len() {
+        return Err(ProviderBackupGraphError::InvalidSecrets);
+    }
+    secrets
+        .into_iter()
+        .map(|mut secret| {
+            secret.reference = *fresh
+                .get(&secret.reference)
+                .ok_or(ProviderBackupGraphError::InvalidSecrets)?;
+            Ok(secret)
+        })
+        .collect()
+}
+
 pub(crate) fn expected_secrets(
     graph: &ProviderBackupGraph,
 ) -> Result<BTreeMap<SecretRef, SecretPurpose>, ProviderBackupGraphError> {

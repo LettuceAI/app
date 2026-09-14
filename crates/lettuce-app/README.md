@@ -1462,6 +1462,20 @@ byte budgets before retaining the bytes, then requires the port descriptor,
 size and BLAKE3 to match the graph reference. The file-backed scenario decrypts
 and verifies the exact starter snapshot payload.
 
+`BackupRestoreCoordinator` restores a version-2 backup as a replacement, never
+a merge (user decision 2026-09-14). It decodes and stages the plan, builds the
+restore admission request, installs every media object into the shared
+content-addressed media root, moves the backup secrets to fresh references and
+stores them, then opens a new database file named by the restore id under
+`private-persistent-v2/databases`. The graph is written through the restore
+writer, device-local state (sync journal, installed Whisper manifests,
+discovered TTS voices) is carried from the previously active database file, and
+the restored graph must read back equal to the decoded graph before the
+admission is recorded. Only then does `AppDatabaseLocation` atomically point the
+active database at the new file; the previous file is never deleted, and secrets
+written by a failed attempt are removed again. A host opens
+`AppDatabaseLocation::active_path()` with `AppBackend::open` on the next launch.
+
 The same export includes the conversation-owned generation runtime: turns,
 attempts, checkpoint timestamps, speaker and initial inference dispatches,
 preparation attribution and tool executions. Its file-backed scenario advances a

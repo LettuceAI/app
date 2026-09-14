@@ -1072,6 +1072,42 @@ fn le_u32(bytes: &[u8]) -> Result<u32, MediaStoreError> {
         .map_err(|_| MediaStoreError::InvalidHeader)
 }
 
+/// Installs verified backup bytes at their content-addressed object key. An
+/// object that is already installed must hash to the same content.
+pub fn install_backup_media_object(
+    root: impl AsRef<Path>,
+    content_hash: &ContentHash,
+    bytes: &[u8],
+) -> Result<(), MediaStoreError> {
+    let files = ConfinedInstallStore::open(root).map_err(MediaStoreError::File)?;
+    let byte_size = u64::try_from(bytes.len()).map_err(|_| MediaStoreError::InputTooLarge)?;
+    match files
+        .prepare(
+            sync_partial_key(content_hash)?,
+            object_key(content_hash)?,
+            byte_size,
+        )
+        .map_err(MediaStoreError::File)?
+    {
+        InstallPreparation::Installed(mut file) => {
+            if file.len() != byte_size || hash_reader(&mut file)? != *content_hash {
+                return Err(MediaStoreError::ObjectConflict);
+            }
+        }
+        InstallPreparation::Resume(mut file) => {
+            file.restart().map_err(MediaStoreError::File)?;
+            file.append(bytes).map_err(MediaStoreError::File)?;
+            file.rewind().map_err(MediaStoreError::File)?;
+            if hash_reader(&mut file)? != *content_hash {
+                file.restart().map_err(MediaStoreError::File)?;
+                return Err(MediaStoreError::ObjectConflict);
+            }
+            file.commit_new().map_err(MediaStoreError::File)?;
+        }
+    }
+    Ok(())
+}
+
 fn content_hash(hash: Hash) -> ContentHash {
     // blake3's hex output is always a valid ContentHash.
     ContentHash::parse(hash.to_hex().to_string()).expect("blake3 hex has fixed length")
@@ -1147,7 +1183,7 @@ fn mime_matches(declared: &str, detected: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, fs, io::Read as _, sync::Mutex};
+    use std::{collections::BTreeMap, fs, sync::Mutex};
 
     use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
     use lettuce_types::{ContentHash, Page, PageRequest};

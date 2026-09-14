@@ -1815,6 +1815,56 @@ mod tests {
                 .conversations
                 .is_empty()
         );
+        let private_persistent = root.join("private-persistent-v2");
+        let location_authority =
+            FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+                .expect("filesystem authority");
+        let location = crate::AppDatabaseLocation::new(&private_persistent, &location_authority)
+            .expect("database location");
+        let coordinated_workspace = root.join("coordinated-restore-workspace");
+        let media_root = root.join("platform-v2/media-blobs");
+        let coordinated = crate::BackupRestoreCoordinator::new(
+            &location,
+            &coordinated_workspace,
+            &media_root,
+            secret_store.as_ref(),
+        )
+        .restore(
+            OperationId::new(),
+            &envelope,
+            "backup password",
+            TimestampMillis::new(5),
+        )
+        .await
+        .expect("restore backup into a new database");
+        assert_eq!(
+            location.active_path().expect("active database"),
+            coordinated.database_path
+        );
+        let coordinated_database =
+            Database::open(&coordinated.database_path).expect("coordinated database");
+        let coordinated_graph =
+            lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(
+                &coordinated_database,
+            )
+            .expect("coordinated graph");
+        let restored_reference = coordinated_graph
+            .accounts
+            .iter()
+            .find(|account| account.id == provider_account_id)
+            .and_then(|account| account.api_key_ref)
+            .expect("restored api key reference");
+        assert_ne!(restored_reference, reference);
+        assert!(
+            secret_store
+                .load(
+                    &restored_reference,
+                    &SecretPurpose::ProviderApiKey { owner },
+                )
+                .await
+                .expect("restored secret")
+                .with(|value| value == "provider-backup-canary")
+        );
         let restored = Database::open_in_memory().expect("restore target");
         lettuce_transfer::ProviderBackupRestoreWriter::restore_provider_backup_graph(
             &restored,

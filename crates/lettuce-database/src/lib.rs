@@ -13,6 +13,7 @@ mod conversation_mutations;
 mod conversation_query;
 mod conversation_vertical_slice;
 mod creation_adapter;
+mod device_local_adapter;
 mod dynamic_memory_rewind_adapter;
 mod dynamic_memory_run_adapter;
 mod group_adapter;

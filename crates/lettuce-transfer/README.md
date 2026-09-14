@@ -517,6 +517,11 @@ replays; a changed partial prefix, installed blob, seal or source receipt fails
 closed. Secrets, live database rows and the media library remain untouched, and
 the backup source is never removed.
 
+`rebind_provider_backup_secrets` moves every provider API key, secret header and
+audio API key reference of a decoded graph to a fresh `SecretRef` and rebinds the
+decoded secret values to them, so a restore writes new store entries instead of
+overwriting secrets the previous database file still references.
+
 Current version-2 and legacy version-1 staging receipts can now produce the same
 validated restore-admission request. It binds the source version/hash, plan
 fingerprint, exact staging-receipt fingerprint and document, media, secret and
