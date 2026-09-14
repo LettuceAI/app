@@ -645,6 +645,12 @@ the conversation stages also replace imported Soul facts
 The creation helper stage inserts seeded workflows through
 `creation_adapter::insert_workflow_in`, and `complete_legacy_import_run` moves a
 partial run to `completed` only when every later stage has a result row.
+Importing the same legacy source again is detected at admission: a run whose
+source fingerprint matches a run that has not failed returns that run's
+admission as a replay (every stage then replays its receipt), a different plan
+for the same source conflicts, and a partial unique index keeps two live runs
+from admitting one source concurrently. A failed run can be retried under a new
+run id.
 
 The read-only legacy provider-secret adapter lists only planned API-key/header
 metadata, then loads one exact value into `SecretValue` on demand. It ignores the

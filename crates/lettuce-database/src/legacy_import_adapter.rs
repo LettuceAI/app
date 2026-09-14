@@ -88,6 +88,33 @@ impl LegacyImportRepository for Database {
                 .map_err(|_| LegacyImportRepositoryError::Storage)?;
             return Ok(existing);
         }
+        if let Some(source_fingerprint) = &request.source_fingerprint {
+            let imported = transaction
+                .query_row(
+                    "SELECT id FROM legacy_import_runs WHERE source_fingerprint=?1 AND status<>'failed' LIMIT 1",
+                    [source_fingerprint.as_str()],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            if let Some(imported) = imported {
+                let run_id = imported
+                    .parse::<LegacyImportRunId>()
+                    .map_err(|_| LegacyImportRepositoryError::Storage)?;
+                let mut existing = load_admission(&transaction, run_id)?
+                    .ok_or(LegacyImportRepositoryError::Storage)?;
+                if existing.inventory_fingerprint != request.inventory_fingerprint
+                    || existing.plan_fingerprint != request.plan_fingerprint
+                {
+                    return Err(LegacyImportRepositoryError::Conflict);
+                }
+                existing.replayed = true;
+                transaction
+                    .commit()
+                    .map_err(|_| LegacyImportRepositoryError::Storage)?;
+                return Ok(existing);
+            }
+        }
 
         transaction
             .execute(

@@ -97,6 +97,9 @@ CREATE TABLE legacy_import_runs (
     admitted_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 ) STRICT;
+CREATE UNIQUE INDEX legacy_import_runs_active_source_uq
+    ON legacy_import_runs(source_fingerprint)
+    WHERE source_fingerprint IS NOT NULL AND status <> 'failed';
 
 CREATE TABLE legacy_import_assignments (
     run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,

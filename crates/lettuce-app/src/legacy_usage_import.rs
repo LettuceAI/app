@@ -197,6 +197,17 @@ mod tests {
             .expect("replay usage records");
         assert!(replay.replayed);
         assert_eq!(replay.completed_at, TimestampMillis::new(40));
+        let reimport = backend
+            .legacy_import_admission()
+            .admit(
+                LegacyImportRunId::new(),
+                &inventory,
+                &plan,
+                TimestampMillis::new(60),
+            )
+            .expect("importing the same legacy source again");
+        assert_eq!(reimport.run_id, admission.run_id);
+        assert!(reimport.replayed);
         drop(backend);
         fs::remove_file(path).expect("remove database");
     }
