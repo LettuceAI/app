@@ -220,6 +220,7 @@ impl CompanionStateBackup {
                 .sort_by_key(|receipt| (receipt.applied_at, receipt.operation_id));
         }
         let mut soul_ids = BTreeSet::new();
+        let mut soul_receipt_ids = BTreeSet::new();
         for soul in &self.souls {
             let state = lettuce_companions::SoulState {
                 revision: soul.revision,
@@ -231,7 +232,10 @@ impl CompanionStateBackup {
                 || lettuce_companions::validate_state(&state).is_err()
                 || !soul_ids.insert(soul.character_id)
                 || soul.receipts.iter().any(|receipt| {
-                    receipt.expected_revision.next().ok() != Some(receipt.resulting_revision)
+                    receipt.expected_revision.get() == 0
+                        || receipt.expected_revision.next().ok() != Some(receipt.resulting_revision)
+                        || receipt.resulting_revision > soul.revision
+                        || !soul_receipt_ids.insert(receipt.operation_id)
                 })
             {
                 return Err(CompanionStateBackupError::InvalidData);

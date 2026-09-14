@@ -479,10 +479,15 @@ impl ProviderBackupRestoreWriter for Database {
                 )
                 .map_err(invalid)?;
         }
-        transaction
-            .execute_batch("DELETE FROM companion_soul_facts; DELETE FROM companion_soul_states;")
-            .map_err(invalid)?;
         for soul in &companion.souls {
+            for table in ["companion_soul_facts", "companion_soul_states"] {
+                transaction
+                    .execute(
+                        &format!("DELETE FROM {table} WHERE character_id = ?1"),
+                        [soul.character_id.to_string()],
+                    )
+                    .map_err(invalid)?;
+            }
             transaction
                 .execute(
                     "INSERT INTO companion_soul_states (character_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
@@ -513,7 +518,8 @@ impl ProviderBackupRestoreWriter for Database {
             }
         }
         for note in &companion.scheduled_notes {
-            crate::scheduled_note_adapter::insert_note_in(&transaction, note).map_err(invalid)?;
+            crate::scheduled_note_adapter::insert_restored_note_in(&transaction, note)
+                .map_err(invalid)?;
         }
         for pool in &graph.memory.pools {
             transaction
@@ -522,6 +528,16 @@ impl ProviderBackupRestoreWriter for Database {
                     params![pool.character_id.to_string(), pool.space_id.to_string()],
                 )
                 .map_err(invalid)?;
+            let stored: String = transaction
+                .query_row(
+                    "SELECT space_id FROM companion_memory_pools WHERE character_id = ?1",
+                    [pool.character_id.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(invalid)?;
+            if stored != pool.space_id.to_string() {
+                return Err(Error::InvalidData);
+            }
         }
         for receipt in &graph.memory.retrieval_accesses {
             let access = &receipt.access;
