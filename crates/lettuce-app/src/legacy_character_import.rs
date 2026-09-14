@@ -733,22 +733,53 @@ mod tests {
             memories: vec![lettuce_transfer::LegacyBackupMemoryEmbedding {
                 id: lettuce_types::MemoryId::new().to_string(),
                 text: "Nia remembers the lighthouse".to_owned(),
-                embedding: Vec::new(),
-                embedding_source_version: None,
-                embedding_dimensions: None,
-                materialization:
-                    lettuce_transfer::LegacyBackupMemoryMaterialization::InitialItemNeedsProjection,
                 ..session_memory.memories[0].clone()
             }],
             ..session_memory.clone()
         };
         let legacy_state = r#"{"emotionalState":{"felt":{"warmth":0.4},"confidence":0.7,"updatedAt":100},"relationshipState":{"closeness":0.6,"trust":0.5,"affection":0.3,"tension":0.1,"stability":0.6,"interactionCount":3,"lastInteractionAt":90},"activeSignals":["curious"],"updatedAt":120}"#;
+        let companion_third_id = lettuce_types::ConversationId::new();
         let direct_sessions = vec![
             session.clone(),
             companion_session(companion_first_id, 300, Some(legacy_state.to_owned())),
             companion_session(companion_second_id, 400, None),
+            companion_session(companion_third_id, 500, None),
         ];
         let direct_memories = vec![session_memory.clone(), companion_memory];
+        let companion_shared = lettuce_transfer::LegacyBackupCompanionSharedMemory {
+            ordinal: 0,
+            character_id: companion_id,
+            memories_json: "[]".to_owned(),
+            memory_embeddings_json: "[]".to_owned(),
+            memory_summary: None,
+            memory_summary_token_count: 0,
+            memory_tool_events_json: "[]".to_owned(),
+            memory_status: None,
+            memory_error: None,
+            memory_progress_step: None,
+            soul_growth_json: "[]".to_owned(),
+            soul_facts: None,
+            relationship_states_json: "[]".to_owned(),
+            relationship_states: Vec::new(),
+            episodes: vec![lettuce_transfer::LegacyBackupCompanionEpisode {
+                ordinal: 0,
+                conversation_source_id: companion_second_id.to_string(),
+                persona_id: None,
+                episode_index: 1,
+                previous_conversation_source_id: None,
+                started_at: 400,
+                ended_at: None,
+                updated_at: 405,
+            }],
+            created_at: 300,
+            updated_at: 405,
+            memory_materialization:
+                lettuce_transfer::LegacyBackupCompanionMaterialization::RetainedEvidence,
+            soul_materialization:
+                lettuce_transfer::LegacyBackupCompanionMaterialization::RetainedEvidence,
+            relationship_materialization:
+                lettuce_transfer::LegacyBackupCompanionMaterialization::RetainedEvidence,
+        };
         let conversation_receipt = backend
             .legacy_direct_conversation_importer()
             .execute(
@@ -756,12 +787,12 @@ mod tests {
                 &plan,
                 &direct_sessions,
                 &direct_memories,
-                &[],
+                &[companion_shared],
                 &[],
                 TimestampMillis::new(57),
             )
             .expect("materialize direct conversations");
-        assert_eq!(conversation_receipt.record_count, 3);
+        assert_eq!(conversation_receipt.record_count, 4);
         let graph =
             lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(backend.database())
                 .expect("backup graph");
@@ -815,7 +846,30 @@ mod tests {
         assert_eq!(space.snapshot.items.len(), 1);
         assert_eq!(space.snapshot.items[0].text, "The user likes night shifts");
         assert!(space.snapshot.items[0].is_pinned);
-        assert_eq!(graph.memory_projections.projections.len(), 1);
+        assert_eq!(graph.memory_projections.projections.len(), 2);
+        let episodes = [companion_first_id, companion_second_id, companion_third_id].map(|id| {
+            graph
+                .companion_state
+                .episodes
+                .iter()
+                .find(|episode| episode.conversation_id == id)
+                .map(|episode| {
+                    (
+                        episode.episode_index,
+                        episode.previous_conversation_id,
+                        episode.ended_at.map(TimestampMillis::get),
+                    )
+                })
+                .expect("companion episode")
+        });
+        assert_eq!(
+            episodes,
+            [
+                (1, None, Some(400)),
+                (2, Some(companion_first_id), None),
+                (3, Some(companion_second_id), None),
+            ]
+        );
         let pool = graph
             .memory
             .spaces
@@ -831,7 +885,7 @@ mod tests {
         let mut bound = pool.shared_conversation_ids.clone();
         bound.push(pool.conversation_id);
         bound.sort();
-        let mut expected_bound = vec![companion_first_id, companion_second_id];
+        let mut expected_bound = vec![companion_first_id, companion_second_id, companion_third_id];
         expected_bound.sort();
         assert_eq!(bound, expected_bound);
         assert!(

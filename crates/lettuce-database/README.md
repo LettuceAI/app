@@ -643,7 +643,8 @@ the conversation stages also replace imported Soul facts
 (`soul_adapter::replace_facts_in`) and insert scheduled notes
 (`scheduled_note_adapter::insert_note_in`).
 The creation helper stage inserts seeded workflows through
-`creation_adapter::insert_workflow_in`, and `complete_legacy_import_run` moves a
+`creation_adapter::insert_workflow_in` and leaves out a legacy draft that exceeds
+the rewrite's creation limits instead of aborting the stage, and `complete_legacy_import_run` moves a
 partial run to `completed` only when every later stage has a result row.
 Importing the same legacy source again is detected at admission: a run whose
 source fingerprint matches a run that has not failed returns that run's

@@ -211,18 +211,11 @@ pub(crate) fn insert_historical_conversation(
             conversation.created_at,
         )
         .map_err(crate::state_adapter::conversation_state_error)?;
-        match &companion.episode {
-            Some(episode) => crate::state_adapter::insert_continuity_episode_in(
-                transaction,
-                companion.owner,
-                episode,
-            ),
-            None => crate::state_adapter::ensure_continuity_episode_in(
-                transaction,
-                companion.owner,
-                conversation.created_at,
-            ),
-        }
+        crate::state_adapter::insert_continuity_episode_in(
+            transaction,
+            companion.owner,
+            &companion.episode,
+        )
         .map_err(crate::state_adapter::conversation_state_error)?;
     }
     insert_creation_record(transaction, aggregate, &messages, &input.operation)?;
@@ -256,13 +249,6 @@ fn insert_memory_state(
         };
     };
     let space_id = space.snapshot.id;
-    if space.conversation_id != conversation_id {
-        return Ok(());
-    }
-    if let Some(summary) = &space.summary {
-        crate::memory_adapter::replace_summary_in(transaction, space_id, Some(summary))
-            .map_err(|_| ConversationRepositoryError::Storage)?;
-    }
     for projection in projections.iter().filter(|_| created) {
         if projection.space_id != space_id {
             return Err(invalid("history.memory_projection_space"));
@@ -292,6 +278,12 @@ fn insert_memory_state(
                 ],
             )
             .map_err(kernel::map_constraint)?;
+    }
+    if space.conversation_id == conversation_id
+        && let Some(summary) = &space.summary
+    {
+        crate::memory_adapter::replace_summary_in(transaction, space_id, Some(summary))
+            .map_err(|_| ConversationRepositoryError::Storage)?;
     }
     Ok(())
 }

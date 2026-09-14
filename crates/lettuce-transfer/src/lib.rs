@@ -1215,7 +1215,7 @@ pub struct LegacyConversationRecord {
 pub struct LegacyCompanionConversation {
     pub owner: lettuce_companions::CompanionStateOwner,
     pub initial: lettuce_companions::CompanionRuntimeState,
-    pub episode: Option<LegacyCompanionEpisodeRecord>,
+    pub episode: LegacyCompanionEpisodeRecord,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

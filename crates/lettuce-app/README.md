@@ -78,14 +78,22 @@ the messages the runtime summary cursor counts.
 A legacy direct session of a companion character is imported as a companion
 conversation: it binds the character's shared memory pool, which takes the
 legacy companion shared memory when legacy kept one and otherwise the memories
-of the character's most recently updated session (user decision 2026-09-14); its
-companion session state comes from the legacy `companionState` JSON (clamped
-into the rewrite's ranges, launch defaults when unreadable) with the legacy pool
-relationship for the persona winning, and its legacy continuity episode is
-copied exactly. Legacy Soul facts that form an exact snapshot replace the
-imported character's authored Soul facts, and legacy scheduled notes of imported
-companion characters are written in the same stage. Conversations are written in
-creation order so episode links resolve.
+of the character's most recently updated session that has any (user decision
+2026-09-14); ready legacy embeddings land with the conversation that creates the
+pool and the summary with the carrier. Its companion session state comes from
+the legacy `companionState` JSON (clamped into the rewrite's ranges, launch
+defaults when unreadable) with the legacy pool relationship of the session's raw
+legacy persona key; every conversation of one character and launch persona
+shares the latest conversation's relationship. Continuity episodes are placed in
+one chain per character and launch persona by start time: legacy created them
+lazily and kept sessions without a persona under a separate `__default__` key,
+so indexes and previous links are renumbered along the merged chain (legacy
+episodes keep their timestamps; sessions legacy never recorded start at their
+creation and end where the next one starts). Legacy Soul facts that form an
+exact snapshot replace the imported character's authored Soul facts, and legacy
+scheduled notes of imported companion characters are written in the same stage
+(notes the rewrite rejects, such as blank content, are left out). Conversations
+are written in episode order so episode links resolve.
 `AppBackend::legacy_creation_importer` seeds a creation workflow with its initial
 proposal for every legacy creation helper session whose untouched active draft
 fits the rewrite's draft; sessions with chat, tool history, draft history or

@@ -955,9 +955,9 @@ impl LegacyImportRepository for Database {
                         .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
                 ),
             };
-            input
-                .validate()
-                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            if input.validate().is_err() {
+                continue;
+            }
             let initial = CreationProposal::initial(
                 input.initial_proposal_id,
                 input.initial_draft.clone(),

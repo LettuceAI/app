@@ -152,10 +152,6 @@ where
             return Ok(receipt);
         }
         let context = import_context(admission, plan);
-        let imported = sessions
-            .iter()
-            .map(|session| session.source_id.as_str())
-            .collect::<std::collections::BTreeSet<_>>();
         let mut mapped = Vec::with_capacity(sessions.len());
         for session in sessions {
             let memory = memory_owner(
@@ -163,38 +159,48 @@ where
                 LegacyBackupMemoryOwnerKind::DirectConversation,
                 &session.source_id,
             );
-            mapped.push(self.map_session(session, memory, companions, &imported, &context)?);
+            mapped.push(self.map_session(session, memory, companions, &context)?);
         }
         attach_companion_pools(&mut mapped, sessions, memories, companions)?;
-        let mut conversations = mapped
-            .into_iter()
-            .map(|(record, _)| record)
-            .collect::<Vec<_>>();
-        conversations.sort_by_key(|record| record.history.aggregate.conversation.created_at);
+        let mut conversations = assign_companion_episodes(mapped)?;
+        conversations.sort_by_key(|record| {
+            let episode = record
+                .companion
+                .as_ref()
+                .map(|companion| &companion.episode);
+            (
+                episode.map_or(
+                    record.history.aggregate.conversation.created_at,
+                    |episode| episode.started_at,
+                ),
+                episode.map_or(0, |episode| episode.episode_index),
+                record.history.aggregate.conversation.id,
+            )
+        });
         let companion_characters = conversations
             .iter()
             .filter_map(|record| record.companion.as_ref())
             .map(|companion| companion.owner.character_id)
             .collect::<std::collections::BTreeSet<_>>();
-        let companion_souls = companions
-            .iter()
-            .filter(|state| {
-                state.soul_materialization
-                    == LegacyBackupCompanionMaterialization::ExactInitialSnapshot
-                    && self.is_companion(state.character_id, &companion_characters)
-            })
-            .filter_map(|state| {
-                state
-                    .soul_facts
-                    .clone()
-                    .map(|facts| (state.character_id, facts))
-            })
-            .collect();
-        let scheduled_notes = scheduled_notes
-            .iter()
-            .filter(|note| self.is_companion(note.note.character_id, &companion_characters))
-            .map(|note| note.note.clone())
-            .collect();
+        let mut companion_souls = Vec::new();
+        for state in companions {
+            if state.soul_materialization
+                == LegacyBackupCompanionMaterialization::ExactInitialSnapshot
+                && self.is_companion(state.character_id, &companion_characters)?
+                && let Some(facts) = state.soul_facts.clone()
+            {
+                companion_souls.push((state.character_id, facts));
+            }
+        }
+        let mut notes = Vec::new();
+        for note in scheduled_notes {
+            if note.note.clone().normalize().is_ok()
+                && self.is_companion(note.note.character_id, &companion_characters)?
+            {
+                notes.push(note.note.clone());
+            }
+        }
+        let scheduled_notes = notes;
         self.sources.materialize_direct_conversations(
             LegacyDirectConversationMaterializationRequest {
                 run_id: admission.run_id,
@@ -231,14 +237,17 @@ where
         &self,
         character_id: CharacterId,
         imported_companions: &std::collections::BTreeSet<CharacterId>,
-    ) -> bool {
-        imported_companions.contains(&character_id)
-            || lettuce_characters::CharacterRepository::get(self.sources, character_id)
-                .ok()
-                .flatten()
+    ) -> Result<bool, Error> {
+        if imported_companions.contains(&character_id) {
+            return Ok(true);
+        }
+        Ok(
+            lettuce_characters::CharacterRepository::get(self.sources, character_id)
+                .map_err(|_| Error::Storage)?
                 .is_some_and(|details| {
                     crate::launch::policy::is_companion(&details.character.defaults)
-                })
+                }),
+        )
     }
 
     fn map_session(
@@ -246,9 +255,8 @@ where
         session: &LegacyBackupDirectSession,
         memory: Option<&LegacyBackupMemoryEmbeddingOwner>,
         companions: &[LegacyBackupCompanionSharedMemory],
-        imported: &std::collections::BTreeSet<&str>,
         context: &ImportContext,
-    ) -> Result<(LegacyConversationRecord, Option<CharacterId>), Error> {
+    ) -> Result<(LegacyConversationRecord, Option<PendingCompanion>), Error> {
         let mut rows = session.messages.iter().collect::<Vec<_>>();
         rows.sort_by_key(|message| message.ordinal);
         let opens_with_scene = opens_with_scene(
@@ -303,14 +311,15 @@ where
                 .unwrap_or(initial);
             if let Some(relationship) = shared.and_then(|state| {
                 state.relationship_states.iter().find(|relationship| {
-                    relationship.persona_id == owner.persona_id
+                    relationship.persona_id.map(|id| id.to_string()).as_deref()
+                        == session.persona_source_id.as_deref()
                         && relationship.materialization
                             == LegacyBackupCompanionMaterialization::ExactInitialSnapshot
                 })
             }) {
                 initial.relationship_state = relationship.state.clone();
             }
-            let episode = shared
+            let legacy_episode = shared
                 .and_then(|state| {
                     state
                         .episodes
@@ -320,21 +329,18 @@ where
                 .map(|episode| {
                     Ok::<_, Error>(LegacyCompanionEpisodeRecord {
                         episode_index: episode.episode_index,
-                        previous_conversation_id: episode
-                            .previous_conversation_source_id
-                            .as_deref()
-                            .filter(|previous| imported.contains(previous))
-                            .map(|previous| ConversationId::from_uuid(legacy_uuid(previous))),
+                        previous_conversation_id: None,
                         started_at: timestamp(episode.started_at)?,
                         ended_at: episode.ended_at.map(timestamp).transpose()?,
                         updated_at: timestamp(episode.updated_at)?,
                     })
                 })
-                .transpose();
-            episode.map(|episode| LegacyCompanionConversation {
+                .transpose()?;
+            Ok::<_, Error>(PendingCompanion {
                 owner,
                 initial,
-                episode,
+                legacy_episode,
+                created_at: timestamp(session.created_at)?,
             })
         });
         let companion = companion.transpose()?;
@@ -418,39 +424,131 @@ where
             },
             context,
         )
-        .map(|mut record| {
-            let character = companion.as_ref().map(|value| value.owner.character_id);
-            record.companion = companion;
-            (record, character)
-        })
+        .map(|record| (record, companion))
     }
+}
+
+/// A companion session's state before its continuity episode is placed in the
+/// character's chain.
+struct PendingCompanion {
+    owner: CompanionStateOwner,
+    initial: CompanionRuntimeState,
+    legacy_episode: Option<LegacyCompanionEpisodeRecord>,
+    created_at: TimestampMillis,
+}
+
+/// Places every companion conversation in its character and persona chain by
+/// start time. Legacy created episodes lazily and keyed sessions without a
+/// persona apart from the default persona they launch with, so indexes are
+/// renumbered along the merged chain; a legacy episode keeps its timestamps, a
+/// session legacy never recorded starts at its creation and ends where the next
+/// one starts. The latest conversation's relationship is the chain's.
+fn assign_companion_episodes(
+    mapped: Vec<(LegacyConversationRecord, Option<PendingCompanion>)>,
+) -> Result<Vec<LegacyConversationRecord>, Error> {
+    let start = |pending: &PendingCompanion| {
+        pending
+            .legacy_episode
+            .as_ref()
+            .map_or(pending.created_at, |episode| episode.started_at)
+    };
+    type Chains<'a> =
+        BTreeMap<(CharacterId, Option<PersonaId>), Vec<(usize, &'a PendingCompanion)>>;
+    let mut chains = Chains::new();
+    for (index, (_, pending)) in mapped.iter().enumerate() {
+        if let Some(pending) = pending {
+            chains
+                .entry((pending.owner.character_id, pending.owner.persona_id))
+                .or_default()
+                .push((index, pending));
+        }
+    }
+    let mut assigned = BTreeMap::new();
+    for chain in chains.values_mut() {
+        chain.sort_by_key(|(_, pending)| {
+            (
+                start(pending),
+                pending
+                    .legacy_episode
+                    .as_ref()
+                    .map_or(u32::MAX, |episode| episode.episode_index),
+                pending.owner.conversation_id,
+            )
+        });
+        let relationship = chain
+            .last()
+            .map(|(_, pending)| pending.initial.relationship_state.clone());
+        for (position, (index, pending)) in chain.iter().enumerate() {
+            let episode_index = u32::try_from(position + 1).map_err(|_| Error::InvalidInput)?;
+            let previous_conversation_id = position
+                .checked_sub(1)
+                .map(|previous| chain[previous].1.owner.conversation_id);
+            let episode = match &pending.legacy_episode {
+                Some(legacy) => LegacyCompanionEpisodeRecord {
+                    episode_index,
+                    previous_conversation_id,
+                    ..legacy.clone()
+                },
+                None => {
+                    let ended_at = chain.get(position + 1).map(|(_, next)| start(next));
+                    LegacyCompanionEpisodeRecord {
+                        episode_index,
+                        previous_conversation_id,
+                        started_at: pending.created_at,
+                        ended_at,
+                        updated_at: ended_at.unwrap_or(pending.created_at),
+                    }
+                }
+            };
+            let mut initial = pending.initial.clone();
+            if let Some(relationship) = &relationship {
+                initial.relationship_state = relationship.clone();
+            }
+            assigned.insert(
+                *index,
+                LegacyCompanionConversation {
+                    owner: pending.owner,
+                    initial,
+                    episode,
+                },
+            );
+        }
+    }
+    Ok(mapped
+        .into_iter()
+        .enumerate()
+        .map(|(index, (mut record, _))| {
+            record.companion = assigned.remove(&index);
+            record
+        })
+        .collect())
 }
 
 /// A companion character shares one memory pool across its conversations. The
 /// pool takes the legacy shared memory when legacy kept one, otherwise the
-/// memories of the character's most recently updated session (user decision
-/// 2026-09-14); its summary window belongs to that latest session.
+/// memories of the character's most recently updated session that has any
+/// (user decision 2026-09-14); its summary window belongs to that session.
 fn attach_companion_pools(
-    mapped: &mut [(LegacyConversationRecord, Option<CharacterId>)],
+    mapped: &mut [(LegacyConversationRecord, Option<PendingCompanion>)],
     sessions: &[LegacyBackupDirectSession],
     memories: &[LegacyBackupMemoryEmbeddingOwner],
     companions: &[LegacyBackupCompanionSharedMemory],
 ) -> Result<(), Error> {
+    let character_of = |pending: &Option<PendingCompanion>| {
+        pending.as_ref().map(|pending| pending.owner.character_id)
+    };
     let characters = mapped
         .iter()
-        .filter_map(|(_, character)| *character)
+        .filter_map(|(_, pending)| character_of(pending))
         .collect::<std::collections::BTreeSet<_>>();
     for character_id in characters {
-        let Some(carrier) = mapped
+        let mut candidates = mapped
             .iter()
             .enumerate()
-            .filter(|(_, (_, character))| *character == Some(character_id))
-            .max_by_key(|(index, _)| (sessions[*index].updated_at, *index))
+            .filter(|(_, (_, pending))| character_of(pending) == Some(character_id))
             .map(|(index, _)| index)
-        else {
-            continue;
-        };
-        let session = &sessions[carrier];
+            .collect::<Vec<_>>();
+        candidates.sort_by_key(|index| std::cmp::Reverse((sessions[*index].updated_at, *index)));
         let shared_state = companions
             .iter()
             .find(|state| state.character_id == character_id);
@@ -464,37 +562,45 @@ fn attach_companion_pools(
                 memory.materialization != LegacyBackupMemoryMaterialization::RetainedEvidence
             })
         });
-        let (owner, summary, summary_token_count) = match shared_owner {
-            Some(owner) => (
-                Some(owner),
-                shared_state.and_then(|state| state.memory_summary.as_deref()),
-                shared_state.map_or(0, |state| state.memory_summary_token_count),
-            ),
-            None => (
-                memory_owner(
-                    memories,
-                    LegacyBackupMemoryOwnerKind::DirectConversation,
-                    &session.source_id,
+        let mut pool = None;
+        for carrier in candidates {
+            let session = &sessions[carrier];
+            let (owner, summary, summary_token_count) = match shared_owner {
+                Some(owner) => (
+                    Some(owner),
+                    shared_state.and_then(|state| state.memory_summary.as_deref()),
+                    shared_state.map_or(0, |state| state.memory_summary_token_count),
                 ),
-                session.memory_summary.as_deref(),
-                session.memory_summary_token_count,
-            ),
-        };
-        let record = &mapped[carrier].0;
-        let (space, projections) = memory_space(
-            record.history.aggregate.conversation.id,
-            &format!("companion-pool:{character_id}"),
-            owner,
-            summary,
-            summary_token_count,
-            &record.history.messages,
-            record.history.aggregate.conversation.updated_at,
-        )?;
-        let Some(space) = space else {
+                None => (
+                    memory_owner(
+                        memories,
+                        LegacyBackupMemoryOwnerKind::DirectConversation,
+                        &session.source_id,
+                    ),
+                    session.memory_summary.as_deref(),
+                    session.memory_summary_token_count,
+                ),
+            };
+            let record = &mapped[carrier].0;
+            let (space, projections) = memory_space(
+                record.history.aggregate.conversation.id,
+                &format!("companion-pool:{character_id}"),
+                owner,
+                summary,
+                summary_token_count,
+                &record.history.messages,
+                record.history.aggregate.conversation.updated_at,
+            )?;
+            if let Some(space) = space {
+                pool = Some((space, projections));
+                break;
+            }
+        }
+        let Some((space, projections)) = pool else {
             continue;
         };
-        for (record, character) in mapped.iter_mut() {
-            if *character == Some(character_id) {
+        for (record, pending) in mapped.iter_mut() {
+            if character_of(pending) == Some(character_id) {
                 record.memory = Some(space.clone());
                 record.memory_projections = projections.clone();
             }
