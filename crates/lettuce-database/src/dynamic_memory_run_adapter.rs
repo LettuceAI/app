@@ -807,24 +807,51 @@ pub(crate) fn insert_restored_run_in(
     }
     for entry in &backup.attempts {
         let attempt = &entry.attempt;
-        transaction
-            .execute(
-                "INSERT INTO dynamic_memory_run_attempts \
-                 (run_id,id,ordinal,retry_parent_id,job_id,status,failure,revision,created_at,\
-                  started_at,finished_at,updated_at) \
-                 VALUES (?1,?2,?3,?4,?5,'created',NULL,1,?6,NULL,NULL,?6)",
-                params![
-                    attempt.run_id.to_string(),
-                    attempt.id.to_string(),
-                    i64::from(attempt.ordinal),
-                    attempt.retry_parent_id.map(|id| id.to_string()),
-                    attempt.job_id.to_string(),
-                    attempt.created_at.get(),
-                ],
-            )
-            .map_err(storage)?;
+        let exported = attempt.revision.get();
+        let terminal = attempt.status.is_terminal();
+        let direct_processing =
+            attempt.started_at.is_some() && exported == if terminal { 2 } else { 1 };
+        match (direct_processing, attempt.started_at) {
+            (true, Some(started_at)) => {
+                transaction
+                    .execute(
+                        "INSERT INTO dynamic_memory_run_attempts \
+                         (run_id,id,ordinal,retry_parent_id,job_id,status,failure,revision,created_at,\
+                          started_at,finished_at,updated_at) \
+                         VALUES (?1,?2,?3,?4,?5,'processing',NULL,1,?6,?7,NULL,?7)",
+                        params![
+                            attempt.run_id.to_string(),
+                            attempt.id.to_string(),
+                            i64::from(attempt.ordinal),
+                            attempt.retry_parent_id.map(|id| id.to_string()),
+                            attempt.job_id.to_string(),
+                            attempt.created_at.get(),
+                            started_at.get(),
+                        ],
+                    )
+                    .map_err(storage)?;
+            }
+            _ => {
+                transaction
+                    .execute(
+                        "INSERT INTO dynamic_memory_run_attempts \
+                         (run_id,id,ordinal,retry_parent_id,job_id,status,failure,revision,created_at,\
+                          started_at,finished_at,updated_at) \
+                         VALUES (?1,?2,?3,?4,?5,'created',NULL,1,?6,NULL,NULL,?6)",
+                        params![
+                            attempt.run_id.to_string(),
+                            attempt.id.to_string(),
+                            i64::from(attempt.ordinal),
+                            attempt.retry_parent_id.map(|id| id.to_string()),
+                            attempt.job_id.to_string(),
+                            attempt.created_at.get(),
+                        ],
+                    )
+                    .map_err(storage)?;
+            }
+        }
         let mut revision = 1_u64;
-        if let Some(started_at) = attempt.started_at {
+        if let (false, Some(started_at)) = (direct_processing, attempt.started_at) {
             revision += 1;
             transaction
                 .execute(
@@ -841,7 +868,7 @@ pub(crate) fn insert_restored_run_in(
                 copy_background_settlement_in(transaction, settlement, digest, attempt.id)?;
             }
         }
-        if attempt.status.is_terminal() {
+        if terminal {
             revision += 1;
             transaction
                 .execute(
@@ -856,6 +883,9 @@ pub(crate) fn insert_restored_run_in(
                     ],
                 )
                 .map_err(storage)?;
+        }
+        if revision != exported {
+            return Err(DynamicMemoryRunRepositoryError::Invalid);
         }
     }
     if let Some(checkpoint) = &backup.summary_checkpoint {

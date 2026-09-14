@@ -1054,14 +1054,15 @@ pub(crate) fn insert_restored_effect_in(
         "INSERT INTO companion_turn_effects (
            id, conversation_id, turn_id, user_message_id, assistant_message_id,
            status, summary, enqueued_at, created_at, updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, 'processing', NULL, NULL, ?6, ?6)",
+         ) VALUES (?1, ?2, ?3, ?4, ?5, 'processing', NULL, NULL, ?6, ?7)",
         params![
             effect.id.to_string(),
             effect.conversation_id.to_string(),
             effect.turn_id.to_string(),
             effect.user_message_id.map(|value| value.to_string()),
             effect.assistant_message_id.to_string(),
-            effect.created_at.get()
+            effect.created_at.get(),
+            effect.updated_at.get()
         ],
     )
     .map_err(effect_failure)?;
@@ -1102,9 +1103,10 @@ pub(crate) fn insert_restored_effect_in(
         .source_window
         .as_ref()
         .map(|window| window.enqueued_at.get());
-    let status = match (effect.status, enqueued_at) {
-        (CompanionTurnEffectStatus::Processing, _) => return Ok(()),
-        (CompanionTurnEffectStatus::Ready | CompanionTurnEffectStatus::Invalidated, Some(_)) => {
+    let status = match (effect.status, enqueued_at, effect.summary.is_some()) {
+        (CompanionTurnEffectStatus::Processing, _, _)
+        | (CompanionTurnEffectStatus::Invalidated, None, false) => return Ok(()),
+        (CompanionTurnEffectStatus::Ready | CompanionTurnEffectStatus::Invalidated, Some(_), _) => {
             "ready"
         }
         _ => "failed",
