@@ -1147,6 +1147,21 @@ pub enum LegacyImportStage {
     DirectConversations,
     GroupConversations,
     UsageRecords,
+    CreationHelper,
+}
+
+impl LegacyImportStage {
+    /// Every stage a legacy run needs before it counts as a completed import.
+    pub const ALL: [Self; 8] = [
+        Self::Characters,
+        Self::Groups,
+        Self::Audio,
+        Self::Settings,
+        Self::DirectConversations,
+        Self::GroupConversations,
+        Self::UsageRecords,
+        Self::CreationHelper,
+    ];
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1220,6 +1235,15 @@ pub struct LegacyDirectConversationMaterializationRequest {
     pub conversations: Vec<LegacyConversationRecord>,
     pub companion_souls: Vec<(CharacterId, Vec<lettuce_companions::SoulFact>)>,
     pub scheduled_notes: Vec<lettuce_companions::CompanionScheduledNote>,
+    pub completed_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyCreationMaterializationRequest {
+    pub run_id: LegacyImportRunId,
+    pub plan_fingerprint: ContentHash,
+    pub source_fingerprint: ContentHash,
+    pub sessions: Vec<LegacyBackupCreationHelperSession>,
     pub completed_at: TimestampMillis,
 }
 
@@ -1349,4 +1373,16 @@ pub trait LegacyImportRepository: Send + Sync {
         &self,
         request: LegacyUsageMaterializationRequest,
     ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
+
+    fn materialize_creation_helper(
+        &self,
+        request: LegacyCreationMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
+
+    /// Marks a partial run completed once every later stage has its result.
+    fn complete_legacy_import_run(
+        &self,
+        run_id: LegacyImportRunId,
+        completed_at: TimestampMillis,
+    ) -> Result<LegacyImportRunStatus, LegacyImportRepositoryError>;
 }

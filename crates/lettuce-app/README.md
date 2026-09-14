@@ -85,7 +85,13 @@ relationship for the persona winning, and its legacy continuity episode is
 copied exactly. Legacy Soul facts that form an exact snapshot replace the
 imported character's authored Soul facts, and legacy scheduled notes of imported
 companion characters are written in the same stage. Conversations are written in
-creation order so episode links resolve. Memories in an incompatible shape stay in sealed evidence. Session settings become
+creation order so episode links resolve.
+`AppBackend::legacy_creation_importer` seeds a creation workflow with its initial
+proposal for every legacy creation helper session whose untouched active draft
+fits the rewrite's draft; sessions with chat, tool history, draft history or
+images stay in sealed evidence. `AppBackend::complete_legacy_import` marks a
+partial legacy run completed only once every stage in `LegacyImportStage::ALL`
+has committed. Memories in an incompatible shape stay in sealed evidence. Session settings become
 current conversation settings: the author note, the session prompt override
 (snapshotted when the imported prompt is available with the conversation's
 purpose, otherwise the launch prompt stays like legacy's fallback), the lorebook

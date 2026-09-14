@@ -642,6 +642,9 @@ session state and writes its legacy continuity episode
 the conversation stages also replace imported Soul facts
 (`soul_adapter::replace_facts_in`) and insert scheduled notes
 (`scheduled_note_adapter::insert_note_in`).
+The creation helper stage inserts seeded workflows through
+`creation_adapter::insert_workflow_in`, and `complete_legacy_import_run` moves a
+partial run to `completed` only when every later stage has a result row.
 
 The read-only legacy provider-secret adapter lists only planned API-key/header
 metadata, then loads one exact value into `SecretValue` on demand. It ignores the

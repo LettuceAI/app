@@ -832,6 +832,176 @@ impl LegacyImportRepository for Database {
         )
     }
 
+    fn materialize_creation_helper(
+        &self,
+        request: lettuce_transfer::LegacyCreationMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError> {
+        use lettuce_creation::{
+            CreationDraft, CreationProposal, CreationScene, CreationTarget, NewCreationWorkflow,
+        };
+        use lettuce_transfer::{
+            LEGACY_ID_NAMESPACE, LegacyBackupCreationGoal, LegacyBackupCreationMaterialization,
+        };
+
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let record_count = u64::try_from(request.sessions.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        if let StageStart::Replayed(receipt) = start_stage(
+            &transaction,
+            request.run_id,
+            (&request.plan_fingerprint, &request.source_fingerprint),
+            LegacyImportStage::CreationHelper,
+            record_count,
+            None,
+        )? {
+            transaction
+                .commit()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            return Ok(receipt);
+        }
+        let derived = |source: &str, suffix: &str| {
+            uuid::Uuid::new_v5(
+                &LEGACY_ID_NAMESPACE,
+                format!("{source}:{suffix}").as_bytes(),
+            )
+        };
+        for session in &request.sessions {
+            if session.materialization != LegacyBackupCreationMaterialization::InitialDraftSeed {
+                return Err(LegacyImportRepositoryError::InvalidInput);
+            }
+            let draft = &session.session.draft;
+            let (target, initial_draft) = match session.creation_goal {
+                LegacyBackupCreationGoal::Character => (
+                    CreationTarget::NewCharacter,
+                    CreationDraft::Character {
+                        name: draft.name.clone(),
+                        definition: draft.definition.clone(),
+                        scenes: draft
+                            .scenes
+                            .iter()
+                            .map(|scene| CreationScene {
+                                id: lettuce_types::SceneId::from_uuid(
+                                    uuid::Uuid::parse_str(&scene.source_id).unwrap_or_else(|_| {
+                                        derived(&session.source_id, &scene.source_id)
+                                    }),
+                                ),
+                                content: scene.content.clone(),
+                                direction: scene.direction.clone(),
+                            })
+                            .collect(),
+                    },
+                ),
+                LegacyBackupCreationGoal::Persona => (
+                    CreationTarget::NewPersona,
+                    CreationDraft::Persona {
+                        name: draft.name.clone(),
+                        description: draft.description.clone(),
+                    },
+                ),
+                LegacyBackupCreationGoal::Lorebook => (
+                    CreationTarget::NewLorebook,
+                    CreationDraft::Lorebook {
+                        name: draft.name.clone(),
+                        description: draft.description.clone(),
+                        entries: Vec::new(),
+                    },
+                ),
+            };
+            let input = NewCreationWorkflow {
+                id: lettuce_types::CreationWorkflowId::from_uuid(derived(
+                    &session.source_id,
+                    "creation-workflow",
+                )),
+                initial_proposal_id: lettuce_types::CreationProposalId::from_uuid(derived(
+                    &session.source_id,
+                    "creation-proposal",
+                )),
+                target,
+                initial_draft,
+                now: TimestampMillis::new(
+                    i64::try_from(session.created_at)
+                        .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                ),
+            };
+            input
+                .validate()
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            let initial = CreationProposal::initial(
+                input.initial_proposal_id,
+                input.initial_draft.clone(),
+                input.now,
+            )
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            crate::creation_adapter::insert_workflow_in(&transaction, &input, &initial)
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        }
+        insert_stage_result(
+            &transaction,
+            request.run_id,
+            LegacyImportStage::CreationHelper,
+            record_count,
+            request.completed_at,
+        )?;
+        let receipt = load_stage_receipt(
+            &transaction,
+            request.run_id,
+            LegacyImportStage::CreationHelper,
+        )?
+        .ok_or(LegacyImportRepositoryError::Storage)?;
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(receipt)
+    }
+
+    fn complete_legacy_import_run(
+        &self,
+        run_id: LegacyImportRunId,
+        completed_at: TimestampMillis,
+    ) -> Result<LegacyImportRunStatus, LegacyImportRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let admission =
+            load_admission(&transaction, run_id)?.ok_or(LegacyImportRepositoryError::Conflict)?;
+        match admission.status {
+            LegacyImportRunStatus::Completed => {
+                transaction
+                    .commit()
+                    .map_err(|_| LegacyImportRepositoryError::Storage)?;
+                return Ok(LegacyImportRunStatus::Completed);
+            }
+            LegacyImportRunStatus::Partial => {}
+            _ => return Err(LegacyImportRepositoryError::Conflict),
+        }
+        for stage in LegacyImportStage::ALL {
+            if load_stage_receipt(&transaction, run_id, stage)?.is_none() {
+                return Err(LegacyImportRepositoryError::Conflict);
+            }
+        }
+        let changed = transaction
+            .execute(
+                "UPDATE legacy_import_runs SET status='completed',updated_at=?2 WHERE id=?1 AND status='partial'",
+                params![run_id.to_string(), completed_at.get()],
+            )
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        if changed != 1 {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(LegacyImportRunStatus::Completed)
+    }
+
     fn materialize_usage_records(
         &self,
         request: lettuce_transfer::LegacyUsageMaterializationRequest,
@@ -2256,6 +2426,7 @@ const fn stage_name(stage: LegacyImportStage) -> &'static str {
         LegacyImportStage::DirectConversations => "direct_conversations",
         LegacyImportStage::GroupConversations => "group_conversations",
         LegacyImportStage::UsageRecords => "usage_records",
+        LegacyImportStage::CreationHelper => "creation_helper",
     }
 }
 

@@ -456,6 +456,35 @@ fn next_ordinal(
     u32::try_from(ordinal).map_err(|_| CreationRepositoryError::Storage)
 }
 
+/// Inserts a new creation workflow with its initial proposal on the caller's
+/// transaction.
+pub(crate) fn insert_workflow_in(
+    transaction: &Transaction<'_>,
+    input: &NewCreationWorkflow,
+    initial: &CreationProposal,
+) -> Result<(), CreationRepositoryError> {
+    transaction
+        .execute(
+            "INSERT INTO creation_workflows \
+             (id,target_json,stage,current_proposal_id,revision,created_at,updated_at) \
+             VALUES (?1,?2,'drafting',NULL,1,?3,?3)",
+            params![
+                input.id.to_string(),
+                encode(&input.target)?,
+                input.now.get()
+            ],
+        )
+        .map_err(storage)?;
+    insert_proposal(transaction, input.id, initial)?;
+    transaction
+        .execute(
+            "UPDATE creation_workflows SET current_proposal_id=?2 WHERE id=?1",
+            params![input.id.to_string(), input.initial_proposal_id.to_string()],
+        )
+        .map_err(storage)?;
+    Ok(())
+}
+
 fn insert_proposal(
     transaction: &Transaction<'_>,
     workflow_id: CreationWorkflowId,
@@ -1397,25 +1426,7 @@ impl CreationWorkflowRepository for Database {
             Err(CreationRepositoryError::NotFound) => {}
             Err(error) => return Err(error),
         }
-        transaction
-            .execute(
-                "INSERT INTO creation_workflows \
-                 (id,target_json,stage,current_proposal_id,revision,created_at,updated_at) \
-                 VALUES (?1,?2,'drafting',NULL,1,?3,?3)",
-                params![
-                    input.id.to_string(),
-                    encode(&input.target)?,
-                    input.now.get()
-                ],
-            )
-            .map_err(storage)?;
-        insert_proposal(&transaction, input.id, &initial)?;
-        transaction
-            .execute(
-                "UPDATE creation_workflows SET current_proposal_id=?2 WHERE id=?1",
-                params![input.id.to_string(), input.initial_proposal_id.to_string()],
-            )
-            .map_err(storage)?;
+        insert_workflow_in(&transaction, &input, &initial)?;
         let workflow = load_workflow_conn(&transaction, input.id)?;
         transaction.commit().map_err(storage)?;
         Ok(workflow)

@@ -192,6 +192,27 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn legacy_creation_importer(&self) -> crate::LegacyCreationImportCoordinator<'_, Database> {
+        crate::LegacyCreationImportCoordinator::new(self.database.as_ref())
+    }
+
+    /// Marks a legacy import run completed once every stage has committed.
+    pub fn complete_legacy_import(
+        &self,
+        run_id: lettuce_types::LegacyImportRunId,
+        completed_at: lettuce_types::TimestampMillis,
+    ) -> Result<
+        lettuce_transfer::LegacyImportRunStatus,
+        lettuce_transfer::LegacyImportRepositoryError,
+    > {
+        lettuce_transfer::LegacyImportRepository::complete_legacy_import_run(
+            self.database.as_ref(),
+            run_id,
+            completed_at,
+        )
+    }
+
+    #[must_use]
     pub fn legacy_usage_importer(&self) -> crate::LegacyUsageImportCoordinator<'_, Database> {
         crate::LegacyUsageImportCoordinator::new(self.database.as_ref())
     }

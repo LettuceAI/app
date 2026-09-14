@@ -1064,6 +1064,10 @@ mod tests {
             )
             .expect("replay group conversations");
         assert!(group_conversation_replay.replayed);
+        assert_eq!(
+            reopened.complete_legacy_import(run_id, TimestampMillis::new(97)),
+            Err(LegacyImportRepositoryError::Conflict)
+        );
         drop(reopened);
         fs::remove_file(path).expect("remove database");
     }
