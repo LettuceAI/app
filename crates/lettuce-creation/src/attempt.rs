@@ -138,7 +138,8 @@ pub struct CreationAttemptSuccess {
     pub proposal: Option<crate::CreationProposal>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreationInferenceAttempt {
     pub id: GenerationAttemptId,
     pub workflow_id: CreationWorkflowId,
@@ -254,7 +255,8 @@ pub struct NewCreationToolCall {
 
 pub const MAX_CREATION_INFERENCE_ROUNDS: u8 = 8;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CreationRoundFinishReason {
     Stop,
     Length,
@@ -338,7 +340,8 @@ pub struct CreationDialogueTurn {
     pub assistant_parts: Vec<MessagePart>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreationInferenceRound {
     pub workflow_id: CreationWorkflowId,
     pub turn_id: CreationTurnId,
@@ -400,7 +403,8 @@ impl CreationInferenceRound {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreationToolCallEvidence {
     pub id: ToolExecutionId,
     pub workflow_id: CreationWorkflowId,

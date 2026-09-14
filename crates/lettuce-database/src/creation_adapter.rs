@@ -735,6 +735,357 @@ fn list_rounds_in(
     Ok(rounds)
 }
 
+fn insert_round_rows_in(
+    transaction: &Transaction<'_>,
+    requested: &CreationInferenceRound,
+) -> Result<(), CreationRepositoryError> {
+    let (round_replay_id, round_replay_retention) = requested
+        .provider_replay
+        .as_ref()
+        .map(|reference| {
+            (
+                Some(reference.artifact_id.to_string()),
+                Some("conversation"),
+            )
+        })
+        .unwrap_or((None, None));
+    let (input_tokens, output_tokens) = requested
+        .usage
+        .as_ref()
+        .map(|usage| {
+            Ok((
+                Some(sql_u64(usage.input_tokens)?),
+                Some(sql_u64(usage.output_tokens)?),
+            ))
+        })
+        .transpose()?
+        .unwrap_or((None, None));
+    transaction
+        .execute(
+            "INSERT INTO creation_inference_rounds \
+             (workflow_id,turn_id,attempt_id,ordinal,first_call_ordinal,call_count,parts_json,\
+              provider_replay_artifact_id,provider_replay_retention,input_tokens,output_tokens,\
+              finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+            params![
+                requested.workflow_id.to_string(),
+                requested.turn_id.to_string(),
+                requested.attempt_id.to_string(),
+                i64::from(requested.ordinal),
+                i64::from(requested.first_call_ordinal),
+                i64::try_from(requested.calls.len())
+                    .map_err(|_| CreationRepositoryError::Invalid)?,
+                encode_versioned(&requested.parts, CREATION_JSON_VERSION)
+                    .map_err(|_| CreationRepositoryError::Invalid)?,
+                round_replay_id,
+                round_replay_retention,
+                input_tokens,
+                output_tokens,
+                match requested.finish_reason {
+                    CreationRoundFinishReason::Stop => "stop",
+                    CreationRoundFinishReason::Length => "length",
+                },
+                requested.provider_request_id.as_deref(),
+                requested.admitted_at.get(),
+                requested.usage.as_ref().and_then(|u| u.cached_input_tokens).map(sql_u64).transpose()?,
+                requested.usage.as_ref().and_then(|u| u.reasoning_tokens).map(sql_u64).transpose()?,
+                requested.usage.as_ref().and_then(|u| u.cache_write_tokens).map(sql_u64).transpose()?,
+                requested.usage.as_ref().and_then(|u| u.web_search_requests).map(sql_u64).transpose()?,
+                requested.usage.as_ref().and_then(|u| u.provider_reported_cost).map(lettuce_conversations::ProviderReportedCost::get),
+            ],
+        )
+        .map_err(|error| match error.sqlite_error_code() {
+            Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
+            _ => CreationRepositoryError::Storage,
+        })?;
+    for evidence in &requested.calls {
+        let (replay_id, replay_retention) = evidence
+            .call
+            .provider_replay
+            .as_ref()
+            .map(|reference| {
+                (
+                    Some(reference.artifact_id.to_string()),
+                    Some("conversation"),
+                )
+            })
+            .unwrap_or((None, None));
+        transaction
+            .execute(
+                "INSERT INTO creation_admitted_tool_calls \
+                 (workflow_id,turn_id,attempt_id,round_ordinal,id,ordinal,definition_name,definition_version,\
+                  provider_call_id,arguments_json,raw_arguments,provider_replay_artifact_id,\
+                  provider_replay_retention,admitted_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+                params![
+                    evidence.workflow_id.to_string(),
+                    evidence.turn_id.to_string(),
+                    evidence.attempt_id.to_string(),
+                    i64::from(evidence.round_ordinal),
+                    evidence.id.to_string(),
+                    i64::from(evidence.ordinal),
+                    evidence.call.name,
+                    i64::from(evidence.definition_version),
+                    evidence.call.provider_call_id,
+                    encode_versioned(&evidence.call.arguments, CREATION_JSON_VERSION)
+                        .map_err(|_| CreationRepositoryError::Invalid)?,
+                    evidence.call.raw_arguments,
+                    replay_id,
+                    replay_retention,
+                    evidence.admitted_at.get(),
+                ],
+            )
+            .map_err(|error| match error.sqlite_error_code() {
+                Some(rusqlite::ErrorCode::ConstraintViolation) => {
+                    CreationRepositoryError::Conflict
+                }
+                _ => CreationRepositoryError::Storage,
+            })?;
+    }
+    Ok(())
+}
+
+fn ids_in(
+    transaction: &Transaction<'_>,
+    sql: &str,
+    workflow_id: CreationWorkflowId,
+) -> Result<Vec<String>, CreationRepositoryError> {
+    let mut statement = transaction.prepare(sql).map_err(storage)?;
+    statement
+        .query_map([workflow_id.to_string()], |row| row.get::<_, String>(0))
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage)
+}
+
+/// Reads every creation workflow with its proposal chain, turns, attempts,
+/// rounds and apply receipt for a backup.
+pub(crate) fn read_workflows_in(
+    transaction: &Transaction<'_>,
+) -> Result<Vec<lettuce_transfer::BackupCreationWorkflow>, CreationRepositoryError> {
+    let mut statement = transaction
+        .prepare("SELECT id FROM creation_workflows ORDER BY id")
+        .map_err(storage)?;
+    let ids = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage)?;
+    drop(statement);
+    let mut workflows = Vec::with_capacity(ids.len());
+    for id in ids {
+        let workflow_id: CreationWorkflowId = id.parse().map_err(storage)?;
+        let workflow = load_workflow_conn(transaction, workflow_id)?;
+        let proposals = ids_in(
+            transaction,
+            "SELECT id FROM creation_proposals WHERE workflow_id=?1 ORDER BY ordinal",
+            workflow_id,
+        )?
+        .into_iter()
+        .map(|id| load_proposal_conn(transaction, id.parse().map_err(storage)?))
+        .collect::<Result<Vec<_>, _>>()?;
+        let turns = ids_in(
+            transaction,
+            "SELECT id FROM creation_turns WHERE workflow_id=?1 ORDER BY ordinal",
+            workflow_id,
+        )?
+        .into_iter()
+        .map(|id| load_turn_conn(transaction, id.parse().map_err(storage)?))
+        .collect::<Result<Vec<_>, _>>()?;
+        let attempts = ids_in(
+            transaction,
+            "SELECT a.id FROM creation_inference_attempts a JOIN creation_turns t ON t.id = a.turn_id WHERE a.workflow_id=?1 ORDER BY t.ordinal, a.ordinal",
+            workflow_id,
+        )?
+        .into_iter()
+        .map(|id| {
+            let attempt = load_attempt_conn(transaction, id.parse().map_err(storage)?)?;
+            let rounds = list_rounds_in(
+                transaction,
+                CreationAttemptOwner {
+                    workflow_id,
+                    turn_id: attempt.turn_id,
+                },
+                attempt.id,
+            )?;
+            Ok(lettuce_transfer::BackupCreationAttempt { attempt, rounds })
+        })
+        .collect::<Result<Vec<_>, CreationRepositoryError>>()?;
+        workflows.push(lettuce_transfer::BackupCreationWorkflow {
+            workflow,
+            proposals,
+            turns,
+            attempts,
+            persona_receipt: load_apply_receipt(transaction, workflow_id)?,
+            character_receipt: load_character_apply_receipt(transaction, workflow_id)?,
+            lorebook_receipt: load_lorebook_apply_receipt(transaction, workflow_id)?,
+        });
+    }
+    Ok(workflows)
+}
+
+/// Writes a backed-up creation workflow: its proposal chain advances turn by
+/// turn so each attempt and its rounds are inserted while the workflow's
+/// current proposal is the attempt's base, attempts walk
+/// `created -> running -> terminal` up to their stored status, and the apply
+/// receipt comes last.
+pub(crate) fn insert_restored_workflow_in(
+    transaction: &Transaction<'_>,
+    backup: &lettuce_transfer::BackupCreationWorkflow,
+) -> Result<(), CreationRepositoryError> {
+    let workflow = &backup.workflow;
+    let [first, rest @ ..] = backup.proposals.as_slice() else {
+        return Err(CreationRepositoryError::Invalid);
+    };
+    transaction
+        .execute(
+            "INSERT INTO creation_workflows \
+             (id,target_json,stage,current_proposal_id,revision,created_at,updated_at) \
+             VALUES (?1,?2,'drafting',NULL,1,?3,?3)",
+            params![
+                workflow.id.to_string(),
+                encode(&workflow.target)?,
+                workflow.created_at.get()
+            ],
+        )
+        .map_err(storage)?;
+    insert_proposal(transaction, workflow.id, first)?;
+    transaction
+        .execute(
+            "UPDATE creation_workflows SET current_proposal_id=?2 WHERE id=?1",
+            params![workflow.id.to_string(), first.id.to_string()],
+        )
+        .map_err(storage)?;
+    let mut revision = 1_u64;
+    for turn in &backup.turns {
+        transaction
+            .execute(
+                "INSERT INTO creation_turns \
+                 (id,workflow_id,ordinal,base_proposal_id,user_message,created_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6)",
+                params![
+                    turn.id.to_string(),
+                    workflow.id.to_string(),
+                    i64::from(turn.ordinal),
+                    turn.base_proposal_id.to_string(),
+                    turn.user_message,
+                    turn.created_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        for value in backup
+            .attempts
+            .iter()
+            .filter(|value| value.attempt.turn_id == turn.id)
+        {
+            let attempt = &value.attempt;
+            transaction
+                .execute(
+                    "INSERT INTO creation_inference_attempts \
+                     (workflow_id,turn_id,id,ordinal,retry_parent_id,base_proposal_id,\
+                      planned_proposal_id,target,stage,tool_request_json,job_id,profile_fingerprint,\
+                      workflow_revision,status,failure,revision,created_at,started_at,finished_at,updated_at) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,'created',NULL,1,?14,NULL,NULL,?14)",
+                    params![
+                        attempt.workflow_id.to_string(),
+                        attempt.turn_id.to_string(),
+                        attempt.id.to_string(),
+                        i64::from(attempt.ordinal),
+                        attempt.retry_parent_id.map(|id| id.to_string()),
+                        attempt.base_proposal_id.to_string(),
+                        attempt.planned_proposal_id.to_string(),
+                        target_name(attempt.target),
+                        stage_name(attempt.stage),
+                        encode_versioned(&attempt.tool_request, CREATION_JSON_VERSION)
+                            .map_err(|_| CreationRepositoryError::Invalid)?,
+                        attempt.job_id.to_string(),
+                        attempt.profile_fingerprint.as_slice(),
+                        sql_u64(attempt.workflow_revision.get())?,
+                        attempt.created_at.get(),
+                    ],
+                )
+                .map_err(storage)?;
+            let mut attempt_revision = 1_u64;
+            if let Some(started_at) = attempt.started_at {
+                attempt_revision += 1;
+                transaction
+                    .execute(
+                        "UPDATE creation_inference_attempts SET status='running',revision=?2,started_at=?3,updated_at=?3 WHERE id=?1",
+                        params![
+                            attempt.id.to_string(),
+                            sql_u64(attempt_revision)?,
+                            started_at.get()
+                        ],
+                    )
+                    .map_err(storage)?;
+            }
+            for round in &value.rounds {
+                insert_round_rows_in(transaction, round)?;
+            }
+            if !matches!(
+                attempt.status,
+                CreationAttemptStatus::Created | CreationAttemptStatus::Running
+            ) {
+                attempt_revision += 1;
+                transaction
+                    .execute(
+                        "UPDATE creation_inference_attempts SET status=?2,failure=?3,revision=?4,finished_at=?5,updated_at=?6 WHERE id=?1",
+                        params![
+                            attempt.id.to_string(),
+                            attempt_status_name(attempt.status),
+                            attempt.failure.map(attempt_failure_name),
+                            sql_u64(attempt_revision)?,
+                            attempt.finished_at.map(TimestampMillis::get),
+                            attempt.updated_at.get(),
+                        ],
+                    )
+                    .map_err(storage)?;
+            }
+            if attempt_revision != attempt.revision.get() {
+                return Err(CreationRepositoryError::Invalid);
+            }
+        }
+        if let Some(proposal) = rest
+            .iter()
+            .find(|proposal| proposal.turn_id == Some(turn.id))
+        {
+            insert_proposal(transaction, workflow.id, proposal)?;
+            revision += 1;
+            transaction
+                .execute(
+                    "UPDATE creation_workflows SET stage=?2,current_proposal_id=?3,revision=?4,updated_at=?5 WHERE id=?1",
+                    params![
+                        workflow.id.to_string(),
+                        stage_name(proposal.stage),
+                        proposal.id.to_string(),
+                        sql_u64(revision)?,
+                        proposal.created_at.get(),
+                    ],
+                )
+                .map_err(storage)?;
+        }
+    }
+    if revision != workflow.revision.get() {
+        return Err(CreationRepositoryError::Invalid);
+    }
+    transaction
+        .execute(
+            "UPDATE creation_workflows SET updated_at=?2 WHERE id=?1",
+            params![workflow.id.to_string(), workflow.updated_at.get()],
+        )
+        .map_err(storage)?;
+    if let Some(receipt) = &backup.persona_receipt {
+        insert_apply_receipt(transaction, receipt)?;
+    }
+    if let Some(receipt) = &backup.character_receipt {
+        insert_character_apply_receipt(transaction, receipt)?;
+    }
+    if let Some(receipt) = &backup.lorebook_receipt {
+        insert_lorebook_apply_receipt(transaction, receipt)?;
+    }
+    Ok(())
+}
+
 impl CreationApplyRepository for Database {
     fn apply_new_persona(
         &self,
@@ -2293,109 +2644,7 @@ impl CreationAttemptRepository for Database {
             validate_creation_tool_calls(&base, attempt.planned_proposal_id, &admitted)
                 .map_err(|_| CreationRepositoryError::Invalid)?;
         }
-        let (round_replay_id, round_replay_retention) = requested
-            .provider_replay
-            .as_ref()
-            .map(|reference| {
-                (
-                    Some(reference.artifact_id.to_string()),
-                    Some("conversation"),
-                )
-            })
-            .unwrap_or((None, None));
-        let (input_tokens, output_tokens) = requested
-            .usage
-            .as_ref()
-            .map(|usage| {
-                Ok((
-                    Some(sql_u64(usage.input_tokens)?),
-                    Some(sql_u64(usage.output_tokens)?),
-                ))
-            })
-            .transpose()?
-            .unwrap_or((None, None));
-        transaction
-            .execute(
-                "INSERT INTO creation_inference_rounds \
-                 (workflow_id,turn_id,attempt_id,ordinal,first_call_ordinal,call_count,parts_json,\
-                  provider_replay_artifact_id,provider_replay_retention,input_tokens,output_tokens,\
-                  finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
-                params![
-                    requested.workflow_id.to_string(),
-                    requested.turn_id.to_string(),
-                    requested.attempt_id.to_string(),
-                    i64::from(requested.ordinal),
-                    i64::from(requested.first_call_ordinal),
-                    i64::try_from(requested.calls.len())
-                        .map_err(|_| CreationRepositoryError::Invalid)?,
-                    encode_versioned(&requested.parts, CREATION_JSON_VERSION)
-                        .map_err(|_| CreationRepositoryError::Invalid)?,
-                    round_replay_id,
-                    round_replay_retention,
-                    input_tokens,
-                    output_tokens,
-                    match requested.finish_reason {
-                        CreationRoundFinishReason::Stop => "stop",
-                        CreationRoundFinishReason::Length => "length",
-                    },
-                    requested.provider_request_id.as_deref(),
-                    requested.admitted_at.get(),
-                    requested.usage.as_ref().and_then(|u| u.cached_input_tokens).map(sql_u64).transpose()?,
-                    requested.usage.as_ref().and_then(|u| u.reasoning_tokens).map(sql_u64).transpose()?,
-                    requested.usage.as_ref().and_then(|u| u.cache_write_tokens).map(sql_u64).transpose()?,
-                    requested.usage.as_ref().and_then(|u| u.web_search_requests).map(sql_u64).transpose()?,
-                    requested.usage.as_ref().and_then(|u| u.provider_reported_cost).map(lettuce_conversations::ProviderReportedCost::get),
-                ],
-            )
-            .map_err(|error| match error.sqlite_error_code() {
-                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
-                _ => CreationRepositoryError::Storage,
-            })?;
-        for evidence in &requested.calls {
-            let (replay_id, replay_retention) = evidence
-                .call
-                .provider_replay
-                .as_ref()
-                .map(|reference| {
-                    (
-                        Some(reference.artifact_id.to_string()),
-                        Some("conversation"),
-                    )
-                })
-                .unwrap_or((None, None));
-            transaction
-                .execute(
-                    "INSERT INTO creation_admitted_tool_calls \
-                     (workflow_id,turn_id,attempt_id,round_ordinal,id,ordinal,definition_name,definition_version,\
-                      provider_call_id,arguments_json,raw_arguments,provider_replay_artifact_id,\
-                      provider_replay_retention,admitted_at) \
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
-                    params![
-                        evidence.workflow_id.to_string(),
-                        evidence.turn_id.to_string(),
-                        evidence.attempt_id.to_string(),
-                        i64::from(evidence.round_ordinal),
-                        evidence.id.to_string(),
-                        i64::from(evidence.ordinal),
-                        evidence.call.name,
-                        i64::from(evidence.definition_version),
-                        evidence.call.provider_call_id,
-                        encode_versioned(&evidence.call.arguments, CREATION_JSON_VERSION)
-                            .map_err(|_| CreationRepositoryError::Invalid)?,
-                        evidence.call.raw_arguments,
-                        replay_id,
-                        replay_retention,
-                        evidence.admitted_at.get(),
-                    ],
-                )
-                .map_err(|error| match error.sqlite_error_code() {
-                    Some(rusqlite::ErrorCode::ConstraintViolation) => {
-                        CreationRepositoryError::Conflict
-                    }
-                    _ => CreationRepositoryError::Storage,
-                })?;
-        }
+        insert_round_rows_in(&transaction, &requested)?;
         let stored = list_rounds_in(&transaction, owner, attempt_id)?;
         let admitted = stored
             .last()

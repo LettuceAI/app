@@ -130,6 +130,27 @@ pub struct CreationBackup {
     pub staged_lorebooks: Vec<lettuce_creation::StagedLorebookPlanningRun>,
     #[serde(default)]
     pub staged_lorebook_writer_runs: Vec<lettuce_creation::StagedLorebookWriterRun>,
+    #[serde(default)]
+    pub workflows: Vec<BackupCreationWorkflow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupCreationWorkflow {
+    pub workflow: lettuce_creation::CreationWorkflow,
+    pub proposals: Vec<lettuce_creation::CreationProposal>,
+    pub turns: Vec<lettuce_creation::CreationTurn>,
+    pub attempts: Vec<BackupCreationAttempt>,
+    pub persona_receipt: Option<lettuce_creation::CreationApplyReceipt>,
+    pub character_receipt: Option<lettuce_creation::CreationCharacterApplyReceipt>,
+    pub lorebook_receipt: Option<lettuce_creation::CreationLorebookApplyReceipt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupCreationAttempt {
+    pub attempt: lettuce_creation::CreationInferenceAttempt,
+    pub rounds: Vec<lettuce_creation::CreationInferenceRound>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -398,6 +419,22 @@ pub(crate) fn all_conversation_artifact_descriptors(
                     .filter_map(|call| call.call.provider_replay.clone()),
             )
         })
+        .chain(
+            graph
+                .creation
+                .workflows
+                .iter()
+                .flat_map(|entry| &entry.attempts)
+                .flat_map(|value| &value.rounds)
+                .flat_map(|round| {
+                    round.provider_replay.iter().cloned().chain(
+                        round
+                            .calls
+                            .iter()
+                            .filter_map(|call| call.call.provider_replay.clone()),
+                    )
+                }),
+        )
         .map(TrustedArtifactDescriptor::Replay)
         .collect::<Vec<_>>();
     let descriptors = graph
@@ -570,6 +607,38 @@ pub fn canonicalize_and_validate(
     creation
         .staged_lorebook_writer_runs
         .sort_by_key(|run| run.request_id);
+    creation.workflows.sort_by_key(|entry| entry.workflow.id);
+    for entry in &mut creation.workflows {
+        entry.proposals.sort_by_key(|proposal| proposal.ordinal);
+        entry.turns.sort_by_key(|turn| turn.ordinal);
+        let turn_ordinals = entry
+            .turns
+            .iter()
+            .map(|turn| (turn.id, turn.ordinal))
+            .collect::<BTreeMap<_, _>>();
+        entry.attempts.sort_by_key(|value| {
+            (
+                turn_ordinals.get(&value.attempt.turn_id).copied(),
+                value.attempt.ordinal,
+            )
+        });
+        if entry
+            .proposals
+            .first()
+            .is_none_or(|first| first.ordinal != 0)
+            || entry
+                .proposals
+                .iter()
+                .any(|proposal| proposal.validate().is_err())
+            || entry.attempts.iter().any(|value| {
+                value.attempt.workflow_id != entry.workflow.id
+                    || !turn_ordinals.contains_key(&value.attempt.turn_id)
+                    || value.rounds.iter().any(|round| round.validate().is_err())
+            })
+        {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+    }
     if creation.lorebook_entry_runs.iter().any(|entry| {
         entry.run.validate().is_err()
             || lettuce_creation::validate_lorebook_entry_attempts(&entry.attempts).is_err()

@@ -90,6 +90,8 @@ fn read_creation(
                 .ok_or(ProviderBackupSourceError::InvalidData)?,
         );
     }
+    creation.workflows = crate::creation_adapter::read_workflows_in(transaction)
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
     Ok(creation)
 }
 

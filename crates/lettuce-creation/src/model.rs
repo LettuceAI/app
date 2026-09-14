@@ -206,7 +206,8 @@ impl NewCreationWorkflow {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreationWorkflow {
     pub id: CreationWorkflowId,
     pub target: CreationTarget,
@@ -238,7 +239,8 @@ impl NewCreationTurn {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreationTurn {
     pub id: CreationTurnId,
     pub workflow_id: CreationWorkflowId,
@@ -305,7 +307,8 @@ pub struct ConfirmedLorebookRevisionApply {
     pub now: TimestampMillis,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreationApplyReceipt {
     pub workflow_id: CreationWorkflowId,
     pub workflow_revision: Revision,
@@ -315,7 +318,8 @@ pub struct CreationApplyReceipt {
     pub applied_at: TimestampMillis,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreationCharacterApplyReceipt {
     pub workflow_id: CreationWorkflowId,
     pub workflow_revision: Revision,
@@ -325,7 +329,8 @@ pub struct CreationCharacterApplyReceipt {
     pub applied_at: TimestampMillis,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreationLorebookApplyReceipt {
     pub workflow_id: CreationWorkflowId,
     pub workflow_revision: Revision,

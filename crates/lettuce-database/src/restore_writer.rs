@@ -598,6 +598,10 @@ impl ProviderBackupRestoreWriter for Database {
             crate::soul_writer_adapter::insert_restored_in(&transaction, run).map_err(invalid)?;
         }
         let creation = &graph.creation;
+        for workflow in &creation.workflows {
+            crate::creation_adapter::insert_restored_workflow_in(&transaction, workflow)
+                .map_err(invalid)?;
+        }
         for entry in &creation.lorebook_entry_runs {
             crate::lorebook_entry_run_adapter::insert_restored_in(
                 &transaction,
