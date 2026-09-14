@@ -14,6 +14,16 @@ pub struct MemoryBackup {
     pub version: u32,
     pub spaces: Vec<BackupMemorySpace>,
     pub retrieval_accesses: Vec<MemoryRetrievalAccessReceipt>,
+    /// The companion character that owns each shared memory pool.
+    #[serde(default)]
+    pub pools: Vec<BackupCompanionMemoryPool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupCompanionMemoryPool {
+    pub character_id: lettuce_types::CharacterId,
+    pub space_id: lettuce_types::MemorySpaceId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,6 +53,21 @@ impl MemoryBackup {
             return Err(MemoryBackupError::InvalidData);
         }
         self.spaces.sort_by_key(|space| space.conversation_id);
+        self.pools.sort_by_key(|pool| pool.character_id);
+        let space_ids = self
+            .spaces
+            .iter()
+            .map(|space| space.snapshot.id)
+            .collect::<BTreeSet<_>>();
+        let mut pool_characters = BTreeSet::new();
+        let mut pool_spaces = BTreeSet::new();
+        if self.pools.iter().any(|pool| {
+            !space_ids.contains(&pool.space_id)
+                || !pool_characters.insert(pool.character_id)
+                || !pool_spaces.insert(pool.space_id)
+        }) {
+            return Err(MemoryBackupError::InvalidData);
+        }
         self.retrieval_accesses.sort_by_key(|receipt| {
             (
                 receipt.access.conversation_id,

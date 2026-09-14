@@ -1183,6 +1183,8 @@ mod tests {
                 conversations: Vec::new(),
             },
             companion_state: crate::CompanionStateBackup {
+                souls: Vec::new(),
+                scheduled_notes: Vec::new(),
                 version: crate::COMPANION_STATE_BACKUP_VERSION,
                 relationships: Vec::new(),
                 sessions: Vec::new(),
@@ -1195,6 +1197,7 @@ mod tests {
                 rewinds: Vec::new(),
             },
             memory: crate::MemoryBackup {
+                pools: Vec::new(),
                 version: crate::MEMORY_BACKUP_VERSION,
                 spaces: Vec::new(),
                 retrieval_accesses: Vec::new(),

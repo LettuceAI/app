@@ -21,6 +21,31 @@ pub struct CompanionStateBackup {
     pub sessions: Vec<BackupCompanionSession>,
     pub episodes: Vec<CompanionContinuityEpisode>,
     pub receipts: Vec<BackupCompanionStateReceipt>,
+    #[serde(default)]
+    pub souls: Vec<BackupCompanionSoul>,
+    #[serde(default)]
+    pub scheduled_notes: Vec<lettuce_companions::CompanionScheduledNote>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupCompanionSoul {
+    pub character_id: CharacterId,
+    pub revision: Revision,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+    pub facts: Vec<lettuce_companions::SoulFact>,
+    pub receipts: Vec<BackupSoulReceipt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupSoulReceipt {
+    pub operation_id: lettuce_types::OperationRecordId,
+    pub expected_revision: Revision,
+    pub resulting_revision: Revision,
+    pub applied_at: TimestampMillis,
+    pub change_hash: ContentHash,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -179,6 +204,39 @@ impl CompanionStateBackup {
                         .next()
                         .map_err(|_| CompanionStateBackupError::InvalidData)?
                 || !receipt_ids.insert(receipt.operation_id)
+            {
+                return Err(CompanionStateBackupError::InvalidData);
+            }
+        }
+        self.souls.sort_by_key(|soul| soul.character_id);
+        for soul in &mut self.souls {
+            soul.receipts
+                .sort_by_key(|receipt| (receipt.applied_at, receipt.operation_id));
+        }
+        let mut soul_ids = BTreeSet::new();
+        for soul in &self.souls {
+            let state = lettuce_companions::SoulState {
+                revision: soul.revision,
+                facts: soul.facts.clone(),
+            };
+            if !character_ids.contains(&soul.character_id)
+                || soul.revision.get() == 0
+                || soul.created_at > soul.updated_at
+                || lettuce_companions::validate_state(&state).is_err()
+                || !soul_ids.insert(soul.character_id)
+                || soul.receipts.iter().any(|receipt| {
+                    receipt.expected_revision.next().ok() != Some(receipt.resulting_revision)
+                })
+            {
+                return Err(CompanionStateBackupError::InvalidData);
+            }
+        }
+        self.scheduled_notes.sort_by_key(|note| note.id);
+        let mut note_ids = BTreeSet::new();
+        for note in &self.scheduled_notes {
+            if !character_ids.contains(&note.character_id)
+                || note.validate().is_err()
+                || !note_ids.insert(note.id)
             {
                 return Err(CompanionStateBackupError::InvalidData);
             }

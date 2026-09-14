@@ -124,7 +124,9 @@ the path its revision implies; a tool left unsettled by an interrupted attempt
 is settled with it), and its generation checkpoints. Memory retrieval accesses
 follow the conversations, then companion relationship states, session states
 with their emotion vectors and signals, continuity episodes and apply receipts
-at their exported revisions. Dynamic memory pending approvals and runs follow:
+at their exported revisions, companion Soul states with their facts and apply
+receipts (replacing the Soul rows the character insert seeded), scheduled notes
+and the companion memory pool ownership rows. Dynamic memory pending approvals and runs follow:
 each source row is inserted while its message briefly renders the source the run
 recorded (messages tombstoned at backup time are written hidden and tombstoned
 after the runs, because a tombstone cannot be undone), attempts walk

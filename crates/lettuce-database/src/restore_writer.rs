@@ -479,6 +479,50 @@ impl ProviderBackupRestoreWriter for Database {
                 )
                 .map_err(invalid)?;
         }
+        transaction
+            .execute_batch("DELETE FROM companion_soul_facts; DELETE FROM companion_soul_states;")
+            .map_err(invalid)?;
+        for soul in &companion.souls {
+            transaction
+                .execute(
+                    "INSERT INTO companion_soul_states (character_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        soul.character_id.to_string(),
+                        sql_revision(soul.revision)?,
+                        soul.created_at.get(),
+                        soul.updated_at.get()
+                    ],
+                )
+                .map_err(invalid)?;
+            crate::soul_adapter::insert_facts(&transaction, soul.character_id, &soul.facts)
+                .map_err(invalid)?;
+            for receipt in &soul.receipts {
+                transaction
+                    .execute(
+                        "INSERT INTO companion_soul_apply_receipts (operation_id, character_id, expected_revision, resulting_revision, applied_at, change_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        params![
+                            receipt.operation_id.to_string(),
+                            soul.character_id.to_string(),
+                            sql_revision(receipt.expected_revision)?,
+                            sql_revision(receipt.resulting_revision)?,
+                            receipt.applied_at.get(),
+                            crate::hex_decode(receipt.change_hash.as_str()).map_err(invalid)?
+                        ],
+                    )
+                    .map_err(invalid)?;
+            }
+        }
+        for note in &companion.scheduled_notes {
+            crate::scheduled_note_adapter::insert_note_in(&transaction, note).map_err(invalid)?;
+        }
+        for pool in &graph.memory.pools {
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO companion_memory_pools (character_id, space_id) VALUES (?1, ?2)",
+                    params![pool.character_id.to_string(), pool.space_id.to_string()],
+                )
+                .map_err(invalid)?;
+        }
         for receipt in &graph.memory.retrieval_accesses {
             let access = &receipt.access;
             transaction

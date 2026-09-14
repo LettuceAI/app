@@ -1838,7 +1838,7 @@ mod tests {
             round_trip.conversation_outbox,
             restore_plan.graph.conversation_outbox
         );
-        assert_eq!(round_trip.memory.spaces, restore_plan.graph.memory.spaces);
+        assert_eq!(round_trip.memory, restore_plan.graph.memory);
         assert_eq!(round_trip.job_backup, restore_plan.graph.job_backup);
         assert_eq!(
             round_trip.companion_state,

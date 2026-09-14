@@ -106,7 +106,7 @@ fn load_strings(
         .map_err(corrupt)
 }
 
-fn get_in(
+pub(crate) fn get_in(
     tx: &Transaction<'_>,
     owner: SoulOwner,
 ) -> Result<Option<SoulState>, SoulRepositoryError> {
@@ -201,7 +201,7 @@ fn get_in(
     Ok(Some(state))
 }
 
-fn insert_facts(
+pub(crate) fn insert_facts(
     tx: &Transaction<'_>,
     character_id: CharacterId,
     facts: &[SoulFact],

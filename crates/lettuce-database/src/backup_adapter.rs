@@ -291,10 +291,33 @@ fn read_memory(
             })
         })
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
+    let pools = transaction
+        .prepare("SELECT character_id, space_id FROM companion_memory_pools ORDER BY character_id")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?
+        .into_iter()
+        .map(|(character_id, space_id)| {
+            Ok(lettuce_transfer::BackupCompanionMemoryPool {
+                character_id: character_id
+                    .parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                space_id: space_id
+                    .parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            })
+        })
+        .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
     Ok(MemoryBackup {
         version: MEMORY_BACKUP_VERSION,
         spaces,
         retrieval_accesses,
+        pools,
     })
 }
 
@@ -777,12 +800,95 @@ fn read_companion_state(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let soul_rows = transaction
+        .prepare(
+            "SELECT character_id, created_at, updated_at FROM companion_soul_states ORDER BY character_id",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    let mut souls = Vec::with_capacity(soul_rows.len());
+    for (character_id, created_at, updated_at) in soul_rows {
+        let character_id: CharacterId = character_id
+            .parse()
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let state = crate::soul_adapter::get_in(
+            transaction,
+            lettuce_companions::SoulOwner::Character(character_id),
+        )
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?
+        .ok_or(ProviderBackupSourceError::InvalidData)?;
+        let receipts = transaction
+            .prepare(
+                "SELECT operation_id, expected_revision, resulting_revision, applied_at, change_hash FROM companion_soul_apply_receipts WHERE character_id = ?1 ORDER BY applied_at, operation_id",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([character_id.to_string()], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, i64>(2)?,
+                            row.get::<_, i64>(3)?,
+                            row.get::<_, Vec<u8>>(4)?,
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(backup_error)?
+            .into_iter()
+            .map(|row| {
+                Ok(lettuce_transfer::BackupSoulReceipt {
+                    operation_id: row
+                        .0
+                        .parse()
+                        .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                    expected_revision: backup_revision(row.1)?,
+                    resulting_revision: backup_revision(row.2)?,
+                    applied_at: TimestampMillis::new(row.3),
+                    change_hash: backup_hash(&row.4)?,
+                })
+            })
+            .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
+        souls.push(lettuce_transfer::BackupCompanionSoul {
+            character_id,
+            revision: state.revision,
+            created_at: TimestampMillis::new(created_at),
+            updated_at: TimestampMillis::new(updated_at),
+            facts: state.facts,
+            receipts,
+        });
+    }
+    let scheduled_notes = transaction
+        .prepare(
+            "SELECT id, character_id, label, content, available_at, expires_at, recurrence, recurrence_window_ms, enabled, created_at, updated_at FROM companion_scheduled_notes ORDER BY id",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    crate::scheduled_note_adapter::from_row(row)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
     Ok(CompanionStateBackup {
         version: COMPANION_STATE_BACKUP_VERSION,
         relationships,
         sessions,
         episodes,
         receipts,
+        souls,
+        scheduled_notes,
     })
 }
 

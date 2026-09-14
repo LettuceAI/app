@@ -41,7 +41,9 @@ fn recurrence_from_name(
     }
 }
 
-fn from_row(row: &Row<'_>) -> Result<CompanionScheduledNote, CompanionScheduledNoteError> {
+pub(crate) fn from_row(
+    row: &Row<'_>,
+) -> Result<CompanionScheduledNote, CompanionScheduledNoteError> {
     let window = row.get::<_, Option<i64>>(7).map_err(corrupt)?;
     let note = CompanionScheduledNote {
         id: Uuid::parse_str(&row.get::<_, String>(0).map_err(corrupt)?).map_err(corrupt)?,
