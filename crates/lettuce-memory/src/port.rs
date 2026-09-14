@@ -144,6 +144,20 @@ pub trait MemorySummaryRepository: Send + Sync {
         space_id: MemorySpaceId,
     ) -> Result<Option<MemorySummary>, MemoryRepositoryError>;
 
+    /// How far one conversation's dialogue is summarized inside a space. A
+    /// companion memory pool is shared by several conversations, so the cursor
+    /// belongs to the conversation, like legacy's per-session tool-event walk.
+    fn summary_cursor(
+        &self,
+        space_id: MemorySpaceId,
+        conversation_id: ConversationId,
+    ) -> Result<u64, MemoryRepositoryError> {
+        let _ = conversation_id;
+        Ok(self
+            .get_summary(space_id)?
+            .map_or(0, |summary| summary.window_end))
+    }
+
     /// Atomically verifies the memory-space revision, replaces its cumulative
     /// summary and ordered source cursor, and increments the root revision.
     fn compare_and_apply_summary(

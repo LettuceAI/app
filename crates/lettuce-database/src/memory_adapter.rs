@@ -115,6 +115,49 @@ pub(super) fn insert_items(
     Ok(())
 }
 
+/// Binds a companion conversation to its character's shared memory pool,
+/// creating the pool space the first time the companion needs memory.
+pub(crate) fn bind_companion_pool_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    character_id: lettuce_types::CharacterId,
+) -> Result<MemorySpaceId, lettuce_conversations::ConversationRepositoryError> {
+    let existing = transaction
+        .query_row(
+            "SELECT space_id FROM companion_memory_pools WHERE character_id = ?1",
+            [character_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(space_storage_error)?;
+    let space_id = match existing {
+        Some(value) => value.parse().map_err(space_storage_error)?,
+        None => {
+            let space_id = MemorySpaceId::new();
+            transaction
+                .execute(
+                    "INSERT INTO memory_spaces (id, revision) VALUES (?1, 1)",
+                    [space_id.to_string()],
+                )
+                .map_err(space_storage_error)?;
+            transaction
+                .execute(
+                    "INSERT INTO companion_memory_pools (character_id, space_id) VALUES (?1, ?2)",
+                    params![character_id.to_string(), space_id.to_string()],
+                )
+                .map_err(space_storage_error)?;
+            space_id
+        }
+    };
+    transaction
+        .execute(
+            "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+            params![conversation_id.to_string(), space_id.to_string()],
+        )
+        .map_err(space_storage_error)?;
+    Ok(space_id)
+}
+
 fn space_storage_error<E>(_: E) -> lettuce_conversations::ConversationRepositoryError {
     lettuce_conversations::ConversationRepositoryError::Storage
 }
@@ -351,15 +394,35 @@ pub(crate) fn replace_summary_in(
     if summary.is_some_and(|summary| summary.space_id != space_id || summary.validate().is_err()) {
         return Err(storage("invalid replacement summary"));
     }
-    let conversation_id = transaction
-        .query_row(
-            "SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = ?1",
-            [space_id.to_string()],
-            |row| row.get::<_, String>(0),
+    let bindings = transaction
+        .prepare(
+            "SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = ?1 LIMIT 2",
         )
-        .optional()
         .map_err(storage)?
-        .ok_or(MemoryRepositoryError::NotFound)?;
+        .query_map([space_id.to_string()], |row| row.get::<_, String>(0))
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage)?;
+    let conversation_id = match (bindings.as_slice(), summary) {
+        ([], _) => return Err(MemoryRepositoryError::NotFound),
+        ([only], _) => only.clone(),
+        (_, Some(summary)) => {
+            let source = summary
+                .source_message_ids
+                .first()
+                .ok_or_else(|| storage("summary without source messages"))?;
+            transaction
+                .query_row(
+                    "SELECT conversation_id FROM conversation_messages WHERE id = ?1 LIMIT 1",
+                    [source.to_string()],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(storage)?
+                .ok_or(MemoryRepositoryError::NotFound)?
+        }
+        (_, None) => String::new(),
+    };
     transaction
         .execute(
             "DELETE FROM memory_summary_source_messages WHERE space_id = ?1",
@@ -754,6 +817,33 @@ impl MemorySummaryRepository for Database {
         Ok(summary)
     }
 
+    fn summary_cursor(
+        &self,
+        space_id: MemorySpaceId,
+        conversation_id: ConversationId,
+    ) -> Result<u64, MemoryRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        let own = connection
+            .query_row(
+                "SELECT window_end FROM memory_summaries WHERE space_id = ?1 AND conversation_id = ?2",
+                params![space_id.to_string(), conversation_id.to_string()],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(storage)?;
+        let settled_run = connection
+            .query_row(
+                "SELECT MAX(run.summary_window_end)
+                   FROM dynamic_memory_runs run
+                   JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id = run.id
+                  WHERE run.space_id = ?1 AND run.conversation_id = ?2",
+                params![space_id.to_string(), conversation_id.to_string()],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .map_err(storage)?;
+        u64::try_from(own.or(settled_run).unwrap_or(0)).map_err(storage)
+    }
+
     fn compare_and_apply_summary(
         &self,
         change: MemorySummaryChange,
@@ -1078,5 +1168,73 @@ mod tests {
             Err(MemoryRepositoryError::Conflict)
         );
         assert_eq!(database.get_summary(space_id).expect("get"), Some(current));
+    }
+
+    #[test]
+    fn companion_conversations_share_one_pool_and_keep_their_own_summary_cursor() {
+        let database = Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("fixture mode");
+        let character_id = lettuce_types::CharacterId::new();
+        let first = lettuce_types::ConversationId::new();
+        let second = lettuce_types::ConversationId::new();
+        let (first_space, second_space) = {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            let first_space =
+                crate::memory_adapter::bind_companion_pool_in(&transaction, first, character_id)
+                    .expect("first binding");
+            let second_space =
+                crate::memory_adapter::bind_companion_pool_in(&transaction, second, character_id)
+                    .expect("second binding");
+            transaction.commit().expect("commit");
+            (first_space, second_space)
+        };
+        assert_eq!(first_space, second_space);
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO memory_summaries (space_id, conversation_id, text, token_count, window_start, window_end, updated_at) VALUES (?1, ?2, 'Shared summary', 2, 0, 2, 10)",
+                rusqlite::params![first_space.to_string(), first.to_string()],
+            )
+            .expect("summary");
+        assert_eq!(
+            lettuce_memory::MemorySummaryRepository::summary_cursor(&database, first_space, first)
+                .expect("cursor"),
+            2
+        );
+        assert_eq!(
+            database
+                .summary_cursor(first_space, second)
+                .expect("cursor"),
+            0
+        );
+
+        let private_space = MemorySpaceId::new();
+        let connection = database.connection().expect("connection");
+        connection
+            .execute(
+                "INSERT INTO memory_spaces (id, revision) VALUES (?1, 1)",
+                [private_space.to_string()],
+            )
+            .expect("space");
+        connection
+            .execute(
+                "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                rusqlite::params![lettuce_types::ConversationId::new().to_string(), private_space.to_string()],
+            )
+            .expect("private binding");
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                    rusqlite::params![lettuce_types::ConversationId::new().to_string(), private_space.to_string()],
+                )
+                .is_err()
+        );
     }
 }

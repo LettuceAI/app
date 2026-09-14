@@ -785,7 +785,8 @@ impl CompanionConversationCreator for Database {
     ) -> Result<lettuce_conversations::CreateConversationResult, CompanionLaunchRepositoryError>
     {
         let (conversation, owner, initial) = launch.into_parts();
-        crate::conversation_creator::create_with_hook(self, conversation, now, |tx, _| {
+        let memory = crate::conversation_creator::MemoryBinding::CompanionPool(owner.character_id);
+        crate::conversation_creator::create_with_hook(self, conversation, now, memory, |tx, _| {
             create_in(tx, owner, &initial, now).map_err(conversation_state_error)?;
             ensure_continuity_episode_in(tx, owner, now).map_err(conversation_state_error)
         })

@@ -22,6 +22,11 @@ pub struct BackupMemorySpace {
     pub conversation_id: ConversationId,
     pub snapshot: MemorySpaceSnapshot,
     pub summary: Option<MemorySummary>,
+    /// Other conversations bound to the same space: a companion memory pool
+    /// is shared by the companion's conversations; `conversation_id` owns the
+    /// summary.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shared_conversation_ids: Vec<ConversationId>,
 }
 
 impl MemoryBackup {
@@ -78,17 +83,20 @@ impl MemoryBackup {
         let mut space_ids = BTreeSet::new();
         let mut memory_owners = BTreeMap::new();
         for space in &self.spaces {
-            if !known_conversations.contains(&space.conversation_id)
+            let bound = std::iter::once(space.conversation_id)
+                .chain(space.shared_conversation_ids.iter().copied())
+                .collect::<Vec<_>>();
+            if bound.iter().any(|id| !known_conversations.contains(id))
                 || space.snapshot.validate().is_err()
-                || spaces
-                    .insert(space.conversation_id, space.snapshot.id)
-                    .is_some()
+                || bound
+                    .iter()
+                    .any(|id| spaces.insert(*id, space.snapshot.id).is_some())
                 || !space_ids.insert(space.snapshot.id)
                 || space.snapshot.items.iter().any(|item| {
                     memory_owners.insert(item.id, space.snapshot.id).is_some()
                         || item.source_message_id.is_some_and(|id| {
                             messages.get(&id).is_none_or(|(conversation_id, role)| {
-                                *conversation_id != space.conversation_id
+                                !bound.contains(conversation_id)
                                     || item
                                         .source_role
                                         .is_some_and(|source_role| source_role != *role)

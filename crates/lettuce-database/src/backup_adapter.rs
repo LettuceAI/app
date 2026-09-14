@@ -1,11 +1,11 @@
 use lettuce_transfer::{
     ASR_LEARNING_DOCUMENT_VERSION, AsrLearningAudioAsset, AsrLearningDocument,
     AuthoredProfileBackup, BackupConversation, BackupConversationOutbox, BackupConversationRuntime,
-    BackupConversationUsage, BackupDynamicMemoryAttempt,
-    BackupDynamicMemoryRound, BackupDynamicMemoryRun, BackupGenerationAttemptRuntime,
-    BackupGenerationCheckpoint, BackupGenerationTurn, BackupGlobalSettings, BackupJobInference,
-    BackupLorebookBindings, BackupMemoryProjection, BackupMemoryProjectionState, BackupMemorySpace,
-    BackupMessage, COMPANION_EFFECT_BACKUP_VERSION, COMPANION_STATE_BACKUP_VERSION,
+    BackupConversationUsage, BackupDynamicMemoryAttempt, BackupDynamicMemoryRound,
+    BackupDynamicMemoryRun, BackupGenerationAttemptRuntime, BackupGenerationCheckpoint,
+    BackupGenerationTurn, BackupGlobalSettings, BackupJobInference, BackupLorebookBindings,
+    BackupMemoryProjection, BackupMemoryProjectionState, BackupMemorySpace, BackupMessage,
+    COMPANION_EFFECT_BACKUP_VERSION, COMPANION_STATE_BACKUP_VERSION,
     CONVERSATION_HISTORY_BACKUP_VERSION, CONVERSATION_OUTBOX_BACKUP_VERSION,
     CONVERSATION_RUNTIME_BACKUP_VERSION, CONVERSATION_USAGE_BACKUP_VERSION, CompanionEffectBackup,
     CompanionStateBackup, ConversationHistoryBackup, ConversationOutboxBackup,
@@ -16,13 +16,12 @@ use lettuce_transfer::{
     MAX_BACKUP_CONVERSATION_OPERATIONS, MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS,
     MAX_BACKUP_CONVERSATION_USAGE_EVENTS, MAX_BACKUP_CONVERSATIONS,
     MAX_BACKUP_DYNAMIC_MEMORY_APPROVALS, MAX_BACKUP_DYNAMIC_MEMORY_ATTEMPTS,
-    MAX_BACKUP_DYNAMIC_MEMORY_RUNS,
-    MAX_BACKUP_GENERATION_CHECKPOINTS, MAX_BACKUP_GENERATION_TURNS, MAX_BACKUP_JOB_EVENTS,
-    MAX_BACKUP_JOB_INFERENCE_EVENTS, MAX_BACKUP_JOBS, MAX_BACKUP_MEDIA_RECORDS,
-    MAX_BACKUP_MEMORY_ACCESSES, MAX_BACKUP_MEMORY_PROJECTIONS, MAX_BACKUP_MEMORY_REWINDS,
-    MAX_BACKUP_MEMORY_SPACES, MAX_BACKUP_MESSAGE_CANDIDATES, MAX_BACKUP_MESSAGE_REVISIONS,
-    MAX_BACKUP_MESSAGES, MAX_BACKUP_TOOL_EXECUTIONS, MEMORY_BACKUP_VERSION,
-    MEMORY_PROJECTION_BACKUP_VERSION, MemoryBackup, MemoryProjectionBackup,
+    MAX_BACKUP_DYNAMIC_MEMORY_RUNS, MAX_BACKUP_GENERATION_CHECKPOINTS, MAX_BACKUP_GENERATION_TURNS,
+    MAX_BACKUP_JOB_EVENTS, MAX_BACKUP_JOB_INFERENCE_EVENTS, MAX_BACKUP_JOBS,
+    MAX_BACKUP_MEDIA_RECORDS, MAX_BACKUP_MEMORY_ACCESSES, MAX_BACKUP_MEMORY_PROJECTIONS,
+    MAX_BACKUP_MEMORY_REWINDS, MAX_BACKUP_MEMORY_SPACES, MAX_BACKUP_MESSAGE_CANDIDATES,
+    MAX_BACKUP_MESSAGE_REVISIONS, MAX_BACKUP_MESSAGES, MAX_BACKUP_TOOL_EXECUTIONS,
+    MEMORY_BACKUP_VERSION, MEMORY_PROJECTION_BACKUP_VERSION, MemoryBackup, MemoryProjectionBackup,
     PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph, ProviderBackupSelections,
     ProviderBackupSource, ProviderBackupSourceError,
 };
@@ -192,15 +191,35 @@ fn read_memory(
     if owners.len() > MAX_BACKUP_MEMORY_SPACES {
         return Err(ProviderBackupSourceError::InvalidData);
     }
-    let spaces = owners
-        .into_iter()
-        .map(|(conversation_id, space_id)| {
-            let conversation_id = conversation_id
+    let mut bound = std::collections::BTreeMap::<String, Vec<ConversationId>>::new();
+    for (conversation_id, space_id) in owners {
+        bound.entry(space_id).or_default().push(
+            conversation_id
                 .parse()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+        );
+    }
+    let spaces = bound
+        .into_iter()
+        .map(|(space_id, mut conversations)| {
+            let summary_owner = transaction
+                .query_row(
+                    "SELECT conversation_id FROM memory_summaries WHERE space_id = ?1",
+                    [space_id.as_str()],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(backup_error)?
+                .map(|value| value.parse::<ConversationId>())
+                .transpose()
                 .map_err(|_| ProviderBackupSourceError::InvalidData)?;
             let space_id = space_id
                 .parse()
                 .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            let owner_index = summary_owner
+                .and_then(|owner| conversations.iter().position(|id| *id == owner))
+                .unwrap_or(0);
+            let conversation_id = conversations.remove(owner_index);
             let snapshot = crate::memory_adapter::get_in(transaction, space_id)
                 .map_err(|_| ProviderBackupSourceError::InvalidData)?
                 .ok_or(ProviderBackupSourceError::InvalidData)?;
@@ -210,6 +229,7 @@ fn read_memory(
                 conversation_id,
                 snapshot,
                 summary,
+                shared_conversation_ids: conversations,
             })
         })
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;

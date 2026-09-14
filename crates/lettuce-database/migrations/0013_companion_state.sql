@@ -328,3 +328,16 @@ WHEN (SELECT status FROM companion_turn_effects WHERE id = OLD.effect_id) != 'pr
 BEGIN
     SELECT RAISE(ABORT, 'terminal companion turn effect children are immutable');
 END;
+
+CREATE TABLE companion_memory_pools (
+    character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+    space_id TEXT NOT NULL UNIQUE REFERENCES memory_spaces(id) ON DELETE RESTRICT
+) STRICT;
+
+CREATE TRIGGER conversation_memory_spaces_shared_guard
+BEFORE INSERT ON conversation_memory_spaces
+WHEN EXISTS (SELECT 1 FROM conversation_memory_spaces WHERE space_id = NEW.space_id)
+  AND NOT EXISTS (SELECT 1 FROM companion_memory_pools WHERE space_id = NEW.space_id)
+BEGIN
+    SELECT RAISE(ABORT, 'only a companion memory pool is shared across conversations');
+END;

@@ -422,10 +422,18 @@ fn read_creation_outbox(
     Ok(record.clone())
 }
 
+/// Where a new conversation's memory space comes from.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum MemoryBinding {
+    PerConversation,
+    CompanionPool(lettuce_types::CharacterId),
+}
+
 pub(crate) fn create_with_hook<F>(
     database: &Database,
     launch: PreparedConversationLaunch,
     now: TimestampMillis,
+    memory: MemoryBinding,
     mut hook: F,
 ) -> Result<lettuce_conversations::CreateConversationResult, ConversationRepositoryError>
 where
@@ -524,7 +532,21 @@ where
     let aggregate = make_aggregate(&plan, root_branch_id, now)?;
     conversation_vertical_slice::save_conversation(&transaction, &aggregate.conversation)?;
     if conversation_uses_memory(&plan.kind) {
-        crate::memory_adapter::create_conversation_space_in(&transaction, plan.conversation_id)?;
+        match memory {
+            MemoryBinding::PerConversation => {
+                crate::memory_adapter::create_conversation_space_in(
+                    &transaction,
+                    plan.conversation_id,
+                )?;
+            }
+            MemoryBinding::CompanionPool(character_id) => {
+                crate::memory_adapter::bind_companion_pool_in(
+                    &transaction,
+                    plan.conversation_id,
+                    character_id,
+                )?;
+            }
+        }
     }
     conversation_vertical_slice::save_branch(&transaction, &aggregate.branches[0])?;
     for reference in expected.values() {
@@ -570,7 +592,9 @@ impl ConversationCreator for Database {
         launch: PreparedConversationLaunch,
         now: TimestampMillis,
     ) -> Result<lettuce_conversations::CreateConversationResult, ConversationRepositoryError> {
-        create_with_hook(self, launch, now, |_, _| Ok(()))
+        create_with_hook(self, launch, now, MemoryBinding::PerConversation, |_, _| {
+            Ok(())
+        })
     }
 }
 
@@ -1027,6 +1051,7 @@ mod tests {
             &database,
             prepared(conversation_id, CharacterId::new()),
             TimestampMillis::new(10),
+            MemoryBinding::PerConversation,
             |_, _| Err(ConversationRepositoryError::Storage),
         );
         assert_eq!(result, Err(ConversationRepositoryError::Storage));

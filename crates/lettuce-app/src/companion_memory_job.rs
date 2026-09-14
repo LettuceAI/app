@@ -492,9 +492,12 @@ impl<
             lettuce_memory::MemoryRepository::get_for_conversation(self.effects, conversation_id)
                 .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?
                 .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
-        let cursor = lettuce_memory::MemorySummaryRepository::get_summary(self.effects, space.id)
-            .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?
-            .map_or(0, |summary| summary.window_end);
+        let cursor = lettuce_memory::MemorySummaryRepository::summary_cursor(
+            self.effects,
+            space.id,
+            conversation_id,
+        )
+        .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?;
         let cursor = usize::try_from(cursor)
             .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
         let unsummarized = messages.len().saturating_sub(cursor);
@@ -566,9 +569,12 @@ impl<
             lettuce_memory::MemoryRepository::get_for_conversation(self.effects, conversation_id)
                 .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?
                 .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
-        let cursor = lettuce_memory::MemorySummaryRepository::get_summary(self.effects, space.id)
-            .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?
-            .map_or(0, |summary| summary.window_end);
+        let cursor = lettuce_memory::MemorySummaryRepository::summary_cursor(
+            self.effects,
+            space.id,
+            conversation_id,
+        )
+        .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?;
         let cursor = usize::try_from(cursor)
             .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
         let unsummarized = messages.len().saturating_sub(cursor);

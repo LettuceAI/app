@@ -622,6 +622,16 @@ The writer also restores a conversation's memory space with its own id,
 revision and items (`memory_adapter::insert_space_in`), its summary and its
 embedding projections, after the messages the summary cites.
 
+A companion character has one shared memory pool (`companion_memory_pools`,
+user decision 2026-09-14): companion conversation creation binds the pool space
+instead of a fresh space, and `conversation_memory_spaces` allows a second
+binding only for a pool space. The summary row stays per space and records the
+conversation that wrote it; `replace_summary_in` takes that conversation from
+the summary's source messages when a space is shared. `summary_cursor` gives each
+conversation its own cursor (its own summary window, else its latest settled
+run, else 0), like legacy's per-session tool-event walk. Backups export a
+shared space once with `shared_conversation_ids`.
+
 The read-only legacy provider-secret adapter lists only planned API-key/header
 metadata, then loads one exact value into `SecretValue` on demand. It ignores the
 obsolete pre-v7 API-key reference and never opens the source writable. Migration

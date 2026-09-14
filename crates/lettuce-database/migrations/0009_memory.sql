@@ -5,9 +5,10 @@ CREATE TABLE memory_spaces (
 
 CREATE TABLE conversation_memory_spaces (
     conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
-    space_id TEXT NOT NULL UNIQUE REFERENCES memory_spaces(id) ON DELETE RESTRICT,
+    space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     UNIQUE (conversation_id, space_id)
 ) STRICT;
+CREATE INDEX conversation_memory_spaces_space_idx ON conversation_memory_spaces(space_id);
 
 CREATE TABLE dynamic_memory_pending_approvals (
     conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,

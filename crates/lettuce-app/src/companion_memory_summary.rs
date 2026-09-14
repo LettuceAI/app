@@ -124,9 +124,11 @@ impl<
             .repository
             .get_summary(run.space_id)
             .map_err(CompanionMemoryInferenceError::Memory)?;
-        if previous
-            .as_ref()
-            .is_some_and(|summary| summary.window_end > run.summary_window.start)
+        if self
+            .repository
+            .summary_cursor(run.space_id, run.conversation_id)
+            .map_err(CompanionMemoryInferenceError::Memory)?
+            > run.summary_window.start
         {
             return Err(CompanionMemoryInferenceError::InvalidOwnership);
         }

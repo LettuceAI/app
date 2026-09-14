@@ -602,6 +602,7 @@ fn memory_space(
                 items,
             },
             summary,
+            shared_conversation_ids: Vec::new(),
         }),
         projections,
     ))

@@ -66,9 +66,34 @@ pub(crate) fn insert_historical_conversation(
         .map_err(ConversationRepositoryError::ArtifactReference)?;
     }
     slice::save_conversation(transaction, conversation)?;
+    let mut memory_created = false;
     match input.memory {
-        Some(space) if space.conversation_id == conversation_id => {
-            crate::memory_adapter::insert_space_in(transaction, conversation_id, &space.snapshot)?;
+        Some(space)
+            if space.conversation_id == conversation_id
+                || space.shared_conversation_ids.contains(&conversation_id) =>
+        {
+            let exists = transaction
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM memory_spaces WHERE id = ?1)",
+                    [space.snapshot.id.to_string()],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(slice::db)?;
+            if exists {
+                transaction
+                    .execute(
+                        "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                        params![conversation_id.to_string(), space.snapshot.id.to_string()],
+                    )
+                    .map_err(kernel::map_constraint)?;
+            } else {
+                crate::memory_adapter::insert_space_in(
+                    transaction,
+                    conversation_id,
+                    &space.snapshot,
+                )?;
+                memory_created = true;
+            }
         }
         Some(_) => return Err(invalid("history.memory_space")),
         None if conversation_creator::conversation_uses_memory(&conversation.kind) => {
@@ -150,7 +175,13 @@ pub(crate) fn insert_historical_conversation(
         )
         .map_err(slice::db)?;
 
-    insert_memory_state(transaction, input.memory, input.memory_projections)?;
+    insert_memory_state(
+        transaction,
+        conversation_id,
+        input.memory,
+        memory_created,
+        input.memory_projections,
+    )?;
     insert_creation_record(transaction, aggregate, &messages, &input.operation)?;
     let stored = slice::hydrate_conversation(transaction, conversation_id, || {})?;
     let mut expected = aggregate.clone();
@@ -169,7 +200,9 @@ pub(crate) fn insert_historical_conversation(
 
 fn insert_memory_state(
     transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
     memory: Option<&BackupMemorySpace>,
+    created: bool,
     projections: &[BackupMemoryProjection],
 ) -> Result<(), ConversationRepositoryError> {
     let Some(space) = memory else {
@@ -180,11 +213,14 @@ fn insert_memory_state(
         };
     };
     let space_id = space.snapshot.id;
+    if space.conversation_id != conversation_id {
+        return Ok(());
+    }
     if let Some(summary) = &space.summary {
         crate::memory_adapter::replace_summary_in(transaction, space_id, Some(summary))
             .map_err(|_| ConversationRepositoryError::Storage)?;
     }
-    for projection in projections {
+    for projection in projections.iter().filter(|_| created) {
         if projection.space_id != space_id {
             return Err(invalid("history.memory_projection_space"));
         }

@@ -4190,6 +4190,7 @@ mod tests {
                 "companion_continuity_episodes",
                 "companion_emotion_vectors",
                 "companion_growth_runs",
+                "companion_memory_pools",
                 "companion_relationship_states",
                 "companion_scheduled_notes",
                 "companion_session_states",

@@ -66,7 +66,11 @@ impl DynamicMemoryBackup {
         let spaces = memory
             .spaces
             .iter()
-            .map(|entry| (entry.conversation_id, &entry.snapshot))
+            .flat_map(|entry| {
+                std::iter::once(entry.conversation_id)
+                    .chain(entry.shared_conversation_ids.iter().copied())
+                    .map(move |conversation_id| (conversation_id, &entry.snapshot))
+            })
             .collect::<BTreeMap<_, _>>();
         let messages = history
             .conversations

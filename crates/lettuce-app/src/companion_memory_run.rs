@@ -162,7 +162,7 @@ impl<
             Err(DynamicMemoryRunRepositoryError::NotFound) => {
                 let summary_window = summary_window(
                     self.repository
-                        .get_summary(snapshot.id)
+                        .summary_cursor(snapshot.id, conversation_id)
                         .map_err(CompanionPostTurnMemoryRunError::Memory)?,
                     admission.batch.summary_message_interval,
                     admission.batch.window_selection,
@@ -258,7 +258,7 @@ impl<
 }
 
 fn summary_window(
-    previous: Option<lettuce_memory::MemorySummary>,
+    cursor: u64,
     message_interval: u32,
     selection: crate::CompanionMemoryWindowSelection,
     unsummarized_message_count: u64,
@@ -267,7 +267,6 @@ fn summary_window(
     if message_interval == 0 || source_message_count == 0 || unsummarized_message_count == 0 {
         return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
     }
-    let cursor = previous.map_or(0, |summary| summary.window_end);
     let source_message_count = u64::try_from(source_message_count)
         .map_err(|_| CompanionPostTurnMemoryRunError::InvalidAdmission)?;
     if source_message_count > unsummarized_message_count {
@@ -1045,7 +1044,7 @@ mod tests {
         };
         assert_eq!(
             summary_window(
-                Some(previous.clone()),
+                previous.window_end,
                 4,
                 crate::CompanionMemoryWindowSelection::Automatic,
                 4,
@@ -1060,7 +1059,7 @@ mod tests {
         );
         assert_eq!(
             summary_window(
-                Some(previous),
+                previous.window_end,
                 4,
                 crate::CompanionMemoryWindowSelection::Recent,
                 10,
