@@ -740,15 +740,25 @@ pub(crate) fn insert_group_plan(
     plan: &CreateGroupPlan,
 ) -> Result<GroupDetails, RepositoryError> {
     plan.validate()?;
-    if load_details(tx, plan.group.id)
-        .map_err(db_error)?
-        .is_some()
-    {
+    if load_details(tx, plan.group.id).map_err(db_error)?.is_some() {
         return Err(RepositoryError::AlreadyExists);
     }
     validate_member_assignments(tx, &plan.group.members)?;
     if let Selection::Explicit(persona) = &plan.group.persona {
         ensure_active_persona(tx, *persona)?;
+    }
+    insert_group_rows(tx, plan)
+}
+
+/// Inserts a group as stored, including members and a persona archived after
+/// they were selected, as a backup restore writes it.
+pub(crate) fn insert_group_rows(
+    tx: &rusqlite::Transaction<'_>,
+    plan: &CreateGroupPlan,
+) -> Result<GroupDetails, RepositoryError> {
+    plan.validate()?;
+    if load_details(tx, plan.group.id).map_err(db_error)?.is_some() {
+        return Err(RepositoryError::AlreadyExists);
     }
     if let Some(asset) = plan.group.background_asset_id {
         ensure_image_asset(tx, asset)?;
