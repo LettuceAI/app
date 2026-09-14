@@ -118,7 +118,11 @@ validation (in-flight jobs keep their state so the normal lease-expiry recovery
 handles them like after a restart), with job inference usage and cost bases.
 Speech transcriptions and syntheses are inserted pending and settled through
 their settle-once triggers, so a restored synthesis is checked against its
-output asset and provenance like a live one.
+output asset and provenance like a live one. Revision and candidate media refs
+that were historical at backup time (retired by regenerate, candidate choice,
+edit or tombstone) are exported per owner and flipped back to historical after
+the history writer inserts them active; ref `created_at` still follows the
+revision or candidate timestamp.
 Each turn walks the shortest legal status path of the 0008 transition graph,
 and per attempt the writer restores its speaker dispatch while the turn is
 selecting a speaker, its initial dispatch with replay references and tool

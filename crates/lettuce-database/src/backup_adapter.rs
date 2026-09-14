@@ -1943,6 +1943,20 @@ fn read_backup_messages(
             item.message.id,
             candidate_count,
         )?;
+        let historical_media_revision_ids = read_ids(
+            transaction,
+            &format!(
+                "SELECT DISTINCT r.message_revision_id FROM revision_media_refs AS r JOIN conversation_message_revisions AS v ON v.id = r.message_revision_id WHERE r.conversation_id = '{conversation_id}' AND v.message_id = '{}' AND r.state = 'historical' ORDER BY 1",
+                item.message.id
+            ),
+        )?;
+        let historical_media_candidate_ids = read_ids(
+            transaction,
+            &format!(
+                "SELECT DISTINCT r.candidate_id FROM candidate_media_refs AS r JOIN conversation_message_candidates AS c ON c.id = r.candidate_id WHERE r.conversation_id = '{conversation_id}' AND c.message_id = '{}' AND r.state = 'historical' ORDER BY 1",
+                item.message.id
+            ),
+        )?;
         messages.push(BackupMessage {
             message: item.message,
             timeline_ordinal: u64::try_from(ordinal)
@@ -1950,6 +1964,8 @@ fn read_backup_messages(
             initial_origin: item.initial_origin,
             revisions,
             candidates,
+            historical_media_revision_ids,
+            historical_media_candidate_ids,
         });
     }
     if messages.len() > remaining {

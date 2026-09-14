@@ -641,6 +641,27 @@ impl ProviderBackupRestoreWriter for Database {
                 )
                 .map_err(invalid)?;
         }
+        for history in &graph.conversation_history.conversations {
+            let conversation_id = history.aggregate.conversation.id.to_string();
+            for message in &history.messages {
+                for revision_id in &message.historical_media_revision_ids {
+                    transaction
+                        .execute(
+                            "UPDATE revision_media_refs SET state = 'historical' WHERE conversation_id = ?1 AND message_revision_id = ?2",
+                            params![conversation_id, revision_id.to_string()],
+                        )
+                        .map_err(invalid)?;
+                }
+                for candidate_id in &message.historical_media_candidate_ids {
+                    transaction
+                        .execute(
+                            "UPDATE candidate_media_refs SET state = 'historical' WHERE conversation_id = ?1 AND candidate_id = ?2",
+                            params![conversation_id, candidate_id.to_string()],
+                        )
+                        .map_err(invalid)?;
+                }
+            }
+        }
         for entry in &graph.conversation_usage.events {
             if let Some(basis) = &entry.cost_basis {
                 transaction

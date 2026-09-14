@@ -37,6 +37,10 @@ pub struct BackupMessage {
     pub initial_origin: Option<InitialMessageOrigin>,
     pub revisions: Vec<MessageRevision>,
     pub candidates: Vec<MessageCandidate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub historical_media_revision_ids: Vec<lettuce_types::MessageRevisionId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub historical_media_candidate_ids: Vec<lettuce_types::MessageCandidateId>,
 }
 
 impl ConversationHistoryBackup {
@@ -293,6 +297,31 @@ fn validate_conversation(
                 return Err(ConversationHistoryBackupError::InvalidData);
             }
         }
+        entry.historical_media_revision_ids.sort();
+        entry.historical_media_candidate_ids.sort();
+        if entry
+            .historical_media_revision_ids
+            .windows(2)
+            .any(|pair| pair[0] == pair[1])
+            || entry
+                .historical_media_candidate_ids
+                .windows(2)
+                .any(|pair| pair[0] == pair[1])
+            || entry.historical_media_revision_ids.iter().any(|id| {
+                entry
+                    .revisions
+                    .iter()
+                    .all(|revision| revision.id != *id || !has_media(&revision.parts))
+            })
+            || entry.historical_media_candidate_ids.iter().any(|id| {
+                entry
+                    .candidates
+                    .iter()
+                    .all(|candidate| candidate.id != *id || !has_media(&candidate.parts))
+            })
+        {
+            return Err(ConversationHistoryBackupError::InvalidData);
+        }
         let active_present = match entry.message.active_render_source {
             MessageRenderSource::Revision(id) => {
                 entry.revisions.iter().any(|revision| revision.id == id)
@@ -380,6 +409,12 @@ fn validate_initial_origin(
         }
     }
     Ok(())
+}
+
+fn has_media(parts: &[MessagePart]) -> bool {
+    parts
+        .iter()
+        .any(|part| matches!(part, MessagePart::MediaAsset { .. }))
 }
 
 fn has_unknown_media(

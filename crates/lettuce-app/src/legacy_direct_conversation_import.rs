@@ -1409,6 +1409,8 @@ impl SessionWriter<'_> {
             initial_origin: origin,
             revisions,
             candidates,
+            historical_media_revision_ids: Vec::new(),
+            historical_media_candidate_ids: Vec::new(),
         });
         Ok((message_id, role))
     }
