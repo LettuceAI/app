@@ -115,6 +115,52 @@ pub(super) fn insert_items(
     Ok(())
 }
 
+/// Creates a companion character's memory pool from an imported snapshot, or
+/// binds the conversation to the pool when an earlier conversation created it.
+/// Returns whether this call created the pool.
+pub(crate) fn insert_pool_space_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    character_id: lettuce_types::CharacterId,
+    space: &lettuce_memory::MemorySpaceSnapshot,
+) -> Result<bool, lettuce_conversations::ConversationRepositoryError> {
+    let exists = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM companion_memory_pools WHERE character_id = ?1)",
+            [character_id.to_string()],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(space_storage_error)?;
+    if exists {
+        bind_companion_pool_in(transaction, conversation_id, character_id)?;
+        return Ok(false);
+    }
+    space.validate().map_err(space_storage_error)?;
+    transaction
+        .execute(
+            "INSERT INTO memory_spaces (id, revision) VALUES (?1, ?2)",
+            params![
+                space.id.to_string(),
+                i64::try_from(space.revision.get()).map_err(space_storage_error)?
+            ],
+        )
+        .map_err(space_storage_error)?;
+    transaction
+        .execute(
+            "INSERT INTO companion_memory_pools (character_id, space_id) VALUES (?1, ?2)",
+            params![character_id.to_string(), space.id.to_string()],
+        )
+        .map_err(space_storage_error)?;
+    transaction
+        .execute(
+            "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+            params![conversation_id.to_string(), space.id.to_string()],
+        )
+        .map_err(space_storage_error)?;
+    insert_items(transaction, space.id, &space.items).map_err(space_storage_error)?;
+    Ok(true)
+}
+
 /// Binds a companion conversation to its character's shared memory pool,
 /// creating the pool space the first time the companion needs memory.
 pub(crate) fn bind_companion_pool_in(

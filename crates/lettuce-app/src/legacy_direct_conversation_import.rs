@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
 
+use lettuce_companions::{
+    CompanionRuntimeState, CompanionStateOwner, EmotionVector, EmotionalState, RelationshipState,
+};
 use lettuce_conversations::{
     BranchStatus, Conversation, ConversationAggregate, ConversationBranch, ConversationKind,
     ConversationLifecycle, ConversationParticipant, ConversationParticipantDraft,
@@ -22,6 +25,10 @@ use lettuce_transfer::{
     LegacyDirectConversationMaterializationRequest, LegacyImportAdmission, LegacyImportAssignment,
     LegacyImportPlan, LegacyImportRepository, LegacyImportRepositoryError,
     LegacyImportStageReceipt,
+};
+use lettuce_transfer::{
+    LegacyBackupCompanionMaterialization, LegacyBackupCompanionSharedMemory,
+    LegacyBackupScheduledNote, LegacyCompanionConversation, LegacyCompanionEpisodeRecord,
 };
 use lettuce_types::{
     CharacterId, ConversationBranchId, ConversationId, ConversationParticipantId,
@@ -119,12 +126,15 @@ where
     /// Converts each legacy direct session into a finished conversation: launch
     /// snapshots come from the imported character, persona and models, and each
     /// assistant variant becomes a candidate of its own historical turn.
+    #[allow(clippy::too_many_arguments)]
     pub fn execute(
         &self,
         admission: &LegacyImportAdmission,
         plan: &LegacyImportPlan,
         sessions: &[LegacyBackupDirectSession],
         memories: &[LegacyBackupMemoryEmbeddingOwner],
+        companions: &[LegacyBackupCompanionSharedMemory],
+        scheduled_notes: &[LegacyBackupScheduledNote],
         completed_at: TimestampMillis,
     ) -> Result<LegacyImportStageReceipt, Error> {
         let plan_fingerprint = crate::legacy_import::plan_fingerprint(plan);
@@ -142,23 +152,57 @@ where
             return Ok(receipt);
         }
         let context = import_context(admission, plan);
-        let conversations = sessions
+        let imported = sessions
             .iter()
-            .map(|session| {
-                let memory = memory_owner(
-                    memories,
-                    LegacyBackupMemoryOwnerKind::DirectConversation,
-                    &session.source_id,
-                );
-                self.map_session(session, memory, &context)
+            .map(|session| session.source_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut mapped = Vec::with_capacity(sessions.len());
+        for session in sessions {
+            let memory = memory_owner(
+                memories,
+                LegacyBackupMemoryOwnerKind::DirectConversation,
+                &session.source_id,
+            );
+            mapped.push(self.map_session(session, memory, companions, &imported, &context)?);
+        }
+        attach_companion_pools(&mut mapped, sessions, memories, companions)?;
+        let mut conversations = mapped
+            .into_iter()
+            .map(|(record, _)| record)
+            .collect::<Vec<_>>();
+        conversations.sort_by_key(|record| record.history.aggregate.conversation.created_at);
+        let companion_characters = conversations
+            .iter()
+            .filter_map(|record| record.companion.as_ref())
+            .map(|companion| companion.owner.character_id)
+            .collect::<std::collections::BTreeSet<_>>();
+        let companion_souls = companions
+            .iter()
+            .filter(|state| {
+                state.soul_materialization
+                    == LegacyBackupCompanionMaterialization::ExactInitialSnapshot
+                    && self.is_companion(state.character_id, &companion_characters)
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .filter_map(|state| {
+                state
+                    .soul_facts
+                    .clone()
+                    .map(|facts| (state.character_id, facts))
+            })
+            .collect();
+        let scheduled_notes = scheduled_notes
+            .iter()
+            .filter(|note| self.is_companion(note.note.character_id, &companion_characters))
+            .map(|note| note.note.clone())
+            .collect();
         self.sources.materialize_direct_conversations(
             LegacyDirectConversationMaterializationRequest {
                 run_id: admission.run_id,
                 plan_fingerprint,
                 source_fingerprint,
                 conversations,
+                companion_souls,
+                scheduled_notes,
                 completed_at,
             },
         )
@@ -175,16 +219,36 @@ where
             &import.plan,
             &import.compatibility.direct_sessions().sessions,
             &import.compatibility.memory_embeddings().owners,
+            &import.compatibility.memory_embeddings().source.states,
+            &import.compatibility.memory_embeddings().source.source.notes,
             completed_at,
         )
+    }
+
+    /// Soul facts and scheduled notes belong to companion characters the
+    /// import wrote; a character imported in another interaction mode keeps none.
+    fn is_companion(
+        &self,
+        character_id: CharacterId,
+        imported_companions: &std::collections::BTreeSet<CharacterId>,
+    ) -> bool {
+        imported_companions.contains(&character_id)
+            || lettuce_characters::CharacterRepository::get(self.sources, character_id)
+                .ok()
+                .flatten()
+                .is_some_and(|details| {
+                    crate::launch::policy::is_companion(&details.character.defaults)
+                })
     }
 
     fn map_session(
         &self,
         session: &LegacyBackupDirectSession,
         memory: Option<&LegacyBackupMemoryEmbeddingOwner>,
+        companions: &[LegacyBackupCompanionSharedMemory],
+        imported: &std::collections::BTreeSet<&str>,
         context: &ImportContext,
-    ) -> Result<LegacyConversationRecord, Error> {
+    ) -> Result<(LegacyConversationRecord, Option<CharacterId>), Error> {
         let mut rows = session.messages.iter().collect::<Vec<_>>();
         rows.sort_by_key(|message| message.ordinal);
         let opens_with_scene = opens_with_scene(
@@ -219,10 +283,61 @@ where
             persona,
             operation_key: launch_key(&session.source_id)?,
         };
-        let (plan, mut snapshots) = ConversationLaunchPlanner::new(self.sources)
-            .prepare_direct(&request)
-            .map_err(|_| Error::Conflict)?
-            .into_parts();
+        let (prepared, launch_companion) = ConversationLaunchPlanner::new(self.sources)
+            .prepare_direct_parts(&request)
+            .map_err(|_| Error::Conflict)?;
+        let (plan, mut snapshots) = prepared.into_parts();
+        let conversation_id = ConversationId::from_uuid(legacy_uuid(&session.source_id));
+        let companion = launch_companion.map(|(owner, initial)| {
+            let owner = CompanionStateOwner {
+                conversation_id,
+                ..owner
+            };
+            let shared = companions
+                .iter()
+                .find(|state| state.character_id == owner.character_id);
+            let mut initial = session
+                .companion_state_json
+                .as_deref()
+                .and_then(|json| legacy_companion_state(json, &initial))
+                .unwrap_or(initial);
+            if let Some(relationship) = shared.and_then(|state| {
+                state.relationship_states.iter().find(|relationship| {
+                    relationship.persona_id == owner.persona_id
+                        && relationship.materialization
+                            == LegacyBackupCompanionMaterialization::ExactInitialSnapshot
+                })
+            }) {
+                initial.relationship_state = relationship.state.clone();
+            }
+            let episode = shared
+                .and_then(|state| {
+                    state
+                        .episodes
+                        .iter()
+                        .find(|episode| episode.conversation_source_id == session.source_id)
+                })
+                .map(|episode| {
+                    Ok::<_, Error>(LegacyCompanionEpisodeRecord {
+                        episode_index: episode.episode_index,
+                        previous_conversation_id: episode
+                            .previous_conversation_source_id
+                            .as_deref()
+                            .filter(|previous| imported.contains(previous))
+                            .map(|previous| ConversationId::from_uuid(legacy_uuid(previous))),
+                        started_at: timestamp(episode.started_at)?,
+                        ended_at: episode.ended_at.map(timestamp).transpose()?,
+                        updated_at: timestamp(episode.updated_at)?,
+                    })
+                })
+                .transpose();
+            episode.map(|episode| LegacyCompanionConversation {
+                owner,
+                initial,
+                episode,
+            })
+        });
+        let companion = companion.transpose()?;
         let character = plan
             .participants
             .iter()
@@ -293,14 +408,241 @@ where
                 created_at: session.created_at,
                 updated_at: session.updated_at,
                 messages,
-                memory,
-                memory_summary: session.memory_summary.as_deref(),
+                memory: memory.filter(|_| companion.is_none()),
+                memory_summary: session
+                    .memory_summary
+                    .as_deref()
+                    .filter(|_| companion.is_none()),
                 memory_summary_token_count: session.memory_summary_token_count,
                 settings,
             },
             context,
         )
+        .map(|mut record| {
+            let character = companion.as_ref().map(|value| value.owner.character_id);
+            record.companion = companion;
+            (record, character)
+        })
     }
+}
+
+/// A companion character shares one memory pool across its conversations. The
+/// pool takes the legacy shared memory when legacy kept one, otherwise the
+/// memories of the character's most recently updated session (user decision
+/// 2026-09-14); its summary window belongs to that latest session.
+fn attach_companion_pools(
+    mapped: &mut [(LegacyConversationRecord, Option<CharacterId>)],
+    sessions: &[LegacyBackupDirectSession],
+    memories: &[LegacyBackupMemoryEmbeddingOwner],
+    companions: &[LegacyBackupCompanionSharedMemory],
+) -> Result<(), Error> {
+    let characters = mapped
+        .iter()
+        .filter_map(|(_, character)| *character)
+        .collect::<std::collections::BTreeSet<_>>();
+    for character_id in characters {
+        let Some(carrier) = mapped
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, character))| *character == Some(character_id))
+            .max_by_key(|(index, _)| (sessions[*index].updated_at, *index))
+            .map(|(index, _)| index)
+        else {
+            continue;
+        };
+        let session = &sessions[carrier];
+        let shared_state = companions
+            .iter()
+            .find(|state| state.character_id == character_id);
+        let shared_owner = memory_owner(
+            memories,
+            LegacyBackupMemoryOwnerKind::CompanionShared,
+            &character_id.to_string(),
+        )
+        .filter(|owner| {
+            owner.memories.iter().any(|memory| {
+                memory.materialization != LegacyBackupMemoryMaterialization::RetainedEvidence
+            })
+        });
+        let (owner, summary, summary_token_count) = match shared_owner {
+            Some(owner) => (
+                Some(owner),
+                shared_state.and_then(|state| state.memory_summary.as_deref()),
+                shared_state.map_or(0, |state| state.memory_summary_token_count),
+            ),
+            None => (
+                memory_owner(
+                    memories,
+                    LegacyBackupMemoryOwnerKind::DirectConversation,
+                    &session.source_id,
+                ),
+                session.memory_summary.as_deref(),
+                session.memory_summary_token_count,
+            ),
+        };
+        let record = &mapped[carrier].0;
+        let (space, projections) = memory_space(
+            record.history.aggregate.conversation.id,
+            &format!("companion-pool:{character_id}"),
+            owner,
+            summary,
+            summary_token_count,
+            &record.history.messages,
+            record.history.aggregate.conversation.updated_at,
+        )?;
+        let Some(space) = space else {
+            continue;
+        };
+        for (record, character) in mapped.iter_mut() {
+            if *character == Some(character_id) {
+                record.memory = Some(space.clone());
+                record.memory_projections = projections.clone();
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Legacy stored a companion session's runtime state as camelCase JSON; values
+/// are clamped into the rewrite's ranges and an unreadable state keeps the
+/// launch initial state.
+fn legacy_companion_state(
+    json: &str,
+    initial: &CompanionRuntimeState,
+) -> Option<CompanionRuntimeState> {
+    #[derive(serde::Deserialize, Default)]
+    #[serde(rename_all = "camelCase", default)]
+    struct Vector {
+        warmth: f64,
+        trust: f64,
+        calm: f64,
+        vulnerability: f64,
+        longing: f64,
+        hurt: f64,
+        tension: f64,
+        irritation: f64,
+        affection_intensity: f64,
+        reassurance_need: f64,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Emotional {
+        #[serde(default)]
+        felt: Vector,
+        #[serde(default)]
+        expressed: Vector,
+        #[serde(default)]
+        blocked: Vector,
+        #[serde(default)]
+        momentum: Vector,
+        #[serde(default)]
+        active_drivers: Vec<String>,
+        confidence: f64,
+        #[serde(default)]
+        updated_at: u64,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Relationship {
+        closeness: f64,
+        trust: f64,
+        affection: f64,
+        tension: f64,
+        stability: f64,
+        #[serde(default)]
+        interaction_count: u32,
+        #[serde(default)]
+        last_interaction_at: u64,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct State {
+        emotional_state: Emotional,
+        relationship_state: Relationship,
+        #[serde(default)]
+        active_signals: Vec<String>,
+        #[serde(default)]
+        updated_at: u64,
+    }
+    let vector = |value: &Vector| EmotionVector {
+        warmth: value.warmth,
+        trust: value.trust,
+        calm: value.calm,
+        vulnerability: value.vulnerability,
+        longing: value.longing,
+        hurt: value.hurt,
+        tension: value.tension,
+        irritation: value.irritation,
+        affection_intensity: value.affection_intensity,
+        reassurance_need: value.reassurance_need,
+    };
+    let finite = |value: f64, low: f64, high: f64, fallback: f64| {
+        if value.is_finite() {
+            value.clamp(low, high)
+        } else {
+            fallback
+        }
+    };
+    let legacy = serde_json::from_str::<State>(json).ok()?;
+    let updated_at = i64::try_from(legacy.updated_at).ok()?;
+    let emotional_updated_at = i64::try_from(legacy.emotional_state.updated_at)
+        .ok()?
+        .min(updated_at);
+    let text = |values: Vec<String>| {
+        values
+            .into_iter()
+            .filter(|value| !value.trim().is_empty())
+            .collect::<Vec<_>>()
+    };
+    Some(CompanionRuntimeState {
+        emotional_state: EmotionalState {
+            felt: vector(&legacy.emotional_state.felt).clamp(),
+            expressed: vector(&legacy.emotional_state.expressed).clamp(),
+            blocked: vector(&legacy.emotional_state.blocked).clamp(),
+            momentum: vector(&legacy.emotional_state.momentum).clamp_signed(),
+            active_drivers: text(legacy.emotional_state.active_drivers),
+            confidence: finite(legacy.emotional_state.confidence, 0.0, 1.0, 0.5),
+            updated_at: TimestampMillis::new(emotional_updated_at),
+        },
+        relationship_state: RelationshipState {
+            closeness: finite(
+                legacy.relationship_state.closeness,
+                -1.0,
+                1.0,
+                initial.relationship_state.closeness,
+            ),
+            trust: finite(
+                legacy.relationship_state.trust,
+                -1.0,
+                1.0,
+                initial.relationship_state.trust,
+            ),
+            affection: finite(
+                legacy.relationship_state.affection,
+                -1.0,
+                1.0,
+                initial.relationship_state.affection,
+            ),
+            tension: finite(
+                legacy.relationship_state.tension,
+                0.0,
+                1.0,
+                initial.relationship_state.tension,
+            ),
+            stability: finite(
+                legacy.relationship_state.stability,
+                0.0,
+                1.0,
+                initial.relationship_state.stability,
+            ),
+            interaction_count: legacy.relationship_state.interaction_count,
+            last_interaction_at: TimestampMillis::new(
+                i64::try_from(legacy.relationship_state.last_interaction_at).ok()?,
+            ),
+        },
+        active_signals: text(legacy.active_signals),
+        updated_at: TimestampMillis::new(updated_at),
+    })
 }
 
 /// A legacy session's author note, prompt and lorebook overrides and group
@@ -790,6 +1132,7 @@ pub(crate) fn conversation_record(
         snapshots: source.snapshots,
         memory,
         memory_projections,
+        companion: None,
     })
 }
 

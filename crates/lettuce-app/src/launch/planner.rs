@@ -180,7 +180,7 @@ where
         self.prepare_direct_parts(request).map(|value| value.0)
     }
 
-    fn prepare_direct_parts(
+    pub(crate) fn prepare_direct_parts(
         &self,
         request: &DirectConversationLaunchRequest,
     ) -> Result<

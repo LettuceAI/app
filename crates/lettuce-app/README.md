@@ -74,7 +74,18 @@ conversation's memory space with ids derived per session (legacy branches
 copied memories with the same ids) and deterministic short ids, stored embeddings of
 64-768 dimensions become ready projections under their legacy source version,
 and a legacy summary covers the latest visible user and assistant messages,
-the messages the runtime summary cursor counts. Memories in an incompatible shape stay in sealed evidence. Session settings become
+the messages the runtime summary cursor counts.
+A legacy direct session of a companion character is imported as a companion
+conversation: it binds the character's shared memory pool, which takes the
+legacy companion shared memory when legacy kept one and otherwise the memories
+of the character's most recently updated session (user decision 2026-09-14); its
+companion session state comes from the legacy `companionState` JSON (clamped
+into the rewrite's ranges, launch defaults when unreadable) with the legacy pool
+relationship for the persona winning, and its legacy continuity episode is
+copied exactly. Legacy Soul facts that form an exact snapshot replace the
+imported character's authored Soul facts, and legacy scheduled notes of imported
+companion characters are written in the same stage. Conversations are written in
+creation order so episode links resolve. Memories in an incompatible shape stay in sealed evidence. Session settings become
 current conversation settings: the author note, the session prompt override
 (snapshotted when the imported prompt is available with the conversation's
 purpose, otherwise the launch prompt stays like legacy's fallback), the lorebook

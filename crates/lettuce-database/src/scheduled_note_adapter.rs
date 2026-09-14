@@ -84,6 +84,41 @@ fn load_in(
     .map_err(corrupt)
 }
 
+/// Inserts an imported legacy scheduled note on the caller's transaction.
+pub(crate) fn insert_note_in(
+    tx: &Transaction<'_>,
+    note: &CompanionScheduledNote,
+) -> Result<(), CompanionScheduledNoteError> {
+    let note = note.clone().normalize()?;
+    let window = note
+        .recurrence_window_ms
+        .map(i64::try_from)
+        .transpose()
+        .map_err(|_| CompanionScheduledNoteError::Invalid)?;
+    ensure_companion(tx, note.character_id)?;
+    tx.execute(
+        "INSERT INTO companion_scheduled_notes (
+            id, character_id, label, content, available_at, expires_at, recurrence,
+            recurrence_window_ms, enabled, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        params![
+            note.id.to_string(),
+            note.character_id.to_string(),
+            note.label,
+            note.content,
+            note.available_at.get(),
+            note.expires_at.map(TimestampMillis::get),
+            recurrence_name(note.recurrence),
+            window,
+            i64::from(note.enabled),
+            note.created_at.get(),
+            note.updated_at.get(),
+        ],
+    )
+    .map_err(failure)?;
+    Ok(())
+}
+
 fn ensure_companion(
     tx: &Transaction<'_>,
     character_id: CharacterId,

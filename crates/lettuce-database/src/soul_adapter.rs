@@ -260,6 +260,32 @@ fn insert_facts(
     Ok(())
 }
 
+/// Replaces a companion character's Soul facts with an imported snapshot,
+/// creating its Soul state when the character has none yet.
+pub(crate) fn replace_facts_in(
+    tx: &Transaction<'_>,
+    character_id: CharacterId,
+    facts: &[SoulFact],
+    now: TimestampMillis,
+) -> Result<(), SoulRepositoryError> {
+    validate_state(&SoulState {
+        revision: Revision::INITIAL,
+        facts: facts.to_vec(),
+    })
+    .map_err(SoulRepositoryError::Invalid)?;
+    tx.execute(
+        "INSERT OR IGNORE INTO companion_soul_states (character_id, revision, created_at, updated_at) VALUES (?1, 1, ?2, ?2)",
+        params![character_id.to_string(), now.get()],
+    )
+    .map_err(failure)?;
+    tx.execute(
+        "DELETE FROM companion_soul_facts WHERE character_id = ?1",
+        [character_id.to_string()],
+    )
+    .map_err(failure)?;
+    insert_facts(tx, character_id, facts)
+}
+
 pub(crate) fn create_in(
     tx: &Transaction<'_>,
     owner: SoulOwner,

@@ -23,7 +23,9 @@ use crate::Database;
 
 type Error = CompanionStateRepositoryError;
 
-fn conversation_state_error(error: Error) -> lettuce_conversations::ConversationRepositoryError {
+pub(crate) fn conversation_state_error(
+    error: Error,
+) -> lettuce_conversations::ConversationRepositoryError {
     match error {
         Error::AlreadyExists | Error::Conflict | Error::OperationMismatch => {
             lettuce_conversations::ConversationRepositoryError::Conflict
@@ -502,7 +504,7 @@ pub(crate) fn create_in(
     get_in(tx, owner)?.ok_or(Error::Corrupt)
 }
 
-fn ensure_continuity_episode_in(
+pub(crate) fn ensure_continuity_episode_in(
     tx: &Transaction<'_>,
     owner: CompanionStateOwner,
     now: TimestampMillis,
@@ -561,6 +563,33 @@ fn ensure_continuity_episode_in(
             episode_index,
             previous_conversation_id,
             now.get(),
+        ],
+    )
+    .map_err(failure)?;
+    Ok(())
+}
+
+/// Writes one legacy continuity episode exactly as legacy kept it.
+pub(crate) fn insert_continuity_episode_in(
+    tx: &Transaction<'_>,
+    owner: CompanionStateOwner,
+    episode: &lettuce_transfer::LegacyCompanionEpisodeRecord,
+) -> Result<(), Error> {
+    tx.execute(
+        "INSERT INTO companion_continuity_episodes (
+           conversation_id, character_id, persona_key, persona_id, episode_index,
+           previous_conversation_id, started_at, ended_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            owner.conversation_id.to_string(),
+            owner.character_id.to_string(),
+            persona_key(owner),
+            owner.persona_id.map(|id| id.to_string()),
+            i64::from(episode.episode_index),
+            episode.previous_conversation_id.map(|id| id.to_string()),
+            episode.started_at.get(),
+            episode.ended_at.map(TimestampMillis::get),
+            episode.updated_at.get(),
         ],
     )
     .map_err(failure)?;

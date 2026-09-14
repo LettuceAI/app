@@ -231,7 +231,7 @@ mod tests {
             models: 1,
             prompts: 1,
             personas: 0,
-            characters: 3,
+            characters: 4,
             lorebooks: 1,
             chat_templates: 1,
             direct_conversations: 0,
@@ -350,7 +350,18 @@ mod tests {
             id: third_id,
             ..second.clone()
         };
-        let characters = vec![character.clone(), second, third];
+        let companion_id = CharacterId::new();
+        let companion_character = LegacyBackupCharacterCandidate {
+            id: companion_id,
+            defaults: LegacyBackupCharacterDefaults {
+                interaction_mode: InteractionMode::Companion,
+                companion_soul: Some(CompanionSoulConfig::default()),
+                companion_prompt_source_id: None,
+                ..second.defaults.clone()
+            },
+            ..second.clone()
+        };
+        let characters = vec![character.clone(), second, third, companion_character];
         let group_id = GroupId::new();
         let group_scene = SceneId::new();
         let group_variant = SceneVariantId::new();
@@ -487,7 +498,7 @@ mod tests {
             )
             .expect("materialize characters");
 
-        assert_eq!(receipt.record_count, 3);
+        assert_eq!(receipt.record_count, 4);
         assert!(!receipt.replayed);
         let details = CharacterRepository::get(backend.database(), character_id)
             .expect("read character")
@@ -691,21 +702,75 @@ mod tests {
                     lettuce_transfer::LegacyBackupMemoryMaterialization::InitialItemAndProjection,
             }],
         };
+        let companion_first_id = lettuce_types::ConversationId::new();
+        let companion_second_id = lettuce_types::ConversationId::new();
+        let companion_session =
+            |id: lettuce_types::ConversationId, created_at: u64, state: Option<String>| {
+                lettuce_transfer::LegacyBackupDirectSession {
+                    source_id: id.to_string(),
+                    character_source_id: companion_id.to_string(),
+                    title: "Evening walk".to_owned(),
+                    root_session_source_id: id.to_string(),
+                    author_note: None,
+                    lorebook_source_ids_override: None,
+                    mode: "companion".to_owned(),
+                    companion_state_json: state,
+                    created_at,
+                    updated_at: created_at + 10,
+                    messages: vec![message(
+                        "user",
+                        0,
+                        "Good evening",
+                        created_at + 1,
+                        Vec::new(),
+                        None,
+                    )],
+                    ..session.clone()
+                }
+            };
+        let companion_memory = lettuce_transfer::LegacyBackupMemoryEmbeddingOwner {
+            source_id: companion_second_id.to_string(),
+            memories: vec![lettuce_transfer::LegacyBackupMemoryEmbedding {
+                id: lettuce_types::MemoryId::new().to_string(),
+                text: "Nia remembers the lighthouse".to_owned(),
+                embedding: Vec::new(),
+                embedding_source_version: None,
+                embedding_dimensions: None,
+                materialization:
+                    lettuce_transfer::LegacyBackupMemoryMaterialization::InitialItemNeedsProjection,
+                ..session_memory.memories[0].clone()
+            }],
+            ..session_memory.clone()
+        };
+        let legacy_state = r#"{"emotionalState":{"felt":{"warmth":0.4},"confidence":0.7,"updatedAt":100},"relationshipState":{"closeness":0.6,"trust":0.5,"affection":0.3,"tension":0.1,"stability":0.6,"interactionCount":3,"lastInteractionAt":90},"activeSignals":["curious"],"updatedAt":120}"#;
+        let direct_sessions = vec![
+            session.clone(),
+            companion_session(companion_first_id, 300, Some(legacy_state.to_owned())),
+            companion_session(companion_second_id, 400, None),
+        ];
+        let direct_memories = vec![session_memory.clone(), companion_memory];
         let conversation_receipt = backend
             .legacy_direct_conversation_importer()
             .execute(
                 &admission,
                 &plan,
-                std::slice::from_ref(&session),
-                std::slice::from_ref(&session_memory),
+                &direct_sessions,
+                &direct_memories,
+                &[],
+                &[],
                 TimestampMillis::new(57),
             )
             .expect("materialize direct conversations");
-        assert_eq!(conversation_receipt.record_count, 1);
+        assert_eq!(conversation_receipt.record_count, 3);
         let graph =
             lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(backend.database())
                 .expect("backup graph");
-        let history = &graph.conversation_history.conversations[0];
+        let history = graph
+            .conversation_history
+            .conversations
+            .iter()
+            .find(|history| history.aggregate.conversation.id == session_id)
+            .expect("direct conversation history");
         assert_eq!(history.aggregate.conversation.id, session_id);
         assert_eq!(history.messages.len(), 2);
         let settings = history
@@ -730,7 +795,17 @@ mod tests {
                 second_variant.parse().expect("candidate id")
             )
         );
-        assert_eq!(graph.conversation_runtime.conversations[0].turns.len(), 2);
+        assert_eq!(
+            graph
+                .conversation_runtime
+                .conversations
+                .iter()
+                .find(|runtime| runtime.conversation_id == session_id)
+                .expect("direct runtime")
+                .turns
+                .len(),
+            2
+        );
         let space = graph
             .memory
             .spaces
@@ -741,6 +816,36 @@ mod tests {
         assert_eq!(space.snapshot.items[0].text, "The user likes night shifts");
         assert!(space.snapshot.items[0].is_pinned);
         assert_eq!(graph.memory_projections.projections.len(), 1);
+        let pool = graph
+            .memory
+            .spaces
+            .iter()
+            .find(|space| {
+                space
+                    .snapshot
+                    .items
+                    .iter()
+                    .any(|item| item.text == "Nia remembers the lighthouse")
+            })
+            .expect("companion memory pool");
+        let mut bound = pool.shared_conversation_ids.clone();
+        bound.push(pool.conversation_id);
+        bound.sort();
+        let mut expected_bound = vec![companion_first_id, companion_second_id];
+        expected_bound.sort();
+        assert_eq!(bound, expected_bound);
+        assert!(
+            lettuce_companions::CompanionStateRepository::get(
+                backend.database(),
+                lettuce_companions::CompanionStateOwner {
+                    conversation_id: companion_first_id,
+                    character_id: companion_id,
+                    persona_id: None,
+                },
+            )
+            .expect("companion state")
+            .is_some()
+        );
 
         let group_session_id = lettuce_types::ConversationId::new();
         let deleted_speaker = CharacterId::new();
@@ -939,8 +1044,10 @@ mod tests {
             .execute(
                 &replayed_admission,
                 &plan,
-                std::slice::from_ref(&session),
-                std::slice::from_ref(&session_memory),
+                &direct_sessions,
+                &direct_memories,
+                &[],
+                &[],
                 TimestampMillis::new(95),
             )
             .expect("replay direct conversations");

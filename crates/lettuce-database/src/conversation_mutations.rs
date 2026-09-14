@@ -11790,6 +11790,7 @@ mod tests {
                     operation: token("history-restore", "ef"),
                     memory: None,
                     memory_projections: &[],
+                    companion: None,
                 },
             )
             .expect("restore conversation");

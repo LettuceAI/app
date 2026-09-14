@@ -1191,6 +1191,25 @@ pub struct LegacyConversationRecord {
     pub snapshots: Vec<lettuce_conversations::SnapshotArtifactDraft>,
     pub memory: Option<BackupMemorySpace>,
     pub memory_projections: Vec<BackupMemoryProjection>,
+    pub companion: Option<LegacyCompanionConversation>,
+}
+
+/// The companion runtime state a legacy companion session seeds, with its
+/// exact legacy continuity episode when the legacy data kept one.
+#[derive(Debug, Clone)]
+pub struct LegacyCompanionConversation {
+    pub owner: lettuce_companions::CompanionStateOwner,
+    pub initial: lettuce_companions::CompanionRuntimeState,
+    pub episode: Option<LegacyCompanionEpisodeRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyCompanionEpisodeRecord {
+    pub episode_index: u32,
+    pub previous_conversation_id: Option<lettuce_types::ConversationId>,
+    pub started_at: TimestampMillis,
+    pub ended_at: Option<TimestampMillis>,
+    pub updated_at: TimestampMillis,
 }
 
 #[derive(Debug)]
@@ -1199,6 +1218,8 @@ pub struct LegacyDirectConversationMaterializationRequest {
     pub plan_fingerprint: ContentHash,
     pub source_fingerprint: ContentHash,
     pub conversations: Vec<LegacyConversationRecord>,
+    pub companion_souls: Vec<(CharacterId, Vec<lettuce_companions::SoulFact>)>,
+    pub scheduled_notes: Vec<lettuce_companions::CompanionScheduledNote>,
     pub completed_at: TimestampMillis,
 }
 

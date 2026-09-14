@@ -631,6 +631,13 @@ the summary's source messages when a space is shared. `summary_cursor` gives eac
 conversation its own cursor (its own summary window, else its latest settled
 run, else 0), like legacy's per-session tool-event walk. Backups export a
 shared space once with `shared_conversation_ids`.
+The history writer creates or binds a companion pool for a companion
+conversation (`memory_adapter::insert_pool_space_in`), creates its companion
+session state and writes its legacy continuity episode
+(`state_adapter::insert_continuity_episode_in`, else the normal episode chain);
+the conversation stages also replace imported Soul facts
+(`soul_adapter::replace_facts_in`) and insert scheduled notes
+(`scheduled_note_adapter::insert_note_in`).
 
 The read-only legacy provider-secret adapter lists only planned API-key/header
 metadata, then loads one exact value into `SecretValue` on demand. It ignores the

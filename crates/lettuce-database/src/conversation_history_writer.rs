@@ -40,6 +40,7 @@ pub(crate) struct HistoricalConversation<'a> {
     pub operation: OperationToken,
     pub memory: Option<&'a BackupMemorySpace>,
     pub memory_projections: &'a [BackupMemoryProjection],
+    pub companion: Option<&'a lettuce_transfer::LegacyCompanionConversation>,
 }
 
 fn invalid(field: &'static str) -> ConversationRepositoryError {
@@ -67,39 +68,59 @@ pub(crate) fn insert_historical_conversation(
     }
     slice::save_conversation(transaction, conversation)?;
     let mut memory_created = false;
-    match input.memory {
-        Some(space)
-            if space.conversation_id == conversation_id
-                || space.shared_conversation_ids.contains(&conversation_id) =>
+    match (input.companion, input.memory) {
+        (Some(companion), Some(space)) => {
+            memory_created = crate::memory_adapter::insert_pool_space_in(
+                transaction,
+                conversation_id,
+                companion.owner.character_id,
+                &space.snapshot,
+            )?;
+        }
+        (Some(companion), None)
+            if conversation_creator::conversation_uses_memory(&conversation.kind) =>
         {
-            let exists = transaction
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM memory_spaces WHERE id = ?1)",
-                    [space.snapshot.id.to_string()],
-                    |row| row.get::<_, bool>(0),
-                )
-                .map_err(slice::db)?;
-            if exists {
-                transaction
+            crate::memory_adapter::bind_companion_pool_in(
+                transaction,
+                conversation_id,
+                companion.owner.character_id,
+            )?;
+        }
+        (Some(_), None) => {}
+        (None, memory) => match memory {
+            Some(space)
+                if space.conversation_id == conversation_id
+                    || space.shared_conversation_ids.contains(&conversation_id) =>
+            {
+                let exists = transaction
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM memory_spaces WHERE id = ?1)",
+                        [space.snapshot.id.to_string()],
+                        |row| row.get::<_, bool>(0),
+                    )
+                    .map_err(slice::db)?;
+                if exists {
+                    transaction
                     .execute(
                         "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
                         params![conversation_id.to_string(), space.snapshot.id.to_string()],
                     )
                     .map_err(kernel::map_constraint)?;
-            } else {
-                crate::memory_adapter::insert_space_in(
-                    transaction,
-                    conversation_id,
-                    &space.snapshot,
-                )?;
-                memory_created = true;
+                } else {
+                    crate::memory_adapter::insert_space_in(
+                        transaction,
+                        conversation_id,
+                        &space.snapshot,
+                    )?;
+                    memory_created = true;
+                }
             }
-        }
-        Some(_) => return Err(invalid("history.memory_space")),
-        None if conversation_creator::conversation_uses_memory(&conversation.kind) => {
-            crate::memory_adapter::create_conversation_space_in(transaction, conversation_id)?;
-        }
-        None => {}
+            Some(_) => return Err(invalid("history.memory_space")),
+            None if conversation_creator::conversation_uses_memory(&conversation.kind) => {
+                crate::memory_adapter::create_conversation_space_in(transaction, conversation_id)?;
+            }
+            None => {}
+        },
     }
     insert_snapshot_refs(transaction, input.history)?;
 
@@ -182,6 +203,28 @@ pub(crate) fn insert_historical_conversation(
         memory_created,
         input.memory_projections,
     )?;
+    if let Some(companion) = input.companion {
+        crate::state_adapter::create_in(
+            transaction,
+            companion.owner,
+            &companion.initial,
+            conversation.created_at,
+        )
+        .map_err(crate::state_adapter::conversation_state_error)?;
+        match &companion.episode {
+            Some(episode) => crate::state_adapter::insert_continuity_episode_in(
+                transaction,
+                companion.owner,
+                episode,
+            ),
+            None => crate::state_adapter::ensure_continuity_episode_in(
+                transaction,
+                companion.owner,
+                conversation.created_at,
+            ),
+        }
+        .map_err(crate::state_adapter::conversation_state_error)?;
+    }
     insert_creation_record(transaction, aggregate, &messages, &input.operation)?;
     let stored = slice::hydrate_conversation(transaction, conversation_id, || {})?;
     let mut expected = aggregate.clone();

@@ -2205,6 +2205,7 @@ fn materialize_conversations(
                 operation,
                 memory: record.memory.as_ref(),
                 memory_projections: &record.memory_projections,
+                companion: record.companion.as_ref(),
             },
         )
         .map_err(|error| match error {
@@ -2217,6 +2218,19 @@ fn materialize_conversations(
             }
             _ => LegacyImportRepositoryError::Storage,
         })?;
+    }
+    for (character_id, facts) in &request.companion_souls {
+        crate::soul_adapter::replace_facts_in(
+            &transaction,
+            *character_id,
+            facts,
+            request.completed_at,
+        )
+        .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+    }
+    for note in &request.scheduled_notes {
+        crate::scheduled_note_adapter::insert_note_in(&transaction, note)
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
     }
     insert_stage_result(
         &transaction,

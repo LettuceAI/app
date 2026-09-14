@@ -89,6 +89,8 @@ where
                 plan_fingerprint,
                 source_fingerprint,
                 conversations,
+                companion_souls: Vec::new(),
+                scheduled_notes: Vec::new(),
                 completed_at,
             },
         )
