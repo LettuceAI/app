@@ -1412,8 +1412,13 @@ checked around every transport wait and mutation boundary.
 
 The production loopback/LAN sync transport now binds a caller-selected socket,
 creates or accepts a six-digit session PIN and returns the sync transport traits
-only after both peers prove the PIN over fresh challenges. The proof binds both
-ephemeral connection roles and durable device identities; the resulting
+only after both peers run SPAKE2 over the PIN (pairing protocol version 2,
+backlog #22: version 1 derived the key from the PIN and a cleartext salt, so a
+captured handshake allowed an offline PIN search and decryption of the whole
+session; now an observer learns nothing to test guesses against and an active
+attacker gets one guess per session) and confirm the resulting key over fresh
+challenges. The confirmation binds both ephemeral connection roles and durable
+device identities; the resulting
 ChaCha20-Poly1305 session uses direction-separated monotonic nonces. Every typed
 frame is length-prefixed, capped at 20 MiB before allocation, decoded with the
 same bound and reconstructed through current domain validators. Host/client

@@ -17,6 +17,7 @@ use lettuce_sync::{
 use lettuce_types::{ContentHash, TimestampMillis};
 use rand::{RngCore, rngs::OsRng};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -27,7 +28,8 @@ use crate::{
     SyncTransportError,
 };
 
-const PAIRING_PROTOCOL_VERSION: u32 = 1;
+const PAIRING_PROTOCOL_VERSION: u32 = 2;
+const PAIRING_PAKE_IDENTITY: &[u8] = b"lettuce-sync-pairing-v2";
 const MAX_PAIRING_FRAME_BYTES: usize = 1024;
 const MAX_SYNC_FRAME_BYTES: usize = 20 * 1024 * 1024;
 const MAX_PENDING_FRAMES: usize = 8;
@@ -485,12 +487,13 @@ enum PairingFrame {
     HostChallenge {
         version: u32,
         device: SyncDeviceId,
-        salt: [u8; 16],
         challenge: [u8; 32],
+        pake: Vec<u8>,
     },
     ClientProof {
         device: SyncDeviceId,
         challenge: [u8; 32],
+        pake: Vec<u8>,
         proof: [u8; 32],
     },
     HostProof {
@@ -545,17 +548,16 @@ async fn authenticate_host<'a>(
     media: Option<&'a dyn SyncBlobSource>,
     cancellation: &CancellationToken,
 ) -> Result<AuthenticatedTcpSyncTransport<'a>, SyncPeerTransportError> {
-    let mut salt = [0u8; 16];
     let mut host_challenge = [0u8; 32];
-    OsRng.fill_bytes(&mut salt);
     OsRng.fill_bytes(&mut host_challenge);
+    let (pake, host_message) = start_pake(pin);
     send_plain(
         &mut stream,
         &PairingFrame::HostChallenge {
             version: PAIRING_PROTOCOL_VERSION,
             device: local_device,
-            salt,
             challenge: host_challenge,
+            pake: host_message,
         },
         cancellation,
     )
@@ -563,6 +565,7 @@ async fn authenticate_host<'a>(
     let PairingFrame::ClientProof {
         device: peer,
         challenge: client_challenge,
+        pake: client_message,
         proof,
     } = receive_plain(&mut stream, cancellation).await?
     else {
@@ -572,7 +575,10 @@ async fn authenticate_host<'a>(
         let _ = send_plain(&mut stream, &PairingFrame::Rejected, cancellation).await;
         return Err(SyncPeerTransportError::IdentityMismatch);
     }
-    let pairing_key = pairing_key(pin, &salt);
+    let Ok(pairing_key) = finish_pake(pake, &client_message) else {
+        let _ = send_plain(&mut stream, &PairingFrame::Rejected, cancellation).await;
+        return Err(SyncPeerTransportError::AuthenticationFailed);
+    };
     let expected = pairing_proof(
         &pairing_key,
         b"client",
@@ -624,8 +630,8 @@ async fn authenticate_client<'a>(
     let PairingFrame::HostChallenge {
         version,
         device: peer,
-        salt,
         challenge: host_challenge,
+        pake: host_message,
     } = receive_plain(&mut stream, cancellation).await?
     else {
         return Err(SyncPeerTransportError::Protocol);
@@ -633,7 +639,8 @@ async fn authenticate_client<'a>(
     if version != PAIRING_PROTOCOL_VERSION {
         return Err(SyncPeerTransportError::Protocol);
     }
-    let pairing_key = pairing_key(pin, &salt);
+    let (pake, client_message) = start_pake(pin);
+    let pairing_key = finish_pake(pake, &host_message)?;
     let mut client_challenge = [0u8; 32];
     OsRng.fill_bytes(&mut client_challenge);
     let proof = pairing_proof(
@@ -649,6 +656,7 @@ async fn authenticate_client<'a>(
         &PairingFrame::ClientProof {
             device: local_device,
             challenge: client_challenge,
+            pake: client_message,
             proof,
         },
         cancellation,
@@ -708,11 +716,24 @@ fn authenticated_transport<'a>(
     }
 }
 
-fn pairing_key(pin: &PairingPin, salt: &[u8; 16]) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new_derive_key("lettuce-sync-pairing-key-v1");
-    hasher.update(salt);
-    hasher.update(pin.expose().as_bytes());
-    *hasher.finalize().as_bytes()
+/// SPAKE2 over the session PIN: an observer of the handshake learns nothing
+/// it can test PIN guesses against, and an active attacker gets one guess per
+/// pairing session.
+fn start_pake(pin: &PairingPin) -> (Spake2<Ed25519Group>, Vec<u8>) {
+    Spake2::<Ed25519Group>::start_symmetric(
+        &Password::new(pin.expose().as_bytes()),
+        &Identity::new(PAIRING_PAKE_IDENTITY),
+    )
+}
+
+fn finish_pake(
+    pake: Spake2<Ed25519Group>,
+    peer_message: &[u8],
+) -> Result<[u8; 32], SyncPeerTransportError> {
+    pake.finish(peer_message)
+        .ok()
+        .and_then(|key| <[u8; 32]>::try_from(key.as_slice()).ok())
+        .ok_or(SyncPeerTransportError::AuthenticationFailed)
 }
 
 fn pairing_proof(
