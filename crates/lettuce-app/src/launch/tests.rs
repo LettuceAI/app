@@ -541,8 +541,9 @@ fn seed_model_with(
             display_name: "Vendor Model".into(),
             kind,
             config: ModelProfileConfig {
-                legacy_advanced_settings: Default::default(),
-                lorebook_generator_parameters: Default::default(),
+                llama_cpp: Default::default(),
+                stable_diffusion: Default::default(),
+                feature_parameters: Default::default(),
                 chat_parameters: lettuce_models::ChatParameterProfile {
                     temperature: Some(0.7),
                     context_length: Some(8192),
@@ -4547,10 +4548,10 @@ fn staged_lorebook_configured_admission_resolves_and_validates_before_job_creati
     let mut model = ModelProfileRepository::get(&database, model_id)
         .expect("load feature model")
         .expect("feature model exists");
-    model.config.lorebook_generator_parameters.temperature =
+    model.config.feature_parameters.lorebook_generator.parameters.temperature =
         lettuce_models::ParameterOverride::Set(0.6);
-    model.config.lorebook_generator_parameters.top_p = lettuce_models::ParameterOverride::Set(0.8);
-    model.config.lorebook_generator_parameters.max_output_tokens =
+    model.config.feature_parameters.lorebook_generator.parameters.top_p = lettuce_models::ParameterOverride::Set(0.8);
+    model.config.feature_parameters.lorebook_generator.parameters.max_output_tokens =
         lettuce_models::ParameterOverride::Set(2048);
     model.config.chat_parameters.reasoning_mode = Some(lettuce_models::ReasoningMode::Enabled);
     model.config.chat_parameters.reasoning_budget_tokens = Some(100);

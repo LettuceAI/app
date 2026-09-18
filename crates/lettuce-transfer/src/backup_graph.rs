@@ -720,12 +720,7 @@ pub fn canonicalize_and_validate(
             || profile.display_name.trim().is_empty()
             || profile.revision.get() == 0
             || profile.created_at > profile.updated_at
-            || profile.config.chat_parameters.validate().is_err()
-            || profile
-                .config
-                .lorebook_generator_parameters
-                .validate()
-                .is_err()
+            || profile.config.validate_parameters().is_err()
             || profile.config.capabilities.validate().is_err()
             || profile_ids.insert(profile.id, ()).is_some()
         {

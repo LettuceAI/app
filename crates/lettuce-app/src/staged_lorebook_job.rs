@@ -218,7 +218,11 @@ impl<
             &account,
             &staged_lorebook_parameter_defaults(
                 &settings.settings.lorebook_generator,
-                &model.config.lorebook_generator_parameters,
+                &model
+                    .config
+                    .feature_parameters
+                    .lorebook_generator
+                    .parameters,
             ),
             &lettuce_models::ChatRequirements::default(),
         )?;

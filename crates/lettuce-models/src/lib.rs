@@ -3,10 +3,12 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod capabilities;
+mod local_runtime;
 mod parameters;
 mod resolution;
 
 pub use capabilities::*;
+pub use local_runtime::*;
 pub use parameters::*;
 pub use resolution::*;
 
@@ -489,14 +491,24 @@ pub enum Modality {
 pub struct ModelProfileConfig {
     #[serde(default)]
     pub chat_parameters: ChatParameterProfile,
-    #[serde(default)]
-    pub lorebook_generator_parameters: ChatParameterOverrides,
+    #[serde(default, skip_serializing_if = "FeatureParameters::is_empty")]
+    pub feature_parameters: FeatureParameters,
     pub capabilities: ModelCapabilities,
-    /// Legacy advanced model settings with no typed destination yet (llama.cpp
-    /// and stable-diffusion.cpp runtime keys, the other feature generation
-    /// slots), kept verbatim by the legacy import until their runtimes own them.
-    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
-    pub legacy_advanced_settings: serde_json::Map<String, serde_json::Value>,
+    #[serde(default, skip_serializing_if = "LlamaCppSettings::is_empty")]
+    pub llama_cpp: LlamaCppSettings,
+    #[serde(default, skip_serializing_if = "StableDiffusionSettings::is_empty")]
+    pub stable_diffusion: StableDiffusionSettings,
+}
+
+impl ModelProfileConfig {
+    /// Validates every parameter group of the profile; capabilities validate
+    /// separately.
+    pub fn validate_parameters(&self) -> Result<(), ParameterValidationError> {
+        self.chat_parameters.validate()?;
+        self.feature_parameters.validate()?;
+        self.llama_cpp.validate()?;
+        self.stable_diffusion.validate()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

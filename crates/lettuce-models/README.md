@@ -59,10 +59,18 @@ Provider accounts and model profiles expose serialization only for the
 validated canonical backup snapshot. Secret fields remain opaque references;
 plaintext values are never model-domain data.
 
-`ModelProfileConfig.legacy_advanced_settings` keeps the legacy per-model
-`advanced_model_settings` keys that have no typed destination yet, verbatim:
-llama.cpp and stable-diffusion.cpp runtime keys (`llama*`, `sd*`, `sdcpp*`),
-`forceSendThinkingState` and the feature generation slots other than the
-lorebook generator. It is empty (and not serialized) for every non-legacy
-profile. The embedded runtime slices move these keys into typed settings; until
-then nothing reads them, but a legacy import no longer loses them.
+`ModelProfileConfig` owns every per-model setting as typed data (model editor
+rule): `chat_parameters` (now with `send_thinking_state`), `feature_parameters`
+(one `FeatureGenerationParameters` per app feature: dynamic memory, companion
+Soul writer, companion memory, lorebook entry generator, lorebook generator,
+scene writer, help-me-reply, group speaker selection, creation helper, each with
+chat parameter overrides and llama.cpp sampler overrides), `llama_cpp`
+(`LlamaCppSettings`: GPU/CPU placement and distribution, KV type and placement,
+threads, batching, RoPE, flash attention, chat template, mmproj, MTP, streaming
+and the `LlamaSamplerSettings`) and `stable_diffusion` (`StableDiffusionSettings`:
+generation defaults, hires, SLG, cache, VAE tiling, LoRAs and the
+stable-diffusion.cpp binding). Enum values and ranges mirror the legacy editor.
+Empty groups are not serialized. `validate_parameters` checks all groups. The
+former `lorebook_generator_parameters` moved to
+`feature_parameters.lorebook_generator.parameters`. The embedded runtimes read
+these settings when they land; runtime formulas stay unchanged.

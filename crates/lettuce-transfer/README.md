@@ -641,13 +641,17 @@ session then links to. A session linking a deleted group stays recorded as
 lorebooks use the canonical ordered binding document. Group sessions remain in
 the attached inventory for the later conversation/runtime conversion slice.
 
-`legacy_model_parameters` is the single mapper for a legacy model's
-`advanced_model_settings`, shared by the backup v1 planner and the live legacy
-database preflight (the preflight's copy was removed). Common sampling, reasoning,
-prompt caching, Ollama and OpenRouter keys go to `ChatParameterProfile`; the
-`featureGenerationSettings.lorebookGenerator` slot becomes
-`lorebook_generator_parameters` (a present field is `Set`, an absent one inherits,
-matching legacy `feature_model_overrides`); every other non-null key is kept
-verbatim in `legacy_advanced_settings` and still reported as an Unsupported
-notice per top-level key. Null keys (legacy serialized every unset option) are
-neither kept nor reported.
+`legacy_model_parameters` (legacy_backup_model_settings.rs) is the single mapper
+for a legacy model's `advanced_model_settings`, shared by the backup v1 planner
+and the live legacy database preflight. It moves every legacy key into the typed
+model settings: common sampling, reasoning, prompt caching, `forceSendThinkingState`,
+Ollama and OpenRouter keys into `ChatParameterProfile`; every `llama*` key into
+`LlamaCppSettings` (sampler keys into its `LlamaSamplerSettings`); every `sd*` and
+`sdcpp*` key into `StableDiffusionSettings`; each of the nine
+`featureGenerationSettings` slots into its `FeatureGenerationParameters` (present
+fields `Set`, absent ones inherit, matching legacy `feature_model_overrides`). A
+value of the wrong type or outside the legacy editor's range is left out with a
+Lossy notice instead of aborting the import (legacy accepted
+`ollamaRepeatPenalty: 0`, which the new profile rejects), keys legacy never defined
+get an Unsupported notice, null values are ignored, and the backend-owned
+`llamaLastRuntimeReport` diagnostics are dropped with a Lossy notice.

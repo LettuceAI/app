@@ -15,6 +15,10 @@ pub struct ChatParameterProfile {
     pub reasoning_effort: Option<ReasoningEffort>,
     pub reasoning_budget_tokens: Option<u32>,
     pub prompt_caching: Option<PromptCaching>,
+    /// Sends `enable_thinking` (and the chat template kwarg) with the request,
+    /// following the resolved reasoning mode.
+    #[serde(default)]
+    pub send_thinking_state: Option<bool>,
     #[serde(default)]
     pub ollama: OllamaOptions,
     #[serde(default)]

@@ -1119,11 +1119,15 @@ fn plan_legacy_provider_models_with_limits(
         };
         let lettuce_transfer::LegacyModelParameters {
             chat_parameters,
-            lorebook_generator_parameters,
-            retained,
-            unsupported_fields,
-        } = lettuce_transfer::legacy_model_parameters(&provider_kind, &advanced)
-            .map_err(|_| model_malformed("advanced_model_settings"))?;
+            feature_parameters,
+            llama_cpp,
+            stable_diffusion,
+            lossy_fields,
+            unknown_fields,
+        } = lettuce_transfer::legacy_model_parameters(&provider_kind, &advanced);
+        let mut deferred_advanced_fields = lossy_fields;
+        deferred_advanced_fields.extend(unknown_fields);
+        deferred_advanced_fields.sort();
         let account = provider_accounts
             .iter()
             .find(|account| account.id == provider_account_id)
@@ -1156,13 +1160,13 @@ fn plan_legacy_provider_models_with_limits(
         };
         let config = ModelProfileConfig {
             chat_parameters,
-            lorebook_generator_parameters,
+            feature_parameters,
             capabilities,
-            legacy_advanced_settings: retained,
+            llama_cpp,
+            stable_diffusion,
         };
         config
-            .chat_parameters
-            .validate()
+            .validate_parameters()
             .map_err(|_| model_malformed("advanced_model_settings"))?;
         config
             .capabilities
@@ -1187,7 +1191,7 @@ fn plan_legacy_provider_models_with_limits(
             config,
             prompt_template_id: normalized_optional(prompt_template_id),
             deprecated_system_prompt: normalized_optional(deprecated_system_prompt),
-            deferred_advanced_fields: unsupported_fields,
+            deferred_advanced_fields,
             created_at: TimestampMillis::new(created_at),
         });
     }
@@ -2685,10 +2689,8 @@ mod tests {
             router_model.deprecated_system_prompt.as_deref(),
             Some("Legacy system")
         );
-        assert_eq!(
-            router_model.deferred_advanced_fields,
-            vec!["llamaGpuLayers"]
-        );
+        assert!(router_model.deferred_advanced_fields.is_empty());
+        assert_eq!(router_model.config.llama_cpp.gpu_layers, Some(18));
         assert_eq!(
             router_model.config.capabilities.input_modalities.image,
             CapabilityStatus::Supported

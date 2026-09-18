@@ -1275,9 +1275,10 @@ mod tests {
                 display_name: "Example Chat".to_owned(),
                 kind: lettuce_models::ModelKind::Chat,
                 config: ModelProfileConfig {
-                    legacy_advanced_settings: Default::default(),
+                    llama_cpp: Default::default(),
+                    stable_diffusion: Default::default(),
                     chat_parameters: Default::default(),
-                    lorebook_generator_parameters: Default::default(),
+                    feature_parameters: Default::default(),
                     capabilities: lettuce_models::ModelCapabilities {
                         input_modalities: lettuce_models::ModalityCapabilities {
                             text: lettuce_models::CapabilityStatus::Supported,

@@ -836,8 +836,9 @@ mod tests {
             display_name: "Remote model".into(),
             kind: ModelKind::Chat,
             config: crate::ModelProfileConfig {
-                legacy_advanced_settings: Default::default(),
-                lorebook_generator_parameters: Default::default(),
+                llama_cpp: Default::default(),
+                stable_diffusion: Default::default(),
+                feature_parameters: Default::default(),
                 chat_parameters: ChatParameterProfile {
                     temperature: Some(0.7),
                     max_output_tokens: Some(100),
