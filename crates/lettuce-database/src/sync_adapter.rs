@@ -190,6 +190,32 @@ impl StoredChangeRow {
     }
 }
 
+/// A local operation identity scoped to the latest remote change journaled
+/// for the entity. A remote winner can move an aggregate revision backwards,
+/// so revision-derived identities would otherwise repeat on this device.
+pub(crate) fn entity_scoped_operation(
+    connection: &Connection,
+    entity: &SyncEntity,
+    operation: OperationId,
+) -> Result<OperationId, LocalChangeJournalError> {
+    let last_remote = connection
+        .query_row(
+            "SELECT change_id FROM sync_changes
+             WHERE entity_kind = ?1 AND entity_id = ?2 AND operation_id IS NULL
+             ORDER BY rowid DESC LIMIT 1",
+            params![entity.kind(), entity.id()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    Ok(match last_remote {
+        Some(change_id) => {
+            OperationId::from_uuid(Uuid::new_v5(&operation.as_uuid(), change_id.as_bytes()))
+        }
+        None => operation,
+    })
+}
+
 pub(crate) fn load_local_change_in(
     connection: &Connection,
     operation_id: OperationId,
@@ -2447,6 +2473,86 @@ mod tests {
             )
             .expect("conflicts");
         assert_eq!((count, side.as_str()), (1, "current"));
+    }
+
+    #[test]
+    fn local_edits_after_a_lower_remote_winner_get_fresh_operation_ids() {
+        let source = Database::open_in_memory().expect("source");
+        let target = Database::open_in_memory().expect("target");
+        let send = |from: &Database, to: &Database, at: i64| {
+            let batch = from
+                .outbound_changes(
+                    &to.local_frontier().expect("frontier"),
+                    MAX_OUTBOUND_CHANGES,
+                    MAX_OUTBOUND_PAYLOAD_BYTES,
+                )
+                .expect("outbound");
+            for change in batch.changes {
+                stage_and_apply(to, change, at);
+            }
+        };
+        let draft = |title: &str| PersonaDraftUpdate {
+            title: title.into(),
+            description: "Edited".into(),
+            nickname: None,
+            design_description: None,
+            avatar_crop: None,
+            image_recommendation: None,
+        };
+        let persona_id = PersonaId::new();
+        PersonaRepository::create(
+            &source,
+            Persona::new(
+                persona_id,
+                "Shared".into(),
+                "Both".into(),
+                TimestampMillis::new(1),
+            )
+            .expect("persona"),
+        )
+        .expect("create");
+        send(&source, &target, 2);
+        let first = PersonaRepository::revise(
+            &target,
+            persona_id,
+            Revision::INITIAL,
+            draft("Local one"),
+            TimestampMillis::new(10),
+        )
+        .expect("first local edit");
+        PersonaRepository::revise(
+            &target,
+            persona_id,
+            first.revision,
+            draft("Local two"),
+            TimestampMillis::new(11),
+        )
+        .expect("second local edit");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        PersonaRepository::revise(
+            &source,
+            persona_id,
+            Revision::INITIAL,
+            draft("Remote"),
+            TimestampMillis::new(100),
+        )
+        .expect("remote edit");
+        send(&source, &target, 200);
+        let current = PersonaRepository::get(&target, persona_id)
+            .expect("persona")
+            .expect("present");
+        assert_eq!(current.title, "Remote");
+        assert_eq!(current.revision, first.revision);
+
+        let edited = PersonaRepository::revise(
+            &target,
+            persona_id,
+            current.revision,
+            draft("Local three"),
+            TimestampMillis::new(300),
+        )
+        .expect("edit after the remote winner");
+        assert_eq!(edited.title, "Local three");
     }
 
     #[test]

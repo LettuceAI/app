@@ -75,6 +75,13 @@ recorded (winning side current). Concurrent
 persona changes retain both snapshots and deterministic winner evidence in an
 immutable conflict record.
 
+Local persona operation identities are scoped to the latest remote change
+journaled for the entity (backlog #21): a remote winner can move a persona or
+default revision backwards, and revision-derived identities would then repeat
+and turn the next local edit into a permanent stale-revision replay. Entities
+never touched by sync keep their unscoped identities, and exact retries within
+the same scope still replay.
+
 Persona conflicts can be listed as at most 100 typed current/other candidates
 and resolved by choosing either side. Resolution always creates a new local
 canonical snapshot with a fresh aggregate revision, even when the current

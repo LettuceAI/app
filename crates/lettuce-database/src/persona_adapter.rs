@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use unicode_normalization::UnicodeNormalization;
 
 use super::Database;
-use crate::sync_adapter::{load_local_change_in, record_local_change_in};
+use crate::sync_adapter::{entity_scoped_operation, load_local_change_in, record_local_change_in};
 const CROP_VERSION: u32 = 1;
 const RECOMMENDATION_VERSION: u32 = 1;
 const CURSOR_VERSION: u32 = 1;
@@ -819,6 +819,12 @@ impl PersonaRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        let operation = entity_scoped_operation(
+            &tx,
+            &persona_sync_entity(canonical.id).map_err(|_| RepositoryError::Storage)?,
+            operation,
+        )
+        .map_err(sync_error)?;
         record_persona_media_assets(
             &tx,
             canonical.media.links.iter().map(|link| link.asset_id),
@@ -979,6 +985,12 @@ impl PersonaRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        let operation = entity_scoped_operation(
+            &tx,
+            &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+            operation,
+        )
+        .map_err(sync_error)?;
         if let Some(change) = load_local_change_in(&tx, operation).map_err(sync_error)? {
             let current = load_persona(&tx, id)
                 .map_err(db_error)?
@@ -1048,6 +1060,12 @@ impl PersonaRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        let operation = entity_scoped_operation(
+            &tx,
+            &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+            operation,
+        )
+        .map_err(sync_error)?;
         if let Some(persona) =
             replay_persona_update_change(&tx, operation, id, expected_revision, now)?
         {
@@ -1088,6 +1106,12 @@ impl PersonaRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        let operation = entity_scoped_operation(
+            &tx,
+            &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+            operation,
+        )
+        .map_err(sync_error)?;
         if let Some(persona) =
             replay_persona_update_change(&tx, operation, id, expected_revision, now)?
         {
@@ -1180,6 +1204,12 @@ impl PersonaRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        let operation = entity_scoped_operation(
+            &tx,
+            &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+            operation,
+        )
+        .map_err(sync_error)?;
         if let Some(persona) =
             replay_persona_update_change(&tx, operation, id, expected_revision, now)?
         {
@@ -1245,6 +1275,12 @@ impl PersonaRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        let operation = entity_scoped_operation(
+            &tx,
+            &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+            operation,
+        )
+        .map_err(sync_error)?;
         if let Some(persona) =
             replay_persona_update_change(&tx, operation, id, expected_revision, now)?
         {
@@ -1315,6 +1351,12 @@ impl PersonaRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        let operation = entity_scoped_operation(
+            &tx,
+            &persona_default_sync_entity().map_err(|_| RepositoryError::Storage)?,
+            operation,
+        )
+        .map_err(sync_error)?;
         if let Some(state) =
             replay_persona_default_change(&tx, operation, expected_default_revision, now)?
         {
@@ -1376,6 +1418,12 @@ impl PersonaRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        let operation = entity_scoped_operation(
+            &tx,
+            &persona_default_sync_entity().map_err(|_| RepositoryError::Storage)?,
+            operation,
+        )
+        .map_err(sync_error)?;
         if let Some(state) =
             replay_persona_default_change(&tx, operation, expected_default_revision, now)?
         {
@@ -1434,6 +1482,27 @@ impl PersonaRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        let operation = entity_scoped_operation(
+            &tx,
+            &persona_sync_entity(request.persona_id).map_err(|_| RepositoryError::Storage)?,
+            operation,
+        )
+        .map_err(sync_error)?;
+        let default_operation = request
+            .expected_default_revision
+            .map(|expected_default| {
+                entity_scoped_operation(
+                    &tx,
+                    &persona_default_sync_entity().map_err(|_| RepositoryError::Storage)?,
+                    persona_archive_default_operation(
+                        request.persona_id,
+                        request.expected_persona_revision,
+                        expected_default,
+                    ),
+                )
+                .map_err(sync_error)
+            })
+            .transpose()?;
         if let Some(persona) = replay_persona_update_change(
             &tx,
             operation,
@@ -1441,14 +1510,12 @@ impl PersonaRepository for Database {
             request.expected_persona_revision,
             request.now,
         )? {
-            let default = if let Some(expected_default) = request.expected_default_revision {
+            let default = if let (Some(expected_default), Some(default_operation)) =
+                (request.expected_default_revision, default_operation)
+            {
                 replay_persona_default_change(
                     &tx,
-                    persona_archive_default_operation(
-                        request.persona_id,
-                        request.expected_persona_revision,
-                        expected_default,
-                    ),
+                    default_operation,
                     expected_default,
                     request.now,
                 )?
@@ -1554,21 +1621,12 @@ impl PersonaRepository for Database {
             return Err(RepositoryError::Storage);
         }
         if is_default {
-            let expected_default = request
-                .expected_default_revision
-                .ok_or(RepositoryError::MissingDefaultRevision)?;
+            let default_operation =
+                default_operation.ok_or(RepositoryError::MissingDefaultRevision)?;
             let default_change = persona_default_update_change(&before_default, &result.default)?;
-            let admission = record_local_change_in(
-                &tx,
-                persona_archive_default_operation(
-                    request.persona_id,
-                    request.expected_persona_revision,
-                    expected_default,
-                ),
-                &default_change,
-                request.now,
-            )
-            .map_err(sync_error)?;
+            let admission =
+                record_local_change_in(&tx, default_operation, &default_change, request.now)
+                    .map_err(sync_error)?;
             if !admission.created {
                 return Err(RepositoryError::Storage);
             }
@@ -1588,6 +1646,12 @@ impl PersonaRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
+        let operation = entity_scoped_operation(
+            &tx,
+            &persona_sync_entity(id).map_err(|_| RepositoryError::Storage)?,
+            operation,
+        )
+        .map_err(sync_error)?;
         if let Some(persona) =
             replay_persona_update_change(&tx, operation, id, expected_revision, now)?
         {
