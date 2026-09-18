@@ -188,6 +188,7 @@ where
         + CompanionStateRepository
         + CompanionScheduledNoteRepository
         + ModelProfileRepository
+        + lettuce_models::GlobalModelSettingsRepository
         + ProviderAccountRepository
         + lettuce_conversations::InitialInferenceRepository
         + SpeakerInferenceRepository
@@ -931,11 +932,24 @@ where
         let account = ProviderAccountRepository::get(self.repository, model.provider_account_id)
             .map_err(ConversationGenerationInputError::ModelRepository)?
             .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let (global_model_settings, _) =
+            lettuce_models::GlobalModelSettingsRepository::global_model_settings(self.repository)
+                .map_err(ConversationGenerationInputError::ModelRepository)?;
+        let parameters = ChatParameterResolutionInput {
+            global: global_model_settings.chat_parameters,
+            session: aggregate
+                .conversation
+                .current_settings
+                .as_ref()
+                .map(|current| current.model_settings.chat_overrides())
+                .unwrap_or_default(),
+            operation: Default::default(),
+        };
         let profile = lettuce_models::resolve_chat_profile(
             &model.expected_chat_identity(),
             &stored_model,
             &account,
-            &ChatParameterResolutionInput::default(),
+            &parameters,
             &ChatRequirements {
                 require_streaming: runtime.stream_sink.is_some(),
                 ..Default::default()

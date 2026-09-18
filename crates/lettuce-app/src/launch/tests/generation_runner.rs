@@ -842,6 +842,86 @@ async fn app_backend_worker_executes_one_durable_generation_job() {
 }
 
 #[tokio::test]
+async fn conversation_and_app_model_settings_reach_the_resolved_request() {
+    use lettuce_conversations::ConversationRepository as _;
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let scenario =
+        scenario_with_resolvable_profile(backend.database(), false, "layered-settings", true);
+    let (_, settings_revision) =
+        lettuce_models::GlobalModelSettingsRepository::global_model_settings(backend.database())
+            .expect("global model settings");
+    lettuce_models::GlobalModelSettingsRepository::save_global_model_settings(
+        backend.database(),
+        lettuce_models::ModelSettingsLayer {
+            chat_parameters: lettuce_models::ChatParameterProfile {
+                context_length: Some(12_288),
+                max_output_tokens: Some(111),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        settings_revision,
+        TimestampMillis::now().expect("clock"),
+    )
+    .expect("save global model settings");
+    backend
+        .database()
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id: scenario.conversation_id,
+                    expected_settings_revision: None,
+                    operation: lettuce_conversations::OperationToken {
+                        key: lettuce_jobs::IdempotencyKey::new("layered-settings").expect("key"),
+                        request_digest: lettuce_types::ContentHash::parse("cd".repeat(32))
+                            .expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        model_settings: lettuce_conversations::PatchValue::Set(
+                            lettuce_models::ModelSettingsLayer {
+                                chat_parameters: lettuce_models::ChatParameterProfile {
+                                    max_output_tokens: Some(333),
+                                    ..Default::default()
+                                },
+                                ..Default::default()
+                            },
+                        ),
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                Vec::new(),
+            )
+            .expect("prepared settings"),
+            TimestampMillis::new(1_012),
+        )
+        .expect("conversation model settings");
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![text_outcome("layered-response", "Reply", 13, 4)]);
+    let engine = ScenarioEmbeddingEngine;
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("layered generation");
+    let requests = inference.requests.lock().expect("requests");
+    let parameters = &requests[0].profile.chat_profile.parameters;
+    assert_eq!(
+        parameters.visible_max_output_tokens,
+        Some(333),
+        "the conversation layer overrides the model and the app"
+    );
+    assert_eq!(
+        parameters.context_length,
+        Some(8_192),
+        "the model's own value wins over the app layer"
+    );
+}
+
+#[tokio::test]
 async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
     let scenario =

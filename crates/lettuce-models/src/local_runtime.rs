@@ -635,6 +635,48 @@ impl ModelSettingsLayer {
         *self == Self::default()
     }
 
+    /// The chat parameters as overrides on top of a model: a set field
+    /// overrides, an unset field inherits.
+    #[must_use]
+    pub fn chat_overrides(&self) -> ChatParameterOverrides {
+        fn set<T: Clone>(value: &Option<T>) -> crate::ParameterOverride<T> {
+            value.clone().map_or(
+                crate::ParameterOverride::Inherit,
+                crate::ParameterOverride::Set,
+            )
+        }
+        let chat = &self.chat_parameters;
+        let ollama = &chat.ollama;
+        ChatParameterOverrides {
+            temperature: set(&chat.temperature),
+            top_p: set(&chat.top_p),
+            top_k: set(&chat.top_k),
+            max_output_tokens: set(&chat.max_output_tokens),
+            context_length: set(&chat.context_length),
+            frequency_penalty: set(&chat.frequency_penalty),
+            presence_penalty: set(&chat.presence_penalty),
+            repetition_penalty: set(&chat.repetition_penalty),
+            reasoning_mode: set(&chat.reasoning_mode),
+            reasoning_effort: set(&chat.reasoning_effort),
+            reasoning_budget_tokens: set(&chat.reasoning_budget_tokens),
+            prompt_caching: set(&chat.prompt_caching),
+            ollama: crate::OllamaOptionOverrides {
+                num_keep: set(&ollama.num_keep),
+                num_batch: set(&ollama.num_batch),
+                num_gpu: set(&ollama.num_gpu),
+                num_thread: set(&ollama.num_thread),
+                tfs_z: set(&ollama.tfs_z),
+                typical_p: set(&ollama.typical_p),
+                min_p: set(&ollama.min_p),
+                mirostat: set(&ollama.mirostat),
+                mirostat_tau: set(&ollama.mirostat_tau),
+                mirostat_eta: set(&ollama.mirostat_eta),
+                seed: set(&ollama.seed),
+                stop: set(&ollama.stop),
+            },
+        }
+    }
+
     pub fn validate(&self) -> Result<(), ParameterValidationError> {
         self.chat_parameters.validate()?;
         self.llama_cpp.validate()?;

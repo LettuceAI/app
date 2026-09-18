@@ -1534,3 +1534,11 @@ ordered signals, continuity episodes and immutable replacement receipts. Its
 file-backed scenario applies a real state transition, reopens the database,
 checks exact owner, signal, episode and receipt identity, and rejects a corrupt
 episode index. The companion calculation itself is unchanged.
+
+Conversation generation now resolves chat parameters with the conversation's
+own model settings as the session layer (`ModelSettingsLayer::chat_overrides`:
+a set field overrides, an unset one inherits) and the global model settings as
+the app layer, so a legacy session override or app default reaches the request
+with legacy's order (conversation, then model, then app; fields the resolver
+keeps model-only ignore the app layer). Feature operations (speaker selection,
+memory, reply helper, lorebook generator) keep their own operation overrides.
