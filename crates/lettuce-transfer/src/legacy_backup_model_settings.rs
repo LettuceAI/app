@@ -621,7 +621,8 @@ fn lossy_extend(reader: &mut Reader<'_>, fields: Vec<String>) {
 /// layer. Legacy read fewer fields from these layers than from a model:
 /// prompt caching and the OpenRouter pin only from the model, image generation
 /// settings never, feature generation slots never, and the app layer never
-/// sent the thinking state. Such values are left out and returned with the
+/// supplied the thinking state, top-k, frequency and presence penalties or
+/// reasoning. Such values are left out and returned with the
 /// other lossy fields; unknown keys are returned separately.
 pub(crate) fn legacy_settings_layer(
     object: &Map<String, Value>,
@@ -639,8 +640,22 @@ pub(crate) fn legacy_settings_layer(
     chat_parameters.prompt_caching = None;
     chat_parameters.openrouter = OpenRouterOptions::default();
     if app {
-        ignored.push("forceSendThinkingState");
+        ignored.extend([
+            "forceSendThinkingState",
+            "topK",
+            "frequencyPenalty",
+            "presencePenalty",
+            "reasoningEnabled",
+            "reasoningEffort",
+            "reasoningBudgetTokens",
+        ]);
         chat_parameters.send_thinking_state = None;
+        chat_parameters.top_k = None;
+        chat_parameters.frequency_penalty = None;
+        chat_parameters.presence_penalty = None;
+        chat_parameters.reasoning_mode = None;
+        chat_parameters.reasoning_effort = None;
+        chat_parameters.reasoning_budget_tokens = None;
     }
     lossy.extend(
         ignored

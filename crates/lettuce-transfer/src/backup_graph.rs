@@ -699,7 +699,10 @@ pub fn canonicalize_and_validate(
         .audio_assets
         .sort_by_key(|asset| asset.asset_id);
 
-    if graph.settings.revision.get() == 0 || graph.settings.created_at > graph.settings.updated_at {
+    if graph.settings.revision.get() == 0
+        || graph.settings.created_at > graph.settings.updated_at
+        || graph.settings.model_settings.validate().is_err()
+    {
         return Err(ProviderBackupGraphError::InvalidGraph);
     }
 

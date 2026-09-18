@@ -3488,7 +3488,7 @@ mod tests {
                     "default_provider_credential_id": provider_id,
                     "default_model_id": model_id,
                     "app_state": {"pureModeEnabled": false, "analyticsEnabled": false, "theme": "dark"},
-                    "advanced_model_settings": {"temperature": 0.2},
+                    "advanced_model_settings": {"temperature": 0.2, "topK": 5},
                     "prompt_template_id": "prompt-main",
                     "system_prompt": "Old global prompt",
                     "migration_version": 92,
@@ -3641,6 +3641,12 @@ mod tests {
             plan.settings.model_settings.chat_parameters.temperature,
             Some(0.2)
         );
+        assert_eq!(plan.settings.model_settings.chat_parameters.top_k, None);
+        assert!(plan.notices.iter().any(|notice| {
+            notice.kind == LegacyBackupConversionNoticeKind::Lossy
+                && notice.document == LegacyBackupDocumentKind::Settings
+                && notice.field == "advanced_model_settings.topK"
+        }));
         assert!(!plan.settings.value.analytics_enabled);
         assert!(!plan.settings.value.update_checks_enabled);
         assert_eq!(plan.settings.value.dynamic_memory.max_entries, 60);

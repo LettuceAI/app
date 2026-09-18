@@ -662,10 +662,12 @@ otherwise the flat temperature/top_p/max_output_tokens/penalty/top_k columns
 (legacy `build_session_advanced_model_settings`). Legacy read fewer fields from
 a session (and from the app layer) than from a model: prompt caching and the
 OpenRouter pin only from the model, image generation settings and feature slots
-never, and the app layer never the thinking state; `legacy_settings_layer` leaves
-those out with Lossy notices. The thinking state and the prompt cache TTL were
-model-first in legacy, which request resolution must keep when it reads the
-layers. The direct conversation importer writes the layer into the conversation's
+never, and the app layer never the thinking state, top-k, frequency and
+presence penalties or reasoning; `legacy_settings_layer` leaves those out with
+Lossy notices. A session's prompt cache TTL only filled in for a model whose
+caching was on without a TTL; imported model caching always carries its
+retention, so the session TTL is dropped too. The thinking state was model-first
+in legacy, which request resolution must keep when it reads the layers. The direct conversation importer writes the layer into the conversation's
 current settings; group conversations reject a model settings layer (legacy group
 sessions had none).
 

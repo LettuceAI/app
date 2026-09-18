@@ -1181,6 +1181,10 @@ impl LegacyImportRepository for Database {
                 .transpose()
         };
         let candidate = &request.settings;
+        candidate
+            .model_settings
+            .validate()
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
         let mut settings = candidate.value.clone();
         settings.lorebook_generator.selection = lettuce_settings::LorebookGeneratorSelection {
             model_profile_id: model(candidate.lorebook_generator_model_profile_id)?,
