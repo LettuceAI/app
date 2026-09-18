@@ -993,28 +993,83 @@ fn resolve_dominated_conflicts(
     Ok(())
 }
 
-fn apply_persona_change(
+/// How one synced aggregate kind reads its current canonical snapshot and
+/// materializes an incoming one. `materialize` returns `false` when the
+/// snapshot is valid but cannot be applied here (the change is journaled and
+/// kept as a current-wins conflict).
+struct SnapshotCodec {
+    decode: fn(&str, &[u8]) -> Result<(), ApplyOneError>,
+    current: fn(&Connection, &str) -> Result<Option<CanonicalPayload>, ApplyOneError>,
+    materialize: fn(&Transaction<'_>, &[u8]) -> Result<bool, ApplyOneError>,
+}
+
+const PERSONA_CODEC: SnapshotCodec = SnapshotCodec {
+    decode: |id, bytes| {
+        let incoming: Persona =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        let id = id
+            .parse::<PersonaId>()
+            .map_err(|_| ApplyOneError::Corrupt)?;
+        if incoming.id != id {
+            return Err(ApplyOneError::Corrupt);
+        }
+        Ok(())
+    },
+    current: |connection, id| {
+        let id = id
+            .parse::<PersonaId>()
+            .map_err(|_| ApplyOneError::Corrupt)?;
+        load_persona(connection, id)
+            .map_err(|_| ApplyOneError::Storage)?
+            .as_ref()
+            .map(canonical_persona_payload)
+            .transpose()
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    materialize: |tx, bytes| {
+        let incoming: Persona =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        apply_synced_persona(tx, incoming).map_err(repository_apply_error)?;
+        Ok(true)
+    },
+};
+
+const PERSONA_DEFAULT_CODEC: SnapshotCodec = SnapshotCodec {
+    decode: |_, bytes| {
+        serde_json::from_slice::<PersonaDefaultState>(bytes)
+            .map(|_| ())
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    current: |connection, _| {
+        let current = read_default(connection).map_err(|_| ApplyOneError::Storage)?;
+        canonical_persona_default_payload(&current)
+            .map(Some)
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    materialize: |tx, bytes| {
+        let incoming: PersonaDefaultState =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        match apply_synced_persona_default(tx, incoming) {
+            Ok(_) => Ok(true),
+            Err(RepositoryError::Archived | RepositoryError::NotFound) => Ok(false),
+            Err(error) => Err(repository_apply_error(error)),
+        }
+    },
+};
+
+/// One incoming complete-snapshot change: identical snapshots and clean
+/// inserts/updates apply, an absent entity adopts the snapshot, anything
+/// else is a concurrent edit settled by `incoming_wins` with both snapshots
+/// kept as conflict evidence.
+fn apply_snapshot_change(
     tx: &Transaction<'_>,
     change: &CanonicalChange,
     now: TimestampMillis,
+    codec: &SnapshotCodec,
 ) -> Result<bool, ApplyOneError> {
     let payload = change.payload().ok_or(ApplyOneError::Corrupt)?;
-    let incoming: Persona =
-        serde_json::from_slice(payload.bytes()).map_err(|_| ApplyOneError::Corrupt)?;
-    let id = change
-        .entity()
-        .id()
-        .parse::<PersonaId>()
-        .map_err(|_| ApplyOneError::Corrupt)?;
-    if incoming.id != id {
-        return Err(ApplyOneError::Corrupt);
-    }
-    let current = load_persona(tx, id).map_err(|_| ApplyOneError::Storage)?;
-    let current_payload = current
-        .as_ref()
-        .map(canonical_persona_payload)
-        .transpose()
-        .map_err(|_| ApplyOneError::Corrupt)?;
+    (codec.decode)(change.entity().id(), payload.bytes())?;
+    let current_payload = (codec.current)(tx, change.entity().id())?;
     let same = current_payload
         .as_ref()
         .is_some_and(|value| value.content_hash() == payload.content_hash());
@@ -1022,7 +1077,7 @@ fn apply_persona_change(
         change.operation() == ChangeOperation::Update
             && change.base_revision() == Some(value.content_hash())
     });
-    let clean_insert = current.is_none();
+    let clean_insert = current_payload.is_none();
     let conflict = !same && !clean_update && !clean_insert;
     let current_change = current_payload
         .as_ref()
@@ -1039,22 +1094,29 @@ fn apply_persona_change(
             .is_some_and(|current| incoming_wins(change, current));
     observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
     insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
+    let mut unmaterialized = false;
     if winner_is_incoming && !same {
-        apply_synced_persona(tx, incoming).map_err(repository_apply_error)?;
+        unmaterialized = !(codec.materialize)(tx, payload.bytes())?;
     }
-    if conflict {
+    if conflict || unmaterialized {
+        let current_bytes = current_payload
+            .as_ref()
+            .map(CanonicalPayload::bytes)
+            .ok_or(ApplyOneError::Pending)?;
         insert_conflict(
             tx,
             change,
             current_change.as_ref(),
-            current_payload.as_ref().map(CanonicalPayload::bytes),
+            Some(current_bytes),
             payload.bytes(),
-            winner_is_incoming,
+            winner_is_incoming && !unmaterialized,
             now,
         )?;
     }
-    resolve_dominated_conflicts(tx, change, now, None)?;
-    Ok(conflict)
+    if !unmaterialized {
+        resolve_dominated_conflicts(tx, change, now, None)?;
+    }
+    Ok(conflict || unmaterialized)
 }
 
 fn apply_media_asset_change(
@@ -1105,58 +1167,6 @@ fn apply_media_asset_change(
     observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
     insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
     Ok(false)
-}
-
-fn apply_persona_default_change(
-    tx: &Transaction<'_>,
-    change: &CanonicalChange,
-    now: TimestampMillis,
-) -> Result<bool, ApplyOneError> {
-    let payload = change.payload().ok_or(ApplyOneError::Corrupt)?;
-    let incoming: PersonaDefaultState =
-        serde_json::from_slice(payload.bytes()).map_err(|_| ApplyOneError::Corrupt)?;
-    let current = read_default(tx).map_err(|_| ApplyOneError::Storage)?;
-    let current_payload =
-        canonical_persona_default_payload(&current).map_err(|_| ApplyOneError::Corrupt)?;
-    let same = current_payload.content_hash() == payload.content_hash();
-    let clean_update = change.base_revision() == Some(current_payload.content_hash());
-    let conflict = !same && !clean_update;
-    let current_change =
-        load_materialized_change(tx, change.entity(), current_payload.content_hash()).map_err(
-            |error| match error {
-                IncomingChangeError::Storage => ApplyOneError::Storage,
-                _ => ApplyOneError::Corrupt,
-            },
-        )?;
-    let winner_is_incoming = !conflict
-        || current_change
-            .as_ref()
-            .is_some_and(|current| incoming_wins(change, current));
-    observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
-    insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
-    let mut unmaterialized = false;
-    if winner_is_incoming && !same {
-        match apply_synced_persona_default(tx, incoming) {
-            Ok(_) => {}
-            Err(RepositoryError::Archived | RepositoryError::NotFound) => unmaterialized = true,
-            Err(error) => return Err(repository_apply_error(error)),
-        }
-    }
-    if conflict || unmaterialized {
-        insert_conflict(
-            tx,
-            change,
-            current_change.as_ref(),
-            Some(current_payload.bytes()),
-            payload.bytes(),
-            winner_is_incoming && !unmaterialized,
-            now,
-        )?;
-    }
-    if !unmaterialized {
-        resolve_dominated_conflicts(tx, change, now, None)?;
-    }
-    Ok(conflict || unmaterialized)
 }
 
 fn mark_batch_pending(
@@ -1954,8 +1964,10 @@ impl IncomingChangeRepository for Database {
             }
             let result = match change.entity().kind() {
                 "media_asset" => apply_media_asset_change(&transaction, change, now),
-                "persona" => apply_persona_change(&transaction, change, now),
-                "persona_default" => apply_persona_default_change(&transaction, change, now),
+                "persona" => apply_snapshot_change(&transaction, change, now, &PERSONA_CODEC),
+                "persona_default" => {
+                    apply_snapshot_change(&transaction, change, now, &PERSONA_DEFAULT_CODEC)
+                }
                 _ => Err(ApplyOneError::Corrupt),
             };
             match result {
