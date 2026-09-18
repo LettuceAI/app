@@ -693,6 +693,20 @@ mod tests {
         assert!(
             matches!(outcome, SpeechTranscriptionRunResult::Cancelled { job, .. } if job.state == JobState::Cancelled)
         );
+        let pruned = JobStore::prune(
+            &database,
+            lettuce_jobs::retention::RetentionPolicy {
+                keep_terminal_for: Some(Duration::ZERO),
+            },
+            TimestampMillis::new(1_000_000),
+        )
+        .expect("prune keeps speech-bound jobs");
+        assert!(!pruned.removed.contains(&cancelled.job.id));
+        assert!(
+            JobStore::get(&database, cancelled.job.id)
+                .expect("read job")
+                .is_some()
+        );
 
         let mut retry_request = request(audio_asset_id);
         retry_request.id = RequestId::new();

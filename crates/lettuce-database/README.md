@@ -149,7 +149,10 @@ at backup time (created or processing attempts, processing companion effects)
 stays open for its restored job, like after a restart. Companion turn effects
 are written through their draft, processing status and children, then settled;
 suffix rewinds and effect invalidations come last. Secrets, media bytes and the
-cutover belong to the app restore coordinator. `Database::carry_device_local_state_from`
+cutover belong to the app restore coordinator. Job pruning keeps terminal jobs that a speech transcription or synthesis still
+binds (and their ancestors), because that evidence forbids deleting its job;
+before this, one such job made every later prune fail.
+`Database::carry_device_local_state_from`
 attaches the previous database file and copies the device-local rows a backup
 never carries: the sync journal tables, installed Whisper model manifests and
 the discovered voices of audio providers present in the restored database. It

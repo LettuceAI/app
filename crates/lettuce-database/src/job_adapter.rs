@@ -363,8 +363,60 @@ impl JobStore for Database {
         self.write_jobs(|store| store.expired_claims(now, limit))
     }
 
+    /// Prunes terminal jobs except those a speech transcription or synthesis
+    /// still binds (their evidence rows forbid deleting the job), together with
+    /// every ancestor such a kept job points at.
     fn prune(&self, policy: RetentionPolicy, now: Timestamp) -> Result<PruneReport, StoreError> {
-        self.write_jobs(|store| Ok(store.prune(policy, now)))
+        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| StoreError::Storage)?;
+        let store = load_store(&transaction)?;
+        let before = records_by_id(store.stored_records());
+        let mut report = store.prune(policy, now);
+        let bound = transaction
+            .prepare(
+                "SELECT job_id FROM speech_transcriptions UNION SELECT job_id FROM speech_syntheses",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(|_| StoreError::Storage)?
+            .into_iter()
+            .map(|id| id.parse::<JobId>().map_err(|_| StoreError::InvalidData))
+            .collect::<Result<std::collections::BTreeSet<_>, _>>()?;
+        let removed = report
+            .removed
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut kept = removed
+            .intersection(&bound)
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
+        loop {
+            let parents = kept
+                .iter()
+                .filter_map(|id| before.get(id).and_then(|record| record.snapshot.parent_id))
+                .filter(|parent| removed.contains(parent) && !kept.contains(parent))
+                .collect::<Vec<_>>();
+            if parents.is_empty() {
+                break;
+            }
+            kept.extend(parents);
+        }
+        let mut after = records_by_id(store.stored_records());
+        for id in &kept {
+            if let Some(record) = before.get(id) {
+                after.insert(*id, record.clone());
+            }
+        }
+        report.removed.retain(|id| !kept.contains(id));
+        persist_changes(&transaction, &before, &after)?;
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(report)
     }
 }
 
