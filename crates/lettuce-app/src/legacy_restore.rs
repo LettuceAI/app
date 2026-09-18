@@ -468,6 +468,203 @@ mod tests {
         );
     }
 
+    const PNG: [u8; 70] = [
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6,
+        0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 218, 99, 100, 96, 248, 95, 15,
+        0, 2, 135, 1, 128, 235, 71, 186, 146, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    ];
+
+    fn legacy_message(
+        id: &str,
+        role: &str,
+        parent: Option<&str>,
+        content: &str,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "role": role,
+            "content": content,
+            "created_at": 10,
+            "effective_at": 11,
+            "visible_in_chat": true,
+            "scene_edited": false,
+            "prompt_tokens": null,
+            "completion_tokens": null,
+            "total_tokens": null,
+            "first_token_ms": null,
+            "tokens_per_second": null,
+            "mtp_stats": null,
+            "model_id": null,
+            "selected_variant_id": null,
+            "is_pinned": false,
+            "memory_refs": "[]",
+            "used_lorebook_entries": "[]",
+            "attachments": "[]",
+            "reasoning": null,
+            "parent_message_id": parent,
+            "variants": []
+        })
+    }
+
+    #[tokio::test]
+    async fn a_legacy_source_with_media_characters_and_conversations_replaces_the_database() {
+        let root = std::env::temp_dir().join(format!("legacy-restore-{}", OperationId::new()));
+        std::fs::create_dir_all(&root).expect("fixture root");
+        let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+            .expect("filesystem authority");
+        let location = AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority)
+            .expect("database location");
+        let secrets = InMemorySecretStore::new();
+        let workspace = root.join("legacy-restore-workspace");
+        let coordinator =
+            LegacyRestoreCoordinator::new(&location, &authority, &workspace, &secrets);
+        let persona = uuid::Uuid::from_u128(1).to_string();
+        let character = uuid::Uuid::from_u128(2).to_string();
+        let session = uuid::Uuid::from_u128(3).to_string();
+        let first_message = uuid::Uuid::from_u128(4).to_string();
+        let second_message = uuid::Uuid::from_u128(5).to_string();
+        let document = |kind, value: serde_json::Value| lettuce_transfer::LegacyBackupDocument {
+            kind,
+            bytes: zeroize::Zeroizing::new(serde_json::to_vec(&value).expect("document")),
+        };
+        let media = |root, segments: &[&str]| lettuce_transfer::LegacyBackupMedia {
+            root,
+            relative_segments: segments
+                .iter()
+                .map(|segment| (*segment).to_owned())
+                .collect(),
+            bytes: zeroize::Zeroizing::new(PNG.to_vec()),
+        };
+        let compatibility =
+            lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                version: 1,
+                created_at: 1,
+                app_version: "legacy".into(),
+                source_hash: ContentHash::parse("ef".repeat(32)).expect("source hash"),
+                documents: vec![
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::Personas,
+                        serde_json::json!([{
+                            "id": persona,
+                            "title": "User",
+                            "description": "User profile",
+                            "avatar_path": "persona.png",
+                            "created_at": 1,
+                            "updated_at": 1
+                        }]),
+                    ),
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::Characters,
+                        serde_json::json!([{
+                            "id": character,
+                            "name": "Mira",
+                            "avatar_path": "mira.png",
+                            "created_at": 1,
+                            "updated_at": 1
+                        }]),
+                    ),
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::Sessions,
+                        serde_json::json!([{
+                            "id": session,
+                            "character_id": character,
+                            "title": "Conversation",
+                            "parent_session_id": null,
+                            "branched_from_message_id": null,
+                            "root_session_id": session,
+                            "background_image_path": null,
+                            "system_prompt": null,
+                            "mode": "roleplay",
+                            "selected_scene_id": null,
+                            "author_note": null,
+                            "persona_id": persona,
+                            "persona_disabled": false,
+                            "voice_autoplay": false,
+                            "prompt_template_id": null,
+                            "lorebook_ids_override": "[]",
+                            "temperature": null,
+                            "top_p": null,
+                            "max_output_tokens": null,
+                            "frequency_penalty": null,
+                            "presence_penalty": null,
+                            "top_k": null,
+                            "advanced_model_settings": null,
+                            "companion_state": null,
+                            "memories": "[]",
+                            "memory_embeddings": "[]",
+                            "memory_summary": null,
+                            "memory_summary_token_count": 0,
+                            "memory_tool_events": "[]",
+                            "memory_status": null,
+                            "memory_error": null,
+                            "memory_progress_step": 0,
+                            "archived": false,
+                            "created_at": 1,
+                            "updated_at": 20,
+                            "messages": [
+                                legacy_message(&first_message, "user", None, "Hello Mira"),
+                                legacy_message(
+                                    &second_message,
+                                    "assistant",
+                                    Some(&first_message),
+                                    "Hello there"
+                                )
+                            ]
+                        }]),
+                    ),
+                ],
+                media: vec![
+                    media(
+                        lettuce_transfer::LegacyBackupMediaRoot::Avatars,
+                        &[&format!("persona-{persona}"), "persona.png"],
+                    ),
+                    media(
+                        lettuce_transfer::LegacyBackupMediaRoot::Avatars,
+                        &[&format!("character-{character}"), "mira.png"],
+                    ),
+                ],
+            })
+            .expect("compatibility plan");
+        let plan = compatibility.legacy_import_plan();
+        assert_eq!(plan.media.media.len(), 2);
+        let receipt = coordinator
+            .replace(
+                OperationId::new(),
+                &LegacyDatabaseImportPlan {
+                    compatibility,
+                    plan,
+                },
+                None,
+                None,
+                TimestampMillis::new(1_700_000_000_100),
+            )
+            .await
+            .expect("replace with legacy source");
+        assert_eq!(
+            location.active_path().expect("active database"),
+            receipt.database_path
+        );
+        let restored = Database::open(&receipt.database_path).expect("restored database");
+        let graph = restored
+            .read_provider_backup_graph()
+            .expect("restored graph");
+        assert_eq!(graph.authored.personas.len(), 1);
+        assert_eq!(graph.authored.characters.len(), 1);
+        assert_eq!(graph.authored.media_assets.len(), 2);
+        assert_eq!(graph.conversation_history.conversations.len(), 1);
+        assert_eq!(
+            graph.conversation_history.conversations[0].messages.len(),
+            2
+        );
+        let mut exported = graph.clone();
+        lettuce_transfer::canonicalize_and_validate(&mut exported)
+            .expect("a legacy-restored database backs up again");
+        assert_eq!(
+            lettuce_transfer::backup_sql_text(&graph.legacy_imports.runs[0].run, "status"),
+            Some("completed")
+        );
+    }
+
     #[tokio::test]
     async fn an_empty_legacy_source_replaces_the_active_database_with_a_completed_run() {
         let root = std::env::temp_dir().join(format!("legacy-restore-{}", OperationId::new()));
