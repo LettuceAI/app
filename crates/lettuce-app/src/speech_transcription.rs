@@ -655,6 +655,11 @@ mod tests {
             TranscriptionState::Succeeded { .. }
         ));
         assert_eq!(*calls.lock().expect("calls"), 1);
+        let graph = crate::backup_restore::assert_backup_round_trip(&database);
+        assert!(matches!(
+            graph.job_backup.speech_transcriptions.as_slice(),
+            [record] if matches!(record.state, TranscriptionState::Succeeded { .. })
+        ));
         std::fs::remove_file(path).expect("cleanup");
     }
 

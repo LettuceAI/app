@@ -223,6 +223,8 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
             .map_err(BackupRestoreError::Media)?;
         }
         let secrets = lettuce_transfer::rebind_provider_backup_secrets(&mut graph, secrets)?;
+        lettuce_transfer::settle_in_flight_generation(&mut graph);
+        lettuce_transfer::canonicalize_and_validate(&mut graph)?;
         let mut written = Vec::new();
         let outcome = self
             .write_database(
@@ -294,4 +296,29 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
         }
         Ok(database.admit_backup_restore(admission)?)
     }
+}
+
+/// Exports a database without conversations, restores it into an empty one
+/// and asserts the restored graph reads back equal.
+#[cfg(test)]
+pub(crate) fn assert_backup_round_trip(database: &Database) -> ProviderBackupGraph {
+    let mut graph = database.read_provider_backup_graph().expect("export graph");
+    lettuce_transfer::canonicalize_and_validate(&mut graph).expect("canonical graph");
+    lettuce_transfer::settle_in_flight_generation(&mut graph);
+    lettuce_transfer::canonicalize_and_validate(&mut graph).expect("settled graph");
+    assert!(
+        lettuce_transfer::provider_backup_artifact_requirements(&graph)
+            .expect("artifact requirements")
+            .is_empty()
+    );
+    let restored = Database::open_in_memory().expect("restore target");
+    restored
+        .restore_provider_backup_graph(&graph, &[])
+        .expect("restore graph");
+    let mut round_trip = restored
+        .read_provider_backup_graph()
+        .expect("read restored graph");
+    lettuce_transfer::canonicalize_and_validate(&mut round_trip).expect("canonical restored graph");
+    assert_eq!(round_trip, graph);
+    graph
 }

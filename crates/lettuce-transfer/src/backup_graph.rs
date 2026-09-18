@@ -1253,6 +1253,120 @@ pub fn rebind_provider_backup_secrets(
         .collect()
 }
 
+/// Settles generation work that was in flight when the backup was taken as
+/// interrupted (user decision 2026-09-14), the way a restore writes it: a turn
+/// that never started an attempt is left out, unfinished attempts are
+/// interrupted with an interrupted usage event, unfinished turns become
+/// interrupted, running tools are interrupted and requested or validated tools
+/// are cancelled.
+pub fn settle_in_flight_generation(graph: &mut ProviderBackupGraph) {
+    use lettuce_conversations::{
+        GenerationAttemptStatus, GenerationTurnStatus, ToolExecutionStatus, UsageCounters,
+        UsageOutcome, UsageRecord, UsageUnavailableReason,
+    };
+
+    let mut dispatched = BTreeMap::<_, Vec<_>>::new();
+    for entry in &graph.job_backup.inference {
+        dispatched
+            .entry(entry.evidence.logical_attempt_id)
+            .or_default()
+            .push(entry.evidence.id);
+    }
+    let terminal_turn = |status: GenerationTurnStatus| {
+        matches!(
+            status,
+            GenerationTurnStatus::Succeeded
+                | GenerationTurnStatus::Failed
+                | GenerationTurnStatus::Cancelled
+                | GenerationTurnStatus::Interrupted
+        )
+    };
+    let mut events = Vec::new();
+    for conversation in &mut graph.conversation_runtime.conversations {
+        conversation
+            .turns
+            .retain(|entry| terminal_turn(entry.turn.status) || !entry.turn.attempts.is_empty());
+        for entry in &mut conversation.turns {
+            let turn = &mut entry.turn;
+            let updated_at = turn.updated_at;
+            for attempt in &mut turn.attempts {
+                if matches!(
+                    attempt.status,
+                    GenerationAttemptStatus::Succeeded
+                        | GenerationAttemptStatus::Failed
+                        | GenerationAttemptStatus::Cancelled
+                        | GenerationAttemptStatus::Interrupted
+                ) {
+                    continue;
+                }
+                let started_at = attempt.started_at.unwrap_or(updated_at);
+                attempt.status = GenerationAttemptStatus::Interrupted;
+                attempt.failure = None;
+                attempt.started_at = Some(started_at);
+                attempt.finished_at = Some(updated_at.max(started_at));
+                if attempt.usage_event_id.is_none() {
+                    let id = lettuce_types::UsageEventId::from_uuid(uuid::Uuid::new_v5(
+                        &attempt.id.as_uuid(),
+                        b"restore-interrupted",
+                    ));
+                    attempt.usage_event_id = Some(id);
+                    let mut overlapping = dispatched.get(&attempt.id).cloned().unwrap_or_default();
+                    overlapping.sort();
+                    let model = turn.resolved_model.as_ref();
+                    events.push(crate::BackupConversationUsage {
+                        event: lettuce_usage::UsageEvent {
+                            id,
+                            record: UsageRecord {
+                                turn_id: turn.id,
+                                attempt_id: attempt.id,
+                                outcome: UsageOutcome::Interrupted,
+                                usage: UsageCounters::Unavailable(if overlapping.is_empty() {
+                                    UsageUnavailableReason::NotAdmitted
+                                } else {
+                                    UsageUnavailableReason::TransportFailed
+                                }),
+                                model_profile_id: model.map(|model| model.source_id),
+                                model_revision: model.map(|model| model.source_revision),
+                                provider_account_id: model.map(|model| model.provider_account_id),
+                                provider_account_revision: model
+                                    .map(|model| model.provider_account_revision),
+                                recorded_at: started_at,
+                            },
+                        },
+                        cost_basis: None,
+                        overlapping_job_inference_ids: overlapping,
+                    });
+                }
+            }
+            if !terminal_turn(turn.status) {
+                turn.status = GenerationTurnStatus::Interrupted;
+                turn.failure = None;
+                turn.selected_candidate_id = None;
+            }
+            for tool in entry
+                .attempts
+                .iter_mut()
+                .flat_map(|runtime| runtime.tools.iter_mut())
+            {
+                match tool.status {
+                    ToolExecutionStatus::Running => {
+                        tool.status = ToolExecutionStatus::Interrupted;
+                        tool.finished_at = Some(tool.updated_at);
+                        tool.revision = lettuce_types::Revision::new(4);
+                    }
+                    ToolExecutionStatus::Requested | ToolExecutionStatus::Validated => {
+                        tool.status = ToolExecutionStatus::Cancelled;
+                        tool.finished_at = Some(tool.updated_at);
+                        tool.revision = lettuce_types::Revision::new(tool.revision.get() + 1);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    graph.conversation_usage.events.extend(events);
+}
+
 pub(crate) fn expected_secrets(
     graph: &ProviderBackupGraph,
 ) -> Result<BTreeMap<SecretRef, SecretPurpose>, ProviderBackupGraphError> {

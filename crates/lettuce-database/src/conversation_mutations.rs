@@ -5025,7 +5025,7 @@ mod tests {
             .expect("blob");
         connection
             .execute(
-                "INSERT INTO media_assets (id, blob_id, blob_kind, kind, origin, retention, expires_at, provenance_json, revision, created_at, updated_at) VALUES (?1, ?2, 'image', 'message_image', 'upload', 'persistent', NULL, '{}', 1, 1, 1)",
+                "INSERT INTO media_assets (id, blob_id, blob_kind, kind, origin, retention, expires_at, provenance_json, revision, created_at, updated_at) VALUES (?1, ?2, 'image', 'message_image', 'upload', 'persistent', NULL, '{\"format_version\":1}', 1, 1, 1)",
                 params![asset_id.to_string(), blob_id.to_string()],
             )
             .expect("asset");
@@ -5181,6 +5181,57 @@ mod tests {
         }
     }
 
+    /// Stores the model snapshots `model_snapshot` references but never
+    /// persists, so the fixture exports like a live conversation.
+    fn store_fixture_model_snapshots(database: &Database) {
+        let graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(database)
+            .expect("export graph");
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        for descriptor in
+            lettuce_transfer::provider_backup_artifact_requirements(&graph).expect("artifacts")
+        {
+            if let lettuce_conversations::TrustedArtifactDescriptor::Snapshot(reference) =
+                &descriptor
+                && matches!(reference.source, SnapshotSource::Model(_))
+            {
+                let _ = crate::conversation_artifact_adapter::insert_trusted_artifact_in(
+                    &transaction,
+                    &descriptor,
+                    b"model",
+                    TimestampMillis::new(1),
+                );
+            }
+        }
+        transaction.commit().expect("commit");
+    }
+
+    fn recorded_usage(
+        fixture: &Fixture,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        at: i64,
+    ) -> UsageEventId {
+        lettuce_usage::UsageLedger::record(
+            fixture.database.as_ref(),
+            lettuce_conversations::UsageRecord {
+                turn_id,
+                attempt_id,
+                outcome: lettuce_conversations::UsageOutcome::Succeeded,
+                usage: lettuce_conversations::UsageCounters::Unavailable(
+                    lettuce_conversations::UsageUnavailableReason::ProviderOmitted,
+                ),
+                model_profile_id: None,
+                model_revision: None,
+                provider_account_id: None,
+                provider_account_revision: None,
+                recorded_at: TimestampMillis::new(at),
+            },
+        )
+        .expect("record usage")
+        .id
+    }
+
     /// Drives a live turn to running and finalizes it through the real port.
     fn settle_succeeded(
         fixture: &Fixture,
@@ -5200,6 +5251,7 @@ mod tests {
             &format!("drive-ok-{}", turn.id),
             now,
         );
+
         let finalized = fixture
             .database
             .finalize_generation(
@@ -5209,7 +5261,7 @@ mod tests {
                 revision,
                 &token(&format!("finalize-{}", turn.id), "cd"),
                 finalization_draft(text("generated"), 0),
-                UsageEventId::new(),
+                recorded_usage(fixture, turn.id, attempt_id, now + 50),
                 TimestampMillis::new(now + 50),
             )
             .expect("finalize");
@@ -9521,7 +9573,12 @@ mod tests {
                 revision,
                 &token(&format!("{key}-finalize"), "cd"),
                 finalization_draft(text("second take"), 1),
-                UsageEventId::new(),
+                recorded_usage(
+                    fixture,
+                    regenerate.value.turn.id,
+                    regenerate.value.attempt.id,
+                    90,
+                ),
                 TimestampMillis::new(90),
             )
             .expect("second finalize")
@@ -9758,6 +9815,46 @@ mod tests {
             &fixture.conversation_id.to_string(),
         );
         assert_eq!(historical, 1, "the edited revision's media retired");
+        store_fixture_model_snapshots(&fixture.database);
+        let graph = crate::restore_writer::tests::assert_backup_round_trip(&fixture.database);
+        assert!(
+            graph
+                .conversation_history
+                .conversations
+                .iter()
+                .flat_map(|conversation| &conversation.messages)
+                .any(|message| !message.historical_media_revision_ids.is_empty())
+        );
+    }
+
+    #[test]
+    fn in_flight_generation_restores_interrupted_with_a_usage_event() {
+        let fixture = direct_fixture();
+        fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "in-flight-send", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        store_fixture_model_snapshots(&fixture.database);
+        let graph = crate::restore_writer::tests::assert_backup_round_trip(&fixture.database);
+        let attempts = graph
+            .conversation_runtime
+            .conversations
+            .iter()
+            .flat_map(|conversation| &conversation.turns)
+            .flat_map(|entry| &entry.turn.attempts)
+            .collect::<Vec<_>>();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(
+            attempts[0].status,
+            lettuce_conversations::GenerationAttemptStatus::Interrupted
+        );
+        assert!(graph.conversation_usage.events.iter().any(|entry| {
+            Some(entry.event.id) == attempts[0].usage_event_id
+                && entry.event.record.outcome == lettuce_conversations::UsageOutcome::Interrupted
+        }));
     }
 
     #[test]

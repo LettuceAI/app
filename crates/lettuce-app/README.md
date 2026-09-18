@@ -1470,7 +1470,8 @@ stores them, then opens a new database file named by the restore id under
 `private-persistent-v2/databases`. The graph is written through the restore
 writer, device-local state (sync journal, installed Whisper manifests,
 discovered TTS voices) is carried from the previously active database file, and
-the restored graph must read back equal to the decoded graph before the
+the restored graph must read back equal to the decoded graph (with in-flight
+generation settled as interrupted, exactly as the writer restores it) before the
 admission is recorded. Only then does `AppDatabaseLocation` atomically point the
 active database at the new file; the previous file is never deleted, and secrets
 written by a failed attempt (including a failed pointer switch) are removed

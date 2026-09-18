@@ -111,9 +111,13 @@ events instead of a generated create record, provider replay references,
 selected speaker, lorebook and memory attribution, failed or interrupted turns
 without candidates, companion memory pools shared by several conversations,
 usage events and cost bases. Work that was in progress when the backup was taken
-is restored as interrupted (user decision 2026-09-14): unfinished attempts are
-interrupted with a derived usage event id and turns without attempts are left
-out. Jobs and job events are written as exported through the job store's
+is restored as interrupted (user decision 2026-09-14) through
+`lettuce_transfer::settle_in_flight_generation`: unfinished attempts are
+interrupted with a derived interrupted usage event (not admitted, or transport
+failed when a job dispatch exists), unfinished turns become interrupted, turns
+without attempts are left out, running tools are interrupted and requested or
+validated tools cancelled. Earlier the attempt got a usage id without an event,
+so a restored database with such work could not be backed up again. Jobs and job events are written as exported through the job store's
 validation (in-flight jobs keep their state so the normal lease-expiry recovery
 handles them like after a restart), with job inference usage and cost bases.
 Speech transcriptions and syntheses are inserted pending and settled through

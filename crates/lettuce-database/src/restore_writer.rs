@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
 
 use lettuce_characters::{CreateCharacterPlan, CreateGroupPlan};
-use lettuce_conversations::{GenerationAttemptStatus, GenerationTurn, GenerationTurnStatus};
 use lettuce_transfer::{
     BackupConversationArtifact, ProviderBackupGraph, ProviderBackupRestoreWriteError,
     ProviderBackupRestoreWriter,
 };
-use lettuce_types::{Revision, UsageEventId};
+use lettuce_types::Revision;
 use rusqlite::{TransactionBehavior, params};
 
 use crate::Database;
@@ -26,58 +25,15 @@ fn sql_revision(revision: Revision) -> Result<i64, Error> {
     i64::try_from(revision.get()).map_err(invalid)
 }
 
-/// Work that was in progress when the backup was taken is restored as
-/// interrupted (user decision 2026-09-14); a turn that never started an attempt
-/// did no work and is left out.
-fn settled_turn(turn: &GenerationTurn) -> Option<GenerationTurn> {
-    let terminal_turn = matches!(
-        turn.status,
-        GenerationTurnStatus::Succeeded
-            | GenerationTurnStatus::Failed
-            | GenerationTurnStatus::Cancelled
-            | GenerationTurnStatus::Interrupted
-    );
-    if !terminal_turn && turn.attempts.is_empty() {
-        return None;
-    }
-    let mut turn = turn.clone();
-    let updated_at = turn.updated_at;
-    for attempt in &mut turn.attempts {
-        if matches!(
-            attempt.status,
-            GenerationAttemptStatus::Succeeded
-                | GenerationAttemptStatus::Failed
-                | GenerationAttemptStatus::Cancelled
-                | GenerationAttemptStatus::Interrupted
-        ) {
-            continue;
-        }
-        let started_at = attempt.started_at.unwrap_or(updated_at);
-        attempt.status = GenerationAttemptStatus::Interrupted;
-        attempt.failure = None;
-        attempt.started_at = Some(started_at);
-        attempt.finished_at = Some(updated_at.max(started_at));
-        attempt.usage_event_id.get_or_insert_with(|| {
-            UsageEventId::from_uuid(uuid::Uuid::new_v5(
-                &attempt.id.as_uuid(),
-                b"restore-interrupted",
-            ))
-        });
-    }
-    if !terminal_turn {
-        turn.status = GenerationTurnStatus::Interrupted;
-        turn.failure = None;
-        turn.selected_candidate_id = None;
-    }
-    Some(turn)
-}
-
 impl ProviderBackupRestoreWriter for Database {
     fn restore_provider_backup_graph(
         &self,
         graph: &ProviderBackupGraph,
         artifacts: &[BackupConversationArtifact],
     ) -> Result<(), Error> {
+        let mut settled = graph.clone();
+        lettuce_transfer::settle_in_flight_generation(&mut settled);
+        let graph = &settled;
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -330,7 +286,7 @@ impl ProviderBackupRestoreWriter for Database {
                     runtime
                         .turns
                         .iter()
-                        .filter_map(|turn| settled_turn(&turn.turn))
+                        .map(|turn| turn.turn.clone())
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
@@ -633,8 +589,11 @@ impl ProviderBackupRestoreWriter for Database {
             crate::staged_lorebook_writer_adapter::insert_restored_in(&transaction, run)
                 .map_err(invalid)?;
         }
-        crate::legacy_import_backup_adapter::insert_restored_in(&transaction, &graph.legacy_imports)
-            .map_err(invalid)?;
+        crate::legacy_import_backup_adapter::insert_restored_in(
+            &transaction,
+            &graph.legacy_imports,
+        )
+        .map_err(invalid)?;
         for (conversation_id, message_id) in tombstoned {
             transaction
                 .execute(
@@ -685,5 +644,76 @@ impl ProviderBackupRestoreWriter for Database {
             }
             _ => Error::Storage,
         })
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use lettuce_conversations::{
+        ArtifactTransferError, ConversationArtifactTransferPort, TrustedArtifactDescriptor,
+        TrustedArtifactSink,
+    };
+    use lettuce_transfer::{
+        BackupConversationArtifact, ProviderBackupGraph, ProviderBackupRestoreWriter,
+        ProviderBackupSource,
+    };
+
+    use crate::Database;
+
+    struct CollectedArtifact(Vec<u8>);
+
+    impl TrustedArtifactSink for CollectedArtifact {
+        fn begin(&mut self, _: &TrustedArtifactDescriptor) -> Result<(), ArtifactTransferError> {
+            Ok(())
+        }
+
+        fn chunk(&mut self, bytes: &[u8]) -> Result<(), ArtifactTransferError> {
+            self.0.extend_from_slice(bytes);
+            Ok(())
+        }
+
+        fn finish(&mut self) -> Result<(), ArtifactTransferError> {
+            Ok(())
+        }
+    }
+
+    /// Exports a database with its protected artifacts, restores it into an
+    /// empty one and asserts the restored graph reads back equal.
+    pub(crate) fn assert_backup_round_trip(database: &Database) -> ProviderBackupGraph {
+        let mut graph = database.read_provider_backup_graph().expect("export graph");
+        lettuce_transfer::canonicalize_and_validate(&mut graph).expect("canonical graph");
+        lettuce_transfer::settle_in_flight_generation(&mut graph);
+        lettuce_transfer::canonicalize_and_validate(&mut graph).expect("settled graph");
+        let artifacts = lettuce_transfer::provider_backup_artifact_requirements(&graph)
+            .expect("artifact requirements")
+            .into_iter()
+            .map(|descriptor| {
+                let mut sink = CollectedArtifact(Vec::new());
+                match &descriptor {
+                    TrustedArtifactDescriptor::Snapshot(reference) => {
+                        database.export_snapshot(reference.artifact_id, &mut sink)
+                    }
+                    TrustedArtifactDescriptor::Replay(reference) => {
+                        database.export_replay(reference.artifact_id, &mut sink)
+                    }
+                }
+                .expect("export artifact");
+                BackupConversationArtifact {
+                    descriptor,
+                    bytes: zeroize::Zeroizing::new(sink.0),
+                }
+            })
+            .collect::<Vec<_>>();
+        let restored = Database::open_in_memory().expect("restore target");
+        restored
+            .restore_provider_backup_graph(&graph, &artifacts)
+            .expect("restore graph");
+        let mut round_trip = restored
+            .read_provider_backup_graph()
+            .expect("read restored graph");
+        lettuce_transfer::canonicalize_and_validate(&mut round_trip)
+            .expect("canonical restored graph");
+        assert_eq!(round_trip, graph);
+        graph
     }
 }

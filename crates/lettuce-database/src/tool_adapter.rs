@@ -359,27 +359,14 @@ pub(super) fn insert_in(
 }
 
 /// Writes a backed-up tool execution by walking it from `requested` to its
-/// stored status; the stored revision tells which legal path it took. A tool
-/// left unsettled by an attempt restored as interrupted is settled with it.
+/// stored status; the stored revision tells which legal path it took. Tools
+/// left unsettled are settled beforehand by `settle_in_flight_generation`.
 pub(crate) fn insert_restored_in(
     transaction: &Transaction<'_>,
     execution: &ToolExecution,
 ) -> Result<(), ConversationRepositoryError> {
     use ToolExecutionStatus as Status;
-    let mut execution = execution.clone();
-    match execution.status {
-        Status::Running => {
-            execution.status = Status::Interrupted;
-            execution.finished_at = Some(execution.updated_at);
-            execution.revision = Revision::new(4);
-        }
-        Status::Requested | Status::Validated => {
-            execution.status = Status::Cancelled;
-            execution.finished_at = Some(execution.updated_at);
-            execution.revision = Revision::new(execution.revision.get() + 1);
-        }
-        _ => {}
-    }
+    let execution = execution.clone();
     let path: Vec<Status> = match (execution.status, execution.revision.get()) {
         (Status::Succeeded | Status::Failed | Status::Interrupted, _) => {
             vec![Status::Validated, Status::Running, execution.status]

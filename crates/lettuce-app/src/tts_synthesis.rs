@@ -736,6 +736,15 @@ mod tests {
         assert_eq!(result.audio_asset_id, preview_id.expect("preview asset"));
         assert_ne!(preview_id, retained_id);
         assert_eq!(*calls.lock().expect("calls"), 2);
+        let graph = crate::backup_restore::assert_backup_round_trip(&database);
+        assert_eq!(graph.job_backup.speech_syntheses.len(), 2);
+        assert!(
+            graph
+                .job_backup
+                .speech_syntheses
+                .iter()
+                .all(|record| matches!(record.state, SynthesisState::Succeeded { .. }))
+        );
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 
