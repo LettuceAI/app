@@ -29,8 +29,8 @@ order); `verify_backup_media` and `verify_backup_artifact` check one object
 against its size and hash so the app appends it without copying and drops it
 before loading the next. Section limits are 2 GiB per section and 1 TiB in total (backlog #15:
 the earlier 512 MiB total blocked large libraries; legacy had no limit). The
-version-1 decoder and the legacy database inventory keep their 512 MiB
-in-memory limits (`MAX_LEGACY_BACKUP_*`) until they stream too.
+version-1 decoder keeps only its 512 MiB per-entry limit
+(`MAX_LEGACY_BACKUP_ENTRY_BYTES`).
 
 `decode_provider_backup_restore_plan` takes any seekable `BackupSource` (the
 received archive file), hashes it by streaming, decodes the data sections,
@@ -45,7 +45,10 @@ restore memory no longer grows with the media library.
 `LegacyBackupMedia` carries each legacy file's size and BLAKE3 hash and reads
 its bytes on demand through `read` (re-checked against both): the live legacy
 database inventory keeps only the file path (`from_file` hashes it by
-streaming) and version-1 archives keep the decrypted entry. The live database
+streaming) and `decode_legacy_backup_inventory` reads a version-1 archive from
+a seekable `BackupSource`, decrypting each media entry once for its size and
+hash and again on `read` (a version-1 entry is one AEAD message, so each entry
+is still limited to 512 MiB; the archive total is not). The live database
 inventory no longer rejects a large or unreferenced file or a library over
 512 MiB; the media plan still limits each referenced object to 64 MiB (the
 media store limit) and the legacy media total is now the backup total. The

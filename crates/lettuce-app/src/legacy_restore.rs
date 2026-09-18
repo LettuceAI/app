@@ -107,11 +107,11 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
     pub async fn restore_backup(
         &self,
         restore_id: OperationId,
-        bytes: &[u8],
+        backup: impl lettuce_transfer::BackupSource + 'static,
         password: &str,
         restored_at: TimestampMillis,
     ) -> Result<LegacyRestoreReceipt, LegacyRestoreError> {
-        let inventory = lettuce_transfer::decode_legacy_backup_inventory(bytes, password)
+        let inventory = lettuce_transfer::decode_legacy_backup_inventory(backup, password)
             .map_err(LegacyRestoreError::Inventory)?;
         let compatibility = lettuce_transfer::plan_legacy_backup_compatibility(inventory)
             .map_err(LegacyRestoreError::Compatibility)?;
