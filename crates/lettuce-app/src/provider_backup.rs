@@ -456,6 +456,7 @@ mod tests {
                 display_name: "Backup chat model".into(),
                 kind: ModelKind::Chat,
                 config: ModelProfileConfig {
+                    legacy_advanced_settings: Default::default(),
                     chat_parameters: Default::default(),
                     lorebook_generator_parameters: Default::default(),
                     capabilities: lettuce_models::ModelCapabilities {

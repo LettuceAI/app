@@ -541,6 +541,7 @@ fn seed_model_with(
             display_name: "Vendor Model".into(),
             kind,
             config: ModelProfileConfig {
+                legacy_advanced_settings: Default::default(),
                 lorebook_generator_parameters: Default::default(),
                 chat_parameters: lettuce_models::ChatParameterProfile {
                     temperature: Some(0.7),

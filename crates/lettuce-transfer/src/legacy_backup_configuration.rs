@@ -8,11 +8,12 @@ use lettuce_context::{
     PromptEntryRole, PromptPurpose,
 };
 use lettuce_models::{
-    CapabilityEvidence, CapabilityEvidenceSource, CapabilityStatus, ChatParameterProfile,
-    CustomAuth, CustomModelList, CustomProviderConfig, CustomRoles, CustomToolChoiceMode, JsonPath,
-    ModalityCapabilities, ModelCapabilities, ModelKind, ModelProfileConfig, OllamaOptions,
-    OpenRouterOptions, ParameterSupport, PromptCacheRetention, PromptCaching, ProviderConfig,
-    ProviderProtocol, QueryParameterName, ReasoningEffort, ReasoningMode, WireRole,
+    CapabilityEvidence, CapabilityEvidenceSource, CapabilityStatus, ChatParameterOverrides,
+    ChatParameterProfile, CustomAuth, CustomModelList, CustomProviderConfig, CustomRoles,
+    CustomToolChoiceMode, JsonPath, ModalityCapabilities, ModelCapabilities, ModelKind,
+    ModelProfileConfig, OllamaOptionOverrides, OllamaOptions, OpenRouterOptions, ParameterOverride,
+    ParameterSupport, PromptCacheRetention, PromptCaching, ProviderConfig, ProviderProtocol,
+    QueryParameterName, ReasoningEffort, ReasoningMode, WireRole,
 };
 use lettuce_settings::{
     DynamicMemorySettings, EmbeddingSettings, GlobalSettings, HeaderName, HelpMeReplySettings,
@@ -1203,12 +1204,12 @@ fn map_provider_models(
             Some(Value::Object(object)) => object,
             _ => Map::new(),
         };
-        let (chat_parameters, mapped) = legacy_chat_parameters(&row.provider_id, &advanced)?;
-        let deferred = advanced
-            .keys()
-            .filter(|field| !mapped.contains(&field.as_str()))
-            .cloned()
-            .collect::<Vec<_>>();
+        let LegacyModelParameters {
+            chat_parameters,
+            lorebook_generator_parameters,
+            retained,
+            unsupported_fields: deferred,
+        } = legacy_model_parameters(&row.provider_id, &advanced)?;
         for field in &deferred {
             notices.push(notice(
                 LegacyBackupConversionNoticeKind::Unsupported,
@@ -1227,7 +1228,8 @@ fn map_provider_models(
             })?;
         let config = ModelProfileConfig {
             chat_parameters,
-            lorebook_generator_parameters: Default::default(),
+            lorebook_generator_parameters,
+            legacy_advanced_settings: retained,
             capabilities: ModelCapabilities {
                 format_version: lettuce_models::MODEL_CAPABILITIES_FORMAT_VERSION,
                 evidence: CapabilityEvidence {
@@ -2739,6 +2741,131 @@ fn legacy_provider_config(
     ))
 }
 
+/// Legacy per-model advanced settings split into their typed destinations and
+/// the keys that have none yet, which are kept verbatim.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyModelParameters {
+    pub chat_parameters: ChatParameterProfile,
+    pub lorebook_generator_parameters: ChatParameterOverrides,
+    pub retained: Map<String, Value>,
+    pub unsupported_fields: Vec<String>,
+}
+
+const FEATURE_GENERATION_SETTINGS: &str = "featureGenerationSettings";
+const LOREBOOK_GENERATOR_SLOT: &str = "lorebookGenerator";
+const FEATURE_MAPPED_FIELDS: [&str; 15] = [
+    "temperature",
+    "topP",
+    "topK",
+    "maxOutputTokens",
+    "frequencyPenalty",
+    "presencePenalty",
+    "ollamaMinP",
+    "ollamaTypicalP",
+    "ollamaTfsZ",
+    "ollamaRepeatPenalty",
+    "ollamaMirostat",
+    "ollamaMirostatTau",
+    "ollamaMirostatEta",
+    "ollamaSeed",
+    "ollamaStop",
+];
+
+/// Maps one legacy model's `advanced_model_settings` object. Shared by the
+/// legacy backup planner and the live legacy database preflight.
+pub fn legacy_model_parameters(
+    provider_kind: &str,
+    advanced: &Map<String, Value>,
+) -> Result<LegacyModelParameters, LegacyBackupConfigurationError> {
+    let (chat_parameters, mapped) = legacy_chat_parameters(provider_kind, advanced)?;
+    let mut retained = advanced
+        .iter()
+        .filter(|(field, _)| !mapped.contains(&field.as_str()))
+        .map(|(field, value)| (field.clone(), value.clone()))
+        .collect::<Map<_, _>>();
+    let mut lorebook_generator_parameters = ChatParameterOverrides::default();
+    if let Some(Value::Object(slots)) = retained.get_mut(FEATURE_GENERATION_SETTINGS) {
+        if let Some(Value::Object(slot)) = slots.get_mut(LOREBOOK_GENERATOR_SLOT) {
+            lorebook_generator_parameters = legacy_feature_overrides(slot)?;
+            slot.retain(|field, _| !FEATURE_MAPPED_FIELDS.contains(&field.as_str()));
+            if slot.is_empty() {
+                slots.remove(LOREBOOK_GENERATOR_SLOT);
+            }
+        }
+        if slots.is_empty() {
+            retained.remove(FEATURE_GENERATION_SETTINGS);
+        }
+    }
+    retained.retain(|_, value| !value.is_null());
+    let unsupported_fields = retained.keys().cloned().collect();
+    Ok(LegacyModelParameters {
+        chat_parameters,
+        lorebook_generator_parameters,
+        retained,
+        unsupported_fields,
+    })
+}
+
+/// A legacy feature generation slot overrides the model's sampling field by
+/// field (legacy `feature_model_overrides`); absent fields inherit.
+fn legacy_feature_overrides(
+    slot: &Map<String, Value>,
+) -> Result<ChatParameterOverrides, LegacyBackupConfigurationError> {
+    fn set<T>(value: Option<T>) -> ParameterOverride<T> {
+        value.map_or(ParameterOverride::Inherit, ParameterOverride::Set)
+    }
+    let invalid = || malformed(LegacyBackupDocumentKind::Models, "advanced_model_settings");
+    let present = |key: &str| slot.get(key).filter(|value| !value.is_null());
+    let f64_value = |key: &str| {
+        present(key)
+            .map(|value| value.as_f64().ok_or_else(invalid))
+            .transpose()
+    };
+    let u32_value = |key: &str| {
+        present(key)
+            .map(|value| {
+                value
+                    .as_u64()
+                    .and_then(|value| u32::try_from(value).ok())
+                    .ok_or_else(invalid)
+            })
+            .transpose()
+    };
+    let stop = present("ollamaStop")
+        .map(|value| {
+            value
+                .as_array()
+                .ok_or_else(invalid)?
+                .iter()
+                .map(|value| value.as_str().map(str::to_owned).ok_or_else(invalid))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?;
+    let overrides = ChatParameterOverrides {
+        temperature: set(f64_value("temperature")?),
+        top_p: set(f64_value("topP")?),
+        top_k: set(u32_value("topK")?),
+        max_output_tokens: set(u32_value("maxOutputTokens")?.filter(|value| *value != 0)),
+        frequency_penalty: set(f64_value("frequencyPenalty")?),
+        presence_penalty: set(f64_value("presencePenalty")?),
+        repetition_penalty: set(f64_value("ollamaRepeatPenalty")?),
+        ollama: OllamaOptionOverrides {
+            tfs_z: set(f64_value("ollamaTfsZ")?),
+            typical_p: set(f64_value("ollamaTypicalP")?),
+            min_p: set(f64_value("ollamaMinP")?),
+            mirostat: set(u32_value("ollamaMirostat")?),
+            mirostat_tau: set(f64_value("ollamaMirostatTau")?),
+            mirostat_eta: set(f64_value("ollamaMirostatEta")?),
+            seed: set(u32_value("ollamaSeed")?),
+            stop: set(stop),
+            ..OllamaOptionOverrides::default()
+        },
+        ..ChatParameterOverrides::default()
+    };
+    overrides.validate().map_err(|_| invalid())?;
+    Ok(overrides)
+}
+
 fn legacy_chat_parameters(
     kind: &str,
     object: &Map<String, Value>,
@@ -3909,6 +4036,70 @@ mod tests {
             == LegacyBackupConversionNoticeKind::Lossy
             && notice.document == LegacyBackupDocumentKind::AudioProviders
             && notice.field == "[1].id"));
+    }
+
+    #[test]
+    fn advanced_model_settings_map_the_lorebook_slot_and_keep_every_other_key() {
+        let advanced = json!({
+            "temperature": 0.7,
+            "llamaGpuLayers": 33,
+            "llamaKvType": "q8_0",
+            "sdSteps": 28,
+            "llamaMtpModelPath": null,
+            "featureGenerationSettings": {
+                "lorebookGenerator": {
+                    "temperature": 0.25,
+                    "maxOutputTokens": 900,
+                    "ollamaRepeatPenalty": 1.1,
+                    "ollamaStop": ["</entry>"],
+                    "llamaMinP": 0.05
+                },
+                "dynamicMemory": {"temperature": 0.4}
+            }
+        });
+        let parameters = legacy_model_parameters("llamacpp", advanced.as_object().expect("object"))
+            .expect("model parameters");
+        assert_eq!(parameters.chat_parameters.temperature, Some(0.7));
+        let lorebook = &parameters.lorebook_generator_parameters;
+        assert_eq!(lorebook.temperature, ParameterOverride::Set(0.25));
+        assert_eq!(lorebook.max_output_tokens, ParameterOverride::Set(900));
+        assert_eq!(lorebook.repetition_penalty, ParameterOverride::Set(1.1));
+        assert_eq!(
+            lorebook.ollama.stop,
+            ParameterOverride::Set(vec!["</entry>".to_owned()])
+        );
+        assert_eq!(lorebook.top_p, ParameterOverride::Inherit);
+        assert_eq!(
+            Value::Object(parameters.retained.clone()),
+            json!({
+                "llamaGpuLayers": 33,
+                "llamaKvType": "q8_0",
+                "sdSteps": 28,
+                "featureGenerationSettings": {
+                    "lorebookGenerator": {"llamaMinP": 0.05},
+                    "dynamicMemory": {"temperature": 0.4}
+                }
+            })
+        );
+        assert_eq!(
+            parameters.unsupported_fields,
+            vec![
+                "featureGenerationSettings".to_owned(),
+                "llamaGpuLayers".to_owned(),
+                "llamaKvType".to_owned(),
+                "sdSteps".to_owned(),
+            ]
+        );
+        let config = ModelProfileConfig {
+            chat_parameters: parameters.chat_parameters,
+            lorebook_generator_parameters: parameters.lorebook_generator_parameters,
+            capabilities: ModelCapabilities::default(),
+            legacy_advanced_settings: parameters.retained,
+        };
+        let round_trip: ModelProfileConfig =
+            serde_json::from_value(serde_json::to_value(&config).expect("serialize config"))
+                .expect("deserialize config");
+        assert_eq!(round_trip, config);
     }
 
     #[test]

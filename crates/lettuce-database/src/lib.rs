@@ -1904,6 +1904,7 @@ mod tests {
             display_name: "Example".into(),
             kind: ModelKind::Chat,
             config: ModelProfileConfig {
+                legacy_advanced_settings: Default::default(),
                 lorebook_generator_parameters: Default::default(),
                 chat_parameters: lettuce_models::ChatParameterProfile {
                     temperature: Some(0.8),

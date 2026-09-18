@@ -9,12 +9,11 @@ use lettuce_context::{
     PromptEntryRole, PromptPurpose,
 };
 use lettuce_models::{
-    CapabilityEvidence, CapabilityEvidenceSource, CapabilityStatus, ChatParameterProfile,
-    CustomAuth, CustomModelList, CustomProviderConfig, CustomRoles, CustomToolChoiceMode, JsonPath,
-    ModalityCapabilities, ModelCapabilities, ModelKind, ModelProfileConfig, OllamaOptions,
-    OpenRouterOptions, ParameterSupport, PromptCacheRetention, PromptCaching, ProviderAccount,
-    ProviderConfig, ProviderProtocol, QueryParameterName, ReasoningEffort, ReasoningMode,
-    SecretHeader, WireRole, validate_provider_connection,
+    CapabilityEvidence, CapabilityEvidenceSource, CapabilityStatus, CustomAuth, CustomModelList,
+    CustomProviderConfig, CustomRoles, CustomToolChoiceMode, JsonPath, ModalityCapabilities,
+    ModelCapabilities, ModelKind, ModelProfileConfig, ParameterSupport, ProviderAccount,
+    ProviderConfig, ProviderProtocol, QueryParameterName, SecretHeader, WireRole,
+    validate_provider_connection,
 };
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef, SecretValue};
 use lettuce_transfer::{
@@ -1118,8 +1117,13 @@ fn plan_legacy_provider_models_with_limits(
             Some(Value::Object(object)) => object,
             _ => Map::new(),
         };
-        let (chat_parameters, mapped_advanced_fields) =
-            legacy_chat_parameters(&provider_kind, &advanced)?;
+        let lettuce_transfer::LegacyModelParameters {
+            chat_parameters,
+            lorebook_generator_parameters,
+            retained,
+            unsupported_fields,
+        } = lettuce_transfer::legacy_model_parameters(&provider_kind, &advanced)
+            .map_err(|_| model_malformed("advanced_model_settings"))?;
         let account = provider_accounts
             .iter()
             .find(|account| account.id == provider_account_id)
@@ -1152,8 +1156,9 @@ fn plan_legacy_provider_models_with_limits(
         };
         let config = ModelProfileConfig {
             chat_parameters,
-            lorebook_generator_parameters: Default::default(),
+            lorebook_generator_parameters,
             capabilities,
+            legacy_advanced_settings: retained,
         };
         config
             .chat_parameters
@@ -1182,7 +1187,7 @@ fn plan_legacy_provider_models_with_limits(
             config,
             prompt_template_id: normalized_optional(prompt_template_id),
             deprecated_system_prompt: normalized_optional(deprecated_system_prompt),
-            deferred_advanced_fields: deferred_fields(&advanced, &mapped_advanced_fields),
+            deferred_advanced_fields: unsupported_fields,
             created_at: TimestampMillis::new(created_at),
         });
     }
@@ -2074,206 +2079,13 @@ fn parse_modalities(
     Ok(modalities)
 }
 
-fn legacy_chat_parameters(
-    provider_kind: &str,
-    object: &Map<String, Value>,
-) -> Result<(ChatParameterProfile, Vec<&'static str>), LegacyDatabasePreflightError> {
-    let mapped = vec![
-        "temperature",
-        "topP",
-        "topK",
-        "maxOutputTokens",
-        "contextLength",
-        "frequencyPenalty",
-        "presencePenalty",
-        "ollamaNumCtx",
-        "ollamaNumPredict",
-        "ollamaNumKeep",
-        "ollamaNumBatch",
-        "ollamaNumGpu",
-        "ollamaNumThread",
-        "ollamaTfsZ",
-        "ollamaTypicalP",
-        "ollamaMinP",
-        "ollamaMirostat",
-        "ollamaMirostatTau",
-        "ollamaMirostatEta",
-        "ollamaRepeatPenalty",
-        "ollamaSeed",
-        "ollamaStop",
-        "reasoningEnabled",
-        "reasoningEffort",
-        "reasoningBudgetTokens",
-        "promptCachingEnabled",
-        "promptCachingTtl",
-        "openRouterProvider",
-    ];
-    let f64_value = |key: &'static str| -> Result<Option<f64>, LegacyDatabasePreflightError> {
-        object
-            .get(key)
-            .filter(|value| !value.is_null())
-            .map(|value| {
-                value
-                    .as_f64()
-                    .ok_or_else(|| model_malformed("advanced_model_settings"))
-            })
-            .transpose()
-    };
-    let u32_value = |key: &'static str| -> Result<Option<u32>, LegacyDatabasePreflightError> {
-        object
-            .get(key)
-            .filter(|value| !value.is_null())
-            .map(|value| {
-                value
-                    .as_u64()
-                    .and_then(|value| u32::try_from(value).ok())
-                    .ok_or_else(|| model_malformed("advanced_model_settings"))
-            })
-            .transpose()
-    };
-    let bool_value = |key: &'static str| -> Result<Option<bool>, LegacyDatabasePreflightError> {
-        object
-            .get(key)
-            .filter(|value| !value.is_null())
-            .map(|value| {
-                value
-                    .as_bool()
-                    .ok_or_else(|| model_malformed("advanced_model_settings"))
-            })
-            .transpose()
-    };
-    let string_value = |key: &'static str| -> Result<Option<String>, LegacyDatabasePreflightError> {
-        object
-            .get(key)
-            .filter(|value| !value.is_null())
-            .map(|value| {
-                value
-                    .as_str()
-                    .map(str::to_owned)
-                    .ok_or_else(|| model_malformed("advanced_model_settings"))
-            })
-            .transpose()
-    };
-    let positive_or_none = |value: Option<u32>| value.filter(|value| *value != 0);
-    let reasoning_mode = bool_value("reasoningEnabled")?.map(|enabled| {
-        if enabled {
-            ReasoningMode::Enabled
-        } else {
-            ReasoningMode::Disabled
-        }
-    });
-    let reasoning_effort = if reasoning_mode == Some(ReasoningMode::Disabled) {
-        None
-    } else {
-        string_value("reasoningEffort")?
-            .map(|value| match value.as_str() {
-                "low" => Ok(ReasoningEffort::Low),
-                "medium" => Ok(ReasoningEffort::Medium),
-                "high" => Ok(ReasoningEffort::High),
-                _ => Err(model_malformed("advanced_model_settings")),
-            })
-            .transpose()?
-    };
-    let reasoning_budget_tokens = if reasoning_mode == Some(ReasoningMode::Disabled) {
-        None
-    } else {
-        u32_value("reasoningBudgetTokens")?
-    };
-    let prompt_caching = match bool_value("promptCachingEnabled")? {
-        None => None,
-        Some(false) => Some(PromptCaching::Disabled),
-        Some(true) => {
-            let default = if provider_kind == "openai" {
-                "in_memory"
-            } else {
-                "5min"
-            };
-            let retention = match string_value("promptCachingTtl")?
-                .unwrap_or_else(|| default.to_owned())
-                .as_str()
-            {
-                "in_memory" => PromptCacheRetention::InMemory,
-                "5min" => PromptCacheRetention::FiveMinutes,
-                "1h" => PromptCacheRetention::OneHour,
-                "24h" => PromptCacheRetention::TwentyFourHours,
-                _ => return Err(model_malformed("advanced_model_settings")),
-            };
-            Some(PromptCaching::Enabled { retention })
-        }
-    };
-    let stop = object
-        .get("ollamaStop")
-        .filter(|value| !value.is_null())
-        .map(|value| {
-            value
-                .as_array()
-                .ok_or_else(|| model_malformed("advanced_model_settings"))?
-                .iter()
-                .map(|value| {
-                    value
-                        .as_str()
-                        .map(str::to_owned)
-                        .ok_or_else(|| model_malformed("advanced_model_settings"))
-                })
-                .collect()
-        })
-        .transpose()?;
-    let pinned_provider = object
-        .get("openRouterProvider")
-        .filter(|value| !value.is_null())
-        .map(|value| {
-            value
-                .as_object()
-                .and_then(|value| value.get("id"))
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .ok_or_else(|| model_malformed("advanced_model_settings"))
-        })
-        .transpose()?;
-    Ok((
-        ChatParameterProfile {
-            temperature: f64_value("temperature")?,
-            top_p: f64_value("topP")?,
-            top_k: u32_value("topK")?,
-            max_output_tokens: u32_value("maxOutputTokens")?
-                .or(u32_value("ollamaNumPredict")?)
-                .and_then(|value| (value != 0).then_some(value)),
-            context_length: positive_or_none(
-                u32_value("contextLength")?.or(u32_value("ollamaNumCtx")?),
-            ),
-            frequency_penalty: f64_value("frequencyPenalty")?,
-            presence_penalty: f64_value("presencePenalty")?,
-            repetition_penalty: f64_value("ollamaRepeatPenalty")?,
-            reasoning_mode,
-            reasoning_effort,
-            reasoning_budget_tokens,
-            prompt_caching,
-            ollama: OllamaOptions {
-                num_keep: u32_value("ollamaNumKeep")?,
-                num_batch: u32_value("ollamaNumBatch")?,
-                num_gpu: u32_value("ollamaNumGpu")?,
-                num_thread: u32_value("ollamaNumThread")?,
-                tfs_z: f64_value("ollamaTfsZ")?,
-                typical_p: f64_value("ollamaTypicalP")?,
-                min_p: f64_value("ollamaMinP")?,
-                mirostat: u32_value("ollamaMirostat")?,
-                mirostat_tau: f64_value("ollamaMirostatTau")?,
-                mirostat_eta: f64_value("ollamaMirostatEta")?,
-                seed: u32_value("ollamaSeed")?,
-                stop,
-            },
-            openrouter: OpenRouterOptions { pinned_provider },
-        },
-        mapped,
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
 
     use super::*;
     use lettuce_context::{PromptEntryPosition, PromptEntryRole, PromptPurpose};
+    use lettuce_models::{PromptCacheRetention, PromptCaching, ReasoningEffort, ReasoningMode};
     use lettuce_types::MediaBlobId;
 
     fn legacy_database(version: i64) -> std::path::PathBuf {

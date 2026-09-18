@@ -979,6 +979,7 @@ mod tests {
             display_name: "Memory model".into(),
             kind: ModelKind::Chat,
             config: ModelProfileConfig {
+                legacy_advanced_settings: Default::default(),
                 lorebook_generator_parameters: Default::default(),
                 chat_parameters: Default::default(),
                 capabilities: ModelCapabilities {

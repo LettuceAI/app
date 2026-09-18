@@ -58,3 +58,11 @@ stores endpoint display names, logos, or pricing cache data.
 Provider accounts and model profiles expose serialization only for the
 validated canonical backup snapshot. Secret fields remain opaque references;
 plaintext values are never model-domain data.
+
+`ModelProfileConfig.legacy_advanced_settings` keeps the legacy per-model
+`advanced_model_settings` keys that have no typed destination yet, verbatim:
+llama.cpp and stable-diffusion.cpp runtime keys (`llama*`, `sd*`, `sdcpp*`),
+`forceSendThinkingState` and the feature generation slots other than the
+lorebook generator. It is empty (and not serialized) for every non-legacy
+profile. The embedded runtime slices move these keys into typed settings; until
+then nothing reads them, but a legacy import no longer loses them.

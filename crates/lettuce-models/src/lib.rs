@@ -492,6 +492,11 @@ pub struct ModelProfileConfig {
     #[serde(default)]
     pub lorebook_generator_parameters: ChatParameterOverrides,
     pub capabilities: ModelCapabilities,
+    /// Legacy advanced model settings with no typed destination yet (llama.cpp
+    /// and stable-diffusion.cpp runtime keys, the other feature generation
+    /// slots), kept verbatim by the legacy import until their runtimes own them.
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub legacy_advanced_settings: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

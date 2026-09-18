@@ -1275,6 +1275,7 @@ mod tests {
                 display_name: "Example Chat".to_owned(),
                 kind: lettuce_models::ModelKind::Chat,
                 config: ModelProfileConfig {
+                    legacy_advanced_settings: Default::default(),
                     chat_parameters: Default::default(),
                     lorebook_generator_parameters: Default::default(),
                     capabilities: lettuce_models::ModelCapabilities {
