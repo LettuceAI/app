@@ -344,6 +344,12 @@ impl Read for ResumableInstall {
     }
 }
 
+impl Seek for ResumableInstall {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        self.file.seek(position)
+    }
+}
+
 fn create_parent(root: &cap_std::fs::Dir, key: &ObjectKey) -> Result<(), PlatformError> {
     let parent = &key.segments[..key.segments.len() - 1];
     let mut path = PathBuf::new();

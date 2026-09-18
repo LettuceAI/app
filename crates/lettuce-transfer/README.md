@@ -7,18 +7,24 @@ consistent encrypted backups, staged restore, and rollback.
 
 Compatibility transfer and full backup remain separate internal modules.
 
-Backup format version 2 seals a bounded, versioned whole-profile envelope with
-Argon2id-derived keys and independently generated XChaCha20-Poly1305 nonces for
-every section. The manifest binds each safe logical entry name, schema,
-plaintext size and BLAKE3 content hash into the authenticated data. Inspection
-is deterministic and exposes metadata only; opening returns no section unless
-the password, complete manifest and every encrypted section authenticate and
-match their declared size and hash. Duplicate or unsafe names, duplicate
-nonces, oversized inventories, truncation and trailing data reject the whole
-envelope.
+Backup format version 2 is a streamed file: a plaintext header with only the
+magic and the Argon2id parameters and salt (written at RFC 9106's 64 MiB, t=3,
+p=4; read within a bounded range so later bumps stay readable), then every
+section encrypted with XChaCha20-Poly1305 in 1 MiB chunks (random 19-byte
+per-section nonce prefix, chunk counter and last-chunk flag; the header hash
+and section index are the associated data), then the encrypted manifest
+(names, schemas, sizes, BLAKE3 hashes) and a plaintext footer with its nonce
+and length. Nothing about the content is visible without the password (backlog
+#17: the earlier plaintext manifest exposed section hashes and sizes, and media
+section names are image hashes). `BackupWriter` appends sections from any
+reader and `BackupReader` opens a seekable source and decrypts one section at a
+time into memory or a sink, so a section never has to be held whole to be
+written or restored. Reordered, swapped, truncated or extended data, duplicate
+or unsafe names and duplicate nonce prefixes reject the backup.
+`verify_backup_frame` checks the plaintext frame without the password.
 
 Backup reception uses confined resumable partial files and commits to a new
-path only after the complete envelope and its expected hash verify. An existing
+path only after the file's expected hash (streamed) and frame verify. An existing
 backup is replayed when identical and never replaced. This corrects the legacy
 backup format's fast password hash, reused encryption nonce and unbound entry
 inventory. The uncompressed envelope also avoids archive traversal and
