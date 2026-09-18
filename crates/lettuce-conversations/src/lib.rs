@@ -1052,6 +1052,7 @@ mod tests {
             scene: PatchValue::Keep,
             speaker_selection: PatchValue::Keep,
             companion_clock: PatchValue::Keep,
+            model_settings: PatchValue::Keep,
         };
         assert!(
             PreparedConversationSettingsUpdate::new(command(patch.clone()), Vec::new()).is_ok()
@@ -2470,6 +2471,7 @@ mod tests {
             scene: PatchValue::Keep,
             speaker_selection: PatchValue::Keep,
             companion_clock: PatchValue::Keep,
+            model_settings: PatchValue::Keep,
         };
         let command = UpdateConversationSettings {
             conversation_id: ConversationId::new(),
@@ -2504,6 +2506,7 @@ mod tests {
         );
         let existing = CurrentConversationSettings {
             companion_clock: None,
+            model_settings: Default::default(),
             revision: Revision::INITIAL,
             author_note: None,
             author_note_provenance: SettingProvenance::Disabled,
@@ -2565,6 +2568,7 @@ mod tests {
             scene: PatchValue::Keep,
             speaker_selection: PatchValue::Keep,
             companion_clock: PatchValue::Keep,
+            model_settings: PatchValue::Keep,
         };
         let created = set.apply(None, None).expect("create settings");
         assert_eq!(created.revision, Revision::INITIAL);
@@ -2590,6 +2594,7 @@ mod tests {
             scene: PatchValue::UseLaunchDefault,
             speaker_selection: PatchValue::Keep,
             companion_clock: PatchValue::Keep,
+            model_settings: PatchValue::Keep,
         };
         let inherited = use_launch_default
             .apply(Some(&created), Some(Revision::INITIAL))
@@ -2627,6 +2632,7 @@ mod tests {
             scene: PatchValue::Clear,
             speaker_selection: PatchValue::Keep,
             companion_clock: PatchValue::Keep,
+            model_settings: PatchValue::Keep,
         };
         let disabled = clear
             .apply(Some(&created), Some(Revision::INITIAL))
@@ -2760,6 +2766,7 @@ mod tests {
             scene: PatchValue::Set(scene),
             speaker_selection: PatchValue::Keep,
             companion_clock: PatchValue::Keep,
+            model_settings: PatchValue::Keep,
         };
         let current = patch.apply(None, None).expect("context settings");
         assert_eq!(current.prompt, Some(prompt.clone()));
@@ -2846,6 +2853,7 @@ mod tests {
     fn persisted_settings_require_a_revision_and_validate_resolved_values() {
         let mut settings = CurrentConversationSettings {
             companion_clock: None,
+            model_settings: Default::default(),
             revision: Revision::INITIAL,
             author_note: None,
             author_note_provenance: SettingProvenance::Disabled,

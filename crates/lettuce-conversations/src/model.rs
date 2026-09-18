@@ -90,6 +90,13 @@ pub enum ParticipantSource {
 pub struct CurrentConversationSettings {
     #[serde(default)]
     pub companion_clock: Option<crate::CompanionClockSettings>,
+    /// Model settings this conversation overrides (legacy session
+    /// `advanced_model_settings`).
+    #[serde(
+        default,
+        skip_serializing_if = "lettuce_models::ModelSettingsLayer::is_empty"
+    )]
+    pub model_settings: lettuce_models::ModelSettingsLayer,
     pub revision: Revision,
     pub author_note: Option<String>,
     pub author_note_provenance: crate::commands::SettingProvenance,
@@ -120,6 +127,11 @@ impl CurrentConversationSettings {
         if let Some(clock) = self.companion_clock {
             clock.validate()?;
         }
+        self.model_settings
+            .validate()
+            .map_err(|_| ValidationError::InvalidValue {
+                field: "conversation_settings.model_settings",
+            })?;
         if self.revision.get() == 0 {
             return Err(ValidationError::ZeroRevision);
         }

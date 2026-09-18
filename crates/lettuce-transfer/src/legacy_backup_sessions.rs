@@ -58,13 +58,7 @@ pub struct LegacyBackupDirectSession {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LegacyBackupSessionGenerationSettings {
-    pub temperature: Option<f64>,
-    pub top_p: Option<f64>,
-    pub max_output_tokens: Option<u64>,
-    pub frequency_penalty: Option<f64>,
-    pub presence_penalty: Option<f64>,
-    pub top_k: Option<u64>,
-    pub advanced_json: Option<String>,
+    pub model_settings: lettuce_models::ModelSettingsLayer,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -341,6 +335,7 @@ fn map_sessions(
             });
         }
         validate_session_settings(&row, &path)?;
+        let model_settings = session_model_settings(&row, &path, notices);
         let created_at = timestamp(row.created_at, &format!("{path}.created_at"))?;
         let updated_at = timestamp(row.updated_at, &format!("{path}.updated_at"))?;
         if created_at > updated_at {
@@ -414,18 +409,7 @@ fn map_sessions(
             voice_autoplay: row.voice_autoplay,
             prompt_source_id,
             lorebook_source_ids_override: lorebook_override,
-            generation_settings: LegacyBackupSessionGenerationSettings {
-                temperature: row.temperature,
-                top_p: row.top_p,
-                max_output_tokens: optional_count(
-                    row.max_output_tokens,
-                    &format!("{path}.max_output_tokens"),
-                )?,
-                frequency_penalty: row.frequency_penalty,
-                presence_penalty: row.presence_penalty,
-                top_k: optional_count(row.top_k, &format!("{path}.top_k"))?,
-                advanced_json: row.advanced_model_settings,
-            },
+            generation_settings: LegacyBackupSessionGenerationSettings { model_settings },
             companion_state_json: row.companion_state,
             memories_json: row.memories,
             memory_embeddings_json: row.memory_embeddings,
@@ -740,6 +724,69 @@ fn reconcile_authored_session_links(
         }
     }
     Ok(())
+}
+
+/// Legacy used a session's `advanced_model_settings` when it parsed and
+/// otherwise its flat sampling columns (`build_session_advanced_model_settings`).
+/// That fallback also built the settings from the struct default, which turned
+/// prompt caching off for the session and so overrode the model; the side
+/// effect is not carried. Feature generation slots only ever applied at the
+/// model level, so a session's are left out with a Lossy notice.
+fn session_model_settings(
+    row: &SessionRow,
+    path: &str,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> lettuce_models::ModelSettingsLayer {
+    let advanced = row
+        .advanced_model_settings
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .and_then(|value| match value {
+            Value::Object(object) => Some(object),
+            _ => None,
+        });
+    if let Some(object) = advanced {
+        let parameters = crate::legacy_model_parameters("", &object);
+        for (kind, field) in parameters
+            .lossy_fields
+            .iter()
+            .map(|field| (LegacyBackupConversionNoticeKind::Lossy, field.as_str()))
+            .chain((!parameters.feature_parameters.is_empty()).then_some((
+                LegacyBackupConversionNoticeKind::Lossy,
+                "featureGenerationSettings",
+            )))
+            .chain(parameters.unknown_fields.iter().map(|field| {
+                (
+                    LegacyBackupConversionNoticeKind::Unsupported,
+                    field.as_str(),
+                )
+            }))
+        {
+            notices.push(notice(
+                kind,
+                &format!("{path}.advanced_model_settings.{field}"),
+            ));
+        }
+        return lettuce_models::ModelSettingsLayer {
+            chat_parameters: parameters.chat_parameters,
+            llama_cpp: parameters.llama_cpp,
+            stable_diffusion: parameters.stable_diffusion,
+        };
+    }
+    lettuce_models::ModelSettingsLayer {
+        chat_parameters: lettuce_models::ChatParameterProfile {
+            temperature: row.temperature,
+            top_p: row.top_p,
+            max_output_tokens: row
+                .max_output_tokens
+                .and_then(|value| u32::try_from(value).ok()),
+            frequency_penalty: row.frequency_penalty,
+            presence_penalty: row.presence_penalty,
+            top_k: row.top_k.and_then(|value| u32::try_from(value).ok()),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
 }
 
 fn validate_session_settings(row: &SessionRow, path: &str) -> Result<(), LegacyBackupSessionError> {
@@ -1131,6 +1178,48 @@ mod tests {
         assert!(plan.notices.iter().any(|notice| {
             notice.kind == LegacyBackupConversionNoticeKind::Lossy
                 && notice.field == "[].currentGenerationAttempts"
+        }));
+    }
+
+    #[test]
+    fn session_model_settings_use_the_json_or_else_the_flat_columns() {
+        let character = id(1);
+        let with_json = id(2);
+        let flat = id(3);
+        let mut json_session = session(&with_json, &character, None, &with_json, None, Vec::new());
+        json_session["advanced_model_settings"] = json!(
+            "{\"temperature\":0.5,\"llamaGpuLayers\":10,\"featureGenerationSettings\":{\"helpMeReply\":{\"temperature\":0.2}}}"
+        );
+        let mut flat_session = session(&flat, &character, None, &flat, None, Vec::new());
+        flat_session["advanced_model_settings"] = Value::Null;
+        let plan = plan_legacy_backup_direct_sessions(source(
+            json!([json_session, flat_session]),
+            &character,
+        ))
+        .expect("direct session plan");
+        let by_id = |id: &str| {
+            &plan
+                .sessions
+                .iter()
+                .find(|session| session.source_id == id)
+                .expect("session")
+                .generation_settings
+                .model_settings
+        };
+        let json_settings = by_id(&with_json);
+        assert_eq!(json_settings.chat_parameters.temperature, Some(0.5));
+        assert_eq!(json_settings.chat_parameters.top_p, None);
+        assert_eq!(json_settings.llama_cpp.gpu_layers, Some(10));
+        let flat_settings = by_id(&flat);
+        assert_eq!(flat_settings.chat_parameters.temperature, Some(0.8));
+        assert_eq!(flat_settings.chat_parameters.top_k, Some(40));
+        assert_eq!(flat_settings.chat_parameters.max_output_tokens, Some(512));
+        assert_eq!(flat_settings.chat_parameters.prompt_caching, None);
+        assert!(plan.notices.iter().any(|notice| {
+            notice.kind == LegacyBackupConversionNoticeKind::Lossy
+                && notice
+                    .field
+                    .ends_with(".advanced_model_settings.featureGenerationSettings")
         }));
     }
 

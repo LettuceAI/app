@@ -588,7 +588,7 @@ mod tests {
                             "frequency_penalty": null,
                             "presence_penalty": null,
                             "top_k": null,
-                            "advanced_model_settings": null,
+                            "advanced_model_settings": "{\"temperature\":0.55,\"llamaThreads\":8}",
                             "companion_state": null,
                             "memories": "[]",
                             "memory_embeddings": "[]",
@@ -656,6 +656,17 @@ mod tests {
             graph.conversation_history.conversations[0].messages.len(),
             2
         );
+        let settings = graph.conversation_history.conversations[0]
+            .aggregate
+            .conversation
+            .current_settings
+            .as_ref()
+            .expect("conversation settings");
+        assert_eq!(
+            settings.model_settings.chat_parameters.temperature,
+            Some(0.55)
+        );
+        assert_eq!(settings.model_settings.llama_cpp.threads, Some(8));
         let mut exported = graph.clone();
         lettuce_transfer::canonicalize_and_validate(&mut exported)
             .expect("a legacy-restored database backs up again");

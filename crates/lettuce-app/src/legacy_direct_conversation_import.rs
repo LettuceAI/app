@@ -66,6 +66,7 @@ pub(crate) struct SessionSettingsSource<'a> {
     pub prompt_snapshot_purpose: lettuce_conversations::PromptPurposeSnapshot,
     pub lorebook_source_ids: Option<&'a [String]>,
     pub speaker_selection: Option<lettuce_conversations::GroupSpeakerSelectionSnapshot>,
+    pub model_settings: &'a lettuce_models::ModelSettingsLayer,
 }
 
 /// One legacy chat row in the shape both direct and group sessions share.
@@ -388,6 +389,7 @@ where
                 prompt_snapshot_purpose: lettuce_conversations::PromptPurposeSnapshot::Direct,
                 lorebook_source_ids: session.lorebook_source_ids_override.as_deref(),
                 speaker_selection: None,
+                model_settings: &session.generation_settings.model_settings,
             },
         )?;
         snapshots.extend(settings_snapshots);
@@ -901,12 +903,14 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
         && prompt.is_none()
         && lorebooks_provenance == SettingProvenance::LaunchInherited
         && input.speaker_selection.is_none()
+        && input.model_settings.is_empty()
     {
         return Ok((None, drafts));
     }
     Ok((
         Some(CurrentConversationSettings {
             companion_clock: None,
+            model_settings: input.model_settings.clone(),
             revision: Revision::INITIAL,
             author_note_provenance: provenance(author_note.is_some()),
             author_note,

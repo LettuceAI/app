@@ -655,3 +655,12 @@ Lossy notice instead of aborting the import (legacy accepted
 `ollamaRepeatPenalty: 0`, which the new profile rejects), keys legacy never defined
 get an Unsupported notice, null values are ignored, and the backend-owned
 `llamaLastRuntimeReport` diagnostics are dropped with a Lossy notice.
+
+Direct sessions now carry `generation_settings.model_settings`: the session's
+`advanced_model_settings` through the same mapper when it parses as an object,
+otherwise the flat temperature/top_p/max_output_tokens/penalty/top_k columns
+(legacy `build_session_advanced_model_settings`). Legacy's flat fallback also
+turned prompt caching off for the session through the struct default, which
+overrode the model; that side effect is corrected, not carried. Session feature
+slots never applied in legacy and are left out with a Lossy notice. The direct
+conversation importer writes the layer into the conversation's current settings.

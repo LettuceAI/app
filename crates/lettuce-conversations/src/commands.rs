@@ -976,6 +976,8 @@ pub enum PatchValue<T> {
 pub struct CurrentConversationSettingsPatch {
     #[serde(default)]
     pub companion_clock: PatchValue<crate::CompanionClockSettings>,
+    #[serde(default)]
+    pub model_settings: PatchValue<lettuce_models::ModelSettingsLayer>,
     pub author_note: PatchValue<String>,
     pub memory: PatchValue<crate::snapshot::MemorySettingsSnapshot>,
     pub model_override: PatchValue<ModelSelectionSnapshot>,
@@ -994,6 +996,13 @@ impl CurrentConversationSettingsPatch {
     pub fn validate(&self) -> Result<(), ValidationError> {
         if let PatchValue::Set(clock) = self.companion_clock {
             clock.validate()?;
+        }
+        if let PatchValue::Set(settings) = &self.model_settings {
+            settings
+                .validate()
+                .map_err(|_| ValidationError::InvalidValue {
+                    field: "conversation_settings.model_settings",
+                })?;
         }
         if matches!(self.speaker_selection, PatchValue::Clear) {
             return Err(ValidationError::InvalidReference {
@@ -1101,6 +1110,7 @@ impl CurrentConversationSettingsPatch {
         }
         let empty = crate::model::CurrentConversationSettings {
             companion_clock: None,
+            model_settings: Default::default(),
             revision,
             author_note: None,
             author_note_provenance: SettingProvenance::LaunchInherited,
@@ -1181,6 +1191,11 @@ impl CurrentConversationSettingsPatch {
                 PatchValue::Keep => base.companion_clock,
                 PatchValue::Set(clock) => Some(clock),
                 PatchValue::Clear | PatchValue::UseLaunchDefault => None,
+            },
+            model_settings: match &self.model_settings {
+                PatchValue::Keep => base.model_settings.clone(),
+                PatchValue::Set(settings) => settings.clone(),
+                PatchValue::Clear | PatchValue::UseLaunchDefault => Default::default(),
             },
             revision,
             author_note,

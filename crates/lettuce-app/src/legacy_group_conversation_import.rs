@@ -183,6 +183,7 @@ where
                 lorebook_source_ids: Some(&session.lorebook_source_ids),
                 speaker_selection: (speaker_selection != details.group.speaker_selection)
                     .then_some(speaker_selection),
+                model_settings: &lettuce_models::ModelSettingsLayer::default(),
             },
         )?;
         snapshots.extend(settings_snapshots);

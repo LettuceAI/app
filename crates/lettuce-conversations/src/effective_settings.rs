@@ -645,6 +645,7 @@ mod tests {
                 scene: PatchValue::Keep,
                 speaker_selection: PatchValue::Keep,
                 companion_clock: PatchValue::Keep,
+                model_settings: PatchValue::Keep,
             }
             .apply(None, None)
             .expect("settings override"),

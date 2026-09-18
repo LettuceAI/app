@@ -68,6 +68,7 @@ CREATE TABLE conversation_settings (
     speaker_selection TEXT CHECK (speaker_selection IS NULL OR speaker_selection IN ('llm', 'heuristic', 'round_robin', 'director', 'director_action')),
     speaker_selection_provenance TEXT NOT NULL DEFAULT 'launch_inherited' CHECK (speaker_selection_provenance IN ('launch_inherited', 'current_override')),
     companion_clock_json TEXT CHECK (companion_clock_json IS NULL OR (json_valid(companion_clock_json) AND json_extract(companion_clock_json, '$.format_version') = 1)),
+    model_settings_json TEXT CHECK (model_settings_json IS NULL OR (json_valid(model_settings_json) AND json_extract(model_settings_json, '$.format_version') = 1)),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     CHECK (author_note IS NULL OR (length(trim(author_note)) > 0 AND length(CAST(author_note AS BLOB)) <= 1048576)),

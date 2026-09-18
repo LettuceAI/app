@@ -222,3 +222,12 @@ The optional field is backward-compatible for existing snapshot documents and
 is valid only with the LLM policy. Its protected model artifact freezes the
 model and provider-account revisions independently from the responding member's
 generation model.
+
+`CurrentConversationSettings.model_settings` (`lettuce_models::ModelSettingsLayer`:
+chat parameters, llama.cpp and stable-diffusion settings) holds the model
+settings a conversation overrides, the legacy session `advanced_model_settings`.
+Legacy resolved every field as session, then model, then app; an unset field
+defers to the next layer. It is patched with `CurrentConversationSettingsPatch
+.model_settings`, stored in `conversation_settings.model_settings_json` (NULL
+when empty) and travels with the conversation history in backups. Runtime
+resolution wiring is a later slice.

@@ -1417,7 +1417,7 @@ fn read_current_settings(
 {
     transaction
         .query_row(
-            "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, companion_clock_json FROM conversation_settings WHERE conversation_id = ?1",
+            "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, companion_clock_json, model_settings_json FROM conversation_settings WHERE conversation_id = ?1",
             [conversation_id.to_string()],
             slice::read_settings,
         )
@@ -1447,7 +1447,7 @@ fn write_settings(
     if create {
         transaction
             .execute(
-                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at, companion_clock_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?20, ?21, ?19, ?19, ?22)",
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at, companion_clock_json, model_settings_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?20, ?21, ?19, ?19, ?22, ?23)",
                 params![
                     conversation_id.to_string(),
                     revision,
@@ -1471,6 +1471,7 @@ fn write_settings(
                     settings.speaker_selection.map(slice::speaker_selection_name),
                     slice::provenance_name(settings.speaker_selection_provenance),
                     settings.companion_clock.as_ref().map(slice::encode).transpose()?,
+                    crate::conversation_vertical_slice::encode_model_settings(&settings.model_settings)?,
                 ],
             )
             .map_err(kernel::map_constraint)?;
@@ -1478,7 +1479,7 @@ fn write_settings(
     }
     let changed = transaction
         .execute(
-            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19, speaker_selection = ?21, speaker_selection_provenance = ?22, companion_clock_json = ?23 WHERE conversation_id = ?1 AND revision = ?20",
+            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19, speaker_selection = ?21, speaker_selection_provenance = ?22, companion_clock_json = ?23, model_settings_json = ?24 WHERE conversation_id = ?1 AND revision = ?20",
             params![
                 conversation_id.to_string(),
                 revision,
@@ -1503,6 +1504,7 @@ fn write_settings(
                 settings.speaker_selection.map(slice::speaker_selection_name),
                 slice::provenance_name(settings.speaker_selection_provenance),
                 settings.companion_clock.as_ref().map(slice::encode).transpose()?,
+                crate::conversation_vertical_slice::encode_model_settings(&settings.model_settings)?,
             ],
         )
         .map_err(kernel::map_constraint)?;
@@ -11041,6 +11043,7 @@ mod tests {
                 scene: PatchValue::Keep,
                 speaker_selection: PatchValue::Keep,
                 companion_clock: PatchValue::Keep,
+                model_settings: PatchValue::Keep,
             }
         };
         let prepared = |command: UpdateConversationSettings| {
@@ -11456,6 +11459,7 @@ mod tests {
         let patch = |prompt: PatchValue<lettuce_conversations::PromptLaunchSnapshot>| {
             CurrentConversationSettingsPatch {
                 companion_clock: PatchValue::Keep,
+                model_settings: PatchValue::Keep,
                 author_note: PatchValue::Keep,
                 memory: PatchValue::Keep,
                 model_override: PatchValue::Keep,
@@ -11592,6 +11596,7 @@ mod tests {
              scene: PatchValue<lettuce_conversations::SceneLaunchSnapshot>| {
                 CurrentConversationSettingsPatch {
                     companion_clock: PatchValue::Keep,
+                    model_settings: PatchValue::Keep,
                     author_note: PatchValue::Keep,
                     memory: PatchValue::Keep,
                     model_override: PatchValue::Keep,
