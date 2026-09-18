@@ -103,8 +103,8 @@ personas, lorebooks, characters, groups and their lorebook bindings with their
 exported ids, revisions, timestamps and states, sets the persona default and
 global settings and selections to the exported rows, and inserts ASR learning
 records. Reading the restored database back yields the same sections. Companion
-characters still receive a fresh Soul state from their authored config because
-the export carries no Soul rows yet. Protected snapshot and replay artifacts are
+Soul states are replaced by their exported rows later in the same transaction.
+Protected snapshot and replay artifacts are
 written from their verified backup bytes, and every conversation goes through
 `conversation_history_writer` in exact mode: exported operations and outbox
 events instead of a generated create record, provider replay references,
