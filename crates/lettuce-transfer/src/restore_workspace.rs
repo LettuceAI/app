@@ -176,6 +176,29 @@ impl BackupRestoreWorkspace {
         Ok(())
     }
 
+    /// The staged bytes of one media blob, checked against its hash.
+    pub fn read_staged_media(
+        &self,
+        expected: &ContentHash,
+    ) -> Result<zeroize::Zeroizing<Vec<u8>>, BackupRestoreWorkspaceError> {
+        let mut installed = self
+            .files
+            .inspect(
+                &ObjectKey::from_segments(["media", "blobs", expected.as_str()])
+                    .map_err(BackupRestoreWorkspaceError::Platform)?,
+            )
+            .map_err(BackupRestoreWorkspaceError::Platform)?
+            .ok_or(BackupRestoreWorkspaceError::Conflict)?;
+        let mut bytes = zeroize::Zeroizing::new(Vec::new());
+        installed
+            .read_to_end(&mut bytes)
+            .map_err(|_| BackupRestoreWorkspaceError::Conflict)?;
+        if content_hash(&bytes) != *expected {
+            return Err(BackupRestoreWorkspaceError::Conflict);
+        }
+        Ok(bytes)
+    }
+
     fn stage_media(
         &self,
         content_hash: &ContentHash,

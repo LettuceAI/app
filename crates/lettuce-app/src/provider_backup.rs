@@ -6,10 +6,11 @@ use lettuce_conversations::{
 };
 use lettuce_settings::{SecretState, SecretStore};
 use lettuce_transfer::{
-    BackupConversationArtifact, BackupEnvelopeError, BackupWriter, MAX_BACKUP_ENTRIES,
-    PROVIDER_BACKUP_FIXED_SECTIONS, ProviderBackupGraphError, ProviderBackupSecret,
-    ProviderBackupSource, ProviderBackupSourceError, backup_artifact_section, backup_media_section,
-    plan_provider_backup_export, provider_backup_secret_requirements,
+    BACKUP_MEDIA_SECTION_SCHEMA, BackupConversationArtifact, BackupEnvelopeError, BackupWriter,
+    MAX_BACKUP_ENTRIES, PROVIDER_BACKUP_FIXED_SECTIONS, ProviderBackupGraphError,
+    ProviderBackupSecret, ProviderBackupSource, ProviderBackupSourceError,
+    backup_media_section_name, plan_provider_backup_export, provider_backup_secret_requirements,
+    verify_backup_artifact, verify_backup_media,
 };
 use lettuce_types::{ContentHash, TimestampMillis};
 use zeroize::Zeroizing;
@@ -128,13 +129,17 @@ where
             return Err(ProviderBackupGraphError::LimitExceeded.into());
         }
         let mut writer = BackupWriter::new(out, app_version, created_at, password)?;
-        for section in &plan.data_sections {
+        for section in plan.data_sections {
             writer.append_bytes(&section.name, &section.schema, &section.bytes)?;
         }
         for (content_hash, byte_size) in &plan.media {
             let bytes = self.read_media(content_hash, *byte_size)?;
-            let section = backup_media_section(content_hash, *byte_size, &bytes)?;
-            writer.append_bytes(&section.name, &section.schema, &section.bytes)?;
+            verify_backup_media(content_hash, *byte_size, &bytes)?;
+            writer.append_bytes(
+                &backup_media_section_name(content_hash),
+                BACKUP_MEDIA_SECTION_SCHEMA,
+                &bytes,
+            )?;
         }
         for descriptor in &plan.artifacts {
             let mut sink = BackupArtifactSink::new(descriptor.clone());
@@ -147,8 +152,8 @@ where
                     .export_replay(reference.artifact_id, &mut sink)?,
             }
             let artifact = sink.complete()?;
-            let section = backup_artifact_section(descriptor, &artifact.bytes)?;
-            writer.append_bytes(&section.name, &section.schema, &section.bytes)?;
+            let (name, schema) = verify_backup_artifact(descriptor, &artifact.bytes)?;
+            writer.append_bytes(&name, &schema, &artifact.bytes)?;
         }
         writer.finish().map_err(Into::into)
     }

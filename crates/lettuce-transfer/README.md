@@ -25,9 +25,9 @@ or unsafe names and duplicate nonce prefixes reject the backup.
 
 Export is planned by `plan_provider_backup_export` (validated graph, secret
 and data sections, then the ready media blobs and conversation artifacts in
-order); `backup_media_section` and `backup_artifact_section` check one object
-against its size and hash so the app appends it and drops it before loading
-the next. Section limits are 2 GiB per section and 1 TiB in total (backlog #15:
+order); `verify_backup_media` and `verify_backup_artifact` check one object
+against its size and hash so the app appends it without copying and drops it
+before loading the next. Section limits are 2 GiB per section and 1 TiB in total (backlog #15:
 the earlier 512 MiB total blocked large libraries; legacy had no limit). The
 version-1 decoder and the legacy database inventory keep their 512 MiB
 in-memory limits (`MAX_LEGACY_BACKUP_*`) until they stream too.
@@ -36,8 +36,11 @@ in-memory limits (`MAX_LEGACY_BACKUP_*`) until they stream too.
 received archive file), hashes it by streaming, decodes the data sections,
 secrets and conversation artifacts, and keeps media as `BackupMediaEntry`
 (hash, size, section) read one at a time through `read_media` from the
-authenticated reader the plan owns; staging and media installation pull each
-blob that way, so restore memory no longer grows with the media library.
+authenticated reader the plan owns. Media ciphertext is authenticated when
+staging reads it (a damaged blob fails staging with `Source`, before anything
+reaches the media root or a database); installation then reads the verified
+staged copy (`read_staged_media`), so the source is decrypted once per blob and
+restore memory no longer grows with the media library.
 
 `LegacyBackupMedia` carries each legacy file's size and BLAKE3 hash and reads
 its bytes on demand through `read` (re-checked against both): the live legacy

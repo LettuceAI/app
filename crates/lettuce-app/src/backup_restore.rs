@@ -183,9 +183,9 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
         restored_at: TimestampMillis,
     ) -> Result<BackupRestoreReceipt, BackupRestoreError> {
         let plan = lettuce_transfer::decode_provider_backup_restore_plan(backup, password)?;
-        let staging =
-            BackupRestoreWorkspace::open(self.workspace_root.join(restore_id.to_string()))?
-                .stage(&plan)?;
+        let workspace =
+            BackupRestoreWorkspace::open(self.workspace_root.join(restore_id.to_string()))?;
+        let staging = workspace.stage(&plan)?;
         let admission = lettuce_transfer::current_backup_restore_admission(
             restore_id,
             &plan,
@@ -211,7 +211,7 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
             lettuce_media::install_backup_media_object(
                 self.media_root,
                 &entry.content_hash,
-                &plan.read_media(entry)?,
+                &workspace.read_staged_media(&entry.content_hash)?,
             )
             .map_err(BackupRestoreError::Media)?;
         }

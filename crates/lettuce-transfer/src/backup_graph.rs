@@ -260,8 +260,8 @@ pub enum ProviderBackupGraphError {
 }
 
 /// A validated export: the fixed data and secret sections, then the media
-/// blobs and conversation artifacts the writer appends one at a time through
-/// [`backup_media_section`] and [`backup_artifact_section`].
+/// blobs and conversation artifacts the writer appends one at a time after
+/// [`verify_backup_media`] and [`verify_backup_artifact`].
 #[derive(Debug)]
 pub struct ProviderBackupExportPlan {
     pub data_sections: Vec<BackupSection>,
@@ -284,17 +284,19 @@ pub fn provider_backup_sections(
         if object.content_hash != *content_hash {
             return Err(ProviderBackupGraphError::InvalidGraph);
         }
-        sections.push(backup_media_section(
-            content_hash,
-            *byte_size,
-            &object.bytes,
-        )?);
+        verify_backup_media(content_hash, *byte_size, &object.bytes)?;
+        sections.push(BackupSection::new(
+            backup_media_section_name(content_hash),
+            BACKUP_MEDIA_SECTION_SCHEMA,
+            object.bytes.to_vec(),
+        ));
     }
     for (descriptor, artifact) in plan.artifacts.iter().zip(artifacts) {
         if artifact.descriptor != *descriptor {
             return Err(ProviderBackupGraphError::InvalidGraph);
         }
-        sections.push(backup_artifact_section(descriptor, &artifact.bytes)?);
+        let (name, schema) = verify_backup_artifact(descriptor, &artifact.bytes)?;
+        sections.push(BackupSection::new(name, schema, artifact.bytes.to_vec()));
     }
     Ok(sections)
 }
@@ -519,17 +521,17 @@ pub(crate) fn all_conversation_artifact_descriptors(
         .collect())
 }
 
-/// The backup section of one conversation artifact, checked against its
-/// descriptor's size and digest.
-pub fn backup_artifact_section(
+/// Checks one conversation artifact against its descriptor's size and
+/// digest and returns its section name and schema.
+pub fn verify_backup_artifact(
     descriptor: &TrustedArtifactDescriptor,
     bytes: &[u8],
-) -> Result<BackupSection, ProviderBackupGraphError> {
+) -> Result<(String, String), ProviderBackupGraphError> {
     let (name, schema, digest, byte_size) = backup_artifact_section_identity(descriptor);
     if u64::try_from(bytes.len()).ok() != Some(byte_size) || &content_hash_of(bytes) != digest {
         return Err(ProviderBackupGraphError::InvalidGraph);
     }
-    Ok(BackupSection::new(name, schema, bytes.to_vec()))
+    Ok((name, schema))
 }
 
 pub(crate) fn backup_artifact_section_identity(
@@ -558,22 +560,17 @@ pub fn backup_media_section_name(content_hash: &lettuce_types::ContentHash) -> S
     format!("media/blobs/{content_hash}")
 }
 
-/// The backup section of one ready media blob, checked against its size and
-/// content hash.
-pub fn backup_media_section(
+/// Checks one ready media blob against its size and content hash.
+pub fn verify_backup_media(
     content_hash: &lettuce_types::ContentHash,
     byte_size: u64,
     bytes: &[u8],
-) -> Result<BackupSection, ProviderBackupGraphError> {
+) -> Result<(), ProviderBackupGraphError> {
     if u64::try_from(bytes.len()).ok() != Some(byte_size) || &content_hash_of(bytes) != content_hash
     {
         return Err(ProviderBackupGraphError::InvalidGraph);
     }
-    Ok(BackupSection::new(
-        backup_media_section_name(content_hash),
-        BACKUP_MEDIA_SECTION_SCHEMA,
-        bytes.to_vec(),
-    ))
+    Ok(())
 }
 
 fn content_hash_of(bytes: &[u8]) -> lettuce_types::ContentHash {
@@ -1887,6 +1884,43 @@ mod tests {
             bytes
         );
         assert_eq!(workspace.stage(&plan).expect("replay staging"), receipt);
+        assert_eq!(
+            &*workspace
+                .read_staged_media(&content_hash)
+                .expect("staged media"),
+            &bytes
+        );
+
+        let manifest_len = u32::from_be_bytes(
+            envelope[envelope.len() - 12..envelope.len() - 8]
+                .try_into()
+                .expect("footer length"),
+        ) as usize;
+        let mut tampered = envelope.clone();
+        let media_end = tampered.len() - 36 - manifest_len;
+        tampered[media_end - 1] ^= 1;
+        let tampered_plan = crate::decode_provider_backup_restore_plan(
+            std::io::Cursor::new(tampered),
+            "backup password",
+        )
+        .expect("data sections still decode");
+        assert!(matches!(
+            tampered_plan.read_media(&tampered_plan.media[0]),
+            Err(crate::ProviderBackupRestorePlanError::Envelope(
+                crate::BackupEnvelopeError::Authentication
+            ))
+        ));
+        let tampered_root = std::env::temp_dir().join(format!(
+            "lettuce-restore-workspace-tampered-{}",
+            OperationId::new()
+        ));
+        assert_eq!(
+            crate::BackupRestoreWorkspace::open(&tampered_root)
+                .expect("tampered workspace")
+                .stage(&tampered_plan),
+            Err(crate::BackupRestoreWorkspaceError::Source)
+        );
+        std::fs::remove_dir_all(tampered_root).expect("remove tampered workspace");
 
         std::fs::write(
             root.join("media").join("blobs").join(content_hash.as_str()),
