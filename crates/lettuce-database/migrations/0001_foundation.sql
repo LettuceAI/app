@@ -37,6 +37,7 @@ CREATE TABLE app_settings (
     group_speaker_model_profile_id TEXT REFERENCES model_profiles(id) ON DELETE RESTRICT,
     format_version INTEGER NOT NULL CHECK (format_version >= 1),
     payload_json TEXT NOT NULL,
+    model_settings_json TEXT CHECK (model_settings_json IS NULL OR json_valid(model_settings_json)),
     revision INTEGER NOT NULL CHECK (revision >= 1),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL

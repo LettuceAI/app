@@ -288,6 +288,11 @@ impl CurrentConversationSettings {
 
     pub fn validate_against_kind(&self, kind: &ConversationKind) -> Result<(), ValidationError> {
         self.validate()?;
+        if matches!(kind, ConversationKind::Group(_)) && !self.model_settings.is_empty() {
+            return Err(ValidationError::InvalidValue {
+                field: "conversation_settings.model_settings",
+            });
+        }
         if matches!(kind, ConversationKind::Group(_)) && self.companion_clock.is_some() {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.companion_clock",

@@ -605,6 +605,20 @@ pub enum ModelRepositoryError {
     Storage,
 }
 
+/// App-wide model settings underneath every model's own (legacy app
+/// `advanced_model_settings`), stored with the global settings row and
+/// revisioned with it.
+pub trait GlobalModelSettingsRepository: Send + Sync {
+    fn global_model_settings(&self)
+    -> Result<(ModelSettingsLayer, Revision), ModelRepositoryError>;
+    fn save_global_model_settings(
+        &self,
+        settings: ModelSettingsLayer,
+        expected_revision: Revision,
+        at: TimestampMillis,
+    ) -> Result<Revision, ModelRepositoryError>;
+}
+
 pub trait ProviderAccountRepository: Send + Sync {
     fn upsert(
         &self,

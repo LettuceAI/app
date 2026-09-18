@@ -427,6 +427,85 @@ fn to_i64(value: u64) -> Result<i64, rusqlite::Error> {
     i64::try_from(value).map_err(|_| rusqlite::Error::InvalidQuery)
 }
 
+/// Empty global model settings store NULL.
+pub(crate) fn encode_global_model_settings(
+    settings: &lettuce_models::ModelSettingsLayer,
+) -> Result<Option<String>, serde_json::Error> {
+    (!settings.is_empty())
+        .then(|| serde_json::to_string(settings))
+        .transpose()
+}
+
+pub(crate) fn decode_global_model_settings(
+    value: Option<String>,
+) -> Result<lettuce_models::ModelSettingsLayer, rusqlite::Error> {
+    let settings: lettuce_models::ModelSettingsLayer = value
+        .map(|value| serde_json::from_str(&value))
+        .transpose()
+        .map_err(|_| rusqlite::Error::InvalidQuery)?
+        .unwrap_or_default();
+    settings
+        .validate()
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    Ok(settings)
+}
+
+impl lettuce_models::GlobalModelSettingsRepository for Database {
+    fn global_model_settings(
+        &self,
+    ) -> Result<(lettuce_models::ModelSettingsLayer, Revision), ModelRepositoryError> {
+        self.connection()
+            .map_err(|_| ModelRepositoryError::Storage)?
+            .query_row(
+                "SELECT model_settings_json, revision FROM app_settings WHERE id = 1",
+                [],
+                |row| {
+                    Ok((
+                        decode_global_model_settings(row.get(0)?)?,
+                        to_revision(row.get(1)?)?,
+                    ))
+                },
+            )
+            .map_err(|error| match error {
+                rusqlite::Error::InvalidQuery => ModelRepositoryError::InvalidData,
+                _ => ModelRepositoryError::Storage,
+            })
+    }
+
+    fn save_global_model_settings(
+        &self,
+        settings: lettuce_models::ModelSettingsLayer,
+        expected_revision: Revision,
+        at: TimestampMillis,
+    ) -> Result<Revision, ModelRepositoryError> {
+        settings
+            .validate()
+            .map_err(|_| ModelRepositoryError::InvalidData)?;
+        let payload = encode_global_model_settings(&settings)
+            .map_err(|_| ModelRepositoryError::InvalidData)?;
+        let next = expected_revision
+            .next()
+            .map_err(|_| ModelRepositoryError::Storage)?;
+        let changed = self
+            .connection()
+            .map_err(|_| ModelRepositoryError::Storage)?
+            .execute(
+                "UPDATE app_settings SET model_settings_json=?1, revision=?2, updated_at=?3 WHERE id=1 AND revision=?4",
+                params![
+                    payload,
+                    i64::try_from(next.get()).map_err(|_| ModelRepositoryError::Storage)?,
+                    at.get(),
+                    i64::try_from(expected_revision.get()).map_err(|_| ModelRepositoryError::Storage)?
+                ],
+            )
+            .map_err(|_| ModelRepositoryError::Storage)?;
+        if changed != 1 {
+            return Err(ModelRepositoryError::StaleRevision);
+        }
+        Ok(next)
+    }
+}
+
 impl GlobalSettingsStore for Database {
     fn load(&self) -> Result<StoredGlobalSettings, GlobalSettingsStoreError> {
         self.connection()

@@ -728,10 +728,8 @@ fn reconcile_authored_session_links(
 
 /// Legacy used a session's `advanced_model_settings` when it parsed and
 /// otherwise its flat sampling columns (`build_session_advanced_model_settings`).
-/// That fallback also built the settings from the struct default, which turned
-/// prompt caching off for the session and so overrode the model; the side
-/// effect is not carried. Feature generation slots only ever applied at the
-/// model level, so a session's are left out with a Lossy notice.
+/// Fields legacy never read from a session are left out with Lossy notices
+/// (`legacy_settings_layer`).
 fn session_model_settings(
     row: &SessionRow,
     path: &str,
@@ -746,32 +744,23 @@ fn session_model_settings(
             _ => None,
         });
     if let Some(object) = advanced {
-        let parameters = crate::legacy_model_parameters("", &object);
-        for (kind, field) in parameters
-            .lossy_fields
+        let (layer, lossy, unknown) =
+            crate::legacy_backup_model_settings::legacy_settings_layer(&object, false);
+        for (kind, field) in lossy
             .iter()
-            .map(|field| (LegacyBackupConversionNoticeKind::Lossy, field.as_str()))
-            .chain((!parameters.feature_parameters.is_empty()).then_some((
-                LegacyBackupConversionNoticeKind::Lossy,
-                "featureGenerationSettings",
-            )))
-            .chain(parameters.unknown_fields.iter().map(|field| {
-                (
-                    LegacyBackupConversionNoticeKind::Unsupported,
-                    field.as_str(),
-                )
-            }))
+            .map(|field| (LegacyBackupConversionNoticeKind::Lossy, field))
+            .chain(
+                unknown
+                    .iter()
+                    .map(|field| (LegacyBackupConversionNoticeKind::Unsupported, field)),
+            )
         {
             notices.push(notice(
                 kind,
                 &format!("{path}.advanced_model_settings.{field}"),
             ));
         }
-        return lettuce_models::ModelSettingsLayer {
-            chat_parameters: parameters.chat_parameters,
-            llama_cpp: parameters.llama_cpp,
-            stable_diffusion: parameters.stable_diffusion,
-        };
+        return layer;
     }
     lettuce_models::ModelSettingsLayer {
         chat_parameters: lettuce_models::ChatParameterProfile {
@@ -1188,7 +1177,7 @@ mod tests {
         let flat = id(3);
         let mut json_session = session(&with_json, &character, None, &with_json, None, Vec::new());
         json_session["advanced_model_settings"] = json!(
-            "{\"temperature\":0.5,\"llamaGpuLayers\":10,\"featureGenerationSettings\":{\"helpMeReply\":{\"temperature\":0.2}}}"
+            "{\"temperature\":0.5,\"llamaGpuLayers\":10,\"promptCachingEnabled\":true,\"sdSteps\":20,\"featureGenerationSettings\":{\"helpMeReply\":{\"temperature\":0.2}}}"
         );
         let mut flat_session = session(&flat, &character, None, &flat, None, Vec::new());
         flat_session["advanced_model_settings"] = Value::Null;
@@ -1210,6 +1199,16 @@ mod tests {
         assert_eq!(json_settings.chat_parameters.temperature, Some(0.5));
         assert_eq!(json_settings.chat_parameters.top_p, None);
         assert_eq!(json_settings.llama_cpp.gpu_layers, Some(10));
+        assert_eq!(json_settings.chat_parameters.prompt_caching, None);
+        assert!(json_settings.stable_diffusion.is_empty());
+        for field in ["promptCachingEnabled", "sdSteps"] {
+            assert!(plan.notices.iter().any(|notice| {
+                notice.kind == LegacyBackupConversionNoticeKind::Lossy
+                    && notice
+                        .field
+                        .ends_with(&format!(".advanced_model_settings.{field}"))
+            }));
+        }
         let flat_settings = by_id(&flat);
         assert_eq!(flat_settings.chat_parameters.temperature, Some(0.8));
         assert_eq!(flat_settings.chat_parameters.top_k, Some(40));

@@ -1788,6 +1788,28 @@ mod tests {
         drop(backend);
 
         let reopened = AppBackend::open(&path, TimestampMillis::new(3)).expect("reopen backend");
+        let (_, settings_revision) =
+            lettuce_models::GlobalModelSettingsRepository::global_model_settings(
+                reopened.database(),
+            )
+            .expect("global model settings");
+        lettuce_models::GlobalModelSettingsRepository::save_global_model_settings(
+            reopened.database(),
+            lettuce_models::ModelSettingsLayer {
+                chat_parameters: lettuce_models::ChatParameterProfile {
+                    temperature: Some(0.42),
+                    ..Default::default()
+                },
+                llama_cpp: lettuce_models::LlamaCppSettings {
+                    threads: Some(6),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            settings_revision,
+            TimestampMillis::now().expect("clock"),
+        )
+        .expect("save global model settings");
         let media = LocalSyncMediaStore::open(
             root.join("platform-v2/media-blobs"),
             Database::open(&path).expect("blob database"),
@@ -1884,6 +1906,14 @@ mod tests {
         assert_eq!(round_trip.prompts, restore_plan.graph.prompts);
         assert_eq!(round_trip.selections, restore_plan.graph.selections);
         assert_eq!(round_trip.settings, restore_plan.graph.settings);
+        assert_eq!(
+            round_trip
+                .settings
+                .model_settings
+                .chat_parameters
+                .temperature,
+            Some(0.42)
+        );
         assert_eq!(round_trip.audio_providers, restore_plan.graph.audio_providers);
         assert_eq!(round_trip.user_voices, restore_plan.graph.user_voices);
         assert_eq!(round_trip.authored, restore_plan.graph.authored);

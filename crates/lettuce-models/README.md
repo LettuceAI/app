@@ -74,3 +74,12 @@ Empty groups are not serialized. `validate_parameters` checks all groups. The
 former `lorebook_generator_parameters` moved to
 `feature_parameters.lorebook_generator.parameters`. The embedded runtimes read
 these settings when they land; runtime formulas stay unchanged.
+
+`ModelSettingsLayer` (chat parameters, llama.cpp and stable-diffusion settings)
+is the shape of the two other legacy layers: a conversation's own model settings
+(`CurrentConversationSettings.model_settings`) and the app-wide defaults behind
+`GlobalModelSettingsRepository` (stored in `app_settings.model_settings_json`,
+revisioned with the global settings row). Legacy resolved every field as
+conversation, then model, then app; an unset field defers. Feature generation
+slots exist only at the model level. Wiring the layers into request resolution
+is a later slice.

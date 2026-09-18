@@ -1058,7 +1058,7 @@ impl ProviderBackupSource for Database {
             .map_err(backup_error)?;
         let (selections, settings) = transaction
             .query_row(
-                "SELECT default_model_profile_id,dynamic_memory_model_profile_id,group_speaker_model_profile_id,default_prompt_document_id,format_version,payload_json,revision,created_at,updated_at FROM app_settings WHERE id=1",
+                "SELECT default_model_profile_id,dynamic_memory_model_profile_id,group_speaker_model_profile_id,default_prompt_document_id,format_version,payload_json,revision,created_at,updated_at,model_settings_json FROM app_settings WHERE id=1",
                 [],
                 |row| {
                     if row.get::<_, u32>(4)? != lettuce_settings::GLOBAL_SETTINGS_FORMAT_VERSION {
@@ -1085,6 +1085,7 @@ impl ProviderBackupSource for Database {
                                 .transpose()?,
                         },
                         BackupGlobalSettings {
+                            model_settings: crate::decode_global_model_settings(row.get(9)?)?,
                             value: serde_json::from_str(&payload)
                                 .map_err(|_| rusqlite::Error::InvalidQuery)?,
                             revision: Revision::new(

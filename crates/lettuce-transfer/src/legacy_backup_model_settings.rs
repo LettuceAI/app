@@ -616,3 +616,56 @@ pub fn legacy_model_parameters(
 fn lossy_extend(reader: &mut Reader<'_>, fields: Vec<String>) {
     reader.lossy.extend(fields);
 }
+
+/// A legacy session's or the app's `advanced_model_settings` as a settings
+/// layer. Legacy read fewer fields from these layers than from a model:
+/// prompt caching and the OpenRouter pin only from the model, image generation
+/// settings never, feature generation slots never, and the app layer never
+/// sent the thinking state. Such values are left out and returned with the
+/// other lossy fields; unknown keys are returned separately.
+pub(crate) fn legacy_settings_layer(
+    object: &Map<String, Value>,
+    app: bool,
+) -> (lettuce_models::ModelSettingsLayer, Vec<String>, Vec<String>) {
+    let parameters = legacy_model_parameters("", object);
+    let present = |key: &str| object.get(key).is_some_and(|value| !value.is_null());
+    let mut lossy = parameters.lossy_fields;
+    let mut chat_parameters = parameters.chat_parameters;
+    let mut ignored = vec![
+        "promptCachingEnabled",
+        "promptCachingTtl",
+        "openRouterProvider",
+    ];
+    chat_parameters.prompt_caching = None;
+    chat_parameters.openrouter = OpenRouterOptions::default();
+    if app {
+        ignored.push("forceSendThinkingState");
+        chat_parameters.send_thinking_state = None;
+    }
+    lossy.extend(
+        ignored
+            .into_iter()
+            .chain(
+                object
+                    .keys()
+                    .map(String::as_str)
+                    .filter(|key| key.starts_with("sd")),
+            )
+            .chain(
+                (!parameters.feature_parameters.is_empty()).then_some("featureGenerationSettings"),
+            )
+            .filter(|key| present(key) || *key == "featureGenerationSettings")
+            .map(str::to_owned),
+    );
+    lossy.sort();
+    lossy.dedup();
+    (
+        lettuce_models::ModelSettingsLayer {
+            chat_parameters,
+            llama_cpp: parameters.llama_cpp,
+            stable_diffusion: StableDiffusionSettings::default(),
+        },
+        lossy,
+        parameters.unknown_fields,
+    )
+}

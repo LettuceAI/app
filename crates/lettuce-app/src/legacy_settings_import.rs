@@ -156,6 +156,13 @@ mod tests {
             group_conversations: 0,
         };
         let settings = LegacyBackupSettingsCandidate {
+            model_settings: lettuce_models::ModelSettingsLayer {
+                chat_parameters: lettuce_models::ChatParameterProfile {
+                    temperature: Some(0.65),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
             value: GlobalSettings {
                 analytics_enabled: false,
                 manual_mode_context_window: 30,
@@ -217,6 +224,12 @@ mod tests {
         let stored = GlobalSettingsStore::load(backend.database()).expect("settings after");
         assert!(!stored.settings.analytics_enabled);
         assert_eq!(stored.settings.manual_mode_context_window, 30);
+        let (model_settings, _) =
+            lettuce_models::GlobalModelSettingsRepository::global_model_settings(
+                backend.database(),
+            )
+            .expect("global model settings");
+        assert_eq!(model_settings.chat_parameters.temperature, Some(0.65));
         assert_eq!(
             stored.settings.dynamic_memory_prompts.summarizer_prompt_id,
             Some(prompt_id)

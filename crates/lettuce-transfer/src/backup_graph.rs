@@ -45,6 +45,11 @@ pub struct ProviderBackupSelections {
 #[serde(deny_unknown_fields)]
 pub struct BackupGlobalSettings {
     pub value: GlobalSettings,
+    #[serde(
+        default,
+        skip_serializing_if = "lettuce_models::ModelSettingsLayer::is_empty"
+    )]
+    pub model_settings: lettuce_models::ModelSettingsLayer,
     pub revision: Revision,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
@@ -1475,6 +1480,7 @@ mod tests {
             },
             settings: BackupGlobalSettings {
                 value: GlobalSettings::default(),
+                model_settings: Default::default(),
                 revision: Revision::new(1),
                 created_at: TimestampMillis::new(1),
                 updated_at: TimestampMillis::new(1),

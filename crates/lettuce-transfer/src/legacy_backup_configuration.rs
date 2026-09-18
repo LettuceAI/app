@@ -95,6 +95,8 @@ pub struct LegacyBackupConfigurationPlan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyBackupSettingsCandidate {
     pub value: GlobalSettings,
+    /// The app-wide model settings (legacy `settings.advanced_model_settings`).
+    pub model_settings: lettuce_models::ModelSettingsLayer,
     pub default_provider_account_id: Option<ProviderAccountId>,
     pub default_model_profile_id: Option<ModelProfileId>,
     pub default_prompt_source_id: Option<String>,
@@ -702,17 +704,8 @@ fn map_settings(
             format!("app_state.{field}"),
         ));
     }
-    if row
-        .advanced_model_settings
-        .as_ref()
-        .is_some_and(|value| !value.is_null())
-    {
-        notices.push(notice(
-            LegacyBackupConversionNoticeKind::Unsupported,
-            LegacyBackupDocumentKind::Settings,
-            "advanced_model_settings",
-        ));
-    }
+    let model_settings =
+        legacy_global_model_settings(row.advanced_model_settings.as_ref(), notices);
     if row.migration_version.is_some() {
         notices.push(notice(
             LegacyBackupConversionNoticeKind::Unsupported,
@@ -721,6 +714,7 @@ fn map_settings(
         ));
     }
     Ok(LegacyBackupSettingsCandidate {
+        model_settings,
         value: GlobalSettings {
             pure_mode,
             analytics_enabled,
@@ -2753,6 +2747,44 @@ fn legacy_provider_config(
     ))
 }
 
+/// The legacy app `advanced_model_settings` as the global model settings
+/// layer; fields legacy never read from the app layer are left out with Lossy
+/// notices (`legacy_settings_layer`).
+fn legacy_global_model_settings(
+    value: Option<&Value>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> lettuce_models::ModelSettingsLayer {
+    let Some(value) = value.filter(|value| !value.is_null()) else {
+        return Default::default();
+    };
+    let Some(object) = value.as_object() else {
+        notices.push(notice(
+            LegacyBackupConversionNoticeKind::Lossy,
+            LegacyBackupDocumentKind::Settings,
+            "advanced_model_settings",
+        ));
+        return Default::default();
+    };
+    let (layer, lossy, unknown) =
+        crate::legacy_backup_model_settings::legacy_settings_layer(object, true);
+    for (kind, field) in lossy
+        .iter()
+        .map(|field| (LegacyBackupConversionNoticeKind::Lossy, field))
+        .chain(
+            unknown
+                .iter()
+                .map(|field| (LegacyBackupConversionNoticeKind::Unsupported, field)),
+        )
+    {
+        notices.push(notice(
+            kind,
+            LegacyBackupDocumentKind::Settings,
+            format!("advanced_model_settings.{field}"),
+        ));
+    }
+    layer
+}
+
 fn canonical_provider_id(
     value: &str,
     notices: &mut Vec<LegacyBackupConversionNotice>,
@@ -3605,6 +3637,10 @@ mod tests {
             "System content"
         );
         assert_eq!(plan.settings.value.pure_mode, PureMode::Off);
+        assert_eq!(
+            plan.settings.model_settings.chat_parameters.temperature,
+            Some(0.2)
+        );
         assert!(!plan.settings.value.analytics_enabled);
         assert!(!plan.settings.value.update_checks_enabled);
         assert_eq!(plan.settings.value.dynamic_memory.max_entries, 60);

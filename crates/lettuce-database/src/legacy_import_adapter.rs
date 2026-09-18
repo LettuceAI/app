@@ -1210,13 +1210,15 @@ impl LegacyImportRepository for Database {
         if !earlier_settings {
             let changed = transaction
                 .execute(
-                    "UPDATE app_settings SET payload_json=?1,dynamic_memory_model_profile_id=?2,group_speaker_model_profile_id=?3,revision=revision+1,created_at=MIN(created_at,?5),updated_at=?4 WHERE id=1",
+                    "UPDATE app_settings SET payload_json=?1,dynamic_memory_model_profile_id=?2,group_speaker_model_profile_id=?3,revision=revision+1,created_at=MIN(created_at,?5),updated_at=?4,model_settings_json=?6 WHERE id=1",
                     params![
                         payload,
                         model(candidate.dynamic_memory_model_profile_id)?.map(|id| id.to_string()),
                         model(candidate.group_speaker_model_profile_id)?.map(|id| id.to_string()),
                         request.completed_at.get(),
-                        candidate.created_at.get()
+                        candidate.created_at.get(),
+                        crate::encode_global_model_settings(&candidate.model_settings)
+                            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?
                     ],
                 )
                 .map_err(|_| LegacyImportRepositoryError::Storage)?;

@@ -149,7 +149,7 @@ impl ProviderBackupRestoreWriter for Database {
         let payload = serde_json::to_string(&settings.value).map_err(invalid)?;
         transaction
             .execute(
-                "UPDATE app_settings SET default_model_profile_id=?1,dynamic_memory_model_profile_id=?2,group_speaker_model_profile_id=?3,default_prompt_document_id=?4,format_version=?5,payload_json=?6,revision=?7,created_at=?8,updated_at=?9 WHERE id=1",
+                "UPDATE app_settings SET default_model_profile_id=?1,dynamic_memory_model_profile_id=?2,group_speaker_model_profile_id=?3,default_prompt_document_id=?4,format_version=?5,payload_json=?6,revision=?7,created_at=?8,updated_at=?9,model_settings_json=?10 WHERE id=1",
                 params![
                     selections.default_model_profile_id.map(|id| id.to_string()),
                     selections
@@ -163,7 +163,9 @@ impl ProviderBackupRestoreWriter for Database {
                     payload,
                     sql_revision(settings.revision)?,
                     settings.created_at.get(),
-                    settings.updated_at.get()
+                    settings.updated_at.get(),
+                    crate::encode_global_model_settings(&settings.model_settings)
+                        .map_err(invalid)?
                 ],
             )
             .map_err(invalid)?;

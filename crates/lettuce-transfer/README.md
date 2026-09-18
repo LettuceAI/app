@@ -659,8 +659,17 @@ get an Unsupported notice, null values are ignored, and the backend-owned
 Direct sessions now carry `generation_settings.model_settings`: the session's
 `advanced_model_settings` through the same mapper when it parses as an object,
 otherwise the flat temperature/top_p/max_output_tokens/penalty/top_k columns
-(legacy `build_session_advanced_model_settings`). Legacy's flat fallback also
-turned prompt caching off for the session through the struct default, which
-overrode the model; that side effect is corrected, not carried. Session feature
-slots never applied in legacy and are left out with a Lossy notice. The direct
-conversation importer writes the layer into the conversation's current settings.
+(legacy `build_session_advanced_model_settings`). Legacy read fewer fields from
+a session (and from the app layer) than from a model: prompt caching and the
+OpenRouter pin only from the model, image generation settings and feature slots
+never, and the app layer never the thinking state; `legacy_settings_layer` leaves
+those out with Lossy notices. The thinking state and the prompt cache TTL were
+model-first in legacy, which request resolution must keep when it reads the
+layers. The direct conversation importer writes the layer into the conversation's
+current settings; group conversations reject a model settings layer (legacy group
+sessions had none).
+
+The legacy app `settings.advanced_model_settings` goes through the same mapper
+into `LegacyBackupSettingsCandidate.model_settings` (replacing the former
+Unsupported notice); the settings import stage writes it as the global model
+settings, and backup version 2 carries it in `BackupGlobalSettings.model_settings`.
