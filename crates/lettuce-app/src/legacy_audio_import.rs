@@ -37,7 +37,7 @@ where
         }
     }
 
-    /// Stores every legacy audio provider API key under its deterministic
+    /// Stores every legacy audio provider API key under its run-scoped
     /// reference, then writes the planned audio providers and user voices.
     /// A retry loads and compares an existing key instead of rewriting it.
     pub async fn execute(
@@ -67,7 +67,7 @@ where
                 ),
                 api_key_ref: provider
                     .api_key_ref
-                    .map(|reference| SecretRef::from_uuid(scope.uuid(reference.as_uuid()))),
+                    .map(|reference| legacy_audio_secret_ref(admission.run_id, scope, reference)),
                 ..provider.clone()
             })
             .collect::<Vec<_>>();
@@ -161,6 +161,38 @@ where
         )
         .await
     }
+}
+
+/// The store reference of an imported legacy audio API key. It is scoped by
+/// the legacy source and the import run, so importing the same legacy source
+/// into a replacement database never shares a secret record with the database
+/// it replaces.
+pub(crate) fn legacy_audio_secret_ref(
+    run_id: lettuce_types::LegacyImportRunId,
+    scope: lettuce_transfer::LegacyIdScope,
+    reference: SecretRef,
+) -> SecretRef {
+    SecretRef::from_uuid(uuid::Uuid::new_v5(
+        &run_id.as_uuid(),
+        scope.uuid(reference.as_uuid()).as_bytes(),
+    ))
+}
+
+/// The scoped store reference and purpose of a legacy audio provider's API key
+/// for one import run.
+pub(crate) fn legacy_audio_secret(
+    run_id: lettuce_types::LegacyImportRunId,
+    scope: lettuce_transfer::LegacyIdScope,
+    provider: &AudioProvider,
+) -> Option<(SecretRef, SecretPurpose)> {
+    provider.api_key_ref.map(|reference| {
+        (
+            legacy_audio_secret_ref(run_id, scope, reference),
+            SecretPurpose::AudioApiKey {
+                owner: SecretOwnerId::from_uuid(scope.uuid(provider.secret_owner_id.as_uuid())),
+            },
+        )
+    })
 }
 
 #[cfg(test)]
@@ -302,7 +334,7 @@ mod tests {
                 .as_ref()
                 .expect("source fingerprint"),
         );
-        let scoped_reference = SecretRef::from_uuid(scope.uuid(reference.as_uuid()));
+        let scoped_reference = super::legacy_audio_secret_ref(run_id, scope, reference);
         let scoped_owner = SecretOwnerId::from_uuid(scope.uuid(owner.as_uuid()));
         assert_eq!(
             TtsConfigurationRepository::get_audio_provider(

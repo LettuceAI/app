@@ -68,9 +68,10 @@ fn stage<E: fmt::Debug>(name: &'static str) -> impl FnOnce(E) -> LegacyRestoreEr
 /// Replaces the app data with a legacy source (user decision 2026-09-14: a
 /// legacy backup replaces, never imports alongside). The whole legacy import
 /// chain runs into a new database file; only a completed run switches the
-/// active database, and the previous file is never deleted. Provider secrets
-/// admitted by a failed attempt are deleted again; audio secret references are
-/// scoped by the legacy source and may be shared with the previous database.
+/// active database, and the previous file is never deleted. Provider and audio
+/// secrets use references unique to the import run, so a failed attempt deletes
+/// them again and a successful one never shares a record with the previous
+/// database.
 pub struct LegacyRestoreCoordinator<'a, S: ?Sized> {
     location: &'a AppDatabaseLocation,
     authority: &'a FilesystemAuthority,
@@ -293,6 +294,19 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                     _ => None,
                 }),
         );
+        if let Some(fingerprint) = &plan.source_fingerprint {
+            let scope = lettuce_transfer::LegacyIdScope::new(fingerprint);
+            written.extend(
+                source
+                    .authored_plan()
+                    .configuration
+                    .audio_providers
+                    .iter()
+                    .filter_map(|provider| {
+                        crate::legacy_audio_import::legacy_audio_secret(run_id, scope, provider)
+                    }),
+            );
+        }
         let media_store = LocalMediaBlobStore::new(
             self.authority.managed_files(),
             self.authority

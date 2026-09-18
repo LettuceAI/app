@@ -1500,9 +1500,10 @@ previous database, records the backup admission and switches the active database
 pointer; the previous file is never deleted. Each restore stages into its own
 `<workspace>/<restore_id>` directory, so a later restore of a different backup
 never conflicts with an earlier receipt (the version-2 coordinator does the
-same). Provider secrets get fresh references at admission, so a failed attempt
-deletes the ones it admitted; audio secret references are scoped by the legacy
-source and may be shared with the previous database, so they are left alone.
+same). Provider secrets get fresh references at admission and legacy audio API
+keys use references derived from the legacy source and the import run, so a
+replacement never shares a secret record with the database it replaces and a
+failed attempt deletes the secrets it wrote.
 
 The same export includes the conversation-owned generation runtime: turns,
 attempts, checkpoint timestamps, speaker and initial inference dispatches,
