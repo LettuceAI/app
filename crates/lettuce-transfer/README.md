@@ -48,7 +48,10 @@ database inventory keeps only the file path (`from_file` hashes it by
 streaming) and `decode_legacy_backup_inventory` reads a version-1 archive from
 a seekable `BackupSource`, decrypting each media entry once for its size and
 hash and again on `read` (a version-1 entry is one AEAD message, so each entry
-is still limited to 512 MiB; the archive total is not). The live database
+is still limited to 512 MiB, entry names are checked before anything is
+decrypted, and the decrypted documents held for planning are limited to 512 MiB
+together; the archive and media totals are not). A live file that changed
+after the inventory fails its import with `SourceChanged`. The live database
 inventory no longer rejects a large or unreferenced file or a library over
 512 MiB; the media plan still limits each referenced object to 64 MiB (the
 media store limit) and the legacy media total is now the backup total. The

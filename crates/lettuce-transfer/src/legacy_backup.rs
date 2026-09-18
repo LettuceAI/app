@@ -19,6 +19,8 @@ use crate::MAX_BACKUP_ENTRIES;
 
 /// A version-1 entry is one AEAD message, so each is decrypted whole.
 pub const MAX_LEGACY_BACKUP_ENTRY_BYTES: usize = 512 * 1024 * 1024;
+/// The decrypted documents are held together while the archive is planned.
+pub const MAX_LEGACY_BACKUP_DOCUMENT_TOTAL_BYTES: usize = 512 * 1024 * 1024;
 
 const LEGACY_MANIFEST_VERSION: u32 = 2;
 const LEGACY_MARKER: &[u8] = b"LETTUCE_BACKUP_VERIFIED";
@@ -364,7 +366,11 @@ pub fn decode_legacy_backup_inventory(
         if matches!(name.as_str(), "manifest.json" | "encrypted_marker.bin") {
             continue;
         }
-        entries.push((index, name));
+        let entry = match document_kind(&name) {
+            Some(kind) => Ok(kind),
+            None => Err(media_name(&name)?),
+        };
+        entries.push((index, entry));
     }
     let archive = Arc::new(LegacyArchive {
         zip: Mutex::new(archive),
@@ -372,23 +378,28 @@ pub fn decode_legacy_backup_inventory(
         nonce,
     });
     let mut documents = Vec::new();
+    let mut document_bytes = 0usize;
     let mut media = Vec::new();
-    for (index, name) in entries {
+    for (index, entry) in entries {
         let decrypted = archive.entry(index)?;
-        if let Some(kind) = document_kind(&name) {
-            documents.push(LegacyBackupDocument {
-                kind,
-                bytes: decrypted,
-            });
-        } else {
-            let (root, relative_segments) = media_name(&name)?;
-            media.push(LegacyBackupMedia {
+        match entry {
+            Ok(kind) => {
+                document_bytes = document_bytes
+                    .checked_add(decrypted.len())
+                    .filter(|total| *total <= MAX_LEGACY_BACKUP_DOCUMENT_TOTAL_BYTES)
+                    .ok_or(LegacyBackupInventoryError::LimitExceeded)?;
+                documents.push(LegacyBackupDocument {
+                    kind,
+                    bytes: decrypted,
+                });
+            }
+            Err((root, relative_segments)) => media.push(LegacyBackupMedia {
                 root,
                 relative_segments,
                 byte_len: decrypted.len() as u64,
                 content_hash: content_hash(&decrypted),
                 source: LegacyMediaSource::Archive(Arc::clone(&archive), index),
-            });
+            }),
         }
     }
     documents.sort_by_key(|document| document.kind);

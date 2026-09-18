@@ -86,7 +86,15 @@ where
                     candidate,
                     media
                         .read()
-                        .map_err(|_| LegacyMediaImportError::SourceUnavailable)?
+                        .map_err(|error| match error {
+                            lettuce_transfer::LegacyMediaReadError::Changed => {
+                                LegacyMediaImportError::SourceChanged
+                            }
+                            lettuce_transfer::LegacyMediaReadError::Unreadable
+                            | lettuce_transfer::LegacyMediaReadError::TooLarge { .. } => {
+                                LegacyMediaImportError::SourceUnavailable
+                            }
+                        })?
                         .to_vec(),
                 ),
                 (None, Some(root)) => read_verified_source(root, candidate),
