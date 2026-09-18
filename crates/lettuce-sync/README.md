@@ -51,9 +51,12 @@ families and legacy sync-state migration remain later slices. No legacy
 database, source or user asset is read, rewritten or deleted by this crate.
 
 The journal now exposes its local causal frontier, bounded outbound batches and
-durable peer acknowledgements. Outbound reads start after the peer frontier,
-retain origin order and require every causal dependency; a missing local
-sequence fails closed. Caller limits are capped at 256 changes and 16 MiB of
+durable peer acknowledgements. Outbound reads cover every origin in the local
+frontier, not only this device (backlog #19: a peer now relays changes it
+received from a third device), start after the peer frontier for each origin,
+retain each origin's order and merge origins by readiness, then hybrid
+timestamp and device ID; every causal dependency must be satisfied and a
+missing sequence fails closed. Caller limits are capped at 256 changes and 16 MiB of
 payload. Peer acknowledgements only advance and are clamped to facts present in
 the local frontier.
 

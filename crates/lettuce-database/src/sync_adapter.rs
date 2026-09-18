@@ -1412,7 +1412,7 @@ impl LocalChangeJournal for Database {
         validate_frontier(remote_frontier)?;
         let connection = self.connection().map_err(storage)?;
         let local_frontier = load_frontier(&connection)?;
-        let Some(device) = local_device(&connection)? else {
+        if local_device(&connection)?.is_none() {
             if !local_frontier.is_empty() {
                 return Err(LocalChangeJournalError::Corrupt);
             }
@@ -1421,40 +1421,62 @@ impl LocalChangeJournal for Database {
                 payload_bytes: 0,
                 has_more: false,
             });
-        };
-        let local_sequence = local_frontier.get(&device).copied().unwrap_or(0);
-        let seen = remote_frontier
-            .get(&device)
-            .copied()
-            .unwrap_or(0)
-            .min(local_sequence);
-        let max_changes = max_changes.min(MAX_OUTBOUND_CHANGES);
-        let max_payload_bytes = max_payload_bytes.min(MAX_OUTBOUND_PAYLOAD_BYTES);
-        if max_changes == 0 || max_payload_bytes == 0 {
-            return Ok(OutboundChangeBatch {
-                changes: Vec::new(),
-                payload_bytes: 0,
-                has_more: seen < local_sequence,
-            });
         }
         let mut simulated = remote_frontier.clone();
-        if seen == 0 {
-            simulated.remove(&device);
-        } else {
-            simulated.insert(device, seen);
+        let mut cursors = BTreeMap::new();
+        for (origin, local_sequence) in &local_frontier {
+            let seen = remote_frontier
+                .get(origin)
+                .copied()
+                .unwrap_or(0)
+                .min(*local_sequence);
+            if seen == 0 {
+                simulated.remove(origin);
+            } else {
+                simulated.insert(*origin, seen);
+            }
+            if seen < *local_sequence {
+                cursors.insert(*origin, (seen.saturating_add(1), *local_sequence));
+            }
         }
+        let max_changes = max_changes.min(MAX_OUTBOUND_CHANGES);
+        let max_payload_bytes = max_payload_bytes.min(MAX_OUTBOUND_PAYLOAD_BYTES);
         let mut changes = Vec::new();
         let mut payload_bytes = 0usize;
-        let mut sequence = seen.saturating_add(1);
-        while sequence <= local_sequence && changes.len() < max_changes {
-            let change = change_for_sequence(&connection, device, sequence)?;
-            let ready = change
-                .base_frontier()
-                .iter()
-                .all(|(origin, required)| simulated.get(origin).copied().unwrap_or(0) >= *required);
-            if !ready {
-                return Err(LocalChangeJournalError::UnsatisfiedDependencies);
+        if max_changes == 0 || max_payload_bytes == 0 {
+            return Ok(OutboundChangeBatch {
+                changes,
+                payload_bytes,
+                has_more: !cursors.is_empty(),
+            });
+        }
+        let mut heads = BTreeMap::new();
+        while changes.len() < max_changes && !cursors.is_empty() {
+            let mut next: Option<(CanonicalChange, SyncDeviceId)> = None;
+            for (origin, (sequence, _)) in &cursors {
+                let head = match heads.remove(origin) {
+                    Some(head) => head,
+                    None => change_for_sequence(&connection, *origin, *sequence)?,
+                };
+                let ready = head.base_frontier().iter().all(|(dependency, required)| {
+                    simulated.get(dependency).copied().unwrap_or(0) >= *required
+                });
+                let earlier = next.as_ref().is_none_or(|(current, _)| {
+                    (head.timestamp(), head.origin_device())
+                        < (current.timestamp(), current.origin_device())
+                });
+                if ready && earlier {
+                    if let Some((previous, previous_origin)) = next.take() {
+                        heads.insert(previous_origin, previous);
+                    }
+                    next = Some((head, *origin));
+                } else {
+                    heads.insert(*origin, head);
+                }
             }
+            let Some((change, origin)) = next else {
+                return Err(LocalChangeJournalError::UnsatisfiedDependencies);
+            };
             let bytes = change.payload().map_or(0, |payload| payload.bytes().len());
             if payload_bytes.saturating_add(bytes) > max_payload_bytes {
                 if changes.is_empty() {
@@ -1463,14 +1485,21 @@ impl LocalChangeJournal for Database {
                 break;
             }
             payload_bytes += bytes;
-            simulated.insert(device, sequence);
+            let (sequence, last) = cursors
+                .get_mut(&origin)
+                .ok_or(LocalChangeJournalError::Corrupt)?;
+            simulated.insert(origin, *sequence);
+            if *sequence == *last {
+                cursors.remove(&origin);
+            } else {
+                *sequence += 1;
+            }
             changes.push(change);
-            sequence = sequence.saturating_add(1);
         }
         Ok(OutboundChangeBatch {
             changes,
             payload_bytes,
-            has_more: sequence <= local_sequence,
+            has_more: !cursors.is_empty(),
         })
     }
 
@@ -2293,6 +2322,99 @@ mod tests {
     }
 
     #[test]
+    fn a_peer_relays_changes_it_received_from_a_third_device() {
+        let paths = ["a", "b", "c"].map(|name| {
+            std::env::temp_dir().join(format!("sync-relay-{name}-{}.sqlite3", OperationId::new()))
+        });
+        let [a, b, c] = paths
+            .each_ref()
+            .map(|path| Database::open(path).expect("database"));
+        let transfer = |from: &Database, to: &Database, at: i64| {
+            let batch = from
+                .outbound_changes(
+                    &to.local_frontier().expect("peer frontier"),
+                    MAX_OUTBOUND_CHANGES,
+                    MAX_OUTBOUND_PAYLOAD_BYTES,
+                )
+                .expect("outbound batch");
+            let id = OperationId::new();
+            to.stage_incoming_batch(
+                SyncDeviceId::new(),
+                id,
+                &canonical_batch_hash(&batch.changes),
+                &batch.changes,
+                TimestampMillis::new(at),
+            )
+            .expect("stage batch");
+            let applied = to
+                .apply_incoming_batch(id, TimestampMillis::new(at + 1))
+                .expect("apply batch");
+            assert_eq!(applied.state, IncomingBatchState::Committed);
+            batch.changes
+        };
+        let from_a = PersonaId::new();
+        PersonaRepository::create(
+            &a,
+            Persona::new(from_a, "A".into(), "First".into(), TimestampMillis::new(10))
+                .expect("persona"),
+        )
+        .expect("create on a");
+        transfer(&a, &b, 20);
+        let from_b = PersonaId::new();
+        PersonaRepository::create(
+            &b,
+            Persona::new(
+                from_b,
+                "B".into(),
+                "Second".into(),
+                TimestampMillis::new(30),
+            )
+            .expect("persona"),
+        )
+        .expect("create on b");
+
+        let relayed = transfer(&b, &c, 40);
+
+        let a_device = a
+            .local_frontier()
+            .expect("a frontier")
+            .into_keys()
+            .next()
+            .expect("a device");
+        assert_eq!(relayed.len(), 2);
+        assert_eq!(relayed[0].origin_device(), a_device);
+        assert_ne!(relayed[1].origin_device(), a_device);
+        assert!(
+            PersonaRepository::get(&c, from_a)
+                .expect("relayed")
+                .is_some()
+        );
+        assert!(
+            PersonaRepository::get(&c, from_b)
+                .expect("direct")
+                .is_some()
+        );
+        assert_eq!(
+            c.local_frontier().expect("c"),
+            b.local_frontier().expect("b")
+        );
+        assert!(
+            b.outbound_changes(
+                &c.local_frontier().expect("c"),
+                MAX_OUTBOUND_CHANGES,
+                MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("caught up")
+            .changes
+            .is_empty()
+        );
+        drop((a, b, c));
+        for path in paths {
+            std::fs::remove_file(path).expect("remove test database");
+        }
+    }
+
+    #[test]
     fn incoming_persona_batches_apply_replay_and_preserve_pending_conflicts() {
         let source_path = std::env::temp_dir().join(format!(
             "sync-incoming-source-{}.sqlite3",
@@ -2462,7 +2584,7 @@ mod tests {
         );
         let conflict_batch = source
             .outbound_changes(
-                &CausalFrontier::from([(source_device, 5)]),
+                &CausalFrontier::from([(source_device, 5), (target_device, 1)]),
                 MAX_OUTBOUND_CHANGES,
                 MAX_OUTBOUND_PAYLOAD_BYTES,
             )
