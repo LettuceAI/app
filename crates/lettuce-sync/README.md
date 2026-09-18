@@ -65,7 +65,13 @@ binds ordered change fingerprints; the repository stages metadata and payloads
 durably before apply. The first materializer accepts complete persona and
 default snapshots, advances change/frontier evidence in the same transaction as
 the aggregate, observes remote hybrid clocks and replays committed delivery
-after restart. Unsupported schemas and causal gaps remain pending. Concurrent
+after restart. Unsupported schemas and causal gaps remain pending; a later
+session re-sends the same changes in a new batch. Backlog #20: two cases used
+to stay pending forever and now commit. An update for a persona this device
+never received (created before journaling existed on its origin) adopts the
+complete snapshot, and a default change whose persona is archived or missing
+here is journaled with the local default kept and an unresolved conflict
+recorded (winning side current). Concurrent
 persona changes retain both snapshots and deterministic winner evidence in an
 immutable conflict record.
 

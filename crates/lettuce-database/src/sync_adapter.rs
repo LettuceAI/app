@@ -984,10 +984,7 @@ fn apply_persona_change(
         change.operation() == ChangeOperation::Update
             && change.base_revision() == Some(value.content_hash())
     });
-    let clean_insert = current.is_none() && change.operation() == ChangeOperation::Insert;
-    if current.is_none() && !clean_insert {
-        return Err(ApplyOneError::Pending);
-    }
+    let clean_insert = current.is_none();
     let conflict = !same && !clean_update && !clean_insert;
     let current_change = current_payload
         .as_ref()
@@ -1099,22 +1096,29 @@ fn apply_persona_default_change(
             .is_some_and(|current| incoming_wins(change, current));
     observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
     insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
+    let mut unmaterialized = false;
     if winner_is_incoming && !same {
-        apply_synced_persona_default(tx, incoming).map_err(repository_apply_error)?;
+        match apply_synced_persona_default(tx, incoming) {
+            Ok(_) => {}
+            Err(RepositoryError::Archived | RepositoryError::NotFound) => unmaterialized = true,
+            Err(error) => return Err(repository_apply_error(error)),
+        }
     }
-    if conflict {
+    if conflict || unmaterialized {
         insert_conflict(
             tx,
             change,
             current_change.as_ref(),
             Some(current_payload.bytes()),
             payload.bytes(),
-            winner_is_incoming,
+            winner_is_incoming && !unmaterialized,
             now,
         )?;
     }
-    resolve_dominated_conflicts(tx, change, now, None)?;
-    Ok(conflict)
+    if !unmaterialized {
+        resolve_dominated_conflicts(tx, change, now, None)?;
+    }
+    Ok(conflict || unmaterialized)
 }
 
 fn mark_batch_pending(
@@ -2319,6 +2323,130 @@ mod tests {
         );
         drop(database);
         std::fs::remove_file(path).expect("remove test database");
+    }
+
+    fn stage_and_apply(target: &Database, change: CanonicalChange, at: i64) -> IncomingBatchState {
+        let id = OperationId::new();
+        target
+            .stage_incoming_batch(
+                SyncDeviceId::new(),
+                id,
+                &canonical_batch_hash(std::slice::from_ref(&change)),
+                std::slice::from_ref(&change),
+                TimestampMillis::new(at),
+            )
+            .expect("stage batch");
+        target
+            .apply_incoming_batch(id, TimestampMillis::new(at + 1))
+            .expect("apply batch")
+            .state
+    }
+
+    #[test]
+    fn an_update_for_a_persona_that_predates_the_journal_materializes_its_snapshot() {
+        let target = Database::open_in_memory().expect("target");
+        let persona = Persona::new(
+            PersonaId::new(),
+            "Older".into(),
+            "Created before sync".into(),
+            TimestampMillis::new(10),
+        )
+        .expect("persona");
+        let change = CanonicalChange::new(
+            SyncChangeId::new(),
+            SyncDeviceId::new(),
+            1,
+            HybridTimestamp::new(TimestampMillis::new(20), 0),
+            CausalFrontier::new(),
+            persona_sync_entity(persona.id).expect("entity"),
+            ChangeOperation::Update,
+            Some(ContentHash::parse("44".repeat(32)).expect("base hash")),
+            Some(canonical_persona_payload(&persona).expect("payload")),
+        )
+        .expect("change");
+
+        assert_eq!(
+            stage_and_apply(&target, change, 30),
+            IncomingBatchState::Committed
+        );
+        assert_eq!(
+            PersonaRepository::get(&target, persona.id).expect("persona"),
+            Some(persona)
+        );
+    }
+
+    #[test]
+    fn a_default_for_a_locally_archived_persona_commits_as_a_conflict() {
+        let target = Database::open_in_memory().expect("target");
+        let persona_id = PersonaId::new();
+        let created = PersonaRepository::create(
+            &target,
+            Persona::new(
+                persona_id,
+                "Archived".into(),
+                "Archived here".into(),
+                TimestampMillis::new(10),
+            )
+            .expect("persona"),
+        )
+        .expect("create persona");
+        PersonaRepository::archive(
+            &target,
+            PersonaArchiveRequest {
+                persona_id,
+                expected_persona_revision: created.revision,
+                expected_default_revision: None,
+                now: TimestampMillis::new(20),
+            },
+        )
+        .expect("archive persona");
+        let before = PersonaRepository::get_default_snapshot(&target)
+            .expect("default")
+            .state;
+        let incoming = lettuce_characters::PersonaDefaultState {
+            persona_id: Some(persona_id),
+            revision: before.revision.next().expect("next revision"),
+            created_at: before.created_at,
+            updated_at: TimestampMillis::new(30),
+        };
+        let change = CanonicalChange::new(
+            SyncChangeId::new(),
+            SyncDeviceId::new(),
+            1,
+            HybridTimestamp::new(TimestampMillis::new(30), 0),
+            CausalFrontier::new(),
+            persona_default_sync_entity().expect("entity"),
+            ChangeOperation::Update,
+            Some(
+                canonical_persona_default_payload(&before)
+                    .expect("base")
+                    .content_hash()
+                    .clone(),
+            ),
+            Some(canonical_persona_default_payload(&incoming).expect("payload")),
+        )
+        .expect("change");
+
+        assert_eq!(
+            stage_and_apply(&target, change, 40),
+            IncomingBatchState::Committed
+        );
+        assert_eq!(
+            PersonaRepository::get_default_snapshot(&target)
+                .expect("default")
+                .state,
+            before
+        );
+        let (count, side): (i64, String) = target
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT COUNT(*), MAX(winning_side) FROM sync_conflicts WHERE status = 'unresolved'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("conflicts");
+        assert_eq!((count, side.as_str()), (1, "current"));
     }
 
     #[test]
