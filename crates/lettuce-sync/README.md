@@ -71,16 +71,19 @@ to stay pending forever and now commit. An update for a persona this device
 never received (created before journaling existed on its origin) adopts the
 complete snapshot, and a default change whose persona is archived or missing
 here is journaled with the local default kept and an unresolved conflict
-recorded (winning side current). Concurrent
+recorded (winning side current). Choosing the other side of that conflict is
+refused until the persona is restored; any later local default change
+supersedes it. Conflicts whose current side predates the journal (the seeded
+default) are superseded by a later change that observes the incoming side. Concurrent
 persona changes retain both snapshots and deterministic winner evidence in an
 immutable conflict record.
 
-Local persona operation identities are scoped to the latest remote change
-journaled for the entity (backlog #21): a remote winner can move a persona or
+Local persona operation identities are scoped to the latest remote change that
+won locally for the entity (backlog #21): a remote winner can move a persona or
 default revision backwards, and revision-derived identities would then repeat
 and turn the next local edit into a permanent stale-revision replay. Entities
-never touched by sync keep their unscoped identities, and exact retries within
-the same scope still replay.
+never touched by sync keep their unscoped identities, and a losing remote
+change leaves the scope unchanged, so an exact retry still replays.
 
 Persona conflicts can be listed as at most 100 typed current/other candidates
 and resolved by choosing either side. Resolution always creates a new local

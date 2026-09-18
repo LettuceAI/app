@@ -190,9 +190,10 @@ impl StoredChangeRow {
     }
 }
 
-/// A local operation identity scoped to the latest remote change journaled
-/// for the entity. A remote winner can move an aggregate revision backwards,
-/// so revision-derived identities would otherwise repeat on this device.
+/// A local operation identity scoped to the latest remote change that won
+/// locally for the entity. A remote winner can move an aggregate revision
+/// backwards, so revision-derived identities would otherwise repeat on this
+/// device; losing remote changes leave the scope, and so retries, unchanged.
 pub(crate) fn entity_scoped_operation(
     connection: &Connection,
     entity: &SyncEntity,
@@ -200,9 +201,15 @@ pub(crate) fn entity_scoped_operation(
 ) -> Result<OperationId, LocalChangeJournalError> {
     let last_remote = connection
         .query_row(
-            "SELECT change_id FROM sync_changes
-             WHERE entity_kind = ?1 AND entity_id = ?2 AND operation_id IS NULL
-             ORDER BY rowid DESC LIMIT 1",
+            "SELECT change.change_id FROM sync_changes change
+             WHERE change.entity_kind = ?1 AND change.entity_id = ?2
+               AND change.operation_id IS NULL
+               AND NOT EXISTS (
+                 SELECT 1 FROM sync_conflicts conflict
+                 WHERE conflict.incoming_change_id = change.change_id
+                   AND conflict.winning_side = 'current'
+               )
+             ORDER BY change.rowid DESC LIMIT 1",
             params![entity.kind(), entity.id()],
             |row| row.get::<_, String>(0),
         )
@@ -921,8 +928,7 @@ fn resolve_dominated_conflicts(
         .prepare(
             "SELECT conflict_id, current_change_id, incoming_change_id
              FROM sync_conflicts
-             WHERE status = 'unresolved' AND entity_kind = ?1 AND entity_id = ?2
-               AND current_change_id IS NOT NULL",
+             WHERE status = 'unresolved' AND entity_kind = ?1 AND entity_id = ?2",
         )
         .map_err(|_| ApplyOneError::Storage)?;
     let rows = statement
@@ -931,7 +937,7 @@ fn resolve_dominated_conflicts(
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(1)?,
                     row.get::<_, String>(2)?,
                 ))
             },
@@ -943,25 +949,31 @@ fn resolve_dominated_conflicts(
         if skipped_conflict.is_some_and(|skipped| skipped.to_string() == conflict_id) {
             continue;
         }
-        let current_id = SyncChangeId::from_uuid(
-            Uuid::parse_str(&current_id).map_err(|_| ApplyOneError::Corrupt)?,
-        );
         let incoming_id = SyncChangeId::from_uuid(
             Uuid::parse_str(&incoming_id).map_err(|_| ApplyOneError::Corrupt)?,
         );
-        let current = load_change_by_id(connection, current_id)
-            .map_err(|error| match error {
-                IncomingChangeError::Storage => ApplyOneError::Storage,
-                _ => ApplyOneError::Corrupt,
-            })?
-            .ok_or(ApplyOneError::Corrupt)?;
+        let current = current_id
+            .map(|current_id| {
+                let current_id = SyncChangeId::from_uuid(
+                    Uuid::parse_str(&current_id).map_err(|_| ApplyOneError::Corrupt)?,
+                );
+                load_change_by_id(connection, current_id)
+                    .map_err(|error| match error {
+                        IncomingChangeError::Storage => ApplyOneError::Storage,
+                        _ => ApplyOneError::Corrupt,
+                    })?
+                    .ok_or(ApplyOneError::Corrupt)
+            })
+            .transpose()?;
         let incoming = load_change_by_id(connection, incoming_id)
             .map_err(|error| match error {
                 IncomingChangeError::Storage => ApplyOneError::Storage,
                 _ => ApplyOneError::Corrupt,
             })?
             .ok_or(ApplyOneError::Corrupt)?;
-        if (winner.id() == current.id() || winner.observes(&current))
+        if current
+            .as_ref()
+            .is_none_or(|current| winner.id() == current.id() || winner.observes(current))
             && (winner.id() == incoming.id() || winner.observes(&incoming))
         {
             resolved.push(conflict_id);
@@ -2473,6 +2485,33 @@ mod tests {
             )
             .expect("conflicts");
         assert_eq!((count, side.as_str()), (1, "current"));
+
+        let other = PersonaRepository::create(
+            &target,
+            Persona::new(
+                PersonaId::new(),
+                "Active".into(),
+                "Still active".into(),
+                TimestampMillis::new(50),
+            )
+            .expect("persona"),
+        )
+        .expect("create active persona");
+        PersonaRepository::set_default(
+            &target,
+            other.id,
+            before.revision,
+            TimestampMillis::new(60),
+        )
+        .expect("local default change");
+        let status: String = target
+            .connection()
+            .expect("connection")
+            .query_row("SELECT resolution_choice FROM sync_conflicts", [], |row| {
+                row.get(0)
+            })
+            .expect("conflict status");
+        assert_eq!(status, "superseded");
     }
 
     #[test]
@@ -2553,6 +2592,85 @@ mod tests {
         )
         .expect("edit after the remote winner");
         assert_eq!(edited.title, "Local three");
+    }
+
+    #[test]
+    fn a_losing_remote_change_keeps_local_retries_replayable() {
+        let source = Database::open_in_memory().expect("source");
+        let target = Database::open_in_memory().expect("target");
+        let persona_id = PersonaId::new();
+        PersonaRepository::create(
+            &source,
+            Persona::new(
+                persona_id,
+                "Shared".into(),
+                "Both".into(),
+                TimestampMillis::new(1),
+            )
+            .expect("persona"),
+        )
+        .expect("create");
+        for change in source
+            .outbound_changes(
+                &CausalFrontier::new(),
+                MAX_OUTBOUND_CHANGES,
+                MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("insert")
+            .changes
+        {
+            stage_and_apply(&target, change, 2);
+        }
+        let draft = |title: &str| PersonaDraftUpdate {
+            title: title.into(),
+            description: "Edited".into(),
+            nickname: None,
+            design_description: None,
+            avatar_crop: None,
+            image_recommendation: None,
+        };
+        PersonaRepository::revise(
+            &source,
+            persona_id,
+            Revision::INITIAL,
+            draft("Earlier remote"),
+            TimestampMillis::new(5),
+        )
+        .expect("remote edit");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let local = PersonaRepository::revise(
+            &target,
+            persona_id,
+            Revision::INITIAL,
+            draft("Later local"),
+            TimestampMillis::new(10),
+        )
+        .expect("local edit");
+        let frontier = target.local_frontier().expect("frontier");
+        for change in source
+            .outbound_changes(&frontier, MAX_OUTBOUND_CHANGES, MAX_OUTBOUND_PAYLOAD_BYTES)
+            .expect("remote edit batch")
+            .changes
+        {
+            stage_and_apply(&target, change, 20);
+        }
+        assert_eq!(
+            PersonaRepository::get(&target, persona_id)
+                .expect("persona")
+                .expect("present")
+                .title,
+            "Later local"
+        );
+
+        let retry = PersonaRepository::revise(
+            &target,
+            persona_id,
+            Revision::INITIAL,
+            draft("Later local"),
+            TimestampMillis::new(10),
+        )
+        .expect("exact retry replays");
+        assert_eq!(retry, local);
     }
 
     #[test]
