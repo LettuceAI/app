@@ -18,8 +18,8 @@ use zeroize::Zeroizing;
 
 pub const BACKUP_ENVELOPE_VERSION: u32 = 2;
 pub const MAX_BACKUP_ENTRIES: usize = 65_792;
-pub const MAX_BACKUP_ENTRY_BYTES: usize = 512 * 1024 * 1024;
-pub const MAX_BACKUP_TOTAL_BYTES: usize = 512 * 1024 * 1024;
+pub const MAX_BACKUP_ENTRY_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+pub const MAX_BACKUP_TOTAL_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 pub const MAX_BACKUP_WRITE_CHUNK_BYTES: usize = 1024 * 1024;
 
 const MAGIC: [u8; 16] = *b"LETTUCE-BACKUP2\0";
@@ -324,8 +324,8 @@ impl<W: Write> BackupWriter<W> {
             size = size
                 .checked_add(current_len as u64)
                 .ok_or(BackupEnvelopeError::LimitExceeded)?;
-            if size > MAX_BACKUP_ENTRY_BYTES as u64
-                || self.total.saturating_add(size) > MAX_BACKUP_TOTAL_BYTES as u64
+            if size > MAX_BACKUP_ENTRY_BYTES
+                || self.total.saturating_add(size) > MAX_BACKUP_TOTAL_BYTES
             {
                 return Err(BackupEnvelopeError::LimitExceeded);
             }
@@ -354,7 +354,7 @@ impl<W: Write> BackupWriter<W> {
         self.total = self
             .total
             .checked_add(size)
-            .filter(|total| *total <= MAX_BACKUP_TOTAL_BYTES as u64)
+            .filter(|total| *total <= MAX_BACKUP_TOTAL_BYTES)
             .ok_or(BackupEnvelopeError::LimitExceeded)?;
         self.names.insert(name.to_owned());
         self.entries.push(BackupEntryDescriptor {
@@ -772,14 +772,14 @@ fn validate_manifest(manifest: &BackupManifest) -> Result<(), BackupEnvelopeErro
         if !prefixes.insert(entry.nonce_prefix) {
             return Err(BackupEnvelopeError::InvalidMetadata);
         }
-        if entry.plaintext_bytes > MAX_BACKUP_ENTRY_BYTES as u64
+        if entry.plaintext_bytes > MAX_BACKUP_ENTRY_BYTES
             || ContentHash::parse(entry.content_hash.as_str()).as_ref() != Ok(&entry.content_hash)
         {
             return Err(BackupEnvelopeError::LimitExceeded);
         }
         total = total
             .checked_add(entry.plaintext_bytes)
-            .filter(|total| *total <= MAX_BACKUP_TOTAL_BYTES as u64)
+            .filter(|total| *total <= MAX_BACKUP_TOTAL_BYTES)
             .ok_or(BackupEnvelopeError::LimitExceeded)?;
     }
     Ok(())
@@ -965,8 +965,7 @@ impl BackupArchiveStore {
         backup_id: OperationId,
         total_bytes: u64,
     ) -> Result<InstallPreparation, BackupArchiveStoreError> {
-        let max = u64::try_from(MAX_BACKUP_TOTAL_BYTES)
-            .ok()
+        let max = Some(MAX_BACKUP_TOTAL_BYTES)
             .and_then(|total| {
                 let chunks =
                     u64::try_from(MAX_BACKUP_ENTRIES).ok()? + total.div_ceil(CHUNK_BYTES as u64);

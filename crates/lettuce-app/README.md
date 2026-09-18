@@ -1561,3 +1561,9 @@ lorebook generator (generator output cap) use it. Companion Soul writer,
 companion memory, lorebook entry and creation helper runs receive their profile
 from the host, which builds it with the same function and the matching defaults
 constant.
+
+`ProviderBackupCoordinator::export_to` writes a v2 backup into any writer one
+section at a time (data sections, then each media blob and conversation
+artifact read, checked and appended before the next is loaded), so export
+memory is bounded by the largest single object instead of the library;
+`export` is the in-memory wrapper.

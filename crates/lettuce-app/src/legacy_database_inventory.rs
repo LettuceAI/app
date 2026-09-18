@@ -8,8 +8,8 @@ use lettuce_transfer::{
     LEGACY_MEDIA_TOTAL_BYTES_LIMIT, LegacyBackupCompatibilityError, LegacyBackupCompatibilityPlan,
     LegacyBackupDocument, LegacyBackupDocumentKind, LegacyBackupInventory, LegacyBackupMedia,
     LegacyBackupMediaRoot, LegacyDatabasePreflightError, LegacyImportPlan, LegacyLorebookPlan,
-    LegacyMediaPlan, LegacyPersonaPlan, MAX_BACKUP_ENTRIES, MAX_BACKUP_ENTRY_BYTES,
-    MAX_BACKUP_TOTAL_BYTES, plan_legacy_backup_compatibility,
+    LegacyMediaPlan, LegacyPersonaPlan, MAX_BACKUP_ENTRIES, MAX_LEGACY_BACKUP_ENTRY_BYTES,
+    MAX_LEGACY_BACKUP_TOTAL_BYTES, plan_legacy_backup_compatibility,
 };
 use lettuce_types::ContentHash;
 use zeroize::Zeroizing;
@@ -119,8 +119,8 @@ impl MediaWalk {
         segments: &[String],
         expected_len: u64,
     ) -> Result<(), LegacyDatabasePreflightError> {
-        let object_limit = MAX_BACKUP_ENTRY_BYTES as u64;
-        let total_limit = MAX_BACKUP_TOTAL_BYTES as u64;
+        let object_limit = MAX_LEGACY_BACKUP_ENTRY_BYTES as u64;
+        let total_limit = MAX_LEGACY_BACKUP_TOTAL_BYTES as u64;
         if self.media.len() >= MAX_BACKUP_ENTRIES {
             return Err(LegacyDatabasePreflightError::LimitExceeded {
                 table: "media_files",
@@ -471,7 +471,7 @@ mod tests {
     fn oversized_media_objects_reject_with_their_locator() {
         let root = app_data_dir();
         let file = File::create(root.join("generated_images/huge.bin")).expect("huge file");
-        file.set_len(MAX_BACKUP_ENTRY_BYTES as u64 + 1)
+        file.set_len(MAX_LEGACY_BACKUP_ENTRY_BYTES as u64 + 1)
             .expect("sparse size");
 
         let error = read_legacy_media(&root).expect_err("oversized media");
@@ -480,7 +480,7 @@ mod tests {
             error,
             LegacyDatabasePreflightError::MediaObjectTooLarge {
                 locator: "generated_images/huge.bin".into(),
-                limit: MAX_BACKUP_ENTRY_BYTES as u64,
+                limit: MAX_LEGACY_BACKUP_ENTRY_BYTES as u64,
             }
         );
         fs::remove_dir_all(root).expect("remove fixture");

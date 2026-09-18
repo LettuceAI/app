@@ -13,7 +13,11 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 use zip::ZipArchive;
 
-use crate::{MAX_BACKUP_ENTRIES, MAX_BACKUP_ENTRY_BYTES, MAX_BACKUP_TOTAL_BYTES};
+use crate::MAX_BACKUP_ENTRIES;
+
+/// The version-1 decoder still reads the whole legacy archive into memory.
+pub const MAX_LEGACY_BACKUP_ENTRY_BYTES: usize = 512 * 1024 * 1024;
+pub const MAX_LEGACY_BACKUP_TOTAL_BYTES: usize = 512 * 1024 * 1024;
 
 const LEGACY_MANIFEST_VERSION: u32 = 2;
 const LEGACY_MARKER: &[u8] = b"LETTUCE_BACKUP_VERIFIED";
@@ -176,7 +180,7 @@ pub fn decode_legacy_backup_inventory(
     password: &str,
 ) -> Result<LegacyBackupInventory, LegacyBackupInventoryError> {
     validate_password(password)?;
-    let max_archive = MAX_BACKUP_TOTAL_BYTES
+    let max_archive = MAX_LEGACY_BACKUP_TOTAL_BYTES
         .checked_add(MAX_LEGACY_ARCHIVE_OVERHEAD_BYTES)
         .ok_or(LegacyBackupInventoryError::LimitExceeded)?;
     if bytes.len() > max_archive || !bytes.starts_with(b"PK\x03\x04") {
@@ -230,12 +234,12 @@ pub fn decode_legacy_backup_inventory(
         };
         let encrypted = read_bounded(
             &mut file,
-            u64::try_from(MAX_BACKUP_ENTRY_BYTES)
+            u64::try_from(MAX_LEGACY_BACKUP_ENTRY_BYTES)
                 .map_err(|_| LegacyBackupInventoryError::LimitExceeded)?
                 .saturating_add(16),
         )?;
         let decrypted = Zeroizing::new(decrypt(&encrypted, &key, &nonce)?);
-        if decrypted.len() > MAX_BACKUP_ENTRY_BYTES {
+        if decrypted.len() > MAX_LEGACY_BACKUP_ENTRY_BYTES {
             return Err(LegacyBackupInventoryError::LimitExceeded);
         }
         if let Some(kind) = document {
@@ -286,7 +290,7 @@ fn validate_archive_metadata(
             }
             continue;
         }
-        let max_entry = u64::try_from(MAX_BACKUP_ENTRY_BYTES)
+        let max_entry = u64::try_from(MAX_LEGACY_BACKUP_ENTRY_BYTES)
             .map_err(|_| LegacyBackupInventoryError::LimitExceeded)?
             .saturating_add(16);
         if file.size() > max_entry {
@@ -296,7 +300,7 @@ fn validate_archive_metadata(
             .checked_add(file.size())
             .ok_or(LegacyBackupInventoryError::LimitExceeded)?;
         if total
-            > u64::try_from(MAX_BACKUP_TOTAL_BYTES)
+            > u64::try_from(MAX_LEGACY_BACKUP_TOTAL_BYTES)
                 .map_err(|_| LegacyBackupInventoryError::LimitExceeded)?
         {
             return Err(LegacyBackupInventoryError::LimitExceeded);

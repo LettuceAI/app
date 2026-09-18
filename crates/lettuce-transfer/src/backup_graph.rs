@@ -259,12 +259,50 @@ pub enum ProviderBackupGraphError {
     Serialization,
 }
 
+/// A validated export: the fixed data and secret sections, then the media
+/// blobs and conversation artifacts the writer appends one at a time through
+/// [`backup_media_section`] and [`backup_artifact_section`].
+#[derive(Debug)]
+pub struct ProviderBackupExportPlan {
+    pub data_sections: Vec<BackupSection>,
+    pub media: Vec<(lettuce_types::ContentHash, u64)>,
+    pub artifacts: Vec<TrustedArtifactDescriptor>,
+}
+
 pub fn provider_backup_sections(
-    mut graph: ProviderBackupGraph,
+    graph: ProviderBackupGraph,
     secrets: Vec<ProviderBackupSecret>,
     media: Vec<BackupMediaObject>,
     artifacts: Vec<BackupConversationArtifact>,
 ) -> Result<Vec<BackupSection>, ProviderBackupGraphError> {
+    let plan = plan_provider_backup_export(graph, secrets)?;
+    if plan.media.len() != media.len() || plan.artifacts.len() != artifacts.len() {
+        return Err(ProviderBackupGraphError::InvalidGraph);
+    }
+    let mut sections = plan.data_sections;
+    for ((content_hash, byte_size), object) in plan.media.iter().zip(media) {
+        if object.content_hash != *content_hash {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+        sections.push(backup_media_section(
+            content_hash,
+            *byte_size,
+            &object.bytes,
+        )?);
+    }
+    for (descriptor, artifact) in plan.artifacts.iter().zip(artifacts) {
+        if artifact.descriptor != *descriptor {
+            return Err(ProviderBackupGraphError::InvalidGraph);
+        }
+        sections.push(backup_artifact_section(descriptor, &artifact.bytes)?);
+    }
+    Ok(sections)
+}
+
+pub fn plan_provider_backup_export(
+    mut graph: ProviderBackupGraph,
+    secrets: Vec<ProviderBackupSecret>,
+) -> Result<ProviderBackupExportPlan, ProviderBackupGraphError> {
     canonicalize_and_validate(&mut graph)?;
     let expected = expected_secrets(&graph)?;
     if secrets.len() != expected.len() {
@@ -282,6 +320,20 @@ pub fn provider_backup_sections(
     if supplied.len() != expected.len() {
         return Err(ProviderBackupGraphError::InvalidSecrets);
     }
+    let media = graph
+        .authored
+        .media_blobs
+        .iter()
+        .filter(|blob| blob.state == BlobState::Ready)
+        .map(|blob| {
+            if blob.byte_size > MAX_MEDIA_BLOB_BYTES {
+                Err(ProviderBackupGraphError::LimitExceeded)
+            } else {
+                Ok((blob.content_hash.clone(), blob.byte_size))
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let artifacts = all_conversation_artifact_descriptors(&graph)?;
     let metadata =
         serde_json::to_vec(&graph).map_err(|_| ProviderBackupGraphError::Serialization)?;
     let asr_learning = serde_json::to_vec(&graph.asr_learning)
@@ -315,12 +367,8 @@ pub fn provider_backup_sections(
         secrets: ordered_secrets,
     })
     .map_err(|_| ProviderBackupGraphError::Serialization)?;
-    let media_sections = media_sections(&graph, media)?;
-    let artifact_sections = conversation_artifact_sections(&graph, artifacts)?;
-    let mut sections = Vec::with_capacity(
-        PROVIDER_BACKUP_FIXED_SECTIONS + media_sections.len() + artifact_sections.len(),
-    );
-    sections.extend([
+    let mut data_sections = Vec::with_capacity(PROVIDER_BACKUP_FIXED_SECTIONS);
+    data_sections.extend([
         BackupSection::new("data/provider-graph.json", "provider-graph.v2", metadata),
         BackupSection::new(
             "secrets/provider-secrets.json",
@@ -371,9 +419,11 @@ pub fn provider_backup_sections(
             dynamic_memory,
         ),
     ]);
-    sections.extend(media_sections);
-    sections.extend(artifact_sections);
-    Ok(sections)
+    Ok(ProviderBackupExportPlan {
+        data_sections,
+        media,
+        artifacts,
+    })
 }
 
 pub fn provider_backup_secret_requirements(
@@ -382,20 +432,6 @@ pub fn provider_backup_secret_requirements(
     let mut graph = graph.clone();
     canonicalize_and_validate(&mut graph)?;
     Ok(expected_secrets(&graph)?.into_iter().collect())
-}
-
-pub fn provider_backup_media_requirements(
-    graph: &ProviderBackupGraph,
-) -> Result<Vec<(lettuce_types::ContentHash, u64)>, ProviderBackupGraphError> {
-    let mut graph = graph.clone();
-    canonicalize_and_validate(&mut graph)?;
-    Ok(graph
-        .authored
-        .media_blobs
-        .into_iter()
-        .filter(|blob| blob.state == BlobState::Ready)
-        .map(|blob| (blob.content_hash, blob.byte_size))
-        .collect())
 }
 
 pub fn provider_backup_artifact_requirements(
@@ -483,96 +519,66 @@ pub(crate) fn all_conversation_artifact_descriptors(
         .collect())
 }
 
-fn conversation_artifact_sections(
-    graph: &ProviderBackupGraph,
-    artifacts: Vec<BackupConversationArtifact>,
-) -> Result<Vec<BackupSection>, ProviderBackupGraphError> {
-    let expected = all_conversation_artifact_descriptors(graph)?;
-    if expected.len() != artifacts.len() {
+/// The backup section of one conversation artifact, checked against its
+/// descriptor's size and digest.
+pub fn backup_artifact_section(
+    descriptor: &TrustedArtifactDescriptor,
+    bytes: &[u8],
+) -> Result<BackupSection, ProviderBackupGraphError> {
+    let (name, schema, digest, byte_size) = backup_artifact_section_identity(descriptor);
+    if u64::try_from(bytes.len()).ok() != Some(byte_size) || &content_hash_of(bytes) != digest {
         return Err(ProviderBackupGraphError::InvalidGraph);
     }
-    expected
-        .into_iter()
-        .zip(artifacts)
-        .map(|(expected, artifact)| {
-            if artifact.descriptor != expected {
-                return Err(ProviderBackupGraphError::InvalidGraph);
-            }
-            let (name, schema, digest, byte_size) = match &expected {
-                TrustedArtifactDescriptor::Snapshot(reference) => (
-                    format!("conversation/snapshots/{}", reference.artifact_id),
-                    format!("conversation-snapshot.v{}", reference.schema_version),
-                    &reference.digest,
-                    reference.byte_size,
-                ),
-                TrustedArtifactDescriptor::Replay(reference) => (
-                    format!("conversation/replays/{}", reference.artifact_id),
-                    format!("conversation-replay.v{}", reference.schema_version),
-                    &reference.digest,
-                    reference.byte_size,
-                ),
-            };
-            if artifact.bytes.len()
-                != usize::try_from(byte_size)
-                    .map_err(|_| ProviderBackupGraphError::LimitExceeded)?
-                || lettuce_types::ContentHash::parse(
-                    blake3::hash(&artifact.bytes).to_hex().to_string(),
-                )
-                .as_ref()
-                    != Ok(digest)
-            {
-                return Err(ProviderBackupGraphError::InvalidGraph);
-            }
-            Ok(BackupSection::new(name, schema, artifact.bytes.to_vec()))
-        })
-        .collect()
+    Ok(BackupSection::new(name, schema, bytes.to_vec()))
 }
 
-fn media_sections(
-    graph: &ProviderBackupGraph,
-    media: Vec<BackupMediaObject>,
-) -> Result<Vec<BackupSection>, ProviderBackupGraphError> {
-    let expected = graph
-        .authored
-        .media_blobs
-        .iter()
-        .filter(|blob| blob.state == BlobState::Ready)
-        .map(|blob| (&blob.content_hash, blob.byte_size))
-        .collect::<Vec<_>>();
-    if expected.len() != media.len() {
+pub(crate) fn backup_artifact_section_identity(
+    descriptor: &TrustedArtifactDescriptor,
+) -> (String, String, &lettuce_types::ContentHash, u64) {
+    match descriptor {
+        TrustedArtifactDescriptor::Snapshot(reference) => (
+            format!("conversation/snapshots/{}", reference.artifact_id),
+            format!("conversation-snapshot.v{}", reference.schema_version),
+            &reference.digest,
+            reference.byte_size,
+        ),
+        TrustedArtifactDescriptor::Replay(reference) => (
+            format!("conversation/replays/{}", reference.artifact_id),
+            format!("conversation-replay.v{}", reference.schema_version),
+            &reference.digest,
+            reference.byte_size,
+        ),
+    }
+}
+
+pub const BACKUP_MEDIA_SECTION_SCHEMA: &str = "media-blob.v2";
+
+#[must_use]
+pub fn backup_media_section_name(content_hash: &lettuce_types::ContentHash) -> String {
+    format!("media/blobs/{content_hash}")
+}
+
+/// The backup section of one ready media blob, checked against its size and
+/// content hash.
+pub fn backup_media_section(
+    content_hash: &lettuce_types::ContentHash,
+    byte_size: u64,
+    bytes: &[u8],
+) -> Result<BackupSection, ProviderBackupGraphError> {
+    if u64::try_from(bytes.len()).ok() != Some(byte_size) || &content_hash_of(bytes) != content_hash
+    {
         return Err(ProviderBackupGraphError::InvalidGraph);
     }
-    let total = expected.iter().try_fold(0_usize, |total, (_, size)| {
-        if *size > MAX_MEDIA_BLOB_BYTES {
-            return Err(ProviderBackupGraphError::LimitExceeded);
-        }
-        let size = usize::try_from(*size).map_err(|_| ProviderBackupGraphError::LimitExceeded)?;
-        total
-            .checked_add(size)
-            .ok_or(ProviderBackupGraphError::LimitExceeded)
-    })?;
-    if total > crate::MAX_BACKUP_TOTAL_BYTES {
-        return Err(ProviderBackupGraphError::LimitExceeded);
-    }
-    let mut sections = Vec::with_capacity(expected.len());
-    for ((expected_hash, expected_size), object) in expected.into_iter().zip(media) {
-        if &object.content_hash != expected_hash
-            || object.bytes.len()
-                != usize::try_from(expected_size)
-                    .map_err(|_| ProviderBackupGraphError::LimitExceeded)?
-            || lettuce_types::ContentHash::parse(blake3::hash(&object.bytes).to_hex().to_string())
-                .as_ref()
-                != Ok(expected_hash)
-        {
-            return Err(ProviderBackupGraphError::InvalidGraph);
-        }
-        sections.push(BackupSection::new(
-            format!("media/blobs/{expected_hash}"),
-            "media-blob.v2",
-            object.bytes.to_vec(),
-        ));
-    }
-    Ok(sections)
+    Ok(BackupSection::new(
+        backup_media_section_name(content_hash),
+        BACKUP_MEDIA_SECTION_SCHEMA,
+        bytes.to_vec(),
+    ))
+}
+
+fn content_hash_of(bytes: &[u8]) -> lettuce_types::ContentHash {
+    lettuce_types::ContentHash::parse(blake3::hash(bytes).to_hex().to_string())
+        .expect("BLAKE3 produces a valid content hash")
 }
 
 pub fn canonicalize_and_validate(

@@ -23,6 +23,15 @@ written or restored. Reordered, swapped, truncated or extended data, duplicate
 or unsafe names and duplicate nonce prefixes reject the backup.
 `verify_backup_frame` checks the plaintext frame without the password.
 
+Export is planned by `plan_provider_backup_export` (validated graph, secret
+and data sections, then the ready media blobs and conversation artifacts in
+order); `backup_media_section` and `backup_artifact_section` check one object
+against its size and hash so the app appends it and drops it before loading
+the next. Section limits are 2 GiB per section and 1 TiB in total (backlog #15:
+the earlier 512 MiB total blocked large libraries; legacy had no limit). The
+version-1 decoder and the legacy database inventory keep their 512 MiB
+in-memory limits (`MAX_LEGACY_BACKUP_*`) until they stream too.
+
 Backup reception uses confined resumable partial files and commits to a new
 path only after the file's expected hash (streamed) and frame verify. An existing
 backup is replayed when identical and never replaced. This corrects the legacy

@@ -6,11 +6,10 @@ use lettuce_conversations::{
 };
 use lettuce_settings::{SecretState, SecretStore};
 use lettuce_transfer::{
-    BackupConversationArtifact, BackupEnvelopeError, BackupMediaObject, MAX_BACKUP_ENTRIES,
-    MAX_BACKUP_TOTAL_BYTES, PROVIDER_BACKUP_FIXED_SECTIONS, ProviderBackupGraphError,
-    ProviderBackupSecret, ProviderBackupSource, ProviderBackupSourceError,
-    provider_backup_artifact_requirements, provider_backup_media_requirements,
-    provider_backup_secret_requirements, provider_backup_sections, seal_backup,
+    BackupConversationArtifact, BackupEnvelopeError, BackupWriter, MAX_BACKUP_ENTRIES,
+    PROVIDER_BACKUP_FIXED_SECTIONS, ProviderBackupGraphError, ProviderBackupSecret,
+    ProviderBackupSource, ProviderBackupSourceError, backup_artifact_section, backup_media_section,
+    plan_provider_backup_export, provider_backup_secret_requirements,
 };
 use lettuce_types::{ContentHash, TimestampMillis};
 use zeroize::Zeroizing;
@@ -79,18 +78,23 @@ where
         created_at: TimestampMillis,
         password: &str,
     ) -> Result<Vec<u8>, ProviderBackupError> {
+        self.export_to(Vec::new(), app_version, created_at, password)
+            .await
+    }
+
+    /// Writes the backup to `out` one section at a time: the data sections,
+    /// then each media blob and conversation artifact read, checked and
+    /// appended before the next is loaded. On error `out` holds an
+    /// incomplete backup and must be discarded.
+    pub async fn export_to<W: std::io::Write>(
+        &self,
+        out: W,
+        app_version: impl Into<String>,
+        created_at: TimestampMillis,
+        password: &str,
+    ) -> Result<W, ProviderBackupError> {
         let graph = self.source.read_provider_backup_graph()?;
         let requirements = provider_backup_secret_requirements(&graph)?;
-        let media_requirements = provider_backup_media_requirements(&graph)?;
-        let artifact_requirements = provider_backup_artifact_requirements(&graph)?;
-        if media_requirements
-            .len()
-            .checked_add(artifact_requirements.len())
-            .and_then(|count| count.checked_add(PROVIDER_BACKUP_FIXED_SECTIONS))
-            .is_none_or(|count| count > MAX_BACKUP_ENTRIES)
-        {
-            return Err(ProviderBackupGraphError::LimitExceeded.into());
-        }
         let mut values = Vec::with_capacity(requirements.len());
         for (reference, purpose) in requirements {
             let before = self.secrets.status(&reference, &purpose).await?;
@@ -113,47 +117,26 @@ where
                 value,
             });
         }
-        let mut media = Vec::with_capacity(media_requirements.len());
-        let mut binary_bytes = 0_usize;
-        for (content_hash, byte_size) in media_requirements {
-            let capacity = usize::try_from(byte_size)
-                .map_err(|_| ProviderBackupError::Graph(ProviderBackupGraphError::LimitExceeded))?;
-            binary_bytes = binary_bytes
-                .checked_add(capacity)
-                .filter(|total| *total <= MAX_BACKUP_TOTAL_BYTES)
-                .ok_or(ProviderBackupGraphError::LimitExceeded)?;
-            let mut bytes = Zeroizing::new(Vec::with_capacity(capacity));
-            while bytes.len() < capacity {
-                let chunk = self.media.read_backup_chunk(
-                    &content_hash,
-                    u64::try_from(bytes.len()).map_err(|_| {
-                        ProviderBackupError::Graph(ProviderBackupGraphError::LimitExceeded)
-                    })?,
-                    lettuce_media::MAX_SYNC_MEDIA_CHUNK_BYTES.min(capacity - bytes.len()),
-                )?;
-                if chunk.is_empty() {
-                    return Err(ProviderBackupError::MediaIncomplete);
-                }
-                bytes.extend_from_slice(&chunk);
-            }
-            media.push(BackupMediaObject {
-                content_hash,
-                bytes,
-            });
+        let plan = plan_provider_backup_export(graph, values)?;
+        if plan
+            .media
+            .len()
+            .checked_add(plan.artifacts.len())
+            .and_then(|count| count.checked_add(PROVIDER_BACKUP_FIXED_SECTIONS))
+            .is_none_or(|count| count > MAX_BACKUP_ENTRIES)
+        {
+            return Err(ProviderBackupGraphError::LimitExceeded.into());
         }
-        let mut artifacts = Vec::with_capacity(artifact_requirements.len());
-        for descriptor in artifact_requirements {
-            let byte_size = match &descriptor {
-                TrustedArtifactDescriptor::Snapshot(reference) => reference.byte_size,
-                TrustedArtifactDescriptor::Replay(reference) => reference.byte_size,
-            };
-            binary_bytes = binary_bytes
-                .checked_add(
-                    usize::try_from(byte_size)
-                        .map_err(|_| ProviderBackupGraphError::LimitExceeded)?,
-                )
-                .filter(|total| *total <= MAX_BACKUP_TOTAL_BYTES)
-                .ok_or(ProviderBackupGraphError::LimitExceeded)?;
+        let mut writer = BackupWriter::new(out, app_version, created_at, password)?;
+        for section in &plan.data_sections {
+            writer.append_bytes(&section.name, &section.schema, &section.bytes)?;
+        }
+        for (content_hash, byte_size) in &plan.media {
+            let bytes = self.read_media(content_hash, *byte_size)?;
+            let section = backup_media_section(content_hash, *byte_size, &bytes)?;
+            writer.append_bytes(&section.name, &section.schema, &section.bytes)?;
+        }
+        for descriptor in &plan.artifacts {
             let mut sink = BackupArtifactSink::new(descriptor.clone());
             match descriptor {
                 TrustedArtifactDescriptor::Snapshot(reference) => self
@@ -163,10 +146,35 @@ where
                     .artifacts
                     .export_replay(reference.artifact_id, &mut sink)?,
             }
-            artifacts.push(sink.complete()?);
+            let artifact = sink.complete()?;
+            let section = backup_artifact_section(descriptor, &artifact.bytes)?;
+            writer.append_bytes(&section.name, &section.schema, &section.bytes)?;
         }
-        let sections = provider_backup_sections(graph, values, media, artifacts)?;
-        seal_backup(app_version, created_at, password, sections).map_err(Into::into)
+        writer.finish().map_err(Into::into)
+    }
+
+    fn read_media(
+        &self,
+        content_hash: &ContentHash,
+        byte_size: u64,
+    ) -> Result<Zeroizing<Vec<u8>>, ProviderBackupError> {
+        let capacity = usize::try_from(byte_size)
+            .map_err(|_| ProviderBackupError::Graph(ProviderBackupGraphError::LimitExceeded))?;
+        let mut bytes = Zeroizing::new(Vec::with_capacity(capacity));
+        while bytes.len() < capacity {
+            let chunk = self.media.read_backup_chunk(
+                content_hash,
+                u64::try_from(bytes.len()).map_err(|_| {
+                    ProviderBackupError::Graph(ProviderBackupGraphError::LimitExceeded)
+                })?,
+                lettuce_media::MAX_SYNC_MEDIA_CHUNK_BYTES.min(capacity - bytes.len()),
+            )?;
+            if chunk.is_empty() {
+                return Err(ProviderBackupError::MediaIncomplete);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
     }
 }
 
@@ -1867,11 +1875,10 @@ mod tests {
         );
         let coordinated_database =
             Database::open(&coordinated.database_path).expect("coordinated database");
-        let coordinated_graph =
-            lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(
-                &coordinated_database,
-            )
-            .expect("coordinated graph");
+        let coordinated_graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(
+            &coordinated_database,
+        )
+        .expect("coordinated graph");
         let restored_reference = coordinated_graph
             .accounts
             .iter()
@@ -1914,7 +1921,10 @@ mod tests {
                 .temperature,
             Some(0.42)
         );
-        assert_eq!(round_trip.audio_providers, restore_plan.graph.audio_providers);
+        assert_eq!(
+            round_trip.audio_providers,
+            restore_plan.graph.audio_providers
+        );
         assert_eq!(round_trip.user_voices, restore_plan.graph.user_voices);
         assert_eq!(round_trip.authored, restore_plan.graph.authored);
         assert_eq!(round_trip.asr_learning, restore_plan.graph.asr_learning);
