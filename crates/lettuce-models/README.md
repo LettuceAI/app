@@ -81,5 +81,10 @@ is the shape of the two other legacy layers: a conversation's own model settings
 `GlobalModelSettingsRepository` (stored in `app_settings.model_settings_json`,
 revisioned with the global settings row). Legacy resolved every field as
 conversation, then model, then app; an unset field defers. Feature generation
-slots exist only at the model level. Wiring the layers into request resolution
-is a later slice.
+slots exist only at the model level. `resolve_chat_profile` takes the app layer
+as `global` and the conversation layer as `session`.
+
+A configured sampling parameter is rejected only when the model's capability
+evidence says `Unsupported`; `Unknown` support passes the value through, as
+legacy sent every configured value and nothing in the rewrite fills
+`parameter_support` yet (imports and new models carry `Unknown`).

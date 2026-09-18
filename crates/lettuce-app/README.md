@@ -1549,10 +1549,15 @@ memory, reply helper, lorebook generator) keep their own operation overrides.
 temperature/top_p (and the output cap when the feature has one) come from the
 legacy `FeatureSamplingDefaults` constants, reasoning is off, a conversation's
 own model settings do not apply and the app layer fills what the model leaves
-unset; a gated sampling parameter the model does not declare is cleared instead
-of failing resolution. Help-me-reply (settings output cap where the slot sets
-none), dynamic memory (plus the llama.cpp sampler strip, skipped when the slot
-sets its own llama sampler) and group speaker selection use it. Companion Soul
-writer, companion memory, lorebook entry and creation helper runs receive their
-profile from the host, which builds it with the same function and the matching
-defaults constant; the staged lorebook generator keeps its equivalent builder.
+unset. `FeatureRequestFields` keeps the fields legacy passed per feature: only
+the direct help-me-reply sent top_k, the penalties and prompt caching (the
+scene writer sent prompt caching only); every other feature sent temperature,
+top_p, the output cap and context length, while Ollama and llama.cpp still got
+top_k and the penalties through their request options. Help-me-reply
+(settings output cap where the slot sets none), dynamic memory (plus the
+llama.cpp sampler strip to top_k 40 and neutral penalties, skipped when the
+slot sets its own llama sampler), group speaker selection and the staged
+lorebook generator (generator output cap) use it. Companion Soul writer,
+companion memory, lorebook entry and creation helper runs receive their profile
+from the host, which builds it with the same function and the matching defaults
+constant.

@@ -221,6 +221,7 @@ where
         P: lettuce_settings::GlobalSettingsStore
             + lettuce_models::ModelProfileRepository
             + lettuce_models::ProviderAccountRepository
+            + lettuce_models::GlobalModelSettingsRepository
             + lettuce_context::PromptRepository,
     {
         let current = self.projects.load_staged_lorebook(project_request_id)?;
@@ -359,6 +360,7 @@ where
         P: lettuce_settings::GlobalSettingsStore
             + lettuce_models::ModelProfileRepository
             + lettuce_models::ProviderAccountRepository
+            + lettuce_models::GlobalModelSettingsRepository
             + lettuce_context::PromptRepository,
     {
         match self

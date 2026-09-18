@@ -30,27 +30,28 @@ pub fn select_staged_lorebook_settings(
     )
 }
 
+/// Legacy `LOREBOOK_GENERATOR_DEFAULTS` over the model's lorebook generator
+/// slot; the generator settings' output cap applies where the slot sets none.
 pub fn staged_lorebook_parameter_defaults(
     settings: &lettuce_settings::LorebookGeneratorSettings,
-    authored: &lettuce_models::ChatParameterOverrides,
+    slot: &lettuce_models::FeatureGenerationParameters,
+    protocol: lettuce_models::ProviderProtocol,
+    global: &lettuce_models::ChatParameterProfile,
 ) -> lettuce_models::ChatParameterResolutionInput {
-    use lettuce_models::ParameterOverride::{Inherit, Set};
-    let mut parameters = lettuce_models::ChatParameterResolutionInput {
-        operation: authored.clone(),
-        ..Default::default()
-    };
-    if parameters.operation.temperature == Inherit {
-        parameters.operation.temperature = Set(0.3);
+    let mut parameters = crate::feature_parameter_input(
+        slot,
+        crate::LOREBOOK_GENERATOR_DEFAULTS,
+        crate::FeatureRequestFields::Sampling,
+        protocol,
+        global,
+    );
+    if !matches!(
+        parameters.operation.max_output_tokens,
+        lettuce_models::ParameterOverride::Set(_)
+    ) {
+        parameters.operation.max_output_tokens =
+            lettuce_models::ParameterOverride::Set(settings.output_tokens());
     }
-    if parameters.operation.top_p == Inherit {
-        parameters.operation.top_p = Set(1.0);
-    }
-    if parameters.operation.max_output_tokens == Inherit {
-        parameters.operation.max_output_tokens = Set(settings.output_tokens());
-    }
-    parameters.operation.reasoning_mode = Set(lettuce_models::ReasoningMode::Disabled);
-    parameters.operation.reasoning_effort = lettuce_models::ParameterOverride::Clear;
-    parameters.operation.reasoning_budget_tokens = lettuce_models::ParameterOverride::Clear;
     parameters
 }
 
@@ -174,6 +175,7 @@ impl<
         R: lettuce_settings::GlobalSettingsStore
             + lettuce_models::ModelProfileRepository
             + lettuce_models::ProviderAccountRepository
+            + lettuce_models::GlobalModelSettingsRepository
             + lettuce_context::PromptRepository,
     {
         let settings = lettuce_settings::GlobalSettingsStore::load(self.repository)?;
@@ -218,11 +220,13 @@ impl<
             &account,
             &staged_lorebook_parameter_defaults(
                 &settings.settings.lorebook_generator,
-                &model
-                    .config
-                    .feature_parameters
-                    .lorebook_generator
-                    .parameters,
+                &model.config.feature_parameters.lorebook_generator,
+                account.protocol,
+                &lettuce_models::GlobalModelSettingsRepository::global_model_settings(
+                    self.repository,
+                )?
+                .0
+                .chat_parameters,
             ),
             &lettuce_models::ChatRequirements::default(),
         )?;
@@ -264,6 +268,7 @@ impl<
         R: lettuce_settings::GlobalSettingsStore
             + lettuce_models::ModelProfileRepository
             + lettuce_models::ProviderAccountRepository
+            + lettuce_models::GlobalModelSettingsRepository
             + lettuce_context::PromptRepository,
     {
         let configured_inputs = lettuce_creation::StagedLorebookConfiguredInputs {
@@ -529,6 +534,7 @@ impl<
         R: lettuce_settings::GlobalSettingsStore
             + lettuce_models::ModelProfileRepository
             + lettuce_models::ProviderAccountRepository
+            + lettuce_models::GlobalModelSettingsRepository
             + lettuce_context::PromptRepository,
     {
         let project = self

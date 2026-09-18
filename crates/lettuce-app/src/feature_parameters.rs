@@ -1,6 +1,6 @@
 use lettuce_models::{
-    CapabilityStatus, ChatParameterOverrides, ChatParameterProfile, ChatParameterResolutionInput,
-    FeatureGenerationParameters, ParameterOverride, ParameterSupport, ReasoningMode,
+    ChatParameterOverrides, ChatParameterProfile, ChatParameterResolutionInput,
+    FeatureGenerationParameters, ParameterOverride, ProviderProtocol, ReasoningMode,
 };
 
 /// Legacy `FeatureSamplingDefaults`: the temperature, top_p and output cap a
@@ -49,10 +49,18 @@ pub const GROUP_SPEAKER_SELECTION_DEFAULTS: FeatureSamplingDefaults =
 pub const CREATION_HELPER_DEFAULTS: FeatureSamplingDefaults =
     FeatureSamplingDefaults::with_max_tokens(0.7, 20480);
 
-fn declared<T>(value: &mut ParameterOverride<T>, status: CapabilityStatus) {
-    if status != CapabilityStatus::Supported && matches!(value, ParameterOverride::Set(_)) {
-        *value = ParameterOverride::Clear;
-    }
+/// Which request fields legacy passed for a feature besides temperature,
+/// top_p, the output cap and the context length. Ollama and llama.cpp always
+/// received top_k and the penalties through their request options.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureRequestFields {
+    Sampling,
+    SamplingAndPromptCache,
+    Full,
+}
+
+fn unset<T>(value: &ParameterOverride<T>) -> bool {
+    !matches!(value, ParameterOverride::Set(_))
 }
 
 /// Legacy `feature_model_overrides` + `prepare_feature_request` for one app
@@ -60,40 +68,45 @@ fn declared<T>(value: &mut ParameterOverride<T>, status: CapabilityStatus) {
 /// and top_p (and the output cap when the feature has one) come from the
 /// feature defaults, reasoning is off, and a conversation's own model settings
 /// do not apply (legacy replaced them with the feature slot). The app layer
-/// still fills what the model leaves unset. A gated sampling parameter the
-/// model does not declare is left out: legacy sent it for the provider to
-/// ignore, the resolver rejects it.
+/// still fills what the model leaves unset.
 #[must_use]
 pub fn feature_parameter_input(
     slot: &FeatureGenerationParameters,
     defaults: FeatureSamplingDefaults,
+    fields: FeatureRequestFields,
+    protocol: ProviderProtocol,
     global: &ChatParameterProfile,
-    support: ParameterSupport,
 ) -> ChatParameterResolutionInput {
     let mut operation: ChatParameterOverrides = slot.parameters.clone();
-    if operation.temperature == ParameterOverride::Inherit {
+    if unset(&operation.temperature) {
         operation.temperature = ParameterOverride::Set(defaults.temperature);
     }
-    if operation.top_p == ParameterOverride::Inherit {
+    if unset(&operation.top_p) {
         operation.top_p = ParameterOverride::Set(defaults.top_p);
     }
     if let Some(max_output_tokens) = defaults.max_output_tokens
-        && operation.max_output_tokens == ParameterOverride::Inherit
+        && unset(&operation.max_output_tokens)
     {
         operation.max_output_tokens = ParameterOverride::Set(max_output_tokens);
     }
     operation.reasoning_mode = ParameterOverride::Set(ReasoningMode::Disabled);
     operation.reasoning_effort = ParameterOverride::Clear;
     operation.reasoning_budget_tokens = ParameterOverride::Clear;
-    declared(&mut operation.temperature, support.temperature);
-    declared(&mut operation.top_p, support.top_p);
-    declared(&mut operation.top_k, support.top_k);
-    declared(&mut operation.frequency_penalty, support.frequency_penalty);
-    declared(&mut operation.presence_penalty, support.presence_penalty);
-    declared(
-        &mut operation.repetition_penalty,
-        support.repetition_penalty,
+    let request_options = matches!(
+        protocol,
+        ProviderProtocol::Ollama | ProviderProtocol::LlamaCpp
     );
+    if !request_options {
+        operation.repetition_penalty = ParameterOverride::Clear;
+        if fields != FeatureRequestFields::Full {
+            operation.top_k = ParameterOverride::Clear;
+            operation.frequency_penalty = ParameterOverride::Clear;
+            operation.presence_penalty = ParameterOverride::Clear;
+        }
+    }
+    if fields == FeatureRequestFields::Sampling {
+        operation.prompt_caching = ParameterOverride::Clear;
+    }
     ChatParameterResolutionInput {
         global: global.clone(),
         session: ChatParameterOverrides::default(),
@@ -103,31 +116,71 @@ pub fn feature_parameter_input(
 
 #[cfg(test)]
 mod tests {
-    use lettuce_models::{CapabilityStatus, ParameterOverride::*, ParameterSupport};
+    use lettuce_models::ParameterOverride::*;
 
     use super::*;
 
-    #[test]
-    fn slot_values_win_and_defaults_fill_the_rest_with_reasoning_off() {
+    fn slot() -> FeatureGenerationParameters {
         let mut slot = FeatureGenerationParameters::default();
         slot.parameters.temperature = Set(0.25);
+        slot.parameters.top_p = Clear;
         slot.parameters.frequency_penalty = Set(0.5);
-        let support = ParameterSupport {
-            temperature: CapabilityStatus::Supported,
-            top_p: CapabilityStatus::Supported,
-            ..ParameterSupport::default()
+        slot.parameters.top_k = Set(20);
+        slot.parameters.repetition_penalty = Set(1.1);
+        slot.parameters.reasoning_effort = Set(lettuce_models::ReasoningEffort::High);
+        slot
+    }
+
+    #[test]
+    fn slot_values_win_and_defaults_fill_the_rest_with_reasoning_off() {
+        let global = ChatParameterProfile {
+            context_length: Some(4096),
+            ..ChatParameterProfile::default()
         };
         let input = feature_parameter_input(
-            &slot,
+            &slot(),
             GROUP_SPEAKER_SELECTION_DEFAULTS,
-            &ChatParameterProfile::default(),
-            support,
+            FeatureRequestFields::Sampling,
+            ProviderProtocol::OpenAiCompatible,
+            &global,
         );
         assert_eq!(input.operation.temperature, Set(0.25));
         assert_eq!(input.operation.top_p, Set(1.0));
         assert_eq!(input.operation.max_output_tokens, Set(500));
-        assert_eq!(input.operation.frequency_penalty, Clear);
         assert_eq!(input.operation.reasoning_mode, Set(ReasoningMode::Disabled));
+        assert_eq!(input.operation.reasoning_effort, Clear);
+        assert_eq!(input.operation.reasoning_budget_tokens, Clear);
+        assert_eq!(input.operation.frequency_penalty, Clear);
+        assert_eq!(input.operation.top_k, Clear);
+        assert_eq!(input.operation.repetition_penalty, Clear);
+        assert_eq!(input.operation.prompt_caching, Clear);
         assert_eq!(input.session, ChatParameterOverrides::default());
+        assert_eq!(input.global, global);
+    }
+
+    #[test]
+    fn request_options_and_full_features_keep_penalties() {
+        let local = feature_parameter_input(
+            &slot(),
+            DYNAMIC_MEMORY_DEFAULTS,
+            FeatureRequestFields::Sampling,
+            ProviderProtocol::Ollama,
+            &ChatParameterProfile::default(),
+        );
+        assert_eq!(local.operation.frequency_penalty, Set(0.5));
+        assert_eq!(local.operation.top_k, Set(20));
+        assert_eq!(local.operation.repetition_penalty, Set(1.1));
+        assert_eq!(local.operation.max_output_tokens, Inherit);
+        let full = feature_parameter_input(
+            &slot(),
+            HELP_ME_REPLY_DEFAULTS,
+            FeatureRequestFields::Full,
+            ProviderProtocol::Anthropic,
+            &ChatParameterProfile::default(),
+        );
+        assert_eq!(full.operation.frequency_penalty, Set(0.5));
+        assert_eq!(full.operation.top_k, Set(20));
+        assert_eq!(full.operation.repetition_penalty, Clear);
+        assert_eq!(full.operation.prompt_caching, Inherit);
     }
 }

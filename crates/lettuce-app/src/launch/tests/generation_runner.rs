@@ -3076,11 +3076,8 @@ async fn reply_helper_drafts_the_next_user_message_from_live_settings() {
     };
     assert!(sent.tools.is_none());
     assert_eq!(sent.stream_sink, Some(request.request_id));
-    assert_eq!(
-        sent.profile.chat_profile.parameters.temperature,
-        None,
-        "the scenario model declares no temperature support, so the 0.8 default stays off"
-    );
+    assert_eq!(sent.profile.chat_profile.parameters.temperature, Some(0.8));
+    assert_eq!(sent.profile.chat_profile.parameters.top_p, Some(1.0));
     assert_eq!(
         sent.profile.chat_profile.parameters.visible_max_output_tokens,
         Some(150)

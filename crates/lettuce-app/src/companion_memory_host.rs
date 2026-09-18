@@ -353,7 +353,6 @@ where
                 stored
                     .settings
                     .dynamic_memory_llama_sampler_overwrite_enabled,
-                model.config.capabilities.parameter_support,
                 &lettuce_models::GlobalModelSettingsRepository::global_model_settings(
                     self.repository,
                 )
@@ -563,40 +562,25 @@ fn memory_parameter_input(
     slot: &lettuce_models::FeatureGenerationParameters,
     protocol: ProviderProtocol,
     overwrite_llama_sampler: bool,
-    support: lettuce_models::ParameterSupport,
     global: &lettuce_models::ChatParameterProfile,
 ) -> ChatParameterResolutionInput {
-    use lettuce_models::ParameterOverride::{Clear, Set};
-    let mut input =
-        crate::feature_parameter_input(slot, crate::DYNAMIC_MEMORY_DEFAULTS, global, support);
-    if protocol != ProviderProtocol::LlamaCpp
-        || !overwrite_llama_sampler
-        || !slot.llama_sampler.is_empty()
+    use lettuce_models::ParameterOverride::Set;
+    let mut input = crate::feature_parameter_input(
+        slot,
+        crate::DYNAMIC_MEMORY_DEFAULTS,
+        crate::FeatureRequestFields::Sampling,
+        protocol,
+        global,
+    );
+    if protocol == ProviderProtocol::LlamaCpp
+        && overwrite_llama_sampler
+        && slot.llama_sampler.is_empty()
     {
-        return input;
+        input.operation.top_k = Set(40);
+        input.operation.frequency_penalty = Set(0.0);
+        input.operation.presence_penalty = Set(0.0);
+        input.operation.repetition_penalty = Set(1.0);
     }
-    let declared = |status| status == lettuce_models::CapabilityStatus::Supported;
-    let operation = &mut input.operation;
-    operation.top_k = if declared(support.top_k) {
-        Set(40)
-    } else {
-        Clear
-    };
-    operation.frequency_penalty = if declared(support.frequency_penalty) {
-        Set(0.0)
-    } else {
-        Clear
-    };
-    operation.presence_penalty = if declared(support.presence_penalty) {
-        Set(0.0)
-    } else {
-        Clear
-    };
-    operation.repetition_penalty = if declared(support.repetition_penalty) {
-        Set(1.0)
-    } else {
-        Clear
-    };
     input
 }
 
@@ -652,59 +636,52 @@ fn create_seeds<E: MemoryEmbeddingEngine + ?Sized>(
 
 #[cfg(test)]
 mod tests {
-    use lettuce_models::{CapabilityStatus, ParameterOverride, ParameterSupport, ProviderProtocol};
+    use lettuce_models::{ParameterOverride, ProviderProtocol};
 
     use super::memory_parameter_input;
 
     #[test]
     fn llama_cpp_memory_calls_drop_the_creative_sampler_unless_disabled() {
-        let declared = ParameterSupport {
-            temperature: CapabilityStatus::Supported,
-            top_p: CapabilityStatus::Supported,
-            top_k: CapabilityStatus::Supported,
-            frequency_penalty: CapabilityStatus::Supported,
-            presence_penalty: CapabilityStatus::Unknown,
-            repetition_penalty: CapabilityStatus::Supported,
-        };
         let slot = lettuce_models::FeatureGenerationParameters::default();
         let global = lettuce_models::ChatParameterProfile::default();
-        let forced =
-            memory_parameter_input(&slot, ProviderProtocol::LlamaCpp, true, declared, &global);
+        let forced = memory_parameter_input(&slot, ProviderProtocol::LlamaCpp, true, &global);
         assert_eq!(forced.operation.top_k, ParameterOverride::Set(40));
         assert_eq!(
             forced.operation.frequency_penalty,
             ParameterOverride::Set(0.0)
         );
-        assert_eq!(forced.operation.presence_penalty, ParameterOverride::Clear);
+        assert_eq!(
+            forced.operation.presence_penalty,
+            ParameterOverride::Set(0.0)
+        );
         assert_eq!(
             forced.operation.repetition_penalty,
             ParameterOverride::Set(1.0)
         );
         assert_eq!(forced.operation.temperature, ParameterOverride::Set(0.4));
         assert_eq!(forced.operation.top_p, ParameterOverride::Set(1.0));
-        let kept =
-            memory_parameter_input(&slot, ProviderProtocol::LlamaCpp, false, declared, &global);
+        let kept = memory_parameter_input(&slot, ProviderProtocol::LlamaCpp, false, &global);
         assert_eq!(kept.operation.top_k, ParameterOverride::Inherit);
         assert_eq!(kept.operation.temperature, ParameterOverride::Set(0.4));
         let mut own_sampler = slot.clone();
         own_sampler.llama_sampler.min_p = Some(0.1);
         assert_eq!(
-            memory_parameter_input(
-                &own_sampler,
-                ProviderProtocol::LlamaCpp,
-                true,
-                declared,
-                &global
-            )
-            .operation
-            .top_k,
-            ParameterOverride::Inherit
-        );
-        assert_eq!(
-            memory_parameter_input(&slot, ProviderProtocol::Ollama, true, declared, &global)
+            memory_parameter_input(&own_sampler, ProviderProtocol::LlamaCpp, true, &global)
                 .operation
                 .top_k,
             ParameterOverride::Inherit
+        );
+        assert_eq!(
+            memory_parameter_input(&slot, ProviderProtocol::Ollama, true, &global)
+                .operation
+                .top_k,
+            ParameterOverride::Inherit
+        );
+        assert_eq!(
+            memory_parameter_input(&slot, ProviderProtocol::OpenAiCompatible, true, &global)
+                .operation
+                .top_k,
+            ParameterOverride::Clear
         );
     }
 }

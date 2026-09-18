@@ -4416,6 +4416,8 @@ fn staged_generator_settings_select_builtins_and_parameter_fallback() {
     let parameters = crate::staged_lorebook_parameter_defaults(
         &settings.settings.lorebook_generator,
         &Default::default(),
+        ProviderProtocol::OpenAiCompatible,
+        &Default::default(),
     );
     assert_eq!(
         parameters.operation.max_output_tokens,

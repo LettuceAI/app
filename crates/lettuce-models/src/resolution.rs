@@ -182,8 +182,6 @@ pub enum ChatProfileResolutionError {
     },
     #[error("parameter {parameter:?} is unsupported")]
     ParameterUnsupported { parameter: ChatParameter },
-    #[error("parameter {parameter:?} support is unknown")]
-    ParameterUnknown { parameter: ChatParameter },
     #[error("resolved context length {requested} exceeds capability limit {available}")]
     ContextLimitExceeded { requested: u32, available: u32 },
     #[error("resolved visible output limit {requested} exceeds capability limit {available}")]
@@ -697,16 +695,8 @@ fn validate_parameter_support(
             support.repetition_penalty,
         ),
     ] {
-        if configured {
-            match status {
-                CapabilityStatus::Supported => {}
-                CapabilityStatus::Unsupported => {
-                    return Err(ChatProfileResolutionError::ParameterUnsupported { parameter });
-                }
-                CapabilityStatus::Unknown => {
-                    return Err(ChatProfileResolutionError::ParameterUnknown { parameter });
-                }
-            }
+        if configured && status == CapabilityStatus::Unsupported {
+            return Err(ChatProfileResolutionError::ParameterUnsupported { parameter });
         }
     }
     Ok(())
@@ -926,21 +916,18 @@ mod tests {
     }
 
     #[test]
-    fn unknown_and_unsupported_parameters_are_distinct() {
+    fn unknown_parameters_pass_and_unsupported_ones_are_rejected() {
         let (expected, mut profile, account) = fixture();
         profile.config.capabilities.parameter_support.temperature = CapabilityStatus::Unknown;
-        assert!(matches!(
-            resolve_chat_profile(
-                &expected,
-                &profile,
-                &account,
-                &ChatParameterResolutionInput::default(),
-                &ChatRequirements::default()
-            ),
-            Err(ChatProfileResolutionError::ParameterUnknown {
-                parameter: ChatParameter::Temperature
-            })
-        ));
+        let resolved = resolve_chat_profile(
+            &expected,
+            &profile,
+            &account,
+            &ChatParameterResolutionInput::default(),
+            &ChatRequirements::default(),
+        )
+        .expect("unknown support passes the configured value through");
+        assert!(resolved.parameters.temperature.is_some());
         profile.config.capabilities.parameter_support.temperature = CapabilityStatus::Unsupported;
         assert!(matches!(
             resolve_chat_profile(

@@ -753,8 +753,9 @@ where
             &crate::feature_parameter_input(
                 &model.config.feature_parameters.group_speaker_selection,
                 crate::GROUP_SPEAKER_SELECTION_DEFAULTS,
+                crate::FeatureRequestFields::Sampling,
+                account.protocol,
                 &global_model_settings,
-                model.config.capabilities.parameter_support,
             ),
             &ChatRequirements {
                 require_tools: true,
