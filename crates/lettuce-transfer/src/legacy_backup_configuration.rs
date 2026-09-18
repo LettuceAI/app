@@ -3744,6 +3744,9 @@ mod tests {
             "sdBaseLoras": [{"path": "/loras/a.safetensors", "multiplier": 0.8}],
             "sdcppVaePath": "/models/vae.safetensors",
             "futureKey": 1,
+            "contextLength": 0,
+            "ollamaNumCtx": 8192,
+            "reasoningBudgetTokens": 512,
             "featureGenerationSettings": {
                 "lorebookGenerator": {
                     "temperature": 0.25,
@@ -3753,6 +3756,7 @@ mod tests {
                     "llamaSeed": null
                 },
                 "dynamicMemory": {"temperature": 0.4, "llamaXtcProbability": 0.2},
+                "helpMeReply": {"ollamaStop": vec!["x"; 257]},
                 "sceneWriter": null
             }
         });
@@ -3761,6 +3765,8 @@ mod tests {
         assert_eq!(parameters.chat_parameters.temperature, Some(0.7));
         assert_eq!(parameters.chat_parameters.repetition_penalty, None);
         assert_eq!(parameters.chat_parameters.send_thinking_state, Some(true));
+        assert_eq!(parameters.chat_parameters.context_length, Some(8192));
+        assert_eq!(parameters.chat_parameters.reasoning_budget_tokens, None);
         let llama = &parameters.llama_cpp;
         assert_eq!(llama.gpu_layers, Some(33));
         assert_eq!(llama.kv_type, Some(LlamaKvType::Q80));
@@ -3803,9 +3809,11 @@ mod tests {
         assert_eq!(
             parameters.lossy_fields,
             vec![
+                "featureGenerationSettings.helpMeReply.ollamaStop".to_owned(),
                 "llamaLastRuntimeReport".to_owned(),
                 "llamaThreads".to_owned(),
                 "ollamaRepeatPenalty".to_owned(),
+                "reasoningBudgetTokens".to_owned(),
             ]
         );
         assert_eq!(parameters.unknown_fields, vec!["futureKey".to_owned()]);

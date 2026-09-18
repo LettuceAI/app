@@ -487,7 +487,7 @@ pub enum Modality {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "ModelProfileConfigRecord")]
 pub struct ModelProfileConfig {
     #[serde(default)]
     pub chat_parameters: ChatParameterProfile,
@@ -498,6 +498,47 @@ pub struct ModelProfileConfig {
     pub llama_cpp: LlamaCppSettings,
     #[serde(default, skip_serializing_if = "StableDiffusionSettings::is_empty")]
     pub stable_diffusion: StableDiffusionSettings,
+}
+
+/// The stored shape of [`ModelProfileConfig`]. Configs written before the
+/// feature slots existed carry `lorebook_generator_parameters`, which moves to
+/// the lorebook generator slot; the short-lived raw `legacy_advanced_settings`
+/// field is ignored because its keys are migrated from the legacy source.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ModelProfileConfigRecord {
+    #[serde(default)]
+    chat_parameters: ChatParameterProfile,
+    #[serde(default)]
+    feature_parameters: FeatureParameters,
+    #[serde(default)]
+    lorebook_generator_parameters: Option<ChatParameterOverrides>,
+    #[serde(default)]
+    legacy_advanced_settings: Option<serde::de::IgnoredAny>,
+    capabilities: ModelCapabilities,
+    #[serde(default)]
+    llama_cpp: LlamaCppSettings,
+    #[serde(default)]
+    stable_diffusion: StableDiffusionSettings,
+}
+
+impl From<ModelProfileConfigRecord> for ModelProfileConfig {
+    fn from(record: ModelProfileConfigRecord) -> Self {
+        let mut feature_parameters = record.feature_parameters;
+        if let Some(parameters) = record.lorebook_generator_parameters
+            && feature_parameters.lorebook_generator.parameters == ChatParameterOverrides::default()
+        {
+            feature_parameters.lorebook_generator.parameters = parameters;
+        }
+        let _ = record.legacy_advanced_settings;
+        Self {
+            chat_parameters: record.chat_parameters,
+            feature_parameters,
+            capabilities: record.capabilities,
+            llama_cpp: record.llama_cpp,
+            stable_diffusion: record.stable_diffusion,
+        }
+    }
 }
 
 impl ModelProfileConfig {
@@ -598,6 +639,43 @@ mod tests {
     use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
     use lettuce_types::CharacterId;
     use lettuce_types::{ProviderAccountId, Revision, TimestampMillis};
+
+    #[test]
+    fn configs_stored_before_the_feature_slots_still_read() {
+        let mut stored = serde_json::to_value(super::ModelProfileConfig {
+            chat_parameters: Default::default(),
+            feature_parameters: Default::default(),
+            capabilities: super::ModelCapabilities::default(),
+            llama_cpp: Default::default(),
+            stable_diffusion: Default::default(),
+        })
+        .expect("config JSON");
+        let object = stored.as_object_mut().expect("object");
+        object.insert(
+            "lorebook_generator_parameters".into(),
+            serde_json::json!({"temperature": {"kind": "set", "value": 0.6}}),
+        );
+        object.insert(
+            "legacy_advanced_settings".into(),
+            serde_json::json!({"llamaGpuLayers": 12}),
+        );
+        let config: super::ModelProfileConfig =
+            serde_json::from_value(stored).expect("old config reads");
+        assert_eq!(
+            config
+                .feature_parameters
+                .lorebook_generator
+                .parameters
+                .temperature,
+            super::ParameterOverride::Set(0.6)
+        );
+        let rewritten = serde_json::to_value(&config).expect("rewritten config");
+        assert!(rewritten.get("lorebook_generator_parameters").is_none());
+        assert_eq!(
+            serde_json::from_value::<super::ModelProfileConfig>(rewritten).expect("reread"),
+            config
+        );
+    }
 
     fn account() -> ProviderAccount {
         ProviderAccount {

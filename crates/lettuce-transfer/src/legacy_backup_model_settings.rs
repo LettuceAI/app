@@ -118,6 +118,25 @@ impl<'a> Reader<'a> {
         })
     }
 
+    /// Ollama stop sequences within the profile's bounds (256 items of at most
+    /// 4096 bytes); a longer list is left out rather than aborting the import.
+    fn stop(&mut self, key: &'a str) -> Option<Vec<String>> {
+        self.parse(key, |value| {
+            let items = value.as_array()?;
+            if items.len() > 256 {
+                return None;
+            }
+            items
+                .iter()
+                .map(|item| {
+                    item.as_str()
+                        .filter(|item| !item.is_empty() && item.len() <= 4_096)
+                        .map(str::to_owned)
+                })
+                .collect()
+        })
+    }
+
     fn choice<T>(&mut self, key: &'a str, map: impl Fn(&str) -> Option<T>) -> Option<T> {
         self.parse(key, |value| value.as_str().and_then(&map))
     }
@@ -208,7 +227,7 @@ fn feature_slot(reader: &mut Reader<'_>) -> FeatureGenerationParameters {
                 mirostat_tau: set(reader.f64("ollamaMirostatTau", 0.0, 10.0)),
                 mirostat_eta: set(reader.f64("ollamaMirostatEta", 0.0, 1.0)),
                 seed: set(reader.u32("ollamaSeed", 0, i32::MAX as u32)),
-                stop: set(reader.texts("ollamaStop", false)),
+                stop: set(reader.stop("ollamaStop")),
                 ..OllamaOptionOverrides::default()
             },
             ..ChatParameterOverrides::default()
@@ -231,7 +250,7 @@ fn chat_parameters(reader: &mut Reader<'_>, provider_kind: &str) -> ChatParamete
         "high" => Some(ReasoningEffort::High),
         _ => None,
     });
-    let reasoning_budget_tokens = reader.u32("reasoningBudgetTokens", 1, u32::MAX);
+    let reasoning_budget_tokens = reader.u32("reasoningBudgetTokens", 1024, u32::MAX);
     let enabled_reasoning = reasoning_mode != Some(ReasoningMode::Disabled);
     let caching_enabled = reader.bool("promptCachingEnabled");
     let retention = reader.choice("promptCachingTtl", |value| match value {
@@ -254,18 +273,32 @@ fn chat_parameters(reader: &mut Reader<'_>, provider_kind: &str) -> ChatParamete
             PromptCaching::Disabled
         }
     });
-    let max_output_tokens = reader.u32("maxOutputTokens", 0, u32::MAX);
-    let num_predict = reader.u32("ollamaNumPredict", 0, u32::MAX);
-    let context_length = reader.u32("contextLength", 0, u32::MAX);
-    let num_ctx = reader.u32("ollamaNumCtx", 0, u32::MAX);
+    let max_output_tokens = reader
+        .u32("maxOutputTokens", 0, u32::MAX)
+        .filter(|value| *value != 0);
+    let num_predict = reader
+        .u32("ollamaNumPredict", 0, 131_072)
+        .filter(|value| *value != 0);
+    let context_length = reader
+        .u32("contextLength", 0, u32::MAX)
+        .filter(|value| *value != 0);
+    let num_ctx = reader
+        .u32("ollamaNumCtx", 0, 262_144)
+        .filter(|value| *value != 0);
+    if max_output_tokens.is_some()
+        && num_predict.is_some_and(|value| Some(value) != max_output_tokens)
+    {
+        reader.lose("ollamaNumPredict");
+    }
+    if context_length.is_some() && num_ctx.is_some_and(|value| Some(value) != context_length) {
+        reader.lose("ollamaNumCtx");
+    }
     ChatParameterProfile {
         temperature: reader.f64("temperature", 0.0, 2.0),
         top_p: reader.f64("topP", 0.0, 1.0),
         top_k: reader.u32("topK", 1, u32::MAX),
-        max_output_tokens: max_output_tokens
-            .or(num_predict)
-            .filter(|value| *value != 0),
-        context_length: context_length.or(num_ctx).filter(|value| *value != 0),
+        max_output_tokens: max_output_tokens.or(num_predict),
+        context_length: context_length.or(num_ctx),
         frequency_penalty: reader.f64("frequencyPenalty", -2.0, 2.0),
         presence_penalty: reader.f64("presencePenalty", -2.0, 2.0),
         repetition_penalty: reader.f64("ollamaRepeatPenalty", f64::MIN_POSITIVE, 2.0),
@@ -286,7 +319,7 @@ fn chat_parameters(reader: &mut Reader<'_>, provider_kind: &str) -> ChatParamete
             mirostat_tau: reader.f64("ollamaMirostatTau", 0.0, 10.0),
             mirostat_eta: reader.f64("ollamaMirostatEta", 0.0, 1.0),
             seed: reader.u32("ollamaSeed", 0, i32::MAX as u32),
-            stop: reader.texts("ollamaStop", false),
+            stop: reader.stop("ollamaStop"),
         },
         openrouter: OpenRouterOptions {
             pinned_provider: reader.parse("openRouterProvider", |value| {
@@ -294,7 +327,9 @@ fn chat_parameters(reader: &mut Reader<'_>, provider_kind: &str) -> ChatParamete
                     .get("id")?
                     .as_str()
                     .map(str::trim)
-                    .filter(|id| !id.is_empty() && id.len() <= 256)
+                    .filter(|id| {
+                        !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control)
+                    })
                     .map(str::to_owned)
             }),
         },
@@ -445,6 +480,10 @@ fn stable_diffusion(reader: &mut Reader<'_>) -> StableDiffusionSettings {
                 .map(|lora| {
                     let path = lora.get("path")?.as_str()?.trim();
                     let multiplier = lora.get("multiplier")?.as_f64()?;
+                    let is_high_noise = match lora.get("isHighNoise") {
+                        None | Some(Value::Null) => false,
+                        Some(value) => value.as_bool()?,
+                    };
                     let keywords = match lora.get("keywords").filter(|value| !value.is_null()) {
                         Some(keywords) => keywords
                             .as_array()?
@@ -465,10 +504,7 @@ fn stable_diffusion(reader: &mut Reader<'_>) -> StableDiffusionSettings {
                     .then(|| StableDiffusionLora {
                         path: path.to_owned(),
                         multiplier,
-                        is_high_noise: lora
-                            .get("isHighNoise")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(false),
+                        is_high_noise,
                         keywords,
                     })
                 })
