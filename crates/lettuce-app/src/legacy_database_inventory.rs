@@ -1,18 +1,12 @@
-use std::{
-    fs::{self, File},
-    io::Read,
-    path::Path,
-};
+use std::{fs, path::Path};
 
 use lettuce_transfer::{
     LEGACY_MEDIA_TOTAL_BYTES_LIMIT, LegacyBackupCompatibilityError, LegacyBackupCompatibilityPlan,
     LegacyBackupDocument, LegacyBackupDocumentKind, LegacyBackupInventory, LegacyBackupMedia,
     LegacyBackupMediaRoot, LegacyDatabasePreflightError, LegacyImportPlan, LegacyLorebookPlan,
-    LegacyMediaPlan, LegacyPersonaPlan, MAX_BACKUP_ENTRIES, MAX_LEGACY_BACKUP_ENTRY_BYTES,
-    MAX_LEGACY_BACKUP_TOTAL_BYTES, plan_legacy_backup_compatibility,
+    LegacyMediaPlan, LegacyPersonaPlan, MAX_BACKUP_ENTRIES, plan_legacy_backup_compatibility,
 };
 use lettuce_types::ContentHash;
-use zeroize::Zeroizing;
 
 const STORAGE_MEDIA_ROOTS: [LegacyBackupMediaRoot; 4] = [
     LegacyBackupMediaRoot::Images,
@@ -73,7 +67,6 @@ fn read_legacy_media(
 #[derive(Default)]
 struct MediaWalk {
     media: Vec<LegacyBackupMedia>,
-    total_bytes: u64,
 }
 
 impl MediaWalk {
@@ -105,7 +98,7 @@ impl MediaWalk {
             if metadata.is_dir() {
                 self.directory(&child, root, segments)?;
             } else if metadata.is_file() {
-                self.file(&child, root, segments, metadata.len())?;
+                self.file(&child, root, segments)?;
             }
             segments.pop();
         }
@@ -117,43 +110,17 @@ impl MediaWalk {
         path: &Path,
         root: LegacyBackupMediaRoot,
         segments: &[String],
-        expected_len: u64,
     ) -> Result<(), LegacyDatabasePreflightError> {
-        let object_limit = MAX_LEGACY_BACKUP_ENTRY_BYTES as u64;
-        let total_limit = MAX_LEGACY_BACKUP_TOTAL_BYTES as u64;
         if self.media.len() >= MAX_BACKUP_ENTRIES {
             return Err(LegacyDatabasePreflightError::LimitExceeded {
                 table: "media_files",
                 limit: MAX_BACKUP_ENTRIES as u32,
             });
         }
-        if expected_len > object_limit {
-            return Err(LegacyDatabasePreflightError::MediaObjectTooLarge {
-                locator: locator(root, segments),
-                limit: object_limit,
-            });
-        }
-        let mut bytes = Zeroizing::new(Vec::new());
-        File::open(path)
-            .and_then(|file| file.take(object_limit + 1).read_to_end(&mut bytes))
-            .map_err(|_| read_failed(root, segments))?;
-        let len = bytes.len() as u64;
-        if len > object_limit {
-            return Err(LegacyDatabasePreflightError::MediaObjectTooLarge {
-                locator: locator(root, segments),
-                limit: object_limit,
-            });
-        }
-        self.total_bytes = self
-            .total_bytes
-            .checked_add(len)
-            .filter(|total| *total <= total_limit)
-            .ok_or(LegacyDatabasePreflightError::MediaTotalTooLarge { limit: total_limit })?;
-        self.media.push(LegacyBackupMedia {
-            root,
-            relative_segments: segments.to_vec(),
-            bytes,
-        });
+        let media =
+            LegacyBackupMedia::from_file(root, segments.to_vec(), path.to_owned(), u64::MAX)
+                .map_err(|_| read_failed(root, segments))?;
+        self.media.push(media);
         Ok(())
     }
 }
@@ -222,8 +189,8 @@ fn source_hash(
         for segment in &item.relative_segments {
             add_text(&mut hasher, segment);
         }
-        hasher.update(&(item.bytes.len() as u64).to_le_bytes());
-        hasher.update(&item.bytes);
+        hasher.update(&item.byte_len.to_le_bytes());
+        hasher.update(item.content_hash.as_str().as_bytes());
     }
     ContentHash::parse(hasher.finalize().to_hex().to_string())
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)
@@ -311,6 +278,7 @@ fn merge_media(
 #[cfg(test)]
 mod tests {
     use lettuce_types::MediaBlobId;
+    use zeroize::Zeroizing;
 
     use super::*;
 
@@ -398,7 +366,7 @@ mod tests {
                 (
                     item.root,
                     item.relative_segments.join("/"),
-                    item.bytes.to_vec(),
+                    item.read().expect("media bytes").to_vec(),
                 )
             })
             .collect::<Vec<_>>();
@@ -439,7 +407,11 @@ mod tests {
         let media = read_legacy_media(&root).expect("legacy media");
 
         assert_eq!(media.len(), 3);
-        assert!(media.iter().all(|item| item.bytes.as_slice() != b"private"));
+        assert!(
+            media
+                .iter()
+                .all(|item| item.read().expect("media bytes").as_slice() != b"private")
+        );
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
@@ -455,7 +427,11 @@ mod tests {
         let fixture = app_data_dir();
         let first = read_legacy_media(&fixture).expect("media");
         let mut changed = read_legacy_media(&fixture).expect("media");
-        changed[0].bytes = Zeroizing::new(b"other".to_vec());
+        changed[0] = LegacyBackupMedia::from_bytes(
+            changed[0].root,
+            changed[0].relative_segments.clone(),
+            Zeroizing::new(b"other".to_vec()),
+        );
         assert_ne!(
             source_hash(1, &[], &first).expect("hash"),
             source_hash(1, &[], &changed).expect("hash")
@@ -468,21 +444,19 @@ mod tests {
     }
 
     #[test]
-    fn oversized_media_objects_reject_with_their_locator() {
+    fn large_media_files_are_inventoried_without_being_loaded() {
         let root = app_data_dir();
-        let file = File::create(root.join("generated_images/huge.bin")).expect("huge file");
-        file.set_len(MAX_LEGACY_BACKUP_ENTRY_BYTES as u64 + 1)
-            .expect("sparse size");
+        let size = lettuce_transfer::LEGACY_MEDIA_OBJECT_BYTES_LIMIT + 1;
+        let file = fs::File::create(root.join("generated_images/huge.bin")).expect("huge file");
+        file.set_len(size).expect("sparse size");
 
-        let error = read_legacy_media(&root).expect_err("oversized media");
+        let media = read_legacy_media(&root).expect("legacy media");
 
-        assert_eq!(
-            error,
-            LegacyDatabasePreflightError::MediaObjectTooLarge {
-                locator: "generated_images/huge.bin".into(),
-                limit: MAX_LEGACY_BACKUP_ENTRY_BYTES as u64,
-            }
-        );
+        let huge = media
+            .iter()
+            .find(|item| item.relative_segments == ["huge.bin"])
+            .expect("huge file inventoried");
+        assert_eq!(huge.byte_len, size);
         fs::remove_dir_all(root).expect("remove fixture");
     }
 }

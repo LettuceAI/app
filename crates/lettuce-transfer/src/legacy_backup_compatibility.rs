@@ -144,14 +144,13 @@ impl LegacyBackupCompatibilityPlan {
         &self.creation_helpers.source.source.source.source.source
     }
 
-    /// The retained bytes of one planned media object, by its archive path.
+    /// One planned media object of the source, by its archive path.
     #[must_use]
-    pub fn media_bytes(&self, relative_path: &str) -> Option<&[u8]> {
+    pub fn media(&self, relative_path: &str) -> Option<&crate::LegacyBackupMedia> {
         self.inventory()
             .media
             .iter()
             .find(|media| crate::legacy_backup_media::archive_path(media) == relative_path)
-            .map(|media| media.bytes.as_slice())
     }
 
     /// The source counts a legacy import admission validates, derived from the
@@ -410,8 +409,7 @@ fn build_coverage(
         if !seen_media.insert((item.root, item.relative_segments.clone())) {
             return Err(LegacyBackupCompatibilityError::DuplicateInventory);
         }
-        let byte_count = u64::try_from(item.bytes.len())
-            .map_err(|_| LegacyBackupCompatibilityError::LimitExceeded)?;
+        let byte_count = item.byte_len;
         media_byte_count = media_byte_count
             .checked_add(byte_count)
             .ok_or(LegacyBackupCompatibilityError::LimitExceeded)?;
@@ -419,7 +417,7 @@ fn build_coverage(
             root: item.root,
             relative_segments: item.relative_segments.clone(),
             byte_count,
-            content_hash: hash_bytes(&item.bytes),
+            content_hash: item.content_hash.clone(),
         });
     }
     media.sort_by(|left, right| {
@@ -597,11 +595,11 @@ mod tests {
     fn every_retained_media_object_changes_the_source_bound_fingerprint() {
         let empty = plan_legacy_backup_compatibility(inventory()).expect("empty plan");
         let mut with_media = inventory();
-        with_media.media.push(LegacyBackupMedia {
-            root: LegacyBackupMediaRoot::Attachments,
-            relative_segments: vec!["session".into(), "file.bin".into()],
-            bytes: Zeroizing::new(b"retained attachment".to_vec()),
-        });
+        with_media.media.push(LegacyBackupMedia::from_bytes(
+            LegacyBackupMediaRoot::Attachments,
+            vec!["session".into(), "file.bin".into()],
+            Zeroizing::new(b"retained attachment".to_vec()),
+        ));
 
         let plan = plan_legacy_backup_compatibility(with_media).expect("media plan");
 
@@ -629,11 +627,11 @@ mod tests {
             Err(LegacyBackupCompatibilityError::DuplicateInventory)
         ));
 
-        let media = LegacyBackupMedia {
-            root: LegacyBackupMediaRoot::Images,
-            relative_segments: vec!["same.png".into()],
-            bytes: Zeroizing::new(vec![1]),
-        };
+        let media = LegacyBackupMedia::from_bytes(
+            LegacyBackupMediaRoot::Images,
+            vec!["same.png".into()],
+            Zeroizing::new(vec![1]),
+        );
         let mut duplicate_media = inventory();
         duplicate_media.media = vec![media.clone(), media];
         assert!(matches!(

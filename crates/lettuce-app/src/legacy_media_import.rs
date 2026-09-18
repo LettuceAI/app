@@ -81,8 +81,14 @@ where
     ) -> Result<Vec<LegacyImportMediaCompletion>, LegacyMediaImportError> {
         let storage_root = storage_root.map(canonical_storage_root).transpose()?;
         self.execute_with(admission, plan, completed_at, |candidate| {
-            match (source.media_bytes(&candidate.relative_path), &storage_root) {
-                (Some(bytes), _) => verified_bytes(candidate, bytes.to_vec()),
+            match (source.media(&candidate.relative_path), &storage_root) {
+                (Some(media), _) => verified_bytes(
+                    candidate,
+                    media
+                        .read()
+                        .map_err(|_| LegacyMediaImportError::SourceUnavailable)?
+                        .to_vec(),
+                ),
                 (None, Some(root)) => read_verified_source(root, candidate),
                 (None, None) => Err(LegacyMediaImportError::SourceUnavailable),
             }

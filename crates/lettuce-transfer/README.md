@@ -39,6 +39,16 @@ secrets and conversation artifacts, and keeps media as `BackupMediaEntry`
 authenticated reader the plan owns; staging and media installation pull each
 blob that way, so restore memory no longer grows with the media library.
 
+`LegacyBackupMedia` carries each legacy file's size and BLAKE3 hash and reads
+its bytes on demand through `read` (re-checked against both): the live legacy
+database inventory keeps only the file path (`from_file` hashes it by
+streaming) and version-1 archives keep the decrypted entry. The live database
+inventory no longer rejects a large or unreferenced file or a library over
+512 MiB; the media plan still limits each referenced object to 64 MiB (the
+media store limit) and the legacy media total is now the backup total. The
+live inventory source hash binds each file's size and content hash instead of
+its bytes.
+
 Backup reception uses confined resumable partial files and commits to a new
 path only after the file's expected hash (streamed) and frame verify. An existing
 backup is replayed when identical and never replaced. This corrects the legacy

@@ -123,15 +123,18 @@ impl BackupRestoreWorkspace {
         };
         self.verify_existing_legacy_receipt(&receipt)?;
         for item in &plan.inventory().media {
-            let content_hash = content_hash(&item.bytes);
+            let bytes = item
+                .read()
+                .map_err(|_| BackupRestoreWorkspaceError::Source)?;
+            let content_hash = &item.content_hash;
             let name = content_hash.as_str();
             self.stage_bytes(
                 ObjectKey::from_segments(["partial", "legacy-media", &format!("{name}.partial")])
                     .map_err(BackupRestoreWorkspaceError::Platform)?,
                 ObjectKey::from_segments(["media", "blobs", name])
                     .map_err(BackupRestoreWorkspaceError::Platform)?,
-                &content_hash,
-                &item.bytes,
+                content_hash,
+                &bytes,
             )?;
         }
         let bytes =
@@ -395,11 +398,11 @@ mod tests {
             app_version: "1.0.0".into(),
             source_hash: ContentHash::parse(source_hash.repeat(32)).expect("source hash"),
             documents: Vec::new(),
-            media: vec![LegacyBackupMedia {
-                root: LegacyBackupMediaRoot::Sessions,
-                relative_segments: vec!["session-id".into(), "attachment.bin".into()],
-                bytes: Zeroizing::new(bytes.to_vec()),
-            }],
+            media: vec![LegacyBackupMedia::from_bytes(
+                LegacyBackupMediaRoot::Sessions,
+                vec!["session-id".into(), "attachment.bin".into()],
+                Zeroizing::new(bytes.to_vec()),
+            )],
         })
         .expect("legacy compatibility plan")
     }

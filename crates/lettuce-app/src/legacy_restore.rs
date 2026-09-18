@@ -527,13 +527,15 @@ mod tests {
             kind,
             bytes: zeroize::Zeroizing::new(serde_json::to_vec(&value).expect("document")),
         };
-        let media = |root, segments: &[&str]| lettuce_transfer::LegacyBackupMedia {
-            root,
-            relative_segments: segments
-                .iter()
-                .map(|segment| (*segment).to_owned())
-                .collect(),
-            bytes: zeroize::Zeroizing::new(PNG.to_vec()),
+        let media = |root, segments: &[&str]| {
+            lettuce_transfer::LegacyBackupMedia::from_bytes(
+                root,
+                segments
+                    .iter()
+                    .map(|segment| (*segment).to_owned())
+                    .collect(),
+                zeroize::Zeroizing::new(PNG.to_vec()),
+            )
         };
         let compatibility =
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {

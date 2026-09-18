@@ -706,9 +706,7 @@ fn resolve_image_asset(
         return Err(orphan(field));
     };
     let locator = item.relative_segments.join("/");
-    let hash = ContentHash::parse(blake3::hash(&item.bytes).to_hex().to_string())
-        .expect("BLAKE3 produces a valid content hash");
-    Ok((locator, hash))
+    Ok((locator, item.content_hash.clone()))
 }
 
 fn validate_inline_image(
@@ -1069,11 +1067,11 @@ mod tests {
         let bytes = vec![0x89, b'P', b'N', b'G'];
         let expected_hash =
             ContentHash::parse(blake3::hash(&bytes).to_hex().to_string()).expect("content hash");
-        let media = vec![LegacyBackupMedia {
-            root: LegacyBackupMediaRoot::Images,
-            relative_segments: vec!["upload-1.png".into()],
-            bytes: Zeroizing::new(bytes),
-        }];
+        let media = vec![LegacyBackupMedia::from_bytes(
+            LegacyBackupMediaRoot::Images,
+            vec!["upload-1.png".into()],
+            Zeroizing::new(bytes),
+        )];
         let plan = plan_legacy_backup_creation_helpers(source(Some(rows), media))
             .expect("creation-helper plan");
         let session = &plan.sessions[0];

@@ -1,6 +1,8 @@
 use std::{
     collections::BTreeSet,
     io::{Cursor, Read},
+    path::PathBuf,
+    sync::Arc,
 };
 
 use base64::{Engine as _, engine::general_purpose};
@@ -40,12 +42,107 @@ pub struct LegacyBackupDocument {
     pub bytes: Zeroizing<Vec<u8>>,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+/// One legacy media file: its size and content hash are known up front and
+/// its bytes are read on demand, so an inventory never holds the library.
+#[derive(Clone)]
 pub struct LegacyBackupMedia {
     pub root: LegacyBackupMediaRoot,
     pub relative_segments: Vec<String>,
-    pub bytes: Zeroizing<Vec<u8>>,
+    pub byte_len: u64,
+    pub content_hash: ContentHash,
+    source: LegacyMediaSource,
 }
+
+#[derive(Clone)]
+enum LegacyMediaSource {
+    Memory(Arc<Zeroizing<Vec<u8>>>),
+    File(PathBuf),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum LegacyMediaReadError {
+    #[error("legacy media file could not be read")]
+    Unreadable,
+    #[error("legacy media file exceeds {limit} bytes")]
+    TooLarge { limit: u64 },
+    #[error("legacy media changed after it was inventoried")]
+    Changed,
+}
+
+impl LegacyBackupMedia {
+    #[must_use]
+    pub fn from_bytes(
+        root: LegacyBackupMediaRoot,
+        relative_segments: Vec<String>,
+        bytes: Zeroizing<Vec<u8>>,
+    ) -> Self {
+        Self {
+            root,
+            relative_segments,
+            byte_len: bytes.len() as u64,
+            content_hash: content_hash(&bytes),
+            source: LegacyMediaSource::Memory(Arc::new(bytes)),
+        }
+    }
+
+    /// Hashes the file by streaming it and keeps only its path.
+    pub fn from_file(
+        root: LegacyBackupMediaRoot,
+        relative_segments: Vec<String>,
+        path: PathBuf,
+        max_bytes: u64,
+    ) -> Result<Self, LegacyMediaReadError> {
+        let file = std::fs::File::open(&path).map_err(|_| LegacyMediaReadError::Unreadable)?;
+        let mut hasher = blake3::Hasher::new();
+        let byte_len = std::io::copy(&mut file.take(max_bytes.saturating_add(1)), &mut hasher)
+            .map_err(|_| LegacyMediaReadError::Unreadable)?;
+        if byte_len > max_bytes {
+            return Err(LegacyMediaReadError::TooLarge { limit: max_bytes });
+        }
+        Ok(Self {
+            root,
+            relative_segments,
+            byte_len,
+            content_hash: ContentHash::parse(hasher.finalize().to_hex().to_string())
+                .expect("BLAKE3 produces a valid content hash"),
+            source: LegacyMediaSource::File(path),
+        })
+    }
+
+    /// The bytes, checked against the inventoried size and hash.
+    pub fn read(&self) -> Result<Zeroizing<Vec<u8>>, LegacyMediaReadError> {
+        let bytes = match &self.source {
+            LegacyMediaSource::Memory(bytes) => Zeroizing::new(bytes.to_vec()),
+            LegacyMediaSource::File(path) => {
+                let mut bytes = Zeroizing::new(Vec::with_capacity(
+                    usize::try_from(self.byte_len).map_err(|_| LegacyMediaReadError::Changed)?,
+                ));
+                std::fs::File::open(path)
+                    .and_then(|file| {
+                        file.take(self.byte_len.saturating_add(1))
+                            .read_to_end(&mut bytes)
+                    })
+                    .map_err(|_| LegacyMediaReadError::Unreadable)?;
+                bytes
+            }
+        };
+        if bytes.len() as u64 != self.byte_len || content_hash(&bytes) != self.content_hash {
+            return Err(LegacyMediaReadError::Changed);
+        }
+        Ok(bytes)
+    }
+}
+
+impl PartialEq for LegacyBackupMedia {
+    fn eq(&self, other: &Self) -> bool {
+        self.root == other.root
+            && self.relative_segments == other.relative_segments
+            && self.byte_len == other.byte_len
+            && self.content_hash == other.content_hash
+    }
+}
+
+impl Eq for LegacyBackupMedia {}
 
 impl std::fmt::Debug for LegacyBackupDocument {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -63,8 +160,8 @@ impl std::fmt::Debug for LegacyBackupMedia {
             .debug_struct("LegacyBackupMedia")
             .field("root", &self.root)
             .field("relative_segments", &self.relative_segments)
-            .field("bytes", &"[REDACTED]")
-            .finish()
+            .field("byte_len", &self.byte_len)
+            .finish_non_exhaustive()
     }
 }
 
@@ -250,11 +347,11 @@ pub fn decode_legacy_backup_inventory(
         } else {
             let (root, relative_segments) =
                 media_entry.ok_or(LegacyBackupInventoryError::InvalidInventory)?;
-            media.push(LegacyBackupMedia {
+            media.push(LegacyBackupMedia::from_bytes(
                 root,
                 relative_segments,
-                bytes: decrypted,
-            });
+                decrypted,
+            ));
         }
     }
     documents.sort_by_key(|document| document.kind);
@@ -543,7 +640,10 @@ mod tests {
             inventory.media[0].relative_segments,
             vec!["shared", "avatar.png"]
         );
-        assert_eq!(&*inventory.media[0].bytes, b"legacy image");
+        assert_eq!(
+            &*inventory.media[0].read().expect("media bytes"),
+            b"legacy image"
+        );
         assert_eq!(inventory.media[1].root, LegacyBackupMediaRoot::Avatars);
         assert_eq!(
             inventory.media[1].relative_segments,

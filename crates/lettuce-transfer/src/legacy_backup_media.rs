@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 
-use lettuce_types::ContentHash;
-
 use crate::{
     LEGACY_MEDIA_OBJECT_BYTES_LIMIT, LEGACY_MEDIA_REFERENCE_LIMIT, LEGACY_MEDIA_TOTAL_BYTES_LIMIT,
     LegacyBackupAuthoredPlan, LegacyBackupMedia, LegacyBackupMediaRoot, LegacyImportSkip,
@@ -161,11 +159,7 @@ pub fn plan_legacy_backup_authored_media(
     let mut total_bytes = 0_u64;
     let mut media = Vec::with_capacity(planned.len());
     for (relative_path, item) in planned {
-        let byte_len = u64::try_from(item.media.bytes.len()).map_err(|_| {
-            LegacyBackupMediaPlanError::ObjectLimit {
-                locator: relative_path.clone(),
-            }
-        })?;
+        let byte_len = item.media.byte_len;
         if byte_len > LEGACY_MEDIA_OBJECT_BYTES_LIMIT {
             return Err(LegacyBackupMediaPlanError::ObjectLimit {
                 locator: relative_path,
@@ -177,8 +171,7 @@ pub fn plan_legacy_backup_authored_media(
         if total_bytes > LEGACY_MEDIA_TOTAL_BYTES_LIMIT {
             return Err(LegacyBackupMediaPlanError::TotalLimit);
         }
-        let content_hash = ContentHash::parse(blake3::hash(&item.media.bytes).to_hex().to_string())
-            .expect("BLAKE3 produces a valid content hash");
+        let content_hash = item.media.content_hash.clone();
         media.push(LegacyMediaCandidate {
             source_locator: relative_path.clone(),
             relative_path,
@@ -504,11 +497,11 @@ mod tests {
     }
 
     fn media(root: LegacyBackupMediaRoot, segments: &[&str], bytes: &[u8]) -> LegacyBackupMedia {
-        LegacyBackupMedia {
+        LegacyBackupMedia::from_bytes(
             root,
-            relative_segments: segments.iter().map(|value| (*value).to_owned()).collect(),
-            bytes: Zeroizing::new(bytes.to_vec()),
-        }
+            segments.iter().map(|value| (*value).to_owned()).collect(),
+            Zeroizing::new(bytes.to_vec()),
+        )
     }
 
     fn authored(
