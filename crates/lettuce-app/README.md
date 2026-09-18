@@ -1542,3 +1542,17 @@ the app layer, so a legacy session override or app default reaches the request
 with legacy's order (conversation, then model, then app; fields the resolver
 keeps model-only ignore the app layer). Feature operations (speaker selection,
 memory, reply helper, lorebook generator) keep their own operation overrides.
+
+`feature_parameter_input` is legacy `feature_model_overrides` +
+`prepare_feature_request` for an app feature: the model's feature slot
+(`ModelProfileConfig.feature_parameters`) overrides the model, unset
+temperature/top_p (and the output cap when the feature has one) come from the
+legacy `FeatureSamplingDefaults` constants, reasoning is off, a conversation's
+own model settings do not apply and the app layer fills what the model leaves
+unset; a gated sampling parameter the model does not declare is cleared instead
+of failing resolution. Help-me-reply (settings output cap where the slot sets
+none), dynamic memory (plus the llama.cpp sampler strip, skipped when the slot
+sets its own llama sampler) and group speaker selection use it. Companion Soul
+writer, companion memory, lorebook entry and creation helper runs receive their
+profile from the host, which builds it with the same function and the matching
+defaults constant; the staged lorebook generator keeps its equivalent builder.

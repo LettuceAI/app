@@ -86,6 +86,7 @@ pub trait CompanionMemoryHostSources:
     + GlobalSettingsStore
     + ConversationReader
     + ModelProfileRepository
+    + lettuce_models::GlobalModelSettingsRepository
     + ProviderAccountRepository
     + PromptRepository
     + JobStore
@@ -106,6 +107,7 @@ impl<T> CompanionMemoryHostSources for T where
         + GlobalSettingsStore
         + ConversationReader
         + ModelProfileRepository
+        + lettuce_models::GlobalModelSettingsRepository
         + ProviderAccountRepository
         + PromptRepository
         + JobStore
@@ -346,11 +348,18 @@ where
             &model,
             &account,
             &memory_parameter_input(
+                &model.config.feature_parameters.dynamic_memory,
                 account.protocol,
                 stored
                     .settings
                     .dynamic_memory_llama_sampler_overwrite_enabled,
                 model.config.capabilities.parameter_support,
+                &lettuce_models::GlobalModelSettingsRepository::global_model_settings(
+                    self.repository,
+                )
+                .map_err(|_| storage())?
+                .0
+                .chat_parameters,
             ),
             &ChatRequirements::default(),
         )
@@ -544,47 +553,51 @@ fn clock_error(error: crate::companion_clock::CompanionClockError) -> CompanionM
     }
 }
 
-/// Legacy stripped the creative llama.cpp sampler for memory calls unless the
-/// user turned `dynamicMemoryLlamaSamplerOverwriteEnabled` off: fixed `top_k`
-/// 40 and neutral penalties. The llama.cpp-only fields it also reset (sampler
-/// profile and order, min_p, typical_p, DRY) have no request-parameter
-/// destination before the llama.cpp runtime slice.
+/// Legacy `DYNAMIC_MEMORY_MANAGER_DEFAULTS` over the model's dynamic memory
+/// slot, then the llama.cpp sampler strip: unless the user turned
+/// `dynamicMemoryLlamaSamplerOverwriteEnabled` off, or the slot sets its own
+/// llama sampler, memory calls on llama.cpp use `top_k` 40 and neutral
+/// penalties. The llama.cpp-only fields it also reset (sampler profile and
+/// order, min_p, typical_p, DRY) belong to the llama.cpp runtime slice.
 fn memory_parameter_input(
+    slot: &lettuce_models::FeatureGenerationParameters,
     protocol: ProviderProtocol,
     overwrite_llama_sampler: bool,
     support: lettuce_models::ParameterSupport,
+    global: &lettuce_models::ChatParameterProfile,
 ) -> ChatParameterResolutionInput {
-    use lettuce_models::ParameterOverride::{Inherit, Set};
-    if protocol != ProviderProtocol::LlamaCpp || !overwrite_llama_sampler {
-        return ChatParameterResolutionInput::default();
+    use lettuce_models::ParameterOverride::{Clear, Set};
+    let mut input =
+        crate::feature_parameter_input(slot, crate::DYNAMIC_MEMORY_DEFAULTS, global, support);
+    if protocol != ProviderProtocol::LlamaCpp
+        || !overwrite_llama_sampler
+        || !slot.llama_sampler.is_empty()
+    {
+        return input;
     }
     let declared = |status| status == lettuce_models::CapabilityStatus::Supported;
-    ChatParameterResolutionInput {
-        operation: lettuce_models::ChatParameterOverrides {
-            top_k: if declared(support.top_k) {
-                Set(40)
-            } else {
-                Inherit
-            },
-            frequency_penalty: if declared(support.frequency_penalty) {
-                Set(0.0)
-            } else {
-                Inherit
-            },
-            presence_penalty: if declared(support.presence_penalty) {
-                Set(0.0)
-            } else {
-                Inherit
-            },
-            repetition_penalty: if declared(support.repetition_penalty) {
-                Set(1.0)
-            } else {
-                Inherit
-            },
-            ..Default::default()
-        },
-        ..Default::default()
-    }
+    let operation = &mut input.operation;
+    operation.top_k = if declared(support.top_k) {
+        Set(40)
+    } else {
+        Clear
+    };
+    operation.frequency_penalty = if declared(support.frequency_penalty) {
+        Set(0.0)
+    } else {
+        Clear
+    };
+    operation.presence_penalty = if declared(support.presence_penalty) {
+        Set(0.0)
+    } else {
+        Clear
+    };
+    operation.repetition_penalty = if declared(support.repetition_penalty) {
+        Set(1.0)
+    } else {
+        Clear
+    };
+    input
 }
 
 struct ActiveMemoryCycle {
@@ -653,28 +666,45 @@ mod tests {
             presence_penalty: CapabilityStatus::Unknown,
             repetition_penalty: CapabilityStatus::Supported,
         };
-        let forced = memory_parameter_input(ProviderProtocol::LlamaCpp, true, declared);
+        let slot = lettuce_models::FeatureGenerationParameters::default();
+        let global = lettuce_models::ChatParameterProfile::default();
+        let forced =
+            memory_parameter_input(&slot, ProviderProtocol::LlamaCpp, true, declared, &global);
         assert_eq!(forced.operation.top_k, ParameterOverride::Set(40));
         assert_eq!(
             forced.operation.frequency_penalty,
             ParameterOverride::Set(0.0)
         );
-        assert_eq!(
-            forced.operation.presence_penalty,
-            ParameterOverride::Inherit
-        );
+        assert_eq!(forced.operation.presence_penalty, ParameterOverride::Clear);
         assert_eq!(
             forced.operation.repetition_penalty,
             ParameterOverride::Set(1.0)
         );
-        assert_eq!(forced.operation.temperature, ParameterOverride::Inherit);
+        assert_eq!(forced.operation.temperature, ParameterOverride::Set(0.4));
+        assert_eq!(forced.operation.top_p, ParameterOverride::Set(1.0));
+        let kept =
+            memory_parameter_input(&slot, ProviderProtocol::LlamaCpp, false, declared, &global);
+        assert_eq!(kept.operation.top_k, ParameterOverride::Inherit);
+        assert_eq!(kept.operation.temperature, ParameterOverride::Set(0.4));
+        let mut own_sampler = slot.clone();
+        own_sampler.llama_sampler.min_p = Some(0.1);
         assert_eq!(
-            memory_parameter_input(ProviderProtocol::LlamaCpp, false, declared),
-            lettuce_models::ChatParameterResolutionInput::default()
+            memory_parameter_input(
+                &own_sampler,
+                ProviderProtocol::LlamaCpp,
+                true,
+                declared,
+                &global
+            )
+            .operation
+            .top_k,
+            ParameterOverride::Inherit
         );
         assert_eq!(
-            memory_parameter_input(ProviderProtocol::Ollama, true, declared),
-            lettuce_models::ChatParameterResolutionInput::default()
+            memory_parameter_input(&slot, ProviderProtocol::Ollama, true, declared, &global)
+                .operation
+                .top_k,
+            ParameterOverride::Inherit
         );
     }
 }

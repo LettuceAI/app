@@ -20,8 +20,8 @@ use lettuce_jobs::{
     StageSnapshot, StoreError, SubjectKind, WorkerId, handle::JobHandle,
 };
 use lettuce_models::{
-    ChatParameterOverrides, ChatParameterResolutionInput, ChatRequirements, ExpectedModelIdentity,
-    ModelProfileRepository, ParameterOverride, ProviderAccountRepository,
+    ChatParameterResolutionInput, ChatRequirements, ExpectedModelIdentity, ModelProfileRepository,
+    ParameterOverride, ProviderAccountRepository,
 };
 use lettuce_settings::{GlobalSettingsStore, HelpMeReplyStyle};
 use lettuce_types::{
@@ -34,33 +34,22 @@ use crate::job_inference_usage::{JobInferenceError, run_job_inference};
 use crate::runtime_text::{RuntimeText, RuntimeTextError};
 use crate::{BuiltInPromptId, cleanup_outcome_replays};
 
-/// Legacy `HELP_ME_REPLY_DEFAULTS`: temperature 0.8 and top_p 1.0 for the
-/// request, applied only where the model declares the parameter, plus the
-/// settings' output cap.
-const HELP_ME_REPLY_TEMPERATURE: f64 = 0.8;
-const HELP_ME_REPLY_TOP_P: f64 = 1.0;
 const HELP_ME_REPLY_STAGE: &str = "reply-helper";
 
+/// Legacy `HELP_ME_REPLY_DEFAULTS` over the model's help-me-reply slot; the
+/// settings' output cap applies where the slot sets none.
 fn help_me_reply_parameters(
+    slot: &lettuce_models::FeatureGenerationParameters,
     support: lettuce_models::ParameterSupport,
+    global: &lettuce_models::ChatParameterProfile,
     max_output_tokens: u32,
 ) -> ChatParameterResolutionInput {
-    let supported = |status, value| {
-        if status == lettuce_models::CapabilityStatus::Supported {
-            ParameterOverride::Set(value)
-        } else {
-            ParameterOverride::Inherit
-        }
-    };
-    ChatParameterResolutionInput {
-        operation: ChatParameterOverrides {
-            temperature: supported(support.temperature, HELP_ME_REPLY_TEMPERATURE),
-            top_p: supported(support.top_p, HELP_ME_REPLY_TOP_P),
-            max_output_tokens: ParameterOverride::Set(max_output_tokens),
-            ..Default::default()
-        },
-        ..Default::default()
+    let mut input =
+        crate::feature_parameter_input(slot, crate::HELP_ME_REPLY_DEFAULTS, global, support);
+    if input.operation.max_output_tokens == ParameterOverride::Inherit {
+        input.operation.max_output_tokens = ParameterOverride::Set(max_output_tokens);
     }
+    input
 }
 
 /// One "help me reply" request, legacy `chat_generate_user_reply`.
@@ -127,6 +116,7 @@ pub trait ReplyHelperSources:
     + CharacterRepository
     + PersonaRepository
     + ModelProfileRepository
+    + lettuce_models::GlobalModelSettingsRepository
     + ProviderAccountRepository
     + PromptRepository
     + JobStore
@@ -141,6 +131,7 @@ impl<T> ReplyHelperSources for T where
         + CharacterRepository
         + PersonaRepository
         + ModelProfileRepository
+        + lettuce_models::GlobalModelSettingsRepository
         + ProviderAccountRepository
         + PromptRepository
         + JobStore
@@ -426,7 +417,14 @@ where
             &model,
             &account,
             &help_me_reply_parameters(
+                &model.config.feature_parameters.help_me_reply,
                 model.config.capabilities.parameter_support,
+                &lettuce_models::GlobalModelSettingsRepository::global_model_settings(
+                    self.repository,
+                )
+                .map_err(|_| ReplyHelperError::ModelUnavailable)?
+                .0
+                .chat_parameters,
                 settings.max_output_tokens,
             ),
             &ChatRequirements::default(),
@@ -848,12 +846,21 @@ mod tests {
             top_p: CapabilityStatus::Unknown,
             ..Default::default()
         };
-        let input = help_me_reply_parameters(all, 150);
+        let input = help_me_reply_parameters(&Default::default(), all, &Default::default(), 150);
         assert_eq!(input.operation.temperature, ParameterOverride::Set(0.8));
-        assert_eq!(input.operation.top_p, ParameterOverride::Inherit);
+        assert_eq!(input.operation.top_p, ParameterOverride::Clear);
         assert_eq!(
             input.operation.max_output_tokens,
             ParameterOverride::Set(150)
+        );
+        let mut slot = lettuce_models::FeatureGenerationParameters::default();
+        slot.parameters.temperature = ParameterOverride::Set(0.35);
+        slot.parameters.max_output_tokens = ParameterOverride::Set(64);
+        let input = help_me_reply_parameters(&slot, all, &Default::default(), 150);
+        assert_eq!(input.operation.temperature, ParameterOverride::Set(0.35));
+        assert_eq!(
+            input.operation.max_output_tokens,
+            ParameterOverride::Set(64)
         );
     }
 

@@ -742,11 +742,20 @@ where
             },
             lettuce_conversations::ModelSelectionSnapshot::expected_chat_identity,
         );
+        let global_model_settings =
+            lettuce_models::GlobalModelSettingsRepository::global_model_settings(self.repository)
+                .map(|(settings, _)| settings.chat_parameters)
+                .unwrap_or_default();
         let profile = match lettuce_models::resolve_chat_profile(
             &expected,
             &model,
             &account,
-            &ChatParameterResolutionInput::default(),
+            &crate::feature_parameter_input(
+                &model.config.feature_parameters.group_speaker_selection,
+                crate::GROUP_SPEAKER_SELECTION_DEFAULTS,
+                &global_model_settings,
+                model.config.capabilities.parameter_support,
+            ),
             &ChatRequirements {
                 require_tools: true,
                 ..Default::default()
