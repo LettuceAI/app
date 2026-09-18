@@ -6,8 +6,8 @@ use lettuce_types::ContentHash;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    BackupConversationArtifact, BackupMediaObject, LegacyBackupCompatibilityPlan,
-    LegacyBackupMediaRoot, ProviderBackupRestorePlan,
+    BackupConversationArtifact, LegacyBackupCompatibilityPlan, LegacyBackupMediaRoot,
+    ProviderBackupRestorePlan,
 };
 
 pub const BACKUP_RESTORE_STAGING_VERSION: u32 = 1;
@@ -59,6 +59,8 @@ pub enum BackupRestoreWorkspaceError {
     Serialization,
     #[error("restore workspace storage failed: {0}")]
     Platform(PlatformError),
+    #[error("backup media could not be read from the source")]
+    Source,
 }
 
 impl BackupRestoreWorkspace {
@@ -74,8 +76,11 @@ impl BackupRestoreWorkspace {
         plan: &ProviderBackupRestorePlan,
     ) -> Result<BackupRestoreStagingReceipt, BackupRestoreWorkspaceError> {
         let receipt = staging_receipt(plan);
-        for object in &plan.media {
-            self.stage_media(object)?;
+        for entry in &plan.media {
+            let bytes = plan
+                .read_media(entry)
+                .map_err(|_| BackupRestoreWorkspaceError::Source)?;
+            self.stage_media(&entry.content_hash, &bytes)?;
         }
         for artifact in &plan.artifacts {
             self.stage_artifact(artifact)?;
@@ -168,15 +173,19 @@ impl BackupRestoreWorkspace {
         Ok(())
     }
 
-    fn stage_media(&self, object: &BackupMediaObject) -> Result<(), BackupRestoreWorkspaceError> {
-        let name = object.content_hash.as_str();
+    fn stage_media(
+        &self,
+        content_hash: &ContentHash,
+        bytes: &[u8],
+    ) -> Result<(), BackupRestoreWorkspaceError> {
+        let name = content_hash.as_str();
         self.stage_bytes(
             ObjectKey::from_segments(["partial", "media", &format!("{name}.partial")])
                 .map_err(BackupRestoreWorkspaceError::Platform)?,
             ObjectKey::from_segments(["media", "blobs", name])
                 .map_err(BackupRestoreWorkspaceError::Platform)?,
-            &object.content_hash,
-            &object.bytes,
+            content_hash,
+            bytes,
         )
     }
 

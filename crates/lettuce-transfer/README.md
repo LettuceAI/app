@@ -32,6 +32,13 @@ the earlier 512 MiB total blocked large libraries; legacy had no limit). The
 version-1 decoder and the legacy database inventory keep their 512 MiB
 in-memory limits (`MAX_LEGACY_BACKUP_*`) until they stream too.
 
+`decode_provider_backup_restore_plan` takes any seekable `BackupSource` (the
+received archive file), hashes it by streaming, decodes the data sections,
+secrets and conversation artifacts, and keeps media as `BackupMediaEntry`
+(hash, size, section) read one at a time through `read_media` from the
+authenticated reader the plan owns; staging and media installation pull each
+blob that way, so restore memory no longer grows with the media library.
+
 Backup reception uses confined resumable partial files and commits to a new
 path only after the file's expected hash (streamed) and frame verify. An existing
 backup is replayed when identical and never replaced. This corrects the legacy

@@ -1,4 +1,8 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    io::{Read, Seek, SeekFrom},
+    sync::Mutex,
+};
 
 use lettuce_context::PromptDocument;
 use lettuce_models::{
@@ -11,18 +15,66 @@ use lettuce_types::{ModelProfileId, ProviderAccountId, Revision, TimestampMillis
 use serde::Deserialize;
 
 use crate::{
-    AuthoredProfileBackup, BackupConversationArtifact, BackupGlobalSettings, BackupMediaObject,
-    BackupSection, PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph, ProviderBackupGraphError,
-    ProviderBackupSecret, ProviderBackupSelections,
+    AuthoredProfileBackup, BackupConversationArtifact, BackupGlobalSettings, BackupReader,
+    BackupSectionInfo, PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph,
+    ProviderBackupGraphError, ProviderBackupSecret, ProviderBackupSelections,
 };
 
-#[derive(Debug)]
+/// A seekable backup file or buffer.
+pub trait BackupSource: Read + Seek + Send {}
+
+impl<T: Read + Seek + Send> BackupSource for T {}
+
+/// A ready media blob of the backup, read on demand through
+/// [`ProviderBackupRestorePlan::read_media`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackupMediaEntry {
+    pub content_hash: lettuce_types::ContentHash,
+    pub byte_size: u64,
+    section: usize,
+}
+
+/// A decoded version-2 backup. Data sections, secrets and conversation
+/// artifacts are in memory; media blobs stay in the authenticated source and
+/// are read one at a time.
 pub struct ProviderBackupRestorePlan {
     pub source_hash: lettuce_types::ContentHash,
     pub graph: ProviderBackupGraph,
     pub secrets: Vec<ProviderBackupSecret>,
-    pub media: Vec<BackupMediaObject>,
+    pub media: Vec<BackupMediaEntry>,
     pub artifacts: Vec<BackupConversationArtifact>,
+    source: Mutex<BackupReader<Box<dyn BackupSource>>>,
+}
+
+impl std::fmt::Debug for ProviderBackupRestorePlan {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProviderBackupRestorePlan")
+            .field("source_hash", &self.source_hash)
+            .field("media", &self.media)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ProviderBackupRestorePlan {
+    /// Decrypts one media blob and checks it against the graph's size and
+    /// content hash.
+    pub fn read_media(
+        &self,
+        entry: &BackupMediaEntry,
+    ) -> Result<zeroize::Zeroizing<Vec<u8>>, ProviderBackupRestorePlanError> {
+        let bytes = self
+            .source
+            .lock()
+            .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)?
+            .read_section(entry.section)?;
+        if u64::try_from(bytes.len()).ok() != Some(entry.byte_size)
+            || content_hash(&bytes) != entry.content_hash
+        {
+            return Err(ProviderBackupRestorePlanError::InvalidInventory);
+        }
+        Ok(bytes)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -35,6 +87,8 @@ pub enum ProviderBackupRestorePlanError {
     InvalidInventory,
     #[error("backup restore graph is invalid: {0}")]
     InvalidGraph(#[from] ProviderBackupGraphError),
+    #[error("backup source could not be read")]
+    Io,
 }
 
 #[derive(Deserialize)]
@@ -144,72 +198,89 @@ struct DecodedSecret {
 }
 
 pub fn decode_provider_backup_restore_plan(
-    bytes: &[u8],
+    mut input: impl BackupSource + 'static,
     password: &str,
 ) -> Result<ProviderBackupRestorePlan, ProviderBackupRestorePlanError> {
-    match crate::detect_backup_format(bytes)? {
+    let mut prefix = [0u8; 16];
+    let mut read = 0;
+    input
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| ProviderBackupRestorePlanError::Io)?;
+    while read < prefix.len() {
+        match input.read(&mut prefix[read..]) {
+            Ok(0) => break,
+            Ok(count) => read += count,
+            Err(_) => return Err(ProviderBackupRestorePlanError::Io),
+        }
+    }
+    match crate::detect_backup_format(&prefix[..read])? {
         crate::BackupFormatVersion::LegacyV1 => {
             return Err(ProviderBackupRestorePlanError::LegacyRequiresCompatibility);
         }
         crate::BackupFormatVersion::CurrentV2 => {}
     }
-    let mut sections = crate::open_backup(bytes, password)?
+    input
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| ProviderBackupRestorePlanError::Io)?;
+    let mut hasher = blake3::Hasher::new();
+    hasher
+        .update_reader(&mut input)
+        .map_err(|_| ProviderBackupRestorePlanError::Io)?;
+    let source_hash = lettuce_types::ContentHash::parse(hasher.finalize().to_hex().to_string())
+        .expect("BLAKE3 produces a valid content hash");
+    let mut reader = BackupReader::open(Box::new(input) as Box<dyn BackupSource>, password)?;
+    let mut sections = reader
+        .sections()
         .into_iter()
-        .map(|section| (section.name.clone(), section))
+        .enumerate()
+        .map(|(index, section)| (section.name.clone(), (index, section)))
         .collect::<BTreeMap<_, _>>();
-    let metadata: ProviderMetadata = take_json(
-        &mut sections,
-        "data/provider-graph.json",
-        "provider-graph.v2",
-    )?;
+    let sections = &mut Sections {
+        reader: &mut reader,
+        sections: &mut sections,
+    };
+    let metadata: ProviderMetadata =
+        take_json(sections, "data/provider-graph.json", "provider-graph.v2")?;
     let secret_document: SecretDocument = take_json(
-        &mut sections,
+        sections,
         "secrets/provider-secrets.json",
         "provider-secrets.v2",
     )?;
-    let asr_learning = take_json(&mut sections, "data/asr-learning.json", "asr-learning.v3")?;
+    let asr_learning = take_json(sections, "data/asr-learning.json", "asr-learning.v3")?;
     let conversation_history = take_json(
-        &mut sections,
+        sections,
         "data/conversation-history.json",
         "conversation-history.v1",
     )?;
     let conversation_runtime = take_json(
-        &mut sections,
+        sections,
         "data/conversation-runtime.json",
         "conversation-runtime.v1",
     )?;
-    let job_backup = take_json(&mut sections, "data/jobs.json", "jobs.v1")?;
+    let job_backup = take_json(sections, "data/jobs.json", "jobs.v1")?;
     let conversation_usage = take_json(
-        &mut sections,
+        sections,
         "data/conversation-usage.json",
         "conversation-usage.v1",
     )?;
     let conversation_outbox = take_json(
-        &mut sections,
+        sections,
         "data/conversation-outbox.json",
         "conversation-outbox.v1",
     )?;
-    let companion_state = take_json(
-        &mut sections,
-        "data/companion-state.json",
-        "companion-state.v1",
-    )?;
+    let companion_state = take_json(sections, "data/companion-state.json", "companion-state.v1")?;
     let companion_effects = take_json(
-        &mut sections,
+        sections,
         "data/companion-effects.json",
         "companion-effects.v1",
     )?;
-    let memory = take_json(&mut sections, "data/memory.json", "memory.v1")?;
+    let memory = take_json(sections, "data/memory.json", "memory.v1")?;
     let memory_projections = take_json(
-        &mut sections,
+        sections,
         "data/memory-projections.json",
         "memory-projections.v1",
     )?;
-    let dynamic_memory = take_json(
-        &mut sections,
-        "data/dynamic-memory.json",
-        "dynamic-memory.v1",
-    )?;
+    let dynamic_memory = take_json(sections, "data/dynamic-memory.json", "dynamic-memory.v1")?;
     let mut graph = ProviderBackupGraph {
         creation: metadata.creation,
         legacy_imports: metadata.legacy_imports,
@@ -236,18 +307,50 @@ pub fn decode_provider_backup_restore_plan(
     };
     crate::backup_graph::canonicalize_and_validate(&mut graph)?;
     let secrets = decode_secrets(secret_document, &graph)?;
-    let media = take_media(&mut sections, &graph)?;
-    let artifacts = take_artifacts(&mut sections, &graph)?;
-    if !sections.is_empty() {
+    let media = take_media(sections, &graph)?;
+    let artifacts = take_artifacts(sections, &graph)?;
+    if !sections.sections.is_empty() {
         return Err(ProviderBackupRestorePlanError::InvalidInventory);
     }
     Ok(ProviderBackupRestorePlan {
-        source_hash: content_hash(bytes),
+        source_hash,
         graph,
         secrets,
         media,
         artifacts,
+        source: Mutex::new(reader),
     })
+}
+
+struct Sections<'a> {
+    reader: &'a mut BackupReader<Box<dyn BackupSource>>,
+    sections: &'a mut BTreeMap<String, (usize, BackupSectionInfo)>,
+}
+
+impl Sections<'_> {
+    fn take(
+        &mut self,
+        name: &str,
+        schema: &str,
+    ) -> Result<(usize, BackupSectionInfo), ProviderBackupRestorePlanError> {
+        let (index, section) = self
+            .sections
+            .remove(name)
+            .ok_or(ProviderBackupRestorePlanError::InvalidInventory)?;
+        if section.schema != schema {
+            return Err(ProviderBackupRestorePlanError::InvalidInventory);
+        }
+        Ok((index, section))
+    }
+
+    fn read(
+        &mut self,
+        name: &str,
+        schema: &str,
+    ) -> Result<zeroize::Zeroizing<Vec<u8>>, ProviderBackupRestorePlanError> {
+        let (index, _) = self.take(name, schema)?;
+        Ok(self.reader.read_section(index)?)
+    }
 }
 
 fn content_hash(bytes: &[u8]) -> lettuce_types::ContentHash {
@@ -256,17 +359,11 @@ fn content_hash(bytes: &[u8]) -> lettuce_types::ContentHash {
 }
 
 fn take_json<T: for<'de> Deserialize<'de>>(
-    sections: &mut BTreeMap<String, BackupSection>,
+    sections: &mut Sections<'_>,
     name: &str,
     schema: &str,
 ) -> Result<T, ProviderBackupRestorePlanError> {
-    let section = sections
-        .remove(name)
-        .ok_or(ProviderBackupRestorePlanError::InvalidInventory)?;
-    if section.schema != schema {
-        return Err(ProviderBackupRestorePlanError::InvalidInventory);
-    }
-    serde_json::from_slice(&section.bytes)
+    serde_json::from_slice(&sections.read(name, schema)?)
         .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)
 }
 
@@ -303,79 +400,46 @@ fn decode_secrets(
 }
 
 fn take_media(
-    sections: &mut BTreeMap<String, BackupSection>,
+    sections: &mut Sections<'_>,
     graph: &ProviderBackupGraph,
-) -> Result<Vec<BackupMediaObject>, ProviderBackupRestorePlanError> {
+) -> Result<Vec<BackupMediaEntry>, ProviderBackupRestorePlanError> {
     graph
         .authored
         .media_blobs
         .iter()
         .filter(|blob| blob.state == lettuce_media::BlobState::Ready)
         .map(|blob| {
-            let name = format!("media/blobs/{}", blob.content_hash);
-            let section = sections
-                .remove(&name)
-                .ok_or(ProviderBackupRestorePlanError::InvalidInventory)?;
-            if section.schema != "media-blob.v2"
-                || section.bytes.len()
-                    != usize::try_from(blob.byte_size)
-                        .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)?
-                || lettuce_types::ContentHash::parse(
-                    blake3::hash(&section.bytes).to_hex().to_string(),
-                )
-                .as_ref()
-                    != Ok(&blob.content_hash)
-            {
+            let (section, info) = sections.take(
+                &crate::backup_media_section_name(&blob.content_hash),
+                crate::BACKUP_MEDIA_SECTION_SCHEMA,
+            )?;
+            if info.plaintext_bytes != blob.byte_size || info.content_hash != blob.content_hash {
                 return Err(ProviderBackupRestorePlanError::InvalidInventory);
             }
-            Ok(BackupMediaObject {
+            Ok(BackupMediaEntry {
                 content_hash: blob.content_hash.clone(),
-                bytes: section.bytes,
+                byte_size: blob.byte_size,
+                section,
             })
         })
         .collect()
 }
 
 fn take_artifacts(
-    sections: &mut BTreeMap<String, BackupSection>,
+    sections: &mut Sections<'_>,
     graph: &ProviderBackupGraph,
 ) -> Result<Vec<BackupConversationArtifact>, ProviderBackupRestorePlanError> {
     crate::backup_graph::all_conversation_artifact_descriptors(graph)?
         .into_iter()
         .map(|descriptor| {
-            let (name, schema, digest, byte_size) = match &descriptor {
-                lettuce_conversations::TrustedArtifactDescriptor::Snapshot(reference) => (
-                    format!("conversation/snapshots/{}", reference.artifact_id),
-                    format!("conversation-snapshot.v{}", reference.schema_version),
-                    &reference.digest,
-                    reference.byte_size,
-                ),
-                lettuce_conversations::TrustedArtifactDescriptor::Replay(reference) => (
-                    format!("conversation/replays/{}", reference.artifact_id),
-                    format!("conversation-replay.v{}", reference.schema_version),
-                    &reference.digest,
-                    reference.byte_size,
-                ),
-            };
-            let section = sections
-                .remove(&name)
-                .ok_or(ProviderBackupRestorePlanError::InvalidInventory)?;
-            if section.schema != schema
-                || section.bytes.len()
-                    != usize::try_from(byte_size)
-                        .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)?
-                || lettuce_types::ContentHash::parse(
-                    blake3::hash(&section.bytes).to_hex().to_string(),
-                )
-                .as_ref()
-                    != Ok(digest)
+            let (name, schema, digest, byte_size) =
+                crate::backup_graph::backup_artifact_section_identity(&descriptor);
+            let bytes = sections.read(&name, &schema)?;
+            if u64::try_from(bytes.len()).ok() != Some(byte_size) || content_hash(&bytes) != *digest
             {
                 return Err(ProviderBackupRestorePlanError::InvalidInventory);
             }
-            Ok(BackupConversationArtifact {
-                descriptor,
-                bytes: section.bytes,
-            })
+            Ok(BackupConversationArtifact { descriptor, bytes })
         })
         .collect()
 }

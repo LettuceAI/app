@@ -1664,8 +1664,11 @@ mod tests {
         )
         .expect("sealed backup");
 
-        let plan = crate::decode_provider_backup_restore_plan(&envelope, "backup password")
-            .expect("restore plan");
+        let plan = crate::decode_provider_backup_restore_plan(
+            std::io::Cursor::new(envelope.clone()),
+            "backup password",
+        )
+        .expect("restore plan");
         assert_eq!(plan.graph, source_graph);
         assert_eq!(plan.secrets.len(), 1);
         assert_eq!(plan.secrets[0].reference, reference);
@@ -1711,7 +1714,10 @@ mod tests {
         )
         .expect("sealed backup");
         assert!(matches!(
-            crate::decode_provider_backup_restore_plan(&missing_envelope, "backup password"),
+            crate::decode_provider_backup_restore_plan(
+                std::io::Cursor::new(missing_envelope.clone()),
+                "backup password"
+            ),
             Err(crate::ProviderBackupRestorePlanError::InvalidInventory)
         ));
 
@@ -1729,7 +1735,10 @@ mod tests {
         )
         .expect("sealed backup");
         assert!(matches!(
-            crate::decode_provider_backup_restore_plan(&unknown_envelope, "backup password"),
+            crate::decode_provider_backup_restore_plan(
+                std::io::Cursor::new(unknown_envelope.clone()),
+                "backup password"
+            ),
             Err(crate::ProviderBackupRestorePlanError::InvalidInventory)
         ));
     }
@@ -1737,7 +1746,10 @@ mod tests {
     #[test]
     fn restore_plan_routes_unversioned_zip_backups_to_legacy_compatibility() {
         assert!(matches!(
-            crate::decode_provider_backup_restore_plan(b"PK\x03\x04legacy", "backup password"),
+            crate::decode_provider_backup_restore_plan(
+                std::io::Cursor::new(b"PK\x03\x04legacy".to_vec()),
+                "backup password"
+            ),
             Err(crate::ProviderBackupRestorePlanError::LegacyRequiresCompatibility)
         ));
     }
@@ -1850,8 +1862,11 @@ mod tests {
             sections,
         )
         .expect("sealed backup");
-        let plan = crate::decode_provider_backup_restore_plan(&envelope, "backup password")
-            .expect("restore plan");
+        let plan = crate::decode_provider_backup_restore_plan(
+            std::io::Cursor::new(envelope.clone()),
+            "backup password",
+        )
+        .expect("restore plan");
         let root =
             std::env::temp_dir().join(format!("lettuce-restore-workspace-{}", OperationId::new()));
         let partial = root

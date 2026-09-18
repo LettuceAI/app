@@ -1837,9 +1837,11 @@ mod tests {
             open_backup(&envelope, "wrong password"),
             Err(BackupEnvelopeError::Authentication)
         );
-        let restore_plan =
-            lettuce_transfer::decode_provider_backup_restore_plan(&envelope, "backup password")
-                .expect("restore plan");
+        let restore_plan = lettuce_transfer::decode_provider_backup_restore_plan(
+            std::io::Cursor::new(envelope.clone()),
+            "backup password",
+        )
+        .expect("restore plan");
         assert!(
             !restore_plan
                 .graph
@@ -1863,7 +1865,7 @@ mod tests {
         )
         .restore(
             OperationId::new(),
-            &envelope,
+            std::io::Cursor::new(envelope.clone()),
             "backup password",
             TimestampMillis::new(5),
         )

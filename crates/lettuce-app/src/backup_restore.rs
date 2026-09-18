@@ -178,11 +178,11 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
     pub async fn restore(
         &self,
         restore_id: OperationId,
-        bytes: &[u8],
+        backup: impl lettuce_transfer::BackupSource + 'static,
         password: &str,
         restored_at: TimestampMillis,
     ) -> Result<BackupRestoreReceipt, BackupRestoreError> {
-        let plan = lettuce_transfer::decode_provider_backup_restore_plan(bytes, password)?;
+        let plan = lettuce_transfer::decode_provider_backup_restore_plan(backup, password)?;
         let staging =
             BackupRestoreWorkspace::open(self.workspace_root.join(restore_id.to_string()))?
                 .stage(&plan)?;
@@ -207,21 +207,20 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
                 .ok_or(BackupRestoreError::TargetDirectory)?,
         )
         .map_err(|_| BackupRestoreError::TargetDirectory)?;
-        let ProviderBackupRestorePlan {
-            mut graph,
-            secrets,
-            media,
-            artifacts,
-            ..
-        } = plan;
-        for object in &media {
+        for entry in &plan.media {
             lettuce_media::install_backup_media_object(
                 self.media_root,
-                &object.content_hash,
-                &object.bytes,
+                &entry.content_hash,
+                &plan.read_media(entry)?,
             )
             .map_err(BackupRestoreError::Media)?;
         }
+        let ProviderBackupRestorePlan {
+            mut graph,
+            secrets,
+            artifacts,
+            ..
+        } = plan;
         let secrets = lettuce_transfer::rebind_provider_backup_secrets(&mut graph, secrets)?;
         lettuce_transfer::settle_in_flight_generation(&mut graph);
         lettuce_transfer::canonicalize_and_validate(&mut graph)?;
