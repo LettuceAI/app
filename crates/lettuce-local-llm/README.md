@@ -68,6 +68,17 @@ features. whisper.cpp (lettuce-speech) links into the same binary.
   stages), penalties only when a penalty is set, DRY/XTC/typical/min-p
   parameters, the template's (lazy) grammar forced to the front, then `dist`
   (seeded, random seed when none) above zero temperature or `greedy`.
+- `prompt` (desktop): the legacy prompt builder unchanged. The template
+  resolves from the explicit override, the GGUF's embedded template, then a
+  named preset. Tool definitions or tool messages take the OpenAI-compatible
+  template path (tool_choice `auto`/`none`/`required`, a named tool narrows
+  the list and becomes `required`, a tool-marker heuristic and missing native
+  parser metadata go into diagnostics); plain chats try the same path, then
+  llama.cpp's basic template call; the `role: content` transcript ending in
+  `assistant: ` is the opt-in fallback when resolution or application fails.
+  Media parts become mtmd markers. BOS is never added to templated prompts;
+  raw completions follow `tokenizer.ggml.add_bos_token`, defaulting to on.
+  Errors are typed with legacy wording, without legacy's module/line prefix.
 
 AMD Ryzen AI / handheld APUs (user requirement 2026-09-21) share one
 user-adjustable memory pool between the iGPU and the CPU. Legacy left iGPUs
@@ -81,5 +92,5 @@ unified memory (for example memory the iGPU can borrow beyond the carve-out)
 is still open: it needs measurement on the hardware and the user's approval,
 since the formulas are frozen.
 
-Next: contexts and the hot-context cache, prompt templates and sampler, MTP
+Next: contexts and the hot-context cache, MTP
 runtime, request handling, the worker thread and the inference port.
