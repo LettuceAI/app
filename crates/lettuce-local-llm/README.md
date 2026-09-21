@@ -101,4 +101,28 @@ unified memory (for example memory the iGPU can borrow beyond the carve-out)
 is still open: it needs measurement on the hardware and the user's approval,
 since the formulas are frozen.
 
-Next: contexts and the hot-context cache, request handling, the worker thread and the inference port.
+- `request`: one generation request with the user's raw values and the
+  legacy rules that resolve them (sampler profile defaults and filters,
+  deduplicated devices, MTP draft bounds, `/think`/`/no_think` over the
+  explicit flag over a requested reasoning format), plus the stop matcher,
+  stream flush rule, cache eviction count and context key.
+- `tool_calls`: the legacy tool-call parser for a local reply, including raw
+  text recovery (`<tool_call>` blocks, JSON, `<function=...>` tags,
+  `<parameter=...>` arguments).
+- `generation` (desktop): the legacy request handler on one worker thread
+  that owns the model slot and the hot context cache (1 GiB, oldest first):
+  planning with the per-model smart offload cache, the native fitter behind
+  its unchanged gate, multi-GPU distribution, MTP drafter placement, the
+  context attempt groups (GPU KV, then KV in RAM, then smaller contexts) with
+  one reload at the KV-aware layer estimate, prompt-prefix reuse with the MTP
+  carry rebuild, streaming with stop-sequence hold-back and thinking-tag
+  split, the structured tool-call parse with raw-text recovery first, the
+  runtime report (through `RuntimeReportStore`) and the metrics record.
+  Events go to a `GenerationObserver`; the caller persists metrics and ends
+  the stream. Corrections: aborts are a typed error (legacy matched the word
+  "aborted" in any error text); inline images, the `image` 0.25 PNG
+  normalization and base64 handling are unchanged. Verified on a real model:
+  CPU generation, prompt-cache reuse and MTP.
+
+Next: the inference port adapter, llama settings on the resolved chat
+profile, report/metrics storage and the runtime commands.

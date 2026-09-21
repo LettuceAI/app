@@ -12,6 +12,8 @@ pub mod context_info;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod engine;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod generation;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod hardware;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod llama;
@@ -20,5 +22,7 @@ pub mod mtp;
 pub mod offload;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod prompt;
+pub mod request;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod sampler;
+pub mod tool_calls;
