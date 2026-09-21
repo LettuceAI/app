@@ -10985,3 +10985,121 @@ fn note_id(database: &Database, character_id: CharacterId) -> uuid::Uuid {
         .expect("notes")[0]
         .id
 }
+
+#[test]
+fn audio_providers_voices_and_asr_learning_sync_row_by_row() {
+    use lettuce_speech::{
+        AsrIgnoredSuggestion, AsrLearningRepository, AsrVocabularyTerm, AudioProvider,
+        AudioProviderConfig, TtsConfigurationRepository, UserVoice,
+    };
+    let a = database();
+    let b = database();
+    let provider = TtsConfigurationRepository::upsert_audio_provider(
+        &a,
+        AudioProvider {
+            id: lettuce_types::AudioProviderId::new(),
+            secret_owner_id: lettuce_settings::SecretOwnerId::new(),
+            label: "ElevenLabs".to_owned(),
+            api_key_ref: Some(lettuce_settings::SecretRef::new()),
+            config: AudioProviderConfig::Elevenlabs,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(3),
+            updated_at: TimestampMillis::new(3),
+        },
+        None,
+    )
+    .expect("provider");
+    let voice = TtsConfigurationRepository::upsert_user_voice(
+        &a,
+        UserVoice {
+            id: lettuce_types::VoiceProfileId::new(),
+            provider_id: provider.id,
+            name: "Narrator".to_owned(),
+            model_id: "eleven_multilingual_v2".to_owned(),
+            voice_id: "voice-1".to_owned(),
+            prompt: None,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(4),
+            updated_at: TimestampMillis::new(4),
+        },
+        None,
+    )
+    .expect("voice");
+    let term = AsrLearningRepository::save_vocabulary(
+        &a,
+        AsrVocabularyTerm::new("Lettuce", None, None, None, 5, TimestampMillis::new(5))
+            .expect("term"),
+    )
+    .expect("save term");
+    let ignored = |id: &str, at: i64| AsrIgnoredSuggestion {
+        id: id.parse().expect("id"),
+        wrong: "letus".into(),
+        normalized_wrong: "letus".into(),
+        correct: "lettuce".into(),
+        normalized_correct: "lettuce".into(),
+        language: None,
+        scope: "global".into(),
+        ignored_count: 1,
+        last_ignored_at: TimestampMillis::new(at),
+        created_at: TimestampMillis::new(at),
+        updated_at: TimestampMillis::new(at),
+    };
+    AsrLearningRepository::save_ignored_suggestion(
+        &a,
+        ignored("00000000-0000-4000-8000-00000000000b", 6),
+    )
+    .expect("ignored on a");
+    AsrLearningRepository::save_ignored_suggestion(
+        &b,
+        ignored("00000000-0000-4000-8000-00000000000a", 7),
+    )
+    .expect("same ignored on b");
+
+    sync_prompts(&a, &b, 100);
+    sync_prompts(&b, &a, 200);
+    sync_prompts(&a, &b, 300);
+
+    let on_b = TtsConfigurationRepository::get_audio_provider(&b, provider.id)
+        .expect("b provider")
+        .expect("present");
+    assert_eq!(on_b.label, provider.label);
+    assert_eq!(on_b.api_key_ref, provider.api_key_ref);
+    assert_eq!(
+        TtsConfigurationRepository::get_user_voice(&b, voice.id)
+            .expect("b voice")
+            .map(|stored| stored.voice_id),
+        Some(voice.voice_id.clone())
+    );
+    assert_eq!(
+        AsrLearningRepository::get_vocabulary(&b, term.id).expect("b term"),
+        Some(term)
+    );
+    for database in [&a, &b] {
+        let kept = AsrLearningRepository::list_ignored_suggestions(database, None, &[
+            "global".to_owned(),
+        ])
+        .expect("ignored");
+        assert_eq!(
+            kept.iter().map(|value| value.id.to_string()).collect::<Vec<_>>(),
+            vec!["00000000-0000-4000-8000-00000000000a".to_owned()]
+        );
+    }
+
+    TtsConfigurationRepository::delete_user_voice(&b, voice.id).expect("delete on b");
+    sync_prompts(&b, &a, 400);
+    assert_eq!(
+        TtsConfigurationRepository::get_user_voice(&a, voice.id).expect("a voice"),
+        None
+    );
+    {
+        use lettuce_sync::LocalChangeJournal;
+        for database in [&a, &b] {
+            assert_eq!(
+                database
+                    .journal_current_state(TimestampMillis::new(500))
+                    .expect("rescan"),
+                0
+            );
+        }
+    }
+}

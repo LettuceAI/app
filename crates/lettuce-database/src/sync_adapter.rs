@@ -875,6 +875,36 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::CONVERSATION_SYNC_VERSION,
         )
         | (
+            lettuce_sync::AUDIO_PROVIDER_SYNC_KIND,
+            lettuce_sync::AUDIO_PROVIDER_SYNC_SCHEMA,
+            lettuce_sync::AUDIO_PROVIDER_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::USER_VOICE_SYNC_KIND,
+            lettuce_sync::USER_VOICE_SYNC_SCHEMA,
+            lettuce_sync::USER_VOICE_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::ASR_VOCABULARY_TERM_SYNC_KIND,
+            lettuce_sync::ASR_VOCABULARY_TERM_SYNC_SCHEMA,
+            lettuce_sync::ASR_VOCABULARY_TERM_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::ASR_CORRECTION_SYNC_KIND,
+            lettuce_sync::ASR_CORRECTION_SYNC_SCHEMA,
+            lettuce_sync::ASR_CORRECTION_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::ASR_IGNORED_SUGGESTION_SYNC_KIND,
+            lettuce_sync::ASR_IGNORED_SUGGESTION_SYNC_SCHEMA,
+            lettuce_sync::ASR_IGNORED_SUGGESTION_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::ASR_VOICE_EXAMPLE_SYNC_KIND,
+            lettuce_sync::ASR_VOICE_EXAMPLE_SYNC_SCHEMA,
+            lettuce_sync::ASR_VOICE_EXAMPLE_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::COMPANION_SOUL_SYNC_KIND,
             lettuce_sync::COMPANION_SOUL_SYNC_SCHEMA,
             lettuce_sync::COMPANION_SOUL_SYNC_VERSION,
@@ -1892,6 +1922,110 @@ const COMPANION_NOTE_CODEC: SnapshotCodec = SnapshotCodec {
     }),
 };
 
+fn row_apply_error(error: crate::row_sync_adapter::RowSyncError) -> ApplyOneError {
+    match error {
+        crate::row_sync_adapter::RowSyncError::Pending => ApplyOneError::Pending,
+        crate::row_sync_adapter::RowSyncError::Corrupt => ApplyOneError::Corrupt,
+        crate::row_sync_adapter::RowSyncError::Storage => ApplyOneError::Storage,
+    }
+}
+
+macro_rules! row_codec {
+    ($name:ident, $kind:expr, $schema:expr, $version:expr, $spec:expr, $assets:expr) => {
+        const $name: SnapshotCodec = SnapshotCodec {
+            kind: $kind,
+            assets: $assets,
+            empty: None,
+            seed: None,
+            decode: |_, bytes| {
+                crate::row_sync_adapter::row_decode(&$spec, bytes)
+                    .map(|_| ())
+                    .map_err(row_apply_error)
+            },
+            current: |tx, id| {
+                crate::row_sync_adapter::row_current(tx, &$spec, id)
+                    .map_err(row_apply_error)?
+                    .map(|bytes| {
+                        CanonicalPayload::new($schema, $version, bytes)
+                            .map_err(|_| ApplyOneError::Corrupt)
+                    })
+                    .transpose()
+            },
+            materialize: |tx, id, bytes| {
+                crate::row_sync_adapter::row_materialize(tx, &$spec, id, bytes)
+                    .map_err(row_apply_error)
+            },
+            ids: Some(|connection| {
+                crate::row_sync_adapter::row_ids(connection, &$spec)
+                    .map_err(|_| ApplyOneError::Storage)
+            }),
+            delete: Some(|tx, id, _| {
+                crate::row_sync_adapter::row_delete(tx, &$spec, id).map_err(row_apply_error)
+            }),
+        };
+    };
+}
+
+row_codec!(
+    AUDIO_PROVIDER_CODEC,
+    lettuce_sync::AUDIO_PROVIDER_SYNC_KIND,
+    lettuce_sync::AUDIO_PROVIDER_SYNC_SCHEMA,
+    lettuce_sync::AUDIO_PROVIDER_SYNC_VERSION,
+    crate::row_sync_adapter::AUDIO_PROVIDERS,
+    no_assets
+);
+
+row_codec!(
+    USER_VOICE_CODEC,
+    lettuce_sync::USER_VOICE_SYNC_KIND,
+    lettuce_sync::USER_VOICE_SYNC_SCHEMA,
+    lettuce_sync::USER_VOICE_SYNC_VERSION,
+    crate::row_sync_adapter::USER_VOICES,
+    no_assets
+);
+
+row_codec!(
+    ASR_VOCABULARY_TERM_CODEC,
+    lettuce_sync::ASR_VOCABULARY_TERM_SYNC_KIND,
+    lettuce_sync::ASR_VOCABULARY_TERM_SYNC_SCHEMA,
+    lettuce_sync::ASR_VOCABULARY_TERM_SYNC_VERSION,
+    crate::row_sync_adapter::ASR_VOCABULARY_TERMS,
+    no_assets
+);
+
+row_codec!(
+    ASR_CORRECTION_CODEC,
+    lettuce_sync::ASR_CORRECTION_SYNC_KIND,
+    lettuce_sync::ASR_CORRECTION_SYNC_SCHEMA,
+    lettuce_sync::ASR_CORRECTION_SYNC_VERSION,
+    crate::row_sync_adapter::ASR_CORRECTIONS,
+    no_assets
+);
+
+row_codec!(
+    ASR_IGNORED_SUGGESTION_CODEC,
+    lettuce_sync::ASR_IGNORED_SUGGESTION_SYNC_KIND,
+    lettuce_sync::ASR_IGNORED_SUGGESTION_SYNC_SCHEMA,
+    lettuce_sync::ASR_IGNORED_SUGGESTION_SYNC_VERSION,
+    crate::row_sync_adapter::ASR_IGNORED_SUGGESTIONS,
+    no_assets
+);
+
+row_codec!(
+    ASR_VOICE_EXAMPLE_CODEC,
+    lettuce_sync::ASR_VOICE_EXAMPLE_SYNC_KIND,
+    lettuce_sync::ASR_VOICE_EXAMPLE_SYNC_SCHEMA,
+    lettuce_sync::ASR_VOICE_EXAMPLE_SYNC_VERSION,
+    crate::row_sync_adapter::ASR_VOICE_EXAMPLES,
+    |bytes| {
+        serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(bytes)
+            .ok()
+            .and_then(|row| row.get("audio_asset_id")?.as_str().map(str::to_owned))
+            .into_iter()
+            .collect()
+    }
+);
+
 fn decode_branch(
     id: &str,
     bytes: &[u8],
@@ -2017,7 +2151,7 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 20] = [
+const SCANNED_CODECS: [&SnapshotCodec; 26] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -2038,6 +2172,12 @@ const SCANNED_CODECS: [&SnapshotCodec; 20] = [
     &COMPANION_NOTE_CODEC,
     &COMPANION_RELATIONSHIP_CODEC,
     &COMPANION_SESSION_CODEC,
+    &AUDIO_PROVIDER_CODEC,
+    &USER_VOICE_CODEC,
+    &ASR_VOCABULARY_TERM_CODEC,
+    &ASR_CORRECTION_CODEC,
+    &ASR_IGNORED_SUGGESTION_CODEC,
+    &ASR_VOICE_EXAMPLE_CODEC,
 ];
 
 fn snapshot_codec(kind: &str) -> Option<&'static SnapshotCodec> {
@@ -2165,6 +2305,9 @@ fn journal_referenced_media(
              UNION SELECT asset_id FROM group_presentation_asset_refs
              UNION SELECT background_asset_id FROM groups WHERE background_asset_id IS NOT NULL
              UNION SELECT asset_id FROM group_scene_assets
+             UNION SELECT asset_id FROM revision_media_refs
+             UNION SELECT asset_id FROM candidate_media_refs
+             UNION SELECT audio_asset_id FROM asr_voice_examples
              ORDER BY asset_id",
         )
         .and_then(|mut statement| {

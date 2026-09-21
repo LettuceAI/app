@@ -143,3 +143,27 @@ pub const COMPANION_SESSION_SYNC_VERSION: u32 = 1;
 pub const COMPANION_NOTE_SYNC_KIND: &str = "companion_note";
 pub const COMPANION_NOTE_SYNC_SCHEMA: &str = "companion.scheduled_note";
 pub const COMPANION_NOTE_SYNC_VERSION: u32 = 1;
+
+pub const AUDIO_PROVIDER_SYNC_KIND: &str = "audio_provider";
+pub const AUDIO_PROVIDER_SYNC_SCHEMA: &str = "audio.provider";
+pub const AUDIO_PROVIDER_SYNC_VERSION: u32 = 1;
+
+pub const USER_VOICE_SYNC_KIND: &str = "user_voice";
+pub const USER_VOICE_SYNC_SCHEMA: &str = "audio.user_voice";
+pub const USER_VOICE_SYNC_VERSION: u32 = 1;
+
+pub const ASR_VOCABULARY_TERM_SYNC_KIND: &str = "asr_vocabulary_term";
+pub const ASR_VOCABULARY_TERM_SYNC_SCHEMA: &str = "asr.vocabulary_term";
+pub const ASR_VOCABULARY_TERM_SYNC_VERSION: u32 = 1;
+
+pub const ASR_CORRECTION_SYNC_KIND: &str = "asr_correction";
+pub const ASR_CORRECTION_SYNC_SCHEMA: &str = "asr.correction";
+pub const ASR_CORRECTION_SYNC_VERSION: u32 = 1;
+
+pub const ASR_IGNORED_SUGGESTION_SYNC_KIND: &str = "asr_ignored_suggestion";
+pub const ASR_IGNORED_SUGGESTION_SYNC_SCHEMA: &str = "asr.ignored_suggestion";
+pub const ASR_IGNORED_SUGGESTION_SYNC_VERSION: u32 = 1;
+
+pub const ASR_VOICE_EXAMPLE_SYNC_KIND: &str = "asr_voice_example";
+pub const ASR_VOICE_EXAMPLE_SYNC_SCHEMA: &str = "asr.voice_example";
+pub const ASR_VOICE_EXAMPLE_SYNC_VERSION: u32 = 1;

@@ -353,6 +353,30 @@ pub fn current_sync_schema_fingerprint() -> ContentHash {
     for (schema, version) in [
         (crate::CHARACTER_SYNC_SCHEMA, crate::CHARACTER_SYNC_VERSION),
         (
+            crate::AUDIO_PROVIDER_SYNC_SCHEMA,
+            crate::AUDIO_PROVIDER_SYNC_VERSION,
+        ),
+        (
+            crate::USER_VOICE_SYNC_SCHEMA,
+            crate::USER_VOICE_SYNC_VERSION,
+        ),
+        (
+            crate::ASR_VOCABULARY_TERM_SYNC_SCHEMA,
+            crate::ASR_VOCABULARY_TERM_SYNC_VERSION,
+        ),
+        (
+            crate::ASR_CORRECTION_SYNC_SCHEMA,
+            crate::ASR_CORRECTION_SYNC_VERSION,
+        ),
+        (
+            crate::ASR_IGNORED_SUGGESTION_SYNC_SCHEMA,
+            crate::ASR_IGNORED_SUGGESTION_SYNC_VERSION,
+        ),
+        (
+            crate::ASR_VOICE_EXAMPLE_SYNC_SCHEMA,
+            crate::ASR_VOICE_EXAMPLE_SYNC_VERSION,
+        ),
+        (
             crate::COMPANION_NOTE_SYNC_SCHEMA,
             crate::COMPANION_NOTE_SYNC_VERSION,
         ),
@@ -462,7 +486,7 @@ mod tests {
     fn current_schema_fingerprint_is_stable_and_complete() {
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "d6a2d586b3241beb44984b995ef6d46b8a215024477d2776ff747df73429e5d6"
+            "752bfd7b7487451c188c4d1524dfdb2daa00f6419a4df97cd6218d5a654e6e8a"
         );
     }
 

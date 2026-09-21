@@ -336,3 +336,17 @@ relationship. An episode's index and predecessor are numbered by each device
 (two devices can open sessions at once), so they are not exchanged. Apply
 receipts, turn effects, growth/consolidation/writer runs stay on the device
 that ran them.
+
+Plain rows (sync S10). Audio providers, user voices and ASR learning data
+(vocabulary terms, corrections, ignored suggestions, voice examples) are
+exchanged row by row through one generic row codec (`row_sync_adapter.rs`):
+the payload is the row's columns keyed by name, without the local revision;
+an update bumps the local revision and never moves `updated_at` back; deletes
+propagate. A row waits for a required parent (a voice's provider, an
+example's audio asset) and clears an optional reference that is gone. Two
+devices that ignored the same suggestion under different ids keep the lower
+id (the table's natural identity is unique). API keys stay in each device's
+secret store: the secret reference travels, the key does not. Media used by
+messages and voice examples is journaled like other referenced media (the
+referenced-media scan missed message media before, so messages with images
+never became ready to journal).
