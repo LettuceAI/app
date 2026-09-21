@@ -49,5 +49,27 @@ features. whisper.cpp (lettuce-speech) links into the same binary.
   `measure_mmproj_fit_margins`) is ported but stays behind its gate. An
   ignored test loads a real model on the CPU.
 
-Next: contexts and the hot-context cache, prompt templates and sampler, MTP,
-request handling, the worker thread and the inference port.
+- `context`: the legacy context sizing, unchanged: the (context, batch)
+  fallback ladder, the OOM classifier and its error detail, the effective
+  VRAM (backend free memory capped by the Windows DXGI budget), per-device
+  VRAM alignment (missing devices imputed from the smallest reported one),
+  the recommended context and the CPU fallback limits. It keeps its own older
+  KV-per-value table, as legacy did. Model-dependent formulas read a
+  `ModelShape` instead of the model.
+- `hardware` (desktop): available RAM (sysinfo 0.33), the largest free GPU
+  memory ggml reports, the DXGI local-memory cap on Windows, the GPU device
+  list, per-device memory and unified-memory detection, as in legacy.
+- `context_info` (desktop): the model editor's fit estimate (max and
+  recommended context, memory, GPU layers, multi-GPU placement).
+- `mtp`: bundled NextN detection and external `mtp-*.gguf` discovery.
+
+Known gap (user requirement 2026-09-21): AMD Ryzen AI / handheld APUs share
+one user-adjustable memory pool between the iGPU and the CPU. Legacy (and
+this port, so far) leaves iGPUs out of the device list, refuses an iGPU as the
+selected device and skips it in per-device VRAM; offload budgets treat VRAM as
+a separate card. Listing and selecting iGPUs is a behavior fix to make; any
+budget change for unified memory needs measurement on the hardware and the
+user's approval, since the formulas are frozen.
+
+Next: contexts and the hot-context cache, prompt templates and sampler, MTP
+runtime, request handling, the worker thread and the inference port.

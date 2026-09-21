@@ -71,6 +71,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 whisper-rs = { git = "https://codeberg.org/MegalithOfficial/whisper-rs.git", rev = "73ead25190ef5761f561e451b0926a9fef774cd2", features = ["tracing_backend"] }
 llama-cpp-2 = { git = "https://github.com/MegalithOfficial/llama-cpp-rs", rev = "07a8b3b661145f4eac28c9e5e756e2826752978c", features = ["mtmd"] }
 llama-cpp-sys-2 = { git = "https://github.com/MegalithOfficial/llama-cpp-rs", rev = "07a8b3b661145f4eac28c9e5e756e2826752978c" }
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+windows = { version = "0.58", features = ["Win32_Graphics_Dxgi"] }
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
 unicode-normalization = "0.1"
 zeroize = "1"
