@@ -892,6 +892,20 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
                 .map_err(|_| IncomingChangeError::Corrupt)?;
             Ok(true)
         }
+        (
+            lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_KIND,
+            lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_SCHEMA,
+            lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_VERSION,
+        ) => {
+            if change.operation() != ChangeOperation::Insert {
+                return Err(IncomingChangeError::Corrupt);
+            }
+            serde_json::from_slice::<crate::conversation_artifact_adapter::SyncSnapshotArtifact>(
+                payload.bytes(),
+            )
+            .map_err(incoming_corrupt)?;
+            Ok(true)
+        }
         ("media_asset", MEDIA_ASSET_SYNC_SCHEMA, MEDIA_ASSET_SYNC_VERSION) => {
             let value: lettuce_media::SyncMediaAsset =
                 serde_json::from_slice(payload.bytes()).map_err(incoming_corrupt)?;
@@ -1614,6 +1628,53 @@ fn latest_journaled(
     Ok(latest)
 }
 
+/// Journals every launch snapshot artifact a conversation references that
+/// was never journaled (immutable, insert only). An artifact whose encoded
+/// payload exceeds the canonical payload limit is not journaled.
+fn journal_referenced_snapshots(
+    tx: &Transaction<'_>,
+    now: TimestampMillis,
+) -> Result<usize, LocalChangeJournalError> {
+    let ids = crate::conversation_artifact_adapter::sync_snapshot_ids(tx).map_err(storage)?;
+    let mut journaled = 0;
+    for id in ids {
+        let exists: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sync_changes WHERE entity_kind = ?1 AND entity_id = ?2)",
+                params![lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_KIND, id],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if exists {
+            continue;
+        }
+        let Some(artifact) =
+            crate::conversation_artifact_adapter::sync_load_snapshot(tx, &id).map_err(storage)?
+        else {
+            continue;
+        };
+        let bytes = serde_json::to_vec(&artifact).map_err(corrupt)?;
+        let Ok(payload) = CanonicalPayload::new(
+            lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_SCHEMA,
+            lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_VERSION,
+            bytes,
+        ) else {
+            continue;
+        };
+        journal_state_change(
+            tx,
+            lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_KIND,
+            &id,
+            ChangeOperation::Insert,
+            None,
+            Some(payload),
+            now,
+        )?;
+        journaled += 1;
+    }
+    Ok(journaled)
+}
+
 pub(crate) fn media_asset_journaled(
     connection: &Connection,
     id: &str,
@@ -1980,6 +2041,21 @@ fn settle_change(
 ) -> Result<bool, ApplyOneError> {
     match change.entity().kind() {
         "media_asset" => settle_media_asset_change(tx, change),
+        lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_KIND => {
+            let payload = change.payload().ok_or(ApplyOneError::Corrupt)?;
+            let artifact: crate::conversation_artifact_adapter::SyncSnapshotArtifact =
+                serde_json::from_slice(payload.bytes()).map_err(|_| ApplyOneError::Corrupt)?;
+            if artifact.reference.artifact_id.to_string() != change.entity().id() {
+                return Err(ApplyOneError::Corrupt);
+            }
+            crate::conversation_artifact_adapter::sync_stage_snapshot(tx, &artifact, now).map_err(
+                |error| match error {
+                    lettuce_conversations::ArtifactError::Storage => ApplyOneError::Storage,
+                    _ => ApplyOneError::Corrupt,
+                },
+            )?;
+            Ok(false)
+        }
         kind => match snapshot_codec(kind) {
             Some(codec) => settle_snapshot_change(tx, change, now, codec),
             None => Err(ApplyOneError::Corrupt),
@@ -2386,6 +2462,7 @@ impl LocalChangeJournal for Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
         let mut journaled = journal_referenced_media(&tx, now)?;
+        journaled += journal_referenced_snapshots(&tx, now)?;
         let mut present = Vec::with_capacity(SCANNED_CODECS.len());
         for codec in SCANNED_CODECS {
             let ids = codec.ids.ok_or(LocalChangeJournalError::Corrupt)?;

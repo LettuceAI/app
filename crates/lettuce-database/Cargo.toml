@@ -14,6 +14,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+base64.workspace = true
 async-trait.workspace = true
 blake3.workspace = true
 lettuce-context.workspace = true

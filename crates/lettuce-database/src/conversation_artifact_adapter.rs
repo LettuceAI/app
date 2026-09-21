@@ -132,6 +132,102 @@ fn retention_from_name(value: &str) -> Result<ArtifactRetention, ArtifactError> 
     }
 }
 
+/// A launch snapshot artifact as synced between devices (immutable; the
+/// bytes travel base64-encoded in the canonical payload).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SyncSnapshotArtifact {
+    pub reference: ProtectedSnapshotRef,
+    pub codec: ArtifactCodec,
+    pub bytes: String,
+}
+
+pub(crate) fn sync_snapshot_ids(
+    connection: &rusqlite::Connection,
+) -> rusqlite::Result<Vec<String>> {
+    connection
+        .prepare(
+            "SELECT DISTINCT artifact_id FROM conversation_snapshot_refs ORDER BY artifact_id",
+        )?
+        .query_map([], |row| row.get(0))?
+        .collect()
+}
+
+type SyncSnapshotRow = (String, String, i64, String, i64, i64, String, Vec<u8>);
+
+pub(crate) fn sync_load_snapshot(
+    connection: &rusqlite::Connection,
+    id: &str,
+) -> Result<Option<SyncSnapshotArtifact>, ArtifactError> {
+    use base64::Engine as _;
+    let row: Option<SyncSnapshotRow> = connection
+        .query_row(
+            "SELECT source_kind, source_id, source_revision, digest, schema_version, byte_size, codec, bytes FROM conversation_snapshot_artifacts WHERE artifact_id = ?1",
+            [id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(db_error)?;
+    let Some((kind, source_id, revision, digest, schema, size, codec, bytes)) = row else {
+        return Ok(None);
+    };
+    Ok(Some(SyncSnapshotArtifact {
+        reference: ProtectedSnapshotRef {
+            source: source_from_parts(&kind, &source_id)?,
+            source_revision: Revision::new(
+                u64::try_from(revision).map_err(|_| ArtifactError::Storage)?,
+            ),
+            artifact_id: SnapshotArtifactId::from_str(id).map_err(|_| ArtifactError::Storage)?,
+            digest: ContentHash::parse(&digest).map_err(|_| ArtifactError::Storage)?,
+            schema_version: u32::try_from(schema).map_err(|_| ArtifactError::Storage)?,
+            byte_size: u64::try_from(size).map_err(|_| ArtifactError::Storage)?,
+        },
+        codec: codec_from_name(&codec)?,
+        bytes: base64::engine::general_purpose::STANDARD.encode(bytes),
+    }))
+}
+
+/// Stages a synced snapshot artifact through the same verified path as a
+/// local launch; an existing different artifact under the id is a conflict.
+pub(crate) fn sync_stage_snapshot(
+    transaction: &Transaction<'_>,
+    artifact: &SyncSnapshotArtifact,
+    created_at: lettuce_types::TimestampMillis,
+) -> Result<(), ArtifactError> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&artifact.bytes)
+        .map_err(|_| ArtifactError::Storage)?;
+    let reference = &artifact.reference;
+    stage_snapshot_in_transaction(
+        transaction,
+        SnapshotArtifactDraft {
+            source: reference.source,
+            source_revision: reference.source_revision,
+            artifact_id: reference.artifact_id,
+            digest: reference.digest.clone(),
+            schema_version: reference.schema_version,
+            byte_size: reference.byte_size,
+            codec: artifact.codec,
+            retention: ArtifactRetention::Conversation,
+            bytes: ProtectedArtifactBytes::new(bytes)?,
+        },
+        created_at,
+    )?;
+    Ok(())
+}
+
 /// Writes a backed-up protected artifact row with its verified bytes.
 pub(crate) fn insert_trusted_artifact_in(
     transaction: &Transaction<'_>,
