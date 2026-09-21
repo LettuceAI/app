@@ -4,6 +4,7 @@ use lettuce_conversations::{
     FinishReason, InferenceCandidate, InferenceOutcome, InferenceUsage, InferenceWarningCode,
     MAX_TOOL_ARGUMENT_BYTES, MAX_TOOL_CALLS_PER_RESPONSE, MessagePart, ProposedToolCall,
 };
+use lettuce_inference::thinking::{ThinkingSplit, ThinkingTagParser};
 use serde_json::Value;
 
 use crate::stream_framing::StreamRecord;
@@ -1266,94 +1267,8 @@ fn append_bounded(
     Ok(())
 }
 
-#[derive(Debug, Default)]
-struct ThinkingTagParser {
-    in_think: bool,
-    close_tag: Option<&'static str>,
-    pending: String,
-}
-
-#[derive(Debug, Default)]
-struct ThinkingSplit {
-    content: String,
-    reasoning: String,
-}
-
-const TAG_PAIRS: [(&str, &str); 6] = [
-    ("<think>", "</think>"),
-    ("<thinking>", "</thinking>"),
-    ("<reason>", "</reason>"),
-    ("<reasoning>", "</reasoning>"),
-    ("<|channel>thought", "<channel|>"),
-    ("<|channel>", "<channel|>"),
-];
-
-impl ThinkingTagParser {
-    fn feed(&mut self, chunk: &str) -> ThinkingSplit {
-        self.pending.push_str(chunk);
-        let mut split = ThinkingSplit::default();
-        loop {
-            if self.in_think {
-                let close = self.close_tag.expect("thinking close tag must be present");
-                let lower = self.pending.to_ascii_lowercase();
-                if let Some(index) = lower.find(close) {
-                    split.reasoning.push_str(&self.pending[..index]);
-                    self.pending.drain(..index + close.len());
-                    self.in_think = false;
-                    self.close_tag = None;
-                    continue;
-                }
-                let keep = partial_suffix_len(&self.pending, close);
-                let emit = self.pending.len().saturating_sub(keep);
-                if emit > 0 {
-                    split.reasoning.push_str(&self.pending[..emit]);
-                    self.pending.drain(..emit);
-                }
-                break;
-            }
-            if let Some((index, open, close)) = earliest_open_tag(&self.pending) {
-                split.content.push_str(&self.pending[..index]);
-                self.pending.drain(..index + open.len());
-                self.in_think = true;
-                self.close_tag = Some(close);
-                continue;
-            }
-            let opens = TAG_PAIRS.map(|(open, _)| open);
-            let keep = opens
-                .iter()
-                .map(|open| partial_suffix_len(&self.pending, open))
-                .max()
-                .unwrap_or(0);
-            let emit = self.pending.len().saturating_sub(keep);
-            if emit > 0 {
-                split.content.push_str(&self.pending[..emit]);
-                self.pending.drain(..emit);
-            }
-            break;
-        }
-        split
-    }
-
-    fn finish(&mut self) -> ThinkingSplit {
-        let mut split = ThinkingSplit::default();
-        if self.in_think {
-            split.reasoning.push_str(&self.pending);
-        } else {
-            split.content.push_str(&self.pending);
-        }
-        self.pending.clear();
-        self.in_think = false;
-        self.close_tag = None;
-        split
-    }
-}
-
 pub(crate) fn split_complete_thinking(text: &str) -> (String, String) {
-    let mut parser = ThinkingTagParser::default();
-    let mut split = parser.feed(text);
-    let tail = parser.finish();
-    split.content.push_str(&tail.content);
-    split.reasoning.push_str(&tail.reasoning);
+    let split = lettuce_inference::thinking::split_thinking_tags(text);
     (split.content, split.reasoning)
 }
 
@@ -1373,26 +1288,6 @@ pub(crate) fn merge_complete_reasoning<'a>(
         merged.push_str(value);
     }
     merged
-}
-
-fn partial_suffix_len(buffer: &str, tag: &str) -> usize {
-    let lower = buffer.to_ascii_lowercase();
-    let max = lower.len().min(tag.len().saturating_sub(1));
-    lower
-        .char_indices()
-        .map(|(index, _)| &lower[index..])
-        .filter(|suffix| suffix.len() <= max && tag.starts_with(*suffix))
-        .map(str::len)
-        .max()
-        .unwrap_or(0)
-}
-
-fn earliest_open_tag(buffer: &str) -> Option<(usize, &'static str, &'static str)> {
-    let lower = buffer.to_ascii_lowercase();
-    TAG_PAIRS
-        .iter()
-        .filter_map(|(open, close)| lower.find(open).map(|index| (index, *open, *close)))
-        .min_by_key(|(index, _, _)| *index)
 }
 
 #[cfg(test)]

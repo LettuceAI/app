@@ -2,6 +2,8 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+pub mod thinking;
+
 use std::{collections::HashMap, sync::Mutex};
 
 use async_trait::async_trait;
