@@ -1025,6 +1025,11 @@ pub(crate) fn sync_replace_character(
             )
             .map_err(db_error)?;
         if !present {
+            if crate::sync_adapter::entity_deferred(tx, "model_profile", &model_id.to_string())
+                .map_err(db_error)?
+            {
+                return Err(RepositoryError::NotFound);
+            }
             details.character.defaults.model_profile_id = None;
         }
     }

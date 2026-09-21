@@ -576,6 +576,10 @@ pub(crate) fn sync_write_app_settings(
             [&id],
             |row| row.get(0),
         )?;
+        let kind = if table == "model_profiles" { "model_profile" } else { "prompt" };
+        if !exists && crate::sync_adapter::entity_deferred(connection, kind, &id)? {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
         Ok(exists.then_some(id))
     };
     connection.execute(
@@ -2120,7 +2124,7 @@ impl MediaSyncRepository for Database {
                  JOIN sync_changes change ON change.change_id = deferred.change_id
                  WHERE deferred.entity_kind = 'media_asset'
                    AND change.payload_schema = ?1 AND change.payload_version = ?2
-                 ORDER BY deferred.deferred_at, deferred.entity_id LIMIT ?3",
+                 ORDER BY RANDOM() LIMIT ?3",
             )
             .map_err(|_| MediaSyncError::Storage)?;
         let rows = statement
@@ -2375,6 +2379,27 @@ mod tests {
             PersonaRepository::get(&b, persona.id).expect("persona")
         );
         assert_eq!(sync_to(&a, &b, 400) + sync_to(&b, &a, 500), 0);
+    }
+
+    #[test]
+    fn a_fresh_device_does_not_overwrite_edited_settings() {
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let stored = GlobalSettingsStore::load(&a).expect("settings");
+        let saved = GlobalSettingsStore::save(
+            &a,
+            lettuce_settings::GlobalSettings {
+                analytics_enabled: false,
+                ..stored.settings.clone()
+            },
+            None,
+            stored.revision,
+        )
+        .expect("save on a");
+        sync_to(&b, &a, 100);
+        sync_to(&a, &b, 110);
+        assert_eq!(GlobalSettingsStore::load(&a).expect("a"), saved);
+        assert_eq!(GlobalSettingsStore::load(&b).expect("b"), saved);
     }
 
     #[test]

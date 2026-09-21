@@ -224,7 +224,8 @@ that caused them, so its own clearing is a no-op.
 Per-entity deferral. A journaled incoming change that waits for another
 entity that is not here yet (its owner, lorebook, derivation source or media
 asset) is settled inside a savepoint, rolled back and recorded in
-`sync_deferred_changes` (latest change per entity) instead of holding the
+`sync_deferred_changes` (a per-entity queue in journal order: a later change
+waits behind an earlier deferred one) instead of holding the
 batch: the batch commits, the origin's frontier advances and its later changes
 still apply. Deferred changes are settled again after every batch (until no
 progress) and after each media phase, whose pending media now comes from
@@ -233,3 +234,15 @@ operation scoping. Batches stay pending only for causal gaps or unknown
 schemas. Binding lists are ordered lists, so an emptied list journals an
 update to `[]` instead of a delete (a concurrent bind is not lost to a
 delete).
+
+Reference and seed rules. A reference to a model or prompt that is missing
+here is cleared only when nothing for it is deferred; a deferred one makes the
+referencing aggregate wait. A group waits for its persona and member
+characters. A deferred change that later fails for another reason stays
+deferred instead of failing every later batch. An untouched seed snapshot
+(settings or default persona still at revision 1, as on a freshly installed
+device) always loses to an edited one, and an edited one always beats it. An
+emptied binding list with a journaled history counts as present, so a
+concurrent edit is detected as a conflict. Known limit: revision CAS on local
+edits can be satisfied by a remote snapshot that reached the same revision
+number; an editor must reload after a sync.

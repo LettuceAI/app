@@ -240,9 +240,11 @@ BEGIN
 END;
 
 CREATE TABLE sync_deferred_changes (
+    change_id TEXT PRIMARY KEY REFERENCES sync_changes(change_id) ON DELETE RESTRICT,
     entity_kind TEXT NOT NULL,
     entity_id TEXT NOT NULL,
-    change_id TEXT NOT NULL UNIQUE REFERENCES sync_changes(change_id) ON DELETE RESTRICT,
-    deferred_at INTEGER NOT NULL,
-    PRIMARY KEY (entity_kind, entity_id)
+    deferred_at INTEGER NOT NULL
 ) STRICT;
+
+CREATE INDEX sync_deferred_changes_entity_idx
+ON sync_deferred_changes(entity_kind, entity_id);

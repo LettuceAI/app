@@ -819,19 +819,35 @@ pub(crate) fn sync_replace_group(
             return Err(RepositoryError::NotFound);
         }
     }
+    let exists = |table: &str, id: String| -> Result<bool, RepositoryError> {
+        tx.query_row(
+            &format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id=?1)"),
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(db_error)
+    };
+    if let Selection::Explicit(persona) = &details.group.persona
+        && !exists("personas", persona.to_string())?
+    {
+        return Err(RepositoryError::NotFound);
+    }
+    for member in &details.group.members {
+        if !exists("characters", member.character_id.to_string())? {
+            return Err(RepositoryError::NotFound);
+        }
+    }
     let mut details = details.clone();
     for member in &mut details.group.members {
-        if let Some(model) = member.model_profile_override {
-            let present: bool = tx
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM model_profiles WHERE id=?1)",
-                    [model.to_string()],
-                    |row| row.get(0),
-                )
-                .map_err(db_error)?;
-            if !present {
-                member.model_profile_override = None;
+        if let Some(model) = member.model_profile_override
+            && !exists("model_profiles", model.to_string())?
+        {
+            if crate::sync_adapter::entity_deferred(tx, "model_profile", &model.to_string())
+                .map_err(db_error)?
+            {
+                return Err(RepositoryError::NotFound);
             }
+            member.model_profile_override = None;
         }
     }
     let plan = CreateGroupPlan {
@@ -1724,6 +1740,107 @@ mod tests {
             b.journal_current_state(TimestampMillis::new(400))
                 .expect("b"),
             0
+        );
+    }
+
+    #[test]
+    fn a_group_waits_for_its_deferred_persona_and_settles_after_its_media() {
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let member = CharacterId::new();
+        let other = CharacterId::new();
+        character(&a, member);
+        character(&a, other);
+        let persona_id = PersonaId::new();
+        persona(&a, persona_id, "active");
+        let avatar = image_asset(&a, 'a');
+        {
+            let connection = a.connection().expect("a");
+            connection
+                .execute(
+                    "UPDATE media_assets SET provenance_json=?1",
+                    [
+                        serde_json::to_string(&lettuce_media::AssetProvenanceV1::default())
+                            .expect("provenance"),
+                    ],
+                )
+                .expect("valid provenance");
+            connection
+                .execute(
+                    "INSERT INTO persona_media (persona_id,asset_id,blob_kind,slot,ordinal) VALUES (?1,?2,'image','avatar',0)",
+                    rusqlite::params![persona_id.to_string(), avatar.to_string()],
+                )
+                .expect("persona avatar");
+        }
+        let group_id = GroupId::new();
+        let mut profile = GroupProfile::new(
+            group_id,
+            "Narrated".into(),
+            vec![
+                GroupMember {
+                    character_id: member,
+                    ordinal: 0,
+                    muted: false,
+                    model_profile_override: None,
+                },
+                GroupMember {
+                    character_id: other,
+                    ordinal: 1,
+                    muted: false,
+                    model_profile_override: None,
+                },
+            ],
+            TimestampMillis::new(1),
+        )
+        .expect("group");
+        profile.persona = Selection::Explicit(persona_id);
+        GroupRepository::create(
+            &a,
+            CreateGroupPlan {
+                group: profile,
+                starting_scene: None,
+            },
+        )
+        .expect("create");
+
+        sync_groups(&a, &b, 100);
+        assert_eq!(GroupRepository::get(&b, group_id).expect("b group"), None);
+        {
+            let source = a.connection().expect("a");
+            let target = b.connection().expect("b");
+            for table in ["media_blobs", "media_assets"] {
+                let mut statement = source
+                    .prepare(&format!("SELECT * FROM {table}"))
+                    .expect("select");
+                let columns = statement.column_count();
+                let rows = statement
+                    .query_map([], |row| {
+                        (0..columns)
+                            .map(|index| row.get::<_, rusqlite::types::Value>(index))
+                            .collect::<rusqlite::Result<Vec<_>>>()
+                    })
+                    .expect("query")
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .expect("rows");
+                let placeholders = (1..=columns)
+                    .map(|index| format!("?{index}"))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                for row in rows {
+                    target
+                        .execute(
+                            &format!("INSERT OR IGNORE INTO {table} VALUES ({placeholders})"),
+                            rusqlite::params_from_iter(row),
+                        )
+                        .expect("copy");
+                }
+            }
+        }
+        lettuce_sync::MediaSyncRepository::retry_deferred_changes(&b, TimestampMillis::new(200))
+            .expect("retry");
+        assert_eq!(
+            GroupRepository::get(&b, group_id).expect("b group"),
+            GroupRepository::get(&a, group_id).expect("a group")
         );
     }
 
