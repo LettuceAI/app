@@ -140,9 +140,18 @@ change, and its hybrid timestamp is the session's, not the edit's. Scanned
 today: provider accounts (`provider_account.snapshot`, secret references travel
 as opaque identifiers, secret values never leave the device) and model
 profiles (`model_profile.snapshot`). Deletes follow legacy: a delete beats a
-concurrent update on both sides; a delete this device must refuse (the entity
-is still referenced here) is answered with a fresh insert so every device
-keeps it. The persona conflict listing only lists persona conflicts; other
+concurrent update on both sides (the discarded update is kept as losing
+conflict evidence, so a later update in the same chain cannot resurrect the
+entity); a delete this device must refuse (any foreign key here still
+references it, checked in a savepoint) is only journaled, and the next scan
+journals a fresh insert in dependency order so every device keeps it. A model
+whose account was deleted here is journaled but not materialized; the next
+scan journals its delete, so both devices converge. Applying a remote model
+delete clears app defaults pointing at it locally (like a local delete); when
+settings sync lands that side effect must be reconciled. Snapshot structs
+reject unknown fields, so any field change must bump the schema version, and
+serde_json uses `float_roundtrip` so materialized snapshots re-encode
+identically. The persona conflict listing only lists persona conflicts; other
 kinds keep their conflict evidence without a resolution surface yet.
 
 Media without a catalog (sync S3a, protocol version 2). The media phase no

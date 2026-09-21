@@ -62,7 +62,7 @@ lettuce-types = { path = "crates/lettuce-types" }
 lettuce-usage = { path = "crates/lettuce-usage" }
 
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["raw_value"] }
+serde_json = { version = "1", features = ["raw_value", "float_roundtrip"] }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1"

@@ -1148,8 +1148,11 @@ const MODEL_PROFILE_CODEC: SnapshotCodec = SnapshotCodec {
     materialize: |tx, bytes| {
         let profile: lettuce_models::ModelProfile =
             serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
-        crate::sync_upsert_model_profile(tx, &profile).map_err(model_apply_error)?;
-        Ok(true)
+        match crate::sync_upsert_model_profile(tx, &profile) {
+            Ok(()) => Ok(true),
+            Err(lettuce_models::ModelRepositoryError::AccountMissing) => Ok(false),
+            Err(error) => Err(model_apply_error(error)),
+        }
     },
     ids: Some(|connection| {
         crate::sync_ids(connection, "model_profiles").map_err(|_| ApplyOneError::Storage)
@@ -1305,9 +1308,11 @@ fn journal_apply_error(error: ApplyOneError) -> LocalChangeJournalError {
 }
 
 /// A delete of a complete-snapshot entity. Concurrent with a local edit the
-/// delete still wins (legacy); a delete this device refuses (the entity is
-/// still referenced here) is journaled and answered with a fresh insert of
-/// the local snapshot so every device converges on keeping it.
+/// delete still wins (legacy) and the discarded edit is kept as conflict
+/// evidence. A delete this device must refuse (the entity is still
+/// referenced here) is journaled and nothing else happens now: the next state
+/// scan sees the entity present after a journaled delete and journals a fresh
+/// insert, in dependency order, so every device converges on keeping it.
 fn apply_snapshot_delete(
     tx: &Transaction<'_>,
     change: &CanonicalChange,
@@ -1316,29 +1321,38 @@ fn apply_snapshot_delete(
 ) -> Result<bool, ApplyOneError> {
     let delete = codec.delete.ok_or(ApplyOneError::Corrupt)?;
     let current_payload = (codec.current)(tx, change.entity().id())?;
+    let current_change = current_payload
+        .as_ref()
+        .map(|value| load_materialized_change(tx, change.entity(), value.content_hash()))
+        .transpose()
+        .map_err(|error| match error {
+            IncomingChangeError::Storage => ApplyOneError::Storage,
+            _ => ApplyOneError::Corrupt,
+        })?
+        .flatten();
     observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
     insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
     let Some(current_payload) = current_payload else {
+        resolve_dominated_conflicts(tx, change, now, None)?;
         return Ok(false);
     };
     let concurrent = change.base_revision() != Some(current_payload.content_hash());
-    if delete(tx, change.entity().id(), now)? {
-        return Ok(concurrent);
+    if !delete(tx, change.entity().id(), now)? {
+        return Ok(false);
     }
-    journal_state_change(
-        tx,
-        codec.kind,
-        change.entity().id(),
-        ChangeOperation::Insert,
-        None,
-        Some(current_payload),
-        now,
-    )
-    .map_err(|error| match error {
-        LocalChangeJournalError::Storage => ApplyOneError::Storage,
-        _ => ApplyOneError::Corrupt,
-    })?;
-    Ok(true)
+    if concurrent {
+        insert_conflict(
+            tx,
+            change,
+            current_change.as_ref(),
+            Some(current_payload.bytes()),
+            &[],
+            true,
+            now,
+        )?;
+    }
+    resolve_dominated_conflicts(tx, change, now, None)?;
+    Ok(concurrent)
 }
 
 /// Whether the latest local journal entry for the entity is a delete the
@@ -1391,6 +1405,7 @@ fn apply_snapshot_change(
     if current_payload.is_none() && deleted_concurrently(tx, change)? {
         observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
         insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
+        insert_conflict(tx, change, None, Some(&[]), payload.bytes(), false, now)?;
         return Ok(true);
     }
     let same = current_payload
@@ -1421,11 +1436,14 @@ fn apply_snapshot_change(
     if winner_is_incoming && !same {
         unmaterialized = !(codec.materialize)(tx, payload.bytes())?;
     }
+    if unmaterialized && current_payload.is_none() {
+        return Ok(false);
+    }
     if conflict || unmaterialized {
         let current_bytes = current_payload
             .as_ref()
             .map(CanonicalPayload::bytes)
-            .ok_or(ApplyOneError::Pending)?;
+            .ok_or(ApplyOneError::Corrupt)?;
         insert_conflict(
             tx,
             change,

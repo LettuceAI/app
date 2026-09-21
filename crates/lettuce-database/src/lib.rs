@@ -1284,25 +1284,49 @@ pub(crate) fn sync_upsert_provider_account(
     Ok(())
 }
 
-/// Deletes a synced provider account unless a model profile still uses it.
+/// Runs a synced delete in a savepoint; a foreign-key refusal (the row is
+/// still referenced here) rolls it back and reports `false`.
+fn sync_delete_unless_referenced(
+    connection: &Connection,
+    statements: &[(&str, &[&dyn rusqlite::ToSql])],
+) -> Result<bool, ModelRepositoryError> {
+    connection
+        .execute_batch("SAVEPOINT sync_delete")
+        .map_err(model_error)?;
+    for (sql, params) in statements {
+        match connection.execute(sql, *params) {
+            Ok(_) => {}
+            Err(rusqlite::Error::SqliteFailure(code, message))
+                if code.extended_code == 787
+                    || (code.extended_code == 1811
+                        && message.as_deref() == Some("FOREIGN KEY constraint failed")) =>
+            {
+                connection
+                    .execute_batch("ROLLBACK TO sync_delete; RELEASE sync_delete")
+                    .map_err(model_error)?;
+                return Ok(false);
+            }
+            Err(error) => {
+                let _ = connection.execute_batch("ROLLBACK TO sync_delete; RELEASE sync_delete");
+                return Err(model_error(error));
+            }
+        }
+    }
+    connection
+        .execute_batch("RELEASE sync_delete")
+        .map_err(model_error)?;
+    Ok(true)
+}
+
+/// Deletes a synced provider account unless something here still uses it.
 pub(crate) fn sync_delete_provider_account(
     connection: &Connection,
     id: &str,
 ) -> Result<bool, ModelRepositoryError> {
-    let used: bool = connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM model_profiles WHERE provider_account_id=?1)",
-            [id],
-            |row| row.get(0),
-        )
-        .map_err(model_error)?;
-    if used {
-        return Ok(false);
-    }
-    connection
-        .execute("DELETE FROM provider_accounts WHERE id=?1", [id])
-        .map_err(model_error)?;
-    Ok(true)
+    sync_delete_unless_referenced(
+        connection,
+        &[("DELETE FROM provider_accounts WHERE id=?1", &[&id])],
+    )
 }
 
 pub(crate) fn sync_load_model_profile(
@@ -1345,40 +1369,30 @@ pub(crate) fn sync_upsert_model_profile(
     Ok(())
 }
 
-/// Deletes a synced model profile like `delete_and_clear_default`: refused
-/// while a character or group member uses it, app defaults pointing at it are
-/// cleared.
+/// Deletes a synced model profile like `delete_and_clear_default`: app
+/// defaults pointing at it are cleared, and the delete is refused (nothing
+/// changes) while anything else here still references it.
 pub(crate) fn sync_delete_model_profile(
     connection: &Connection,
     id: &str,
     now: TimestampMillis,
 ) -> Result<bool, ModelRepositoryError> {
-    let used: bool = connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM characters WHERE model_profile_id=?1) \
-             OR EXISTS(SELECT 1 FROM group_members WHERE model_profile_override_id=?1)",
-            [id],
-            |row| row.get(0),
-        )
-        .map_err(model_error)?;
-    if used {
-        return Ok(false);
-    }
-    connection
-        .execute(
-            "UPDATE app_settings SET \
-             default_model_profile_id=CASE WHEN default_model_profile_id=?1 THEN NULL ELSE default_model_profile_id END, \
-             dynamic_memory_model_profile_id=CASE WHEN dynamic_memory_model_profile_id=?1 THEN NULL ELSE dynamic_memory_model_profile_id END, \
-             group_speaker_model_profile_id=CASE WHEN group_speaker_model_profile_id=?1 THEN NULL ELSE group_speaker_model_profile_id END, \
-             revision=revision+1, updated_at=?2 \
-             WHERE id=1 AND (default_model_profile_id=?1 OR dynamic_memory_model_profile_id=?1 OR group_speaker_model_profile_id=?1)",
-            params![id, now.get()],
-        )
-        .map_err(model_error)?;
-    connection
-        .execute("DELETE FROM model_profiles WHERE id=?1", [id])
-        .map_err(model_error)?;
-    Ok(true)
+    let now = now.get();
+    sync_delete_unless_referenced(
+        connection,
+        &[
+            (
+                "UPDATE app_settings SET \
+                 default_model_profile_id=CASE WHEN default_model_profile_id=?1 THEN NULL ELSE default_model_profile_id END, \
+                 dynamic_memory_model_profile_id=CASE WHEN dynamic_memory_model_profile_id=?1 THEN NULL ELSE dynamic_memory_model_profile_id END, \
+                 group_speaker_model_profile_id=CASE WHEN group_speaker_model_profile_id=?1 THEN NULL ELSE group_speaker_model_profile_id END, \
+                 revision=revision+1, updated_at=?2 \
+                 WHERE id=1 AND (default_model_profile_id=?1 OR dynamic_memory_model_profile_id=?1 OR group_speaker_model_profile_id=?1)",
+                &[&id, &now],
+            ),
+            ("DELETE FROM model_profiles WHERE id=?1", &[&id]),
+        ],
+    )
 }
 
 pub(crate) fn insert_media_blob_row(
@@ -2164,6 +2178,73 @@ mod tests {
         assert_eq!(ModelProfileRepository::get(&b, second.id).expect("b"), None);
         assert_eq!(sync_to(&a, &b, 240), 0);
         assert_eq!(sync_to(&b, &a, 250), 0);
+    }
+
+    #[test]
+    fn a_delete_beats_every_concurrent_update_relayed_through_a_third_device() {
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let c = Database::open_in_memory().expect("c");
+        let account = ProviderAccountRepository::upsert(&a, provider(), None).expect("account");
+        let model = ModelProfileRepository::upsert(&a, profile(account.id), None).expect("model");
+        sync_to(&a, &b, 10);
+        sync_to(&a, &c, 11);
+        ModelProfileRepository::delete_and_clear_default(&a, model.id).expect("delete on a");
+        let first = ModelProfileRepository::upsert(
+            &b,
+            ModelProfile {
+                display_name: "First edit".into(),
+                ..model.clone()
+            },
+            Some(model.revision),
+        )
+        .expect("first edit");
+        sync_to(&b, &c, 20);
+        ModelProfileRepository::upsert(
+            &b,
+            ModelProfile {
+                display_name: "Second edit".into(),
+                ..first.clone()
+            },
+            Some(first.revision),
+        )
+        .expect("second edit");
+        sync_to(&b, &c, 30);
+
+        sync_to(&c, &a, 40);
+        assert_eq!(ModelProfileRepository::get(&a, model.id).expect("a"), None);
+        sync_to(&a, &b, 50);
+        sync_to(&a, &c, 60);
+        for device in [&a, &b, &c] {
+            assert_eq!(ModelProfileRepository::get(device, model.id).expect("model"), None);
+        }
+        assert_eq!(sync_to(&a, &b, 70) + sync_to(&b, &c, 80) + sync_to(&c, &a, 90), 0);
+    }
+
+    #[test]
+    fn a_refused_account_delete_and_its_orphaned_model_converge() {
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let account = ProviderAccountRepository::upsert(&a, provider(), None).expect("account");
+        sync_to(&a, &b, 10);
+        ProviderAccountRepository::delete(&a, account.id).expect("delete on a");
+        let model = ModelProfileRepository::upsert(&b, profile(account.id), None).expect("model");
+
+        sync_to(&a, &b, 20);
+        assert!(ProviderAccountRepository::get(&b, account.id).expect("b").is_some());
+        sync_to(&b, &a, 30);
+        sync_to(&a, &b, 40);
+        sync_to(&b, &a, 50);
+
+        for device in [&a, &b] {
+            assert!(
+                ProviderAccountRepository::get(device, account.id)
+                    .expect("account")
+                    .is_some()
+            );
+            assert_eq!(ModelProfileRepository::get(device, model.id).expect("model"), None);
+        }
+        assert_eq!(sync_to(&a, &b, 60) + sync_to(&b, &a, 70), 0);
     }
 
     fn provider() -> ProviderAccount {
