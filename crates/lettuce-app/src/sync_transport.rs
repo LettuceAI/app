@@ -267,9 +267,14 @@ impl AuthenticatedTcpSyncTransport<'_> {
             } = frame
             {
                 let source = self.media.ok_or(SyncPeerTransportError::Protocol)?;
-                let bytes = source
-                    .read_chunk(&content_hash, offset, max_bytes)
-                    .map_err(|_| SyncPeerTransportError::Protocol)?;
+                let Ok(bytes) = source.read_chunk(&content_hash, offset, max_bytes) else {
+                    self.send(
+                        SyncWireFrame::BlobUnavailable { content_hash },
+                        cancellation,
+                    )
+                    .await?;
+                    continue;
+                };
                 let next_offset = offset
                     .checked_add(
                         u64::try_from(bytes.len()).map_err(|_| SyncPeerTransportError::Protocol)?,
@@ -459,7 +464,7 @@ impl AuthenticatedMediaSyncTransport for AuthenticatedTcpSyncTransport<'_> {
         offset: u64,
         max_bytes: usize,
         cancellation: &CancellationToken,
-    ) -> Result<SyncBlobChunk, MediaSyncTransportError> {
+    ) -> Result<Option<SyncBlobChunk>, MediaSyncTransportError> {
         self.send(
             SyncWireFrame::BlobRequest {
                 content_hash: content_hash.clone(),
@@ -475,9 +480,16 @@ impl AuthenticatedMediaSyncTransport for AuthenticatedTcpSyncTransport<'_> {
             .await
             .map_err(map_media_error)?
         {
-            SyncWireFrame::BlobChunk(value) => Ok(value),
+            SyncWireFrame::BlobChunk(value) => Ok(Some(value)),
+            SyncWireFrame::BlobUnavailable {
+                content_hash: value,
+            } if value == *content_hash => Ok(None),
             _ => Err(MediaSyncTransportError::Protocol),
         }
+    }
+
+    fn media_peer(&self) -> SyncDeviceId {
+        self.peer
     }
 }
 
@@ -514,6 +526,9 @@ enum SyncWireFrame {
         max_bytes: usize,
     },
     BlobChunk(SyncBlobChunk),
+    BlobUnavailable {
+        content_hash: ContentHash,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -535,7 +550,10 @@ impl ExpectedFrame {
                 | (Self::Changes, SyncWireFrame::Changes(_))
                 | (Self::Acknowledgement, SyncWireFrame::Acknowledgement(_))
                 | (Self::MediaDone, SyncWireFrame::MediaDone)
-                | (Self::BlobChunk, SyncWireFrame::BlobChunk(_))
+                | (
+                    Self::BlobChunk,
+                    SyncWireFrame::BlobChunk(_) | SyncWireFrame::BlobUnavailable { .. }
+                )
         )
     }
 }
@@ -907,6 +925,7 @@ fn validate_wire_frame(frame: &SyncWireFrame) -> Result<(), SyncPeerTransportErr
         SyncWireFrame::BlobChunk(value) => value
             .validate(&value.content_hash, value.offset)
             .map_err(|_| SyncPeerTransportError::Protocol),
+        SyncWireFrame::BlobUnavailable { .. } => Ok(()),
     }
 }
 

@@ -51,11 +51,15 @@ pub enum MediaSyncError {
     Storage,
 }
 
-/// Media assets that pending incoming batches wait for; their blobs are
-/// fetched from the peer by content hash, at most `MAX_SYNC_MEDIA_ASSETS`
-/// per media phase.
+/// Media assets a pending incoming batch waits for; their blobs are fetched
+/// from the peer that sent the batch by content hash, at most
+/// `MAX_SYNC_MEDIA_ASSETS` per media phase.
 pub trait MediaSyncRepository: Send + Sync {
-    fn pending_media(&self) -> Result<Vec<CanonicalMediaAsset>, MediaSyncError>;
+    /// The media assets the latest pending batch from `peer` waits for.
+    fn pending_media(
+        &self,
+        peer: crate::SyncDeviceId,
+    ) -> Result<Vec<CanonicalMediaAsset>, MediaSyncError>;
 }
 
 pub fn canonical_media_asset_payload(

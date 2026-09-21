@@ -2010,6 +2010,7 @@ impl MediaAssetRepository for Database {
 impl MediaSyncRepository for Database {
     fn pending_media(
         &self,
+        peer: lettuce_sync::SyncDeviceId,
     ) -> Result<Vec<lettuce_sync::CanonicalMediaAsset>, MediaSyncError> {
         let connection = self.connection().map_err(|_| MediaSyncError::Storage)?;
         let mut statement = connection
@@ -2017,7 +2018,11 @@ impl MediaSyncRepository for Database {
                 "SELECT change_row.payload_bytes
                  FROM sync_incoming_changes AS change_row
                  JOIN sync_incoming_batches AS batch ON batch.batch_id = change_row.batch_id
-                 WHERE batch.state = 'pending'
+                 WHERE batch.batch_id = (
+                     SELECT batch_id FROM sync_incoming_batches
+                     WHERE state = 'pending' AND peer_device_id = ?4
+                     ORDER BY created_at DESC, rowid DESC LIMIT 1
+                   )
                    AND json_extract(change_row.document, '$.payload_schema') = ?1
                    AND json_extract(change_row.document, '$.payload_version') = ?2
                  ORDER BY change_row.change_id LIMIT ?3",
@@ -2029,7 +2034,8 @@ impl MediaSyncRepository for Database {
                     lettuce_sync::MEDIA_ASSET_SYNC_SCHEMA,
                     i64::from(lettuce_sync::MEDIA_ASSET_SYNC_VERSION),
                     i64::try_from(lettuce_sync::MAX_SYNC_MEDIA_ASSETS)
-                        .map_err(|_| MediaSyncError::Storage)?
+                        .map_err(|_| MediaSyncError::Storage)?,
+                    peer.as_uuid().to_string()
                 ],
                 |row| row.get::<_, Vec<u8>>(0),
             )

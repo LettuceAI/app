@@ -164,7 +164,13 @@ journals every ready asset referenced by personas, characters, their
 presentation and scene assets once (insert only, same deterministic operation
 as persona journaling); later local metadata such as retention stays
 device-local, and an incoming asset insert is checked only against identity
-and blob fields.
+and blob fields. The media phase fetches only what the latest pending batch
+from the connected peer waits for (older pending batches are superseded by
+the peer's resend); a blob the peer cannot serve is answered with
+`BlobUnavailable` and skipped instead of ending the session. An aggregate
+whose referenced assets are not journaled yet (their blobs are not ready) is
+not journaled in that scan, so a receiver never waits on media that cannot
+arrive.
 
 Characters (sync S3b, `character.snapshot`): the complete `CharacterDetails`
 (root, scenes, variants, starters) is a scanned aggregate after models. The

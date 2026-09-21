@@ -1043,9 +1043,26 @@ struct SnapshotCodec {
     materialize: fn(&Transaction<'_>, &str, &[u8]) -> Result<bool, ApplyOneError>,
     ids: Option<ScanIds>,
     delete: Option<SnapshotDelete>,
+    assets: fn(&[u8]) -> Vec<String>,
+}
+
+fn no_assets(_: &[u8]) -> Vec<String> {
+    Vec::new()
 }
 
 const PERSONA_CODEC: SnapshotCodec = SnapshotCodec {
+    assets: |bytes| {
+        serde_json::from_slice::<Persona>(bytes)
+            .map(|persona| {
+                persona
+                    .media
+                    .links
+                    .iter()
+                    .map(|link| link.asset_id.to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    },
     kind: "persona",
     ids: Some(|connection| {
         connection
@@ -1089,6 +1106,7 @@ const PERSONA_CODEC: SnapshotCodec = SnapshotCodec {
 };
 
 const PERSONA_DEFAULT_CODEC: SnapshotCodec = SnapshotCodec {
+    assets: no_assets,
     kind: "persona_default",
     ids: Some(|_| Ok(vec!["application".to_owned()])),
     delete: None,
@@ -1124,6 +1142,7 @@ fn model_apply_error(error: lettuce_models::ModelRepositoryError) -> ApplyOneErr
 }
 
 const PROVIDER_ACCOUNT_CODEC: SnapshotCodec = SnapshotCodec {
+    assets: no_assets,
     kind: lettuce_sync::PROVIDER_ACCOUNT_SYNC_KIND,
     decode: |id, bytes| {
         let account: lettuce_models::ProviderAccount =
@@ -1156,6 +1175,7 @@ const PROVIDER_ACCOUNT_CODEC: SnapshotCodec = SnapshotCodec {
 };
 
 const MODEL_PROFILE_CODEC: SnapshotCodec = SnapshotCodec {
+    assets: no_assets,
     kind: lettuce_sync::MODEL_PROFILE_SYNC_KIND,
     decode: |id, bytes| {
         let profile: lettuce_models::ModelProfile =
@@ -1191,6 +1211,16 @@ const MODEL_PROFILE_CODEC: SnapshotCodec = SnapshotCodec {
 };
 
 const CHARACTER_CODEC: SnapshotCodec = SnapshotCodec {
+    assets: |bytes| {
+        serde_json::from_slice::<lettuce_characters::CharacterDetails>(bytes)
+            .map(|details| {
+                crate::character_adapter::character_asset_ids(&details)
+                    .into_iter()
+                    .map(|id| id.to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    },
     kind: lettuce_sync::CHARACTER_SYNC_KIND,
     decode: |id, bytes| {
         let details: lettuce_characters::CharacterDetails =
@@ -1233,6 +1263,13 @@ fn lorebook_apply_error(error: lettuce_context::LorebookRepositoryError) -> Appl
 }
 
 const LOREBOOK_CODEC: SnapshotCodec = SnapshotCodec {
+    assets: |bytes| {
+        serde_json::from_slice::<lettuce_context::LorebookDetails>(bytes)
+            .ok()
+            .and_then(|details| details.book.icon_asset_id)
+            .map(|id| vec![id.to_string()])
+            .unwrap_or_default()
+    },
     kind: lettuce_sync::LOREBOOK_SYNC_KIND,
     decode: |id, bytes| {
         let details: lettuce_context::LorebookDetails =
@@ -1279,6 +1316,7 @@ macro_rules! binding_codec {
     ($name:ident, $kind:expr, $owner:expr) => {
         const $name: SnapshotCodec = SnapshotCodec {
             kind: $kind,
+            assets: no_assets,
             decode: |_, bytes| decode_bindings(bytes).map(|_| ()),
             current: |connection, id| {
                 crate::lorebook_adapter::sync_load_bindings(connection, $owner, id)
@@ -1946,6 +1984,13 @@ impl LocalChangeJournal for Database {
                 };
                 let base = latest.get(id).cloned().flatten();
                 if base.as_ref() == Some(payload.content_hash()) {
+                    continue;
+                }
+                let mut media_ready = true;
+                for asset in (codec.assets)(payload.bytes()) {
+                    media_ready &= media_asset_journaled(&tx, &asset)?;
+                }
+                if !media_ready {
                     continue;
                 }
                 let operation = if base.is_some() {

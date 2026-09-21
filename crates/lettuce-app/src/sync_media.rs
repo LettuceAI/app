@@ -8,13 +8,18 @@ use lettuce_types::{ContentHash, TimestampMillis};
 
 #[async_trait]
 pub trait AuthenticatedMediaSyncTransport: Send {
+    /// The authenticated peer whose pending media this phase fetches.
+    fn media_peer(&self) -> lettuce_sync::SyncDeviceId;
+
+    /// One chunk of a blob, or `None` when the peer cannot serve it (the
+    /// asset is skipped and its batch stays pending).
     async fn fetch_blob_chunk(
         &mut self,
         content_hash: &ContentHash,
         offset: u64,
         max_bytes: usize,
         cancellation: &CancellationToken,
-    ) -> Result<SyncBlobChunk, MediaSyncTransportError>;
+    ) -> Result<Option<SyncBlobChunk>, MediaSyncTransportError>;
 
     /// Ends the media phase: tells the peer this side fetched everything and
     /// keeps serving its blob requests until the peer says the same.
@@ -72,7 +77,7 @@ where
         check_cancelled(cancellation)?;
         let pending = self
             .repository
-            .pending_media()
+            .pending_media(transport.media_peer())
             .map_err(SyncMediaExchangeError::Catalog)?;
         let mut report = MediaSyncReport {
             received_assets: 0,
@@ -80,8 +85,7 @@ where
             received_bytes: 0,
         };
         let mut completed_hashes = Vec::<ContentHash>::new();
-        for expected in &pending {
-            let asset = expected;
+        'assets: for asset in &pending {
             check_cancelled(cancellation)?;
             let mut offset = self
                 .media
@@ -99,6 +103,9 @@ where
                     )
                     .await
                     .map_err(SyncMediaExchangeError::Transport)?;
+                let Some(chunk) = chunk else {
+                    continue 'assets;
+                };
                 chunk
                     .validate(&asset.blob.content_hash, offset)
                     .map_err(SyncMediaExchangeError::Catalog)?;
@@ -180,6 +187,7 @@ mod tests {
     use lettuce_types::{OperationId, Revision};
 
     struct SourceTransport<'a> {
+        peer: lettuce_sync::SyncDeviceId,
         catalog: Vec<CanonicalMediaAsset>,
         store: &'a LocalSyncMediaStore<Database, Database>,
         disconnect_after_first: bool,
@@ -202,7 +210,7 @@ mod tests {
             offset: u64,
             max_bytes: usize,
             _: &CancellationToken,
-        ) -> Result<SyncBlobChunk, MediaSyncTransportError> {
+        ) -> Result<Option<SyncBlobChunk>, MediaSyncTransportError> {
             self.first_offset.get_or_insert(offset);
             if self.disconnect_after_first && self.fetched == 1 {
                 return Err(MediaSyncTransportError::Disconnected);
@@ -219,12 +227,16 @@ mod tests {
                 .map_err(|_| MediaSyncTransportError::Protocol)?;
             let complete = offset + u64::try_from(bytes.len()).unwrap_or(u64::MAX)
                 == self.catalog[0].blob.byte_size;
-            Ok(SyncBlobChunk {
+            Ok(Some(SyncBlobChunk {
                 content_hash: content_hash.clone(),
                 offset,
                 bytes,
                 complete,
-            })
+            }))
+        }
+
+        fn media_peer(&self) -> lettuce_sync::SyncDeviceId {
+            self.peer
         }
     }
 
@@ -382,7 +394,11 @@ mod tests {
                 .snapshot(design.asset.id)
                 .expect("design snapshot"),
         ];
+        let source_device = source
+            .local_device_id(TimestampMillis::new(11))
+            .expect("source identity");
         let mut interrupted = SourceTransport {
+            peer: source_device,
             catalog: catalog.clone(),
             store: &source_sync,
             disconnect_after_first: true,
@@ -406,6 +422,7 @@ mod tests {
         drop(target_sync);
         let reopened_sync = sync_store(&target_root, &target_path);
         let mut resumed = SourceTransport {
+            peer: source_device,
             catalog,
             store: &source_sync,
             disconnect_after_first: false,

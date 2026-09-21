@@ -637,6 +637,12 @@ fn bump_root(
     Ok(())
 }
 
+pub(crate) fn character_asset_ids(
+    details: &lettuce_characters::CharacterDetails,
+) -> BTreeSet<AssetId> {
+    collect_asset_ids(details)
+}
+
 fn collect_asset_ids(details: &lettuce_characters::CharacterDetails) -> BTreeSet<AssetId> {
     let mut ids: BTreeSet<_> = details
         .character
@@ -3651,6 +3657,50 @@ mod smoke_tests {
                 0
             );
         }
+    }
+
+    #[test]
+    fn characters_wait_for_their_media_to_be_ready_before_they_are_journaled() {
+        use lettuce_sync::LocalChangeJournal;
+        let a = Database::open_in_memory().expect("a");
+        let (plan, _, _, _) = graph_fixture(&a);
+        let connection = a.connection().expect("a");
+        connection
+            .execute(
+                "UPDATE media_assets SET provenance_json=?1",
+                [
+                    serde_json::to_string(&lettuce_media::AssetProvenanceV1::default())
+                        .expect("provenance"),
+                ],
+            )
+            .expect("valid provenance");
+        drop(connection);
+        let created = CharacterRepository::create(&a, plan).expect("create graph");
+        a.connection()
+            .expect("a")
+            .execute("UPDATE media_blobs SET state='staged'", [])
+            .expect("staged blobs");
+        a.journal_current_state(TimestampMillis::new(10))
+            .expect("scan while staged");
+        let character_changes = |database: &Database| -> i64 {
+            database
+                .connection()
+                .expect("connection")
+                .query_row(
+                    "SELECT COUNT(*) FROM sync_changes WHERE entity_kind='character' AND entity_id=?1",
+                    [created.character.id.to_string()],
+                    |row| row.get(0),
+                )
+                .expect("count")
+        };
+        assert_eq!(character_changes(&a), 0);
+        a.connection()
+            .expect("a")
+            .execute("UPDATE media_blobs SET state='ready'", [])
+            .expect("ready blobs");
+        a.journal_current_state(TimestampMillis::new(20))
+            .expect("scan when ready");
+        assert_eq!(character_changes(&a), 1);
     }
 
     #[test]
