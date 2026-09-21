@@ -15,6 +15,10 @@ use crate::SyncDeviceId;
 /// Most secrets one inventory may list.
 pub const MAX_SYNC_SECRETS: usize = 1024;
 
+/// How far ahead of this device's clock a peer's secret version may be; a
+/// version further ahead is refused so a broken clock cannot pin a key.
+pub const MAX_SECRET_VERSION_AHEAD_MILLIS: i64 = 86_400_000;
+
 /// When and where a secret value was last set; the later one wins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SyncSecretVersion {
@@ -31,11 +35,12 @@ pub struct SyncSecretEntry {
     pub version: Option<SyncSecretVersion>,
 }
 
-/// The version recorded for the local value of a secret, with the local
-/// secret-store generation it was recorded for (a different generation means
-/// the value changed here since).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The version recorded for the local value of a secret, with its purpose and
+/// the local secret-store generation it was recorded for (a different
+/// generation means the value changed here since).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredSecretVersion {
+    pub purpose: SecretPurpose,
     pub generation: u64,
     pub version: SyncSecretVersion,
 }
@@ -49,7 +54,8 @@ pub enum SyncSecretError {
 }
 
 pub trait SyncSecretRepository: Send + Sync {
-    /// Every secret the synced provider accounts and audio providers reference.
+    /// Every secret the synced provider accounts and audio providers
+    /// reference; a record that cannot be read is left out.
     fn referenced_secrets(&self) -> Result<Vec<SecretRecord>, SyncSecretError>;
 
     fn secret_version(
@@ -60,6 +66,14 @@ pub trait SyncSecretRepository: Send + Sync {
     fn record_secret_version(
         &self,
         reference: &SecretRef,
-        stored: StoredSecretVersion,
+        stored: &StoredSecretVersion,
     ) -> Result<(), SyncSecretError>;
+
+    /// Every recorded version, so values nothing references any more can be
+    /// removed from the secret store.
+    fn recorded_secret_versions(
+        &self,
+    ) -> Result<Vec<(SecretRef, StoredSecretVersion)>, SyncSecretError>;
+
+    fn forget_secret_version(&self, reference: &SecretRef) -> Result<(), SyncSecretError>;
 }

@@ -401,10 +401,18 @@ secrets its synced records reference with the version its value was last set
 at (`sync_secret_versions`, device-local: reference, secret-store generation,
 set-at time and device; a changed local generation gets a new version at the
 next session), fetches the values it lacks or holds an older version of and
-writes them into its native secret store. Values travel only inside
+writes them into its native secret store under the generation it saw when
+the phase began (a key changed meanwhile is kept). A value changed locally
+gets a version later than any it had; a peer version more than a day ahead
+of the local clock is refused. A value this device lost is fetched again
+rather than deleted elsewhere (no tombstones: a wiped keychain must not wipe
+the other devices), and a value nothing here references any more (its
+provider was deleted) is removed from the store. Values travel only inside
 encrypted frames, are zeroized after use and never printed; a side serves
-only secrets it listed. A secret the store cannot read or write is skipped
-and retried next session.
+only secrets it listed, only during the phase, and an unrequested value ends
+the session. A secret the store cannot read or write is skipped (before its
+value is fetched) and retried next session. Versions are not carried across
+a restore.
 
 Usage (sync S11). Cost bases of conversation usage events (`usage.cost_basis`,
 waits for its event), job inference usage evidence and its cost bases

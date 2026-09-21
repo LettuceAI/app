@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_settings::{SecretRecord, SecretRef, SecretState, SecretStore, SecretValue};
 use lettuce_sync::{
-    MAX_SYNC_SECRETS, StoredSecretVersion, SyncDeviceId, SyncSecretEntry, SyncSecretError,
-    SyncSecretRepository, SyncSecretVersion,
+    MAX_SECRET_VERSION_AHEAD_MILLIS, MAX_SYNC_SECRETS, StoredSecretVersion, SyncDeviceId,
+    SyncSecretEntry, SyncSecretError, SyncSecretRepository, SyncSecretVersion,
 };
 use lettuce_types::TimestampMillis;
 
@@ -30,6 +30,9 @@ pub trait AuthenticatedSecretSyncTransport: Send {
         &mut self,
         cancellation: &CancellationToken,
     ) -> Result<(), SecretSyncTransportError>;
+
+    /// Stops serving secrets, whether the phase finished or failed.
+    fn stop_serving_secrets(&mut self);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -60,13 +63,23 @@ pub struct SecretSyncReport {
 
 /// Runs the secret phase of a sync session. A secret this device lacks, or
 /// holds an older version of, is fetched from the peer and written to the
-/// native secret store; a local value changed since the last session gets a
-/// new version first. A secret the store cannot read or write here is skipped
-/// and retried next session.
+/// native secret store under the generation seen when the phase began (a key
+/// changed meanwhile is kept); a local value changed since the last session
+/// gets a new version later than any it had. A value this device lost is
+/// fetched again rather than deleted elsewhere, and a value nothing here
+/// references any more (its provider was deleted) is removed from the store.
+/// A secret the store cannot read or write is skipped and retried next
+/// session.
 #[derive(Debug)]
 pub struct SyncSecretCoordinator<'a, R: ?Sized, S: ?Sized> {
     repository: &'a R,
     secrets: &'a S,
+}
+
+struct LocalSecret {
+    entry: SyncSecretEntry,
+    generation: Option<u64>,
+    writable: bool,
 }
 
 impl<'a, R: ?Sized, S: ?Sized> SyncSecretCoordinator<'a, R, S> {
@@ -94,6 +107,21 @@ where
     where
         T: AuthenticatedSecretSyncTransport + ?Sized,
     {
+        let result = self.exchange(transport, device, cancellation, now).await;
+        transport.stop_serving_secrets();
+        result
+    }
+
+    async fn exchange<T>(
+        &self,
+        transport: &mut T,
+        device: SyncDeviceId,
+        cancellation: &CancellationToken,
+        now: TimestampMillis,
+    ) -> Result<SecretSyncReport, SyncSecretExchangeError>
+    where
+        T: AuthenticatedSecretSyncTransport + ?Sized,
+    {
         check_cancelled(cancellation)?;
         let records = self
             .repository
@@ -101,18 +129,23 @@ where
             .map_err(SyncSecretExchangeError::Repository)?;
         let mut local = Vec::with_capacity(records.len());
         for record in records.iter().take(MAX_SYNC_SECRETS) {
-            local.push(self.local_entry(record, device, now).await?);
+            local.push(self.local_secret(record, device, now).await?);
         }
         let peer = transport
-            .exchange_secret_inventory(local.clone(), cancellation)
+            .exchange_secret_inventory(
+                local.iter().map(|secret| secret.entry.clone()).collect(),
+                cancellation,
+            )
             .await
             .map_err(SyncSecretExchangeError::Transport)?;
         let mut report = SecretSyncReport {
             received: 0,
             skipped: 0,
         };
-        for entry in &local {
+        let newest_allowed = now.get().saturating_add(MAX_SECRET_VERSION_AHEAD_MILLIS);
+        for secret in &local {
             check_cancelled(cancellation)?;
+            let entry = &secret.entry;
             let Some(offered) = peer
                 .iter()
                 .find(|candidate| {
@@ -125,6 +158,10 @@ where
             if entry.version.is_some_and(|held| held >= offered) {
                 continue;
             }
+            if !secret.writable || offered.set_at.get() > newest_allowed {
+                report.skipped += 1;
+                continue;
+            }
             let Some(value) = transport
                 .fetch_secret(&entry.reference, cancellation)
                 .await
@@ -134,22 +171,15 @@ where
                 continue;
             };
             let record = SecretRecord::new(entry.reference, entry.purpose.clone());
-            let expected = match self.secrets.status(&entry.reference, &entry.purpose).await {
-                Ok(status) if status.state == SecretState::Present => Some(status.generation),
-                Ok(_) => None,
-                Err(_) => {
-                    report.skipped += 1;
-                    continue;
-                }
-            };
-            let Ok(status) = self.secrets.put(record, value, expected).await else {
+            let Ok(status) = self.secrets.put(record, value, secret.generation).await else {
                 report.skipped += 1;
                 continue;
             };
             self.repository
                 .record_secret_version(
                     &entry.reference,
-                    StoredSecretVersion {
+                    &StoredSecretVersion {
+                        purpose: entry.purpose.clone(),
                         generation: status.generation,
                         version: offered,
                     },
@@ -161,54 +191,101 @@ where
             .finish_secrets(cancellation)
             .await
             .map_err(SyncSecretExchangeError::Transport)?;
+        self.forget_unreferenced(&records).await?;
         Ok(report)
     }
 
-    async fn local_entry(
+    async fn local_secret(
         &self,
         record: &SecretRecord,
         device: SyncDeviceId,
         now: TimestampMillis,
-    ) -> Result<SyncSecretEntry, SyncSecretExchangeError> {
+    ) -> Result<LocalSecret, SyncSecretExchangeError> {
         let status = self
             .secrets
             .status(&record.reference, &record.purpose)
             .await
-            .ok()
-            .filter(|status| status.state == SecretState::Present);
-        let version = match status {
-            None => None,
-            Some(status) => {
-                let stored = self
-                    .repository
-                    .secret_version(&record.reference)
-                    .map_err(SyncSecretExchangeError::Repository)?;
-                match stored {
-                    Some(stored) if stored.generation == status.generation => Some(stored.version),
-                    _ => {
+            .ok();
+        let stored = self
+            .repository
+            .secret_version(&record.reference)
+            .map_err(SyncSecretExchangeError::Repository)?;
+        let (version, generation, writable) = match status {
+            Some(status) if status.state == SecretState::Present => {
+                let version = match stored {
+                    Some(stored)
+                        if stored.generation == status.generation
+                            && stored.purpose == record.purpose =>
+                    {
+                        stored.version
+                    }
+                    earlier => {
                         let version = SyncSecretVersion {
-                            set_at: now,
+                            set_at: TimestampMillis::new(earlier.map_or(now.get(), |stored| {
+                                now.get().max(stored.version.set_at.get().saturating_add(1))
+                            })),
                             device,
                         };
                         self.repository
                             .record_secret_version(
                                 &record.reference,
-                                StoredSecretVersion {
+                                &StoredSecretVersion {
+                                    purpose: record.purpose.clone(),
                                     generation: status.generation,
                                     version,
                                 },
                             )
                             .map_err(SyncSecretExchangeError::Repository)?;
-                        Some(version)
+                        version
                     }
-                }
+                };
+                (Some(version), Some(status.generation), true)
             }
+            Some(status) if status.state == SecretState::Missing => {
+                if stored.is_some() {
+                    self.repository
+                        .forget_secret_version(&record.reference)
+                        .map_err(SyncSecretExchangeError::Repository)?;
+                }
+                (None, None, true)
+            }
+            _ => (None, None, false),
         };
-        Ok(SyncSecretEntry {
-            reference: record.reference,
-            purpose: record.purpose.clone(),
-            version,
+        Ok(LocalSecret {
+            entry: SyncSecretEntry {
+                reference: record.reference,
+                purpose: record.purpose.clone(),
+                version,
+            },
+            generation,
+            writable,
         })
+    }
+
+    async fn forget_unreferenced(
+        &self,
+        records: &[SecretRecord],
+    ) -> Result<(), SyncSecretExchangeError> {
+        let recorded = self
+            .repository
+            .recorded_secret_versions()
+            .map_err(SyncSecretExchangeError::Repository)?;
+        for (reference, stored) in recorded {
+            if records.iter().any(|record| record.reference == reference) {
+                continue;
+            }
+            if self
+                .secrets
+                .delete(&reference, &stored.purpose, Some(stored.generation))
+                .await
+                .is_ok()
+            {
+                self.repository
+                    .forget_secret_version(&reference)
+                    .map_err(SyncSecretExchangeError::Repository)?;
+            }
+        }
+        Ok(())
     }
 }
 

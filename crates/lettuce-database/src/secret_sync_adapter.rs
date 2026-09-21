@@ -42,15 +42,17 @@ impl SyncSecretRepository for Database {
             })
             .map_err(storage)?;
         for (api_key, owner, headers) in accounts {
-            let owner = SecretOwnerId::from_uuid(uuid(&owner)?);
-            if let Some(reference) = api_key {
+            let Ok(owner) = uuid(&owner).map(SecretOwnerId::from_uuid) else {
+                continue;
+            };
+            if let Some(Ok(reference)) = api_key.as_deref().map(uuid) {
                 records.push(SecretRecord::new(
-                    SecretRef::from_uuid(uuid(&reference)?),
+                    SecretRef::from_uuid(reference),
                     SecretPurpose::ProviderApiKey { owner },
                 ));
             }
             for header in serde_json::from_str::<Vec<lettuce_models::SecretHeader>>(&headers)
-                .map_err(corrupt)?
+                .unwrap_or_default()
             {
                 records.push(SecretRecord::new(
                     header.secret_ref,
@@ -72,10 +74,13 @@ impl SyncSecretRepository for Database {
             })
             .map_err(storage)?;
         for (reference, owner) in audio {
+            let (Ok(reference), Ok(owner)) = (uuid(&reference), uuid(&owner)) else {
+                continue;
+            };
             records.push(SecretRecord::new(
-                SecretRef::from_uuid(uuid(&reference)?),
+                SecretRef::from_uuid(reference),
                 SecretPurpose::AudioApiKey {
-                    owner: SecretOwnerId::from_uuid(uuid(&owner)?),
+                    owner: SecretOwnerId::from_uuid(owner),
                 },
             ));
         }
@@ -89,42 +94,36 @@ impl SyncSecretRepository for Database {
         let connection = self.connection().map_err(storage)?;
         connection
             .query_row(
-                "SELECT generation, set_at, device_id FROM sync_secret_versions WHERE reference = ?1",
+                "SELECT purpose_json, generation, set_at, device_id FROM sync_secret_versions WHERE reference = ?1",
                 [reference.to_string()],
                 |row| {
                     Ok((
-                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(0)?,
                         row.get::<_, i64>(1)?,
-                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
                     ))
                 },
             )
             .optional()
             .map_err(storage)?
-            .map(|(generation, set_at, device)| {
-                Ok(StoredSecretVersion {
-                    generation: u64::try_from(generation).map_err(corrupt)?,
-                    version: SyncSecretVersion {
-                        set_at: TimestampMillis::new(set_at),
-                        device: SyncDeviceId::from_uuid(uuid(&device)?),
-                    },
-                })
-            })
+            .map(stored_version)
             .transpose()
     }
 
     fn record_secret_version(
         &self,
         reference: &SecretRef,
-        stored: StoredSecretVersion,
+        stored: &StoredSecretVersion,
     ) -> Result<(), SyncSecretError> {
         let connection = self.connection().map_err(storage)?;
         connection
             .execute(
-                "INSERT INTO sync_secret_versions (reference, generation, set_at, device_id) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(reference) DO UPDATE SET generation = excluded.generation, set_at = excluded.set_at, device_id = excluded.device_id",
+                "INSERT INTO sync_secret_versions (reference, purpose_json, generation, set_at, device_id) VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(reference) DO UPDATE SET purpose_json = excluded.purpose_json, generation = excluded.generation, set_at = excluded.set_at, device_id = excluded.device_id",
                 params![
                     reference.to_string(),
+                    serde_json::to_string(&stored.purpose).map_err(corrupt)?,
                     i64::try_from(stored.generation).map_err(corrupt)?,
                     stored.version.set_at.get(),
                     stored.version.device.as_uuid().to_string(),
@@ -133,4 +132,62 @@ impl SyncSecretRepository for Database {
             .map_err(storage)?;
         Ok(())
     }
+
+    fn recorded_secret_versions(
+        &self,
+    ) -> Result<Vec<(SecretRef, StoredSecretVersion)>, SyncSecretError> {
+        let connection = self.connection().map_err(storage)?;
+        let rows = connection
+            .prepare(
+                "SELECT reference, purpose_json, generation, set_at, device_id FROM sync_secret_versions ORDER BY reference",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            (
+                                row.get::<_, String>(1)?,
+                                row.get::<_, i64>(2)?,
+                                row.get::<_, i64>(3)?,
+                                row.get::<_, String>(4)?,
+                            ),
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(storage)?;
+        let mut recorded = Vec::with_capacity(rows.len());
+        for (reference, row) in rows {
+            let (Ok(reference), Ok(stored)) = (uuid(&reference), stored_version(row)) else {
+                continue;
+            };
+            recorded.push((SecretRef::from_uuid(reference), stored));
+        }
+        Ok(recorded)
+    }
+
+    fn forget_secret_version(&self, reference: &SecretRef) -> Result<(), SyncSecretError> {
+        self.connection()
+            .map_err(storage)?
+            .execute(
+                "DELETE FROM sync_secret_versions WHERE reference = ?1",
+                [reference.to_string()],
+            )
+            .map_err(storage)?;
+        Ok(())
+    }
+}
+
+fn stored_version(
+    (purpose, generation, set_at, device): (String, i64, i64, String),
+) -> Result<StoredSecretVersion, SyncSecretError> {
+    Ok(StoredSecretVersion {
+        purpose: serde_json::from_str(&purpose).map_err(corrupt)?,
+        generation: u64::try_from(generation).map_err(corrupt)?,
+        version: SyncSecretVersion {
+            set_at: TimestampMillis::new(set_at),
+            device: SyncDeviceId::from_uuid(uuid(&device)?),
+        },
+    })
 }

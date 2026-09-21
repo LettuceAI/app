@@ -254,6 +254,7 @@ ON sync_deferred_changes(entity_kind, entity_id);
 -- here.
 CREATE TABLE sync_secret_versions (
     reference TEXT PRIMARY KEY CHECK (length(reference) = 36),
+    purpose_json TEXT NOT NULL CHECK (json_valid(purpose_json)),
     generation INTEGER NOT NULL CHECK (generation >= 1),
     set_at INTEGER NOT NULL,
     device_id TEXT NOT NULL CHECK (length(device_id) = 36)

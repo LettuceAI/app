@@ -335,6 +335,12 @@ impl AuthenticatedTcpSyncTransport<'_> {
             if expected.matches(&frame) {
                 return Ok(frame);
             }
+            if matches!(
+                frame,
+                SyncWireFrame::SecretValue { .. } | SyncWireFrame::SecretUnavailable { .. }
+            ) {
+                return Err(SyncPeerTransportError::Protocol);
+            }
             if self.pending.len() == MAX_PENDING_FRAMES {
                 return Err(SyncPeerTransportError::Protocol);
             }
@@ -599,6 +605,10 @@ impl AuthenticatedSecretSyncTransport for AuthenticatedTcpSyncTransport<'_> {
             SyncWireFrame::SecretsDone => Ok(()),
             _ => Err(SecretSyncTransportError::Protocol),
         }
+    }
+
+    fn stop_serving_secrets(&mut self) {
+        self.served_secrets.clear();
     }
 }
 
@@ -1384,6 +1394,27 @@ mod tests {
             read_secret(&source_secrets, reference, &purpose).await,
             "xi-rotated"
         );
+
+        for database in [&source, &target] {
+            let stored = database
+                .get_audio_provider(provider.id)
+                .expect("provider")
+                .expect("present");
+            database
+                .delete_audio_provider(provider.id, stored.revision)
+                .expect("delete provider");
+        }
+        secret_round(&source, &target, &source_secrets, &target_secrets, 40).await;
+        for store in [&source_secrets, &target_secrets] {
+            assert_eq!(
+                store
+                    .status(&reference, &purpose)
+                    .await
+                    .expect("status")
+                    .state,
+                lettuce_settings::SecretState::Missing
+            );
+        }
     }
 
     #[tokio::test]
