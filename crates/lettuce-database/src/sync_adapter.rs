@@ -1347,6 +1347,9 @@ const MODEL_PROFILE_CODEC: SnapshotCodec = SnapshotCodec {
     current: |connection, id| {
         crate::sync_load_model_profile(connection, id)
             .map_err(model_apply_error)?
+            .map(|profile| crate::sync_exchanged_model_profile(connection, profile))
+            .transpose()
+            .map_err(model_apply_error)?
             .as_ref()
             .map(lettuce_sync::canonical_model_profile_payload)
             .transpose()

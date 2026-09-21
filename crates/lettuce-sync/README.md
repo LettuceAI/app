@@ -374,6 +374,16 @@ messages and voice examples is journaled like other referenced media (the
 referenced-media scan missed message media before, so messages with images
 never became ready to journal).
 
+Local model files (sync S13, user decision 2026-09-21). For profiles of
+llama.cpp and stable-diffusion.cpp accounts the files the runtime loads (the
+model file in `external_model_id`, projector, MTP draft model, text encoder,
+VAE, vision encoder, base LoRAs) and the installed runtime build
+(release/asset/backend) are device-local: the exchanged form replaces the
+model file with `UNPICKED_LOCAL_MODEL_FILE` and drops the others, a merge into
+an existing profile keeps this device's files, and a profile first received
+from another device shows its model file still to pick. Everything else in
+the profile (name, parameters, GPU settings, capabilities) syncs.
+
 Secrets (sync S12, protocol version 3). API keys and secret headers of
 provider accounts and audio providers never enter the change journal (it is
 SQLite). After the change exchange a session runs a secret phase over the

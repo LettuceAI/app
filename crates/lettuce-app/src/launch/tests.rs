@@ -11156,3 +11156,60 @@ fn audio_providers_voices_and_asr_learning_sync_row_by_row() {
         }
     }
 }
+
+#[test]
+fn local_model_files_stay_on_their_device_while_the_profile_syncs() {
+    let a = database();
+    let b = database();
+    let id = seed_model(&a, ProviderProtocol::LlamaCpp, "llamacpp");
+    let mut on_a = ModelProfileRepository::get(&a, id)
+        .expect("profile")
+        .expect("present");
+    let revision = on_a.revision;
+    on_a.external_model_id = "/home/a/models/mira-8b.Q4_K_M.gguf".into();
+    on_a.config.llama_cpp.mmproj_path = Some("/home/a/models/mira-mmproj.gguf".into());
+    let on_a = ModelProfileRepository::upsert(&a, on_a, Some(revision)).expect("paths on a");
+
+    sync_prompts(&a, &b, 100);
+
+    let mut on_b = ModelProfileRepository::get(&b, id)
+        .expect("b profile")
+        .expect("present");
+    assert_eq!(
+        on_b.external_model_id,
+        lettuce_models::UNPICKED_LOCAL_MODEL_FILE
+    );
+    assert_eq!(on_b.config.llama_cpp.mmproj_path, None);
+    assert_eq!(on_b.display_name, on_a.display_name);
+
+    let revision = on_b.revision;
+    on_b.external_model_id = "C:\\Models\\mira-8b.gguf".into();
+    on_b.display_name = "Mira 8B".into();
+    ModelProfileRepository::upsert(&b, on_b, Some(revision)).expect("pick file on b");
+    sync_prompts(&b, &a, 200);
+
+    let after = ModelProfileRepository::get(&a, id)
+        .expect("a profile")
+        .expect("present");
+    assert_eq!(after.display_name, "Mira 8B");
+    assert_eq!(after.external_model_id, on_a.external_model_id);
+    assert_eq!(after.config.llama_cpp.mmproj_path, on_a.config.llama_cpp.mmproj_path);
+    assert_eq!(
+        ModelProfileRepository::get(&b, id)
+            .expect("b profile")
+            .expect("present")
+            .external_model_id,
+        "C:\\Models\\mira-8b.gguf"
+    );
+    {
+        use lettuce_sync::LocalChangeJournal;
+        for database in [&a, &b] {
+            assert_eq!(
+                database
+                    .journal_current_state(TimestampMillis::new(300))
+                    .expect("rescan"),
+                0
+            );
+        }
+    }
+}

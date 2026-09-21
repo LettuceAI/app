@@ -683,3 +683,8 @@ impl ModelSettingsLayer {
         self.stable_diffusion.validate()
     }
 }
+
+/// The model file of a local-runtime profile received from another device
+/// before a file was picked here: model files stay on the device that has
+/// them, so sync never carries their paths.
+pub const UNPICKED_LOCAL_MODEL_FILE: &str = "unpicked-local-model-file";

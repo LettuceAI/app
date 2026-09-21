@@ -1453,6 +1453,64 @@ pub(crate) fn sync_load_model_profile(
         .map_err(model_error)
 }
 
+fn runs_locally(connection: &Connection, profile: &ModelProfile) -> Result<bool, ModelRepositoryError> {
+    Ok(
+        sync_load_provider_account(connection, &profile.provider_account_id.to_string())?
+            .is_some_and(|account| {
+                matches!(
+                    account.protocol,
+                    ProviderProtocol::LlamaCpp | ProviderProtocol::StableDiffusion
+                )
+            }),
+    )
+}
+
+/// A model profile as sync exchanges it. The files a local runtime loads
+/// (the model, projector, draft model, encoders, VAE and LoRAs) and the
+/// installed runtime build are device-local and never travel, so the other
+/// device shows the model with its file still to pick.
+pub(crate) fn sync_exchanged_model_profile(
+    connection: &Connection,
+    mut profile: ModelProfile,
+) -> Result<ModelProfile, ModelRepositoryError> {
+    if !runs_locally(connection, &profile)? {
+        return Ok(profile);
+    }
+    lettuce_models::UNPICKED_LOCAL_MODEL_FILE.clone_into(&mut profile.external_model_id);
+    let llama = &mut profile.config.llama_cpp;
+    llama.mmproj_path = None;
+    llama.mtp_model_path = None;
+    let diffusion = &mut profile.config.stable_diffusion;
+    diffusion.base_loras = None;
+    let binding = &mut diffusion.cpp;
+    binding.text_encoder_path = None;
+    binding.vae_path = None;
+    binding.vision_encoder_path = None;
+    binding.runtime_release = None;
+    binding.runtime_asset = None;
+    binding.runtime_backend = None;
+    Ok(profile)
+}
+
+fn keep_device_paths(incoming: &mut ModelProfile, local: &ModelProfile) {
+    incoming.external_model_id.clone_from(&local.external_model_id);
+    let (llama, local_llama) = (&mut incoming.config.llama_cpp, &local.config.llama_cpp);
+    llama.mmproj_path.clone_from(&local_llama.mmproj_path);
+    llama.mtp_model_path.clone_from(&local_llama.mtp_model_path);
+    let (diffusion, local_diffusion) = (
+        &mut incoming.config.stable_diffusion,
+        &local.config.stable_diffusion,
+    );
+    diffusion.base_loras.clone_from(&local_diffusion.base_loras);
+    let (binding, local_binding) = (&mut diffusion.cpp, &local_diffusion.cpp);
+    binding.text_encoder_path.clone_from(&local_binding.text_encoder_path);
+    binding.vae_path.clone_from(&local_binding.vae_path);
+    binding.vision_encoder_path.clone_from(&local_binding.vision_encoder_path);
+    binding.runtime_release.clone_from(&local_binding.runtime_release);
+    binding.runtime_asset.clone_from(&local_binding.runtime_asset);
+    binding.runtime_backend.clone_from(&local_binding.runtime_backend);
+}
+
 /// Writes a synced model profile exactly; its provider account must exist.
 pub(crate) fn sync_upsert_model_profile(
     connection: &Connection,
@@ -1462,10 +1520,18 @@ pub(crate) fn sync_upsert_model_profile(
     if sync_load_provider_account(connection, &profile.provider_account_id.to_string())?.is_none() {
         return Err(ModelRepositoryError::AccountMissing);
     }
-    if sync_load_model_profile(connection, &profile.id.to_string())?.is_none() {
+    let Some(local) = sync_load_model_profile(connection, &profile.id.to_string())? else {
         insert_model_profile_row(connection, profile)?;
         return Ok(());
-    }
+    };
+    let mut kept;
+    let profile = if runs_locally(connection, profile)? && runs_locally(connection, &local)? {
+        kept = profile.clone();
+        keep_device_paths(&mut kept, &local);
+        &kept
+    } else {
+        profile
+    };
     let config = encode_versioned(&profile.config, MODEL_PROFILE_CONFIG_FORMAT_VERSION)
         .map_err(|_| ModelRepositoryError::InvalidData)?;
     connection.execute(
