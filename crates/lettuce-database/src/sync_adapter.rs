@@ -2469,6 +2469,9 @@ impl LocalChangeJournal for Database {
             let ids = ids(&tx).map_err(journal_apply_error)?;
             let latest = latest_journaled(&tx, codec.kind)?;
             for id in &ids {
+                if entity_deferred(&tx, codec.kind, id).map_err(storage)? {
+                    continue;
+                }
                 let Some(payload) = (codec.current)(&tx, id).map_err(journal_apply_error)? else {
                     continue;
                 };
@@ -2504,7 +2507,9 @@ impl LocalChangeJournal for Database {
             }
             for (id, base) in latest {
                 let Some(base) = base else { continue };
-                if ids.binary_search(&id).is_ok() {
+                if ids.binary_search(&id).is_ok()
+                    || entity_deferred(&tx, codec.kind, &id).map_err(storage)?
+                {
                     continue;
                 }
                 match &empty {

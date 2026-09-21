@@ -246,3 +246,6 @@ emptied binding list with a journaled history counts as present, so a
 concurrent edit is detected as a conflict. Known limit: revision CAS on local
 edits can be satisfied by a remote snapshot that reached the same revision
 number; an editor must reload after a sync.
+An entity with a deferred incoming change is skipped by the state scan: its
+local state is transient until the deferred change settles, and journaling it
+would override the origin's newer choice with a later local timestamp.
