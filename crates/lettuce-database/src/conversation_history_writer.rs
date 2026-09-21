@@ -55,9 +55,23 @@ pub(crate) enum HistoricalCreation<'a> {
     },
 }
 
-struct Evidence<'a> {
+pub(crate) struct Evidence<'a> {
     usage: BTreeMap<GenerationAttemptId, &'a UsageEvent>,
     runtime: BTreeMap<GenerationAttemptId, &'a lettuce_transfer::BackupGenerationAttemptRuntime>,
+}
+
+impl<'a> Evidence<'a> {
+    /// Usage events by attempt, without runtime records (dispatches, tools
+    /// and checkpoints stay on the device that ran the generation).
+    pub(crate) fn usage_only(usage: &'a [UsageEvent]) -> Self {
+        Self {
+            usage: usage
+                .iter()
+                .map(|event| (event.record.attempt_id, event))
+                .collect(),
+            runtime: BTreeMap::new(),
+        }
+    }
 }
 
 fn invalid(field: &'static str) -> ConversationRepositoryError {
@@ -459,7 +473,7 @@ pub(crate) fn set_branch_head(
     Ok(())
 }
 
-fn insert_message_with_turns(
+pub(crate) fn insert_message_with_turns(
     transaction: &Transaction<'_>,
     backup: &BackupMessage,
     turns: &[&GenerationTurn],
@@ -612,7 +626,7 @@ fn replay_retention(replay: Option<&ReplayArtifactRef>) -> Option<&'static str> 
     })
 }
 
-fn media_parts(
+pub(crate) fn media_parts(
     parts: &[MessagePart],
 ) -> Result<Vec<(i64, String, &'static str)>, ConversationRepositoryError> {
     parts
@@ -666,7 +680,7 @@ pub(crate) fn insert_origin(
     Ok(())
 }
 
-fn insert_turn(
+pub(crate) fn insert_turn(
     transaction: &Transaction<'_>,
     turn: &GenerationTurn,
 ) -> Result<(), ConversationRepositoryError> {
@@ -899,7 +913,7 @@ fn set_attempt_status(
     Ok(())
 }
 
-fn settle_turn(
+pub(crate) fn settle_turn(
     transaction: &Transaction<'_>,
     backup: Option<&BackupMessage>,
     turn: &GenerationTurn,

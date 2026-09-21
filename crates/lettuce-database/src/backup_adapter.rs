@@ -1921,6 +1921,48 @@ pub(crate) fn read_conversation_messages(
     read_backup_messages(transaction, conversation_id, &mut 0, &mut 0, &mut 0)
 }
 
+/// One message with its revisions and candidates.
+pub(crate) fn read_conversation_message(
+    transaction: &rusqlite::Transaction<'_>,
+    conversation_id: ConversationId,
+    message_id: lettuce_types::MessageId,
+) -> Result<Option<BackupMessage>, ProviderBackupSourceError> {
+    let mut statement = transaction
+        .prepare("SELECT m.conversation_id, m.id, m.branch_id, m.parent_message_id, m.author_participant_id, m.role, m.logical_time, m.effective_time, m.visibility, m.pinned, m.scene_edited, m.timeline_ordinal, m.active_revision_id, m.active_candidate_id, m.revision, m.created_at, m.updated_at FROM conversation_messages AS m WHERE m.conversation_id = ?1 AND m.id = ?2")
+        .map_err(backup_error)?;
+    let mut rows = statement
+        .query(params![conversation_id.to_string(), message_id.to_string()])
+        .map_err(backup_error)?;
+    let Some(row) = rows.next().map_err(backup_error)? else {
+        return Ok(None);
+    };
+    backup_message(transaction, conversation_id, row, &mut 0, &mut 0).map(Some)
+}
+
+/// The terminal generation turns that produced a message's candidates.
+pub(crate) fn read_candidate_turns(
+    transaction: &rusqlite::Transaction<'_>,
+    conversation_id: ConversationId,
+    message_id: lettuce_types::MessageId,
+) -> Result<Vec<lettuce_conversations::GenerationTurn>, ProviderBackupSourceError> {
+    let sql = format!(
+        "{} WHERE conversation_id = ?1 AND id IN (SELECT turn_id FROM conversation_message_candidates WHERE conversation_id = ?1 AND message_id = ?2) ORDER BY created_at, id",
+        crate::conversation_query::turn_select_sql()
+    );
+    let mut statement = transaction.prepare(&sql).map_err(backup_error)?;
+    statement
+        .query_map(
+            params![conversation_id.to_string(), message_id.to_string()],
+            |row| {
+                crate::conversation_query::hydrate_turn_row(transaction, row)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)
+            },
+        )
+        .map_err(backup_error)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(backup_error)
+}
+
 fn read_backup_messages(
     transaction: &rusqlite::Transaction<'_>,
     conversation_id: ConversationId,
@@ -1941,50 +1983,66 @@ fn read_backup_messages(
         .map_err(backup_error)?;
     let mut messages = Vec::new();
     while let Some(row) = rows.next().map_err(backup_error)? {
-        let (item, ordinal) = crate::conversation_query::message_row(transaction, row)
-            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
-        let revisions = read_backup_revisions(
+        messages.push(backup_message(
             transaction,
             conversation_id,
-            item.message.id,
+            row,
             revision_count,
-        )?;
-        let candidates = read_backup_candidates(
-            transaction,
-            conversation_id,
-            item.message.id,
             candidate_count,
-        )?;
-        let historical_media_revision_ids = read_ids(
-            transaction,
-            &format!(
-                "SELECT DISTINCT r.message_revision_id FROM revision_media_refs AS r JOIN conversation_message_revisions AS v ON v.id = r.message_revision_id WHERE r.conversation_id = '{conversation_id}' AND v.message_id = '{}' AND r.state = 'historical' ORDER BY 1",
-                item.message.id
-            ),
-        )?;
-        let historical_media_candidate_ids = read_ids(
-            transaction,
-            &format!(
-                "SELECT DISTINCT r.candidate_id FROM candidate_media_refs AS r JOIN conversation_message_candidates AS c ON c.id = r.candidate_id WHERE r.conversation_id = '{conversation_id}' AND c.message_id = '{}' AND r.state = 'historical' ORDER BY 1",
-                item.message.id
-            ),
-        )?;
-        messages.push(BackupMessage {
-            message: item.message,
-            timeline_ordinal: u64::try_from(ordinal)
-                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
-            initial_origin: item.initial_origin,
-            revisions,
-            candidates,
-            historical_media_revision_ids,
-            historical_media_candidate_ids,
-        });
+        )?);
     }
     if messages.len() > remaining {
         return Err(ProviderBackupSourceError::InvalidData);
     }
     *message_count += messages.len();
     Ok(messages)
+}
+
+fn backup_message(
+    transaction: &rusqlite::Transaction<'_>,
+    conversation_id: ConversationId,
+    row: &rusqlite::Row<'_>,
+    revision_count: &mut usize,
+    candidate_count: &mut usize,
+) -> Result<BackupMessage, ProviderBackupSourceError> {
+    let (item, ordinal) = crate::conversation_query::message_row(transaction, row)
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+    let revisions = read_backup_revisions(
+        transaction,
+        conversation_id,
+        item.message.id,
+        revision_count,
+    )?;
+    let candidates = read_backup_candidates(
+        transaction,
+        conversation_id,
+        item.message.id,
+        candidate_count,
+    )?;
+    let historical_media_revision_ids = read_ids(
+        transaction,
+        &format!(
+            "SELECT DISTINCT r.message_revision_id FROM revision_media_refs AS r JOIN conversation_message_revisions AS v ON v.id = r.message_revision_id WHERE r.conversation_id = '{conversation_id}' AND v.message_id = '{}' AND r.state = 'historical' ORDER BY 1",
+            item.message.id
+        ),
+    )?;
+    let historical_media_candidate_ids = read_ids(
+        transaction,
+        &format!(
+            "SELECT DISTINCT r.candidate_id FROM candidate_media_refs AS r JOIN conversation_message_candidates AS c ON c.id = r.candidate_id WHERE r.conversation_id = '{conversation_id}' AND c.message_id = '{}' AND r.state = 'historical' ORDER BY 1",
+            item.message.id
+        ),
+    )?;
+    Ok(BackupMessage {
+        message: item.message,
+        timeline_ordinal: u64::try_from(ordinal)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+        initial_origin: item.initial_origin,
+        revisions,
+        candidates,
+        historical_media_revision_ids,
+        historical_media_candidate_ids,
+    })
 }
 
 fn read_backup_revisions(

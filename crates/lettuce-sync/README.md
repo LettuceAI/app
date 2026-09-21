@@ -261,5 +261,25 @@ branch heads, the active branch and timeline ordinals stay device-local, so a
 new message never rewrites the root. A new root creates the conversation with
 its root branch, initial messages and origins, snapshot references, memory
 binding and a create operation; an existing one takes title, lifecycle,
-participants and settings. Messages, other branches and the active branch
-follow in S8a-3.
+participants and settings.
+
+Messages (`conversation.message`, entity id `<conversation>:<message>`) carry
+every revision and candidate, the terminal turns that produced the
+candidates and those turns' settled usage events. Timeline ordinals, message
+revisions and update times, provider replay artifacts (device-local provider
+caches) and the retry link to a failed turn that produced nothing stay on the
+device that wrote them; runtime records (dispatches, tools, checkpoints) are
+not exchanged. Revision sequences and candidate ordinals are numbered by each
+device (concurrent edits or regenerations would otherwise collide), so the
+exchanged form orders both by creation time and a merge appends new ones after
+the local maximum. A message with a running turn on it is skipped until it
+settles, and one whose snapshot exceeds the payload limit is not synced.
+Merging unions revisions, candidates and turns, takes the render pointer,
+author and flags from the incoming snapshot, never lifts a tombstone and sets
+media references active or historical as the snapshot says. A new message
+waits for its conversation, branch, parent, participants, media, prompt
+documents and lorebooks, takes the next local timeline ordinal and becomes its branch head
+only when the local head is its parent (or the branch is empty and it
+follows the fork point); a concurrent message stays off the path until the
+fork rule (S8b). Initial messages are only created by their root. Other
+branches and the active branch follow in S8a-3.

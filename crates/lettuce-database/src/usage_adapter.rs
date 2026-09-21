@@ -451,6 +451,21 @@ pub(crate) fn load_all_usage_in(
         .collect()
 }
 
+pub(crate) fn load_turn_usage_in(
+    transaction: &rusqlite::Transaction<'_>,
+    turn_id: &str,
+) -> Result<Vec<UsageEvent>, UsageLedgerError> {
+    transaction
+        .prepare(&format!(
+            "{SELECT_EVENT} WHERE turn_id = ?1 ORDER BY recorded_at,id"
+        ))
+        .map_err(|_| UsageLedgerError::Storage)?
+        .query_map([turn_id], hydrate)
+        .map_err(|_| UsageLedgerError::Storage)?
+        .map(|row| row.map_err(|_| UsageLedgerError::Storage)?.decode())
+        .collect()
+}
+
 /// Inserts one usage event on the caller's transaction; the historical
 /// conversation writer uses it for events it restores with their ids.
 pub(crate) fn insert_usage_event_in(

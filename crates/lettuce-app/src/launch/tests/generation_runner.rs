@@ -4236,3 +4236,148 @@ async fn time_aware_generation_strips_echoed_time_stamps_before_finalizing() {
         }]
     );
 }
+
+#[tokio::test]
+async fn generated_messages_sync_with_their_turns_and_usage() {
+    let a = database();
+    let b = database();
+    let scenario = scenario(&a, false, "synced-generation");
+    let work = admit_and_claim(&a, &scenario, 1_015);
+    let inference = scripted(vec![text_outcome("synced-1", "Synced reply", 20, 5)]);
+    let result = ConversationGenerationJobRunner::new(&a, &inference)
+        .run(&work, input(&scenario), TimestampMillis::new(1_020))
+        .await
+        .expect("run");
+    assert_eq!(result.turn.status, GenerationTurnStatus::Succeeded);
+
+    sync_prompts(&a, &b, 2_000);
+
+    let conversation = ConversationReader::get(&a, scenario.conversation_id).expect("a");
+    let timeline = |database: &Database| {
+        ConversationReader::timeline_page(
+            database,
+            scenario.conversation_id,
+            conversation.conversation.active_branch_id,
+            &lettuce_types::PageRequest::default(),
+        )
+        .expect("timeline")
+        .items
+    };
+    let on_a = timeline(&a);
+    assert!(on_a.len() >= 2);
+    assert_eq!(timeline(&b), on_a);
+    assert_eq!(
+        ConversationReader::get_turn(&b, scenario.turn_id).expect("b turn"),
+        ConversationReader::get_turn(&a, scenario.turn_id).expect("a turn")
+    );
+    assert_eq!(
+        UsageLedger::get(&b, result.usage_event_id).expect("b usage"),
+        UsageLedger::get(&a, result.usage_event_id).expect("a usage")
+    );
+
+    let reply = on_a.last().expect("reply").message.id;
+    lettuce_conversations::ConversationRepository::edit_message(
+        &b,
+        &lettuce_conversations::EditMessage {
+            conversation_id: scenario.conversation_id,
+            message_id: reply,
+            expected_revision: ConversationReader::get(&b, scenario.conversation_id)
+                .expect("b conversation")
+                .conversation
+                .revision,
+            operation: OperationToken {
+                key: key("synced-edit"),
+                request_digest: ContentHash::parse("ef".repeat(32)).expect("digest"),
+            },
+            draft: lettuce_conversations::MessageEditDraft {
+                parts: vec![MessagePart::Text {
+                    text: "Edited on b".into(),
+                }],
+                visibility: MessageVisibility::Visible,
+                pinned: true,
+                scene_edited: false,
+            },
+        },
+        TimestampMillis::new(2_500),
+    )
+    .expect("edit on b");
+    sync_prompts(&b, &a, 3_000);
+    let shared = |database: &Database| {
+        timeline(database)
+            .into_iter()
+            .map(|mut item| {
+                item.message.revision = Revision::INITIAL;
+                item.message.updated_at = item.message.created_at;
+                if let Some(revision) = &mut item.active_revision {
+                    revision.sequence = Revision::INITIAL;
+                }
+                item
+            })
+            .collect::<Vec<_>>()
+    };
+    let edited = shared(&a);
+    assert_eq!(edited, shared(&b));
+    assert!(edited.last().expect("reply").message.pinned);
+    assert_eq!(
+        edited.last().expect("reply").active_revision.as_ref().map(|revision| &revision.parts),
+        Some(&vec![MessagePart::Text {
+            text: "Edited on b".into()
+        }])
+    );
+    let edit = |database: &Database, operation: &str, text: &str, at: i64| {
+        lettuce_conversations::ConversationRepository::edit_message(
+            database,
+            &lettuce_conversations::EditMessage {
+                conversation_id: scenario.conversation_id,
+                message_id: reply,
+                expected_revision: ConversationReader::get(database, scenario.conversation_id)
+                    .expect("conversation")
+                    .conversation
+                    .revision,
+                operation: OperationToken {
+                    key: key(operation),
+                    request_digest: ContentHash::parse("ef".repeat(32)).expect("digest"),
+                },
+                draft: lettuce_conversations::MessageEditDraft {
+                    parts: vec![MessagePart::Text { text: text.into() }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+            },
+            TimestampMillis::new(at),
+        )
+        .expect("concurrent edit");
+    };
+    edit(&a, "concurrent-a", "From a", 3_100);
+    edit(&b, "concurrent-b", "From b", 3_200);
+    sync_prompts(&a, &b, 3_300);
+    sync_prompts(&b, &a, 3_400);
+    sync_prompts(&a, &b, 3_500);
+    let merged = shared(&a);
+    assert_eq!(merged, shared(&b));
+    assert_eq!(
+        ConversationReader::page_message_revisions(
+            &a,
+            reply,
+            &lettuce_types::PageRequest::default(),
+        )
+        .expect("revisions")
+        .items
+        .len(),
+        4
+    );
+    {
+        use lettuce_sync::LocalChangeJournal;
+        assert_eq!(
+            a.journal_current_state(TimestampMillis::new(4_000))
+                .expect("a rescan"),
+            0
+        );
+        assert_eq!(
+            b.journal_current_state(TimestampMillis::new(4_000))
+                .expect("b rescan"),
+            0
+        );
+    }
+}
