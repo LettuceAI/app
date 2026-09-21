@@ -71,7 +71,7 @@ use lettuce_settings::{
     GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
     SecretOwnerId, SecretRef, StoredGlobalSettings,
 };
-use lettuce_sync::{MediaSyncError, PersonaMediaSyncRepository};
+use lettuce_sync::{MediaSyncError, MediaSyncRepository};
 use lettuce_types::{
     AssetId, ContentHash, MediaBlobId, ModelProfileId, Page, PageRequest, ProviderAccountId,
     Revision, TimestampMillis,
@@ -1993,34 +1993,8 @@ impl MediaAssetRepository for Database {
     }
 }
 
-impl PersonaMediaSyncRepository for Database {
-    fn referenced_persona_media(&self) -> Result<Vec<AssetId>, MediaSyncError> {
-        let connection = self.connection().map_err(|_| MediaSyncError::Storage)?;
-        let mut statement = connection
-            .prepare("SELECT DISTINCT asset_id FROM persona_media ORDER BY asset_id LIMIT ?1")
-            .map_err(|_| MediaSyncError::Storage)?;
-        let rows = statement
-            .query_map(
-                [i64::try_from(lettuce_sync::MAX_SYNC_MEDIA_ASSETS + 1)
-                    .map_err(|_| MediaSyncError::Storage)?],
-                |row| row.get::<_, String>(0),
-            )
-            .map_err(|_| MediaSyncError::Storage)?;
-        let mut assets = Vec::new();
-        for row in rows {
-            assets.push(
-                row.map_err(|_| MediaSyncError::Storage)?
-                    .parse()
-                    .map_err(|_| MediaSyncError::Storage)?,
-            );
-        }
-        if assets.len() > lettuce_sync::MAX_SYNC_MEDIA_ASSETS {
-            return Err(MediaSyncError::LimitExceeded);
-        }
-        Ok(assets)
-    }
-
-    fn pending_persona_media(
+impl MediaSyncRepository for Database {
+    fn pending_media(
         &self,
     ) -> Result<Vec<lettuce_sync::CanonicalMediaAsset>, MediaSyncError> {
         let connection = self.connection().map_err(|_| MediaSyncError::Storage)?;
@@ -2040,7 +2014,7 @@ impl PersonaMediaSyncRepository for Database {
                 params![
                     lettuce_sync::MEDIA_ASSET_SYNC_SCHEMA,
                     i64::from(lettuce_sync::MEDIA_ASSET_SYNC_VERSION),
-                    i64::try_from(lettuce_sync::MAX_SYNC_MEDIA_ASSETS + 1)
+                    i64::try_from(lettuce_sync::MAX_SYNC_MEDIA_ASSETS)
                         .map_err(|_| MediaSyncError::Storage)?
                 ],
                 |row| row.get::<_, Vec<u8>>(0),
@@ -2054,9 +2028,6 @@ impl PersonaMediaSyncRepository for Database {
             .map_err(|_| MediaSyncError::Storage)?;
             asset.validate().map_err(|_| MediaSyncError::Storage)?;
             assets.push(asset);
-        }
-        if assets.len() > lettuce_sync::MAX_SYNC_MEDIA_ASSETS {
-            return Err(MediaSyncError::LimitExceeded);
         }
         assets.sort_by_key(|value| value.asset.id);
         for pair in assets.windows(2) {

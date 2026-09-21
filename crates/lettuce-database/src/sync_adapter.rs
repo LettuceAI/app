@@ -1206,6 +1206,77 @@ fn latest_journaled(
     Ok(latest)
 }
 
+pub(crate) fn media_asset_journaled(
+    connection: &Connection,
+    id: &str,
+) -> Result<bool, LocalChangeJournalError> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_changes
+             WHERE entity_kind = 'media_asset' AND entity_id = ?1)",
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(storage)
+}
+
+/// Journals every ready media asset a synced aggregate references and that
+/// was never journaled. Assets are immutable in sync (insert only): later
+/// local metadata changes such as retention stay device-local.
+fn journal_referenced_media(
+    tx: &Transaction<'_>,
+    now: TimestampMillis,
+) -> Result<usize, LocalChangeJournalError> {
+    let ids = tx
+        .prepare(
+            "SELECT asset_id FROM persona_media
+             UNION SELECT asset_id FROM character_media
+             UNION SELECT asset_id FROM character_presentation_asset_refs
+             UNION SELECT asset_id FROM scene_assets
+             ORDER BY asset_id",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(storage)?;
+    let mut journaled = 0;
+    for id in ids {
+        if media_asset_journaled(tx, &id)? {
+            continue;
+        }
+        let asset_id = id.parse::<lettuce_types::AssetId>().map_err(corrupt)?;
+        let Some(asset) = crate::load_asset_with_blob(tx, asset_id).map_err(storage)? else {
+            continue;
+        };
+        let blob = tx
+            .query_row(
+                &format!(
+                    "SELECT {} FROM media_blobs WHERE id=?1",
+                    crate::MEDIA_BLOB_COLUMNS
+                ),
+                [asset.blob_id.to_string()],
+                crate::media_from_row,
+            )
+            .map_err(storage)?;
+        if blob.state != lettuce_media::BlobState::Ready {
+            continue;
+        }
+        let request =
+            lettuce_sync::media_asset_insert_change(&lettuce_media::SyncMediaAsset { asset, blob })
+                .map_err(corrupt)?;
+        record_local_change_in(
+            tx,
+            lettuce_sync::media_asset_create_operation(asset_id),
+            &request,
+            now,
+        )?;
+        journaled += 1;
+    }
+    Ok(journaled)
+}
+
 fn journal_state_change(
     tx: &Transaction<'_>,
     kind: &str,
@@ -1401,9 +1472,10 @@ fn apply_media_asset_change(
             crate::media_from_row,
         )
         .map_err(|_| ApplyOneError::Storage)?;
-    let mut expected = incoming.asset;
-    expected.blob_id = current.blob_id;
-    if current != expected
+    let expected = incoming.asset;
+    if current.kind != expected.kind
+        || current.origin != expected.origin
+        || current.created_at != expected.created_at
         || blob.content_hash != incoming.blob.content_hash
         || blob.kind != incoming.blob.kind
         || blob.mime_type != incoming.blob.mime_type
@@ -1674,7 +1746,7 @@ impl LocalChangeJournal for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        let mut journaled = 0usize;
+        let mut journaled = journal_referenced_media(&tx, now)?;
         let mut present = Vec::with_capacity(SCANNED_CODECS.len());
         for codec in SCANNED_CODECS {
             let ids = codec.ids.ok_or(LocalChangeJournalError::Corrupt)?;

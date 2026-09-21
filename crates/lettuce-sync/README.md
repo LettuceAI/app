@@ -144,3 +144,15 @@ concurrent update on both sides; a delete this device must refuse (the entity
 is still referenced here) is answered with a fresh insert so every device
 keeps it. The persona conflict listing only lists persona conflicts; other
 kinds keep their conflict evidence without a resolution surface yet.
+
+Media without a catalog (sync S3a, protocol version 2). The media phase no
+longer exchanges a catalog of every referenced asset (capped at 256, which
+cannot hold a character library): each side fetches, by content hash, the
+blobs of the media assets its pending incoming batches wait for (their
+payloads already carry the full asset and blob metadata), then exchanges
+`MediaDone` while still serving the peer's blob requests. The state scan
+journals every ready asset referenced by personas, characters, their
+presentation and scene assets once (insert only, same deterministic operation
+as persona journaling); later local metadata such as retention stays
+device-local, and an incoming asset insert is checked only against identity
+and blob fields.

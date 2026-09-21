@@ -3,20 +3,11 @@ use lettuce_jobs::handle::CancellationToken;
 use lettuce_media::{
     LocalSyncMediaStore, MediaAssetRepository, MediaBlobRepository, MediaStoreError,
 };
-use lettuce_sync::{
-    MAX_SYNC_BLOB_CHUNK_BYTES, MediaSyncError, PersonaMediaSyncRepository, SyncBlobChunk,
-    SyncMediaCatalog,
-};
+use lettuce_sync::{MAX_SYNC_BLOB_CHUNK_BYTES, MediaSyncError, MediaSyncRepository, SyncBlobChunk};
 use lettuce_types::{ContentHash, TimestampMillis};
 
 #[async_trait]
 pub trait AuthenticatedMediaSyncTransport: Send {
-    async fn exchange_media_catalog(
-        &mut self,
-        local: SyncMediaCatalog,
-        cancellation: &CancellationToken,
-    ) -> Result<SyncMediaCatalog, MediaSyncTransportError>;
-
     async fn fetch_blob_chunk(
         &mut self,
         content_hash: &ContentHash,
@@ -24,6 +15,13 @@ pub trait AuthenticatedMediaSyncTransport: Send {
         max_bytes: usize,
         cancellation: &CancellationToken,
     ) -> Result<SyncBlobChunk, MediaSyncTransportError>;
+
+    /// Ends the media phase: tells the peer this side fetched everything and
+    /// keeps serving its blob requests until the peer says the same.
+    async fn finish_media(
+        &mut self,
+        cancellation: &CancellationToken,
+    ) -> Result<(), MediaSyncTransportError>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -38,7 +36,6 @@ pub enum MediaSyncTransportError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MediaSyncReport {
-    pub advertised_assets: usize,
     pub received_assets: usize,
     pub received_blobs: usize,
     pub received_bytes: u64,
@@ -59,7 +56,7 @@ impl<'a, R: ?Sized, BR, AR> SyncMediaCoordinator<'a, R, BR, AR> {
 
 impl<R, BR, AR> SyncMediaCoordinator<'_, R, BR, AR>
 where
-    R: PersonaMediaSyncRepository + ?Sized,
+    R: MediaSyncRepository + ?Sized,
     BR: MediaBlobRepository,
     AR: MediaAssetRepository,
 {
@@ -73,42 +70,18 @@ where
         T: AuthenticatedMediaSyncTransport + ?Sized,
     {
         check_cancelled(cancellation)?;
-        let local_ids = self
-            .repository
-            .referenced_persona_media()
-            .map_err(SyncMediaExchangeError::Catalog)?;
-        let local_assets = local_ids
-            .into_iter()
-            .map(|id| self.media.snapshot(id))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(SyncMediaExchangeError::Media)?;
-        let local_catalog =
-            SyncMediaCatalog::new(local_assets).map_err(SyncMediaExchangeError::Catalog)?;
-        let advertised_assets = local_catalog.assets().len();
-        let remote = transport
-            .exchange_media_catalog(local_catalog, cancellation)
-            .await
-            .map_err(SyncMediaExchangeError::Transport)?;
         let pending = self
             .repository
-            .pending_persona_media()
+            .pending_media()
             .map_err(SyncMediaExchangeError::Catalog)?;
         let mut report = MediaSyncReport {
-            advertised_assets,
             received_assets: 0,
             received_blobs: 0,
             received_bytes: 0,
         };
         let mut completed_hashes = Vec::<ContentHash>::new();
-        for expected in pending {
-            let asset = remote
-                .assets()
-                .iter()
-                .find(|asset| asset.asset.id == expected.asset.id)
-                .filter(|asset| **asset == expected)
-                .ok_or(SyncMediaExchangeError::Catalog(
-                    MediaSyncError::InvalidAsset,
-                ))?;
+        for expected in &pending {
+            let asset = expected;
             check_cancelled(cancellation)?;
             let mut offset = self
                 .media
@@ -159,6 +132,11 @@ where
                 report.received_blobs = report.received_blobs.saturating_add(1);
             }
         }
+        check_cancelled(cancellation)?;
+        transport
+            .finish_media(cancellation)
+            .await
+            .map_err(SyncMediaExchangeError::Transport)?;
         Ok(report)
     }
 }
@@ -211,13 +189,11 @@ mod tests {
 
     #[async_trait]
     impl AuthenticatedMediaSyncTransport for SourceTransport<'_> {
-        async fn exchange_media_catalog(
+        async fn finish_media(
             &mut self,
-            _: SyncMediaCatalog,
             _: &CancellationToken,
-        ) -> Result<SyncMediaCatalog, MediaSyncTransportError> {
-            SyncMediaCatalog::new(self.catalog.clone())
-                .map_err(|_| MediaSyncTransportError::Protocol)
+        ) -> Result<(), MediaSyncTransportError> {
+            Ok(())
         }
 
         async fn fetch_blob_chunk(

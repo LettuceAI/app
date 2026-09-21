@@ -11,8 +11,8 @@ use lettuce_media::{LocalSyncMediaStore, MediaAssetRepository, MediaBlobReposito
 use lettuce_sync::{
     CANONICAL_CHANGE_VERSION, CanonicalChange, CanonicalPayload, CausalFrontier, HybridTimestamp,
     MAX_FRONTIER_DEVICES, MAX_SYNC_BLOB_CHUNK_BYTES, SyncBatchAcknowledgement, SyncBlobChunk,
-    SyncChangeBatch, SyncChangeFrame, SyncDeviceId, SyncEntity, SyncHello, SyncMediaCatalog,
-    SyncSessionError, SyncTransferLimits,
+    SyncChangeBatch, SyncChangeFrame, SyncDeviceId, SyncEntity, SyncHello, SyncSessionError,
+    SyncTransferLimits,
 };
 use lettuce_types::{ContentHash, TimestampMillis};
 use rand::{RngCore, rngs::OsRng};
@@ -435,21 +435,20 @@ impl AuthenticatedSyncTransport for AuthenticatedTcpSyncTransport<'_> {
 
 #[async_trait]
 impl AuthenticatedMediaSyncTransport for AuthenticatedTcpSyncTransport<'_> {
-    async fn exchange_media_catalog(
+    async fn finish_media(
         &mut self,
-        local: SyncMediaCatalog,
         cancellation: &CancellationToken,
-    ) -> Result<SyncMediaCatalog, MediaSyncTransportError> {
+    ) -> Result<(), MediaSyncTransportError> {
         match self
             .exchange(
-                SyncWireFrame::MediaCatalog(local),
-                ExpectedFrame::MediaCatalog,
+                SyncWireFrame::MediaDone,
+                ExpectedFrame::MediaDone,
                 cancellation,
             )
             .await
             .map_err(map_media_error)?
         {
-            SyncWireFrame::MediaCatalog(value) => Ok(value),
+            SyncWireFrame::MediaDone => Ok(()),
             _ => Err(MediaSyncTransportError::Protocol),
         }
     }
@@ -508,7 +507,7 @@ enum SyncWireFrame {
     Frontier(CausalFrontier),
     Changes(SyncChangeFrame),
     Acknowledgement(SyncBatchAcknowledgement),
-    MediaCatalog(SyncMediaCatalog),
+    MediaDone,
     BlobRequest {
         content_hash: ContentHash,
         offset: u64,
@@ -523,7 +522,7 @@ enum ExpectedFrame {
     Frontier,
     Changes,
     Acknowledgement,
-    MediaCatalog,
+    MediaDone,
     BlobChunk,
 }
 
@@ -535,7 +534,7 @@ impl ExpectedFrame {
                 | (Self::Frontier, SyncWireFrame::Frontier(_))
                 | (Self::Changes, SyncWireFrame::Changes(_))
                 | (Self::Acknowledgement, SyncWireFrame::Acknowledgement(_))
-                | (Self::MediaCatalog, SyncWireFrame::MediaCatalog(_))
+                | (Self::MediaDone, SyncWireFrame::MediaDone)
                 | (Self::BlobChunk, SyncWireFrame::BlobChunk(_))
         )
     }
@@ -890,15 +889,7 @@ fn validate_wire_frame(frame: &SyncWireFrame) -> Result<(), SyncPeerTransportErr
         SyncWireFrame::Frontier(value) => validate_frontier(value),
         SyncWireFrame::Changes(value) => validate_change_frame(value),
         SyncWireFrame::Acknowledgement(value) => validate_frontier(&value.frontier),
-        SyncWireFrame::MediaCatalog(value) => {
-            let validated = SyncMediaCatalog::new(value.assets().to_vec())
-                .map_err(|_| SyncPeerTransportError::Protocol)?;
-            if &validated == value {
-                Ok(())
-            } else {
-                Err(SyncPeerTransportError::Protocol)
-            }
-        }
+        SyncWireFrame::MediaDone => Ok(()),
         SyncWireFrame::BlobRequest {
             content_hash,
             max_bytes,

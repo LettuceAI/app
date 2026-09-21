@@ -355,6 +355,9 @@ fn record_persona_media_assets(
     ids.sort_unstable();
     ids.dedup();
     for id in ids {
+        if crate::sync_adapter::media_asset_journaled(tx, &id.to_string()).map_err(sync_error)? {
+            continue;
+        }
         let asset = crate::load_asset_with_blob(tx, id)
             .map_err(db_error)?
             .ok_or(RepositoryError::NotFound)?;
