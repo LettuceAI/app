@@ -4381,3 +4381,124 @@ async fn generated_messages_sync_with_their_turns_and_usage() {
         );
     }
 }
+
+async fn send_and_generate(
+    database: &Database,
+    scenario: &Scenario,
+    prefix: &str,
+    reply: &str,
+    at: i64,
+) -> GenerationTurnId {
+    let conversation = ConversationReader::get(database, scenario.conversation_id)
+        .expect("conversation")
+        .conversation;
+    let sent = database
+        .begin_send(
+            &direct_send_command(&conversation, &format!("{prefix}-send"), prefix),
+            TimestampMillis::new(at),
+        )
+        .expect("send")
+        .value;
+    let turn = Scenario {
+        conversation_id: scenario.conversation_id,
+        turn_id: sent.turn.id,
+        attempt_id: sent.attempt.id,
+        model: scenario.model.clone(),
+        profile: scenario.profile.clone(),
+        space_id: scenario.space_id,
+    };
+    let work = admit_and_claim(database, &turn, at + 1);
+    let inference = scripted(vec![text_outcome(prefix, reply, 10, 5)]);
+    let result = ConversationGenerationJobRunner::new(database, &inference)
+        .run(&work, input(&turn), TimestampMillis::new(at + 5))
+        .await
+        .expect("run");
+    assert_eq!(result.turn.status, GenerationTurnStatus::Succeeded);
+    turn.turn_id
+}
+
+fn branch_timeline(
+    database: &Database,
+    conversation_id: ConversationId,
+    branch_id: lettuce_types::ConversationBranchId,
+) -> Vec<lettuce_conversations::TimelineItem> {
+    ConversationReader::timeline_page(
+        database,
+        conversation_id,
+        branch_id,
+        &lettuce_types::PageRequest::default(),
+    )
+    .expect("timeline")
+    .items
+    .into_iter()
+    .map(|mut item| {
+        item.message.revision = Revision::INITIAL;
+        item.message.updated_at = item.message.created_at;
+        item
+    })
+    .collect()
+}
+
+fn assert_rescans_are_empty(databases: &[&Database], at: i64) {
+    use lettuce_sync::LocalChangeJournal;
+    for database in databases {
+        assert_eq!(
+            database
+                .journal_current_state(TimestampMillis::new(at))
+                .expect("rescan"),
+            0
+        );
+    }
+}
+
+#[tokio::test]
+async fn forked_branches_sync_with_their_messages() {
+    let a = database();
+    let b = database();
+    let scenario = scenario(&a, false, "synced-fork");
+    let work = admit_and_claim(&a, &scenario, 1_015);
+    ConversationGenerationJobRunner::new(&a, &scripted(vec![text_outcome("fork-0", "First", 10, 5)]))
+        .run(&work, input(&scenario), TimestampMillis::new(1_020))
+        .await
+        .expect("run");
+    let conversation = ConversationReader::get(&a, scenario.conversation_id)
+        .expect("conversation")
+        .conversation;
+    let root = conversation.active_branch_id;
+    let user_message = branch_timeline(&a, scenario.conversation_id, root)
+        .into_iter()
+        .find(|item| item.message.role == MessageRole::User)
+        .expect("user message")
+        .message
+        .id;
+    let fork = a
+        .fork_branch(
+            &lettuce_conversations::ForkBranch {
+                conversation_id: scenario.conversation_id,
+                source_branch_id: root,
+                at_message_id: Some(user_message),
+                expected_revision: conversation.revision,
+                operation: OperationToken {
+                    key: key("synced-fork-branch"),
+                    request_digest: ContentHash::parse("fa".repeat(32)).expect("digest"),
+                },
+            },
+            TimestampMillis::new(1_100),
+        )
+        .expect("fork")
+        .value
+        .branch
+        .id;
+    send_and_generate(&a, &scenario, "on-fork", "Fork reply", 1_200).await;
+
+    sync_prompts(&a, &b, 2_000);
+
+    let on_a = branch_timeline(&a, scenario.conversation_id, fork);
+    assert!(on_a.len() >= 3);
+    assert_eq!(branch_timeline(&b, scenario.conversation_id, fork), on_a);
+    assert_eq!(
+        branch_timeline(&b, scenario.conversation_id, root),
+        branch_timeline(&a, scenario.conversation_id, root)
+    );
+    assert_rescans_are_empty(&[&a, &b], 3_000);
+}

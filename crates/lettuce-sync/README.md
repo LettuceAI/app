@@ -281,5 +281,11 @@ waits for its conversation, branch, parent, participants, media, prompt
 documents and lorebooks, takes the next local timeline ordinal and becomes its branch head
 only when the local head is its parent (or the branch is empty and it
 follows the fork point); a concurrent message stays off the path until the
-fork rule (S8b). Initial messages are only created by their root. Other
-branches and the active branch follow in S8a-3.
+fork rule (S8b). Initial messages are only created by their root.
+
+Forked branches (`conversation.branch`, entity id `<conversation>:<branch>`)
+are insert-only: no mutation changes a branch after creation. The exchanged
+form leaves the head, revision and update time local (the head follows the
+messages that arrive on the branch), and a branch waits for its fork message.
+Which branch a conversation shows stays device-local, so each device keeps
+viewing the branch its user chose.

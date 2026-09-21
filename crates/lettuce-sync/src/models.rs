@@ -119,3 +119,7 @@ pub const CONVERSATION_SYNC_VERSION: u32 = 1;
 pub const CONVERSATION_MESSAGE_SYNC_KIND: &str = "conversation_message";
 pub const CONVERSATION_MESSAGE_SYNC_SCHEMA: &str = "conversation.message";
 pub const CONVERSATION_MESSAGE_SYNC_VERSION: u32 = 1;
+
+pub const CONVERSATION_BRANCH_SYNC_KIND: &str = "conversation_branch";
+pub const CONVERSATION_BRANCH_SYNC_SCHEMA: &str = "conversation.branch";
+pub const CONVERSATION_BRANCH_SYNC_VERSION: u32 = 1;

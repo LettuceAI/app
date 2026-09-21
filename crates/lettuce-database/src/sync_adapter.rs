@@ -875,6 +875,11 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::CONVERSATION_SYNC_VERSION,
         )
         | (
+            lettuce_sync::CONVERSATION_BRANCH_SYNC_KIND,
+            lettuce_sync::CONVERSATION_BRANCH_SYNC_SCHEMA,
+            lettuce_sync::CONVERSATION_BRANCH_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::CONVERSATION_MESSAGE_SYNC_KIND,
             lettuce_sync::CONVERSATION_MESSAGE_SYNC_SCHEMA,
             lettuce_sync::CONVERSATION_MESSAGE_SYNC_VERSION,
@@ -1627,6 +1632,55 @@ const CONVERSATION_CODEC: SnapshotCodec = SnapshotCodec {
     delete: None,
 };
 
+fn decode_branch(
+    id: &str,
+    bytes: &[u8],
+) -> Result<lettuce_conversations::ConversationBranch, ApplyOneError> {
+    let branch: lettuce_conversations::ConversationBranch =
+        serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+    if crate::conversation_sync_adapter::sync_branch_id(id)
+        != Some((branch.conversation_id, branch.id))
+        || branch.parent_branch_id.is_none()
+    {
+        return Err(ApplyOneError::Corrupt);
+    }
+    Ok(branch)
+}
+
+const CONVERSATION_BRANCH_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::CONVERSATION_BRANCH_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: None,
+    decode: |id, bytes| decode_branch(id, bytes).map(|_| ()),
+    current: |tx, id| {
+        let (conversation_id, branch_id) =
+            crate::conversation_sync_adapter::sync_branch_id(id).ok_or(ApplyOneError::Corrupt)?;
+        crate::conversation_sync_adapter::sync_load_branch(tx, conversation_id, branch_id)
+            .map_err(conversation_apply_error)?
+            .map(|branch| {
+                CanonicalPayload::new(
+                    lettuce_sync::CONVERSATION_BRANCH_SYNC_SCHEMA,
+                    lettuce_sync::CONVERSATION_BRANCH_SYNC_VERSION,
+                    serde_json::to_vec(&branch).map_err(|_| ApplyOneError::Corrupt)?,
+                )
+                .map_err(|_| ApplyOneError::Corrupt)
+            })
+            .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        let branch = decode_branch(id, bytes)?;
+        crate::conversation_sync_adapter::sync_insert_branch(tx, &branch)
+            .map_err(conversation_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::conversation_sync_adapter::sync_branch_ids(connection)
+            .map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: None,
+};
+
 fn decode_message(
     id: &str,
     bytes: &[u8],
@@ -1703,7 +1757,7 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 14] = [
+const SCANNED_CODECS: [&SnapshotCodec; 15] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -1717,6 +1771,7 @@ const SCANNED_CODECS: [&SnapshotCodec; 14] = [
     &PERSONA_BINDINGS_CODEC,
     &GROUP_BINDINGS_CODEC,
     &CONVERSATION_CODEC,
+    &CONVERSATION_BRANCH_CODEC,
     &CONVERSATION_MESSAGE_CODEC,
 ];
 

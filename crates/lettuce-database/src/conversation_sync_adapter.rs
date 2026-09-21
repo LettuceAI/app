@@ -14,7 +14,7 @@ use lettuce_conversations::{
     MessageRevision, MessageVisibility, OperationToken, ProtectedSnapshotRef, SnapshotSelection,
 };
 use lettuce_transfer::{BackupConversation, BackupMessage};
-use lettuce_types::{CharacterId, ConversationId, MessageId, Revision};
+use lettuce_types::{CharacterId, ConversationBranchId, ConversationId, MessageId, Revision};
 use lettuce_usage::UsageEvent;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
@@ -807,5 +807,76 @@ fn merge_message(
             ],
         )
         .map_err(crate::conversation_mutation_kernel::map_constraint)?;
+    Ok(())
+}
+
+pub(crate) fn sync_branch_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
+    connection
+        .prepare(
+            "SELECT conversation_id || ':' || id FROM conversation_branches WHERE parent_branch_id IS NOT NULL ORDER BY conversation_id, created_at, id",
+        )?
+        .query_map([], |row| row.get(0))?
+        .collect()
+}
+
+pub(crate) fn sync_branch_id(id: &str) -> Option<(ConversationId, ConversationBranchId)> {
+    let (conversation, branch) = id.split_once(':')?;
+    Some((conversation.parse().ok()?, branch.parse().ok()?))
+}
+
+/// A forked branch in its creation form; its head follows the messages that
+/// arrive on it.
+pub(crate) fn sync_load_branch(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<Option<ConversationBranch>, ConversationRepositoryError> {
+    let exists = exists(
+        transaction,
+        "SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2 AND parent_branch_id IS NOT NULL)",
+        params![conversation_id.to_string(), branch_id.to_string()],
+    )?;
+    if !exists {
+        return Ok(None);
+    }
+    let aggregate = slice::hydrate_conversation(transaction, conversation_id, || {})?;
+    Ok(aggregate
+        .branches
+        .iter()
+        .find(|branch| branch.id == branch_id)
+        .map(normalized_branch))
+}
+
+/// Inserts a synced fork once its parent branch and fork message exist.
+/// Branches never change after creation, so an existing one is kept.
+pub(crate) fn sync_insert_branch(
+    transaction: &Transaction<'_>,
+    branch: &ConversationBranch,
+) -> Result<(), ConversationRepositoryError> {
+    let conversation_id = branch.conversation_id.to_string();
+    if exists(
+        transaction,
+        "SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2)",
+        params![conversation_id, branch.id.to_string()],
+    )? {
+        return Ok(());
+    }
+    let (Some(parent), Some(fork)) = (branch.parent_branch_id, branch.fork_message_id) else {
+        return Err(invalid_message());
+    };
+    if !exists(
+        transaction,
+        "SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2 AND branch_id = ?3)",
+        params![conversation_id, fork.to_string(), parent.to_string()],
+    )? {
+        return Err(ConversationRepositoryError::NotFound);
+    }
+    history::insert_branch(transaction, &normalized_branch(branch))?;
+    transaction
+        .execute(
+            "UPDATE conversations SET revision = revision + 1 WHERE id = ?1",
+            [conversation_id],
+        )
+        .map_err(storage)?;
     Ok(())
 }
