@@ -350,6 +350,7 @@ where
             &memory_parameter_input(
                 &model.config.feature_parameters.dynamic_memory,
                 account.protocol,
+                group,
                 stored
                     .settings
                     .dynamic_memory_llama_sampler_overwrite_enabled,
@@ -357,8 +358,7 @@ where
                     self.repository,
                 )
                 .map_err(|_| storage())?
-                .0
-                .chat_parameters,
+                .0,
             ),
             &ChatRequirements::default(),
         )
@@ -556,13 +556,14 @@ fn clock_error(error: crate::companion_clock::CompanionClockError) -> CompanionM
 /// slot, then the llama.cpp sampler strip: unless the user turned
 /// `dynamicMemoryLlamaSamplerOverwriteEnabled` off, or the slot sets its own
 /// llama sampler, memory calls on llama.cpp use `top_k` 40 and neutral
-/// penalties. The llama.cpp-only fields it also reset (sampler profile and
-/// order, min_p, typical_p, DRY) belong to the llama.cpp runtime slice.
+/// penalties, with the llama.cpp sampler replaced by the fixed memory
+/// sampler (DRY differs between direct and group memory, as in legacy).
 fn memory_parameter_input(
     slot: &lettuce_models::FeatureGenerationParameters,
     protocol: ProviderProtocol,
+    group: bool,
     overwrite_llama_sampler: bool,
-    global: &lettuce_models::ChatParameterProfile,
+    global: &lettuce_models::ModelSettingsLayer,
 ) -> ChatParameterResolutionInput {
     use lettuce_models::ParameterOverride::Set;
     let mut input = crate::feature_parameter_input(
@@ -580,6 +581,11 @@ fn memory_parameter_input(
         input.operation.frequency_penalty = Set(0.0);
         input.operation.presence_penalty = Set(0.0);
         input.operation.repetition_penalty = Set(1.0);
+        input.llama_cpp.memory_sampler = Some(if group {
+            lettuce_models::LlamaMemorySampler::Group
+        } else {
+            lettuce_models::LlamaMemorySampler::Direct
+        });
     }
     input
 }
@@ -643,8 +649,9 @@ mod tests {
     #[test]
     fn llama_cpp_memory_calls_drop_the_creative_sampler_unless_disabled() {
         let slot = lettuce_models::FeatureGenerationParameters::default();
-        let global = lettuce_models::ChatParameterProfile::default();
-        let forced = memory_parameter_input(&slot, ProviderProtocol::LlamaCpp, true, &global);
+        let global = lettuce_models::ModelSettingsLayer::default();
+        let forced =
+            memory_parameter_input(&slot, ProviderProtocol::LlamaCpp, false, true, &global);
         assert_eq!(forced.operation.top_k, ParameterOverride::Set(40));
         assert_eq!(
             forced.operation.frequency_penalty,
@@ -659,28 +666,51 @@ mod tests {
             ParameterOverride::Set(1.0)
         );
         assert_eq!(forced.operation.temperature, ParameterOverride::Set(0.4));
+        assert_eq!(
+            forced.llama_cpp.memory_sampler,
+            Some(lettuce_models::LlamaMemorySampler::Direct)
+        );
+        assert_eq!(
+            memory_parameter_input(&slot, ProviderProtocol::LlamaCpp, true, true, &global)
+                .llama_cpp
+                .memory_sampler,
+            Some(lettuce_models::LlamaMemorySampler::Group)
+        );
         assert_eq!(forced.operation.top_p, ParameterOverride::Set(1.0));
-        let kept = memory_parameter_input(&slot, ProviderProtocol::LlamaCpp, false, &global);
+        let kept = memory_parameter_input(&slot, ProviderProtocol::LlamaCpp, false, false, &global);
         assert_eq!(kept.operation.top_k, ParameterOverride::Inherit);
         assert_eq!(kept.operation.temperature, ParameterOverride::Set(0.4));
+        assert_eq!(kept.llama_cpp.memory_sampler, None);
         let mut own_sampler = slot.clone();
         own_sampler.llama_sampler.min_p = Some(0.1);
         assert_eq!(
-            memory_parameter_input(&own_sampler, ProviderProtocol::LlamaCpp, true, &global)
+            memory_parameter_input(
+                &own_sampler,
+                ProviderProtocol::LlamaCpp,
+                false,
+                true,
+                &global
+            )
+            .operation
+            .top_k,
+            ParameterOverride::Inherit
+        );
+        assert_eq!(
+            memory_parameter_input(&slot, ProviderProtocol::Ollama, false, true, &global)
                 .operation
                 .top_k,
             ParameterOverride::Inherit
         );
         assert_eq!(
-            memory_parameter_input(&slot, ProviderProtocol::Ollama, true, &global)
-                .operation
-                .top_k,
-            ParameterOverride::Inherit
-        );
-        assert_eq!(
-            memory_parameter_input(&slot, ProviderProtocol::OpenAiCompatible, true, &global)
-                .operation
-                .top_k,
+            memory_parameter_input(
+                &slot,
+                ProviderProtocol::OpenAiCompatible,
+                false,
+                true,
+                &global
+            )
+            .operation
+            .top_k,
             ParameterOverride::Clear
         );
     }

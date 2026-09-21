@@ -662,6 +662,7 @@ mod integration_tests {
                 api_key_ref,
                 secret_headers: Vec::new(),
                 warnings: Vec::<ChatProfileWarning>::new(),
+                llama_cpp: None,
             },
             tool_policy: ToolPolicy::Disabled,
             output_policy: OutputPolicy::Plain,

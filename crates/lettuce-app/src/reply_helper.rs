@@ -43,7 +43,7 @@ fn help_me_reply_parameters(
     slot: &lettuce_models::FeatureGenerationParameters,
     group: bool,
     protocol: lettuce_models::ProviderProtocol,
-    global: &lettuce_models::ChatParameterProfile,
+    global: &lettuce_models::ModelSettingsLayer,
     max_output_tokens: u32,
 ) -> ChatParameterResolutionInput {
     let fields = if group {
@@ -436,8 +436,7 @@ where
                     self.repository,
                 )
                 .map_err(|_| ReplyHelperError::ModelUnavailable)?
-                .0
-                .chat_parameters,
+                .0,
                 settings.max_output_tokens,
             ),
             &ChatRequirements::default(),

@@ -1,6 +1,6 @@
 use lettuce_models::{
-    ChatParameterOverrides, ChatParameterProfile, ChatParameterResolutionInput,
-    FeatureGenerationParameters, ParameterOverride, ProviderProtocol, ReasoningMode,
+    ChatParameterOverrides, ChatParameterResolutionInput, FeatureGenerationParameters,
+    ParameterOverride, ProviderProtocol, ReasoningMode,
 };
 
 /// Legacy `FeatureSamplingDefaults`: the temperature, top_p and output cap a
@@ -75,7 +75,7 @@ pub fn feature_parameter_input(
     defaults: FeatureSamplingDefaults,
     fields: FeatureRequestFields,
     protocol: ProviderProtocol,
-    global: &ChatParameterProfile,
+    global: &lettuce_models::ModelSettingsLayer,
 ) -> ChatParameterResolutionInput {
     let mut operation: ChatParameterOverrides = slot.parameters.clone();
     if unset(&operation.temperature) {
@@ -108,14 +108,23 @@ pub fn feature_parameter_input(
         operation.prompt_caching = ParameterOverride::Clear;
     }
     ChatParameterResolutionInput {
-        global: global.clone(),
+        global: global.chat_parameters.clone(),
         session: ChatParameterOverrides::default(),
         operation,
+        llama_cpp: Box::new(lettuce_models::LlamaResolutionInput {
+            global: global.llama_cpp.clone(),
+            session: lettuce_models::LlamaCppSettings {
+                sampler: slot.llama_sampler.clone(),
+                ..lettuce_models::LlamaCppSettings::default()
+            },
+            memory_sampler: None,
+        }),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use lettuce_models::ChatParameterProfile;
     use lettuce_models::ParameterOverride::*;
 
     use super::*;
@@ -142,7 +151,10 @@ mod tests {
             GROUP_SPEAKER_SELECTION_DEFAULTS,
             FeatureRequestFields::Sampling,
             ProviderProtocol::OpenAiCompatible,
-            &global,
+            &lettuce_models::ModelSettingsLayer {
+                chat_parameters: global.clone(),
+                ..lettuce_models::ModelSettingsLayer::default()
+            },
         );
         assert_eq!(input.operation.temperature, Set(0.25));
         assert_eq!(input.operation.top_p, Set(1.0));
@@ -165,7 +177,7 @@ mod tests {
             DYNAMIC_MEMORY_DEFAULTS,
             FeatureRequestFields::Sampling,
             ProviderProtocol::Ollama,
-            &ChatParameterProfile::default(),
+            &lettuce_models::ModelSettingsLayer::default(),
         );
         assert_eq!(local.operation.frequency_penalty, Set(0.5));
         assert_eq!(local.operation.top_k, Set(20));
@@ -176,7 +188,7 @@ mod tests {
             HELP_ME_REPLY_DEFAULTS,
             FeatureRequestFields::Full,
             ProviderProtocol::Anthropic,
-            &ChatParameterProfile::default(),
+            &lettuce_models::ModelSettingsLayer::default(),
         );
         assert_eq!(full.operation.frequency_penalty, Set(0.5));
         assert_eq!(full.operation.top_k, Set(20));

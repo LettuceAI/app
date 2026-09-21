@@ -744,7 +744,7 @@ where
         );
         let global_model_settings =
             lettuce_models::GlobalModelSettingsRepository::global_model_settings(self.repository)
-                .map(|(settings, _)| settings.chat_parameters)
+                .map(|(settings, _)| settings)
                 .unwrap_or_default();
         let profile = match lettuce_models::resolve_chat_profile(
             &expected,
@@ -945,15 +945,24 @@ where
         let (global_model_settings, _) =
             lettuce_models::GlobalModelSettingsRepository::global_model_settings(self.repository)
                 .map_err(ConversationGenerationInputError::ModelRepository)?;
+        let session_layer = aggregate
+            .conversation
+            .current_settings
+            .as_ref()
+            .map(|current| &current.model_settings);
         let parameters = ChatParameterResolutionInput {
-            global: global_model_settings.chat_parameters,
-            session: aggregate
-                .conversation
-                .current_settings
-                .as_ref()
-                .map(|current| current.model_settings.chat_overrides())
+            session: session_layer
+                .map(|layer| layer.chat_overrides())
                 .unwrap_or_default(),
             operation: Default::default(),
+            llama_cpp: Box::new(lettuce_models::LlamaResolutionInput {
+                global: global_model_settings.llama_cpp,
+                session: session_layer
+                    .map(|layer| layer.llama_cpp.clone())
+                    .unwrap_or_default(),
+                memory_sampler: None,
+            }),
+            global: global_model_settings.chat_parameters,
         };
         let profile = lettuce_models::resolve_chat_profile(
             &model.expected_chat_identity(),

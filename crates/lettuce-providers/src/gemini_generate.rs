@@ -1375,6 +1375,7 @@ mod tests {
             api_key_ref: None,
             secret_headers: Vec::new(),
             warnings: Vec::<ChatProfileWarning>::new(),
+            llama_cpp: None,
         }
     }
 

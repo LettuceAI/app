@@ -3,11 +3,13 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod capabilities;
+mod llama_resolution;
 mod local_runtime;
 mod parameters;
 mod resolution;
 
 pub use capabilities::*;
+pub use llama_resolution::*;
 pub use local_runtime::*;
 pub use parameters::*;
 pub use resolution::*;

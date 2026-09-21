@@ -36,7 +36,7 @@ pub fn staged_lorebook_parameter_defaults(
     settings: &lettuce_settings::LorebookGeneratorSettings,
     slot: &lettuce_models::FeatureGenerationParameters,
     protocol: lettuce_models::ProviderProtocol,
-    global: &lettuce_models::ChatParameterProfile,
+    global: &lettuce_models::ModelSettingsLayer,
 ) -> lettuce_models::ChatParameterResolutionInput {
     let mut parameters = crate::feature_parameter_input(
         slot,
@@ -225,8 +225,7 @@ impl<
                 &lettuce_models::GlobalModelSettingsRepository::global_model_settings(
                     self.repository,
                 )?
-                .0
-                .chat_parameters,
+                .0,
             ),
             &lettuce_models::ChatRequirements::default(),
         )?;

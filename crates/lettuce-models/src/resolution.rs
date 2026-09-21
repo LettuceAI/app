@@ -28,6 +28,8 @@ pub struct ChatParameterResolutionInput {
     pub global: ChatParameterProfile,
     pub session: ChatParameterOverrides,
     pub operation: ChatParameterOverrides,
+    #[serde(default)]
+    pub llama_cpp: Box<crate::LlamaResolutionInput>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,6 +123,9 @@ pub struct ResolvedChatProfile {
     pub api_key_ref: Option<lettuce_settings::SecretRef>,
     pub secret_headers: Vec<SecretHeader>,
     pub warnings: Vec<ChatProfileWarning>,
+    /// The llama.cpp settings, for llama.cpp models only.
+    #[serde(default)]
+    pub llama_cpp: Option<Box<crate::ResolvedLlamaSettings>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -238,6 +243,12 @@ pub fn resolve_chat_profile(
     input.global.validate().map_err(parameter_error)?;
     input.session.validate().map_err(parameter_error)?;
     input.operation.validate().map_err(parameter_error)?;
+    input.llama_cpp.global.validate().map_err(parameter_error)?;
+    input
+        .llama_cpp
+        .session
+        .validate()
+        .map_err(parameter_error)?;
     let parameters = resolve_parameters(&profile.config.chat_parameters, input)?;
     if parameters.openrouter.pinned_provider.is_some()
         && !account.provider_kind.eq_ignore_ascii_case("openrouter")
@@ -266,6 +277,12 @@ pub fn resolve_chat_profile(
         api_key_ref: account.api_key_ref,
         secret_headers: account.secret_headers.clone(),
         warnings,
+        llama_cpp: (account.protocol == ProviderProtocol::LlamaCpp).then(|| {
+            Box::new(crate::resolve_llama_settings(
+                &profile.config.llama_cpp,
+                &input.llama_cpp,
+            ))
+        }),
     })
 }
 
@@ -1103,6 +1120,7 @@ mod tests {
                 frequency_penalty: ParameterOverride::Clear,
                 ..ChatParameterOverrides::default()
             },
+            llama_cpp: Default::default(),
         };
         let resolved = resolve_chat_profile(
             &expected,
@@ -1260,6 +1278,7 @@ mod tests {
                 },
                 ..Default::default()
             },
+            llama_cpp: Default::default(),
         };
         let resolved = resolve_chat_profile(
             &expected,
