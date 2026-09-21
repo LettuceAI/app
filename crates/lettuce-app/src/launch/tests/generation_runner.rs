@@ -4502,3 +4502,115 @@ async fn forked_branches_sync_with_their_messages() {
     );
     assert_rescans_are_empty(&[&a, &b], 3_000);
 }
+
+#[tokio::test]
+async fn concurrent_replies_fork_into_a_branch_and_notify_both_devices() {
+    use lettuce_sync::ConversationForkRepository;
+    let a = database();
+    let b = database();
+    let scenario = scenario(&a, false, "synced-concurrent");
+    let work = admit_and_claim(&a, &scenario, 1_015);
+    ConversationGenerationJobRunner::new(&a, &scripted(vec![text_outcome("c-0", "First", 10, 5)]))
+        .run(&work, input(&scenario), TimestampMillis::new(1_020))
+        .await
+        .expect("run");
+    sync_prompts(&a, &b, 1_500);
+
+    let turn_a = send_and_generate(&a, &scenario, "from-a", "Reply to a", 2_000).await;
+    let turn_b = send_and_generate(&b, &scenario, "from-b", "Reply to b", 2_100).await;
+    sync_prompts(&a, &b, 3_000);
+    sync_prompts(&b, &a, 3_100);
+    sync_prompts(&a, &b, 3_200);
+
+    let root = ConversationReader::get(&a, scenario.conversation_id)
+        .expect("conversation")
+        .conversation
+        .active_branch_id;
+    let path = branch_timeline(&a, scenario.conversation_id, root);
+    assert_eq!(path, branch_timeline(&b, scenario.conversation_id, root));
+    assert_eq!(path.len(), 4);
+    let forks_a = a.unresolved_conversation_forks(10).expect("a forks");
+    let forks_b = b.unresolved_conversation_forks(10).expect("b forks");
+    assert_eq!(forks_a.len(), 1);
+    assert_eq!(forks_b.len(), 1);
+    assert_eq!(forks_a[0].branch_id, forks_b[0].branch_id);
+    assert_ne!(forks_a[0].holds_local, forks_b[0].holds_local);
+    let fork = forks_a[0].branch_id;
+    let forked = branch_timeline(&a, scenario.conversation_id, fork);
+    assert_eq!(forked, branch_timeline(&b, scenario.conversation_id, fork));
+    assert_eq!(forked.len(), 4);
+    let shown = |items: &[lettuce_conversations::TimelineItem]| {
+        items
+            .iter()
+            .filter_map(|item| {
+                item.active_revision
+                    .as_ref()
+                    .map(|revision| revision.parts.clone())
+                    .or_else(|| item.active_candidate.as_ref().map(|candidate| candidate.parts.clone()))
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut replies = shown(&path)[..2]
+        .iter()
+        .chain(shown(&forked)[..2].iter())
+        .cloned()
+        .collect::<Vec<_>>();
+    replies.sort_by_key(|parts| format!("{parts:?}"));
+    assert_eq!(
+        replies,
+        vec![
+            vec![MessagePart::Text { text: "Reply to a".into() }],
+            vec![MessagePart::Text { text: "Reply to b".into() }],
+            vec![MessagePart::Text { text: "from-a".into() }],
+            vec![MessagePart::Text { text: "from-b".into() }],
+        ]
+    );
+    let (loser, loser_turn) = if forks_a[0].holds_local {
+        (&a, turn_a)
+    } else {
+        (&b, turn_b)
+    };
+    let GenerationInput::UserMessage { message_id } = ConversationReader::get_turn(loser, loser_turn)
+        .expect("turn")
+        .input
+    else {
+        panic!("send turn");
+    };
+    lettuce_conversations::ConversationRepository::edit_message(
+        loser,
+        &lettuce_conversations::EditMessage {
+            conversation_id: scenario.conversation_id,
+            message_id,
+            expected_revision: ConversationReader::get(loser, scenario.conversation_id)
+                .expect("conversation")
+                .conversation
+                .revision,
+            operation: OperationToken {
+                key: key("edit-moved-original"),
+                request_digest: ContentHash::parse("ee".repeat(32)).expect("digest"),
+            },
+            draft: lettuce_conversations::MessageEditDraft {
+                parts: vec![MessagePart::Text {
+                    text: "Edited after the fork".into(),
+                }],
+                visibility: MessageVisibility::Visible,
+                pinned: false,
+                scene_edited: false,
+            },
+        },
+        TimestampMillis::new(3_300),
+    )
+    .expect("edit moved original");
+    sync_prompts(&a, &b, 3_400);
+    sync_prompts(&b, &a, 3_500);
+    sync_prompts(&a, &b, 3_600);
+    let refreshed = branch_timeline(&a, scenario.conversation_id, fork);
+    assert_eq!(refreshed, branch_timeline(&b, scenario.conversation_id, fork));
+    assert!(shown(&refreshed).contains(&vec![MessagePart::Text {
+        text: "Edited after the fork".into()
+    }]));
+    a.resolve_conversation_fork(scenario.conversation_id, fork, TimestampMillis::new(4_000))
+        .expect("resolve");
+    assert!(a.unresolved_conversation_forks(10).expect("a forks").is_empty());
+    assert_rescans_are_empty(&[&a, &b], 5_000);
+}

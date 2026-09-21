@@ -248,3 +248,14 @@ CREATE TABLE sync_deferred_changes (
 
 CREATE INDEX sync_deferred_changes_entity_idx
 ON sync_deferred_changes(entity_kind, entity_id);
+
+CREATE TABLE sync_conversation_forks (
+    conversation_id TEXT NOT NULL,
+    branch_id TEXT NOT NULL,
+    holds_local INTEGER NOT NULL CHECK (holds_local IN (0, 1)),
+    detected_at INTEGER NOT NULL,
+    resolved_at INTEGER,
+    PRIMARY KEY (conversation_id, branch_id),
+    FOREIGN KEY (conversation_id, branch_id)
+        REFERENCES conversation_branches(conversation_id, id) ON DELETE RESTRICT
+) STRICT;

@@ -289,3 +289,24 @@ form leaves the head, revision and update time local (the head follows the
 messages that arrive on the branch), and a branch waits for its fork message.
 Which branch a conversation shows stays device-local, so each device keeps
 viewing the branch its user chose.
+
+Concurrent replies (sync S8b). A synced message that does not extend its
+branch head is checked against the local path: when a path message answers
+the same parent, the lower message id keeps the path and the other chain is
+copied, flattened to what each message shows (one revision, content-derived
+id, no turns), into a fork branch named after the chain's first message
+(UUIDv5), with copy ids derived from the fork and the original, so every
+device builds the same fork. Originals stay where they were (off the path),
+nothing is dropped, and a message that continues a moved chain is copied
+after its parent's nearest copy. A merged original refreshes its copies
+(content-derived revisions, flags, tombstones stay). Nothing moves while a
+generation runs in the conversation (the change waits). A device records a
+notice in the device-local `sync_conversation_forks` table only when one side
+is its own message (`holds_local` says whether the fork holds its former
+path); `ConversationForkRepository` lists and resolves
+them. The user's choices (keep both, make mine main, make theirs main) only
+decide which branch the device shows, through the normal branch selection,
+before the notice is resolved. Two concurrent first messages of an empty
+conversation have no fork point and stay as they are. Known limit: a third device
+replying inside a chain that later loses (nested concurrency) can leave the
+devices with different sub-forks; the originals are always kept.

@@ -1,5 +1,5 @@
 use lettuce_characters::{Persona, PersonaDefaultState};
-use lettuce_types::{OperationId, TimestampMillis};
+use lettuce_types::{ConversationBranchId, ConversationId, OperationId, TimestampMillis};
 
 use crate::{CanonicalChange, SyncChangeId, SyncDeviceId};
 
@@ -61,4 +61,32 @@ pub trait PersonaConflictRepository: Send + Sync {
         resolution_id: OperationId,
         now: TimestampMillis,
     ) -> Result<CanonicalChange, ConflictRepositoryError>;
+}
+
+/// A branch sync created because two devices answered the same message: the
+/// lower message id kept the conversation path and the other chain was
+/// copied into `branch_id`. `holds_local` tells whether that chain was this
+/// device's path. Nothing is dropped, so the user's choice is only which
+/// branch to show (keep both, make the fork main, keep the path); resolving
+/// clears the notice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationFork {
+    pub conversation_id: ConversationId,
+    pub branch_id: ConversationBranchId,
+    pub holds_local: bool,
+    pub detected_at: TimestampMillis,
+}
+
+pub trait ConversationForkRepository: Send + Sync {
+    fn unresolved_conversation_forks(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ConversationFork>, ConflictRepositoryError>;
+
+    fn resolve_conversation_fork(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        now: TimestampMillis,
+    ) -> Result<(), ConflictRepositoryError>;
 }

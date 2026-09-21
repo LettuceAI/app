@@ -2936,6 +2936,63 @@ impl LocalChangeJournal for Database {
     }
 }
 
+impl lettuce_sync::ConversationForkRepository for Database {
+    fn unresolved_conversation_forks(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<lettuce_sync::ConversationFork>, ConflictRepositoryError> {
+        let connection = self.connection().map_err(conflict_storage)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT conversation_id, branch_id, holds_local, detected_at FROM sync_conversation_forks
+                 WHERE resolved_at IS NULL ORDER BY detected_at DESC, conversation_id, branch_id LIMIT ?1",
+            )
+            .map_err(conflict_storage)?;
+        let rows = statement
+            .query_map(
+                [i64::try_from(limit.min(MAX_UNRESOLVED_CONFLICTS)).map_err(conflict_corrupt)?],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                    ))
+                },
+            )
+            .map_err(conflict_storage)?;
+        rows.map(|row| {
+            let (conversation, branch, holds_local, detected_at) = row.map_err(conflict_storage)?;
+            Ok(lettuce_sync::ConversationFork {
+                conversation_id: conversation.parse().map_err(conflict_corrupt)?,
+                branch_id: branch.parse().map_err(conflict_corrupt)?,
+                holds_local: holds_local != 0,
+                detected_at: TimestampMillis::new(detected_at),
+            })
+        })
+        .collect()
+    }
+
+    fn resolve_conversation_fork(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+        now: TimestampMillis,
+    ) -> Result<(), ConflictRepositoryError> {
+        let connection = self.connection().map_err(conflict_storage)?;
+        let changed = connection
+            .execute(
+                "UPDATE sync_conversation_forks SET resolved_at = ?3 WHERE conversation_id = ?1 AND branch_id = ?2 AND resolved_at IS NULL",
+                params![conversation_id.to_string(), branch_id.to_string(), now.get()],
+            )
+            .map_err(conflict_storage)?;
+        if changed == 0 {
+            return Err(ConflictRepositoryError::NotFound);
+        }
+        Ok(())
+    }
+}
+
 impl PersonaConflictRepository for Database {
     fn unresolved_persona_conflicts(
         &self,
