@@ -22,9 +22,11 @@ use crate::offload::{
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LlamaRuntimeError {
-    #[error("failed to initialize the llama.cpp backend: {0}")]
+    #[error("Failed to initialize llama backend: {0}")]
     Backend(String),
-    #[error("failed to load llama model metadata for smart offload: {0}")]
+    #[error("Failed to cache shared llama backend")]
+    BackendCache,
+    #[error("Failed to load llama model metadata for smart offload: {0}")]
     ModelLoad(String),
     #[error("llama.cpp metadata cache lock poisoned")]
     CachePoisoned,
@@ -44,7 +46,7 @@ pub fn shared_backend() -> Result<Arc<LlamaBackend>, LlamaRuntimeError> {
     SHARED_BACKEND
         .get()
         .cloned()
-        .ok_or_else(|| LlamaRuntimeError::Backend("failed to cache the shared backend".into()))
+        .ok_or(LlamaRuntimeError::BackendCache)
 }
 
 #[must_use]
