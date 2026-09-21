@@ -776,6 +776,90 @@ pub(crate) fn insert_group_rows(
     Ok(details)
 }
 
+/// Every media asset a group snapshot references.
+pub(crate) fn group_asset_ids(details: &GroupDetails) -> Vec<AssetId> {
+    let mut ids = details.group.presentation.referenced_asset_ids();
+    ids.extend(details.group.background_asset_id);
+    if let Some(starting) = &details.starting_scene {
+        ids.extend(starting.scene.assets.iter().map(|link| link.asset_id));
+    }
+    ids.into_iter().collect()
+}
+
+pub(crate) fn sync_group_ids(connection: &Connection) -> Result<Vec<String>, RepositoryError> {
+    connection
+        .prepare("SELECT id FROM groups ORDER BY id")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect()
+        })
+        .map_err(db_error)
+}
+
+/// Writes a synced group exactly, in place: root row updated, members,
+/// presentation references and the starting scene replaced. A member model
+/// override deleted on this device is cleared instead of blocking the
+/// origin's later changes (the next scan journals it). Missing media assets
+/// report `NotFound` (the media phase delivers them).
+pub(crate) fn sync_replace_group(
+    tx: &Transaction<'_>,
+    details: &GroupDetails,
+) -> Result<(), RepositoryError> {
+    details.validate()?;
+    for asset in group_asset_ids(details) {
+        let present: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id=?1)",
+                [asset.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(db_error)?;
+        if !present {
+            return Err(RepositoryError::NotFound);
+        }
+    }
+    let mut details = details.clone();
+    for member in &mut details.group.members {
+        if let Some(model) = member.model_profile_override {
+            let present: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM model_profiles WHERE id=?1)",
+                    [model.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(db_error)?;
+            if !present {
+                member.model_profile_override = None;
+            }
+        }
+    }
+    let plan = CreateGroupPlan {
+        group: details.group.clone(),
+        starting_scene: details.starting_scene.clone(),
+    };
+    if load_details(tx, details.group.id)
+        .map_err(db_error)?
+        .is_none()
+    {
+        insert_group_rows(tx, &plan)?;
+        return Ok(());
+    }
+    let group = &details.group;
+    tx.execute(
+        "DELETE FROM group_starting_scenes WHERE group_id=?1",
+        [group.id.to_string()],
+    )
+    .map_err(db_error)?;
+    tx.execute("UPDATE groups SET status=?2,name=?3,normalized_name=?4,chat_mode=?5,persona_selection_kind=?6,persona_id=?7,speaker_selection=?8,memory_policy=?9,disable_character_lorebooks=?10,group_conversation_prompt_id=?11,group_roleplay_prompt_id=?12,presentation_json=?13,background_asset_id=?14,starting_scene_id=?15,revision=?16,created_at=?17,updated_at=?18 WHERE id=?1", params![group.id.to_string(), status_name(group.status), group.name, canonical_name(&group.name), chat_mode_name(group.chat_mode), selection_kind(&group.persona), match &group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(group.speaker_selection), memory_name(group.memory_policy), group.disable_character_lorebooks, group.group_conversation_prompt_id.map(|id| id.to_string()), group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&group.presentation, PRESENTATION_VERSION)?, group.background_asset_id.map(|id| id.to_string()), group.starting_scene_id.map(|id| id.to_string()), sql_revision(group.revision)?, group.created_at.get(), group.updated_at.get()]).map_err(db_error)?;
+    write_members(tx, group.id, &group.members)?;
+    write_presentation(tx, group.id, &group.presentation)?;
+    if let Some(starting) = &details.starting_scene {
+        insert_scene(tx, group.id, starting)?;
+    }
+    Ok(())
+}
+
 impl GroupRepository for Database {
     fn create(&self, plan: CreateGroupPlan) -> Result<GroupDetails, RepositoryError> {
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
@@ -1537,6 +1621,110 @@ mod tests {
                 rusqlite::params![id.to_string(), profile_json, provenance_json, defaults_json, presentation_json],
             )
             .expect("character fixture");
+    }
+
+    fn sync_groups(from: &Database, to: &Database, at: i64) {
+        use lettuce_sync::{IncomingBatchState, IncomingChangeRepository, LocalChangeJournal};
+        from.journal_current_state(TimestampMillis::new(at))
+            .expect("source scan");
+        to.journal_current_state(TimestampMillis::new(at))
+            .expect("target scan");
+        let batch = from
+            .outbound_changes(
+                &to.local_frontier().expect("frontier"),
+                lettuce_sync::MAX_OUTBOUND_CHANGES,
+                lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("outbound");
+        if batch.changes.is_empty() {
+            return;
+        }
+        let id = lettuce_types::OperationId::new();
+        to.stage_incoming_batch(
+            lettuce_sync::SyncDeviceId::new(),
+            id,
+            &lettuce_sync::canonical_batch_hash(&batch.changes),
+            &batch.changes,
+            TimestampMillis::new(at),
+        )
+        .expect("stage");
+        assert_eq!(
+            to.apply_incoming_batch(id, TimestampMillis::new(at))
+                .expect("apply")
+                .state,
+            IncomingBatchState::Committed
+        );
+    }
+
+    #[test]
+    fn groups_converge_through_state_sync() {
+        use lettuce_sync::LocalChangeJournal;
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let first = CharacterId::new();
+        let second = CharacterId::new();
+        character(&a, first);
+        character(&a, second);
+        let group_id = GroupId::new();
+        let created = GroupRepository::create(
+            &a,
+            CreateGroupPlan {
+                group: GroupProfile::new(
+                    group_id,
+                    "Harbor Cast".into(),
+                    vec![
+                        GroupMember {
+                            character_id: first,
+                            ordinal: 0,
+                            muted: false,
+                            model_profile_override: None,
+                        },
+                        GroupMember {
+                            character_id: second,
+                            ordinal: 1,
+                            muted: true,
+                            model_profile_override: None,
+                        },
+                    ],
+                    TimestampMillis::new(1),
+                )
+                .expect("group"),
+                starting_scene: None,
+            },
+        )
+        .expect("create");
+
+        sync_groups(&a, &b, 100);
+        assert_eq!(
+            GroupRepository::get(&b, group_id).expect("b group"),
+            Some(created.clone())
+        );
+        let renamed = GroupRepository::rename(
+            &b,
+            group_id,
+            created.group.revision,
+            "Renamed on b".into(),
+            TimestampMillis::new(200),
+        )
+        .expect("rename on b");
+        sync_groups(&b, &a, 300);
+        assert_eq!(
+            GroupRepository::get(&a, group_id)
+                .expect("a group")
+                .expect("present")
+                .group,
+            renamed
+        );
+        assert_eq!(
+            a.journal_current_state(TimestampMillis::new(400))
+                .expect("a"),
+            0
+        );
+        assert_eq!(
+            b.journal_current_state(TimestampMillis::new(400))
+                .expect("b"),
+            0
+        );
     }
 
     #[test]

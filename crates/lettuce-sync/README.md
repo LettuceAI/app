@@ -206,3 +206,10 @@ prompt after its source) before characters. Entry revision and timestamps are
 local bookkeeping outside the snapshot. A prompt whose built-in key is held by
 a different local id (databases seeded before deterministic ids) is journaled
 but not materialized.
+
+Groups (sync S6, `group.snapshot`): reusable groups sync as complete
+`GroupDetails` after characters (root updated in place, members, presentation
+references and the starting scene replaced); a member model override deleted
+on this device is cleared like a character default. Group lorebook bindings
+join the binding entities, and group presentation, background and scene
+assets join the media scan.

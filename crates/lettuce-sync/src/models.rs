@@ -90,3 +90,16 @@ pub fn canonical_prompt_payload(
     let bytes = serde_json::to_vec(document).map_err(|_| SyncChangeError::PayloadEncoding)?;
     CanonicalPayload::new(PROMPT_SYNC_SCHEMA, PROMPT_SYNC_VERSION, bytes)
 }
+
+pub const GROUP_SYNC_KIND: &str = "group";
+pub const GROUP_SYNC_SCHEMA: &str = "group.snapshot";
+pub const GROUP_SYNC_VERSION: u32 = 1;
+pub const GROUP_LOREBOOK_BINDINGS_SYNC_KIND: &str = "group_lorebook_bindings";
+
+/// The complete reusable group: profile, members and starting scene.
+pub fn canonical_group_payload(
+    details: &lettuce_characters::GroupDetails,
+) -> Result<CanonicalPayload, SyncChangeError> {
+    let bytes = serde_json::to_vec(details).map_err(|_| SyncChangeError::PayloadEncoding)?;
+    CanonicalPayload::new(GROUP_SYNC_SCHEMA, GROUP_SYNC_VERSION, bytes)
+}

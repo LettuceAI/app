@@ -861,13 +861,19 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::LOREBOOK_SYNC_VERSION,
         )
         | (
+            lettuce_sync::GROUP_SYNC_KIND,
+            lettuce_sync::GROUP_SYNC_SCHEMA,
+            lettuce_sync::GROUP_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::PROMPT_SYNC_KIND,
             lettuce_sync::PROMPT_SYNC_SCHEMA,
             lettuce_sync::PROMPT_SYNC_VERSION,
         )
         | (
             lettuce_sync::CHARACTER_LOREBOOK_BINDINGS_SYNC_KIND
-            | lettuce_sync::PERSONA_LOREBOOK_BINDINGS_SYNC_KIND,
+            | lettuce_sync::PERSONA_LOREBOOK_BINDINGS_SYNC_KIND
+            | lettuce_sync::GROUP_LOREBOOK_BINDINGS_SYNC_KIND,
             lettuce_sync::LOREBOOK_BINDINGS_SYNC_SCHEMA,
             lettuce_sync::LOREBOOK_BINDINGS_SYNC_VERSION,
         ) => {
@@ -1400,6 +1406,54 @@ binding_codec!(
     lettuce_sync::CHARACTER_LOREBOOK_BINDINGS_SYNC_KIND,
     crate::lorebook_adapter::OwnerKind::Character
 );
+const GROUP_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::GROUP_SYNC_KIND,
+    assets: |bytes| {
+        serde_json::from_slice::<lettuce_characters::GroupDetails>(bytes)
+            .map(|details| {
+                crate::group_adapter::group_asset_ids(&details)
+                    .into_iter()
+                    .map(|id| id.to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    },
+    decode: |id, bytes| {
+        let details: lettuce_characters::GroupDetails =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        if details.group.id.to_string() != id || details.validate().is_err() {
+            return Err(ApplyOneError::Corrupt);
+        }
+        Ok(())
+    },
+    current: |connection, id| {
+        let id = id
+            .parse::<lettuce_types::GroupId>()
+            .map_err(|_| ApplyOneError::Corrupt)?;
+        crate::group_adapter::load_details(connection, id)
+            .map_err(|_| ApplyOneError::Storage)?
+            .as_ref()
+            .map(lettuce_sync::canonical_group_payload)
+            .transpose()
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    materialize: |tx, _, bytes| {
+        let details: lettuce_characters::GroupDetails =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::group_adapter::sync_replace_group(tx, &details).map_err(repository_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::group_adapter::sync_group_ids(connection).map_err(repository_apply_error)
+    }),
+    delete: None,
+};
+
+binding_codec!(
+    GROUP_BINDINGS_CODEC,
+    lettuce_sync::GROUP_LOREBOOK_BINDINGS_SYNC_KIND,
+    crate::lorebook_adapter::OwnerKind::Group
+);
 binding_codec!(
     PERSONA_BINDINGS_CODEC,
     lettuce_sync::PERSONA_LOREBOOK_BINDINGS_SYNC_KIND,
@@ -1408,16 +1462,18 @@ binding_codec!(
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 9] = [
+const SCANNED_CODECS: [&SnapshotCodec; 11] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
     &PERSONA_DEFAULT_CODEC,
     &PROMPT_CODEC,
     &CHARACTER_CODEC,
+    &GROUP_CODEC,
     &LOREBOOK_CODEC,
     &CHARACTER_BINDINGS_CODEC,
     &PERSONA_BINDINGS_CODEC,
+    &GROUP_BINDINGS_CODEC,
 ];
 
 fn snapshot_codec(kind: &str) -> Option<&'static SnapshotCodec> {
@@ -1491,6 +1547,9 @@ fn journal_referenced_media(
              UNION SELECT asset_id FROM character_presentation_asset_refs
              UNION SELECT asset_id FROM scene_assets
              UNION SELECT icon_asset_id FROM lorebooks WHERE icon_asset_id IS NOT NULL
+             UNION SELECT asset_id FROM group_presentation_asset_refs
+             UNION SELECT background_asset_id FROM groups WHERE background_asset_id IS NOT NULL
+             UNION SELECT asset_id FROM group_scene_assets
              ORDER BY asset_id",
         )
         .and_then(|mut statement| {
