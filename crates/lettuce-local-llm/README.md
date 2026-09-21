@@ -63,13 +63,17 @@ features. whisper.cpp (lettuce-speech) links into the same binary.
   recommended context, memory, GPU layers, multi-GPU placement).
 - `mtp`: bundled NextN detection and external `mtp-*.gguf` discovery.
 
-Known gap (user requirement 2026-09-21): AMD Ryzen AI / handheld APUs share
-one user-adjustable memory pool between the iGPU and the CPU. Legacy (and
-this port, so far) leaves iGPUs out of the device list, refuses an iGPU as the
-selected device and skips it in per-device VRAM; offload budgets treat VRAM as
-a separate card. Listing and selecting iGPUs is a behavior fix to make; any
-budget change for unified memory needs measurement on the hardware and the
-user's approval, since the formulas are frozen.
+AMD Ryzen AI / handheld APUs (user requirement 2026-09-21) share one
+user-adjustable memory pool between the iGPU and the CPU. Legacy left iGPUs
+out of the device list, refused an iGPU as the selected device and skipped it
+in per-device VRAM, so an APU had nothing to pick; that is corrected: iGPUs
+are listed (`device_type` `IntegratedGpu`), a single selected device may be
+an iGPU and its budget is read from that device, while multi-GPU still takes
+discrete devices only. The iGPU's reported memory follows the carve-out the
+user set, and available RAM shrinks with it. Whether the budgets need more for
+unified memory (for example memory the iGPU can borrow beyond the carve-out)
+is still open: it needs measurement on the hardware and the user's approval,
+since the formulas are frozen.
 
 Next: contexts and the hot-context cache, prompt templates and sampler, MTP
 runtime, request handling, the worker thread and the inference port.

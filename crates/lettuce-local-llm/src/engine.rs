@@ -23,8 +23,8 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::mtmd::{MtmdContext, MtmdContextParams, measure_memory_usage};
 use llama_cpp_2::{LlamaBackendDeviceType, list_llama_ggml_backend_devices};
 use llama_cpp_sys_2::{
-    GGML_BACKEND_DEVICE_TYPE_ACCEL, GGML_BACKEND_DEVICE_TYPE_GPU, ggml_backend_dev_count,
-    ggml_backend_dev_get, ggml_backend_dev_type,
+    GGML_BACKEND_DEVICE_TYPE_ACCEL, GGML_BACKEND_DEVICE_TYPE_GPU, GGML_BACKEND_DEVICE_TYPE_IGPU,
+    ggml_backend_dev_count, ggml_backend_dev_get, ggml_backend_dev_type,
 };
 
 use crate::llama::shared_backend;
@@ -466,6 +466,7 @@ pub fn emit_model_load_failed(
 
 fn resolve_selected_gpu_device(
     device_id: usize,
+    allow_integrated: bool,
 ) -> Result<llama_cpp_sys_2::ggml_backend_dev_t, LlamaEngineError> {
     let count = unsafe { ggml_backend_dev_count() };
     if device_id >= count {
@@ -481,7 +482,8 @@ fn resolve_selected_gpu_device(
     }
     let device_type = unsafe { ggml_backend_dev_type(device) };
     let is_gpu_like = device_type == GGML_BACKEND_DEVICE_TYPE_GPU
-        || device_type == GGML_BACKEND_DEVICE_TYPE_ACCEL;
+        || device_type == GGML_BACKEND_DEVICE_TYPE_ACCEL
+        || (allow_integrated && device_type == GGML_BACKEND_DEVICE_TYPE_IGPU);
     if !is_gpu_like {
         return Err(LlamaEngineError::Load(format!(
             "Selected device index {device_id} is not a discrete GPU device."
@@ -524,7 +526,7 @@ fn load_model_with_progress(
             ));
         }
         for device_id in &gpu_config.device_ids {
-            selected_devices.push(resolve_selected_gpu_device(*device_id)?);
+            selected_devices.push(resolve_selected_gpu_device(*device_id, false)?);
         }
         selected_devices.push(std::ptr::null_mut());
         params.devices = selected_devices.as_mut_ptr();
@@ -536,7 +538,7 @@ fn load_model_with_progress(
             params.main_gpu = main_gpu;
         }
     } else if fitted_params.is_none() && gpu_config.device_ids.len() == 1 {
-        selected_devices.push(resolve_selected_gpu_device(gpu_config.device_ids[0])?);
+        selected_devices.push(resolve_selected_gpu_device(gpu_config.device_ids[0], true)?);
         selected_devices.push(std::ptr::null_mut());
         params.devices = selected_devices.as_mut_ptr();
         params.main_gpu = 0;

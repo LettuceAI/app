@@ -128,6 +128,10 @@ pub fn get_available_vram_bytes() -> Option<u64> {
     choose_effective_vram_bytes(ggml_available_vram_bytes(), windows_local_vram_cap_bytes())
 }
 
+/// The GPUs, accelerators and integrated GPUs llama.cpp sees. Legacy left
+/// integrated GPUs out, so an APU (a Ryzen AI handheld, for one) had no
+/// device to pick; `device_type` tells them apart (`IntegratedGpu`), and
+/// multi-GPU still takes only discrete devices.
 pub fn list_gpu_devices() -> Vec<LlamaGpuDeviceInfo> {
     llama_cpp_2::list_llama_ggml_backend_devices()
         .into_iter()
@@ -136,6 +140,7 @@ pub fn list_gpu_devices() -> Vec<LlamaGpuDeviceInfo> {
                 device.device_type,
                 llama_cpp_2::LlamaBackendDeviceType::Gpu
                     | llama_cpp_2::LlamaBackendDeviceType::Accelerator
+                    | llama_cpp_2::LlamaBackendDeviceType::IntegratedGpu
             )
         })
         .map(|device| LlamaGpuDeviceInfo {
@@ -153,7 +158,10 @@ pub fn list_gpu_devices() -> Vec<LlamaGpuDeviceInfo> {
 /// Per-device free/total VRAM for the explicitly selected device ids, preserving
 /// the caller's order. Integrated GPUs are skipped (never used for multi-GPU).
 /// Each tuple is `(device_id, free_bytes, total_bytes)`.
-pub fn get_per_device_free_vram(device_ids: &[usize]) -> Vec<(usize, u64, u64)> {
+pub fn get_per_device_free_vram(
+    device_ids: &[usize],
+    include_integrated: bool,
+) -> Vec<(usize, u64, u64)> {
     let mut out = Vec::new();
     unsafe {
         let count = ggml_backend_dev_count();
@@ -167,7 +175,8 @@ pub fn get_per_device_free_vram(device_ids: &[usize]) -> Vec<(usize, u64, u64)> 
             }
             let dev_type = ggml_backend_dev_type(dev);
             let is_gpu_like = dev_type == GGML_BACKEND_DEVICE_TYPE_GPU
-                || dev_type == GGML_BACKEND_DEVICE_TYPE_ACCEL;
+                || dev_type == GGML_BACKEND_DEVICE_TYPE_ACCEL
+                || (include_integrated && dev_type == GGML_BACKEND_DEVICE_TYPE_IGPU);
             if !is_gpu_like {
                 continue;
             }
@@ -184,8 +193,10 @@ pub fn get_per_device_free_vram(device_ids: &[usize]) -> Vec<(usize, u64, u64)> 
     out
 }
 
+/// Per-device memory for the selected ids; a single selected device may be
+/// an integrated GPU, a multi-GPU selection takes discrete devices only.
 pub fn get_aligned_per_device_vram(device_ids: &[usize]) -> Vec<(usize, u64, u64)> {
-    let per_device = get_per_device_free_vram(device_ids);
+    let per_device = get_per_device_free_vram(device_ids, device_ids.len() == 1);
     align_per_device_vram(device_ids, &per_device)
 }
 
