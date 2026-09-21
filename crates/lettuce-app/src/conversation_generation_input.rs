@@ -1284,7 +1284,9 @@ where
     /// Embeds the memories that have no ready vector for the current
     /// embedding model and text (new, edited, synced or from an older
     /// model), as legacy migrated session memories before retrieval. A
-    /// failure leaves the memory for the next retrieval.
+    /// memory that fails is left for the next retrieval and the rest still
+    /// get their vectors; superseded memories are never retrieved and are
+    /// skipped.
     fn embed_pending_memories(
         &self,
         work: &ConversationGenerationClaimedWork,
@@ -1298,11 +1300,13 @@ where
                 self.embedding.source_revision(),
                 self.embedding.dimensions(),
             )
-            .map_err(|_| ConversationGenerationInputError::Embedding)?;
+            .map_err(|_| ConversationGenerationInputError::Embedding)?
+            .into_iter()
+            .map(|projection| (projection.memory_id, projection.source_text))
+            .collect::<HashSet<_>>();
+        let mut failed = 0_usize;
         for item in &memory.items {
-            if ready.iter().any(|projection| {
-                projection.memory_id == item.id && projection.source_text == item.text
-            }) {
+            if item.superseded_by.is_some() || ready.contains(&(item.id, item.text.clone())) {
                 continue;
             }
             let vector = match self.embedding.embed_memory(
@@ -1317,8 +1321,8 @@ where
                     return Err(ConversationGenerationInputError::Cancelled);
                 }
                 Err(EmbeddingGenerationError::Unavailable) => {
-                    tracing::info!("pending memory embeddings wait for the embedding model");
-                    return Ok(());
+                    failed += 1;
+                    continue;
                 }
             };
             if self
@@ -1333,8 +1337,14 @@ where
                 })
                 .is_err()
             {
-                tracing::warn!("a pending memory embedding could not be stored");
+                failed += 1;
             }
+        }
+        if failed > 0 {
+            tracing::info!(
+                failed,
+                "pending memory embeddings wait for the next retrieval"
+            );
         }
         Ok(())
     }

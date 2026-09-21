@@ -124,9 +124,13 @@ pub const CONVERSATION_BRANCH_SYNC_KIND: &str = "conversation_branch";
 pub const CONVERSATION_BRANCH_SYNC_SCHEMA: &str = "conversation.branch";
 pub const CONVERSATION_BRANCH_SYNC_VERSION: u32 = 1;
 
-pub const MEMORY_SPACE_SYNC_KIND: &str = "memory_space";
-pub const MEMORY_SPACE_SYNC_SCHEMA: &str = "memory.space";
-pub const MEMORY_SPACE_SYNC_VERSION: u32 = 1;
+pub const MEMORY_ITEM_SYNC_KIND: &str = "memory_item";
+pub const MEMORY_ITEM_SYNC_SCHEMA: &str = "memory.item";
+pub const MEMORY_ITEM_SYNC_VERSION: u32 = 1;
+
+pub const MEMORY_SUMMARY_SYNC_KIND: &str = "memory_summary";
+pub const MEMORY_SUMMARY_SYNC_SCHEMA: &str = "memory.summary";
+pub const MEMORY_SUMMARY_SYNC_VERSION: u32 = 1;
 
 pub const COMPANION_SOUL_SYNC_KIND: &str = "companion_soul";
 pub const COMPANION_SOUL_SYNC_SCHEMA: &str = "companion.soul";

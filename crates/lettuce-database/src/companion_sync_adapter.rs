@@ -373,15 +373,23 @@ pub(crate) fn sync_replace_session(
             .map_err(storage)?;
         return Ok(());
     }
-    let previous: Option<(String, i64)> = transaction
+    let previous: Option<String> = transaction
         .query_row(
-            "SELECT conversation_id, episode_index FROM companion_continuity_episodes
-              WHERE character_id = ?1 AND persona_key = ?2
-              ORDER BY episode_index DESC, started_at DESC LIMIT 1",
-            params![session.character_id.to_string(), key],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            "SELECT conversation_id FROM companion_continuity_episodes
+              WHERE character_id = ?1 AND persona_key = ?2 AND started_at <= ?3
+              ORDER BY started_at DESC, episode_index DESC LIMIT 1",
+            params![session.character_id.to_string(), key, started_at.get()],
+            |row| row.get(0),
         )
         .optional()
+        .map_err(storage)?;
+    let index: i64 = transaction
+        .query_row(
+            "SELECT COALESCE(MAX(episode_index), 0) + 1 FROM companion_continuity_episodes
+              WHERE character_id = ?1 AND persona_key = ?2",
+            params![session.character_id.to_string(), key],
+            |row| row.get(0),
+        )
         .map_err(storage)?;
     transaction
         .execute(
@@ -394,8 +402,8 @@ pub(crate) fn sync_replace_session(
                 session.character_id.to_string(),
                 key,
                 session.persona_id.map(|id| id.to_string()),
-                previous.as_ref().map_or(1, |(_, index)| index + 1),
-                previous.map(|(id, _)| id),
+                index,
+                previous,
                 started_at.get(),
                 session.episode_ended_at.map(TimestampMillis::get),
                 updated_at.get(),

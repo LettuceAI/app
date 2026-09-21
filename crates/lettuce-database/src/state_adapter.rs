@@ -527,7 +527,7 @@ pub(crate) fn ensure_continuity_episode_in(
             "SELECT conversation_id, episode_index
              FROM companion_continuity_episodes
              WHERE character_id = ?1 AND persona_key = ?2
-             ORDER BY episode_index DESC, started_at DESC
+             ORDER BY started_at DESC, episode_index DESC
              LIMIT 1",
             params![owner.character_id.to_string(), key],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),

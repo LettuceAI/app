@@ -433,8 +433,12 @@ pub fn current_sync_schema_fingerprint() -> ContentHash {
         (crate::LOREBOOK_SYNC_SCHEMA, crate::LOREBOOK_SYNC_VERSION),
         (MEDIA_ASSET_SYNC_SCHEMA, MEDIA_ASSET_SYNC_VERSION),
         (
-            crate::MEMORY_SPACE_SYNC_SCHEMA,
-            crate::MEMORY_SPACE_SYNC_VERSION,
+            crate::MEMORY_ITEM_SYNC_SCHEMA,
+            crate::MEMORY_ITEM_SYNC_VERSION,
+        ),
+        (
+            crate::MEMORY_SUMMARY_SYNC_SCHEMA,
+            crate::MEMORY_SUMMARY_SYNC_VERSION,
         ),
         (
             crate::MODEL_PROFILE_SYNC_SCHEMA,
@@ -499,7 +503,7 @@ mod tests {
     fn current_schema_fingerprint_is_stable_and_complete() {
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "d84fb206ad4d50003d7ef2a7ca3a81973757404d52834afb7f196c13acec5cd8"
+            "25b36d1c04511f9a3084d91d72d76ca7de31482c8d2510a35557dad003e97ed7"
         );
     }
 

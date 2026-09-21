@@ -4756,7 +4756,16 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
         .expect("b space")
         .expect("b space exists");
     assert_ne!(on_b.id, space.id);
-    assert_eq!(on_b.items, vec![item.clone()]);
+    assert_eq!(
+        on_b.items
+            .iter()
+            .map(|stored| MemoryItem {
+                short_id: item.short_id,
+                ..stored.clone()
+            })
+            .collect::<Vec<_>>(),
+        vec![item.clone()]
+    );
     let summary_b = lettuce_memory::MemorySummaryRepository::get_summary(&b, on_b.id)
         .expect("b summary")
         .expect("b summary exists");
@@ -4789,8 +4798,71 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
             .expect("a space")
             .expect("present")
             .items,
-        vec![edited]
+        vec![edited.clone()]
     );
+
+    let add = |database: &Database, space_id: MemorySpaceId, text: &str| {
+        let current = MemoryRepository::get(database, space_id)
+            .expect("space")
+            .expect("present");
+        let id = MemoryId::new();
+        let mut items = current.items.clone();
+        items.push(MemoryItem {
+            id,
+            short_id: lettuce_memory::MemoryShortId::derived(id),
+            text: text.into(),
+            ..edited.clone()
+        });
+        MemoryRepository::compare_and_apply(
+            database,
+            MemoryChangeSet {
+                space_id,
+                expected_revision: current.revision,
+                items,
+            },
+        )
+        .expect("add memory");
+        id
+    };
+    let from_a = add(&a, space.id, "Added on a.");
+    let from_b = add(&b, on_b.id, "Added on b.");
+    sync_prompts(&a, &b, 3_100);
+    sync_prompts(&b, &a, 3_200);
+    let ids = |database: &Database, space_id: MemorySpaceId| {
+        let mut ids = MemoryRepository::get(database, space_id)
+            .expect("space")
+            .expect("present")
+            .items
+            .into_iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    };
+    let mut expected = vec![edited.id, from_a, from_b];
+    expected.sort();
+    assert_eq!(ids(&a, space.id), expected);
+    assert_eq!(ids(&b, on_b.id), expected);
+
+    let current = MemoryRepository::get(&a, space.id)
+        .expect("space")
+        .expect("present");
+    MemoryRepository::compare_and_apply(
+        &a,
+        MemoryChangeSet {
+            space_id: space.id,
+            expected_revision: current.revision,
+            items: current
+                .items
+                .into_iter()
+                .filter(|item| item.id != from_b)
+                .collect(),
+        },
+    )
+    .expect("delete on a");
+    sync_prompts(&a, &b, 3_300);
+    expected.retain(|id| *id != from_b);
+    assert_eq!(ids(&b, on_b.id), expected);
     assert_rescans_are_empty(&[&a, &b], 4_000);
 }
 

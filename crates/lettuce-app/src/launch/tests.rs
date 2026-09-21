@@ -10910,6 +10910,31 @@ fn companion_state_soul_and_notes_sync_with_the_conversation() {
         },
     )
     .expect("note");
+    let soul_owner = lettuce_companions::SoulOwner::Character(character_id);
+    let initial_soul = SoulRepository::get(&a, soul_owner)
+        .expect("soul")
+        .expect("initial soul");
+    let growth = lettuce_companions::prepare_growth_change_set(
+        &initial_soul,
+        initial_soul.revision,
+        vec![lettuce_companions::ProposedSoulFact {
+            id: "grown-fact".to_owned(),
+            category: lettuce_companions::SoulCategory::Likes,
+            value: "Rainy evenings".to_owned(),
+            kind: lettuce_companions::SoulFactKind::Add,
+            policy: lettuce_companions::SoulFactPolicy::Adaptive,
+            slot: "weather".to_owned(),
+            confidence: 0.75,
+            weight: 0.8,
+            valid_until: None,
+            locked: false,
+            source_memory_ids: vec!["memory-a".to_owned()],
+            supersedes: Vec::new(),
+        }],
+        TimestampMillis::new(NOW.get() + 5),
+    )
+    .expect("growth");
+    SoulRepository::apply(&a, soul_owner, OperationRecordId::new(), growth).expect("grow soul");
 
     sync_prompts(&a, &b, NOW.get() + 1_000);
 
@@ -10929,13 +10954,19 @@ fn companion_state_soul_and_notes_sync_with_the_conversation() {
         CompanionScheduledNoteRepository::list_scheduled_notes(&b, character_id).expect("b notes"),
         vec![note]
     );
+    let soul_a = SoulRepository::get(&a, soul_owner)
+        .expect("a soul")
+        .map(|soul| soul.facts);
+    assert!(
+        soul_a
+            .as_ref()
+            .is_some_and(|facts| facts.iter().any(|fact| fact.id == "grown-fact"))
+    );
     assert_eq!(
-        SoulRepository::get(&b, lettuce_companions::SoulOwner::Character(character_id))
+        SoulRepository::get(&b, soul_owner)
             .expect("b soul")
             .map(|soul| soul.facts),
-        SoulRepository::get(&a, lettuce_companions::SoulOwner::Character(character_id))
-            .expect("a soul")
-            .map(|soul| soul.facts),
+        soul_a
     );
 
     let mut on_b_evolved = on_b.state.clone();

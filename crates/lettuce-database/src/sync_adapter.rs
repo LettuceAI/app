@@ -945,9 +945,14 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::COMPANION_NOTE_SYNC_VERSION,
         )
         | (
-            lettuce_sync::MEMORY_SPACE_SYNC_KIND,
-            lettuce_sync::MEMORY_SPACE_SYNC_SCHEMA,
-            lettuce_sync::MEMORY_SPACE_SYNC_VERSION,
+            lettuce_sync::MEMORY_ITEM_SYNC_KIND,
+            lettuce_sync::MEMORY_ITEM_SYNC_SCHEMA,
+            lettuce_sync::MEMORY_ITEM_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::MEMORY_SUMMARY_SYNC_KIND,
+            lettuce_sync::MEMORY_SUMMARY_SYNC_SCHEMA,
+            lettuce_sync::MEMORY_SUMMARY_SYNC_VERSION,
         )
         | (
             lettuce_sync::CONVERSATION_BRANCH_SYNC_KIND,
@@ -1715,49 +1720,87 @@ fn memory_apply_error(error: lettuce_memory::MemoryRepositoryError) -> ApplyOneE
     }
 }
 
-fn decode_memory_space(
+fn decode_memory_item(id: &str, bytes: &[u8]) -> Result<lettuce_memory::MemoryItem, ApplyOneError> {
+    let item: lettuce_memory::MemoryItem =
+        serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+    match crate::memory_sync_adapter::split_item_id(id) {
+        Some((_, item_id)) if item_id == item.id => Ok(item),
+        _ => Err(ApplyOneError::Corrupt),
+    }
+}
+
+const MEMORY_ITEM_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::MEMORY_ITEM_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: None,
+    decode: |id, bytes| decode_memory_item(id, bytes).map(|_| ()),
+    current: |tx, id| {
+        crate::memory_sync_adapter::sync_load_memory_item(tx, id)
+            .map_err(memory_apply_error)?
+            .map(|item| {
+                json_payload(
+                    lettuce_sync::MEMORY_ITEM_SYNC_SCHEMA,
+                    lettuce_sync::MEMORY_ITEM_SYNC_VERSION,
+                    &item,
+                )
+            })
+            .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        let item = decode_memory_item(id, bytes)?;
+        crate::memory_sync_adapter::sync_put_memory_item(tx, id, &item).map_err(memory_apply_error)
+    },
+    ids: Some(|connection| {
+        crate::memory_sync_adapter::sync_memory_item_ids(connection)
+            .map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: Some(|tx, id, _| {
+        crate::memory_sync_adapter::sync_delete_memory_item(tx, id).map_err(memory_apply_error)
+    }),
+};
+
+fn decode_memory_summary(
     id: &str,
     bytes: &[u8],
-) -> Result<crate::memory_sync_adapter::SyncMemorySpace, ApplyOneError> {
-    if !crate::memory_sync_adapter::valid_memory_space_id(id) {
+) -> Result<lettuce_memory::MemorySummary, ApplyOneError> {
+    if !crate::memory_sync_adapter::valid_owner(id) {
         return Err(ApplyOneError::Corrupt);
     }
     serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)
 }
 
-const MEMORY_SPACE_CODEC: SnapshotCodec = SnapshotCodec {
-    kind: lettuce_sync::MEMORY_SPACE_SYNC_KIND,
+const MEMORY_SUMMARY_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::MEMORY_SUMMARY_SYNC_KIND,
     assets: no_assets,
     empty: None,
-    seed: Some(|bytes| {
-        serde_json::from_slice::<crate::memory_sync_adapter::SyncMemorySpace>(bytes)
-            .is_ok_and(|space| space.items.is_empty() && space.summary.is_none())
-    }),
-    decode: |id, bytes| decode_memory_space(id, bytes).map(|_| ()),
+    seed: None,
+    decode: |id, bytes| decode_memory_summary(id, bytes).map(|_| ()),
     current: |tx, id| {
-        crate::memory_sync_adapter::sync_load_memory_space(tx, id)
+        crate::memory_sync_adapter::sync_load_memory_summary(tx, id)
             .map_err(memory_apply_error)?
-            .map(|space| {
-                CanonicalPayload::new(
-                    lettuce_sync::MEMORY_SPACE_SYNC_SCHEMA,
-                    lettuce_sync::MEMORY_SPACE_SYNC_VERSION,
-                    serde_json::to_vec(&space).map_err(|_| ApplyOneError::Corrupt)?,
+            .map(|summary| {
+                json_payload(
+                    lettuce_sync::MEMORY_SUMMARY_SYNC_SCHEMA,
+                    lettuce_sync::MEMORY_SUMMARY_SYNC_VERSION,
+                    &summary,
                 )
-                .map_err(|_| ApplyOneError::Corrupt)
             })
             .transpose()
     },
     materialize: |tx, id, bytes| {
-        let space = decode_memory_space(id, bytes)?;
-        crate::memory_sync_adapter::sync_replace_memory_space(tx, id, &space)
+        let summary = decode_memory_summary(id, bytes)?;
+        crate::memory_sync_adapter::sync_replace_memory_summary(tx, id, &summary)
             .map_err(memory_apply_error)?;
         Ok(true)
     },
     ids: Some(|connection| {
-        crate::memory_sync_adapter::sync_memory_space_ids(connection)
+        crate::memory_sync_adapter::sync_memory_summary_owners(connection)
             .map_err(|_| ApplyOneError::Storage)
     }),
-    delete: None,
+    delete: Some(|tx, id, _| {
+        crate::memory_sync_adapter::sync_delete_memory_summary(tx, id).map_err(memory_apply_error)
+    }),
 };
 
 fn json_payload<T: serde::Serialize>(
@@ -1781,7 +1824,14 @@ const COMPANION_SOUL_CODEC: SnapshotCodec = SnapshotCodec {
     kind: lettuce_sync::COMPANION_SOUL_SYNC_KIND,
     assets: no_assets,
     empty: None,
-    seed: None,
+    seed: Some(|bytes| {
+        serde_json::from_slice::<Vec<lettuce_companions::SoulFact>>(bytes).is_ok_and(|facts| {
+            facts.iter().all(|fact| {
+                fact.kind == lettuce_companions::SoulFactKind::Authored
+                    && fact.superseded_by.is_none()
+            })
+        })
+    }),
     decode: |id, bytes| {
         parse_character(id)?;
         serde_json::from_slice::<Vec<lettuce_companions::SoulFact>>(bytes)
@@ -1829,7 +1879,10 @@ const COMPANION_RELATIONSHIP_CODEC: SnapshotCodec = SnapshotCodec {
     kind: lettuce_sync::COMPANION_RELATIONSHIP_SYNC_KIND,
     assets: no_assets,
     empty: None,
-    seed: None,
+    seed: Some(|bytes| {
+        serde_json::from_slice::<crate::companion_sync_adapter::SyncCompanionRelationship>(bytes)
+            .is_ok_and(|relationship| relationship.state.interaction_count == 0)
+    }),
     decode: |id, bytes| decode_relationship(id, bytes).map(|_| ()),
     current: |tx, id| {
         crate::companion_sync_adapter::sync_load_relationship(tx, id)
@@ -2207,7 +2260,7 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 30] = [
+const SCANNED_CODECS: [&SnapshotCodec; 31] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -2223,7 +2276,8 @@ const SCANNED_CODECS: [&SnapshotCodec; 30] = [
     &CONVERSATION_CODEC,
     &CONVERSATION_BRANCH_CODEC,
     &CONVERSATION_MESSAGE_CODEC,
-    &MEMORY_SPACE_CODEC,
+    &MEMORY_ITEM_CODEC,
+    &MEMORY_SUMMARY_CODEC,
     &COMPANION_SOUL_CODEC,
     &COMPANION_NOTE_CODEC,
     &COMPANION_RELATIONSHIP_CODEC,

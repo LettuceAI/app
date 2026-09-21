@@ -276,50 +276,7 @@ pub(super) fn get_in(
         let mut rows = statement.query([id.to_string()]).map_err(storage)?;
         let mut items = Vec::new();
         while let Some(row) = rows.next().map_err(storage)? {
-            items.push(MemoryItem {
-                id: parse_id(row.get::<_, String>(0).map_err(storage)?)?,
-                short_id: MemoryShortId::new(row.get(1).map_err(storage)?)
-                    .ok_or_else(|| storage("invalid memory short id"))?,
-                text: row.get(2).map_err(storage)?,
-                category: parse_category(&row.get::<_, String>(3).map_err(storage)?)?,
-                source_message_id: row
-                    .get::<_, Option<String>>(4)
-                    .map_err(storage)?
-                    .map(parse_id)
-                    .transpose()?,
-                source_role: match row.get::<_, Option<String>>(5).map_err(storage)?.as_deref() {
-                    Some("user") => Some(lettuce_conversations::MessageRole::User),
-                    Some("assistant") => Some(lettuce_conversations::MessageRole::Assistant),
-                    None => None,
-                    _ => return Err(storage("invalid memory source role")),
-                },
-                observed_at: row
-                    .get::<_, Option<i64>>(6)
-                    .map_err(storage)?
-                    .map(TimestampMillis::new),
-                observed_time_precision: row.get(7).map_err(storage)?,
-                superseded_by: row
-                    .get::<_, Option<String>>(8)
-                    .map_err(storage)?
-                    .map(parse_id)
-                    .transpose()?,
-                superseded_at: row
-                    .get::<_, Option<i64>>(9)
-                    .map_err(storage)?
-                    .map(TimestampMillis::new),
-                supersedes: serde_json::from_str(&row.get::<_, String>(10).map_err(storage)?)
-                    .map_err(storage)?,
-                token_count: row.get(11).map_err(storage)?,
-                is_cold: row.get(12).map_err(storage)?,
-                is_pinned: row.get(13).map_err(storage)?,
-                importance: parse_score(row.get(14).map_err(storage)?)?,
-                persistence_importance: parse_score(row.get(15).map_err(storage)?)?,
-                prompt_importance: parse_score(row.get(16).map_err(storage)?)?,
-                volatility: parse_score(row.get(17).map_err(storage)?)?,
-                access_count: row.get(18).map_err(storage)?,
-                created_at: TimestampMillis::new(row.get(19).map_err(storage)?),
-                last_accessed_at: TimestampMillis::new(row.get(20).map_err(storage)?),
-            });
+            items.push(item_from_row(row)?);
         }
         items
     };
@@ -330,6 +287,67 @@ pub(super) fn get_in(
     };
     snapshot.validate()?;
     Ok(Some(snapshot))
+}
+
+fn item_from_row(row: &rusqlite::Row<'_>) -> Result<MemoryItem, MemoryRepositoryError> {
+    Ok(MemoryItem {
+        id: parse_id(row.get::<_, String>(0).map_err(storage)?)?,
+        short_id: MemoryShortId::new(row.get(1).map_err(storage)?)
+            .ok_or_else(|| storage("invalid memory short id"))?,
+        text: row.get(2).map_err(storage)?,
+        category: parse_category(&row.get::<_, String>(3).map_err(storage)?)?,
+        source_message_id: row
+            .get::<_, Option<String>>(4)
+            .map_err(storage)?
+            .map(parse_id)
+            .transpose()?,
+        source_role: match row.get::<_, Option<String>>(5).map_err(storage)?.as_deref() {
+            Some("user") => Some(lettuce_conversations::MessageRole::User),
+            Some("assistant") => Some(lettuce_conversations::MessageRole::Assistant),
+            None => None,
+            _ => return Err(storage("invalid memory source role")),
+        },
+        observed_at: row
+            .get::<_, Option<i64>>(6)
+            .map_err(storage)?
+            .map(TimestampMillis::new),
+        observed_time_precision: row.get(7).map_err(storage)?,
+        superseded_by: row
+            .get::<_, Option<String>>(8)
+            .map_err(storage)?
+            .map(parse_id)
+            .transpose()?,
+        superseded_at: row
+            .get::<_, Option<i64>>(9)
+            .map_err(storage)?
+            .map(TimestampMillis::new),
+        supersedes: serde_json::from_str(&row.get::<_, String>(10).map_err(storage)?)
+            .map_err(storage)?,
+        token_count: row.get(11).map_err(storage)?,
+        is_cold: row.get(12).map_err(storage)?,
+        is_pinned: row.get(13).map_err(storage)?,
+        importance: parse_score(row.get(14).map_err(storage)?)?,
+        persistence_importance: parse_score(row.get(15).map_err(storage)?)?,
+        prompt_importance: parse_score(row.get(16).map_err(storage)?)?,
+        volatility: parse_score(row.get(17).map_err(storage)?)?,
+        access_count: row.get(18).map_err(storage)?,
+        created_at: TimestampMillis::new(row.get(19).map_err(storage)?),
+        last_accessed_at: TimestampMillis::new(row.get(20).map_err(storage)?),
+    })
+}
+
+/// One item of a space.
+pub(crate) fn get_item_in(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+    item_id: lettuce_types::MemoryId,
+) -> Result<Option<MemoryItem>, MemoryRepositoryError> {
+    let sql = SELECT_ITEM.replace("WHERE space_id = ?1", "WHERE space_id = ?1 AND id = ?2");
+    let mut statement = transaction.prepare(&sql).map_err(storage)?;
+    let mut rows = statement
+        .query(params![space_id.to_string(), item_id.to_string()])
+        .map_err(storage)?;
+    rows.next().map_err(storage)?.map(item_from_row).transpose()
 }
 
 pub(super) fn compare_and_apply_in(

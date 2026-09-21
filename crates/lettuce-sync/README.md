@@ -311,19 +311,23 @@ conversation have no fork point and stay as they are. Known limit: a third devic
 replying inside a chain that later loses (nested concurrency) can leave the
 devices with different sub-forks; the originals are always kept.
 
-Memory (sync S9a, `memory.space`). Each device picks its own memory space
-ids, so a space is exchanged under its owner: `conversation:<id>` for a
-conversation's own space, `pool:<character>` for a companion character's
-shared pool. The payload is the items and the summary (space id blanked);
-the space revision stays local and a merge replaces items and summary as a
-whole (last writer wins). The dynamic-memory cursor is the summary window,
-which counts path messages, so the receiving device continues where the
-other stopped instead of re-extracting. The space appears with its
-conversation root and a summary waits for its source messages; the empty
-space a root creates is a seed that any real snapshot replaces. Runs,
-attempts, retrieval accesses and ask-first approvals stay device-local, and
-embedding projections are rebuilt by each device. (retrieval embeds memories without a
-current vector first, like legacy).
+Memory (sync S9a). Each device picks its own memory space ids, so memory is
+exchanged under the space's owner: `conversation:<id>` for a conversation's
+own space, `pool:<character>` for a companion character's shared pool. Every
+item is its own entity (`memory.item`, `<owner>/<memory id>`, deletable): a
+retrieval journals only the items it touched, concurrent additions on two
+devices are both kept and deletions propagate. Short ids and ordinals are
+numbered by each device (a new item keeps its derived short id unless it is
+taken). An item id that already belongs to another space here is refused.
+The summary is one entity per owner (`memory.summary`, space id blanked,
+waits for its source messages). The dynamic-memory cursor is the summary
+window, which counts path messages, so the summary's owner conversation
+continues where the other device stopped; the other conversations of a pool
+still read their cursor from local runs (known limit). Runs, attempts,
+retrieval accesses and ask-first approvals stay device-local, and embedding
+projections are rebuilt by each device (retrieval embeds every memory
+without a current vector first, like legacy, skipping superseded ones and
+continuing past failures).
 
 Companions (sync S9b). A character's Soul (`companion.soul`, the facts;
 revision local), the relationship a character keeps with one persona
@@ -333,7 +337,12 @@ signals, initial hash and the continuity episode's start and end) and
 scheduled notes (`companion.scheduled_note`, deletable) are exchanged as
 whole snapshots, last writer wins. A session waits for its conversation and
 relationship. An episode's index and predecessor are numbered by each device
-(two devices can open sessions at once), so they are not exchanged. Apply
+(two devices can open sessions at once), so they are not exchanged; the
+predecessor is the latest episode that started before it, and a new local
+launch closes the episode that started last. A soul whose facts are all
+authored and none superseded and a relationship with no interactions are
+seeds (what launching or receiving a character creates on its own), so a
+grown soul or a used relationship replaces them. Apply
 receipts, turn effects, growth/consolidation/writer runs stay on the device
 that ran them.
 
