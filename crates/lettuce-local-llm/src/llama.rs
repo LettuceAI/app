@@ -16,8 +16,8 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_sys_2::llama_flash_attn_type;
 
 use crate::offload::{
-    FlashAttentionPolicy, KvCacheGeometry, KvLayerGeometry, LlamaModelMetadata, ModelOffloadCosts,
-    OffloadModel, OffloadRequest, SmartGpuOffloadPlan,
+    FlashAttentionPolicy, KvCacheGeometry, KvCacheTypes, KvLayerGeometry, LlamaModelMetadata,
+    ModelOffloadCosts, OffloadModel, OffloadRequest, SmartGpuOffloadPlan,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -116,7 +116,7 @@ pub fn measure_device_compute_bytes(
     planned_context: u32,
     n_batch: u32,
     offload_kqv: Option<bool>,
-    llama_kv_type: Option<&str>,
+    kv_types: KvCacheTypes<'_>,
     flash_attention_policy: FlashAttentionPolicy,
 ) -> Option<u64> {
     let key = ComputeProbeKey {
@@ -126,7 +126,7 @@ pub fn measure_device_compute_bytes(
         n_batch,
         offload_kqv,
         flash_attention_policy,
-        kv_type_hash: stable_hash(llama_kv_type.unwrap_or("")),
+        kv_type_hash: stable_hash(kv_types.label().as_deref().unwrap_or("")),
     };
     if let Some(cached) = cache(&COMPUTE_PROBE_CACHE).lock().ok()?.get(&key).copied() {
         return cached;
@@ -141,8 +141,11 @@ pub fn measure_device_compute_bytes(
     if let Some(offload) = offload_kqv {
         context_params = context_params.with_offload_kqv(offload);
     }
-    if let Some(kv_type) = llama_kv_type.and_then(parse_kv_cache_type) {
-        context_params = context_params.with_type_k(kv_type).with_type_v(kv_type);
+    if let Some(k_type) = kv_types.k.and_then(parse_kv_cache_type) {
+        context_params = context_params.with_type_k(k_type);
+    }
+    if let Some(v_type) = kv_types.v.and_then(parse_kv_cache_type) {
+        context_params = context_params.with_type_v(v_type);
     }
     model_params = model_params.with_no_alloc(true);
 
@@ -314,7 +317,7 @@ pub fn plan_smart_gpu_offload(
                 planned_context,
                 request.n_batch,
                 request.resolved_offload_kqv,
-                request.llama_kv_type,
+                request.kv_types,
                 request.flash_attention_policy,
             )
         },
@@ -326,7 +329,7 @@ pub fn estimate_mtp_gpu_reserve_bytes(
     model_path: &str,
     planned_context: u32,
     n_ubatch: u32,
-    llama_kv_type: Option<&str>,
+    kv_types: KvCacheTypes<'_>,
 ) -> Result<u64, LlamaRuntimeError> {
     let metadata = load_model_metadata(model_path)?;
     Ok(crate::offload::estimate_mtp_gpu_reserve_bytes(
@@ -334,7 +337,7 @@ pub fn estimate_mtp_gpu_reserve_bytes(
         load_kv_geometry(model_path).as_ref(),
         planned_context,
         n_ubatch,
-        llama_kv_type,
+        kv_types,
     ))
 }
 
@@ -371,7 +374,7 @@ mod real_model_plan {
         if let Some(geometry) = geometry.as_ref() {
             println!(
                 "kv_total@ctx={}",
-                geometry.total_bytes(ctx, 512, Some("q8_0"))
+                geometry.total_bytes(ctx, 512, KvCacheTypes::uniform(Some("q8_0")))
             );
         }
         println!("output unit bytes={}", costs.gpu_bytes(1));
@@ -383,7 +386,7 @@ mod real_model_plan {
                 requested_context: Some(ctx),
                 n_batch: 512,
                 resolved_offload_kqv: Some(true),
-                llama_kv_type: Some("q8_0"),
+                kv_types: KvCacheTypes::uniform(Some("q8_0")),
                 flash_attention_policy: FlashAttentionPolicy::Auto,
                 sidecar_vram_reserve_bytes: 0,
                 bundled_mtp_draft: bundled,

@@ -1153,7 +1153,7 @@ impl Run<'_> {
                     path,
                     planned_mtp_context,
                     rt.compute_batch_size,
-                    rt.kv_type.as_deref(),
+                    rt.kv_types(),
                 )
             })
             .transpose()?
@@ -1204,7 +1204,7 @@ impl Run<'_> {
             "priorityVramLimitBytes": rt.priority_vram_limit_bytes,
             "kvPlacement": rt.kv_placement,
             "offloadKqv": resolved_offload_kqv,
-            "kvType": rt.kv_type,
+            "kvType": planning_kv_type(&rt),
             "swaFull": rt.swa_full,
             "context": self.requested_context,
             "batch": self.batch_size_limit,
@@ -1282,7 +1282,7 @@ impl Run<'_> {
                     requested_context: self.requested_context,
                     n_batch: rt.compute_batch_size,
                     resolved_offload_kqv,
-                    llama_kv_type: rt.kv_type.as_deref(),
+                    kv_types: rt.kv_types(),
                     flash_attention_policy: flash_policy,
                     sidecar_vram_reserve_bytes,
                     bundled_mtp_draft: mtp_bundled,
@@ -1452,7 +1452,10 @@ impl Run<'_> {
             );
         }
 
-        let kv_type = rt.kv_type.as_deref().and_then(parse_request_kv_type);
+        let kv_types = rt.kv_types();
+        let kv_label = kv_types.label();
+        let k_type = kv_types.k.and_then(parse_request_kv_type);
+        let v_type = kv_types.v.and_then(parse_request_kv_type);
         let native_fit_eligible =
             native_fit_request && backend_supports_gpu_offload && !hot_context_resident;
         if native_fit_eligible {
@@ -1466,7 +1469,8 @@ impl Run<'_> {
                 if let Some(n_ubatch) = rt.ubatch_size {
                     fit_params = fit_params.with_n_ubatch(n_ubatch.min(fit_batch));
                 }
-                fit_params = apply_common_params(fit_params, &rt, resolved_offload_kqv, kv_type);
+                fit_params =
+                    apply_common_params(fit_params, &rt, resolved_offload_kqv, k_type, v_type);
                 let fit_devices = rt
                     .single_gpu_device_id
                     .map(|device_id| vec![device_id])
@@ -1712,7 +1716,7 @@ impl Run<'_> {
             max_ctx,
             actual_gpu_layers_used.unwrap_or(0),
             runtime_offload_kqv,
-            rt.kv_type.as_deref(),
+            kv_types,
         );
         let mut batch_size_limit = self.batch_size_limit;
         let recommended_ctx = if cpu_runtime_active {
@@ -1721,7 +1725,7 @@ impl Run<'_> {
                 available_memory_bytes,
                 max_ctx,
                 actual_gpu_layers_used.unwrap_or(0),
-                rt.kv_type.as_deref(),
+                kv_types,
                 None,
                 batch_size_limit,
             )
@@ -1818,7 +1822,7 @@ impl Run<'_> {
                 available_memory_bytes,
                 max_ctx,
                 actual_gpu_layers_used.unwrap_or(0),
-                rt.kv_type.as_deref(),
+                kv_types,
                 self.requested_context,
                 batch_size_limit,
             )
@@ -2079,7 +2083,7 @@ impl Run<'_> {
                 if let Some(n_ubatch) = attempt_ubatch {
                     ctx_params = ctx_params.with_n_ubatch(n_ubatch);
                 }
-                ctx_params = apply_common_params(ctx_params, &rt, attempt_kqv, kv_type)
+                ctx_params = apply_common_params(ctx_params, &rt, attempt_kqv, k_type, v_type)
                     .with_flash_attention_policy(flash_attention_type(flash_policy));
                 if mtp_active {
                     ctx_params = ctx_params.with_n_rs_seq(rt.mtp_draft_tokens);
@@ -2103,7 +2107,7 @@ impl Run<'_> {
                     n_threads_batch: rt.threads_batch,
                     offload_kqv: attempt_kqv,
                     swa_full: rt.swa_full,
-                    kv_type: rt.kv_type.as_deref(),
+                    kv_type: kv_label.as_deref(),
                     flash_attention: flash_policy,
                     rope_freq_base: rt.rope_freq_base,
                     rope_freq_scale: rt.rope_freq_scale,
@@ -2176,7 +2180,7 @@ impl Run<'_> {
                             attempt_kqv,
                             rt.offload_kqv,
                             recommended_ctx,
-                            rt.kv_type.as_deref(),
+                            kv_label.as_deref(),
                         );
                         if !is_likely_context_oom_error(&raw_error) {
                             return Err(failed(format!(
@@ -2231,8 +2235,11 @@ impl Run<'_> {
             if let Some(swa_full) = rt.swa_full {
                 draft_params = draft_params.with_swa_full(swa_full);
             }
-            if let Some(kv_type) = kv_type {
-                draft_params = draft_params.with_type_k(kv_type).with_type_v(kv_type);
+            if let Some(k_type) = k_type {
+                draft_params = draft_params.with_type_k(k_type);
+            }
+            if let Some(v_type) = v_type {
+                draft_params = draft_params.with_type_v(v_type);
             }
             if let Some(base) = rt.rope_freq_base {
                 draft_params = draft_params.with_rope_freq_base(base as f32);
@@ -2332,7 +2339,7 @@ impl Run<'_> {
                     "actualNUbatchUsed": n_ubatch,
                     "requestedGpuLayers": rt.gpu_layers,
                     "actualGpuLayersUsed": actual_gpu_layers_used,
-                    "actualKvTypeUsed": kv_type_label(rt.kv_type.as_deref()),
+                    "actualKvTypeUsed": kv_type_label(kv_label.as_deref()),
                     "actualOffloadKqvMode": offload_kqv_mode_label(resolved_kqv),
                     "flashAttentionPolicy": flash_attention_policy_label(flash_policy),
                     "actualBackendPathUsed": backend_label,
@@ -2362,7 +2369,7 @@ impl Run<'_> {
             ("actualUbatchUsed", json!(n_ubatch)),
             (
                 "actualKvTypeUsed",
-                json!(kv_type_label(rt.kv_type.as_deref())),
+                json!(kv_type_label(kv_label.as_deref())),
             ),
             (
                 "actualOffloadKqvMode",
@@ -2398,7 +2405,7 @@ impl Run<'_> {
             n_batch,
             n_ubatch,
             gpu_layers = ?actual_gpu_layers_used,
-            kv_type = kv_type_label(rt.kv_type.as_deref()),
+            kv_type = kv_type_label(kv_label.as_deref()),
             offload_kqv = offload_kqv_mode_label(resolved_kqv),
             backend_path = backend_label,
             flash_attention = flash_attention_policy_label(flash_policy),
@@ -3200,11 +3207,23 @@ impl Run<'_> {
     }
 }
 
+/// The planning-config `kvType`: the shared type as legacy wrote it, or the
+/// K and V types when they differ.
+fn planning_kv_type(rt: &ResolvedRuntime) -> Value {
+    let kv_types = rt.kv_types();
+    if kv_types.shared().is_some() {
+        json!(kv_types.k)
+    } else {
+        json!({ "k": kv_types.k, "v": kv_types.v })
+    }
+}
+
 fn apply_common_params(
     mut params: LlamaContextParams,
     rt: &ResolvedRuntime,
     offload_kqv: Option<bool>,
-    kv_type: Option<KvCacheType>,
+    k_type: Option<KvCacheType>,
+    v_type: Option<KvCacheType>,
 ) -> LlamaContextParams {
     if let Some(n_threads) = rt.threads {
         params = params.with_n_threads(n_threads as i32);
@@ -3218,8 +3237,11 @@ fn apply_common_params(
     if let Some(swa_full) = rt.swa_full {
         params = params.with_swa_full(swa_full);
     }
-    if let Some(kv_type) = kv_type {
-        params = params.with_type_k(kv_type).with_type_v(kv_type);
+    if let Some(k_type) = k_type {
+        params = params.with_type_k(k_type);
+    }
+    if let Some(v_type) = v_type {
+        params = params.with_type_v(v_type);
     }
     if let Some(base) = rt.rope_freq_base {
         params = params.with_rope_freq_base(base as f32);
@@ -3510,6 +3532,27 @@ mod tests {
             .clone()
             .expect("stored report");
         assert_eq!(report["promptCacheHit"], json!(true));
+
+        let mut split_kv = base.clone();
+        split_kv.prompt_cache_key = None;
+        split_kv.runtime.kv_type_k = Some("q8_0".into());
+        split_kv.runtime.kv_type_v = Some("q4_0".into());
+        let with_split_kv = run_blocking(
+            &runtime,
+            split_kv,
+            Arc::new(Recorder::default()),
+            reports.clone(),
+        )
+        .expect("split kv run");
+        eprintln!("split kv: {:?}", with_split_kv.content);
+        assert!(with_split_kv.content.contains("Paris"));
+        let report = reports
+            .0
+            .lock()
+            .expect("report")
+            .clone()
+            .expect("stored report");
+        assert_eq!(report["actualKvTypeUsed"], json!("k=q8_0,v=q4_0"));
 
         if let Ok(draft) = std::env::var("LETTUCE_MTP_MODEL") {
             let mut mtp = base;

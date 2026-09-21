@@ -11,7 +11,7 @@ use std::time::Duration;
 use serde_json::{Map, Value, json};
 
 use crate::mtp::{MTP_DRAFT_DEFAULT, MTP_DRAFT_MAX};
-use crate::offload::FlashAttentionPolicy;
+use crate::offload::{FlashAttentionPolicy, KvCacheTypes};
 
 pub const DEFAULT_MAX_TOKENS: u32 = 512;
 pub const DEFAULT_BATCH_SIZE: u32 = 512;
@@ -92,6 +92,8 @@ pub struct LlamaRuntimeInput {
     pub swa_full: Option<bool>,
     pub flash_attention: Option<FlashAttentionPolicy>,
     pub kv_type: Option<String>,
+    pub kv_type_k: Option<String>,
+    pub kv_type_v: Option<String>,
     pub mmproj_path: Option<String>,
     pub chat_template_override: Option<String>,
     pub chat_template_preset: Option<String>,
@@ -150,6 +152,8 @@ pub struct ResolvedRuntime {
     pub swa_full: Option<bool>,
     pub flash_attention: Option<FlashAttentionPolicy>,
     pub kv_type: Option<String>,
+    pub kv_type_k: Option<String>,
+    pub kv_type_v: Option<String>,
     pub mmproj_path: Option<String>,
     pub chat_template_override: Option<String>,
     pub chat_template_preset: Option<String>,
@@ -368,10 +372,9 @@ impl LlamaGenerationRequest {
             offload_kqv: input.offload_kqv,
             swa_full: input.swa_full,
             flash_attention: input.flash_attention,
-            kv_type: input
-                .kv_type
-                .as_deref()
-                .map(|value| value.trim().to_ascii_lowercase()),
+            kv_type: normalized_kv_type(input.kv_type.as_deref()),
+            kv_type_k: normalized_kv_type(input.kv_type_k.as_deref()),
+            kv_type_v: normalized_kv_type(input.kv_type_v.as_deref()),
             mmproj_path: trimmed_non_empty(input.mmproj_path.as_deref()),
             chat_template_override: trimmed_non_empty(input.chat_template_override.as_deref()),
             chat_template_preset: trimmed_non_empty(input.chat_template_preset.as_deref()),
@@ -391,6 +394,22 @@ impl LlamaGenerationRequest {
                 .filter(|value| matches!(value.as_str(), "auto" | "gpu" | "cpu"))
                 .unwrap_or_else(|| "auto".to_string()),
         }
+    }
+}
+
+fn normalized_kv_type(value: Option<&str>) -> Option<String> {
+    value.map(|value| value.trim().to_ascii_lowercase())
+}
+
+impl ResolvedRuntime {
+    /// Separate K/V cache types when either is set, else the shared type.
+    #[must_use]
+    pub fn kv_types(&self) -> KvCacheTypes<'_> {
+        KvCacheTypes::from_settings(
+            self.kv_type.as_deref(),
+            self.kv_type_k.as_deref(),
+            self.kv_type_v.as_deref(),
+        )
     }
 }
 

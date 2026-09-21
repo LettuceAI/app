@@ -389,6 +389,8 @@ fn llama_cpp(reader: &mut Reader<'_>) -> LlamaCppSettings {
         kv_type: reader.parse("llamaKvType", |value| {
             serde_json::from_value::<LlamaKvType>(value.clone()).ok()
         }),
+        kv_type_k: None,
+        kv_type_v: None,
         flash_attention: reader.choice("llamaFlashAttention", |value| match value {
             "auto" => Some(LlamaFlashAttention::Auto),
             "enabled" => Some(LlamaFlashAttention::Enabled),

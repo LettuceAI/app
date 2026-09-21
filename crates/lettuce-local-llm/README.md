@@ -124,5 +124,15 @@ since the formulas are frozen.
   normalization and base64 handling are unchanged. Verified on a real model:
   CPU generation, prompt-cache reuse and MTP.
 
+Separate K and V cache types (user request 2026-09-21): `kv_type_k` and
+`kv_type_v` on `LlamaCppSettings` (both or neither, never beside `kv_type`)
+become `KvCacheTypes`. With one shared type every sizing formula runs the
+legacy expression unchanged (all legacy tests pass as before); with
+different types each half is billed at its own type's bytes per value,
+which is how llama.cpp allocates the K and V tensors (checked on a real
+model: K q8_0 34 MiB and V q4_0 18 MiB at 2048 cells, as predicted). The
+context params, compute probe, drafter, context key, runtime report
+(`k=<type>,v=<type>`) and planning config follow the pair.
+
 Next: the inference port adapter, llama settings on the resolved chat
 profile, report/metrics storage and the runtime commands.

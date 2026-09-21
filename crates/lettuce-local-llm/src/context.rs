@@ -6,7 +6,7 @@
 //! deliberately keep their own KV-per-value table (the offload planner has a
 //! newer one).
 
-use crate::offload::LlamaModelMetadata;
+use crate::offload::{KvCacheTypes, LlamaModelMetadata};
 
 /// The loaded model's shape the context formulas read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,21 +178,29 @@ fn kv_bytes_per_value(llama_kv_type: Option<&str>) -> f64 {
     }
 }
 
-fn estimate_kv_bytes_per_token(model: &ModelShape, llama_kv_type: Option<&str>) -> Option<u64> {
+fn estimate_kv_bytes_per_token(model: &ModelShape, kv_types: KvCacheTypes<'_>) -> Option<u64> {
     let n_layer = u64::from(model.n_layer);
     let n_embd = u64::try_from(model.n_embd).ok()?;
     let n_head = u64::from(model.n_head).max(1);
     let n_head_kv = u64::from(model.n_head_kv).max(1);
     let gqa_correction = n_head_kv as f64 / n_head as f64;
     let effective_n_embd = (n_embd as f64 * gqa_correction) as u64;
-    let bytes_per_value = kv_bytes_per_value(llama_kv_type);
-    let bytes = (n_layer as f64) * (effective_n_embd as f64) * 2.0 * bytes_per_value;
+    let bytes = match kv_types.shared() {
+        Some(shared) => {
+            (n_layer as f64) * (effective_n_embd as f64) * 2.0 * kv_bytes_per_value(shared)
+        }
+        None => {
+            (n_layer as f64)
+                * (effective_n_embd as f64)
+                * (kv_bytes_per_value(kv_types.k) + kv_bytes_per_value(kv_types.v))
+        }
+    };
     Some(bytes.max(0.0) as u64)
 }
 
 fn estimate_kv_bytes_per_token_from_metadata(
     metadata: &LlamaModelMetadata,
-    llama_kv_type: Option<&str>,
+    kv_types: KvCacheTypes<'_>,
 ) -> Option<u64> {
     let n_layer = u64::from(metadata.layer_count.max(1));
     let n_embd = metadata.n_embd.max(1);
@@ -200,8 +208,16 @@ fn estimate_kv_bytes_per_token_from_metadata(
     let n_head_kv = metadata.n_head_kv.max(1);
     let gqa_correction = n_head_kv as f64 / n_head as f64;
     let effective_n_embd = (n_embd as f64 * gqa_correction) as u64;
-    let bytes_per_value = kv_bytes_per_value(llama_kv_type);
-    let bytes = (n_layer as f64) * (effective_n_embd as f64) * 2.0 * bytes_per_value;
+    let bytes = match kv_types.shared() {
+        Some(shared) => {
+            (n_layer as f64) * (effective_n_embd as f64) * 2.0 * kv_bytes_per_value(shared)
+        }
+        None => {
+            (n_layer as f64)
+                * (effective_n_embd as f64)
+                * (kv_bytes_per_value(kv_types.k) + kv_bytes_per_value(kv_types.v))
+        }
+    };
     Some(bytes.max(0.0) as u64)
 }
 
@@ -268,7 +284,7 @@ pub fn compute_recommended_context(
     max_context_length: u32,
     gpu_layers: u32,
     llama_offload_kqv: Option<bool>,
-    llama_kv_type: Option<&str>,
+    kv_types: KvCacheTypes<'_>,
 ) -> Option<u32> {
     let available_for_ctx = if llama_offload_kqv == Some(true) {
         let vram = available_vram_bytes?;
@@ -280,7 +296,7 @@ pub fn compute_recommended_context(
         let ram = available_memory_bytes?;
         ram_budget_for_context(model, ram, gpu_layers)
     };
-    let kv_bytes_per_token = estimate_kv_bytes_per_token(model, llama_kv_type)?;
+    let kv_bytes_per_token = estimate_kv_bytes_per_token(model, kv_types)?;
     if kv_bytes_per_token == 0 {
         return None;
     }
@@ -296,12 +312,12 @@ pub fn compute_cpu_fallback_limits(
     available_memory_bytes: Option<u64>,
     max_context_length: u32,
     gpu_layers: u32,
-    llama_kv_type: Option<&str>,
+    kv_types: KvCacheTypes<'_>,
     requested_context: Option<u32>,
     requested_batch_size: u32,
 ) -> Option<(u32, u32)> {
     let available_memory_bytes = available_memory_bytes?;
-    let kv_bytes_per_token = estimate_kv_bytes_per_token(model, llama_kv_type)?;
+    let kv_bytes_per_token = estimate_kv_bytes_per_token(model, kv_types)?;
     if kv_bytes_per_token == 0 {
         return None;
     }
@@ -334,11 +350,11 @@ pub fn compute_cpu_fallback_limits(
 pub fn compute_cpu_safe_recommended_context_for_metadata(
     metadata: &LlamaModelMetadata,
     available_memory_bytes: Option<u64>,
-    llama_kv_type: Option<&str>,
+    kv_types: KvCacheTypes<'_>,
     requested_context: Option<u32>,
 ) -> Option<u32> {
     let available_memory_bytes = available_memory_bytes?;
-    let kv_bytes_per_token = estimate_kv_bytes_per_token_from_metadata(metadata, llama_kv_type)?;
+    let kv_bytes_per_token = estimate_kv_bytes_per_token_from_metadata(metadata, kv_types)?;
     if kv_bytes_per_token == 0 {
         return None;
     }
@@ -452,5 +468,33 @@ mod tests {
         );
 
         assert_eq!(aligned[2], (2, 8 * gib, 8 * gib));
+    }
+
+    #[test]
+    fn split_kv_types_add_each_half_at_its_own_width() {
+        let model = super::ModelShape {
+            n_layer: 32,
+            n_layer_nextn: 0,
+            n_embd: 4096,
+            n_head: 32,
+            n_head_kv: 8,
+            size: 4_000_000_000,
+        };
+        let shared = |kv_type| {
+            super::estimate_kv_bytes_per_token(
+                &model,
+                crate::offload::KvCacheTypes::uniform(Some(kv_type)),
+            )
+        };
+        assert_eq!(shared("f16"), Some(32 * 1024 * 2 * 2));
+        assert_eq!(shared("q8_0"), Some(32 * 1024 * 2));
+        let split = crate::offload::KvCacheTypes {
+            k: Some("f16"),
+            v: Some("q8_0"),
+        };
+        assert_eq!(
+            super::estimate_kv_bytes_per_token(&model, split),
+            Some(32 * 1024 * 2 + 32 * 1024)
+        );
     }
 }

@@ -259,6 +259,10 @@ pub struct LlamaCppSettings {
     #[serde(default)]
     pub kv_type: Option<LlamaKvType>,
     #[serde(default)]
+    pub kv_type_k: Option<LlamaKvType>,
+    #[serde(default)]
+    pub kv_type_v: Option<LlamaKvType>,
+    #[serde(default)]
     pub flash_attention: Option<LlamaFlashAttention>,
     #[serde(default)]
     pub swa_full: Option<bool>,
@@ -314,6 +318,12 @@ impl LlamaCppSettings {
         check_u32("llama_batch_size", self.batch_size, 1, 8192)?;
         check_u32("llama_ubatch_size", self.ubatch_size, 1, 8192)?;
         check_u32("llama_mtp_draft_tokens", self.mtp_draft_tokens, 1, 8)?;
+        if self.kv_type_k.is_some() != self.kv_type_v.is_some() {
+            return Err(invalid("llama_kv_type_split"));
+        }
+        if self.kv_type.is_some() && self.kv_type_k.is_some() {
+            return Err(invalid("llama_kv_type_split"));
+        }
         check_text(
             "llama_chat_template_override",
             self.chat_template_override.as_deref(),
@@ -688,3 +698,43 @@ impl ModelSettingsLayer {
 /// before a file was picked here: model files stay on the device that has
 /// them, so sync never carries their paths.
 pub const UNPICKED_LOCAL_MODEL_FILE: &str = "unpicked-local-model-file";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_kv_cache_types_need_both_halves_and_no_shared_type() {
+        let shared = LlamaCppSettings {
+            kv_type: Some(LlamaKvType::Q80),
+            ..LlamaCppSettings::default()
+        };
+        assert!(shared.validate().is_ok());
+        let split = LlamaCppSettings {
+            kv_type_k: Some(LlamaKvType::Q80),
+            kv_type_v: Some(LlamaKvType::Q40),
+            ..LlamaCppSettings::default()
+        };
+        assert!(split.validate().is_ok());
+        let half = LlamaCppSettings {
+            kv_type_k: Some(LlamaKvType::Q80),
+            ..LlamaCppSettings::default()
+        };
+        assert_eq!(
+            half.validate(),
+            Err(ParameterValidationError::InvalidValue(
+                "llama_kv_type_split"
+            ))
+        );
+        let mixed = LlamaCppSettings {
+            kv_type: Some(LlamaKvType::F16),
+            ..split
+        };
+        assert_eq!(
+            mixed.validate(),
+            Err(ParameterValidationError::InvalidValue(
+                "llama_kv_type_split"
+            ))
+        );
+    }
+}

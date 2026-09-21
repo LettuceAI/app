@@ -18,7 +18,7 @@ use crate::llama::{
 };
 use crate::mtp::model_has_mtp;
 use crate::offload::{
-    FlashAttentionPolicy, OffloadRequest, compute_recommended_context_for_gpu_layers,
+    FlashAttentionPolicy, KvCacheTypes, OffloadRequest, compute_recommended_context_for_gpu_layers,
     plan_multi_gpu_distribution, reserve_device_vram, select_mtp_gpu_device,
 };
 
@@ -33,6 +33,8 @@ pub struct ContextInfoRequest {
     pub model_path: String,
     pub llama_offload_kqv: Option<bool>,
     pub llama_kv_type: Option<String>,
+    pub llama_kv_type_k: Option<String>,
+    pub llama_kv_type_v: Option<String>,
     pub llama_gpu_layers: Option<u32>,
     pub llama_multi_gpu_enabled: Option<bool>,
     pub llama_gpu_device_ids: Option<Vec<usize>>,
@@ -105,7 +107,11 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
     if !Path::new(&model_path).exists() {
         return Err(ContextInfoError::NotFound(model_path));
     }
-    let llama_kv_type = request.llama_kv_type.as_deref();
+    let kv_types = KvCacheTypes::from_settings(
+        request.llama_kv_type.as_deref(),
+        request.llama_kv_type_k.as_deref(),
+        request.llama_kv_type_v.as_deref(),
+    );
 
     let metadata = load_model_metadata(&model_path)?;
     let max_ctx = metadata.max_context_length.max(1);
@@ -145,7 +151,7 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
             .llama_mtp_model_path
             .as_deref()
             .filter(|path| !path.trim().is_empty())
-            .map(|path| estimate_mtp_gpu_reserve_bytes(path, 16_384, 512, llama_kv_type))
+            .map(|path| estimate_mtp_gpu_reserve_bytes(path, 16_384, 512, kv_types))
             .transpose()?
             .unwrap_or(0)
     } else {
@@ -195,7 +201,7 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
         requested_context: None,
         n_batch: 512,
         resolved_offload_kqv,
-        llama_kv_type,
+        kv_types,
         flash_attention_policy: flash_attention_policy(),
         sidecar_vram_reserve_bytes,
         bundled_mtp_draft,
@@ -215,7 +221,7 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
         compute_cpu_safe_recommended_context_for_metadata(
             &metadata,
             available_memory_bytes,
-            llama_kv_type,
+            kv_types,
             None,
         )
     } else {
@@ -228,7 +234,7 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
             available_vram_bytes,
             resolved_gpu_layers,
             resolved_offload_kqv,
-            llama_kv_type,
+            kv_types,
             sidecar_vram_reserve_bytes,
         )
     };
