@@ -2112,7 +2112,11 @@ mod tests {
             .apply_incoming_batch(id, TimestampMillis::new(at + 1))
             .expect("apply");
         assert_eq!(result.state, lettuce_sync::IncomingBatchState::Committed);
-        batch.changes.len()
+        batch
+            .changes
+            .iter()
+            .filter(|change| change.entity().kind() != "persona_default")
+            .count()
     }
 
     #[test]
@@ -2178,6 +2182,88 @@ mod tests {
         assert_eq!(ModelProfileRepository::get(&b, second.id).expect("b"), None);
         assert_eq!(sync_to(&a, &b, 240), 0);
         assert_eq!(sync_to(&b, &a, 250), 0);
+    }
+
+    #[test]
+    fn lorebooks_personas_and_their_bindings_converge_through_state_sync() {
+        use lettuce_characters::{Persona, PersonaRepository};
+        use lettuce_context::{
+            BindingInsertionTarget, LorebookBindingCreate, LorebookEntryDraft,
+            LorebookMetadataDraft, LorebookRepository, PersonaLorebookBindingRepository,
+        };
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let book = LorebookRepository::create(
+            &a,
+            LorebookMetadataDraft {
+                name: "World".into(),
+                detection_policy: Default::default(),
+                icon_asset_id: None,
+                behavior_version: Default::default(),
+            },
+            vec![LorebookEntryDraft {
+                title: "Harbor".into(),
+                enabled: true,
+                always_active: false,
+                keywords: vec!["harbor".into(), "docks".into()],
+                case_sensitive: false,
+                match_mode: Default::default(),
+                content: "The harbor never sleeps.".into(),
+                priority: 3,
+            }],
+            TimestampMillis::new(10),
+        )
+        .expect("lorebook");
+        let persona = PersonaRepository::create(
+            &a,
+            Persona::new(
+                lettuce_types::PersonaId::new(),
+                "Traveler".into(),
+                "Visits the harbor".into(),
+                TimestampMillis::new(10),
+            )
+            .expect("persona"),
+        )
+        .expect("create persona");
+        a.bind_persona_lorebook(
+            persona.id,
+            persona.revision,
+            LorebookBindingCreate {
+                lorebook_id: book.book.id,
+                target: BindingInsertionTarget::Append,
+            },
+            TimestampMillis::new(20),
+        )
+        .expect("bind");
+
+        sync_to(&a, &b, 100);
+        assert_eq!(LorebookRepository::get(&b, book.book.id).expect("book"), Some(book));
+        assert_eq!(
+            PersonaRepository::get(&b, persona.id).expect("persona"),
+            PersonaRepository::get(&a, persona.id).expect("persona")
+        );
+        assert_eq!(
+            b.list_persona_bindings(persona.id).expect("b bindings"),
+            a.list_persona_bindings(persona.id).expect("a bindings")
+        );
+
+        let bound = PersonaRepository::get(&b, persona.id)
+            .expect("persona")
+            .expect("present");
+        b.unbind_persona_lorebook(
+            persona.id,
+            bound.revision,
+            a.list_persona_bindings(persona.id).expect("bindings")[0].lorebook_id,
+            TimestampMillis::new(200),
+        )
+        .expect("unbind on b");
+        sync_to(&b, &a, 300);
+        assert!(a.list_persona_bindings(persona.id).expect("a bindings").is_empty());
+        assert_eq!(
+            PersonaRepository::get(&a, persona.id).expect("persona"),
+            PersonaRepository::get(&b, persona.id).expect("persona")
+        );
+        assert_eq!(sync_to(&a, &b, 400) + sync_to(&b, &a, 500), 0);
     }
 
     #[test]

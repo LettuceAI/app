@@ -831,7 +831,10 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
                 serde_json::from_slice(payload.bytes()).map_err(incoming_corrupt)?;
             state.validate().map_err(incoming_corrupt)?;
             if change.entity().id() != "application"
-                || change.operation() != ChangeOperation::Update
+                || !matches!(
+                    change.operation(),
+                    ChangeOperation::Insert | ChangeOperation::Update
+                )
             {
                 return Err(IncomingChangeError::Corrupt);
             }
@@ -851,6 +854,17 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::CHARACTER_SYNC_KIND,
             lettuce_sync::CHARACTER_SYNC_SCHEMA,
             lettuce_sync::CHARACTER_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::LOREBOOK_SYNC_KIND,
+            lettuce_sync::LOREBOOK_SYNC_SCHEMA,
+            lettuce_sync::LOREBOOK_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::CHARACTER_LOREBOOK_BINDINGS_SYNC_KIND
+            | lettuce_sync::PERSONA_LOREBOOK_BINDINGS_SYNC_KIND,
+            lettuce_sync::LOREBOOK_BINDINGS_SYNC_SCHEMA,
+            lettuce_sync::LOREBOOK_BINDINGS_SYNC_VERSION,
         ) => {
             let codec =
                 snapshot_codec(change.entity().kind()).ok_or(IncomingChangeError::Corrupt)?;
@@ -1026,14 +1040,23 @@ struct SnapshotCodec {
     kind: &'static str,
     decode: fn(&str, &[u8]) -> Result<(), ApplyOneError>,
     current: fn(&Connection, &str) -> Result<Option<CanonicalPayload>, ApplyOneError>,
-    materialize: fn(&Transaction<'_>, &[u8]) -> Result<bool, ApplyOneError>,
+    materialize: fn(&Transaction<'_>, &str, &[u8]) -> Result<bool, ApplyOneError>,
     ids: Option<ScanIds>,
     delete: Option<SnapshotDelete>,
 }
 
 const PERSONA_CODEC: SnapshotCodec = SnapshotCodec {
     kind: "persona",
-    ids: None,
+    ids: Some(|connection| {
+        connection
+            .prepare("SELECT id FROM personas ORDER BY id")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect()
+            })
+            .map_err(|_| ApplyOneError::Storage)
+    }),
     delete: None,
     decode: |id, bytes| {
         let incoming: Persona =
@@ -1057,7 +1080,7 @@ const PERSONA_CODEC: SnapshotCodec = SnapshotCodec {
             .transpose()
             .map_err(|_| ApplyOneError::Corrupt)
     },
-    materialize: |tx, bytes| {
+    materialize: |tx, _, bytes| {
         let incoming: Persona =
             serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
         apply_synced_persona(tx, incoming).map_err(repository_apply_error)?;
@@ -1067,7 +1090,7 @@ const PERSONA_CODEC: SnapshotCodec = SnapshotCodec {
 
 const PERSONA_DEFAULT_CODEC: SnapshotCodec = SnapshotCodec {
     kind: "persona_default",
-    ids: None,
+    ids: Some(|_| Ok(vec!["application".to_owned()])),
     delete: None,
     decode: |_, bytes| {
         serde_json::from_slice::<PersonaDefaultState>(bytes)
@@ -1080,7 +1103,7 @@ const PERSONA_DEFAULT_CODEC: SnapshotCodec = SnapshotCodec {
             .map(Some)
             .map_err(|_| ApplyOneError::Corrupt)
     },
-    materialize: |tx, bytes| {
+    materialize: |tx, _, bytes| {
         let incoming: PersonaDefaultState =
             serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
         match apply_synced_persona_default(tx, incoming) {
@@ -1118,7 +1141,7 @@ const PROVIDER_ACCOUNT_CODEC: SnapshotCodec = SnapshotCodec {
             .transpose()
             .map_err(|_| ApplyOneError::Corrupt)
     },
-    materialize: |tx, bytes| {
+    materialize: |tx, _, bytes| {
         let account: lettuce_models::ProviderAccount =
             serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
         crate::sync_upsert_provider_account(tx, &account).map_err(model_apply_error)?;
@@ -1150,7 +1173,7 @@ const MODEL_PROFILE_CODEC: SnapshotCodec = SnapshotCodec {
             .transpose()
             .map_err(|_| ApplyOneError::Corrupt)
     },
-    materialize: |tx, bytes| {
+    materialize: |tx, _, bytes| {
         let profile: lettuce_models::ModelProfile =
             serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
         match crate::sync_upsert_model_profile(tx, &profile) {
@@ -1188,7 +1211,7 @@ const CHARACTER_CODEC: SnapshotCodec = SnapshotCodec {
             .transpose()
             .map_err(|_| ApplyOneError::Corrupt)
     },
-    materialize: |tx, bytes| {
+    materialize: |tx, _, bytes| {
         let details: lettuce_characters::CharacterDetails =
             serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
         crate::character_adapter::sync_replace_character(tx, &details)
@@ -1201,12 +1224,115 @@ const CHARACTER_CODEC: SnapshotCodec = SnapshotCodec {
     delete: None,
 };
 
+fn lorebook_apply_error(error: lettuce_context::LorebookRepositoryError) -> ApplyOneError {
+    match error {
+        lettuce_context::LorebookRepositoryError::NotFound => ApplyOneError::Pending,
+        lettuce_context::LorebookRepositoryError::Failure(_) => ApplyOneError::Storage,
+        _ => ApplyOneError::Corrupt,
+    }
+}
+
+const LOREBOOK_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::LOREBOOK_SYNC_KIND,
+    decode: |id, bytes| {
+        let details: lettuce_context::LorebookDetails =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        if details.book.id.to_string() != id || details.validate().is_err() {
+            return Err(ApplyOneError::Corrupt);
+        }
+        Ok(())
+    },
+    current: |connection, id| {
+        let id = id
+            .parse::<lettuce_types::LorebookId>()
+            .map_err(|_| ApplyOneError::Corrupt)?;
+        crate::lorebook_adapter::load_details(connection, id)
+            .map_err(|_| ApplyOneError::Storage)?
+            .as_ref()
+            .map(lettuce_sync::canonical_lorebook_payload)
+            .transpose()
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    materialize: |tx, _, bytes| {
+        let details: lettuce_context::LorebookDetails =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::lorebook_adapter::sync_replace_lorebook(tx, &details)
+            .map_err(lorebook_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::lorebook_adapter::sync_lorebook_ids(connection).map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: None,
+};
+
+fn decode_bindings(bytes: &[u8]) -> Result<Vec<lettuce_context::LorebookBinding>, ApplyOneError> {
+    let bindings: Vec<lettuce_context::LorebookBinding> =
+        serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+    if bindings.is_empty() || lettuce_context::validate_bindings(&bindings).is_err() {
+        return Err(ApplyOneError::Corrupt);
+    }
+    Ok(bindings)
+}
+
+macro_rules! binding_codec {
+    ($name:ident, $kind:expr, $owner:expr) => {
+        const $name: SnapshotCodec = SnapshotCodec {
+            kind: $kind,
+            decode: |_, bytes| decode_bindings(bytes).map(|_| ()),
+            current: |connection, id| {
+                crate::lorebook_adapter::sync_load_bindings(connection, $owner, id)
+                    .map_err(|_| ApplyOneError::Storage)?
+                    .as_deref()
+                    .map(lettuce_sync::canonical_lorebook_bindings_payload)
+                    .transpose()
+                    .map_err(|_| ApplyOneError::Corrupt)
+            },
+            materialize: |tx, id, bytes| {
+                crate::lorebook_adapter::sync_replace_bindings(
+                    tx,
+                    $owner,
+                    id,
+                    &decode_bindings(bytes)?,
+                )
+                .map_err(lorebook_apply_error)?;
+                Ok(true)
+            },
+            ids: Some(|connection| {
+                crate::lorebook_adapter::sync_binding_owner_ids(connection, $owner)
+                    .map_err(|_| ApplyOneError::Storage)
+            }),
+            delete: Some(|tx, id, _| {
+                crate::lorebook_adapter::sync_replace_bindings(tx, $owner, id, &[])
+                    .map_err(lorebook_apply_error)?;
+                Ok(true)
+            }),
+        };
+    };
+}
+
+binding_codec!(
+    CHARACTER_BINDINGS_CODEC,
+    lettuce_sync::CHARACTER_LOREBOOK_BINDINGS_SYNC_KIND,
+    crate::lorebook_adapter::OwnerKind::Character
+);
+binding_codec!(
+    PERSONA_BINDINGS_CODEC,
+    lettuce_sync::PERSONA_LOREBOOK_BINDINGS_SYNC_KIND,
+    crate::lorebook_adapter::OwnerKind::Persona
+);
+
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 3] = [
+const SCANNED_CODECS: [&SnapshotCodec; 8] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
+    &PERSONA_CODEC,
+    &PERSONA_DEFAULT_CODEC,
     &CHARACTER_CODEC,
+    &LOREBOOK_CODEC,
+    &CHARACTER_BINDINGS_CODEC,
+    &PERSONA_BINDINGS_CODEC,
 ];
 
 fn snapshot_codec(kind: &str) -> Option<&'static SnapshotCodec> {
@@ -1279,6 +1405,7 @@ fn journal_referenced_media(
              UNION SELECT asset_id FROM character_media
              UNION SELECT asset_id FROM character_presentation_asset_refs
              UNION SELECT asset_id FROM scene_assets
+             UNION SELECT icon_asset_id FROM lorebooks WHERE icon_asset_id IS NOT NULL
              ORDER BY asset_id",
         )
         .and_then(|mut statement| {
@@ -1477,7 +1604,7 @@ fn apply_snapshot_change(
     insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
     let mut unmaterialized = false;
     if winner_is_incoming && !same {
-        unmaterialized = !(codec.materialize)(tx, payload.bytes())?;
+        unmaterialized = !(codec.materialize)(tx, change.entity().id(), payload.bytes())?;
     }
     if unmaterialized && current_payload.is_none() {
         return Ok(false);

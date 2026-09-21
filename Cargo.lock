@@ -1633,6 +1633,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "lettuce-characters",
+ "lettuce-context",
  "lettuce-media",
  "lettuce-models",
  "lettuce-types",

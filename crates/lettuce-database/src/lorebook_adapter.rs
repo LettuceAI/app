@@ -1341,6 +1341,141 @@ impl LorebookDependencyReader for Database {
     }
 }
 
+pub(crate) fn sync_lorebook_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
+    connection
+        .prepare("SELECT id FROM lorebooks ORDER BY id")?
+        .query_map([], |row| row.get(0))?
+        .collect()
+}
+
+/// Writes a synced lorebook exactly: the book row in place and its entries
+/// replaced. A missing icon asset reports `NotFound` (the media phase
+/// delivers it).
+pub(crate) fn sync_replace_lorebook(
+    tx: &Transaction<'_>,
+    details: &LorebookDetails,
+) -> Result<(), LorebookRepositoryError> {
+    details.validate()?;
+    if let Some(icon) = details.book.icon_asset_id {
+        let present: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id=?1)",
+                [icon.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(db_error)?;
+        if !present {
+            return Err(LorebookRepositoryError::NotFound);
+        }
+    }
+    if load_details(tx, details.book.id)
+        .map_err(db_error)?
+        .is_none()
+    {
+        insert_lorebook_details(tx, details)?;
+        return Ok(());
+    }
+    validate_entries_for_book(details)?;
+    verify_icon(tx, details.book.icon_asset_id)?;
+    tx.execute(
+        "UPDATE lorebooks SET status=?2,name=?3,detection_policy=?4,icon_asset_id=?5,icon_blob_kind='image',behavior_version=?6,revision=?7,created_at=?8,updated_at=?9 WHERE id=?1",
+        params![
+            details.book.id.to_string(),
+            status_name(details.book.status),
+            details.book.name,
+            detection_policy_name(details.book.detection_policy),
+            details.book.icon_asset_id.map(|id| id.to_string()),
+            behavior_name(details.book.behavior_version),
+            sql_revision(details.book.revision)?,
+            details.book.created_at.get(),
+            details.book.updated_at.get(),
+        ],
+    )
+    .map_err(db_error)?;
+    tx.execute(
+        "DELETE FROM lorebook_entries WHERE lorebook_id=?1",
+        [details.book.id.to_string()],
+    )
+    .map_err(db_error)?;
+    for entry in &details.entries {
+        insert_entry(tx, entry)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn sync_binding_owner_ids(
+    connection: &Connection,
+    kind: OwnerKind,
+) -> rusqlite::Result<Vec<String>> {
+    connection
+        .prepare(&format!(
+            "SELECT DISTINCT {} FROM {} ORDER BY {}",
+            kind.owner_column(),
+            kind.binding_table(),
+            kind.owner_column()
+        ))?
+        .query_map([], |row| row.get(0))?
+        .collect()
+}
+
+/// One owner's bindings, `None` when it has none.
+pub(crate) fn sync_load_bindings(
+    connection: &Connection,
+    kind: OwnerKind,
+    owner: &str,
+) -> rusqlite::Result<Option<Vec<LorebookBinding>>> {
+    let mut statement = connection.prepare(&format!(
+        "SELECT {},lorebook_id,enabled,ordinal,revision,created_at,updated_at FROM {} WHERE {}=?1 ORDER BY ordinal,lorebook_id",
+        kind.owner_column(),
+        kind.binding_table(),
+        kind.owner_column()
+    ))?;
+    let values = statement
+        .query_map([owner], parse_binding)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok((!values.is_empty()).then_some(values))
+}
+
+/// Replaces one owner's bindings with a synced list. A missing owner or
+/// lorebook reports `NotFound` (it arrives earlier in origin order).
+pub(crate) fn sync_replace_bindings(
+    tx: &Transaction<'_>,
+    kind: OwnerKind,
+    owner: &str,
+    bindings: &[LorebookBinding],
+) -> Result<(), LorebookRepositoryError> {
+    lettuce_context::validate_bindings(bindings).map_err(|_| failure("invalid synced bindings"))?;
+    let owner_present: bool = tx
+        .query_row(
+            &format!("SELECT EXISTS(SELECT 1 FROM {} WHERE id=?1)", kind.table()),
+            [owner],
+            |row| row.get(0),
+        )
+        .map_err(db_error)?;
+    if !owner_present {
+        return Err(LorebookRepositoryError::NotFound);
+    }
+    for binding in bindings {
+        if load_details(tx, binding.lorebook_id)
+            .map_err(db_error)?
+            .is_none()
+        {
+            return Err(LorebookRepositoryError::NotFound);
+        }
+    }
+    tx.execute(
+        &format!(
+            "DELETE FROM {} WHERE {}=?1",
+            kind.binding_table(),
+            kind.owner_column()
+        ),
+        [owner],
+    )
+    .map_err(db_error)?;
+    insert_bindings_in(tx, kind, owner, bindings).map_err(db_error)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

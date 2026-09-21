@@ -49,3 +49,32 @@ pub fn canonical_character_payload(
     let bytes = serde_json::to_vec(details).map_err(|_| SyncChangeError::PayloadEncoding)?;
     CanonicalPayload::new(CHARACTER_SYNC_SCHEMA, CHARACTER_SYNC_VERSION, bytes)
 }
+
+pub const LOREBOOK_SYNC_KIND: &str = "lorebook";
+pub const LOREBOOK_SYNC_SCHEMA: &str = "lorebook.snapshot";
+pub const LOREBOOK_SYNC_VERSION: u32 = 1;
+pub const CHARACTER_LOREBOOK_BINDINGS_SYNC_KIND: &str = "character_lorebook_bindings";
+pub const PERSONA_LOREBOOK_BINDINGS_SYNC_KIND: &str = "persona_lorebook_bindings";
+pub const LOREBOOK_BINDINGS_SYNC_SCHEMA: &str = "lorebook.bindings";
+pub const LOREBOOK_BINDINGS_SYNC_VERSION: u32 = 1;
+
+/// The complete lorebook: book and entries with their keywords.
+pub fn canonical_lorebook_payload(
+    details: &lettuce_context::LorebookDetails,
+) -> Result<CanonicalPayload, SyncChangeError> {
+    let bytes = serde_json::to_vec(details).map_err(|_| SyncChangeError::PayloadEncoding)?;
+    CanonicalPayload::new(LOREBOOK_SYNC_SCHEMA, LOREBOOK_SYNC_VERSION, bytes)
+}
+
+/// One owner's ordered lorebook bindings; an owner without bindings has no
+/// snapshot (its entity is deleted).
+pub fn canonical_lorebook_bindings_payload(
+    bindings: &[lettuce_context::LorebookBinding],
+) -> Result<CanonicalPayload, SyncChangeError> {
+    let bytes = serde_json::to_vec(bindings).map_err(|_| SyncChangeError::PayloadEncoding)?;
+    CanonicalPayload::new(
+        LOREBOOK_BINDINGS_SYNC_SCHEMA,
+        LOREBOOK_BINDINGS_SYNC_VERSION,
+        bytes,
+    )
+}

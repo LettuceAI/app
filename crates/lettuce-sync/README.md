@@ -176,3 +176,15 @@ the media phase (their inserts precede the character in origin order). A
 default model deleted on this device is cleared instead of blocking the
 origin's later changes, and the next scan journals the cleared default.
 Characters are never hard-deleted, so they journal no deletes.
+
+Lorebooks and bindings (sync S4). Personas and the persona default are
+scanned too (their explicit journaling stays; the scan journals what it
+missed, such as the owner revision bump of a binding change or a seed default
+that was never journaled, which now syncs as an insert). Lorebooks sync as
+complete `LorebookDetails` (book row updated in place, entries replaced; a
+missing icon asset waits for the media phase, and lorebook icons join the
+media scan). Each character's and persona's ordered lorebook bindings are one
+entity (`lorebook.bindings`); removing an owner's last binding journals a
+delete, which clears that owner's bindings on the peer. Group bindings follow
+with groups. Scan order: accounts, models, personas, persona default,
+characters, lorebooks, character bindings, persona bindings.
