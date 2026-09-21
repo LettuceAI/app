@@ -846,6 +846,11 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::MODEL_PROFILE_SYNC_KIND,
             lettuce_sync::MODEL_PROFILE_SYNC_SCHEMA,
             lettuce_sync::MODEL_PROFILE_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::CHARACTER_SYNC_KIND,
+            lettuce_sync::CHARACTER_SYNC_SCHEMA,
+            lettuce_sync::CHARACTER_SYNC_VERSION,
         ) => {
             let codec =
                 snapshot_codec(change.entity().kind()).ok_or(IncomingChangeError::Corrupt)?;
@@ -1162,9 +1167,47 @@ const MODEL_PROFILE_CODEC: SnapshotCodec = SnapshotCodec {
     }),
 };
 
+const CHARACTER_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::CHARACTER_SYNC_KIND,
+    decode: |id, bytes| {
+        let details: lettuce_characters::CharacterDetails =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        if details.character.id.to_string() != id || details.validate().is_err() {
+            return Err(ApplyOneError::Corrupt);
+        }
+        Ok(())
+    },
+    current: |connection, id| {
+        let id = id
+            .parse::<lettuce_types::CharacterId>()
+            .map_err(|_| ApplyOneError::Corrupt)?;
+        crate::character_adapter::load_character_details(connection, id)
+            .map_err(repository_apply_error)?
+            .as_ref()
+            .map(lettuce_sync::canonical_character_payload)
+            .transpose()
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    materialize: |tx, bytes| {
+        let details: lettuce_characters::CharacterDetails =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::character_adapter::sync_replace_character(tx, &details)
+            .map_err(repository_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::character_adapter::sync_character_ids(connection).map_err(repository_apply_error)
+    }),
+    delete: None,
+};
+
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 2] = [&PROVIDER_ACCOUNT_CODEC, &MODEL_PROFILE_CODEC];
+const SCANNED_CODECS: [&SnapshotCodec; 3] = [
+    &PROVIDER_ACCOUNT_CODEC,
+    &MODEL_PROFILE_CODEC,
+    &CHARACTER_CODEC,
+];
 
 fn snapshot_codec(kind: &str) -> Option<&'static SnapshotCodec> {
     match kind {
@@ -1789,6 +1832,9 @@ impl LocalChangeJournal for Database {
             present.push((codec, ids, latest));
         }
         for (codec, ids, latest) in present.into_iter().rev() {
+            if codec.delete.is_none() {
+                continue;
+            }
             for (id, base) in latest {
                 if let Some(base) = base
                     && ids.binary_search(&id).is_err()

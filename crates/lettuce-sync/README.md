@@ -165,3 +165,14 @@ presentation and scene assets once (insert only, same deterministic operation
 as persona journaling); later local metadata such as retention stays
 device-local, and an incoming asset insert is checked only against identity
 and blob fields.
+
+Characters (sync S3b, `character.snapshot`): the complete `CharacterDetails`
+(root, scenes, variants, starters) is a scanned aggregate after models. The
+materializer updates the root row in place (never deleting it: conversations,
+Souls and creation runs depend on it) and replaces scene, variant, starter,
+media and presentation rows; a new companion character gets its initial Soul
+exactly like a local create. Missing media assets keep the batch pending for
+the media phase (their inserts precede the character in origin order). A
+default model deleted on this device is cleared instead of blocking the
+origin's later changes, and the next scan journals the cleared default.
+Characters are never hard-deleted, so they journal no deletes.

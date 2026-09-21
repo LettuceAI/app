@@ -37,3 +37,15 @@ pub fn canonical_model_profile_payload(
 pub fn model_profile_sync_entity(id: ModelProfileId) -> Result<SyncEntity, SyncChangeError> {
     SyncEntity::new(MODEL_PROFILE_SYNC_KIND, id.to_string())
 }
+
+pub const CHARACTER_SYNC_KIND: &str = "character";
+pub const CHARACTER_SYNC_SCHEMA: &str = "character.snapshot";
+pub const CHARACTER_SYNC_VERSION: u32 = 1;
+
+/// The complete character aggregate: root, scenes, variants and starters.
+pub fn canonical_character_payload(
+    details: &lettuce_characters::CharacterDetails,
+) -> Result<CanonicalPayload, SyncChangeError> {
+    let bytes = serde_json::to_vec(details).map_err(|_| SyncChangeError::PayloadEncoding)?;
+    CanonicalPayload::new(CHARACTER_SYNC_SCHEMA, CHARACTER_SYNC_VERSION, bytes)
+}

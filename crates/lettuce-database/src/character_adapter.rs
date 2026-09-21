@@ -806,6 +806,43 @@ fn insert_character(tx: &Transaction<'_>, character: &Character) -> Result<(), R
     Ok(())
 }
 
+fn update_character_root(
+    tx: &Transaction<'_>,
+    character: &Character,
+) -> Result<(), RepositoryError> {
+    let profile = encode(&character.profile, PROFILE_VERSION)?;
+    let provenance = encode(&character.provenance, PROVENANCE_VERSION)?;
+    let defaults = encode(&character.defaults, DEFAULTS_VERSION)?;
+    let presentation = encode(&character.presentation, PRESENTATION_VERSION)?;
+    let recommendation = character
+        .image_recommendation
+        .as_ref()
+        .map(|value| encode(&Some(value), RECOMMENDATION_VERSION))
+        .transpose()?;
+    let (voice_profile_id, voice_legacy_locator) = match &character.defaults.voice {
+        Some(lettuce_characters::VoicePreference::VoiceProfile(id)) => (Some(id.to_string()), None),
+        Some(lettuce_characters::VoicePreference::UnresolvedLegacy(locator)) => {
+            (None, Some(locator.locator.clone()))
+        }
+        None => (None, None),
+    };
+    tx.execute(
+        "UPDATE characters SET status=?2,name=?3,nickname=?4,normalized_name=?5,normalized_nickname=?6,profile_json=?7,provenance_json=?8,defaults_json=?9,interaction_mode=?10,memory_policy=?11,model_profile_id=?12,default_scene_id=?13,default_starter_id=?14,direct_prompt_id=?15,group_conversation_prompt_id=?16,group_roleplay_prompt_id=?17,voice_profile_id=?18,voice_legacy_locator=?19,voice_autoplay=?20,presentation_json=?21,image_recommendation_json=?22,revision=?23,created_at=?24,updated_at=?25 WHERE id=?1",
+        params![
+            character.id.to_string(), status_name(character.status), character.profile.name,
+            character.profile.nickname, canonical_name(&character.profile.name),
+            character.profile.nickname.as_deref().map(canonical_name), profile, provenance, defaults,
+            interaction_name(character.defaults.interaction_mode), memory_name(character.defaults.memory_policy),
+            id_text(character.defaults.model_profile_id), id_text(character.defaults.default_scene_id),
+            id_text(character.defaults.default_starter_id), id_text(character.defaults.direct_prompt_id),
+            id_text(character.defaults.group_conversation_prompt_id), id_text(character.defaults.group_roleplay_prompt_id),
+            voice_profile_id, voice_legacy_locator, character.defaults.voice_autoplay,
+            presentation, recommendation, sql_u64(character.revision.get())?, character.created_at.get(), character.updated_at.get()
+        ],
+    ).map_err(db_error)?;
+    Ok(())
+}
+
 fn replace_character_media(
     tx: &Transaction<'_>,
     character_id: CharacterId,
@@ -946,6 +983,95 @@ pub(crate) fn insert_character_plan(
     load_details(tx, plan.character.id)
         .map_err(db_error)?
         .ok_or(RepositoryError::Storage)
+}
+
+/// Writes a synced character aggregate exactly, in place: the root row is
+/// updated (never deleted, its dependents cascade) and scenes, variants,
+/// starters, media links and presentation references are replaced. A new
+/// companion character gets its initial Soul like `insert_character_plan`.
+/// A default model deleted on this device is cleared instead of blocking the
+/// origin's later changes; the next state scan journals the cleared default.
+/// Missing media assets report `NotFound` (the media phase delivers them).
+pub(crate) fn sync_replace_character(
+    tx: &Transaction<'_>,
+    details: &lettuce_characters::CharacterDetails,
+) -> Result<(), RepositoryError> {
+    details.validate()?;
+    for asset_id in collect_asset_ids(details) {
+        let present: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id=?1)",
+                [asset_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(db_error)?;
+        if !present {
+            return Err(RepositoryError::NotFound);
+        }
+    }
+    let mut details = details.clone();
+    if let Some(model_id) = details.character.defaults.model_profile_id {
+        let present: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM model_profiles WHERE id=?1)",
+                [model_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(db_error)?;
+        if !present {
+            details.character.defaults.model_profile_id = None;
+        }
+    }
+    let plan = CreateCharacterPlan {
+        character: details.character.clone(),
+        scenes: details.scenes.clone(),
+        variants: details.variants.clone(),
+        starters: details.starters.clone(),
+    };
+    let id = details.character.id;
+    if character_row(tx, id).map_err(db_error)?.is_none() {
+        insert_character_plan(tx, &plan)?;
+        return Ok(());
+    }
+    validate_plan_assets(tx, &plan)?;
+    for table in [
+        "starter_messages",
+        "conversation_starters",
+        "scene_assets",
+        "scene_variants",
+        "scenes",
+        "character_presentation_asset_refs",
+    ] {
+        tx.execute(
+            &format!("DELETE FROM {table} WHERE character_id=?1"),
+            [id.to_string()],
+        )
+        .map_err(db_error)?;
+    }
+    update_character_root(tx, &details.character)?;
+    replace_character_media(tx, id, &details.character.media)?;
+    insert_character_presentation_refs(tx, id, &details.character.presentation)?;
+    for scene in &details.scenes {
+        insert_scene(tx, id, scene)?;
+    }
+    for variant in &details.variants {
+        insert_variant(tx, id, variant)?;
+    }
+    for starter in &details.starters {
+        insert_starter(tx, id, starter)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn sync_character_ids(connection: &Connection) -> Result<Vec<String>, RepositoryError> {
+    connection
+        .prepare("SELECT id FROM characters ORDER BY id")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect()
+        })
+        .map_err(db_error)
 }
 
 pub(crate) fn load_character_details(
@@ -3388,6 +3514,143 @@ mod smoke_tests {
             scene_id,
             starter_id,
         )
+    }
+
+    fn sync_characters(from: &Database, to: &Database, at: i64) {
+        use lettuce_sync::{IncomingBatchState, IncomingChangeRepository, LocalChangeJournal};
+        from.journal_current_state(TimestampMillis::new(at))
+            .expect("source scan");
+        to.journal_current_state(TimestampMillis::new(at))
+            .expect("target scan");
+        let batch = from
+            .outbound_changes(
+                &to.local_frontier().expect("frontier"),
+                lettuce_sync::MAX_OUTBOUND_CHANGES,
+                lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("outbound");
+        if batch.changes.is_empty() {
+            return;
+        }
+        let id = lettuce_types::OperationId::new();
+        to.stage_incoming_batch(
+            lettuce_sync::SyncDeviceId::new(),
+            id,
+            &lettuce_sync::canonical_batch_hash(&batch.changes),
+            &batch.changes,
+            TimestampMillis::new(at),
+        )
+        .expect("stage");
+        if to
+            .apply_incoming_batch(id, TimestampMillis::new(at))
+            .expect("apply")
+            .state
+            == IncomingBatchState::Pending
+        {
+            let source = from.connection().expect("source");
+            let target = to.connection().expect("target");
+            for table in ["media_blobs", "media_assets"] {
+                let mut statement = source
+                    .prepare(&format!("SELECT * FROM {table}"))
+                    .expect("select media");
+                let columns = statement.column_count();
+                let rows = statement
+                    .query_map([], |row| {
+                        (0..columns)
+                            .map(|index| row.get::<_, rusqlite::types::Value>(index))
+                            .collect::<rusqlite::Result<Vec<_>>>()
+                    })
+                    .expect("query media")
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .expect("media rows");
+                let placeholders = (1..=columns)
+                    .map(|index| format!("?{index}"))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                for row in rows {
+                    target
+                        .execute(
+                            &format!("INSERT OR IGNORE INTO {table} VALUES ({placeholders})"),
+                            rusqlite::params_from_iter(row),
+                        )
+                        .expect("copy media");
+                }
+            }
+            drop((source, target));
+            assert_eq!(
+                to.apply_incoming_batch(id, TimestampMillis::new(at + 1))
+                    .expect("apply after media")
+                    .state,
+                IncomingBatchState::Committed
+            );
+        }
+    }
+
+    #[test]
+    fn characters_converge_through_state_sync_with_media_and_companion_souls() {
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let (plan, _, _, _) = graph_fixture(&a);
+        a.connection()
+            .expect("a")
+            .execute(
+                "UPDATE media_assets SET provenance_json=?1",
+                [
+                    serde_json::to_string(&lettuce_media::AssetProvenanceV1::default())
+                        .expect("provenance"),
+                ],
+            )
+            .expect("valid provenance");
+        let created = CharacterRepository::create(&a, plan).expect("create graph");
+        let companion_id = CharacterId::new();
+        CharacterRepository::create(&a, companion_plan(companion_id)).expect("companion");
+
+        sync_characters(&a, &b, 100);
+        assert_eq!(
+            CharacterRepository::get(&b, created.character.id).expect("b graph"),
+            Some(created.clone())
+        );
+        assert_eq!(
+            CharacterRepository::get(&b, companion_id).expect("b companion"),
+            CharacterRepository::get(&a, companion_id).expect("a companion")
+        );
+        assert!(
+            SoulRepository::get(&b, SoulOwner::Character(companion_id))
+                .expect("soul")
+                .is_some()
+        );
+
+        let renamed = CharacterRepository::revise_profile(
+            &b,
+            created.character.id,
+            created.character.revision,
+            CharacterProfile {
+                name: "Renamed on b".into(),
+                ..created.character.profile.clone()
+            },
+            TimestampMillis::new(200),
+        )
+        .expect("rename on b");
+        sync_characters(&b, &a, 300);
+        let on_a = CharacterRepository::get(&a, created.character.id)
+            .expect("a graph")
+            .expect("present");
+        assert_eq!(on_a.character, renamed);
+        assert_eq!(on_a.scenes, created.scenes);
+        assert_eq!(on_a.starters, created.starters);
+        {
+            use lettuce_sync::LocalChangeJournal;
+            assert_eq!(
+                a.journal_current_state(TimestampMillis::new(400))
+                    .expect("a"),
+                0
+            );
+            assert_eq!(
+                b.journal_current_state(TimestampMillis::new(400))
+                    .expect("b"),
+                0
+            );
+        }
     }
 
     #[test]
