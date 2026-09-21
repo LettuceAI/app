@@ -8,9 +8,6 @@ use lettuce_types::{ContentHash, TimestampMillis};
 
 #[async_trait]
 pub trait AuthenticatedMediaSyncTransport: Send {
-    /// The authenticated peer whose pending media this phase fetches.
-    fn media_peer(&self) -> lettuce_sync::SyncDeviceId;
-
     /// One chunk of a blob, or `None` when the peer cannot serve it (the
     /// asset is skipped and its batch stays pending).
     async fn fetch_blob_chunk(
@@ -77,7 +74,7 @@ where
         check_cancelled(cancellation)?;
         let pending = self
             .repository
-            .pending_media(transport.media_peer())
+            .pending_media()
             .map_err(SyncMediaExchangeError::Catalog)?;
         let mut report = MediaSyncReport {
             received_assets: 0,
@@ -144,6 +141,9 @@ where
             .finish_media(cancellation)
             .await
             .map_err(SyncMediaExchangeError::Transport)?;
+        self.repository
+            .retry_deferred_changes(now)
+            .map_err(SyncMediaExchangeError::Catalog)?;
         Ok(report)
     }
 }
@@ -187,7 +187,6 @@ mod tests {
     use lettuce_types::{OperationId, Revision};
 
     struct SourceTransport<'a> {
-        peer: lettuce_sync::SyncDeviceId,
         catalog: Vec<CanonicalMediaAsset>,
         store: &'a LocalSyncMediaStore<Database, Database>,
         disconnect_after_first: bool,
@@ -233,10 +232,6 @@ mod tests {
                 bytes,
                 complete,
             }))
-        }
-
-        fn media_peer(&self) -> lettuce_sync::SyncDeviceId {
-            self.peer
         }
     }
 
@@ -290,7 +285,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn persona_media_resumes_and_materializes_before_the_staged_change_batch() {
+    async fn deferred_persona_media_resumes_and_materializes_the_persona() {
         let (source_root, source_path) = media_paths("source");
         let (target_root, target_path) = media_paths("target");
         let source = Database::open(&source_path).expect("source database");
@@ -374,9 +369,9 @@ mod tests {
         assert_eq!(
             target
                 .apply_incoming_batch(batch_id, TimestampMillis::new(11))
-                .expect("pending batch")
+                .expect("batch with deferred media")
                 .state,
-            IncomingBatchState::Pending
+            IncomingBatchState::Committed
         );
         assert!(
             PersonaRepository::get(&target, persona.id)
@@ -394,11 +389,7 @@ mod tests {
                 .snapshot(design.asset.id)
                 .expect("design snapshot"),
         ];
-        let source_device = source
-            .local_device_id(TimestampMillis::new(11))
-            .expect("source identity");
         let mut interrupted = SourceTransport {
-            peer: source_device,
             catalog: catalog.clone(),
             store: &source_sync,
             disconnect_after_first: true,
@@ -422,7 +413,6 @@ mod tests {
         drop(target_sync);
         let reopened_sync = sync_store(&target_root, &target_path);
         let mut resumed = SourceTransport {
-            peer: source_device,
             catalog,
             store: &source_sync,
             disconnect_after_first: false,

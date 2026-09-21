@@ -487,10 +487,6 @@ impl AuthenticatedMediaSyncTransport for AuthenticatedTcpSyncTransport<'_> {
             _ => Err(MediaSyncTransportError::Protocol),
         }
     }
-
-    fn media_peer(&self) -> SyncDeviceId {
-        self.peer
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1027,8 +1023,7 @@ fn validate_change(value: &CanonicalChange) -> Result<(), SyncPeerTransportError
 mod tests {
     use super::*;
     use crate::{
-        SyncExchangeCoordinator, SyncExchangeError, SyncExchangeOutcome, SyncHelloCoordinator,
-        SyncMediaCoordinator,
+        SyncExchangeCoordinator, SyncExchangeOutcome, SyncHelloCoordinator, SyncMediaCoordinator,
     };
     use lettuce_characters::{
         LifecycleStatus, Persona, PersonaMedia, PersonaMediaLink, PersonaMediaSlot,
@@ -1246,7 +1241,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn loopback_peers_resume_pending_persona_media_and_converge() {
+    async fn loopback_peers_defer_persona_media_and_converge_after_the_media_phase() {
         let (source_root, source_path) = paths("source");
         let (target_root, target_path) = paths("target");
         let source = Database::open(&source_path).expect("source database");
@@ -1350,13 +1345,11 @@ mod tests {
         );
         assert!(matches!(
             target_result,
-            Ok(SyncExchangeOutcome::Pending { .. })
+            Ok(SyncExchangeOutcome::Complete(_))
         ));
         assert!(matches!(
             source_result,
-            Err(SyncExchangeError::Transport(
-                SyncTransportError::Disconnected
-            ))
+            Ok(SyncExchangeOutcome::Complete(_))
         ));
         assert!(
             PersonaRepository::get(&target, persona.id)

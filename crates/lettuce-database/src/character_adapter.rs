@@ -3547,12 +3547,20 @@ mod smoke_tests {
             TimestampMillis::new(at),
         )
         .expect("stage");
-        if to
-            .apply_incoming_batch(id, TimestampMillis::new(at))
-            .expect("apply")
-            .state
-            == IncomingBatchState::Pending
-        {
+        assert_eq!(
+            to.apply_incoming_batch(id, TimestampMillis::new(at))
+                .expect("apply")
+                .state,
+            IncomingBatchState::Committed
+        );
+        let deferred: i64 = to
+            .connection()
+            .expect("target")
+            .query_row("SELECT COUNT(*) FROM sync_deferred_changes", [], |row| {
+                row.get(0)
+            })
+            .expect("deferred");
+        if deferred > 0 {
             let source = from.connection().expect("source");
             let target = to.connection().expect("target");
             for table in ["media_blobs", "media_assets"] {
@@ -3583,12 +3591,11 @@ mod smoke_tests {
                 }
             }
             drop((source, target));
-            assert_eq!(
-                to.apply_incoming_batch(id, TimestampMillis::new(at + 1))
-                    .expect("apply after media")
-                    .state,
-                IncomingBatchState::Committed
-            );
+            lettuce_sync::MediaSyncRepository::retry_deferred_changes(
+                to,
+                TimestampMillis::new(at + 1),
+            )
+            .expect("retry after media");
         }
     }
 

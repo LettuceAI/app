@@ -2111,22 +2111,16 @@ impl MediaAssetRepository for Database {
 impl MediaSyncRepository for Database {
     fn pending_media(
         &self,
-        peer: lettuce_sync::SyncDeviceId,
     ) -> Result<Vec<lettuce_sync::CanonicalMediaAsset>, MediaSyncError> {
         let connection = self.connection().map_err(|_| MediaSyncError::Storage)?;
         let mut statement = connection
             .prepare(
-                "SELECT change_row.payload_bytes
-                 FROM sync_incoming_changes AS change_row
-                 JOIN sync_incoming_batches AS batch ON batch.batch_id = change_row.batch_id
-                 WHERE batch.batch_id = (
-                     SELECT batch_id FROM sync_incoming_batches
-                     WHERE state = 'pending' AND peer_device_id = ?4
-                     ORDER BY created_at DESC, rowid DESC LIMIT 1
-                   )
-                   AND json_extract(change_row.document, '$.payload_schema') = ?1
-                   AND json_extract(change_row.document, '$.payload_version') = ?2
-                 ORDER BY change_row.change_id LIMIT ?3",
+                "SELECT change.payload_bytes
+                 FROM sync_deferred_changes deferred
+                 JOIN sync_changes change ON change.change_id = deferred.change_id
+                 WHERE deferred.entity_kind = 'media_asset'
+                   AND change.payload_schema = ?1 AND change.payload_version = ?2
+                 ORDER BY deferred.deferred_at, deferred.entity_id LIMIT ?3",
             )
             .map_err(|_| MediaSyncError::Storage)?;
         let rows = statement
@@ -2135,8 +2129,7 @@ impl MediaSyncRepository for Database {
                     lettuce_sync::MEDIA_ASSET_SYNC_SCHEMA,
                     i64::from(lettuce_sync::MEDIA_ASSET_SYNC_VERSION),
                     i64::try_from(lettuce_sync::MAX_SYNC_MEDIA_ASSETS)
-                        .map_err(|_| MediaSyncError::Storage)?,
-                    peer.as_uuid().to_string()
+                        .map_err(|_| MediaSyncError::Storage)?
                 ],
                 |row| row.get::<_, Vec<u8>>(0),
             )
@@ -2158,6 +2151,17 @@ impl MediaSyncRepository for Database {
         }
         assets.dedup_by_key(|value| value.asset.id);
         Ok(assets)
+    }
+
+    fn retry_deferred_changes(&self, now: TimestampMillis) -> Result<usize, MediaSyncError> {
+        let mut connection = self.connection().map_err(|_| MediaSyncError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| MediaSyncError::Storage)?;
+        let settled = crate::sync_adapter::retry_deferred_changes_in(&transaction, now)
+            .map_err(|_| MediaSyncError::Storage)?;
+        transaction.commit().map_err(|_| MediaSyncError::Storage)?;
+        Ok(settled)
     }
 }
 
@@ -4957,6 +4961,7 @@ mod tests {
                 "sync_change_frontiers",
                 "sync_changes",
                 "sync_conflicts",
+                "sync_deferred_changes",
                 "sync_frontiers",
                 "sync_incoming_batches",
                 "sync_incoming_changes",

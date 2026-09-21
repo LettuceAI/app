@@ -238,3 +238,11 @@ BEFORE DELETE ON sync_conflicts
 BEGIN
     SELECT RAISE(ABORT, 'sync conflicts are durable');
 END;
+
+CREATE TABLE sync_deferred_changes (
+    entity_kind TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    change_id TEXT NOT NULL UNIQUE REFERENCES sync_changes(change_id) ON DELETE RESTRICT,
+    deferred_at INTEGER NOT NULL,
+    PRIMARY KEY (entity_kind, entity_id)
+) STRICT;

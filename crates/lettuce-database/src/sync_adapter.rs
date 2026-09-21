@@ -209,6 +209,10 @@ pub(crate) fn entity_scoped_operation(
                  WHERE conflict.incoming_change_id = change.change_id
                    AND conflict.winning_side = 'current'
                )
+               AND NOT EXISTS (
+                 SELECT 1 FROM sync_deferred_changes deferred
+                 WHERE deferred.change_id = change.change_id
+               )
              ORDER BY change.rowid DESC LIMIT 1",
             params![entity.kind(), entity.id()],
             |row| row.get::<_, String>(0),
@@ -1059,6 +1063,7 @@ struct SnapshotCodec {
     materialize: fn(&Transaction<'_>, &str, &[u8]) -> Result<bool, ApplyOneError>,
     ids: Option<ScanIds>,
     delete: Option<SnapshotDelete>,
+    empty: Option<fn() -> Result<CanonicalPayload, ApplyOneError>>,
     assets: fn(&[u8]) -> Vec<String>,
 }
 
@@ -1067,6 +1072,7 @@ fn no_assets(_: &[u8]) -> Vec<String> {
 }
 
 const PERSONA_CODEC: SnapshotCodec = SnapshotCodec {
+    empty: None,
     assets: |bytes| {
         serde_json::from_slice::<Persona>(bytes)
             .map(|persona| {
@@ -1116,12 +1122,25 @@ const PERSONA_CODEC: SnapshotCodec = SnapshotCodec {
     materialize: |tx, _, bytes| {
         let incoming: Persona =
             serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        for link in &incoming.media.links {
+            let present: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id=?1)",
+                    [link.asset_id.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(|_| ApplyOneError::Storage)?;
+            if !present {
+                return Err(ApplyOneError::Pending);
+            }
+        }
         apply_synced_persona(tx, incoming).map_err(repository_apply_error)?;
         Ok(true)
     },
 };
 
 const PERSONA_DEFAULT_CODEC: SnapshotCodec = SnapshotCodec {
+    empty: None,
     assets: no_assets,
     kind: "persona_default",
     ids: Some(|_| Ok(vec!["application".to_owned()])),
@@ -1188,6 +1207,7 @@ const PROVIDER_ACCOUNT_CODEC: SnapshotCodec = SnapshotCodec {
     delete: Some(|tx, id, _| {
         crate::sync_delete_provider_account(tx, id).map_err(model_apply_error)
     }),
+    empty: None,
 };
 
 const MODEL_PROFILE_CODEC: SnapshotCodec = SnapshotCodec {
@@ -1224,6 +1244,7 @@ const MODEL_PROFILE_CODEC: SnapshotCodec = SnapshotCodec {
     delete: Some(|tx, id, now| {
         crate::sync_delete_model_profile(tx, id, now).map_err(model_apply_error)
     }),
+    empty: None,
 };
 
 const CHARACTER_CODEC: SnapshotCodec = SnapshotCodec {
@@ -1268,6 +1289,7 @@ const CHARACTER_CODEC: SnapshotCodec = SnapshotCodec {
         crate::character_adapter::sync_character_ids(connection).map_err(repository_apply_error)
     }),
     delete: None,
+    empty: None,
 };
 
 fn lorebook_apply_error(error: lettuce_context::LorebookRepositoryError) -> ApplyOneError {
@@ -1317,12 +1339,13 @@ const LOREBOOK_CODEC: SnapshotCodec = SnapshotCodec {
         crate::lorebook_adapter::sync_lorebook_ids(connection).map_err(|_| ApplyOneError::Storage)
     }),
     delete: None,
+    empty: None,
 };
 
 fn decode_bindings(bytes: &[u8]) -> Result<Vec<lettuce_context::LorebookBinding>, ApplyOneError> {
     let bindings: Vec<lettuce_context::LorebookBinding> =
         serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
-    if bindings.is_empty() || lettuce_context::validate_bindings(&bindings).is_err() {
+    if lettuce_context::validate_bindings(&bindings).is_err() {
         return Err(ApplyOneError::Corrupt);
     }
     Ok(bindings)
@@ -1367,6 +1390,7 @@ const PROMPT_CODEC: SnapshotCodec = SnapshotCodec {
         crate::prompt_adapter::sync_prompt_ids(connection).map_err(|_| ApplyOneError::Storage)
     }),
     delete: None,
+    empty: None,
 };
 
 fn app_settings_payload(
@@ -1404,6 +1428,7 @@ const APP_SETTINGS_CODEC: SnapshotCodec = SnapshotCodec {
     },
     ids: Some(|_| Ok(vec!["application".to_owned()])),
     delete: None,
+    empty: None,
 };
 
 macro_rules! binding_codec {
@@ -1434,10 +1459,10 @@ macro_rules! binding_codec {
                 crate::lorebook_adapter::sync_binding_owner_ids(connection, $owner)
                     .map_err(|_| ApplyOneError::Storage)
             }),
-            delete: Some(|tx, id, _| {
-                crate::lorebook_adapter::sync_replace_bindings(tx, $owner, id, &[])
-                    .map_err(lorebook_apply_error)?;
-                Ok(true)
+            delete: None,
+            empty: Some(|| {
+                lettuce_sync::canonical_lorebook_bindings_payload(&[])
+                    .map_err(|_| ApplyOneError::Corrupt)
             }),
         };
     };
@@ -1489,6 +1514,7 @@ const GROUP_CODEC: SnapshotCodec = SnapshotCodec {
         crate::group_adapter::sync_group_ids(connection).map_err(repository_apply_error)
     }),
     delete: None,
+    empty: None,
 };
 
 binding_codec!(
@@ -1542,6 +1568,10 @@ fn latest_journaled(
                  SELECT 1 FROM sync_conflicts conflict
                  WHERE conflict.incoming_change_id = change.change_id
                    AND conflict.winning_side = 'current'
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM sync_deferred_changes deferred
+                 WHERE deferred.change_id = change.change_id
                )
              ORDER BY change.rowid",
         )
@@ -1670,7 +1700,7 @@ fn journal_apply_error(error: ApplyOneError) -> LocalChangeJournalError {
 /// referenced here) is journaled and nothing else happens now: the next state
 /// scan sees the entity present after a journaled delete and journals a fresh
 /// insert, in dependency order, so every device converges on keeping it.
-fn apply_snapshot_delete(
+fn settle_snapshot_delete(
     tx: &Transaction<'_>,
     change: &CanonicalChange,
     now: TimestampMillis,
@@ -1687,8 +1717,6 @@ fn apply_snapshot_delete(
             _ => ApplyOneError::Corrupt,
         })?
         .flatten();
-    observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
-    insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
     let Some(current_payload) = current_payload else {
         resolve_dominated_conflicts(tx, change, now, None)?;
         return Ok(false);
@@ -1718,11 +1746,30 @@ fn deleted_concurrently(
     tx: &Transaction<'_>,
     change: &CanonicalChange,
 ) -> Result<bool, ApplyOneError> {
-    let latest = latest_journaled(tx, change.entity().kind()).map_err(|error| match error {
-        LocalChangeJournalError::Storage => ApplyOneError::Storage,
-        _ => ApplyOneError::Corrupt,
-    })?;
-    if !matches!(latest.get(change.entity().id()), Some(None)) {
+    let latest_other = tx
+        .query_row(
+            "SELECT change.operation FROM sync_changes change
+             WHERE change.entity_kind = ?1 AND change.entity_id = ?2 AND change.change_id <> ?3
+               AND NOT EXISTS (
+                 SELECT 1 FROM sync_conflicts conflict
+                 WHERE conflict.incoming_change_id = change.change_id
+                   AND conflict.winning_side = 'current'
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM sync_deferred_changes deferred
+                 WHERE deferred.change_id = change.change_id
+               )
+             ORDER BY change.rowid DESC LIMIT 1",
+            params![
+                change.entity().kind(),
+                change.entity().id(),
+                change.id().as_uuid().to_string()
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|_| ApplyOneError::Storage)?;
+    if latest_other.as_deref() != Some("delete") {
         return Ok(false);
     }
     let delete_id: String = tx
@@ -1747,21 +1794,21 @@ fn deleted_concurrently(
 /// inserts/updates apply, an absent entity adopts the snapshot, anything
 /// else is a concurrent edit settled by `incoming_wins` with both snapshots
 /// kept as conflict evidence.
-fn apply_snapshot_change(
+/// Settling runs after the change is journaled, so a deferred change can be
+/// settled again later.
+fn settle_snapshot_change(
     tx: &Transaction<'_>,
     change: &CanonicalChange,
     now: TimestampMillis,
     codec: &SnapshotCodec,
 ) -> Result<bool, ApplyOneError> {
     if change.operation() == ChangeOperation::Delete {
-        return apply_snapshot_delete(tx, change, now, codec);
+        return settle_snapshot_delete(tx, change, now, codec);
     }
     let payload = change.payload().ok_or(ApplyOneError::Corrupt)?;
     (codec.decode)(change.entity().id(), payload.bytes())?;
     let current_payload = (codec.current)(tx, change.entity().id())?;
     if current_payload.is_none() && deleted_concurrently(tx, change)? {
-        observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
-        insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
         insert_conflict(tx, change, None, Some(&[]), payload.bytes(), false, now)?;
         return Ok(true);
     }
@@ -1787,8 +1834,6 @@ fn apply_snapshot_change(
         || current_change
             .as_ref()
             .is_some_and(|current| incoming_wins(change, current));
-    observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
-    insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
     let mut unmaterialized = false;
     if winner_is_incoming && !same {
         unmaterialized = !(codec.materialize)(tx, change.entity().id(), payload.bytes())?;
@@ -1817,10 +1862,9 @@ fn apply_snapshot_change(
     Ok(conflict || unmaterialized)
 }
 
-fn apply_media_asset_change(
+fn settle_media_asset_change(
     tx: &Transaction<'_>,
     change: &CanonicalChange,
-    now: TimestampMillis,
 ) -> Result<bool, ApplyOneError> {
     let payload = change.payload().ok_or(ApplyOneError::Corrupt)?;
     let incoming: lettuce_media::SyncMediaAsset =
@@ -1863,9 +1907,113 @@ fn apply_media_asset_change(
     {
         return Err(ApplyOneError::Corrupt);
     }
-    observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
-    insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
     Ok(false)
+}
+
+fn settle_change(
+    tx: &Transaction<'_>,
+    change: &CanonicalChange,
+    now: TimestampMillis,
+) -> Result<bool, ApplyOneError> {
+    match change.entity().kind() {
+        "media_asset" => settle_media_asset_change(tx, change),
+        kind => match snapshot_codec(kind) {
+            Some(codec) => settle_snapshot_change(tx, change, now, codec),
+            None => Err(ApplyOneError::Corrupt),
+        },
+    }
+}
+
+/// Settles a journaled change inside a savepoint. A change waiting for an
+/// entity that is not here yet (its owner, derivation source or media) is
+/// rolled back and deferred per entity instead of holding the batch, so the
+/// origin's later changes still apply; deferred changes are settled again
+/// after every batch and media phase.
+fn settle_or_defer(
+    tx: &Transaction<'_>,
+    change: &CanonicalChange,
+    now: TimestampMillis,
+) -> Result<Option<bool>, ApplyOneError> {
+    tx.execute_batch("SAVEPOINT sync_settle")
+        .map_err(|_| ApplyOneError::Storage)?;
+    match settle_change(tx, change, now) {
+        Ok(conflict) => {
+            tx.execute_batch("RELEASE sync_settle")
+                .map_err(|_| ApplyOneError::Storage)?;
+            tx.execute(
+                "DELETE FROM sync_deferred_changes WHERE entity_kind = ?1 AND entity_id = ?2",
+                params![change.entity().kind(), change.entity().id()],
+            )
+            .map_err(|_| ApplyOneError::Storage)?;
+            Ok(Some(conflict))
+        }
+        Err(ApplyOneError::Pending) => {
+            tx.execute_batch("ROLLBACK TO sync_settle; RELEASE sync_settle")
+                .map_err(|_| ApplyOneError::Storage)?;
+            tx.execute(
+                "INSERT INTO sync_deferred_changes (entity_kind, entity_id, change_id, deferred_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(entity_kind, entity_id) DO UPDATE SET
+                    change_id = excluded.change_id, deferred_at = excluded.deferred_at",
+                params![
+                    change.entity().kind(),
+                    change.entity().id(),
+                    change.id().as_uuid().to_string(),
+                    now.get()
+                ],
+            )
+            .map_err(|_| ApplyOneError::Storage)?;
+            Ok(None)
+        }
+        Err(error) => {
+            let _ = tx.execute_batch("ROLLBACK TO sync_settle; RELEASE sync_settle");
+            Err(error)
+        }
+    }
+}
+
+pub(crate) fn retry_deferred_changes_in(
+    tx: &Transaction<'_>,
+    now: TimestampMillis,
+) -> Result<usize, ()> {
+    retry_deferred_changes(tx, now).map_err(|_| ())
+}
+
+/// Settles deferred changes until none makes progress.
+fn retry_deferred_changes(
+    tx: &Transaction<'_>,
+    now: TimestampMillis,
+) -> Result<usize, ApplyOneError> {
+    let mut settled = 0;
+    loop {
+        let deferred = tx
+            .prepare(
+                "SELECT deferred.change_id FROM sync_deferred_changes deferred
+                 JOIN sync_changes change ON change.change_id = deferred.change_id
+                 ORDER BY change.rowid",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(|_| ApplyOneError::Storage)?;
+        let mut progress = false;
+        for id in deferred {
+            let id =
+                SyncChangeId::from_uuid(Uuid::parse_str(&id).map_err(|_| ApplyOneError::Corrupt)?);
+            let change = load_change_by_id(tx, id)
+                .map_err(|_| ApplyOneError::Storage)?
+                .ok_or(ApplyOneError::Corrupt)?;
+            if settle_or_defer(tx, &change, now)?.is_some() {
+                progress = true;
+                settled += 1;
+            }
+        }
+        if !progress {
+            return Ok(settled);
+        }
+    }
 }
 
 fn mark_batch_pending(
@@ -2153,23 +2301,45 @@ impl LocalChangeJournal for Database {
             present.push((codec, ids, latest));
         }
         for (codec, ids, latest) in present.into_iter().rev() {
-            if codec.delete.is_none() {
+            let empty = codec
+                .empty
+                .map(|empty| empty())
+                .transpose()
+                .map_err(journal_apply_error)?;
+            if codec.delete.is_none() && empty.is_none() {
                 continue;
             }
             for (id, base) in latest {
-                if let Some(base) = base
-                    && ids.binary_search(&id).is_err()
-                {
-                    journal_state_change(
-                        &tx,
-                        codec.kind,
-                        &id,
-                        ChangeOperation::Delete,
-                        Some(base),
-                        None,
-                        now,
-                    )?;
-                    journaled += 1;
+                let Some(base) = base else { continue };
+                if ids.binary_search(&id).is_ok() {
+                    continue;
+                }
+                match &empty {
+                    Some(empty) if &base == empty.content_hash() => {}
+                    Some(empty) => {
+                        journal_state_change(
+                            &tx,
+                            codec.kind,
+                            &id,
+                            ChangeOperation::Update,
+                            Some(base),
+                            Some(empty.clone()),
+                            now,
+                        )?;
+                        journaled += 1;
+                    }
+                    None => {
+                        journal_state_change(
+                            &tx,
+                            codec.kind,
+                            &id,
+                            ChangeOperation::Delete,
+                            Some(base),
+                            None,
+                            now,
+                        )?;
+                        journaled += 1;
+                    }
                 }
             }
         }
@@ -2726,13 +2896,12 @@ impl IncomingChangeRepository for Database {
             if load_change_by_id(&transaction, change.id())?.is_some() {
                 continue;
             }
-            let result = match change.entity().kind() {
-                "media_asset" => apply_media_asset_change(&transaction, change, now),
-                kind => match snapshot_codec(kind) {
-                    Some(codec) => apply_snapshot_change(&transaction, change, now, codec),
-                    None => Err(ApplyOneError::Corrupt),
-                },
-            };
+            observe_remote_clock(&transaction, change.timestamp(), now)
+                .map_err(|_| IncomingChangeError::Storage)?;
+            insert_change(&transaction, None, change, now)
+                .map_err(|_| IncomingChangeError::Storage)?;
+            let result =
+                settle_or_defer(&transaction, change, now).map(|settled| settled.unwrap_or(false));
             match result {
                 Ok(conflict) => {
                     applied += 1;
@@ -2753,6 +2922,10 @@ impl IncomingChangeRepository for Database {
                 Err(ApplyOneError::Storage) => return Err(IncomingChangeError::Storage),
             }
         }
+        retry_deferred_changes(&transaction, now).map_err(|error| match error {
+            ApplyOneError::Corrupt => IncomingChangeError::Corrupt,
+            _ => IncomingChangeError::Storage,
+        })?;
         transaction
             .execute(
                 "UPDATE sync_incoming_batches

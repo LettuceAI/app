@@ -220,3 +220,16 @@ the app-wide model settings layer), scanned after prompts. A selected model or
 prompt missing on this device is cleared. Because a scan journals upserts
 before deletes, a peer receives the cleared defaults before the model delete
 that caused them, so its own clearing is a no-op.
+
+Per-entity deferral. A journaled incoming change that waits for another
+entity that is not here yet (its owner, lorebook, derivation source or media
+asset) is settled inside a savepoint, rolled back and recorded in
+`sync_deferred_changes` (latest change per entity) instead of holding the
+batch: the batch commits, the origin's frontier advances and its later changes
+still apply. Deferred changes are settled again after every batch (until no
+progress) and after each media phase, whose pending media now comes from
+deferred media changes. Deferred changes are not local state for the scan or
+operation scoping. Batches stay pending only for causal gaps or unknown
+schemas. Binding lists are ordered lists, so an emptied list journals an
+update to `[]` instead of a delete (a concurrent bind is not lost to a
+delete).

@@ -8,6 +8,7 @@ const DEVICE_LOCAL_TABLES: &[&str] = &[
     "sync_local_state",
     "sync_frontiers",
     "sync_changes",
+    "sync_deferred_changes",
     "sync_change_frontiers",
     "sync_peer_frontiers",
     "sync_incoming_batches",
