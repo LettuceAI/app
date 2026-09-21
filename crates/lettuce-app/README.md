@@ -360,6 +360,13 @@ the similarity threshold drops to -1 and the recent and frequent fill slots are
 skipped, while the cold keyword fallback still searches the filtered set.
 A memory whose stored vector has zero norm scores 0 like legacy, so the -1
 threshold still admits it, while a vector with a NaN component never matches.
+Before the query is embedded, every memory of the space without a ready vector
+for the current embedding model and its current text (new, edited, synced from
+another device or embedded by an older model) is embedded and stored, like
+legacy `migrate_session_memory_embeddings_if_needed`; an unavailable model
+leaves them for the next retrieval and a failure to store one is only logged.
+Legacy's 90-second per-memory timeout and progress toast are not ported (the
+embedding call follows the job's cancellation instead).
 Calendar arithmetic is checked: an amount that overflows a date yields no range,
 where legacy panicked on inputs like "200000000000 days ago".
 Roleplay and group assembly do not read companion state. Missing or corrupt

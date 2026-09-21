@@ -2107,6 +2107,25 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
         },
     )
     .expect("seed projection");
+    MemoryEmbeddingRepository::put_ready(
+        backend.database(),
+        MemoryEmbeddingProjection {
+            space_id,
+            memory_id: untouched_memory.id,
+            source_text: untouched_memory.text.clone(),
+            vector: EmbeddingVector {
+                source_revision: "scenario-v1".into(),
+                values: {
+                    let mut values = vec![0.0; 128];
+                    values[1] = 1.0;
+                    values
+                },
+            },
+            dimensions: EmbeddingDimensions::D128,
+            updated_at: TimestampMillis::new(1_012),
+        },
+    )
+    .expect("seed unrelated projection");
     let work = admit_and_claim(backend.database(), &scenario, 1_015);
     let inference = scripted(vec![text_outcome(
         "prepared-dynamic-response",
@@ -4734,4 +4753,82 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
         vec![edited]
     );
     assert_rescans_are_empty(&[&a, &b], 4_000);
+}
+
+
+#[tokio::test]
+async fn retrieval_embeds_memories_without_a_current_vector_first() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let stored_settings = GlobalSettingsStore::load(backend.database()).expect("settings");
+    let mut settings = stored_settings.settings;
+    settings.dynamic_memory.enabled = true;
+    settings.dynamic_memory.retrieval_limit = 1;
+    GlobalSettingsStore::save(
+        backend.database(),
+        settings,
+        stored_settings.default_model_profile_id,
+        stored_settings.revision,
+    )
+    .expect("save dynamic memory settings");
+    let scenario =
+        scenario_with_resolvable_profile(backend.database(), true, "pending-embeddings", true);
+    let space_id = scenario.space_id.expect("dynamic memory space");
+    let stored = MemoryRepository::get(backend.database(), space_id)
+        .expect("memory")
+        .expect("memory exists");
+    let memory_id = MemoryId::new();
+    let synced = MemoryItem {
+        id: memory_id,
+        short_id: lettuce_memory::MemoryShortId::derived(memory_id),
+        text: "Mira arrived from another device.".into(),
+        category: MemoryCategory::Preference,
+        source_message_id: None,
+        source_role: None,
+        observed_at: None,
+        observed_time_precision: None,
+        superseded_by: None,
+        superseded_at: None,
+        supersedes: vec![],
+        token_count: 5,
+        is_cold: true,
+        is_pinned: false,
+        importance: Score::from_basis_points(3_000).expect("score"),
+        persistence_importance: Score::from_basis_points(8_000).expect("score"),
+        prompt_importance: Score::from_basis_points(8_000).expect("score"),
+        volatility: Score::LEGACY_VOLATILITY,
+        access_count: 0,
+        created_at: TimestampMillis::new(900),
+        last_accessed_at: TimestampMillis::new(900),
+    };
+    MemoryRepository::compare_and_apply(
+        backend.database(),
+        MemoryChangeSet {
+            space_id,
+            expected_revision: stored.revision,
+            items: vec![synced.clone()],
+        },
+    )
+    .expect("seed memory");
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![]);
+    let engine = ScenarioEmbeddingEngine;
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .build_input(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("build");
+    let ready = MemoryEmbeddingRepository::list_ready(
+        backend.database(),
+        space_id,
+        "scenario-v1",
+        EmbeddingDimensions::D128,
+    )
+    .expect("projections");
+    assert_eq!(ready.len(), 1);
+    assert_eq!(ready[0].memory_id, memory_id);
+    assert_eq!(ready[0].source_text, synced.text);
 }

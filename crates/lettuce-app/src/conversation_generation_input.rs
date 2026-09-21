@@ -1281,6 +1281,64 @@ where
         )
     }
 
+    /// Embeds the memories that have no ready vector for the current
+    /// embedding model and text (new, edited, synced or from an older
+    /// model), as legacy migrated session memories before retrieval. A
+    /// failure leaves the memory for the next retrieval.
+    fn embed_pending_memories(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        memory: &MemorySpaceSnapshot,
+        now: TimestampMillis,
+    ) -> Result<(), ConversationGenerationInputError> {
+        let ready = self
+            .repository
+            .list_ready(
+                memory.id,
+                self.embedding.source_revision(),
+                self.embedding.dimensions(),
+            )
+            .map_err(|_| ConversationGenerationInputError::Embedding)?;
+        for item in &memory.items {
+            if ready.iter().any(|projection| {
+                projection.memory_id == item.id && projection.source_text == item.text
+            }) {
+                continue;
+            }
+            let vector = match self.embedding.embed_memory(
+                &EmbeddingRequest {
+                    text: item.text.clone(),
+                    dimensions: self.embedding.dimensions(),
+                },
+                &work.handle.cancellation_token(),
+            ) {
+                Ok(vector) => vector,
+                Err(EmbeddingGenerationError::Cancelled) => {
+                    return Err(ConversationGenerationInputError::Cancelled);
+                }
+                Err(EmbeddingGenerationError::Unavailable) => {
+                    tracing::info!("pending memory embeddings wait for the embedding model");
+                    return Ok(());
+                }
+            };
+            if self
+                .repository
+                .put_ready(lettuce_embeddings::MemoryEmbeddingProjection {
+                    space_id: memory.id,
+                    memory_id: item.id,
+                    source_text: item.text.clone(),
+                    vector,
+                    dimensions: self.embedding.dimensions(),
+                    updated_at: now,
+                })
+                .is_err()
+            {
+                tracing::warn!("a pending memory embedding could not be stored");
+            }
+        }
+        Ok(())
+    }
+
     async fn retrieve_memories(
         &self,
         work: &ConversationGenerationClaimedWork,
@@ -1327,6 +1385,7 @@ where
             }
             None => active,
         };
+        self.embed_pending_memories(work, memory, now)?;
         let query_embedding = match self.embedding.embed_memory(
             &EmbeddingRequest {
                 text: query.clone(),
