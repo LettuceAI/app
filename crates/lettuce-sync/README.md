@@ -213,3 +213,10 @@ references and the starting scene replaced); a member model override deleted
 on this device is cleared like a character default. Group lorebook bindings
 join the binding entities, and group presentation, background and scene
 assets join the media scan.
+
+Application settings (sync S7, `app_settings.snapshot`): the settings row is
+one singleton entity (preferences, default model and prompt selections and
+the app-wide model settings layer), scanned after prompts. A selected model or
+prompt missing on this device is cleared. Because a scan journals upserts
+before deletes, a peer receives the cleared defaults before the model delete
+that caused them, so its own clearing is a no-op.

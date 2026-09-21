@@ -506,6 +506,107 @@ impl lettuce_models::GlobalModelSettingsRepository for Database {
     }
 }
 
+/// The application settings row as one synced snapshot: preferences, the
+/// selected defaults and the app-wide model settings layer.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SyncAppSettings {
+    pub settings: GlobalSettings,
+    pub default_model_profile_id: Option<ModelProfileId>,
+    pub default_prompt_document_id: Option<lettuce_types::PromptDocumentId>,
+    pub dynamic_memory_model_profile_id: Option<ModelProfileId>,
+    pub group_speaker_model_profile_id: Option<ModelProfileId>,
+    pub model_settings: lettuce_models::ModelSettingsLayer,
+    pub revision: Revision,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
+pub(crate) fn sync_load_app_settings(
+    database: &Connection,
+) -> Result<SyncAppSettings, rusqlite::Error> {
+    database.query_row(
+        "SELECT default_model_profile_id, dynamic_memory_model_profile_id, group_speaker_model_profile_id, default_prompt_document_id, format_version, payload_json, model_settings_json, revision, created_at, updated_at \
+         FROM app_settings WHERE id = 1",
+        [],
+        |row| {
+            if row.get::<_, u32>(4)? != GLOBAL_SETTINGS_FORMAT_VERSION {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            Ok(SyncAppSettings {
+                settings: serde_json::from_str(&row.get::<_, String>(5)?)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                default_model_profile_id: row.get::<_, Option<String>>(0)?.map(parse_id).transpose()?,
+                dynamic_memory_model_profile_id: row
+                    .get::<_, Option<String>>(1)?
+                    .map(parse_id)
+                    .transpose()?,
+                group_speaker_model_profile_id: row
+                    .get::<_, Option<String>>(2)?
+                    .map(parse_id)
+                    .transpose()?,
+                default_prompt_document_id: row
+                    .get::<_, Option<String>>(3)?
+                    .map(parse_id)
+                    .transpose()?,
+                model_settings: decode_global_model_settings(row.get(6)?)?,
+                revision: to_revision(row.get(7)?)?,
+                created_at: TimestampMillis::new(row.get(8)?),
+                updated_at: TimestampMillis::new(row.get(9)?),
+            })
+        },
+    )
+}
+
+/// Writes synced application settings exactly. A selected model or prompt
+/// deleted on this device is cleared instead of blocking the origin's later
+/// changes; the next scan journals the cleared selection.
+pub(crate) fn sync_write_app_settings(
+    connection: &Connection,
+    snapshot: &SyncAppSettings,
+) -> Result<(), rusqlite::Error> {
+    snapshot
+        .model_settings
+        .validate()
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let present = |table: &str, id: Option<String>| -> Result<Option<String>, rusqlite::Error> {
+        let Some(id) = id else { return Ok(None) };
+        let exists: bool = connection.query_row(
+            &format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id=?1)"),
+            [&id],
+            |row| row.get(0),
+        )?;
+        Ok(exists.then_some(id))
+    };
+    connection.execute(
+        "UPDATE app_settings SET default_model_profile_id=?1, dynamic_memory_model_profile_id=?2, \
+         group_speaker_model_profile_id=?3, default_prompt_document_id=?4, payload_json=?5, \
+         model_settings_json=?6, revision=?7, created_at=?8, updated_at=?9 WHERE id=1",
+        params![
+            present("model_profiles", snapshot.default_model_profile_id.map(|id| id.to_string()))?,
+            present(
+                "model_profiles",
+                snapshot.dynamic_memory_model_profile_id.map(|id| id.to_string())
+            )?,
+            present(
+                "model_profiles",
+                snapshot.group_speaker_model_profile_id.map(|id| id.to_string())
+            )?,
+            present(
+                "prompt_documents",
+                snapshot.default_prompt_document_id.map(|id| id.to_string())
+            )?,
+            serde_json::to_string(&snapshot.settings).map_err(|_| rusqlite::Error::InvalidQuery)?,
+            encode_global_model_settings(&snapshot.model_settings)
+                .map_err(|_| rusqlite::Error::InvalidQuery)?,
+            to_i64(snapshot.revision.get())?,
+            snapshot.created_at.get(),
+            snapshot.updated_at.get(),
+        ],
+    )?;
+    Ok(())
+}
+
 impl GlobalSettingsStore for Database {
     fn load(&self) -> Result<StoredGlobalSettings, GlobalSettingsStoreError> {
         self.connection()
@@ -2121,7 +2222,7 @@ mod tests {
         batch
             .changes
             .iter()
-            .filter(|change| change.entity().kind() != "persona_default")
+            .filter(|change| !matches!(change.entity().kind(), "persona_default" | "app_settings"))
             .count()
     }
 
@@ -2270,6 +2371,39 @@ mod tests {
             PersonaRepository::get(&b, persona.id).expect("persona")
         );
         assert_eq!(sync_to(&a, &b, 400) + sync_to(&b, &a, 500), 0);
+    }
+
+    #[test]
+    fn app_settings_converge_through_state_sync() {
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let account = ProviderAccountRepository::upsert(&a, provider(), None).expect("account");
+        let model = ModelProfileRepository::upsert(&a, profile(account.id), None).expect("model");
+        let stored = GlobalSettingsStore::load(&a).expect("settings");
+        let saved = GlobalSettingsStore::save(
+            &a,
+            lettuce_settings::GlobalSettings {
+                analytics_enabled: false,
+                manual_mode_context_window: 77,
+                ..stored.settings.clone()
+            },
+            Some(model.id),
+            stored.revision,
+        )
+        .expect("save on a");
+        sync_to(&a, &b, 100);
+        sync_to(&b, &a, 110);
+        assert_eq!(GlobalSettingsStore::load(&b).expect("b"), saved);
+        assert_eq!(GlobalSettingsStore::load(&a).expect("a"), saved);
+
+        ModelProfileRepository::delete_and_clear_default(&a, model.id).expect("delete model");
+        sync_to(&a, &b, 200);
+        assert_eq!(ModelProfileRepository::get(&b, model.id).expect("b"), None);
+        assert_eq!(
+            GlobalSettingsStore::load(&b).expect("b"),
+            GlobalSettingsStore::load(&a).expect("a")
+        );
+        assert_eq!(sync_to(&a, &b, 300) + sync_to(&b, &a, 400), 0);
     }
 
     #[test]

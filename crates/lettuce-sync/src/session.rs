@@ -352,6 +352,10 @@ pub fn current_sync_schema_fingerprint() -> ContentHash {
     let mut hasher = blake3::Hasher::new_derive_key("lettuce.sync.schemas.v1");
     for (schema, version) in [
         (crate::CHARACTER_SYNC_SCHEMA, crate::CHARACTER_SYNC_VERSION),
+        (
+            crate::APP_SETTINGS_SYNC_SCHEMA,
+            crate::APP_SETTINGS_SYNC_VERSION,
+        ),
         (crate::GROUP_SYNC_SCHEMA, crate::GROUP_SYNC_VERSION),
         (
             crate::LOREBOOK_BINDINGS_SYNC_SCHEMA,
@@ -422,7 +426,7 @@ mod tests {
     fn current_schema_fingerprint_is_stable_and_complete() {
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "304f4d93c07dd2c1b2968bb3c4d21a6b74ea9451ed26eaa5876713cbc1541faf"
+            "ec2b1ef97fc3cb358bc900aaa15f01ae85151607e68d6e99b1b3f4881884b822"
         );
     }
 

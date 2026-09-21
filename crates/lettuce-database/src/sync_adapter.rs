@@ -861,6 +861,11 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::LOREBOOK_SYNC_VERSION,
         )
         | (
+            lettuce_sync::APP_SETTINGS_SYNC_KIND,
+            lettuce_sync::APP_SETTINGS_SYNC_SCHEMA,
+            lettuce_sync::APP_SETTINGS_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::GROUP_SYNC_KIND,
             lettuce_sync::GROUP_SYNC_SCHEMA,
             lettuce_sync::GROUP_SYNC_VERSION,
@@ -1364,6 +1369,43 @@ const PROMPT_CODEC: SnapshotCodec = SnapshotCodec {
     delete: None,
 };
 
+fn app_settings_payload(
+    snapshot: &crate::SyncAppSettings,
+) -> Result<CanonicalPayload, ApplyOneError> {
+    CanonicalPayload::new(
+        lettuce_sync::APP_SETTINGS_SYNC_SCHEMA,
+        lettuce_sync::APP_SETTINGS_SYNC_VERSION,
+        serde_json::to_vec(snapshot).map_err(|_| ApplyOneError::Corrupt)?,
+    )
+    .map_err(|_| ApplyOneError::Corrupt)
+}
+
+const APP_SETTINGS_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::APP_SETTINGS_SYNC_KIND,
+    assets: no_assets,
+    decode: |id, bytes| {
+        let snapshot: crate::SyncAppSettings =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        if id != "application" || snapshot.model_settings.validate().is_err() {
+            return Err(ApplyOneError::Corrupt);
+        }
+        Ok(())
+    },
+    current: |connection, _| {
+        let snapshot =
+            crate::sync_load_app_settings(connection).map_err(|_| ApplyOneError::Storage)?;
+        app_settings_payload(&snapshot).map(Some)
+    },
+    materialize: |tx, _, bytes| {
+        let snapshot: crate::SyncAppSettings =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::sync_write_app_settings(tx, &snapshot).map_err(|_| ApplyOneError::Storage)?;
+        Ok(true)
+    },
+    ids: Some(|_| Ok(vec!["application".to_owned()])),
+    delete: None,
+};
+
 macro_rules! binding_codec {
     ($name:ident, $kind:expr, $owner:expr) => {
         const $name: SnapshotCodec = SnapshotCodec {
@@ -1462,12 +1504,13 @@ binding_codec!(
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 11] = [
+const SCANNED_CODECS: [&SnapshotCodec; 12] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
     &PERSONA_DEFAULT_CODEC,
     &PROMPT_CODEC,
+    &APP_SETTINGS_CODEC,
     &CHARACTER_CODEC,
     &GROUP_CODEC,
     &LOREBOOK_CODEC,

@@ -103,3 +103,7 @@ pub fn canonical_group_payload(
     let bytes = serde_json::to_vec(details).map_err(|_| SyncChangeError::PayloadEncoding)?;
     CanonicalPayload::new(GROUP_SYNC_SCHEMA, GROUP_SYNC_VERSION, bytes)
 }
+
+pub const APP_SETTINGS_SYNC_KIND: &str = "app_settings";
+pub const APP_SETTINGS_SYNC_SCHEMA: &str = "app_settings.snapshot";
+pub const APP_SETTINGS_SYNC_VERSION: u32 = 1;
