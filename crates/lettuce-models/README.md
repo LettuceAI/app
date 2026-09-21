@@ -88,3 +88,12 @@ A configured sampling parameter is rejected only when the model's capability
 evidence says `Unsupported`; `Unknown` support passes the value through, as
 legacy sent every configured value and nothing in the rewrite fills
 `parameter_support` yet (imports and new models carry `Unknown`).
+
+llama.cpp settings resolve per field like legacy `resolve_llama_*`: session
+layer, then the model, then the app layer (`resolve_llama_settings`, on
+`ResolvedChatProfile.llama_cpp` for llama.cpp models only). A single-GPU pin
+yields to multi-GPU enabled at the same or a more specific layer; the K/V
+cache types resolve as one unit. App features use the feature slot's sampler
+as the session layer (legacy synthetic session); dynamic memory can replace
+the sampler with the legacy fixed memory sampler (direct: DRY 0.8/1.75/2/-1,
+group: DRY multiplier 0), which also turns off the profile defaults.
