@@ -3244,15 +3244,22 @@ impl LocalChangeJournal for Database {
             let ids = codec.ids.ok_or(LocalChangeJournalError::Corrupt)?;
             let ids = ids(&tx).map_err(journal_apply_error)?;
             let latest = latest_journaled(&tx, codec.kind)?;
+            let mut skipped = Vec::new();
             for id in &ids {
-                if SyncEntity::new(codec.kind, id.clone()).is_err()
-                    || entity_deferred(&tx, codec.kind, id).map_err(storage)?
-                {
+                if SyncEntity::new(codec.kind, id.clone()).is_err() {
+                    continue;
+                }
+                if entity_deferred(&tx, codec.kind, id).map_err(storage)? {
+                    skipped.push(id.clone());
                     continue;
                 }
                 let payload = match (codec.current)(&tx, id) {
                     Ok(Some(payload)) => payload,
-                    Ok(None) | Err(ApplyOneError::Corrupt) => continue,
+                    Ok(None) => {
+                        skipped.push(id.clone());
+                        continue;
+                    }
+                    Err(ApplyOneError::Corrupt) => continue,
                     Err(error) => return Err(journal_apply_error(error)),
                 };
                 let base = latest.get(id).cloned().flatten();
@@ -3273,6 +3280,10 @@ impl LocalChangeJournal for Database {
                 };
                 journal_state_change(&tx, codec.kind, id, operation, base, Some(payload), now)?;
                 journaled += 1;
+            }
+            if codec.kind == lettuce_sync::CONVERSATION_MESSAGE_SYNC_KIND {
+                crate::conversation_sync_adapter::mark_messages_scanned(&tx, &ids, &skipped)
+                    .map_err(storage)?;
             }
             present.push((codec, ids, latest));
         }

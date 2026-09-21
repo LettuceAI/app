@@ -136,8 +136,29 @@ pub(crate) fn sync_load_conversation_root(
         .iter()
         .find(|branch| branch.parent_branch_id.is_none())
         .ok_or(ConversationRepositoryError::Storage)?;
-    let messages =
-        crate::backup_adapter::read_conversation_messages(transaction, id).map_err(storage)?;
+    let initial_ids = transaction
+        .prepare(
+            "SELECT message_id FROM conversation_initial_message_origins WHERE conversation_id = ?1",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map([id.to_string()], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(storage)?;
+    let mut messages = Vec::with_capacity(initial_ids.len());
+    for message_id in initial_ids {
+        if let Some(message) = crate::backup_adapter::read_conversation_message(
+            transaction,
+            id,
+            message_id.parse().map_err(storage)?,
+        )
+        .map_err(storage)?
+        {
+            messages.push(message);
+        }
+    }
+    messages.sort_by_key(|message| (message.timeline_ordinal, message.message.id));
     let conversation = Conversation {
         active_branch_id: root_branch.id,
         revision: Revision::INITIAL,
@@ -353,7 +374,12 @@ pub(crate) struct SyncConversationMessage {
 pub(crate) fn sync_message_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
     connection
         .prepare(
-            "SELECT conversation_id || ':' || id FROM conversation_messages ORDER BY conversation_id, timeline_ordinal, id",
+            "SELECT message.conversation_id || ':' || message.id FROM conversation_messages message
+              WHERE NOT EXISTS (
+                  SELECT 1 FROM sync_conversation_marks mark
+                   WHERE mark.conversation_id = message.conversation_id AND mark.changed = mark.scanned
+              )
+              ORDER BY message.conversation_id, message.timeline_ordinal, message.id",
         )?
         .query_map([], |row| row.get(0))?
         .collect()
@@ -1270,6 +1296,33 @@ fn refresh_copies(
             )
             .map_err(crate::conversation_mutation_kernel::map_constraint)?;
         settle_copy_media(transaction, conversation_id, copy_id)?;
+    }
+    Ok(())
+}
+
+/// Marks conversations whose messages were all journaled by this scan; those
+/// with a message it had to skip (deferred or mid-generation) stay pending.
+pub(crate) fn mark_messages_scanned(
+    transaction: &Transaction<'_>,
+    scanned: &[String],
+    skipped: &[String],
+) -> rusqlite::Result<()> {
+    let pending = skipped
+        .iter()
+        .filter_map(|id| id.split_once(':').map(|(conversation, _)| conversation))
+        .collect::<std::collections::HashSet<_>>();
+    let mut done = scanned
+        .iter()
+        .filter_map(|id| id.split_once(':').map(|(conversation, _)| conversation))
+        .filter(|conversation| !pending.contains(conversation))
+        .collect::<Vec<_>>();
+    done.dedup();
+    for conversation in done {
+        transaction.execute(
+            "INSERT INTO sync_conversation_marks (conversation_id, changed, scanned) VALUES (?1, 0, 0)
+             ON CONFLICT(conversation_id) DO UPDATE SET scanned = changed",
+            [conversation],
+        )?;
     }
     Ok(())
 }

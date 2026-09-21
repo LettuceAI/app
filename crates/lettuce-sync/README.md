@@ -353,6 +353,15 @@ grown soul or a used relationship replaces them. Apply
 receipts, turn effects, growth/consolidation/writer runs stay on the device
 that ran them.
 
+Message scans read only conversations whose messages changed since the last
+scan: triggers on every table a message snapshot is built from (messages,
+revisions, candidates, initial origins, turns, attempts, media references,
+usage events) count writes per conversation in the device-local
+`sync_conversation_marks`, whatever path made them, and a conversation is
+marked scanned only when none of its messages had to be skipped (deferred or
+mid-generation). A root reads only its initial messages. A restored database
+has no marks and is scanned whole once.
+
 The scan skips an entity whose id is not a valid sync entity id or whose
 snapshot cannot be encoded (for example beyond the payload limit), so one bad
 row never stops journaling for everything else.

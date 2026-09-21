@@ -5059,6 +5059,7 @@ mod tests {
                 "sync_changes",
                 "sync_conflicts",
                 "sync_conversation_forks",
+                "sync_conversation_marks",
                 "sync_deferred_changes",
                 "sync_frontiers",
                 "sync_incoming_batches",

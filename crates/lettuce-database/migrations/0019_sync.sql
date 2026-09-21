@@ -269,3 +269,229 @@ CREATE TABLE sync_conversation_forks (
     FOREIGN KEY (conversation_id, branch_id)
         REFERENCES conversation_branches(conversation_id, id) ON DELETE RESTRICT
 ) STRICT;
+
+-- Conversations whose messages changed since the last journal scan, so the
+-- scan reads only those. Every write to a table a synced message snapshot is
+-- built from counts here, whatever path made it; device-local and not carried
+-- across a restore (a restored database is scanned whole once).
+CREATE TABLE sync_conversation_marks (
+    conversation_id TEXT PRIMARY KEY,
+    changed INTEGER NOT NULL CHECK (changed >= 0),
+    scanned INTEGER NOT NULL CHECK (scanned >= 0)
+) STRICT;
+
+CREATE TRIGGER sync_mark_conversation_messages_insert
+AFTER INSERT ON conversation_messages
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_messages_update
+AFTER UPDATE ON conversation_messages
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_messages_delete
+AFTER DELETE ON conversation_messages
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (OLD.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_message_revisions_insert
+AFTER INSERT ON conversation_message_revisions
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_message_revisions_update
+AFTER UPDATE ON conversation_message_revisions
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_message_revisions_delete
+AFTER DELETE ON conversation_message_revisions
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (OLD.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_message_candidates_insert
+AFTER INSERT ON conversation_message_candidates
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_message_candidates_update
+AFTER UPDATE ON conversation_message_candidates
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_message_candidates_delete
+AFTER DELETE ON conversation_message_candidates
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (OLD.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_initial_message_origins_insert
+AFTER INSERT ON conversation_initial_message_origins
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_initial_message_origins_update
+AFTER UPDATE ON conversation_initial_message_origins
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_initial_message_origins_delete
+AFTER DELETE ON conversation_initial_message_origins
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (OLD.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_turns_insert
+AFTER INSERT ON conversation_turns
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_turns_update
+AFTER UPDATE ON conversation_turns
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_conversation_turns_delete
+AFTER DELETE ON conversation_turns
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (OLD.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_generation_attempts_insert
+AFTER INSERT ON generation_attempts
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_generation_attempts_update
+AFTER UPDATE ON generation_attempts
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_generation_attempts_delete
+AFTER DELETE ON generation_attempts
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (OLD.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_revision_media_refs_insert
+AFTER INSERT ON revision_media_refs
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_revision_media_refs_update
+AFTER UPDATE ON revision_media_refs
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_revision_media_refs_delete
+AFTER DELETE ON revision_media_refs
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (OLD.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_candidate_media_refs_insert
+AFTER INSERT ON candidate_media_refs
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_candidate_media_refs_update
+AFTER UPDATE ON candidate_media_refs
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_candidate_media_refs_delete
+AFTER DELETE ON candidate_media_refs
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (OLD.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_usage_events_insert
+AFTER INSERT ON usage_events
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_usage_events_update
+AFTER UPDATE ON usage_events
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (NEW.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;
+
+CREATE TRIGGER sync_mark_usage_events_delete
+AFTER DELETE ON usage_events
+BEGIN
+    INSERT INTO sync_conversation_marks (conversation_id, changed, scanned)
+    VALUES (OLD.conversation_id, 1, 0)
+    ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
+END;

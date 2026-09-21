@@ -1913,14 +1913,6 @@ fn read_conversation_history(
     })
 }
 
-/// Every message of one conversation with its revisions and candidates.
-pub(crate) fn read_conversation_messages(
-    transaction: &rusqlite::Transaction<'_>,
-    conversation_id: ConversationId,
-) -> Result<Vec<BackupMessage>, ProviderBackupSourceError> {
-    read_backup_messages(transaction, conversation_id, &mut 0, &mut 0, &mut 0)
-}
-
 /// One message with its revisions and candidates.
 pub(crate) fn read_conversation_message(
     transaction: &rusqlite::Transaction<'_>,
