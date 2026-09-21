@@ -353,6 +353,19 @@ pub fn current_sync_schema_fingerprint() -> ContentHash {
     for (schema, version) in [
         (crate::CHARACTER_SYNC_SCHEMA, crate::CHARACTER_SYNC_VERSION),
         (
+            crate::USAGE_COST_SYNC_SCHEMA,
+            crate::USAGE_COST_SYNC_VERSION,
+        ),
+        (crate::JOB_USAGE_SYNC_SCHEMA, crate::JOB_USAGE_SYNC_VERSION),
+        (
+            crate::JOB_USAGE_COST_SYNC_SCHEMA,
+            crate::JOB_USAGE_COST_SYNC_VERSION,
+        ),
+        (
+            crate::LEGACY_USAGE_SYNC_SCHEMA,
+            crate::LEGACY_USAGE_SYNC_VERSION,
+        ),
+        (
             crate::AUDIO_PROVIDER_SYNC_SCHEMA,
             crate::AUDIO_PROVIDER_SYNC_VERSION,
         ),
@@ -486,7 +499,7 @@ mod tests {
     fn current_schema_fingerprint_is_stable_and_complete() {
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "752bfd7b7487451c188c4d1524dfdb2daa00f6419a4df97cd6218d5a654e6e8a"
+            "d84fb206ad4d50003d7ef2a7ca3a81973757404d52834afb7f196c13acec5cd8"
         );
     }
 

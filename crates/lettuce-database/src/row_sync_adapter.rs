@@ -21,6 +21,8 @@ pub(crate) struct RowReference {
 
 pub(crate) struct RowTable {
     pub table: &'static str,
+    pub key: &'static [&'static str],
+    pub immutable: bool,
     pub columns: &'static [&'static str],
     pub revision: bool,
     pub identity: &'static [&'static str],
@@ -38,9 +40,40 @@ fn storage(_: impl std::fmt::Debug) -> RowSyncError {
     RowSyncError::Storage
 }
 
+fn key_expression(spec: &RowTable) -> String {
+    spec.key.join(" || ':' || ")
+}
+
+fn key_condition(spec: &RowTable) -> String {
+    spec.key
+        .iter()
+        .map(|column| format!("{column} = ?"))
+        .collect::<Vec<_>>()
+        .join(" AND ")
+}
+
+fn key_values(spec: &RowTable, id: &str) -> Result<Vec<Value>, RowSyncError> {
+    let mut values = Vec::with_capacity(spec.key.len());
+    let mut rest = id;
+    for index in 0..spec.key.len() {
+        if index + 1 == spec.key.len() {
+            values.push(Value::Text(rest.to_owned()));
+        } else {
+            let (value, tail) = rest.split_once(':').ok_or(RowSyncError::Corrupt)?;
+            values.push(Value::Text(value.to_owned()));
+            rest = tail;
+        }
+    }
+    Ok(values)
+}
+
 pub(crate) fn row_ids(connection: &Connection, spec: &RowTable) -> rusqlite::Result<Vec<String>> {
     connection
-        .prepare(&format!("SELECT id FROM {} ORDER BY id", spec.table))?
+        .prepare(&format!(
+            "SELECT {key} FROM {} ORDER BY {key}",
+            spec.table,
+            key = key_expression(spec)
+        ))?
         .query_map([], |row| row.get(0))?
         .collect()
 }
@@ -76,12 +109,15 @@ pub(crate) fn row_current(
     id: &str,
 ) -> Result<Option<Vec<u8>>, RowSyncError> {
     let sql = format!(
-        "SELECT {} FROM {} WHERE id = ?1",
+        "SELECT {} FROM {} WHERE {}",
         spec.columns.join(", "),
-        spec.table
+        spec.table,
+        key_condition(spec)
     );
     let mut statement = transaction.prepare(&sql).map_err(storage)?;
-    let mut rows = statement.query([id]).map_err(storage)?;
+    let mut rows = statement
+        .query(params_from_iter(key_values(spec, id)?))
+        .map_err(storage)?;
     let Some(row) = rows.next().map_err(storage)? else {
         return Ok(None);
     };
@@ -140,7 +176,18 @@ pub(crate) fn row_materialize(
         .iter()
         .map(|column| to_sql(&object[*column]))
         .collect::<Result<Vec<_>, _>>()?;
+    let keys = key_values(spec, id)?;
     for reference in spec.references {
+        if let Some(index) = spec
+            .key
+            .iter()
+            .position(|column| *column == reference.column)
+        {
+            if !exists(transaction, reference.table, &keys[index])? {
+                return Err(RowSyncError::Pending);
+            }
+            continue;
+        }
         let index = spec
             .columns
             .iter()
@@ -194,7 +241,20 @@ pub(crate) fn row_materialize(
                 .map_err(storage)?;
         }
     }
-    let present = exists(transaction, spec.table, &Value::Text(id.to_owned()))?;
+    let present: bool = transaction
+        .query_row(
+            &format!(
+                "SELECT EXISTS(SELECT 1 FROM {} WHERE {})",
+                spec.table,
+                key_condition(spec)
+            ),
+            params_from_iter(key_values(spec, id)?),
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if present && spec.immutable {
+        return Ok(true);
+    }
     if present {
         let assignments = spec
             .columns
@@ -216,20 +276,28 @@ pub(crate) fn row_materialize(
             .zip(values)
             .filter(|(column, _)| **column != "created_at")
             .map(|(_, value)| value)
-            .chain(std::iter::once(Value::Text(id.to_owned())));
+            .chain(key_values(spec, id)?);
         transaction
             .execute(
-                &format!("UPDATE {} SET {assignments} WHERE id = ?", spec.table),
+                &format!(
+                    "UPDATE {} SET {assignments} WHERE {}",
+                    spec.table,
+                    key_condition(spec)
+                ),
                 params_from_iter(bound),
             )
             .map_err(storage)?;
     } else {
-        let columns = std::iter::once("id")
+        let columns = spec
+            .key
+            .iter()
+            .copied()
             .chain(spec.columns.iter().copied())
             .chain(spec.revision.then_some("revision"))
             .collect::<Vec<_>>();
         let placeholders = vec!["?"; columns.len()].join(", ");
-        let bound = std::iter::once(Value::Text(id.to_owned()))
+        let bound = key_values(spec, id)?
+            .into_iter()
             .chain(values)
             .chain(spec.revision.then_some(Value::Integer(1)));
         transaction
@@ -252,12 +320,17 @@ pub(crate) fn row_delete(
     id: &str,
 ) -> Result<bool, RowSyncError> {
     transaction
-        .execute(&format!("DELETE FROM {} WHERE id = ?1", spec.table), [id])
+        .execute(
+            &format!("DELETE FROM {} WHERE {}", spec.table, key_condition(spec)),
+            params_from_iter(key_values(spec, id)?),
+        )
         .map_err(storage)?;
     Ok(true)
 }
 
 pub(crate) const AUDIO_PROVIDERS: RowTable = RowTable {
+    key: &["id"],
+    immutable: false,
     table: "audio_providers",
     columns: &[
         "secret_owner_id",
@@ -274,6 +347,8 @@ pub(crate) const AUDIO_PROVIDERS: RowTable = RowTable {
 };
 
 pub(crate) const USER_VOICES: RowTable = RowTable {
+    key: &["id"],
+    immutable: false,
     table: "user_voices",
     columns: &[
         "provider_id",
@@ -294,6 +369,8 @@ pub(crate) const USER_VOICES: RowTable = RowTable {
 };
 
 pub(crate) const ASR_VOCABULARY_TERMS: RowTable = RowTable {
+    key: &["id"],
+    immutable: false,
     table: "asr_vocabulary_terms",
     columns: &[
         "term",
@@ -312,6 +389,8 @@ pub(crate) const ASR_VOCABULARY_TERMS: RowTable = RowTable {
 };
 
 pub(crate) const ASR_CORRECTIONS: RowTable = RowTable {
+    key: &["id"],
+    immutable: false,
     table: "asr_corrections",
     columns: &[
         "wrong",
@@ -336,6 +415,8 @@ pub(crate) const ASR_CORRECTIONS: RowTable = RowTable {
 };
 
 pub(crate) const ASR_IGNORED_SUGGESTIONS: RowTable = RowTable {
+    key: &["id"],
+    immutable: false,
     table: "asr_ignored_suggestions",
     columns: &[
         "wrong",
@@ -360,6 +441,8 @@ pub(crate) const ASR_IGNORED_SUGGESTIONS: RowTable = RowTable {
 };
 
 pub(crate) const ASR_VOICE_EXAMPLES: RowTable = RowTable {
+    key: &["id"],
+    immutable: false,
     table: "asr_voice_examples",
     columns: &[
         "audio_asset_id",
@@ -395,3 +478,117 @@ pub(crate) const ASR_VOICE_EXAMPLES: RowTable = RowTable {
         },
     ],
 };
+
+pub(crate) const USAGE_COSTS: RowTable = RowTable {
+    key: &["event_id"],
+    immutable: true,
+    table: "usage_costs",
+    columns: &["basis_json"],
+    revision: false,
+    identity: &[],
+    references: &[RowReference {
+        column: "event_id",
+        table: "usage_events",
+        required: true,
+    }],
+};
+
+pub(crate) const JOB_INFERENCE_USAGE: RowTable = RowTable {
+    key: &["id"],
+    immutable: false,
+    table: "job_inference_usage",
+    columns: &["job_id", "admitted_at", "record_json", "result_json"],
+    revision: false,
+    identity: &[],
+    references: &[],
+};
+
+pub(crate) const JOB_USAGE_COSTS: RowTable = RowTable {
+    key: &["event_id"],
+    immutable: true,
+    table: "job_usage_costs",
+    columns: &["basis_json"],
+    revision: false,
+    identity: &[],
+    references: &[RowReference {
+        column: "event_id",
+        table: "job_inference_usage",
+        required: true,
+    }],
+};
+
+pub(crate) const LEGACY_USAGE_RECORDS: RowTable = RowTable {
+    key: &["run_id", "source_id"],
+    immutable: true,
+    table: "legacy_usage_records",
+    columns: &[
+        "recorded_at",
+        "session_source_id",
+        "character_source_id",
+        "character_name",
+        "model_source_id",
+        "model_profile_id",
+        "model_name",
+        "provider_source_id",
+        "provider_label",
+        "operation_type",
+        "finish_reason",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "memory_tokens",
+        "summary_tokens",
+        "reasoning_tokens",
+        "image_tokens",
+        "audio_tokens",
+        "prompt_cost",
+        "completion_cost",
+        "total_cost",
+        "success",
+        "error_message",
+        "metadata_json",
+    ],
+    revision: false,
+    identity: &[],
+    references: &[],
+};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Database;
+
+    #[test]
+    fn composite_key_immutable_rows_round_trip_once() {
+        let source = Database::open_in_memory().expect("source");
+        let target = Database::open_in_memory().expect("target");
+        source
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO legacy_usage_records (run_id, source_id, recorded_at, session_source_id, character_source_id, character_name, model_source_id, model_profile_id, model_name, provider_source_id, provider_label, operation_type, finish_reason, prompt_tokens, completion_tokens, total_tokens, memory_tokens, summary_tokens, reasoning_tokens, image_tokens, audio_tokens, prompt_cost, completion_cost, total_cost, success, error_message, metadata_json) VALUES ('run', 'usage:1', 5, 's', 'c', 'Ada', 'm', NULL, 'Model', 'p', 'Provider', 'chat', 'stop', 10, 4, 14, NULL, NULL, NULL, NULL, NULL, 0.25, 0.5, 0.75, 1, NULL, '{}')",
+                [],
+            )
+            .expect("legacy usage");
+        let mut connection = source.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        let ids = row_ids(&transaction, &LEGACY_USAGE_RECORDS).expect("ids");
+        assert_eq!(ids, vec!["run:usage:1".to_owned()]);
+        let bytes = row_current(&transaction, &LEGACY_USAGE_RECORDS, &ids[0])
+            .expect("current")
+            .expect("present");
+        drop(transaction);
+        let mut connection = target.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        for _ in 0..2 {
+            assert!(
+                row_materialize(&transaction, &LEGACY_USAGE_RECORDS, &ids[0], &bytes)
+                    .expect("materialize")
+            );
+        }
+        assert_eq!(
+            row_current(&transaction, &LEGACY_USAGE_RECORDS, &ids[0]).expect("current"),
+            Some(bytes)
+        );
+    }
+}

@@ -905,6 +905,26 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::ASR_VOICE_EXAMPLE_SYNC_VERSION,
         )
         | (
+            lettuce_sync::USAGE_COST_SYNC_KIND,
+            lettuce_sync::USAGE_COST_SYNC_SCHEMA,
+            lettuce_sync::USAGE_COST_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::JOB_USAGE_SYNC_KIND,
+            lettuce_sync::JOB_USAGE_SYNC_SCHEMA,
+            lettuce_sync::JOB_USAGE_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::JOB_USAGE_COST_SYNC_KIND,
+            lettuce_sync::JOB_USAGE_COST_SYNC_SCHEMA,
+            lettuce_sync::JOB_USAGE_COST_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::LEGACY_USAGE_SYNC_KIND,
+            lettuce_sync::LEGACY_USAGE_SYNC_SCHEMA,
+            lettuce_sync::LEGACY_USAGE_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::COMPANION_SOUL_SYNC_KIND,
             lettuce_sync::COMPANION_SOUL_SYNC_SCHEMA,
             lettuce_sync::COMPANION_SOUL_SYNC_VERSION,
@@ -2026,6 +2046,42 @@ row_codec!(
     }
 );
 
+row_codec!(
+    USAGE_COST_CODEC,
+    lettuce_sync::USAGE_COST_SYNC_KIND,
+    lettuce_sync::USAGE_COST_SYNC_SCHEMA,
+    lettuce_sync::USAGE_COST_SYNC_VERSION,
+    crate::row_sync_adapter::USAGE_COSTS,
+    no_assets
+);
+
+row_codec!(
+    JOB_USAGE_CODEC,
+    lettuce_sync::JOB_USAGE_SYNC_KIND,
+    lettuce_sync::JOB_USAGE_SYNC_SCHEMA,
+    lettuce_sync::JOB_USAGE_SYNC_VERSION,
+    crate::row_sync_adapter::JOB_INFERENCE_USAGE,
+    no_assets
+);
+
+row_codec!(
+    JOB_USAGE_COST_CODEC,
+    lettuce_sync::JOB_USAGE_COST_SYNC_KIND,
+    lettuce_sync::JOB_USAGE_COST_SYNC_SCHEMA,
+    lettuce_sync::JOB_USAGE_COST_SYNC_VERSION,
+    crate::row_sync_adapter::JOB_USAGE_COSTS,
+    no_assets
+);
+
+row_codec!(
+    LEGACY_USAGE_CODEC,
+    lettuce_sync::LEGACY_USAGE_SYNC_KIND,
+    lettuce_sync::LEGACY_USAGE_SYNC_SCHEMA,
+    lettuce_sync::LEGACY_USAGE_SYNC_VERSION,
+    crate::row_sync_adapter::LEGACY_USAGE_RECORDS,
+    no_assets
+);
+
 fn decode_branch(
     id: &str,
     bytes: &[u8],
@@ -2151,7 +2207,7 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 26] = [
+const SCANNED_CODECS: [&SnapshotCodec; 30] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -2178,6 +2234,10 @@ const SCANNED_CODECS: [&SnapshotCodec; 26] = [
     &ASR_CORRECTION_CODEC,
     &ASR_IGNORED_SUGGESTION_CODEC,
     &ASR_VOICE_EXAMPLE_CODEC,
+    &USAGE_COST_CODEC,
+    &JOB_USAGE_CODEC,
+    &JOB_USAGE_COST_CODEC,
+    &LEGACY_USAGE_CODEC,
 ];
 
 fn snapshot_codec(kind: &str) -> Option<&'static SnapshotCodec> {

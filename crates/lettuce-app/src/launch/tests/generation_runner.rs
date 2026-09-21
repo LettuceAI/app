@@ -4268,8 +4268,47 @@ async fn generated_messages_sync_with_their_turns_and_usage() {
         .await
         .expect("run");
     assert_eq!(result.turn.status, GenerationTurnStatus::Succeeded);
+    let event = UsageLedger::get(&a, result.usage_event_id)
+        .expect("usage")
+        .expect("usage exists");
+    let basis = lettuce_usage::UsageCostBasis {
+        openrouter: None,
+        model_profile_id: event.record.model_profile_id.expect("model"),
+        provider_account_id: event.record.provider_account_id.expect("provider"),
+        source: "OpenRouter endpoint snapshot".into(),
+        captured_at: TimestampMillis::new(1_030),
+        pricing: lettuce_usage::ModelPricing {
+            prompt: "0.001".into(),
+            completion: "0.002".into(),
+            request: String::new(),
+            image: String::new(),
+            image_output: String::new(),
+            web_search: String::new(),
+            internal_reasoning: String::new(),
+            input_cache_read: String::new(),
+            input_cache_write: String::new(),
+        },
+        input: lettuce_usage::OpenRouterCostInput {
+            prompt_tokens: 20,
+            completion_tokens: 5,
+            ..Default::default()
+        },
+    };
+    let cost = lettuce_usage::UsageCostLedger::record_cost(&a, event.id, basis).expect("cost");
 
     sync_prompts(&a, &b, 2_000);
+
+    assert_eq!(
+        lettuce_usage::UsageCostLedger::get_cost(&b, event.id)
+            .expect("b cost")
+            .map(|stored| stored.basis),
+        Some(cost.basis)
+    );
+    assert_eq!(
+        b.job_usage(work.handle.id()).expect("b job usage"),
+        a.job_usage(work.handle.id()).expect("a job usage")
+    );
+    assert!(!a.job_usage(work.handle.id()).expect("a job usage").is_empty());
 
     let conversation = ConversationReader::get(&a, scenario.conversation_id).expect("a");
     let timeline = |database: &Database| {

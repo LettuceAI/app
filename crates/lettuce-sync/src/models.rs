@@ -144,6 +144,22 @@ pub const COMPANION_NOTE_SYNC_KIND: &str = "companion_note";
 pub const COMPANION_NOTE_SYNC_SCHEMA: &str = "companion.scheduled_note";
 pub const COMPANION_NOTE_SYNC_VERSION: u32 = 1;
 
+pub const USAGE_COST_SYNC_KIND: &str = "usage_cost";
+pub const USAGE_COST_SYNC_SCHEMA: &str = "usage.cost_basis";
+pub const USAGE_COST_SYNC_VERSION: u32 = 1;
+
+pub const JOB_USAGE_SYNC_KIND: &str = "job_usage";
+pub const JOB_USAGE_SYNC_SCHEMA: &str = "usage.job_inference";
+pub const JOB_USAGE_SYNC_VERSION: u32 = 1;
+
+pub const JOB_USAGE_COST_SYNC_KIND: &str = "job_usage_cost";
+pub const JOB_USAGE_COST_SYNC_SCHEMA: &str = "usage.job_cost_basis";
+pub const JOB_USAGE_COST_SYNC_VERSION: u32 = 1;
+
+pub const LEGACY_USAGE_SYNC_KIND: &str = "legacy_usage";
+pub const LEGACY_USAGE_SYNC_SCHEMA: &str = "usage.legacy_record";
+pub const LEGACY_USAGE_SYNC_VERSION: u32 = 1;
+
 pub const AUDIO_PROVIDER_SYNC_KIND: &str = "audio_provider";
 pub const AUDIO_PROVIDER_SYNC_SCHEMA: &str = "audio.provider";
 pub const AUDIO_PROVIDER_SYNC_VERSION: u32 = 1;

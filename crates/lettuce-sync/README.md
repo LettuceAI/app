@@ -350,3 +350,10 @@ secret store: the secret reference travels, the key does not. Media used by
 messages and voice examples is journaled like other referenced media (the
 referenced-media scan missed message media before, so messages with images
 never became ready to journal).
+
+Usage (sync S11). Cost bases of conversation usage events (`usage.cost_basis`,
+waits for its event), job inference usage evidence and its cost bases
+(memory, creation, companion and generation jobs) and imported legacy usage
+records (key `<run>:<source>`) go through the same row codec; the immutable
+tables are insert-only (an existing row is kept). Jobs themselves stay local,
+the evidence keeps its job id as a plain value.
