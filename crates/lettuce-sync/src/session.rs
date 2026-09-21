@@ -364,6 +364,7 @@ pub fn current_sync_schema_fingerprint() -> ContentHash {
         ),
         (PERSONA_DEFAULT_SYNC_SCHEMA, PERSONA_DEFAULT_SYNC_VERSION),
         (PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION),
+        (crate::PROMPT_SYNC_SCHEMA, crate::PROMPT_SYNC_VERSION),
         (
             crate::PROVIDER_ACCOUNT_SYNC_SCHEMA,
             crate::PROVIDER_ACCOUNT_SYNC_VERSION,
@@ -420,7 +421,7 @@ mod tests {
     fn current_schema_fingerprint_is_stable_and_complete() {
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "1ba316e7866203917583477aea4fb66747bc48adecda2614c6d9200200dfe28a"
+            "81345dc27952600ca430b823d31bb35b8ad396585993fa26e1efabefe3e34363"
         );
     }
 

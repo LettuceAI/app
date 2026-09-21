@@ -10690,3 +10690,92 @@ fn the_app_backend_exposes_the_group_launch() {
 }
 use std::collections::VecDeque;
 use std::sync::Mutex;
+
+fn sync_prompts(from: &Database, to: &Database, at: i64) {
+    use lettuce_sync::{IncomingBatchState, IncomingChangeRepository, LocalChangeJournal};
+    from.journal_current_state(TimestampMillis::new(at))
+        .expect("scan source");
+    to.journal_current_state(TimestampMillis::new(at))
+        .expect("scan target");
+    let batch = from
+        .outbound_changes(
+            &to.local_frontier().expect("frontier"),
+            lettuce_sync::MAX_OUTBOUND_CHANGES,
+            lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES,
+        )
+        .expect("outbound");
+    if batch.changes.is_empty() {
+        return;
+    }
+    let id = lettuce_types::OperationId::new();
+    to.stage_incoming_batch(
+        lettuce_sync::SyncDeviceId::new(),
+        id,
+        &lettuce_sync::canonical_batch_hash(&batch.changes),
+        &batch.changes,
+        TimestampMillis::new(at),
+    )
+    .expect("stage");
+    assert_eq!(
+        to.apply_incoming_batch(id, TimestampMillis::new(at))
+            .expect("apply")
+            .state,
+        IncomingBatchState::Committed
+    );
+}
+
+#[test]
+fn built_in_prompts_share_ids_across_devices_and_prompts_sync_both_ways() {
+    let a = database();
+    let b = database();
+    let ids_a = BuiltInPromptService::new(&a)
+        .expect("prompt service")
+        .bootstrap(TimestampMillis::new(1))
+        .expect("seed a");
+    let ids_b = BuiltInPromptService::new(&b)
+        .expect("prompt service")
+        .bootstrap(TimestampMillis::new(2))
+        .expect("seed b");
+    assert_eq!(ids_a, ids_b);
+    let user = PromptRepository::create_user_draft(
+        &a,
+        PromptMetadataDraft {
+            name: "Mine".into(),
+            purpose: PromptPurpose::DirectChat,
+            condense: false,
+            behavior_version: PromptBehaviorVersion::default(),
+        },
+        Vec::new(),
+        TimestampMillis::new(10),
+    )
+    .expect("user prompt");
+
+    sync_prompts(&a, &b, 100);
+    assert_eq!(
+        PromptRepository::get(&b, user.id).expect("b prompt"),
+        Some(user)
+    );
+
+    let built_in = PromptRepository::get(&b, ids_b.app_default)
+        .expect("b built-in")
+        .expect("present");
+    let renamed = PromptRepository::revise_metadata(
+        &b,
+        built_in.id,
+        built_in.revision,
+        PromptMetadataDraft {
+            name: "Edited default".into(),
+            purpose: built_in.purpose,
+            condense: built_in.condense,
+            behavior_version: built_in.behavior_version,
+        },
+        TimestampMillis::new(200),
+    )
+    .expect("edit built-in")
+    .document;
+    sync_prompts(&b, &a, 300);
+    assert_eq!(
+        PromptRepository::get(&a, built_in.id).expect("a built-in"),
+        Some(renamed)
+    );
+}

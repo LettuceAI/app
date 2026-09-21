@@ -194,3 +194,15 @@ entity (`lorebook.bindings`); removing an owner's last binding journals a
 delete, which clears that owner's bindings on the peer. Group bindings follow
 with groups. Scan order: accounts, models, personas, persona default,
 characters, lorebooks, character bindings, persona bindings.
+
+Prompts (sync S5, `prompt.snapshot`): every prompt document syncs, built-ins
+included, since built-ins are editable in place. Built-in document ids are now
+derived from the built-in key (UUIDv5) and built-in entry ids from the
+document id and entry key, so every device seeds the same identities and
+references to built-ins (characters, starters, settings, derived prompts)
+resolve across devices; two devices' independent seeds meet as one entity and
+settle by last-writer-wins. Prompts are scanned in derivation order (a derived
+prompt after its source) before characters. Entry revision and timestamps are
+local bookkeeping outside the snapshot. A prompt whose built-in key is held by
+a different local id (databases seeded before deterministic ids) is journaled
+but not materialized.

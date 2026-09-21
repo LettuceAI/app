@@ -78,3 +78,15 @@ pub fn canonical_lorebook_bindings_payload(
         bytes,
     )
 }
+
+pub const PROMPT_SYNC_KIND: &str = "prompt";
+pub const PROMPT_SYNC_SCHEMA: &str = "prompt.snapshot";
+pub const PROMPT_SYNC_VERSION: u32 = 1;
+
+/// The complete prompt document with its ordered entries.
+pub fn canonical_prompt_payload(
+    document: &lettuce_context::PromptDocument,
+) -> Result<CanonicalPayload, SyncChangeError> {
+    let bytes = serde_json::to_vec(document).map_err(|_| SyncChangeError::PayloadEncoding)?;
+    CanonicalPayload::new(PROMPT_SYNC_SCHEMA, PROMPT_SYNC_VERSION, bytes)
+}

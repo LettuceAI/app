@@ -27,6 +27,25 @@ use super::Database;
 
 const JSON_FORMAT_VERSION: u32 = 1;
 const CURSOR_FORMAT_VERSION: u32 = 1;
+const BUILT_IN_PROMPT_NAMESPACE: uuid::Uuid =
+    uuid::Uuid::from_u128(0x5c0f_2d4e_8a1b_5e3c_9f76_0b2d_4a81_c3e9);
+
+/// Built-in prompt identities are derived from their keys, so every device
+/// seeds the same ids and cross-device references (characters, settings,
+/// derived prompts) resolve.
+fn built_in_document_id(key: &str) -> PromptDocumentId {
+    PromptDocumentId::from_uuid(uuid::Uuid::new_v5(
+        &BUILT_IN_PROMPT_NAMESPACE,
+        key.as_bytes(),
+    ))
+}
+
+fn built_in_entry_id(document: PromptDocumentId, entry_key: &str) -> PromptEntryId {
+    PromptEntryId::from_uuid(uuid::Uuid::new_v5(
+        &document.as_uuid(),
+        entry_key.as_bytes(),
+    ))
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -563,7 +582,8 @@ fn reconcile_entries(
                 entry_from_draft(draft.clone(), current_entry.id)
             } else {
                 changed = true;
-                entry_from_draft(draft.clone(), PromptEntryId::new())
+                let entry_key = draft.built_in_entry_key.as_deref().expect("validated seed");
+                entry_from_draft(draft.clone(), built_in_entry_id(current.id, entry_key))
             }
         })
         .collect();
@@ -1191,13 +1211,19 @@ impl PromptBootstrapPort for Database {
             }
             let existing_id = matching_ids.pop();
             let Some(existing_id) = existing_id else {
-                let id = PromptDocumentId::new();
+                let id = built_in_document_id(&key);
                 let metadata = seed.metadata.clone();
                 let entries = seed
                     .entries
                     .iter()
                     .cloned()
-                    .map(|draft| entry_from_draft(draft, PromptEntryId::new()))
+                    .map(|draft| {
+                        let entry_id = built_in_entry_id(
+                            id,
+                            draft.built_in_entry_key.as_deref().expect("validated seed"),
+                        );
+                        entry_from_draft(draft, entry_id)
+                    })
                     .collect();
                 let provenance = seed.provenance()?;
                 let document = metadata_document(id, metadata, entries, provenance, now)
@@ -1434,6 +1460,78 @@ impl PromptDependencyReader for Database {
             .map_err(|error| PromptDependencyError::Failure(storage(error).to_string()))?;
         Ok(references)
     }
+}
+
+/// Prompt ids ordered so a derived prompt follows its source.
+pub(crate) fn sync_prompt_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
+    connection
+        .prepare(
+            "WITH RECURSIVE depth(id, level) AS (
+               SELECT id, 0 FROM prompt_documents WHERE derived_source_id IS NULL
+               UNION ALL
+               SELECT document.id, depth.level + 1 FROM prompt_documents document
+               JOIN depth ON document.derived_source_id = depth.id
+             )
+             SELECT id FROM depth ORDER BY level, id",
+        )?
+        .query_map([], |row| row.get(0))?
+        .collect()
+}
+
+/// Writes a synced prompt document exactly (root in place, entries replaced
+/// keeping local entry bookkeeping by id). Returns `false` when a different
+/// local prompt already holds the same built-in key (pre-deterministic ids):
+/// the incoming snapshot is then not materialized. A missing derivation
+/// source reports `NotFound` (it arrives earlier in origin order).
+pub(crate) fn sync_replace_prompt(
+    tx: &Transaction<'_>,
+    document: &PromptDocument,
+) -> Result<bool, PromptRepositoryError> {
+    document
+        .validate()
+        .map_err(|error| PromptRepositoryError::Failure(error.to_string()))?;
+    let (_, key, source) = provenance_kind(&document.provenance);
+    if let Some(key) = key {
+        let other: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM prompt_documents WHERE built_in_key=?1 AND id<>?2)",
+                params![key, document.id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if other {
+            return Ok(false);
+        }
+    }
+    if let Some(source) = source {
+        let present: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM prompt_documents WHERE id=?1)",
+                [source],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if !present {
+            return Err(PromptRepositoryError::NotFound);
+        }
+    }
+    if load_document(tx, document.id).map_err(storage)?.is_none() {
+        insert_root(tx, document)?;
+        return Ok(true);
+    }
+    let provenance_json = encode(&document.provenance)?;
+    let (kind, key, source) = provenance_kind(&document.provenance);
+    tx.execute(
+        "UPDATE prompt_documents SET status=?2,name=?3,purpose=?4,condense=?5,behavior_version=?6,provenance_kind=?7,built_in_key=?8,derived_source_id=?9,provenance_json=?10,revision=?11,created_at=?12,updated_at=?13 WHERE id=?1",
+        params![
+            document.id.to_string(), status_name(document.status), document.name,
+            purpose_name(document.purpose), document.condense, behavior_name(document.behavior_version),
+            kind, key, source, provenance_json, sql_revision(document.revision)?,
+            document.created_at.get(), document.updated_at.get()
+        ],
+    ).map_err(storage)?;
+    replace_entries(tx, document, document.updated_at, &HashSet::new())?;
+    Ok(true)
 }
 
 #[cfg(test)]

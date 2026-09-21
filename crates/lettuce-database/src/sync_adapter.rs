@@ -861,6 +861,11 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::LOREBOOK_SYNC_VERSION,
         )
         | (
+            lettuce_sync::PROMPT_SYNC_KIND,
+            lettuce_sync::PROMPT_SYNC_SCHEMA,
+            lettuce_sync::PROMPT_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::CHARACTER_LOREBOOK_BINDINGS_SYNC_KIND
             | lettuce_sync::PERSONA_LOREBOOK_BINDINGS_SYNC_KIND,
             lettuce_sync::LOREBOOK_BINDINGS_SYNC_SCHEMA,
@@ -1312,6 +1317,47 @@ fn decode_bindings(bytes: &[u8]) -> Result<Vec<lettuce_context::LorebookBinding>
     Ok(bindings)
 }
 
+fn prompt_apply_error(error: lettuce_context::PromptRepositoryError) -> ApplyOneError {
+    match error {
+        lettuce_context::PromptRepositoryError::NotFound => ApplyOneError::Pending,
+        lettuce_context::PromptRepositoryError::Failure(_) => ApplyOneError::Storage,
+        _ => ApplyOneError::Corrupt,
+    }
+}
+
+const PROMPT_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::PROMPT_SYNC_KIND,
+    assets: no_assets,
+    decode: |id, bytes| {
+        let document: lettuce_context::PromptDocument =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        if document.id.to_string() != id || document.validate().is_err() {
+            return Err(ApplyOneError::Corrupt);
+        }
+        Ok(())
+    },
+    current: |connection, id| {
+        let id = id
+            .parse::<lettuce_types::PromptDocumentId>()
+            .map_err(|_| ApplyOneError::Corrupt)?;
+        crate::prompt_adapter::load_document(connection, id)
+            .map_err(|_| ApplyOneError::Storage)?
+            .as_ref()
+            .map(lettuce_sync::canonical_prompt_payload)
+            .transpose()
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    materialize: |tx, _, bytes| {
+        let document: lettuce_context::PromptDocument =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::prompt_adapter::sync_replace_prompt(tx, &document).map_err(prompt_apply_error)
+    },
+    ids: Some(|connection| {
+        crate::prompt_adapter::sync_prompt_ids(connection).map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: None,
+};
+
 macro_rules! binding_codec {
     ($name:ident, $kind:expr, $owner:expr) => {
         const $name: SnapshotCodec = SnapshotCodec {
@@ -1362,11 +1408,12 @@ binding_codec!(
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 8] = [
+const SCANNED_CODECS: [&SnapshotCodec; 9] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
     &PERSONA_DEFAULT_CODEC,
+    &PROMPT_CODEC,
     &CHARACTER_CODEC,
     &LOREBOOK_CODEC,
     &CHARACTER_BINDINGS_CODEC,
