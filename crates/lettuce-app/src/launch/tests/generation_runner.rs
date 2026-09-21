@@ -4614,3 +4614,124 @@ async fn concurrent_replies_fork_into_a_branch_and_notify_both_devices() {
     assert!(a.unresolved_conversation_forks(10).expect("a forks").is_empty());
     assert_rescans_are_empty(&[&a, &b], 5_000);
 }
+
+#[tokio::test]
+async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
+    let a = database();
+    let b = database();
+    let scenario = scenario(&a, false, "synced-memory");
+    let work = admit_and_claim(&a, &scenario, 1_015);
+    ConversationGenerationJobRunner::new(&a, &scripted(vec![text_outcome("m-0", "Tea noted", 10, 5)]))
+        .run(&work, input(&scenario), TimestampMillis::new(1_020))
+        .await
+        .expect("run");
+    let space = MemoryRepository::get_for_conversation(&a, scenario.conversation_id)
+        .expect("space")
+        .expect("space exists");
+    let item = MemoryItem {
+        id: MemoryId::new(),
+        short_id: lettuce_memory::MemoryShortId::new(4242).expect("short id"),
+        text: "Mira drinks jasmine tea.".into(),
+        category: MemoryCategory::Preference,
+        source_message_id: None,
+        source_role: None,
+        observed_at: None,
+        observed_time_precision: None,
+        superseded_by: None,
+        superseded_at: None,
+        supersedes: vec![],
+        token_count: 5,
+        is_cold: false,
+        is_pinned: true,
+        importance: Score::FULL,
+        persistence_importance: Score::FULL,
+        prompt_importance: Score::FULL,
+        volatility: Score::LEGACY_VOLATILITY,
+        access_count: 0,
+        created_at: TimestampMillis::new(1_030),
+        last_accessed_at: TimestampMillis::new(1_030),
+    };
+    let space = MemoryRepository::compare_and_apply(
+        &a,
+        MemoryChangeSet {
+            space_id: space.id,
+            expected_revision: space.revision,
+            items: vec![item.clone()],
+        },
+    )
+    .expect("memory on a");
+    let sources = ConversationReader::timeline_page(
+        &a,
+        scenario.conversation_id,
+        ConversationReader::get(&a, scenario.conversation_id)
+            .expect("conversation")
+            .conversation
+            .active_branch_id,
+        &lettuce_types::PageRequest::default(),
+    )
+    .expect("timeline")
+    .items
+    .into_iter()
+    .rev()
+    .map(|item| item.message.id)
+    .collect::<Vec<_>>();
+    lettuce_memory::MemorySummaryRepository::compare_and_apply_summary(
+        &a,
+        lettuce_memory::MemorySummaryChange {
+            expected_revision: space.revision,
+            summary: lettuce_memory::MemorySummary {
+                space_id: space.id,
+                text: "They talked about tea.".into(),
+                token_count: 5,
+                window_start: 0,
+                window_end: 2,
+                source_message_ids: sources,
+                updated_at: TimestampMillis::new(1_040),
+            },
+        },
+    )
+    .expect("summary on a");
+
+    sync_prompts(&a, &b, 2_000);
+
+    let on_b = MemoryRepository::get_for_conversation(&b, scenario.conversation_id)
+        .expect("b space")
+        .expect("b space exists");
+    assert_ne!(on_b.id, space.id);
+    assert_eq!(on_b.items, vec![item.clone()]);
+    let summary_b = lettuce_memory::MemorySummaryRepository::get_summary(&b, on_b.id)
+        .expect("b summary")
+        .expect("b summary exists");
+    assert_eq!(summary_b.text, "They talked about tea.");
+    assert_eq!(
+        lettuce_memory::MemorySummaryRepository::summary_cursor(&b, on_b.id, scenario.conversation_id)
+            .expect("cursor"),
+        2
+    );
+
+    let edited = MemoryItem {
+        text: "Mira drinks oolong now.".into(),
+        ..item
+    };
+    MemoryRepository::compare_and_apply(
+        &b,
+        MemoryChangeSet {
+            space_id: on_b.id,
+            expected_revision: MemoryRepository::get(&b, on_b.id)
+                .expect("b space")
+                .expect("present")
+                .revision,
+            items: vec![edited.clone()],
+        },
+    )
+    .expect("memory on b");
+    sync_prompts(&b, &a, 3_000);
+    assert_eq!(
+        MemoryRepository::get(&a, space.id)
+            .expect("a space")
+            .expect("present")
+            .items,
+        vec![edited]
+    );
+    assert_rescans_are_empty(&[&a, &b], 4_000);
+}

@@ -310,3 +310,16 @@ before the notice is resolved. Two concurrent first messages of an empty
 conversation have no fork point and stay as they are. Known limit: a third device
 replying inside a chain that later loses (nested concurrency) can leave the
 devices with different sub-forks; the originals are always kept.
+
+Memory (sync S9a, `memory.space`). Each device picks its own memory space
+ids, so a space is exchanged under its owner: `conversation:<id>` for a
+conversation's own space, `pool:<character>` for a companion character's
+shared pool. The payload is the items and the summary (space id blanked);
+the space revision stays local and a merge replaces items and summary as a
+whole (last writer wins). The dynamic-memory cursor is the summary window,
+which counts path messages, so the receiving device continues where the
+other stopped instead of re-extracting. The space appears with its
+conversation root and a summary waits for its source messages; the empty
+space a root creates is a seed that any real snapshot replaces. Runs,
+attempts, retrieval accesses and ask-first approvals stay device-local, and
+embedding projections are rebuilt by each device.

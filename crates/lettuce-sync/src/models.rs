@@ -123,3 +123,7 @@ pub const CONVERSATION_MESSAGE_SYNC_VERSION: u32 = 1;
 pub const CONVERSATION_BRANCH_SYNC_KIND: &str = "conversation_branch";
 pub const CONVERSATION_BRANCH_SYNC_SCHEMA: &str = "conversation.branch";
 pub const CONVERSATION_BRANCH_SYNC_VERSION: u32 = 1;
+
+pub const MEMORY_SPACE_SYNC_KIND: &str = "memory_space";
+pub const MEMORY_SPACE_SYNC_SCHEMA: &str = "memory.space";
+pub const MEMORY_SPACE_SYNC_VERSION: u32 = 1;

@@ -875,6 +875,11 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::CONVERSATION_SYNC_VERSION,
         )
         | (
+            lettuce_sync::MEMORY_SPACE_SYNC_KIND,
+            lettuce_sync::MEMORY_SPACE_SYNC_SCHEMA,
+            lettuce_sync::MEMORY_SPACE_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::CONVERSATION_BRANCH_SYNC_KIND,
             lettuce_sync::CONVERSATION_BRANCH_SYNC_SCHEMA,
             lettuce_sync::CONVERSATION_BRANCH_SYNC_VERSION,
@@ -1632,6 +1637,59 @@ const CONVERSATION_CODEC: SnapshotCodec = SnapshotCodec {
     delete: None,
 };
 
+fn memory_apply_error(error: lettuce_memory::MemoryRepositoryError) -> ApplyOneError {
+    match error {
+        lettuce_memory::MemoryRepositoryError::NotFound => ApplyOneError::Pending,
+        lettuce_memory::MemoryRepositoryError::Failure(_) => ApplyOneError::Storage,
+        _ => ApplyOneError::Corrupt,
+    }
+}
+
+fn decode_memory_space(
+    id: &str,
+    bytes: &[u8],
+) -> Result<crate::memory_sync_adapter::SyncMemorySpace, ApplyOneError> {
+    if !crate::memory_sync_adapter::valid_memory_space_id(id) {
+        return Err(ApplyOneError::Corrupt);
+    }
+    serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)
+}
+
+const MEMORY_SPACE_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::MEMORY_SPACE_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: Some(|bytes| {
+        serde_json::from_slice::<crate::memory_sync_adapter::SyncMemorySpace>(bytes)
+            .is_ok_and(|space| space.items.is_empty() && space.summary.is_none())
+    }),
+    decode: |id, bytes| decode_memory_space(id, bytes).map(|_| ()),
+    current: |tx, id| {
+        crate::memory_sync_adapter::sync_load_memory_space(tx, id)
+            .map_err(memory_apply_error)?
+            .map(|space| {
+                CanonicalPayload::new(
+                    lettuce_sync::MEMORY_SPACE_SYNC_SCHEMA,
+                    lettuce_sync::MEMORY_SPACE_SYNC_VERSION,
+                    serde_json::to_vec(&space).map_err(|_| ApplyOneError::Corrupt)?,
+                )
+                .map_err(|_| ApplyOneError::Corrupt)
+            })
+            .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        let space = decode_memory_space(id, bytes)?;
+        crate::memory_sync_adapter::sync_replace_memory_space(tx, id, &space)
+            .map_err(memory_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::memory_sync_adapter::sync_memory_space_ids(connection)
+            .map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: None,
+};
+
 fn decode_branch(
     id: &str,
     bytes: &[u8],
@@ -1757,7 +1815,7 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 15] = [
+const SCANNED_CODECS: [&SnapshotCodec; 16] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -1773,6 +1831,7 @@ const SCANNED_CODECS: [&SnapshotCodec; 15] = [
     &CONVERSATION_CODEC,
     &CONVERSATION_BRANCH_CODEC,
     &CONVERSATION_MESSAGE_CODEC,
+    &MEMORY_SPACE_CODEC,
 ];
 
 fn snapshot_codec(kind: &str) -> Option<&'static SnapshotCodec> {

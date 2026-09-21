@@ -30,6 +30,7 @@ mod legacy_database_documents;
 mod legacy_database_preflight;
 mod memory_adapter;
 mod memory_embedding_adapter;
+mod memory_sync_adapter;
 mod persona_adapter;
 mod prompt_adapter;
 mod restore_admission_adapter;
