@@ -10857,3 +10857,131 @@ fn direct_conversations_sync_their_root_with_initial_messages() {
         );
     }
 }
+
+#[test]
+fn companion_state_soul_and_notes_sync_with_the_conversation() {
+    let a = database_with_builtins();
+    let b = database_with_builtins();
+    let character_id = seed_character(&a, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let launched = ConversationLaunchPlanner::new(&a)
+        .launch_direct(&request(character_id, "synced-companion"), NOW)
+        .expect("launch companion");
+    let owner = CompanionStateOwner {
+        conversation_id: launched.value.conversation.id,
+        character_id,
+        persona_id: None,
+    };
+    let state = CompanionStateRepository::get(&a, owner)
+        .expect("state")
+        .expect("present");
+    let mut evolved = state.state.clone();
+    evolved.relationship_state.trust = 0.9;
+    evolved.emotional_state.felt.warmth = 0.2;
+    evolved.active_signals = vec!["emotion:love".into()];
+    CompanionStateRepository::replace(
+        &a,
+        owner,
+        OperationRecordId::new(),
+        CompanionStateReplacement {
+            expected_session_revision: state.session_revision,
+            expected_relationship_revision: state.relationship_revision,
+            state: evolved.clone(),
+            applied_at: TimestampMillis::new(NOW.get() + 1),
+        },
+    )
+    .expect("evolve");
+    let note = CompanionScheduledNoteRepository::upsert_scheduled_note(
+        &a,
+        lettuce_companions::CompanionScheduledNote {
+            id: uuid::Uuid::new_v4(),
+            character_id,
+            label: "Birthday".into(),
+            content: "Remember the user's birthday.".into(),
+            available_at: TimestampMillis::new(NOW.get() + 100),
+            expires_at: None,
+            recurrence: lettuce_companions::ScheduledNoteRecurrence::Yearly,
+            recurrence_window_ms: Some(86_400_000),
+            enabled: true,
+            created_at: NOW,
+            updated_at: NOW,
+        },
+    )
+    .expect("note");
+
+    sync_prompts(&a, &b, NOW.get() + 1_000);
+
+    let on_b = CompanionStateRepository::get(&b, owner)
+        .expect("b state")
+        .expect("b present");
+    assert_eq!(on_b.state, evolved);
+    assert_eq!(
+        CompanionStateRepository::get_continuity_episode(&b, owner.conversation_id)
+            .expect("b episode")
+            .map(|episode| (episode.episode_index, episode.started_at)),
+        CompanionStateRepository::get_continuity_episode(&a, owner.conversation_id)
+            .expect("a episode")
+            .map(|episode| (episode.episode_index, episode.started_at)),
+    );
+    assert_eq!(
+        CompanionScheduledNoteRepository::list_scheduled_notes(&b, character_id).expect("b notes"),
+        vec![note]
+    );
+    assert_eq!(
+        SoulRepository::get(&b, lettuce_companions::SoulOwner::Character(character_id))
+            .expect("b soul")
+            .map(|soul| soul.facts),
+        SoulRepository::get(&a, lettuce_companions::SoulOwner::Character(character_id))
+            .expect("a soul")
+            .map(|soul| soul.facts),
+    );
+
+    let mut on_b_evolved = on_b.state.clone();
+    on_b_evolved.relationship_state.trust = 0.3;
+    CompanionStateRepository::replace(
+        &b,
+        owner,
+        OperationRecordId::new(),
+        CompanionStateReplacement {
+            expected_session_revision: on_b.session_revision,
+            expected_relationship_revision: on_b.relationship_revision,
+            state: on_b_evolved.clone(),
+            applied_at: TimestampMillis::new(NOW.get() + 2_000),
+        },
+    )
+    .expect("evolve on b");
+    CompanionScheduledNoteRepository::delete_scheduled_note(&b, note_id(&b, character_id))
+        .expect("delete note on b");
+    sync_prompts(&b, &a, NOW.get() + 3_000);
+    assert_eq!(
+        CompanionStateRepository::get(&a, owner)
+            .expect("a state")
+            .expect("a present")
+            .state,
+        on_b_evolved
+    );
+    assert!(
+        CompanionScheduledNoteRepository::list_scheduled_notes(&a, character_id)
+            .expect("a notes")
+            .is_empty()
+    );
+    {
+        use lettuce_sync::LocalChangeJournal;
+        for database in [&a, &b] {
+            assert_eq!(
+                database
+                    .journal_current_state(TimestampMillis::new(NOW.get() + 4_000))
+                    .expect("rescan"),
+                0
+            );
+        }
+    }
+}
+
+fn note_id(database: &Database, character_id: CharacterId) -> uuid::Uuid {
+    CompanionScheduledNoteRepository::list_scheduled_notes(database, character_id)
+        .expect("notes")[0]
+        .id
+}

@@ -71,7 +71,7 @@ pub(crate) fn from_row(
     Ok(note)
 }
 
-fn load_in(
+pub(crate) fn load_in(
     tx: &Transaction<'_>,
     id: Uuid,
 ) -> Result<Option<CompanionScheduledNote>, CompanionScheduledNoteError> {

@@ -353,6 +353,22 @@ pub fn current_sync_schema_fingerprint() -> ContentHash {
     for (schema, version) in [
         (crate::CHARACTER_SYNC_SCHEMA, crate::CHARACTER_SYNC_VERSION),
         (
+            crate::COMPANION_NOTE_SYNC_SCHEMA,
+            crate::COMPANION_NOTE_SYNC_VERSION,
+        ),
+        (
+            crate::COMPANION_RELATIONSHIP_SYNC_SCHEMA,
+            crate::COMPANION_RELATIONSHIP_SYNC_VERSION,
+        ),
+        (
+            crate::COMPANION_SESSION_SYNC_SCHEMA,
+            crate::COMPANION_SESSION_SYNC_VERSION,
+        ),
+        (
+            crate::COMPANION_SOUL_SYNC_SCHEMA,
+            crate::COMPANION_SOUL_SYNC_VERSION,
+        ),
+        (
             crate::CONVERSATION_SYNC_SCHEMA,
             crate::CONVERSATION_SYNC_VERSION,
         ),
@@ -446,7 +462,7 @@ mod tests {
     fn current_schema_fingerprint_is_stable_and_complete() {
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "ad43b4a5a54acd8d8016c545d07672b5c43d18d60e21adf9656c6e9e05eee08a"
+            "d6a2d586b3241beb44984b995ef6d46b8a215024477d2776ff747df73429e5d6"
         );
     }
 

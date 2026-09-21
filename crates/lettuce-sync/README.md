@@ -322,4 +322,17 @@ other stopped instead of re-extracting. The space appears with its
 conversation root and a summary waits for its source messages; the empty
 space a root creates is a seed that any real snapshot replaces. Runs,
 attempts, retrieval accesses and ask-first approvals stay device-local, and
-embedding projections are rebuilt by each device.
+embedding projections are rebuilt by each device. (retrieval embeds memories without a
+current vector first, like legacy).
+
+Companions (sync S9b). A character's Soul (`companion.soul`, the facts;
+revision local), the relationship a character keeps with one persona
+(`companion.relationship`, `<character>:<persona key>`), a companion
+conversation's session state (`companion.session`: emotional state, active
+signals, initial hash and the continuity episode's start and end) and
+scheduled notes (`companion.scheduled_note`, deletable) are exchanged as
+whole snapshots, last writer wins. A session waits for its conversation and
+relationship. An episode's index and predecessor are numbered by each device
+(two devices can open sessions at once), so they are not exchanged. Apply
+receipts, turn effects, growth/consolidation/writer runs stay on the device
+that ran them.

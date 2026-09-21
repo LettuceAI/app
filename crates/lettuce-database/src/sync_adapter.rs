@@ -875,6 +875,26 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::CONVERSATION_SYNC_VERSION,
         )
         | (
+            lettuce_sync::COMPANION_SOUL_SYNC_KIND,
+            lettuce_sync::COMPANION_SOUL_SYNC_SCHEMA,
+            lettuce_sync::COMPANION_SOUL_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::COMPANION_RELATIONSHIP_SYNC_KIND,
+            lettuce_sync::COMPANION_RELATIONSHIP_SYNC_SCHEMA,
+            lettuce_sync::COMPANION_RELATIONSHIP_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::COMPANION_SESSION_SYNC_KIND,
+            lettuce_sync::COMPANION_SESSION_SYNC_SCHEMA,
+            lettuce_sync::COMPANION_SESSION_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::COMPANION_NOTE_SYNC_KIND,
+            lettuce_sync::COMPANION_NOTE_SYNC_SCHEMA,
+            lettuce_sync::COMPANION_NOTE_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::MEMORY_SPACE_SYNC_KIND,
             lettuce_sync::MEMORY_SPACE_SYNC_SCHEMA,
             lettuce_sync::MEMORY_SPACE_SYNC_VERSION,
@@ -1690,6 +1710,188 @@ const MEMORY_SPACE_CODEC: SnapshotCodec = SnapshotCodec {
     delete: None,
 };
 
+fn json_payload<T: serde::Serialize>(
+    schema: &str,
+    version: u32,
+    value: &T,
+) -> Result<CanonicalPayload, ApplyOneError> {
+    CanonicalPayload::new(
+        schema,
+        version,
+        serde_json::to_vec(value).map_err(|_| ApplyOneError::Corrupt)?,
+    )
+    .map_err(|_| ApplyOneError::Corrupt)
+}
+
+fn parse_character(id: &str) -> Result<lettuce_types::CharacterId, ApplyOneError> {
+    id.parse().map_err(|_| ApplyOneError::Corrupt)
+}
+
+const COMPANION_SOUL_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::COMPANION_SOUL_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: None,
+    decode: |id, bytes| {
+        parse_character(id)?;
+        serde_json::from_slice::<Vec<lettuce_companions::SoulFact>>(bytes)
+            .map(|_| ())
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    current: |tx, id| {
+        crate::companion_sync_adapter::sync_load_soul(tx, parse_character(id)?)
+            .map_err(conversation_apply_error)?
+            .map(|facts| {
+                json_payload(
+                    lettuce_sync::COMPANION_SOUL_SYNC_SCHEMA,
+                    lettuce_sync::COMPANION_SOUL_SYNC_VERSION,
+                    &facts,
+                )
+            })
+            .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        let facts: Vec<lettuce_companions::SoulFact> =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::companion_sync_adapter::sync_replace_soul(tx, parse_character(id)?, &facts)
+            .map_err(conversation_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::companion_sync_adapter::sync_soul_ids(connection).map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: None,
+};
+
+fn decode_relationship(
+    id: &str,
+    bytes: &[u8],
+) -> Result<crate::companion_sync_adapter::SyncCompanionRelationship, ApplyOneError> {
+    let relationship: crate::companion_sync_adapter::SyncCompanionRelationship =
+        serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+    if crate::companion_sync_adapter::relationship_id(&relationship) != id {
+        return Err(ApplyOneError::Corrupt);
+    }
+    Ok(relationship)
+}
+
+const COMPANION_RELATIONSHIP_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::COMPANION_RELATIONSHIP_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: None,
+    decode: |id, bytes| decode_relationship(id, bytes).map(|_| ()),
+    current: |tx, id| {
+        crate::companion_sync_adapter::sync_load_relationship(tx, id)
+            .map_err(conversation_apply_error)?
+            .map(|relationship| {
+                json_payload(
+                    lettuce_sync::COMPANION_RELATIONSHIP_SYNC_SCHEMA,
+                    lettuce_sync::COMPANION_RELATIONSHIP_SYNC_VERSION,
+                    &relationship,
+                )
+            })
+            .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        let relationship = decode_relationship(id, bytes)?;
+        crate::companion_sync_adapter::sync_replace_relationship(tx, &relationship)
+            .map_err(conversation_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::companion_sync_adapter::sync_relationship_ids(connection)
+            .map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: None,
+};
+
+fn parse_conversation(id: &str) -> Result<lettuce_types::ConversationId, ApplyOneError> {
+    id.parse().map_err(|_| ApplyOneError::Corrupt)
+}
+
+const COMPANION_SESSION_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::COMPANION_SESSION_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: None,
+    decode: |id, bytes| {
+        parse_conversation(id)?;
+        serde_json::from_slice::<crate::companion_sync_adapter::SyncCompanionSession>(bytes)
+            .map(|_| ())
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    current: |tx, id| {
+        crate::companion_sync_adapter::sync_load_session(tx, parse_conversation(id)?)
+            .map_err(conversation_apply_error)?
+            .map(|session| {
+                json_payload(
+                    lettuce_sync::COMPANION_SESSION_SYNC_SCHEMA,
+                    lettuce_sync::COMPANION_SESSION_SYNC_VERSION,
+                    &session,
+                )
+            })
+            .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        let session: crate::companion_sync_adapter::SyncCompanionSession =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::companion_sync_adapter::sync_replace_session(tx, parse_conversation(id)?, &session)
+            .map_err(conversation_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::companion_sync_adapter::sync_session_ids(connection)
+            .map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: None,
+};
+
+fn decode_note(
+    id: &str,
+    bytes: &[u8],
+) -> Result<lettuce_companions::CompanionScheduledNote, ApplyOneError> {
+    let note: lettuce_companions::CompanionScheduledNote =
+        serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+    if note.id.to_string() != id {
+        return Err(ApplyOneError::Corrupt);
+    }
+    Ok(note)
+}
+
+const COMPANION_NOTE_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::COMPANION_NOTE_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: None,
+    decode: |id, bytes| decode_note(id, bytes).map(|_| ()),
+    current: |tx, id| {
+        let id = Uuid::parse_str(id).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::companion_sync_adapter::sync_load_note(tx, id)
+            .map_err(conversation_apply_error)?
+            .map(|note| {
+                json_payload(
+                    lettuce_sync::COMPANION_NOTE_SYNC_SCHEMA,
+                    lettuce_sync::COMPANION_NOTE_SYNC_VERSION,
+                    &note,
+                )
+            })
+            .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        let note = decode_note(id, bytes)?;
+        crate::companion_sync_adapter::sync_replace_note(tx, &note)
+            .map_err(conversation_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::companion_sync_adapter::sync_note_ids(connection).map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: Some(|tx, id, _| {
+        crate::companion_sync_adapter::sync_delete_note(tx, id).map_err(conversation_apply_error)
+    }),
+};
+
 fn decode_branch(
     id: &str,
     bytes: &[u8],
@@ -1815,7 +2017,7 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 16] = [
+const SCANNED_CODECS: [&SnapshotCodec; 20] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -1832,6 +2034,10 @@ const SCANNED_CODECS: [&SnapshotCodec; 16] = [
     &CONVERSATION_BRANCH_CODEC,
     &CONVERSATION_MESSAGE_CODEC,
     &MEMORY_SPACE_CODEC,
+    &COMPANION_SOUL_CODEC,
+    &COMPANION_NOTE_CODEC,
+    &COMPANION_RELATIONSHIP_CODEC,
+    &COMPANION_SESSION_CODEC,
 ];
 
 fn snapshot_codec(kind: &str) -> Option<&'static SnapshotCodec> {

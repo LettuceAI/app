@@ -127,3 +127,19 @@ pub const CONVERSATION_BRANCH_SYNC_VERSION: u32 = 1;
 pub const MEMORY_SPACE_SYNC_KIND: &str = "memory_space";
 pub const MEMORY_SPACE_SYNC_SCHEMA: &str = "memory.space";
 pub const MEMORY_SPACE_SYNC_VERSION: u32 = 1;
+
+pub const COMPANION_SOUL_SYNC_KIND: &str = "companion_soul";
+pub const COMPANION_SOUL_SYNC_SCHEMA: &str = "companion.soul";
+pub const COMPANION_SOUL_SYNC_VERSION: u32 = 1;
+
+pub const COMPANION_RELATIONSHIP_SYNC_KIND: &str = "companion_relationship";
+pub const COMPANION_RELATIONSHIP_SYNC_SCHEMA: &str = "companion.relationship";
+pub const COMPANION_RELATIONSHIP_SYNC_VERSION: u32 = 1;
+
+pub const COMPANION_SESSION_SYNC_KIND: &str = "companion_session";
+pub const COMPANION_SESSION_SYNC_SCHEMA: &str = "companion.session";
+pub const COMPANION_SESSION_SYNC_VERSION: u32 = 1;
+
+pub const COMPANION_NOTE_SYNC_KIND: &str = "companion_note";
+pub const COMPANION_NOTE_SYNC_SCHEMA: &str = "companion.scheduled_note";
+pub const COMPANION_NOTE_SYNC_VERSION: u32 = 1;
