@@ -18,6 +18,13 @@ CREATE TABLE dynamic_memory_pending_approvals (
     updated_at INTEGER NOT NULL
 ) STRICT;
 
+-- A pool conversation's dynamic-memory cursor received from another device;
+-- the local cursor is the larger of this and the device's own runs.
+CREATE TABLE memory_synced_cursors (
+    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    window_end INTEGER NOT NULL CHECK (window_end >= 0)
+) STRICT;
+
 CREATE TABLE memory_summaries (
     space_id TEXT PRIMARY KEY REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     conversation_id TEXT NOT NULL,

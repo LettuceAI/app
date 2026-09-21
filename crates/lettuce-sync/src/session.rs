@@ -433,6 +433,10 @@ pub fn current_sync_schema_fingerprint() -> ContentHash {
         (crate::LOREBOOK_SYNC_SCHEMA, crate::LOREBOOK_SYNC_VERSION),
         (MEDIA_ASSET_SYNC_SCHEMA, MEDIA_ASSET_SYNC_VERSION),
         (
+            crate::MEMORY_CURSOR_SYNC_SCHEMA,
+            crate::MEMORY_CURSOR_SYNC_VERSION,
+        ),
+        (
             crate::MEMORY_ITEM_SYNC_SCHEMA,
             crate::MEMORY_ITEM_SYNC_VERSION,
         ),
@@ -503,7 +507,7 @@ mod tests {
     fn current_schema_fingerprint_is_stable_and_complete() {
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "25b36d1c04511f9a3084d91d72d76ca7de31482c8d2510a35557dad003e97ed7"
+            "50b68c77dc8be6b082f471eede497ccd584191069cd7e210bdba95b583092476"
         );
     }
 

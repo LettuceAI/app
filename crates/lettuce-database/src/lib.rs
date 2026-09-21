@@ -4971,6 +4971,7 @@ mod tests {
                 "memory_spaces",
                 "memory_summaries",
                 "memory_summary_source_messages",
+                "memory_synced_cursors",
                 "model_profiles",
                 "persona_defaults",
                 "persona_lorebook_bindings",

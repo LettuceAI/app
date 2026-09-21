@@ -282,3 +282,72 @@ pub(crate) fn sync_delete_memory_summary(
     }
     Ok(true)
 }
+
+pub(crate) fn sync_memory_cursor_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
+    connection
+        .prepare(
+            "SELECT binding.conversation_id FROM conversation_memory_spaces binding
+               JOIN companion_memory_pools pool ON pool.space_id = binding.space_id
+              ORDER BY 1",
+        )?
+        .query_map([], |row| row.get(0))?
+        .collect()
+}
+
+/// A pool conversation's dynamic-memory cursor, when it has one. Only pool
+/// conversations that do not own the pool's summary need it exchanged, but
+/// the owner's cursor travels too so both devices agree.
+pub(crate) fn sync_load_memory_cursor(
+    transaction: &Transaction<'_>,
+    conversation_id: lettuce_types::ConversationId,
+) -> Result<Option<u64>, MemoryRepositoryError> {
+    let space: Option<String> = transaction
+        .query_row(
+            "SELECT binding.space_id FROM conversation_memory_spaces binding
+               JOIN companion_memory_pools pool ON pool.space_id = binding.space_id
+              WHERE binding.conversation_id = ?1",
+            [conversation_id.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some(space) = space else {
+        return Ok(None);
+    };
+    let cursor = memory_adapter::summary_cursor_in(
+        transaction,
+        space.parse().map_err(storage)?,
+        conversation_id,
+    )?;
+    Ok((cursor > 0).then_some(cursor))
+}
+
+/// Raises the cursor another device reported; cursors only move forward
+/// through sync.
+pub(crate) fn sync_raise_memory_cursor(
+    transaction: &Transaction<'_>,
+    conversation_id: lettuce_types::ConversationId,
+    window_end: u64,
+) -> Result<(), MemoryRepositoryError> {
+    let present: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
+            [conversation_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !present {
+        return Err(MemoryRepositoryError::NotFound);
+    }
+    transaction
+        .execute(
+            "INSERT INTO memory_synced_cursors (conversation_id, window_end) VALUES (?1, ?2)
+             ON CONFLICT(conversation_id) DO UPDATE SET window_end = max(window_end, excluded.window_end)",
+            params![
+                conversation_id.to_string(),
+                i64::try_from(window_end).map_err(storage)?
+            ],
+        )
+        .map_err(storage)?;
+    Ok(())
+}

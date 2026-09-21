@@ -950,6 +950,11 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::MEMORY_ITEM_SYNC_VERSION,
         )
         | (
+            lettuce_sync::MEMORY_CURSOR_SYNC_KIND,
+            lettuce_sync::MEMORY_CURSOR_SYNC_SCHEMA,
+            lettuce_sync::MEMORY_CURSOR_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::MEMORY_SUMMARY_SYNC_KIND,
             lettuce_sync::MEMORY_SUMMARY_SYNC_SCHEMA,
             lettuce_sync::MEMORY_SUMMARY_SYNC_VERSION,
@@ -1760,6 +1765,42 @@ const MEMORY_ITEM_CODEC: SnapshotCodec = SnapshotCodec {
     }),
 };
 
+const MEMORY_CURSOR_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::MEMORY_CURSOR_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: None,
+    decode: |id, bytes| {
+        parse_conversation(id)?;
+        serde_json::from_slice::<u64>(bytes)
+            .map(|_| ())
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    current: |tx, id| {
+        crate::memory_sync_adapter::sync_load_memory_cursor(tx, parse_conversation(id)?)
+            .map_err(memory_apply_error)?
+            .map(|cursor| {
+                json_payload(
+                    lettuce_sync::MEMORY_CURSOR_SYNC_SCHEMA,
+                    lettuce_sync::MEMORY_CURSOR_SYNC_VERSION,
+                    &cursor,
+                )
+            })
+            .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        let cursor: u64 = serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::memory_sync_adapter::sync_raise_memory_cursor(tx, parse_conversation(id)?, cursor)
+            .map_err(memory_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::memory_sync_adapter::sync_memory_cursor_ids(connection)
+            .map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: None,
+};
+
 fn decode_memory_summary(
     id: &str,
     bytes: &[u8],
@@ -2260,7 +2301,7 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 31] = [
+const SCANNED_CODECS: [&SnapshotCodec; 32] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -2278,6 +2319,7 @@ const SCANNED_CODECS: [&SnapshotCodec; 31] = [
     &CONVERSATION_MESSAGE_CODEC,
     &MEMORY_ITEM_CODEC,
     &MEMORY_SUMMARY_CODEC,
+    &MEMORY_CURSOR_CODEC,
     &COMPANION_SOUL_CODEC,
     &COMPANION_NOTE_CODEC,
     &COMPANION_RELATIONSHIP_CODEC,

@@ -322,8 +322,11 @@ taken). An item id that already belongs to another space here is refused.
 The summary is one entity per owner (`memory.summary`, space id blanked,
 waits for its source messages). The dynamic-memory cursor is the summary
 window, which counts path messages, so the summary's owner conversation
-continues where the other device stopped; the other conversations of a pool
-still read their cursor from local runs (known limit). Runs, attempts,
+continues where the other device stopped. The other conversations of a
+companion pool read their cursor from local runs, so each pool conversation's
+cursor is exchanged too (`memory.cursor`, only ever raised by sync, kept in
+`memory_synced_cursors`; the local cursor is the larger of the two, so a
+rewind on another device does not lower it here). Runs, attempts,
 retrieval accesses and ask-first approvals stay device-local, and embedding
 projections are rebuilt by each device (retrieval embeds every memory
 without a current vector first, like legacy, skipping superseded ones and

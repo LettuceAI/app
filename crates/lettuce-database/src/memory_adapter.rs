@@ -586,6 +586,50 @@ pub(super) fn compare_and_apply_summary_in(
     Ok(MemorySummaryCommit { memory, summary })
 }
 
+/// Where a conversation's next dynamic-memory window starts: the summary
+/// window's end for the conversation that owns the space's summary, otherwise
+/// the latest settled run of this conversation that no rewind undid (or the
+/// cursor another device reported, when that is further).
+pub(crate) fn summary_cursor_in(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+    conversation_id: ConversationId,
+) -> Result<u64, MemoryRepositoryError> {
+    let summary_owner = transaction
+        .query_row(
+            "SELECT conversation_id, window_end FROM memory_summaries WHERE space_id = ?1",
+            [space_id.to_string()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    let cursor = match summary_owner {
+        None => 0,
+        Some((owner, window_end)) if owner == conversation_id.to_string() => window_end,
+        Some(_) => transaction
+            .query_row(
+                "SELECT MAX(
+                        COALESCE((
+                            SELECT MAX(run.summary_window_end)
+                              FROM dynamic_memory_runs run
+                              JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id = run.id
+                             WHERE run.space_id = ?1 AND run.conversation_id = ?2
+                               AND NOT EXISTS (
+                                   SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
+                                    WHERE rewind.conversation_id = run.conversation_id
+                                      AND rewind.applied_at >= checkpoint.settled_at
+                               )
+                        ), 0),
+                        COALESCE((SELECT window_end FROM memory_synced_cursors WHERE conversation_id = ?2), 0)
+                    )",
+                params![space_id.to_string(), conversation_id.to_string()],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(storage)?,
+    };
+    u64::try_from(cursor).map_err(storage)
+}
+
 impl MemoryRepository for Database {
     fn create(
         &self,
@@ -890,36 +934,9 @@ impl MemorySummaryRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(storage)?;
-        let summary_owner = transaction
-            .query_row(
-                "SELECT conversation_id, window_end FROM memory_summaries WHERE space_id = ?1",
-                [space_id.to_string()],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
-            )
-            .optional()
-            .map_err(storage)?;
-        let cursor = match summary_owner {
-            None => 0,
-            Some((owner, window_end)) if owner == conversation_id.to_string() => window_end,
-            Some(_) => transaction
-                .query_row(
-                    "SELECT MAX(run.summary_window_end)
-                       FROM dynamic_memory_runs run
-                       JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id = run.id
-                      WHERE run.space_id = ?1 AND run.conversation_id = ?2
-                        AND NOT EXISTS (
-                            SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
-                             WHERE rewind.conversation_id = run.conversation_id
-                               AND rewind.applied_at >= checkpoint.settled_at
-                        )",
-                    params![space_id.to_string(), conversation_id.to_string()],
-                    |row| row.get::<_, Option<i64>>(0),
-                )
-                .map_err(storage)?
-                .unwrap_or(0),
-        };
+        let cursor = summary_cursor_in(&transaction, space_id, conversation_id)?;
         transaction.commit().map_err(storage)?;
-        u64::try_from(cursor).map_err(storage)
+        Ok(cursor)
     }
 
     fn compare_and_apply_summary(
@@ -1290,6 +1307,25 @@ mod tests {
                 .summary_cursor(first_space, second)
                 .expect("cursor"),
             0
+        );
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch(&format!(
+                "PRAGMA foreign_keys = OFF; INSERT INTO memory_synced_cursors (conversation_id, window_end) VALUES ('{second}', 7)"
+            ))
+            .expect("synced cursor");
+        assert_eq!(
+            database
+                .summary_cursor(first_space, second)
+                .expect("cursor from another device"),
+            7
+        );
+        assert_eq!(
+            database
+                .summary_cursor(first_space, first)
+                .expect("owner cursor"),
+            2
         );
 
         let private_space = MemorySpaceId::new();
