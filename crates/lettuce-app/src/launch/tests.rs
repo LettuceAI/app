@@ -10779,3 +10779,81 @@ fn built_in_prompts_share_ids_across_devices_and_prompts_sync_both_ways() {
         Some(renamed)
     );
 }
+
+#[test]
+fn direct_conversations_sync_their_root_with_initial_messages() {
+    let a = database_with_builtins();
+    let b = database_with_builtins();
+    let starter = starter_with(
+        CharacterId::new(),
+        0,
+        "Greeting",
+        vec![
+            message(StarterRole::User, "Hello"),
+            message(StarterRole::Assistant, "Welcome."),
+        ],
+    );
+    let starter_id = starter.id;
+    let character_id = seed_character(&a, Vec::new(), Vec::new(), vec![starter], |_| {});
+    let launched = ConversationLaunchPlanner::new(&a)
+        .launch_direct(
+            &request_with_starter(character_id, "synced-launch", starter_id),
+            NOW,
+        )
+        .expect("launch");
+    let conversation_id = launched.value.conversation.id;
+
+    sync_prompts(&a, &b, 100);
+
+    let on_a = ConversationReader::get(&a, conversation_id).expect("a conversation");
+    let on_b = ConversationReader::get(&b, conversation_id).expect("b conversation");
+    assert_eq!(on_b, on_a);
+    let timeline = |database: &Database| {
+        ConversationReader::timeline_page(
+            database,
+            conversation_id,
+            on_a.conversation.active_branch_id,
+            &lettuce_types::PageRequest::default(),
+        )
+        .expect("timeline")
+        .items
+    };
+    assert_eq!(timeline(&b), timeline(&a));
+
+    lettuce_conversations::ConversationRepository::rename(
+        &b,
+        &lettuce_conversations::RenameConversation {
+            conversation_id,
+            expected_revision: on_b.conversation.revision,
+            operation: lettuce_conversations::OperationToken {
+                key: key("synced-rename"),
+                request_digest: lettuce_types::ContentHash::parse("cd".repeat(32))
+                    .expect("digest"),
+            },
+            title: "Renamed on b".into(),
+        },
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("rename on b");
+    sync_prompts(&b, &a, 160);
+    assert_eq!(
+        ConversationReader::get(&a, conversation_id)
+            .expect("a conversation")
+            .conversation
+            .title,
+        "Renamed on b"
+    );
+    {
+        use lettuce_sync::LocalChangeJournal;
+        assert_eq!(
+            a.journal_current_state(TimestampMillis::new(200))
+                .expect("a rescan"),
+            0
+        );
+        assert_eq!(
+            b.journal_current_state(TimestampMillis::new(200))
+                .expect("b rescan"),
+            0
+        );
+    }
+}

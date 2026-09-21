@@ -870,6 +870,11 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::APP_SETTINGS_SYNC_VERSION,
         )
         | (
+            lettuce_sync::CONVERSATION_SYNC_KIND,
+            lettuce_sync::CONVERSATION_SYNC_SCHEMA,
+            lettuce_sync::CONVERSATION_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::GROUP_SYNC_KIND,
             lettuce_sync::GROUP_SYNC_SCHEMA,
             lettuce_sync::GROUP_SYNC_VERSION,
@@ -1073,7 +1078,7 @@ type SnapshotDelete = fn(&Transaction<'_>, &str, TimestampMillis) -> Result<bool
 struct SnapshotCodec {
     kind: &'static str,
     decode: fn(&str, &[u8]) -> Result<(), ApplyOneError>,
-    current: fn(&Connection, &str) -> Result<Option<CanonicalPayload>, ApplyOneError>,
+    current: fn(&Transaction<'_>, &str) -> Result<Option<CanonicalPayload>, ApplyOneError>,
     materialize: fn(&Transaction<'_>, &str, &[u8]) -> Result<bool, ApplyOneError>,
     ids: Option<ScanIds>,
     delete: Option<SnapshotDelete>,
@@ -1564,9 +1569,62 @@ binding_codec!(
     crate::lorebook_adapter::OwnerKind::Persona
 );
 
+fn conversation_apply_error(
+    error: lettuce_conversations::ConversationRepositoryError,
+) -> ApplyOneError {
+    match error {
+        lettuce_conversations::ConversationRepositoryError::NotFound => ApplyOneError::Pending,
+        lettuce_conversations::ConversationRepositoryError::Storage => ApplyOneError::Storage,
+        _ => ApplyOneError::Corrupt,
+    }
+}
+
+const CONVERSATION_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::CONVERSATION_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: None,
+    decode: |id, bytes| {
+        let root: crate::conversation_sync_adapter::SyncConversationRoot =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        if root.conversation.id.to_string() != id
+            || root.root_branch.conversation_id != root.conversation.id
+            || root.root_branch.parent_branch_id.is_some()
+        {
+            return Err(ApplyOneError::Corrupt);
+        }
+        Ok(())
+    },
+    current: |tx, id| {
+        crate::conversation_sync_adapter::sync_load_conversation_root(tx, id)
+            .map_err(conversation_apply_error)?
+            .map(|root| {
+                CanonicalPayload::new(
+                    lettuce_sync::CONVERSATION_SYNC_SCHEMA,
+                    lettuce_sync::CONVERSATION_SYNC_VERSION,
+                    serde_json::to_vec(&root).map_err(|_| ApplyOneError::Corrupt)?,
+                )
+                .map_err(|_| ApplyOneError::Corrupt)
+            })
+            .transpose()
+    },
+    materialize: |tx, _, bytes| {
+        let root: crate::conversation_sync_adapter::SyncConversationRoot =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::conversation_sync_adapter::sync_replace_conversation_root(tx, &root)
+            .map_err(conversation_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::conversation_sync_adapter::sync_conversation_ids(connection)
+            .map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: None,
+};
+
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 12] = [
+const SCANNED_CODECS: [&SnapshotCodec; 13] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -1579,6 +1637,7 @@ const SCANNED_CODECS: [&SnapshotCodec; 12] = [
     &CHARACTER_BINDINGS_CODEC,
     &PERSONA_BINDINGS_CODEC,
     &GROUP_BINDINGS_CODEC,
+    &CONVERSATION_CODEC,
 ];
 
 fn snapshot_codec(kind: &str) -> Option<&'static SnapshotCodec> {

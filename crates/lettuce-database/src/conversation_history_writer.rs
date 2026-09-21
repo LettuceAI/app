@@ -363,7 +363,7 @@ fn validate_turn(
     Ok(())
 }
 
-fn insert_snapshot_refs(
+pub(crate) fn insert_snapshot_refs(
     transaction: &Transaction<'_>,
     history: &BackupConversation,
 ) -> Result<(), ConversationRepositoryError> {
@@ -418,7 +418,7 @@ const fn branch_status_name(status: BranchStatus) -> &'static str {
     }
 }
 
-fn insert_branch(
+pub(crate) fn insert_branch(
     transaction: &Transaction<'_>,
     branch: &ConversationBranch,
 ) -> Result<(), ConversationRepositoryError> {
@@ -440,7 +440,7 @@ fn insert_branch(
     Ok(())
 }
 
-fn set_branch_head(
+pub(crate) fn set_branch_head(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     branch_id: ConversationBranchId,
@@ -523,7 +523,7 @@ fn insert_message_with_turns(
     Ok(())
 }
 
-fn insert_message(
+pub(crate) fn insert_message(
     transaction: &Transaction<'_>,
     backup: &BackupMessage,
 ) -> Result<(), ConversationRepositoryError> {
@@ -560,7 +560,7 @@ fn insert_message(
     Ok(())
 }
 
-fn insert_revision(
+pub(crate) fn insert_revision(
     transaction: &Transaction<'_>,
     backup: &BackupMessage,
     revision: &MessageRevision,
@@ -635,7 +635,7 @@ fn media_parts(
         .collect()
 }
 
-fn insert_origin(
+pub(crate) fn insert_origin(
     transaction: &Transaction<'_>,
     backup: &BackupMessage,
     origin: &InitialMessageOrigin,
@@ -1176,7 +1176,7 @@ fn insert_candidate(
     Ok(())
 }
 
-fn insert_creation_record(
+pub(crate) fn insert_creation_record(
     transaction: &Transaction<'_>,
     aggregate: &ConversationAggregate,
     messages: &[&BackupMessage],

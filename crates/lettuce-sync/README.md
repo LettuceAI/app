@@ -249,3 +249,17 @@ number; an editor must reload after a sync.
 An entity with a deferred incoming change is skipped by the state scan: its
 local state is transient until the deferred change settles, and journaling it
 would override the origin's newer choice with a later local timestamp.
+
+Conversations, part one (sync S8a). Launch snapshot artifacts are immutable
+insert-only entities (`conversation.snapshot_artifact`, bytes base64-encoded;
+an artifact beyond the payload limit is not synced). The conversation root
+(`conversation.root`) carries what exists from creation on: the conversation
+with participants and settings, the root branch, the memory binding (none,
+own space, companion pool) and the initial scene/starter messages in their
+creation form (first revision, visible, unpinned). Revisions, update times,
+branch heads, the active branch and timeline ordinals stay device-local, so a
+new message never rewrites the root. A new root creates the conversation with
+its root branch, initial messages and origins, snapshot references, memory
+binding and a create operation; an existing one takes title, lifecycle,
+participants and settings. Messages, other branches and the active branch
+follow in S8a-3.

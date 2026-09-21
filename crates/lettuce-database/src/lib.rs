@@ -11,6 +11,7 @@ mod conversation_history_writer;
 mod conversation_mutation_kernel;
 mod conversation_mutations;
 mod conversation_query;
+mod conversation_sync_adapter;
 mod conversation_vertical_slice;
 mod creation_adapter;
 mod device_local_adapter;

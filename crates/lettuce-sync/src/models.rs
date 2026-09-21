@@ -111,3 +111,7 @@ pub const APP_SETTINGS_SYNC_VERSION: u32 = 1;
 pub const CONVERSATION_SNAPSHOT_SYNC_KIND: &str = "conversation_snapshot";
 pub const CONVERSATION_SNAPSHOT_SYNC_SCHEMA: &str = "conversation.snapshot_artifact";
 pub const CONVERSATION_SNAPSHOT_SYNC_VERSION: u32 = 1;
+
+pub const CONVERSATION_SYNC_KIND: &str = "conversation";
+pub const CONVERSATION_SYNC_SCHEMA: &str = "conversation.root";
+pub const CONVERSATION_SYNC_VERSION: u32 = 1;
