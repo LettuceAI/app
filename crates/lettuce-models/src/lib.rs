@@ -279,7 +279,8 @@ pub enum QueryParameterNameError {
     InvalidCharacter,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderAccount {
     pub id: ProviderAccountId,
     pub secret_owner_id: SecretOwnerId,
@@ -552,7 +553,8 @@ impl ModelProfileConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelProfile {
     pub id: ModelProfileId,
     pub provider_account_id: ProviderAccountId,

@@ -125,3 +125,22 @@ logical asset is available, so a persona can never materialize with dangling
 image references. Catalogs are limited to 256 distinct persona assets and blob
 chunks to one MiB. Blob identity remains the BLAKE3 content hash; native paths
 and bytes never enter canonical change payloads.
+
+State-scanned aggregates (sync S2). Instead of wiring every mutation, a sync
+session first calls `LocalChangeJournal::journal_current_state`: for each
+scanned kind, in dependency order, the current canonical snapshot of every
+entity is compared with the latest journaled one that became local state
+(incoming changes that lost a conflict are skipped), and differences are
+journaled as insert or update; journaled entities that no longer exist are
+journaled as deletes in reverse order. Edits, imports and restores therefore
+replicate with no per-mutation code, and because the scan runs before anything
+is received, incoming changes always meet journaled local state. Deviations
+from legacy's per-write capture: edits between sessions collapse into one
+change, and its hybrid timestamp is the session's, not the edit's. Scanned
+today: provider accounts (`provider_account.snapshot`, secret references travel
+as opaque identifiers, secret values never leave the device) and model
+profiles (`model_profile.snapshot`). Deletes follow legacy: a delete beats a
+concurrent update on both sides; a delete this device must refuse (the entity
+is still referenced here) is answered with a fresh insert so every device
+keeps it. The persona conflict listing only lists persona conflicts; other
+kinds keep their conflict evidence without a resolution surface yet.

@@ -808,7 +808,8 @@ fn load_staged_changes(
 
 fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeError> {
     let Some(payload) = change.payload() else {
-        return Ok(false);
+        return Ok(change.operation() == ChangeOperation::Delete
+            && snapshot_codec(change.entity().kind()).is_some_and(|codec| codec.delete.is_some()));
     };
     match (change.entity().kind(), payload.schema(), payload.version()) {
         ("persona", PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION) => {
@@ -834,6 +835,22 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             {
                 return Err(IncomingChangeError::Corrupt);
             }
+            Ok(true)
+        }
+        (
+            lettuce_sync::PROVIDER_ACCOUNT_SYNC_KIND,
+            lettuce_sync::PROVIDER_ACCOUNT_SYNC_SCHEMA,
+            lettuce_sync::PROVIDER_ACCOUNT_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::MODEL_PROFILE_SYNC_KIND,
+            lettuce_sync::MODEL_PROFILE_SYNC_SCHEMA,
+            lettuce_sync::MODEL_PROFILE_SYNC_VERSION,
+        ) => {
+            let codec =
+                snapshot_codec(change.entity().kind()).ok_or(IncomingChangeError::Corrupt)?;
+            (codec.decode)(change.entity().id(), payload.bytes())
+                .map_err(|_| IncomingChangeError::Corrupt)?;
             Ok(true)
         }
         ("media_asset", MEDIA_ASSET_SYNC_SCHEMA, MEDIA_ASSET_SYNC_VERSION) => {
@@ -997,13 +1014,22 @@ fn resolve_dominated_conflicts(
 /// materializes an incoming one. `materialize` returns `false` when the
 /// snapshot is valid but cannot be applied here (the change is journaled and
 /// kept as a current-wins conflict).
+type ScanIds = fn(&Connection) -> Result<Vec<String>, ApplyOneError>;
+type SnapshotDelete = fn(&Transaction<'_>, &str, TimestampMillis) -> Result<bool, ApplyOneError>;
+
 struct SnapshotCodec {
+    kind: &'static str,
     decode: fn(&str, &[u8]) -> Result<(), ApplyOneError>,
     current: fn(&Connection, &str) -> Result<Option<CanonicalPayload>, ApplyOneError>,
     materialize: fn(&Transaction<'_>, &[u8]) -> Result<bool, ApplyOneError>,
+    ids: Option<ScanIds>,
+    delete: Option<SnapshotDelete>,
 }
 
 const PERSONA_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: "persona",
+    ids: None,
+    delete: None,
     decode: |id, bytes| {
         let incoming: Persona =
             serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
@@ -1035,6 +1061,9 @@ const PERSONA_CODEC: SnapshotCodec = SnapshotCodec {
 };
 
 const PERSONA_DEFAULT_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: "persona_default",
+    ids: None,
+    delete: None,
     decode: |_, bytes| {
         serde_json::from_slice::<PersonaDefaultState>(bytes)
             .map(|_| ())
@@ -1057,6 +1086,221 @@ const PERSONA_DEFAULT_CODEC: SnapshotCodec = SnapshotCodec {
     },
 };
 
+fn model_apply_error(error: lettuce_models::ModelRepositoryError) -> ApplyOneError {
+    match error {
+        lettuce_models::ModelRepositoryError::AccountMissing
+        | lettuce_models::ModelRepositoryError::NotFound => ApplyOneError::Pending,
+        lettuce_models::ModelRepositoryError::Storage => ApplyOneError::Storage,
+        _ => ApplyOneError::Corrupt,
+    }
+}
+
+const PROVIDER_ACCOUNT_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::PROVIDER_ACCOUNT_SYNC_KIND,
+    decode: |id, bytes| {
+        let account: lettuce_models::ProviderAccount =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        if account.id.to_string() != id {
+            return Err(ApplyOneError::Corrupt);
+        }
+        Ok(())
+    },
+    current: |connection, id| {
+        crate::sync_load_provider_account(connection, id)
+            .map_err(model_apply_error)?
+            .as_ref()
+            .map(lettuce_sync::canonical_provider_account_payload)
+            .transpose()
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    materialize: |tx, bytes| {
+        let account: lettuce_models::ProviderAccount =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::sync_upsert_provider_account(tx, &account).map_err(model_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::sync_ids(connection, "provider_accounts").map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: Some(|tx, id, _| {
+        crate::sync_delete_provider_account(tx, id).map_err(model_apply_error)
+    }),
+};
+
+const MODEL_PROFILE_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::MODEL_PROFILE_SYNC_KIND,
+    decode: |id, bytes| {
+        let profile: lettuce_models::ModelProfile =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        if profile.id.to_string() != id {
+            return Err(ApplyOneError::Corrupt);
+        }
+        Ok(())
+    },
+    current: |connection, id| {
+        crate::sync_load_model_profile(connection, id)
+            .map_err(model_apply_error)?
+            .as_ref()
+            .map(lettuce_sync::canonical_model_profile_payload)
+            .transpose()
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    materialize: |tx, bytes| {
+        let profile: lettuce_models::ModelProfile =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::sync_upsert_model_profile(tx, &profile).map_err(model_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::sync_ids(connection, "model_profiles").map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: Some(|tx, id, now| {
+        crate::sync_delete_model_profile(tx, id, now).map_err(model_apply_error)
+    }),
+};
+
+/// Aggregates journaled by comparing their current state with the latest
+/// journaled snapshot, in dependency order (deletes run in reverse).
+const SCANNED_CODECS: [&SnapshotCodec; 2] = [&PROVIDER_ACCOUNT_CODEC, &MODEL_PROFILE_CODEC];
+
+fn snapshot_codec(kind: &str) -> Option<&'static SnapshotCodec> {
+    match kind {
+        "persona" => Some(&PERSONA_CODEC),
+        "persona_default" => Some(&PERSONA_DEFAULT_CODEC),
+        _ => SCANNED_CODECS.into_iter().find(|codec| codec.kind == kind),
+    }
+}
+
+/// The latest snapshot hash journaled for each entity of a kind (`None` once
+/// deleted), skipping incoming changes that lost a conflict and so never
+/// became the local state.
+fn latest_journaled(
+    connection: &Connection,
+    kind: &str,
+) -> Result<BTreeMap<String, Option<ContentHash>>, LocalChangeJournalError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT change.entity_id, change.payload_hash FROM sync_changes change
+             WHERE change.entity_kind = ?1
+               AND NOT EXISTS (
+                 SELECT 1 FROM sync_conflicts conflict
+                 WHERE conflict.incoming_change_id = change.change_id
+                   AND conflict.winning_side = 'current'
+               )
+             ORDER BY change.rowid",
+        )
+        .map_err(storage)?;
+    let rows = statement
+        .query_map([kind], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })
+        .map_err(storage)?;
+    let mut latest = BTreeMap::new();
+    for row in rows {
+        let (id, hash) = row.map_err(storage)?;
+        latest.insert(
+            id,
+            hash.map(ContentHash::parse).transpose().map_err(corrupt)?,
+        );
+    }
+    Ok(latest)
+}
+
+fn journal_state_change(
+    tx: &Transaction<'_>,
+    kind: &str,
+    id: &str,
+    operation: ChangeOperation,
+    base: Option<ContentHash>,
+    payload: Option<CanonicalPayload>,
+    now: TimestampMillis,
+) -> Result<(), LocalChangeJournalError> {
+    let request = NewCanonicalChange::new(
+        SyncEntity::new(kind, id).map_err(corrupt)?,
+        operation,
+        base,
+        payload,
+    )
+    .map_err(corrupt)?;
+    record_local_change_in(tx, OperationId::new(), &request, now)?;
+    Ok(())
+}
+
+fn journal_apply_error(error: ApplyOneError) -> LocalChangeJournalError {
+    match error {
+        ApplyOneError::Storage => LocalChangeJournalError::Storage,
+        ApplyOneError::Pending | ApplyOneError::Corrupt => LocalChangeJournalError::Corrupt,
+    }
+}
+
+/// A delete of a complete-snapshot entity. Concurrent with a local edit the
+/// delete still wins (legacy); a delete this device refuses (the entity is
+/// still referenced here) is journaled and answered with a fresh insert of
+/// the local snapshot so every device converges on keeping it.
+fn apply_snapshot_delete(
+    tx: &Transaction<'_>,
+    change: &CanonicalChange,
+    now: TimestampMillis,
+    codec: &SnapshotCodec,
+) -> Result<bool, ApplyOneError> {
+    let delete = codec.delete.ok_or(ApplyOneError::Corrupt)?;
+    let current_payload = (codec.current)(tx, change.entity().id())?;
+    observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
+    insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
+    let Some(current_payload) = current_payload else {
+        return Ok(false);
+    };
+    let concurrent = change.base_revision() != Some(current_payload.content_hash());
+    if delete(tx, change.entity().id(), now)? {
+        return Ok(concurrent);
+    }
+    journal_state_change(
+        tx,
+        codec.kind,
+        change.entity().id(),
+        ChangeOperation::Insert,
+        None,
+        Some(current_payload),
+        now,
+    )
+    .map_err(|error| match error {
+        LocalChangeJournalError::Storage => ApplyOneError::Storage,
+        _ => ApplyOneError::Corrupt,
+    })?;
+    Ok(true)
+}
+
+/// Whether the latest local journal entry for the entity is a delete the
+/// incoming change did not observe: a concurrent delete beats the update.
+fn deleted_concurrently(
+    tx: &Transaction<'_>,
+    change: &CanonicalChange,
+) -> Result<bool, ApplyOneError> {
+    let latest = latest_journaled(tx, change.entity().kind()).map_err(|error| match error {
+        LocalChangeJournalError::Storage => ApplyOneError::Storage,
+        _ => ApplyOneError::Corrupt,
+    })?;
+    if !matches!(latest.get(change.entity().id()), Some(None)) {
+        return Ok(false);
+    }
+    let delete_id: String = tx
+        .query_row(
+            "SELECT change_id FROM sync_changes
+             WHERE entity_kind = ?1 AND entity_id = ?2 AND operation = 'delete'
+             ORDER BY rowid DESC LIMIT 1",
+            params![change.entity().kind(), change.entity().id()],
+            |row| row.get(0),
+        )
+        .map_err(|_| ApplyOneError::Storage)?;
+    let delete = load_change_by_id(
+        tx,
+        SyncChangeId::from_uuid(Uuid::parse_str(&delete_id).map_err(|_| ApplyOneError::Corrupt)?),
+    )
+    .map_err(|_| ApplyOneError::Storage)?
+    .ok_or(ApplyOneError::Corrupt)?;
+    Ok(!change.observes(&delete))
+}
+
 /// One incoming complete-snapshot change: identical snapshots and clean
 /// inserts/updates apply, an absent entity adopts the snapshot, anything
 /// else is a concurrent edit settled by `incoming_wins` with both snapshots
@@ -1067,9 +1311,17 @@ fn apply_snapshot_change(
     now: TimestampMillis,
     codec: &SnapshotCodec,
 ) -> Result<bool, ApplyOneError> {
+    if change.operation() == ChangeOperation::Delete {
+        return apply_snapshot_delete(tx, change, now, codec);
+    }
     let payload = change.payload().ok_or(ApplyOneError::Corrupt)?;
     (codec.decode)(change.entity().id(), payload.bytes())?;
     let current_payload = (codec.current)(tx, change.entity().id())?;
+    if current_payload.is_none() && deleted_concurrently(tx, change)? {
+        observe_remote_clock(tx, change.timestamp(), now).map_err(|_| ApplyOneError::Storage)?;
+        insert_change(tx, None, change, now).map_err(|_| ApplyOneError::Storage)?;
+        return Ok(true);
+    }
     let same = current_payload
         .as_ref()
         .is_some_and(|value| value.content_hash() == payload.content_hash());
@@ -1414,6 +1666,60 @@ fn conflict_candidates(
 }
 
 impl LocalChangeJournal for Database {
+    fn journal_current_state(
+        &self,
+        now: TimestampMillis,
+    ) -> Result<usize, LocalChangeJournalError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let mut journaled = 0usize;
+        let mut present = Vec::with_capacity(SCANNED_CODECS.len());
+        for codec in SCANNED_CODECS {
+            let ids = codec.ids.ok_or(LocalChangeJournalError::Corrupt)?;
+            let ids = ids(&tx).map_err(journal_apply_error)?;
+            let latest = latest_journaled(&tx, codec.kind)?;
+            for id in &ids {
+                let Some(payload) = (codec.current)(&tx, id).map_err(journal_apply_error)? else {
+                    continue;
+                };
+                let base = latest.get(id).cloned().flatten();
+                if base.as_ref() == Some(payload.content_hash()) {
+                    continue;
+                }
+                let operation = if base.is_some() {
+                    ChangeOperation::Update
+                } else {
+                    ChangeOperation::Insert
+                };
+                journal_state_change(&tx, codec.kind, id, operation, base, Some(payload), now)?;
+                journaled += 1;
+            }
+            present.push((codec, ids, latest));
+        }
+        for (codec, ids, latest) in present.into_iter().rev() {
+            for (id, base) in latest {
+                if let Some(base) = base
+                    && ids.binary_search(&id).is_err()
+                {
+                    journal_state_change(
+                        &tx,
+                        codec.kind,
+                        &id,
+                        ChangeOperation::Delete,
+                        Some(base),
+                        None,
+                        now,
+                    )?;
+                    journaled += 1;
+                }
+            }
+        }
+        tx.commit().map_err(storage)?;
+        Ok(journaled)
+    }
+
     fn local_device_id(
         &self,
         now: TimestampMillis,
@@ -1623,7 +1929,8 @@ impl PersonaConflictRepository for Database {
                         incoming_change_id, winning_side, current_payload,
                         incoming_payload, detected_at, status,
                         resolution_choice, resolved_by_change_id, conflict_id
-                 FROM sync_conflicts WHERE status = 'unresolved'
+                 FROM sync_conflicts
+                 WHERE status = 'unresolved' AND entity_kind IN ('persona', 'persona_default')
                  ORDER BY detected_at DESC, conflict_id
                  LIMIT ?1",
             )
@@ -1964,11 +2271,10 @@ impl IncomingChangeRepository for Database {
             }
             let result = match change.entity().kind() {
                 "media_asset" => apply_media_asset_change(&transaction, change, now),
-                "persona" => apply_snapshot_change(&transaction, change, now, &PERSONA_CODEC),
-                "persona_default" => {
-                    apply_snapshot_change(&transaction, change, now, &PERSONA_DEFAULT_CODEC)
-                }
-                _ => Err(ApplyOneError::Corrupt),
+                kind => match snapshot_codec(kind) {
+                    Some(codec) => apply_snapshot_change(&transaction, change, now, codec),
+                    None => Err(ApplyOneError::Corrupt),
+                },
             };
             match result {
                 Ok(conflict) => {

@@ -1227,6 +1227,160 @@ pub(crate) fn insert_model_profile_row(
     ).map_err(model_error)
 }
 
+const PROVIDER_ACCOUNT_COLUMNS: &str = "id, provider_kind, protocol, label, endpoint, enabled, \
+     api_key_secret_ref, secret_owner_id, secret_headers_json, config_json, revision, created_at, \
+     updated_at, streaming_enabled, allow_invalid_tls";
+const MODEL_PROFILE_COLUMNS: &str = "id, provider_account_id, external_model_id, display_name, kind, \
+     config_json, revision, created_at, updated_at";
+
+pub(crate) fn sync_ids(connection: &Connection, table: &str) -> rusqlite::Result<Vec<String>> {
+    connection
+        .prepare(&format!("SELECT id FROM {table} ORDER BY id"))?
+        .query_map([], |row| row.get(0))?
+        .collect()
+}
+
+pub(crate) fn sync_load_provider_account(
+    connection: &Connection,
+    id: &str,
+) -> Result<Option<ProviderAccount>, ModelRepositoryError> {
+    connection
+        .query_row(
+            &format!("SELECT {PROVIDER_ACCOUNT_COLUMNS} FROM provider_accounts WHERE id=?1"),
+            [id],
+            provider_from_row,
+        )
+        .optional()
+        .map_err(model_error)
+}
+
+/// Writes a synced provider account exactly, revision and timestamps included.
+pub(crate) fn sync_upsert_provider_account(
+    connection: &Connection,
+    account: &ProviderAccount,
+) -> Result<(), ModelRepositoryError> {
+    validate_account(account)?;
+    let Some(stored) = sync_load_provider_account(connection, &account.id.to_string())? else {
+        insert_provider_account_row(connection, account)?;
+        return Ok(());
+    };
+    if stored.secret_owner_id != account.secret_owner_id {
+        return Err(ModelRepositoryError::InvalidData);
+    }
+    let headers = serde_json::to_string(&account.secret_headers)
+        .map_err(|_| ModelRepositoryError::InvalidData)?;
+    let config = encode_versioned(&account.config, PROVIDER_CONFIG_FORMAT_VERSION)
+        .map_err(|_| ModelRepositoryError::InvalidData)?;
+    connection.execute(
+        "UPDATE provider_accounts SET provider_kind=?2, protocol=?3, label=?4, endpoint=?5, \
+         enabled=?6, api_key_secret_ref=?7, secret_headers_json=?8, config_json=?9, revision=?10, \
+         created_at=?11, updated_at=?12, streaming_enabled=?13, allow_invalid_tls=?14 WHERE id=?1",
+        params![account.id.to_string(), account.provider_kind, provider_protocol_name(account.protocol),
+            account.label, account.endpoint, account.enabled, account.api_key_ref.map(|v| v.to_string()),
+            headers, config, to_i64(account.revision.get()).map_err(model_error)?,
+            account.created_at.get(), account.updated_at.get(), account.streaming_enabled,
+            account.allow_invalid_tls],
+    ).map_err(model_error)?;
+    Ok(())
+}
+
+/// Deletes a synced provider account unless a model profile still uses it.
+pub(crate) fn sync_delete_provider_account(
+    connection: &Connection,
+    id: &str,
+) -> Result<bool, ModelRepositoryError> {
+    let used: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM model_profiles WHERE provider_account_id=?1)",
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(model_error)?;
+    if used {
+        return Ok(false);
+    }
+    connection
+        .execute("DELETE FROM provider_accounts WHERE id=?1", [id])
+        .map_err(model_error)?;
+    Ok(true)
+}
+
+pub(crate) fn sync_load_model_profile(
+    connection: &Connection,
+    id: &str,
+) -> Result<Option<ModelProfile>, ModelRepositoryError> {
+    connection
+        .query_row(
+            &format!("SELECT {MODEL_PROFILE_COLUMNS} FROM model_profiles WHERE id=?1"),
+            [id],
+            model_from_row,
+        )
+        .optional()
+        .map_err(model_error)
+}
+
+/// Writes a synced model profile exactly; its provider account must exist.
+pub(crate) fn sync_upsert_model_profile(
+    connection: &Connection,
+    profile: &ModelProfile,
+) -> Result<(), ModelRepositoryError> {
+    validate_profile(profile)?;
+    if sync_load_provider_account(connection, &profile.provider_account_id.to_string())?.is_none() {
+        return Err(ModelRepositoryError::AccountMissing);
+    }
+    if sync_load_model_profile(connection, &profile.id.to_string())?.is_none() {
+        insert_model_profile_row(connection, profile)?;
+        return Ok(());
+    }
+    let config = encode_versioned(&profile.config, MODEL_PROFILE_CONFIG_FORMAT_VERSION)
+        .map_err(|_| ModelRepositoryError::InvalidData)?;
+    connection.execute(
+        "UPDATE model_profiles SET provider_account_id=?2, external_model_id=?3, display_name=?4, \
+         kind=?5, config_json=?6, revision=?7, created_at=?8, updated_at=?9 WHERE id=?1",
+        params![profile.id.to_string(), profile.provider_account_id.to_string(), profile.external_model_id,
+            profile.display_name, model_kind_name(profile.kind), config,
+            to_i64(profile.revision.get()).map_err(model_error)?, profile.created_at.get(),
+            profile.updated_at.get()],
+    ).map_err(model_error)?;
+    Ok(())
+}
+
+/// Deletes a synced model profile like `delete_and_clear_default`: refused
+/// while a character or group member uses it, app defaults pointing at it are
+/// cleared.
+pub(crate) fn sync_delete_model_profile(
+    connection: &Connection,
+    id: &str,
+    now: TimestampMillis,
+) -> Result<bool, ModelRepositoryError> {
+    let used: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM characters WHERE model_profile_id=?1) \
+             OR EXISTS(SELECT 1 FROM group_members WHERE model_profile_override_id=?1)",
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(model_error)?;
+    if used {
+        return Ok(false);
+    }
+    connection
+        .execute(
+            "UPDATE app_settings SET \
+             default_model_profile_id=CASE WHEN default_model_profile_id=?1 THEN NULL ELSE default_model_profile_id END, \
+             dynamic_memory_model_profile_id=CASE WHEN dynamic_memory_model_profile_id=?1 THEN NULL ELSE dynamic_memory_model_profile_id END, \
+             group_speaker_model_profile_id=CASE WHEN group_speaker_model_profile_id=?1 THEN NULL ELSE group_speaker_model_profile_id END, \
+             revision=revision+1, updated_at=?2 \
+             WHERE id=1 AND (default_model_profile_id=?1 OR dynamic_memory_model_profile_id=?1 OR group_speaker_model_profile_id=?1)",
+            params![id, now.get()],
+        )
+        .map_err(model_error)?;
+    connection
+        .execute("DELETE FROM model_profiles WHERE id=?1", [id])
+        .map_err(model_error)?;
+    Ok(true)
+}
+
 pub(crate) fn insert_media_blob_row(
     connection: &Connection,
     blob: &MediaBlob,
@@ -1943,6 +2097,103 @@ mod tests {
     use super::{
         Database, DatabaseError, DeleteFailurePoint, Migration, apply_migrations, hex_encode,
     };
+
+    fn sync_to(from: &Database, to: &Database, at: i64) -> usize {
+        use lettuce_sync::{IncomingChangeRepository, LocalChangeJournal};
+        from.journal_current_state(TimestampMillis::new(at))
+            .expect("journal source state");
+        to.journal_current_state(TimestampMillis::new(at))
+            .expect("journal target state");
+        let batch = from
+            .outbound_changes(
+                &to.local_frontier().expect("target frontier"),
+                lettuce_sync::MAX_OUTBOUND_CHANGES,
+                lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("outbound");
+        if batch.changes.is_empty() {
+            return 0;
+        }
+        let id = lettuce_types::OperationId::new();
+        to.stage_incoming_batch(
+            lettuce_sync::SyncDeviceId::new(),
+            id,
+            &lettuce_sync::canonical_batch_hash(&batch.changes),
+            &batch.changes,
+            TimestampMillis::new(at),
+        )
+        .expect("stage");
+        let result = to
+            .apply_incoming_batch(id, TimestampMillis::new(at + 1))
+            .expect("apply");
+        assert_eq!(result.state, lettuce_sync::IncomingBatchState::Committed);
+        batch.changes.len()
+    }
+
+    #[test]
+    fn provider_accounts_and_model_profiles_converge_through_state_sync() {
+        use lettuce_sync::LocalChangeJournal;
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let account = ProviderAccountRepository::upsert(&a, provider(), None).expect("account");
+        let model = ModelProfileRepository::upsert(&a, profile(account.id), None).expect("model");
+
+        assert_eq!(sync_to(&a, &b, 100), 2);
+        assert_eq!(
+            ProviderAccountRepository::get(&b, account.id).expect("b account"),
+            Some(account.clone())
+        );
+        assert_eq!(
+            ModelProfileRepository::get(&b, model.id).expect("b model"),
+            Some(model.clone())
+        );
+        assert_eq!(
+            b.journal_current_state(TimestampMillis::new(110)).expect("rescan"),
+            0
+        );
+
+        let renamed = ModelProfileRepository::upsert(
+            &b,
+            ModelProfile {
+                display_name: "Renamed".into(),
+                updated_at: TimestampMillis::new(120),
+                ..model.clone()
+            },
+            Some(model.revision),
+        )
+        .expect("rename on b");
+        assert_eq!(sync_to(&b, &a, 130), 1);
+        assert_eq!(
+            ModelProfileRepository::get(&a, model.id).expect("a model"),
+            Some(renamed)
+        );
+
+        ModelProfileRepository::delete_and_clear_default(&a, model.id).expect("delete on a");
+        assert_eq!(sync_to(&a, &b, 140), 1);
+        assert_eq!(ModelProfileRepository::get(&b, model.id).expect("b model"), None);
+        assert_eq!(sync_to(&a, &b, 150), 0);
+        assert_eq!(sync_to(&b, &a, 160), 0);
+
+        let second = ModelProfileRepository::upsert(&a, profile(account.id), None).expect("second");
+        assert_eq!(sync_to(&a, &b, 200), 1);
+        ModelProfileRepository::upsert(
+            &a,
+            ModelProfile {
+                display_name: "Edited on a".into(),
+                updated_at: TimestampMillis::new(210),
+                ..second.clone()
+            },
+            Some(second.revision),
+        )
+        .expect("edit on a");
+        ModelProfileRepository::delete_and_clear_default(&b, second.id).expect("delete on b");
+        sync_to(&a, &b, 220);
+        sync_to(&b, &a, 230);
+        assert_eq!(ModelProfileRepository::get(&a, second.id).expect("a"), None);
+        assert_eq!(ModelProfileRepository::get(&b, second.id).expect("b"), None);
+        assert_eq!(sync_to(&a, &b, 240), 0);
+        assert_eq!(sync_to(&b, &a, 250), 0);
+    }
 
     fn provider() -> ProviderAccount {
         let id = ProviderAccountId::new();

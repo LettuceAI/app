@@ -340,6 +340,8 @@ pub enum SyncChangeError {
     InvalidDelete,
     #[error("failed to construct a canonical content hash")]
     InvalidHash,
+    #[error("canonical payload could not be encoded")]
+    PayloadEncoding,
 }
 
 fn validate_change_contract(

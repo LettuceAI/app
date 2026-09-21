@@ -95,6 +95,12 @@ pub enum LocalChangeJournalError {
 }
 
 pub trait LocalChangeJournal: Send + Sync {
+    /// Journals the difference between each state-scanned aggregate's current
+    /// snapshot and its latest journaled one (insert, update or delete), so
+    /// edits, imports and restores replicate without per-mutation wiring.
+    fn journal_current_state(&self, now: TimestampMillis)
+    -> Result<usize, LocalChangeJournalError>;
+
     fn local_device_id(
         &self,
         now: TimestampMillis,

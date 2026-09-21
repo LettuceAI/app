@@ -99,6 +99,9 @@ where
         let negotiated =
             negotiate_sync_session(&local_hello, &peer_hello, transport.authenticated_peer())
                 .map_err(SyncExchangeError::Session)?;
+        self.repository
+            .journal_current_state(now)
+            .map_err(SyncExchangeError::Journal)?;
         let local_frontier = self
             .repository
             .local_frontier()
@@ -301,6 +304,9 @@ mod tests {
             _: &CancellationToken,
         ) -> Result<CausalFrontier, SyncTransportError> {
             self.local_frontier = local;
+            self.remote
+                .journal_current_state(self.now)
+                .map_err(|_| SyncTransportError::Protocol)?;
             self.remote
                 .local_frontier()
                 .map_err(|_| SyncTransportError::Protocol)

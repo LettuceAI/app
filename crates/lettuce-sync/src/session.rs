@@ -352,8 +352,16 @@ pub fn current_sync_schema_fingerprint() -> ContentHash {
     let mut hasher = blake3::Hasher::new_derive_key("lettuce.sync.schemas.v1");
     for (schema, version) in [
         (MEDIA_ASSET_SYNC_SCHEMA, MEDIA_ASSET_SYNC_VERSION),
+        (
+            crate::MODEL_PROFILE_SYNC_SCHEMA,
+            crate::MODEL_PROFILE_SYNC_VERSION,
+        ),
         (PERSONA_DEFAULT_SYNC_SCHEMA, PERSONA_DEFAULT_SYNC_VERSION),
         (PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION),
+        (
+            crate::PROVIDER_ACCOUNT_SYNC_SCHEMA,
+            crate::PROVIDER_ACCOUNT_SYNC_VERSION,
+        ),
     ] {
         hasher.update(&(schema.len() as u64).to_le_bytes());
         hasher.update(schema.as_bytes());
@@ -406,7 +414,7 @@ mod tests {
     fn current_schema_fingerprint_is_stable_and_complete() {
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "f59d621aa4be626ced608e4f587aa0543d481b12ad0248e7e53e98d456955f17"
+            "ff0c3b47a0e20aba9b6d9b40167ba45a8c6378b3b96ebbc8ea36923562d21514"
         );
     }
 

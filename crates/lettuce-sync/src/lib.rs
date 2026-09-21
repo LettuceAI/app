@@ -7,6 +7,7 @@ mod conflict;
 mod incoming;
 mod journal;
 mod media;
+mod models;
 mod persona;
 mod session;
 
@@ -15,5 +16,6 @@ pub use conflict::*;
 pub use incoming::*;
 pub use journal::*;
 pub use media::*;
+pub use models::*;
 pub use persona::*;
 pub use session::*;

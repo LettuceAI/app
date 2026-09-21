@@ -1634,6 +1634,7 @@ dependencies = [
  "blake3",
  "lettuce-characters",
  "lettuce-media",
+ "lettuce-models",
  "lettuce-types",
  "serde",
  "serde_json",
