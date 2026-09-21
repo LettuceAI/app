@@ -101,9 +101,10 @@ pub(crate) fn sync_load_memory_item(
 }
 
 /// Writes one synced item into its owner's space: an existing item takes the
-/// synced values (keeping its local short id), a new one is appended with a
-/// free short id. Returns `false` for an item id that belongs to another
-/// space here.
+/// synced values in place (keeping its local short id and ordinal), a new one
+/// takes a free ordinal and its derived short id, or the first free one. A
+/// full space waits until a synced deletion or a local trim frees room.
+/// Returns `false` for an item id that belongs to another space here.
 pub(crate) fn sync_put_memory_item(
     transaction: &Transaction<'_>,
     id: &str,
@@ -118,67 +119,86 @@ pub(crate) fn sync_put_memory_item(
     let Some(space_id) = local_space(transaction, owner)? else {
         return Err(MemoryRepositoryError::NotFound);
     };
-    let placed: Option<String> = transaction
+    lettuce_memory::MemorySpaceSnapshot {
+        id: space_id,
+        revision: lettuce_types::Revision::INITIAL,
+        items: vec![item.clone()],
+    }
+    .validate()?;
+    let placed: Option<(String, i64, i64)> = transaction
         .query_row(
-            "SELECT space_id FROM memory_items WHERE id = ?1",
+            "SELECT space_id, ordinal, short_id FROM memory_items WHERE id = ?1",
             [item_id.to_string()],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(storage)?;
-    if placed
-        .as_ref()
-        .is_some_and(|space| *space != space_id.to_string())
-    {
-        return Ok(false);
-    }
-    let mut space =
-        memory_adapter::get_in(transaction, space_id)?.ok_or(MemoryRepositoryError::NotFound)?;
-    let local = space.items.iter().position(|stored| stored.id == item_id);
-    let short_id = match local {
-        Some(index) => space.items[index].short_id,
+    let (ordinal, short_id) = match placed {
+        Some((space, _, _)) if space != space_id.to_string() => return Ok(false),
+        Some((_, ordinal, short_id)) => {
+            transaction
+                .execute(
+                    "DELETE FROM memory_items WHERE space_id = ?1 AND id = ?2",
+                    params![space_id.to_string(), item_id.to_string()],
+                )
+                .map_err(storage)?;
+            (
+                ordinal,
+                u32::try_from(short_id)
+                    .ok()
+                    .and_then(MemoryShortId::new)
+                    .ok_or_else(|| storage("invalid memory short id"))?,
+            )
+        }
         None => {
-            let taken = space
-                .items
-                .iter()
-                .map(|stored| stored.short_id.get())
-                .collect::<std::collections::HashSet<_>>();
+            let used =
+                |sql: &str| -> Result<std::collections::HashSet<i64>, MemoryRepositoryError> {
+                    transaction
+                        .prepare(sql)
+                        .and_then(|mut statement| {
+                            statement
+                                .query_map([space_id.to_string()], |row| row.get::<_, i64>(0))?
+                                .collect::<rusqlite::Result<std::collections::HashSet<_>>>()
+                        })
+                        .map_err(storage)
+                };
+            let ordinals = used("SELECT ordinal FROM memory_items WHERE space_id = ?1")?;
+            if ordinals.len() >= lettuce_memory::MAX_MEMORY_ITEMS {
+                return Err(MemoryRepositoryError::NotFound);
+            }
+            let short_ids = used("SELECT short_id FROM memory_items WHERE space_id = ?1")?;
+            let ordinal = (0..)
+                .find(|candidate| !ordinals.contains(candidate))
+                .ok_or_else(|| storage("no free memory ordinal"))?;
             let derived = MemoryShortId::derived(item_id);
-            if taken.contains(&derived.get()) {
-                (0..=999_999)
-                    .find(|candidate| !taken.contains(candidate))
+            let short_id = if short_ids.contains(&i64::from(derived.get())) {
+                (0..MemoryShortId::SPACE)
+                    .find(|candidate| !short_ids.contains(&i64::from(*candidate)))
                     .and_then(MemoryShortId::new)
                     .ok_or_else(|| storage("no free memory short id"))?
             } else {
                 derived
-            }
+            };
+            (ordinal, short_id)
         }
     };
-    let placed_item = MemoryItem {
-        short_id,
-        ..item.clone()
-    };
-    match local {
-        Some(index) => space.items[index] = placed_item,
-        None => space.items.push(placed_item),
-    }
-    space.validate()?;
-    replace_items(transaction, space_id, &space.items)?;
+    memory_adapter::insert_item_at(
+        transaction,
+        space_id,
+        ordinal,
+        &MemoryItem {
+            short_id,
+            ..item.clone()
+        },
+    )?;
+    bump_revision(transaction, space_id)?;
     Ok(true)
 }
 
-fn replace_items(
+fn bump_revision(
     transaction: &Transaction<'_>,
     space_id: MemorySpaceId,
-    items: &[MemoryItem],
 ) -> Result<(), MemoryRepositoryError> {
-    transaction
-        .execute(
-            "DELETE FROM memory_items WHERE space_id = ?1",
-            [space_id.to_string()],
-        )
-        .map_err(storage)?;
-    memory_adapter::insert_items(transaction, space_id, items)?;
     transaction
         .execute(
             "UPDATE memory_spaces SET revision = revision + 1 WHERE id = ?1",
@@ -196,13 +216,14 @@ pub(crate) fn sync_delete_memory_item(
     let Some(space_id) = local_space(transaction, owner)? else {
         return Ok(true);
     };
-    let Some(mut space) = memory_adapter::get_in(transaction, space_id)? else {
-        return Ok(true);
-    };
-    let before = space.items.len();
-    space.items.retain(|item| item.id != item_id);
-    if space.items.len() != before {
-        replace_items(transaction, space_id, &space.items)?;
+    let removed = transaction
+        .execute(
+            "DELETE FROM memory_items WHERE space_id = ?1 AND id = ?2",
+            params![space_id.to_string(), item_id.to_string()],
+        )
+        .map_err(storage)?;
+    if removed > 0 {
+        bump_revision(transaction, space_id)?;
     }
     Ok(true)
 }
@@ -255,13 +276,7 @@ pub(crate) fn sync_replace_memory_summary(
             ..summary.clone()
         }),
     )?;
-    transaction
-        .execute(
-            "UPDATE memory_spaces SET revision = revision + 1 WHERE id = ?1",
-            params![space_id.to_string()],
-        )
-        .map_err(storage)?;
-    Ok(())
+    bump_revision(transaction, space_id)
 }
 
 pub(crate) fn sync_delete_memory_summary(
@@ -273,12 +288,7 @@ pub(crate) fn sync_delete_memory_summary(
     };
     if memory_adapter::get_summary_in(transaction, space_id)?.is_some() {
         memory_adapter::replace_summary_in(transaction, space_id, None)?;
-        transaction
-            .execute(
-                "UPDATE memory_spaces SET revision = revision + 1 WHERE id = ?1",
-                params![space_id.to_string()],
-            )
-            .map_err(storage)?;
+        bump_revision(transaction, space_id)?;
     }
     Ok(true)
 }
@@ -294,9 +304,9 @@ pub(crate) fn sync_memory_cursor_ids(connection: &Connection) -> rusqlite::Resul
         .collect()
 }
 
-/// A pool conversation's dynamic-memory cursor, when it has one. Only pool
-/// conversations that do not own the pool's summary need it exchanged, but
-/// the owner's cursor travels too so both devices agree.
+/// A pool conversation's dynamic-memory cursor from this device's own runs,
+/// when it has one. Only run cursors are exchanged, so a cursor received from
+/// another device is never echoed back.
 pub(crate) fn sync_load_memory_cursor(
     transaction: &Transaction<'_>,
     conversation_id: lettuce_types::ConversationId,
@@ -314,7 +324,7 @@ pub(crate) fn sync_load_memory_cursor(
     let Some(space) = space else {
         return Ok(None);
     };
-    let cursor = memory_adapter::summary_cursor_in(
+    let cursor = memory_adapter::run_cursor_in(
         transaction,
         space.parse().map_err(storage)?,
         conversation_id,
@@ -322,9 +332,9 @@ pub(crate) fn sync_load_memory_cursor(
     Ok((cursor > 0).then_some(cursor))
 }
 
-/// Raises the cursor another device reported; cursors only move forward
-/// through sync.
-pub(crate) fn sync_raise_memory_cursor(
+/// Stores the run cursor another device reported (last writer wins, so a
+/// rewind there lowers it here); a local rewind clears it.
+pub(crate) fn sync_store_memory_cursor(
     transaction: &Transaction<'_>,
     conversation_id: lettuce_types::ConversationId,
     window_end: u64,
@@ -342,7 +352,7 @@ pub(crate) fn sync_raise_memory_cursor(
     transaction
         .execute(
             "INSERT INTO memory_synced_cursors (conversation_id, window_end) VALUES (?1, ?2)
-             ON CONFLICT(conversation_id) DO UPDATE SET window_end = max(window_end, excluded.window_end)",
+             ON CONFLICT(conversation_id) DO UPDATE SET window_end = excluded.window_end",
             params![
                 conversation_id.to_string(),
                 i64::try_from(window_end).map_err(storage)?

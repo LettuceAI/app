@@ -11,7 +11,7 @@ mod text;
 mod tool;
 
 pub use model::{
-    DynamicMemoryPendingApproval, DynamicMemoryRunMode, MAX_MEMORY_SUMMARY_BYTES,
+    DynamicMemoryPendingApproval, DynamicMemoryRunMode, MAX_MEMORY_ITEMS, MAX_MEMORY_SUMMARY_BYTES,
     MAX_MEMORY_SUMMARY_SOURCE_MESSAGES, MemoryCategory, MemoryItem, MemoryPolicy, MemoryShortId,
     MemorySpaceSnapshot, MemorySummary, MemoryValidationError, Score, memory_revision_id,
 };
@@ -48,8 +48,8 @@ pub use text::{
 pub use tool::{
     CategoryArgument, CreateMemoryPreparation, DYNAMIC_MEMORY_TOOL_TEXT_KEYS, DuplicateKind,
     DynamicMemoryToolOptions, ListedMemory, MemoryBatchResult, MemoryCycleBudget,
-    MemoryCycleFinish, MemoryCycleStart, MemoryReference, MemoryToolArguments, MemoryToolCall, MemoryToolError,
-    MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
+    MemoryCycleFinish, MemoryCycleStart, MemoryReference, MemoryToolArguments, MemoryToolCall,
+    MemoryToolError, MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
     MemoryToolSkipReason, SemanticDuplicateEvidence, SoftDeleteReason,
     dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape, list_memories,
 };

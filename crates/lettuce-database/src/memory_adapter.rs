@@ -72,46 +72,62 @@ pub(super) fn insert_items(
     items: &[MemoryItem],
 ) -> Result<(), MemoryRepositoryError> {
     for (ordinal, item) in items.iter().enumerate() {
-        transaction
-            .execute(
-                "INSERT INTO memory_items (
-                    space_id, id, ordinal, text, category, source_message_id, source_role, observed_at, observed_time_precision,
-                    superseded_by, superseded_at, supersedes_json, token_count, is_cold, is_pinned,
-                    importance, persistence_importance, prompt_importance, volatility,
-                    access_count, created_at, last_accessed_at, short_id
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
-                params![
-                    space_id.to_string(),
-                    item.id.to_string(),
-                    i64::try_from(ordinal).map_err(storage)?,
-                    item.text,
-                    category_name(item.category),
-                    item.source_message_id.map(|id| id.to_string()),
-                    item.source_role.map(|role| match role {
-                        lettuce_conversations::MessageRole::User => "user",
-                        lettuce_conversations::MessageRole::Assistant => "assistant",
-                        _ => "invalid",
-                    }),
-                    item.observed_at.map(TimestampMillis::get),
-                    item.observed_time_precision,
-                    item.superseded_by.map(|id| id.to_string()),
-                    item.superseded_at.map(TimestampMillis::get),
-                    serde_json::to_string(&item.supersedes).map_err(storage)?,
-                    i64::from(item.token_count),
-                    item.is_cold,
-                    item.is_pinned,
-                    i64::from(item.importance.basis_points()),
-                    i64::from(item.persistence_importance.basis_points()),
-                    i64::from(item.prompt_importance.basis_points()),
-                    i64::from(item.volatility.basis_points()),
-                    i64::from(item.access_count),
-                    item.created_at.get(),
-                    item.last_accessed_at.get(),
-                    i64::from(item.short_id.get()),
-                ],
-            )
-            .map_err(storage)?;
+        insert_item_at(
+            transaction,
+            space_id,
+            i64::try_from(ordinal).map_err(storage)?,
+            item,
+        )?;
     }
+    Ok(())
+}
+
+/// Inserts one item at a given ordinal.
+pub(crate) fn insert_item_at(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+    ordinal: i64,
+    item: &MemoryItem,
+) -> Result<(), MemoryRepositoryError> {
+    transaction
+        .execute(
+            "INSERT INTO memory_items (
+                space_id, id, ordinal, text, category, source_message_id, source_role, observed_at, observed_time_precision,
+                superseded_by, superseded_at, supersedes_json, token_count, is_cold, is_pinned,
+                importance, persistence_importance, prompt_importance, volatility,
+                access_count, created_at, last_accessed_at, short_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+            params![
+                space_id.to_string(),
+                item.id.to_string(),
+                ordinal,
+                item.text,
+                category_name(item.category),
+                item.source_message_id.map(|id| id.to_string()),
+                item.source_role.map(|role| match role {
+                    lettuce_conversations::MessageRole::User => "user",
+                    lettuce_conversations::MessageRole::Assistant => "assistant",
+                    _ => "invalid",
+                }),
+                item.observed_at.map(TimestampMillis::get),
+                item.observed_time_precision,
+                item.superseded_by.map(|id| id.to_string()),
+                item.superseded_at.map(TimestampMillis::get),
+                serde_json::to_string(&item.supersedes).map_err(storage)?,
+                i64::from(item.token_count),
+                item.is_cold,
+                item.is_pinned,
+                i64::from(item.importance.basis_points()),
+                i64::from(item.persistence_importance.basis_points()),
+                i64::from(item.prompt_importance.basis_points()),
+                i64::from(item.volatility.basis_points()),
+                i64::from(item.access_count),
+                item.created_at.get(),
+                item.last_accessed_at.get(),
+                i64::from(item.short_id.get()),
+            ],
+        )
+        .map_err(storage)?;
     Ok(())
 }
 
@@ -586,10 +602,36 @@ pub(super) fn compare_and_apply_summary_in(
     Ok(MemorySummaryCommit { memory, summary })
 }
 
+/// The end of this conversation's latest settled run in the space that no
+/// rewind undid.
+pub(crate) fn run_cursor_in(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+    conversation_id: ConversationId,
+) -> Result<u64, MemoryRepositoryError> {
+    let cursor = transaction
+        .query_row(
+            "SELECT MAX(run.summary_window_end)
+               FROM dynamic_memory_runs run
+               JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id = run.id
+              WHERE run.space_id = ?1 AND run.conversation_id = ?2
+                AND NOT EXISTS (
+                    SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
+                     WHERE rewind.conversation_id = run.conversation_id
+                       AND rewind.applied_at >= checkpoint.settled_at
+                )",
+            params![space_id.to_string(), conversation_id.to_string()],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .map_err(storage)?
+        .unwrap_or(0);
+    u64::try_from(cursor).map_err(storage)
+}
+
 /// Where a conversation's next dynamic-memory window starts: the summary
 /// window's end for the conversation that owns the space's summary, otherwise
-/// the latest settled run of this conversation that no rewind undid (or the
-/// cursor another device reported, when that is further).
+/// the local run cursor, or the one another device reported when that is
+/// further.
 pub(crate) fn summary_cursor_in(
     transaction: &Transaction<'_>,
     space_id: MemorySpaceId,
@@ -603,31 +645,27 @@ pub(crate) fn summary_cursor_in(
         )
         .optional()
         .map_err(storage)?;
-    let cursor = match summary_owner {
-        None => 0,
-        Some((owner, window_end)) if owner == conversation_id.to_string() => window_end,
-        Some(_) => transaction
-            .query_row(
-                "SELECT MAX(
-                        COALESCE((
-                            SELECT MAX(run.summary_window_end)
-                              FROM dynamic_memory_runs run
-                              JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id = run.id
-                             WHERE run.space_id = ?1 AND run.conversation_id = ?2
-                               AND NOT EXISTS (
-                                   SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
-                                    WHERE rewind.conversation_id = run.conversation_id
-                                      AND rewind.applied_at >= checkpoint.settled_at
-                               )
-                        ), 0),
-                        COALESCE((SELECT window_end FROM memory_synced_cursors WHERE conversation_id = ?2), 0)
-                    )",
-                params![space_id.to_string(), conversation_id.to_string()],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(storage)?,
-    };
-    u64::try_from(cursor).map_err(storage)
+    match summary_owner {
+        None => Ok(0),
+        Some((owner, window_end)) if owner == conversation_id.to_string() => {
+            u64::try_from(window_end).map_err(storage)
+        }
+        Some(_) => {
+            let synced = transaction
+                .query_row(
+                    "SELECT window_end FROM memory_synced_cursors WHERE conversation_id = ?1",
+                    [conversation_id.to_string()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()
+                .map_err(storage)?
+                .map(u64::try_from)
+                .transpose()
+                .map_err(storage)?
+                .unwrap_or(0);
+            Ok(run_cursor_in(transaction, space_id, conversation_id)?.max(synced))
+        }
+    }
 }
 
 impl MemoryRepository for Database {

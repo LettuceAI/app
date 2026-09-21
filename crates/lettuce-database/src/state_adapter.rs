@@ -534,21 +534,26 @@ pub(crate) fn ensure_continuity_episode_in(
         )
         .optional()
         .map_err(failure)?;
+    let next_index: i64 = tx
+        .query_row(
+            "SELECT COALESCE(MAX(episode_index), 0) + 1 FROM companion_continuity_episodes
+             WHERE character_id = ?1 AND persona_key = ?2",
+            params![owner.character_id.to_string(), key],
+            |row| row.get(0),
+        )
+        .map_err(failure)?;
     let (previous_conversation_id, episode_index) = match previous {
-        Some((previous_conversation_id, previous_index)) => {
+        Some((previous_conversation_id, _)) => {
             tx.execute(
                 "UPDATE companion_continuity_episodes
-                 SET ended_at = ?1, updated_at = ?1
+                 SET ended_at = ?1, updated_at = max(updated_at, ?1)
                  WHERE conversation_id = ?2 AND ended_at IS NULL",
                 params![now.get(), previous_conversation_id],
             )
             .map_err(failure)?;
-            (
-                Some(previous_conversation_id),
-                previous_index.checked_add(1).ok_or(Error::Corrupt)?,
-            )
+            (Some(previous_conversation_id), next_index)
         }
-        None => (None, 1),
+        None => (None, next_index),
     };
     tx.execute(
         "INSERT INTO companion_continuity_episodes (

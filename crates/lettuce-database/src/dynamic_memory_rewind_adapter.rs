@@ -324,6 +324,12 @@ impl DynamicMemorySuffixRewindRepository for Database {
                 ],
             )
             .map_err(storage)?;
+        transaction
+            .execute(
+                "DELETE FROM memory_synced_cursors WHERE conversation_id = ?1",
+                [rewind.conversation_id.to_string()],
+            )
+            .map_err(storage)?;
 
         for (ordinal, effect_id) in rewind.invalidated_effect_ids.iter().enumerate() {
             let owner = transaction

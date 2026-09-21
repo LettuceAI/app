@@ -253,7 +253,7 @@ pub(crate) fn row_materialize(
         )
         .map_err(storage)?;
     if present && spec.immutable {
-        return Ok(true);
+        return Ok(row_current(transaction, spec, id)?.as_deref() == Some(bytes));
     }
     if present {
         let assignments = spec
@@ -261,7 +261,7 @@ pub(crate) fn row_materialize(
             .iter()
             .filter(|column| **column != "created_at")
             .map(|column| {
-                if *column == "updated_at" {
+                if *column == "updated_at" && spec.revision {
                     "updated_at = max(updated_at, ?)".to_owned()
                 } else {
                     format!("{column} = ?")

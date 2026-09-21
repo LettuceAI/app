@@ -1790,7 +1790,7 @@ const MEMORY_CURSOR_CODEC: SnapshotCodec = SnapshotCodec {
     },
     materialize: |tx, id, bytes| {
         let cursor: u64 = serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
-        crate::memory_sync_adapter::sync_raise_memory_cursor(tx, parse_conversation(id)?, cursor)
+        crate::memory_sync_adapter::sync_store_memory_cursor(tx, parse_conversation(id)?, cursor)
             .map_err(memory_apply_error)?;
         Ok(true)
     },
@@ -2046,6 +2046,19 @@ fn row_apply_error(error: crate::row_sync_adapter::RowSyncError) -> ApplyOneErro
 
 macro_rules! row_codec {
     ($name:ident, $kind:expr, $schema:expr, $version:expr, $spec:expr, $assets:expr) => {
+        row_codec!(
+            $name,
+            $kind,
+            $schema,
+            $version,
+            $spec,
+            $assets,
+            Some(|tx, id, _| {
+                crate::row_sync_adapter::row_delete(tx, &$spec, id).map_err(row_apply_error)
+            })
+        );
+    };
+    ($name:ident, $kind:expr, $schema:expr, $version:expr, $spec:expr, $assets:expr, $delete:expr) => {
         const $name: SnapshotCodec = SnapshotCodec {
             kind: $kind,
             assets: $assets,
@@ -2073,9 +2086,7 @@ macro_rules! row_codec {
                 crate::row_sync_adapter::row_ids(connection, &$spec)
                     .map_err(|_| ApplyOneError::Storage)
             }),
-            delete: Some(|tx, id, _| {
-                crate::row_sync_adapter::row_delete(tx, &$spec, id).map_err(row_apply_error)
-            }),
+            delete: $delete,
         };
     };
 }
@@ -2146,7 +2157,8 @@ row_codec!(
     lettuce_sync::USAGE_COST_SYNC_SCHEMA,
     lettuce_sync::USAGE_COST_SYNC_VERSION,
     crate::row_sync_adapter::USAGE_COSTS,
-    no_assets
+    no_assets,
+    None
 );
 
 row_codec!(
@@ -2155,7 +2167,8 @@ row_codec!(
     lettuce_sync::JOB_USAGE_SYNC_SCHEMA,
     lettuce_sync::JOB_USAGE_SYNC_VERSION,
     crate::row_sync_adapter::JOB_INFERENCE_USAGE,
-    no_assets
+    no_assets,
+    None
 );
 
 row_codec!(
@@ -2164,7 +2177,8 @@ row_codec!(
     lettuce_sync::JOB_USAGE_COST_SYNC_SCHEMA,
     lettuce_sync::JOB_USAGE_COST_SYNC_VERSION,
     crate::row_sync_adapter::JOB_USAGE_COSTS,
-    no_assets
+    no_assets,
+    None
 );
 
 row_codec!(
@@ -2173,7 +2187,8 @@ row_codec!(
     lettuce_sync::LEGACY_USAGE_SYNC_SCHEMA,
     lettuce_sync::LEGACY_USAGE_SYNC_VERSION,
     crate::row_sync_adapter::LEGACY_USAGE_RECORDS,
-    no_assets
+    no_assets,
+    None
 );
 
 fn decode_branch(
@@ -3227,11 +3242,15 @@ impl LocalChangeJournal for Database {
             let ids = ids(&tx).map_err(journal_apply_error)?;
             let latest = latest_journaled(&tx, codec.kind)?;
             for id in &ids {
-                if entity_deferred(&tx, codec.kind, id).map_err(storage)? {
+                if SyncEntity::new(codec.kind, id.clone()).is_err()
+                    || entity_deferred(&tx, codec.kind, id).map_err(storage)?
+                {
                     continue;
                 }
-                let Some(payload) = (codec.current)(&tx, id).map_err(journal_apply_error)? else {
-                    continue;
+                let payload = match (codec.current)(&tx, id) {
+                    Ok(Some(payload)) => payload,
+                    Ok(None) | Err(ApplyOneError::Corrupt) => continue,
+                    Err(error) => return Err(journal_apply_error(error)),
                 };
                 let base = latest.get(id).cloned().flatten();
                 if base.as_ref() == Some(payload.content_hash()) {

@@ -317,16 +317,20 @@ own space, `pool:<character>` for a companion character's shared pool. Every
 item is its own entity (`memory.item`, `<owner>/<memory id>`, deletable): a
 retrieval journals only the items it touched, concurrent additions on two
 devices are both kept and deletions propagate. Short ids and ordinals are
-numbered by each device (a new item keeps its derived short id unless it is
-taken). An item id that already belongs to another space here is refused.
+numbered by each device (a new item takes a free ordinal and keeps its
+derived short id unless it is taken); items are written one row at a time. A
+full space makes an incoming new item wait until a deletion frees room. An
+item id that already belongs to another space here is refused.
 The summary is one entity per owner (`memory.summary`, space id blanked,
 waits for its source messages). The dynamic-memory cursor is the summary
 window, which counts path messages, so the summary's owner conversation
 continues where the other device stopped. The other conversations of a
 companion pool read their cursor from local runs, so each pool conversation's
 cursor is exchanged too (`memory.cursor`, only ever raised by sync, kept in
-`memory_synced_cursors`; the local cursor is the larger of the two, so a
-rewind on another device does not lower it here). Runs, attempts,
+`memory_synced_cursors`, last writer wins; only a device's own run cursor
+is exchanged, so a received cursor is never echoed; the local cursor is the
+larger of the local run cursor and the received one, and a local rewind clears
+the received one). Runs, attempts,
 retrieval accesses and ask-first approvals stay device-local, and embedding
 projections are rebuilt by each device (retrieval embeds every memory
 without a current vector first, like legacy, skipping superseded ones and
@@ -349,6 +353,10 @@ grown soul or a used relationship replaces them. Apply
 receipts, turn effects, growth/consolidation/writer runs stay on the device
 that ran them.
 
+The scan skips an entity whose id is not a valid sync entity id or whose
+snapshot cannot be encoded (for example beyond the payload limit), so one bad
+row never stops journaling for everything else.
+
 Plain rows (sync S10). Audio providers, user voices and ASR learning data
 (vocabulary terms, corrections, ignored suggestions, voice examples) are
 exchanged row by row through one generic row codec (`row_sync_adapter.rs`):
@@ -357,7 +365,10 @@ an update bumps the local revision and never moves `updated_at` back; deletes
 propagate. A row waits for a required parent (a voice's provider, an
 example's audio asset) and clears an optional reference that is gone. Two
 devices that ignored the same suggestion under different ids keep the lower
-id (the table's natural identity is unique). API keys stay in each device's
+id (the table's natural identity is unique). Tables with a revision step
+trigger never move `updated_at` backwards; the others take the incoming value
+exactly. Immutable rows are insert-only and have no delete; a different
+existing immutable row is kept and the incoming one refused. API keys stay in each device's
 secret store: the secret reference travels, the key does not. Media used by
 messages and voice examples is journaled like other referenced media (the
 referenced-media scan missed message media before, so messages with images

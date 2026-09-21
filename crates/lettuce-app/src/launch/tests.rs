@@ -10998,12 +10998,34 @@ fn companion_state_soul_and_notes_sync_with_the_conversation() {
             .expect("a notes")
             .is_empty()
     );
+
+    ConversationLaunchPlanner::new(&b)
+        .launch_direct(
+            &request(character_id, "companion-on-b"),
+            TimestampMillis::new(NOW.get() + 5_000),
+        )
+        .expect("b session");
+    ConversationLaunchPlanner::new(&a)
+        .launch_direct(
+            &request(character_id, "companion-on-a"),
+            TimestampMillis::new(NOW.get() + 4_500),
+        )
+        .expect("a session");
+    sync_prompts(&a, &b, NOW.get() + 6_000);
+    ConversationLaunchPlanner::new(&b)
+        .launch_direct(
+            &request(character_id, "companion-after-sync"),
+            TimestampMillis::new(NOW.get() + 7_000),
+        )
+        .expect("b launches after receiving a concurrent session");
+    sync_prompts(&b, &a, NOW.get() + 7_500);
+    sync_prompts(&a, &b, NOW.get() + 7_600);
     {
         use lettuce_sync::LocalChangeJournal;
         for database in [&a, &b] {
             assert_eq!(
                 database
-                    .journal_current_state(TimestampMillis::new(NOW.get() + 4_000))
+                    .journal_current_state(TimestampMillis::new(NOW.get() + 8_000))
                     .expect("rescan"),
                 0
             );

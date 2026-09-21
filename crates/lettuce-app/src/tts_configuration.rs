@@ -161,7 +161,7 @@ where
         }
         provider.label = label;
         provider.config = config;
-        provider.updated_at = now;
+        provider.updated_at = now.max(provider.updated_at);
         self.repository
             .upsert_audio_provider(provider, Some(expected_revision))
             .map_err(TtsConfigurationCoordinatorError::Repository)
@@ -303,7 +303,7 @@ where
         voice.model_id = request.model_id;
         voice.voice_id = request.voice_id;
         voice.prompt = request.prompt;
-        voice.updated_at = request.now;
+        voice.updated_at = request.now.max(voice.updated_at);
         self.repository
             .upsert_user_voice(voice, Some(request.expected_revision))
             .map_err(TtsConfigurationCoordinatorError::Repository)

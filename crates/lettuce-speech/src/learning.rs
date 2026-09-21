@@ -601,7 +601,7 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
                 last_seen_at: Some(now),
                 user_approved: true,
                 created_at: existing.created_at,
-                updated_at: now,
+                updated_at: now.max(existing.updated_at),
             }
         } else {
             AsrCorrectionRule {
@@ -655,7 +655,9 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
             ignored_count: existing.as_ref().map_or(1, |item| item.ignored_count + 1),
             last_ignored_at: now,
             created_at: existing.as_ref().map_or(now, |item| item.created_at),
-            updated_at: now,
+            updated_at: existing
+                .as_ref()
+                .map_or(now, |item| now.max(item.updated_at)),
         };
         ignored.validate()?;
         self.repository
