@@ -33,5 +33,21 @@ features. whisper.cpp (lettuce-speech) links into the same binary.
   life of the process, as legacy did. An ignored test prints the plan for a
   real model (`LETTUCE_PLAN_MODEL`).
 
-Next: the model/context engine and its worker thread, prompt templates and
-sampler, MTP, request handling and the inference port.
+- `engine` (desktop): the model slot (`LlamaEngine`), ported from the
+  legacy `load_engine`: a load reuses the loaded model when the path and the
+  full parameter key match (a smart-offload model already on the GPU is kept
+  when only the candidate list changed), otherwise the hot context is
+  discarded and the old model dropped before loading; smart offload walks the
+  GPU layer candidates down, a fixed layer count is tried once, and both fall
+  back to the CPU (with a "switched to CPU" notice) unless strict mode
+  forbids it; multi-GPU loads select the devices, layer split, tensor split
+  and main GPU on the raw params; the multimodal projector and the MTP draft
+  model (GPU with CPU retry when allowed) reload with the model or when their
+  own settings change. Load progress keeps the legacy stage/status codes and
+  per-GPU percentages; Tauri events became an `EngineObserver` and logs go to
+  `tracing`. llama.cpp's own fitter (`fit_model_params`,
+  `measure_mmproj_fit_margins`) is ported but stays behind its gate. An
+  ignored test loads a real model on the CPU.
+
+Next: contexts and the hot-context cache, prompt templates and sampler, MTP,
+request handling, the worker thread and the inference port.

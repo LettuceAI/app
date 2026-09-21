@@ -7,5 +7,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod engine;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod llama;
 pub mod offload;
