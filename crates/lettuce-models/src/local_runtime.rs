@@ -670,6 +670,7 @@ impl ModelSettingsLayer {
             reasoning_effort: set(&chat.reasoning_effort),
             reasoning_budget_tokens: set(&chat.reasoning_budget_tokens),
             prompt_caching: set(&chat.prompt_caching),
+            send_thinking_state: set(&chat.send_thinking_state),
             ollama: crate::OllamaOptionOverrides {
                 num_keep: set(&ollama.num_keep),
                 num_batch: set(&ollama.num_batch),

@@ -91,6 +91,9 @@ pub struct ResolvedChatParameters {
     pub reasoning_budget_tokens: Option<u32>,
     pub prompt_caching: Option<PromptCaching>,
     pub total_completion_allowance: Option<u32>,
+    /// Legacy `forceSendThinkingState`: the model's value, else the session's.
+    #[serde(default)]
+    pub send_thinking_state: bool,
     pub ollama: OllamaOptions,
     pub openrouter: crate::OpenRouterOptions,
 }
@@ -555,6 +558,13 @@ fn resolve_parameters(
             profile.prompt_caching,
         ),
         total_completion_allowance: total,
+        send_thinking_state: profile
+            .send_thinking_state
+            .or(match input.session.send_thinking_state {
+                ParameterOverride::Set(value) => Some(value),
+                ParameterOverride::Inherit | ParameterOverride::Clear => None,
+            })
+            .unwrap_or(false),
         ollama: resolve_ollama(profile, input),
         openrouter: crate::OpenRouterOptions {
             pinned_provider: profile
@@ -1334,5 +1344,33 @@ mod tests {
             resolved.parameters.openrouter.pinned_provider.as_deref(),
             Some("provider/model-choice")
         );
+    }
+
+    #[test]
+    fn thinking_state_is_sent_from_the_model_before_the_session() {
+        let (expected, mut profile, account) = fixture();
+        let session_on = ChatParameterResolutionInput {
+            session: ChatParameterOverrides {
+                send_thinking_state: ParameterOverride::Set(true),
+                ..ChatParameterOverrides::default()
+            },
+            ..ChatParameterResolutionInput::default()
+        };
+        let resolve = |profile: &crate::ModelProfile, input: &ChatParameterResolutionInput| {
+            resolve_chat_profile(
+                &expected,
+                profile,
+                &account,
+                input,
+                &ChatRequirements::default(),
+            )
+            .expect("resolved")
+            .parameters
+            .send_thinking_state
+        };
+        assert!(!resolve(&profile, &ChatParameterResolutionInput::default()));
+        assert!(resolve(&profile, &session_on));
+        profile.config.chat_parameters.send_thinking_state = Some(false);
+        assert!(!resolve(&profile, &session_on));
     }
 }

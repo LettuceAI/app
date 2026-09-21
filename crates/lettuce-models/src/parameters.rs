@@ -181,6 +181,8 @@ pub struct ChatParameterOverrides {
     #[serde(default)]
     pub prompt_caching: ParameterOverride<PromptCaching>,
     #[serde(default)]
+    pub send_thinking_state: ParameterOverride<bool>,
+    #[serde(default)]
     pub ollama: OllamaOptionOverrides,
 }
 
@@ -199,6 +201,7 @@ impl Default for ChatParameterOverrides {
             reasoning_effort: ParameterOverride::Inherit,
             reasoning_budget_tokens: ParameterOverride::Inherit,
             prompt_caching: ParameterOverride::Inherit,
+            send_thinking_state: ParameterOverride::Inherit,
             ollama: OllamaOptionOverrides::default(),
         }
     }

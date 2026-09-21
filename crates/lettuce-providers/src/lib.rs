@@ -577,6 +577,7 @@ mod integration_tests {
             reasoning_budget_tokens: None,
             prompt_caching: None,
             total_completion_allowance: None,
+            send_thinking_state: false,
             ollama: Default::default(),
             openrouter: Default::default(),
         }
