@@ -71,6 +71,17 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn sync_secrets<'a, S>(
+        &'a self,
+        secret_store: &'a S,
+    ) -> crate::SyncSecretCoordinator<'a, Database, S>
+    where
+        S: lettuce_settings::SecretStore + ?Sized,
+    {
+        crate::SyncSecretCoordinator::new(self.database.as_ref(), secret_store)
+    }
+
+    #[must_use]
     pub fn sync_media<'a, BR, AR>(
         &'a self,
         media: &'a lettuce_media::LocalSyncMediaStore<BR, AR>,
