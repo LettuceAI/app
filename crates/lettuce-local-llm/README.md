@@ -61,7 +61,16 @@ features. whisper.cpp (lettuce-speech) links into the same binary.
   list, per-device memory and unified-memory detection, as in legacy.
 - `context_info` (desktop): the model editor's fit estimate (max and
   recommended context, memory, GPU layers, multi-GPU placement).
-- `mtp`: bundled NextN detection and external `mtp-*.gguf` discovery.
+- `mtp` (desktop): bundled NextN detection, external `mtp-*.gguf` discovery,
+  and the legacy draft/verify runtime unchanged: a draft context beside the
+  target (own KV when the draft is as wide as the target, shared hidden state
+  when its output width matches), greedy drafting that stops below 0.75 top-10
+  probability or at end-of-generation, verification with the request's
+  sampler, KV rollback on the first mismatch, prompt-cache trim/rewind, and the
+  draft length halving under 50% acceptance or growing at 80% or more, judged
+  every 8 rounds. Legacy panicked on empty draft logits; drafting now stops
+  there instead. Greedy MTP output is checked token for token against plain
+  greedy decoding on a real model.
 - `sampler` (desktop): the legacy sampler chain unchanged: profiles
   (balanced/creative/stable/reasoning and their defaults), the stage order
   (default or the user's, deduplicated; an explicit empty list means no
@@ -92,5 +101,4 @@ unified memory (for example memory the iGPU can borrow beyond the carve-out)
 is still open: it needs measurement on the hardware and the user's approval,
 since the formulas are frozen.
 
-Next: contexts and the hot-context cache, MTP
-runtime, request handling, the worker thread and the inference port.
+Next: contexts and the hot-context cache, request handling, the worker thread and the inference port.
