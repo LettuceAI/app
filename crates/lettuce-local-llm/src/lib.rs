@@ -1,7 +1,11 @@
-//! Local llama.cpp and Ollama runtime adapters.
+//! Local llama.cpp runtime adapter.
 //!
-//! The intended ownership, boundaries, migration path, and acceptance gates are
-//! specified in the crate PLAN.md. This crate starts behavior-empty so the
-//! legacy monolith cannot leak in through premature compatibility APIs.
+//! `offload` holds the frozen GPU offload, KV cache and context planning
+//! formulas; the llama.cpp bindings (desktop only) load models, read GGUF
+//! metadata and measure compute buffers for them.
 
 #![deny(unsafe_op_in_unsafe_fn)]
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod llama;
+pub mod offload;
