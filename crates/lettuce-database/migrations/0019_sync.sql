@@ -249,6 +249,16 @@ CREATE TABLE sync_deferred_changes (
 CREATE INDEX sync_deferred_changes_entity_idx
 ON sync_deferred_changes(entity_kind, entity_id);
 
+-- The version each locally held synced secret was last set at, for the
+-- secret-store generation it was recorded against. Secret values never live
+-- here.
+CREATE TABLE sync_secret_versions (
+    reference TEXT PRIMARY KEY CHECK (length(reference) = 36),
+    generation INTEGER NOT NULL CHECK (generation >= 1),
+    set_at INTEGER NOT NULL,
+    device_id TEXT NOT NULL CHECK (length(device_id) = 36)
+) STRICT;
+
 CREATE TABLE sync_conversation_forks (
     conversation_id TEXT NOT NULL,
     branch_id TEXT NOT NULL,

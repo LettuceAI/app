@@ -1637,6 +1637,7 @@ dependencies = [
  "lettuce-context",
  "lettuce-media",
  "lettuce-models",
+ "lettuce-settings",
  "lettuce-types",
  "serde",
  "serde_json",

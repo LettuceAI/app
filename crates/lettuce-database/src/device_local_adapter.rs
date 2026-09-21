@@ -14,6 +14,7 @@ const DEVICE_LOCAL_TABLES: &[&str] = &[
     "sync_incoming_batches",
     "sync_incoming_changes",
     "sync_conflicts",
+    "sync_secret_versions",
     "installed_whisper_models",
 ];
 

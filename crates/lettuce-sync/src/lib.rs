@@ -9,6 +9,7 @@ mod journal;
 mod media;
 mod models;
 mod persona;
+mod secrets;
 mod session;
 
 pub use change::*;
@@ -18,4 +19,5 @@ pub use journal::*;
 pub use media::*;
 pub use models::*;
 pub use persona::*;
+pub use secrets::*;
 pub use session::*;

@@ -1,4 +1,8 @@
-use std::{collections::VecDeque, fmt, io, net::SocketAddr};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    fmt, io,
+    net::SocketAddr,
+};
 
 use async_trait::async_trait;
 use bincode::Options;
@@ -23,9 +27,13 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
+use lettuce_settings::{SecretPurpose, SecretRef, SecretStore, SecretValue};
+use lettuce_sync::{MAX_SYNC_SECRETS, SyncSecretEntry};
+use zeroize::{Zeroize, Zeroizing};
+
 use crate::{
-    AuthenticatedMediaSyncTransport, AuthenticatedSyncTransport, MediaSyncTransportError,
-    SyncTransportError,
+    AuthenticatedMediaSyncTransport, AuthenticatedSecretSyncTransport, AuthenticatedSyncTransport,
+    MediaSyncTransportError, SecretSyncTransportError, SyncTransportError,
 };
 
 const PAIRING_PROTOCOL_VERSION: u32 = 2;
@@ -203,6 +211,8 @@ pub struct AuthenticatedTcpSyncTransport<'a> {
     send_counter: u64,
     receive_counter: u64,
     media: Option<&'a dyn SyncBlobSource>,
+    secrets: Option<&'a dyn SecretStore>,
+    served_secrets: BTreeMap<SecretRef, SecretPurpose>,
     pending: VecDeque<SyncWireFrame>,
 }
 
@@ -213,6 +223,13 @@ impl fmt::Debug for AuthenticatedTcpSyncTransport<'_> {
             .field("peer", &self.peer)
             .field("role", &self.role)
             .finish_non_exhaustive()
+    }
+}
+
+impl<'a> AuthenticatedTcpSyncTransport<'a> {
+    /// Lets the secret phase serve the peer's requests from this store.
+    pub fn serve_secrets(&mut self, store: &'a dyn SecretStore) {
+        self.secrets = Some(store);
     }
 }
 
@@ -260,6 +277,21 @@ impl AuthenticatedTcpSyncTransport<'_> {
                     .ok_or(SyncPeerTransportError::Protocol);
             }
             let frame = self.receive(cancellation).await?;
+            if let SyncWireFrame::SecretRequest { reference } = frame {
+                let value = match (self.secrets, self.served_secrets.get(&reference)) {
+                    (Some(store), Some(purpose)) => store.load(&reference, purpose).await.ok(),
+                    _ => None,
+                };
+                let reply = match value {
+                    Some(value) => SyncWireFrame::SecretValue {
+                        reference,
+                        value: WireSecret(value.with(|text| Zeroizing::new(text.to_owned()))),
+                    },
+                    None => SyncWireFrame::SecretUnavailable { reference },
+                };
+                self.send(reply, cancellation).await?;
+                continue;
+            }
             if let SyncWireFrame::BlobRequest {
                 content_hash,
                 offset,
@@ -316,7 +348,7 @@ impl AuthenticatedTcpSyncTransport<'_> {
         cancellation: &CancellationToken,
     ) -> Result<(), SyncPeerTransportError> {
         validate_wire_frame(&frame)?;
-        let plaintext = serialize_bounded(&frame, MAX_SYNC_FRAME_BYTES)?;
+        let mut plaintext = serialize_bounded(&frame, MAX_SYNC_FRAME_BYTES)?;
         let nonce = frame_nonce(self.send_prefix, self.send_counter);
         self.send_counter = self
             .send_counter
@@ -325,7 +357,9 @@ impl AuthenticatedTcpSyncTransport<'_> {
         let encrypted = self
             .cipher
             .encrypt(&nonce, plaintext.as_slice())
-            .map_err(|_| SyncPeerTransportError::Protocol)?;
+            .map_err(|_| SyncPeerTransportError::Protocol);
+        plaintext.zeroize();
+        let encrypted = encrypted?;
         write_frame(
             &mut self.stream,
             &encrypted,
@@ -345,11 +379,13 @@ impl AuthenticatedTcpSyncTransport<'_> {
             .receive_counter
             .checked_add(1)
             .ok_or(SyncPeerTransportError::Protocol)?;
-        let plaintext = self
+        let mut plaintext = self
             .cipher
             .decrypt(&nonce, encrypted.as_slice())
             .map_err(|_| SyncPeerTransportError::Protocol)?;
-        let frame = deserialize_bounded(&plaintext, MAX_SYNC_FRAME_BYTES)?;
+        let frame = deserialize_bounded(&plaintext, MAX_SYNC_FRAME_BYTES);
+        plaintext.zeroize();
+        let frame = frame?;
         validate_wire_frame(&frame)?;
         Ok(frame)
     }
@@ -489,6 +525,91 @@ impl AuthenticatedMediaSyncTransport for AuthenticatedTcpSyncTransport<'_> {
     }
 }
 
+#[async_trait]
+impl AuthenticatedSecretSyncTransport for AuthenticatedTcpSyncTransport<'_> {
+    async fn exchange_secret_inventory(
+        &mut self,
+        local: Vec<SyncSecretEntry>,
+        cancellation: &CancellationToken,
+    ) -> Result<Vec<SyncSecretEntry>, SecretSyncTransportError> {
+        self.served_secrets = local
+            .iter()
+            .filter(|entry| entry.version.is_some())
+            .map(|entry| (entry.reference, entry.purpose.clone()))
+            .collect();
+        match self
+            .exchange(
+                SyncWireFrame::SecretInventory(local),
+                ExpectedFrame::SecretInventory,
+                cancellation,
+            )
+            .await
+            .map_err(map_secret_error)?
+        {
+            SyncWireFrame::SecretInventory(value) => Ok(value),
+            _ => Err(SecretSyncTransportError::Protocol),
+        }
+    }
+
+    async fn fetch_secret(
+        &mut self,
+        reference: &SecretRef,
+        cancellation: &CancellationToken,
+    ) -> Result<Option<SecretValue>, SecretSyncTransportError> {
+        self.send(
+            SyncWireFrame::SecretRequest {
+                reference: *reference,
+            },
+            cancellation,
+        )
+        .await
+        .map_err(map_secret_error)?;
+        match self
+            .receive_expected(ExpectedFrame::SecretValue, cancellation)
+            .await
+            .map_err(map_secret_error)?
+        {
+            SyncWireFrame::SecretValue {
+                reference: received,
+                value,
+            } if received == *reference => SecretValue::new(value.0.as_str())
+                .map(Some)
+                .map_err(|_| SecretSyncTransportError::Protocol),
+            SyncWireFrame::SecretUnavailable {
+                reference: received,
+            } if received == *reference => Ok(None),
+            _ => Err(SecretSyncTransportError::Protocol),
+        }
+    }
+
+    async fn finish_secrets(
+        &mut self,
+        cancellation: &CancellationToken,
+    ) -> Result<(), SecretSyncTransportError> {
+        let result = self
+            .exchange(
+                SyncWireFrame::SecretsDone,
+                ExpectedFrame::SecretsDone,
+                cancellation,
+            )
+            .await
+            .map_err(map_secret_error);
+        self.served_secrets.clear();
+        match result? {
+            SyncWireFrame::SecretsDone => Ok(()),
+            _ => Err(SecretSyncTransportError::Protocol),
+        }
+    }
+}
+
+fn map_secret_error(error: SyncPeerTransportError) -> SecretSyncTransportError {
+    match error {
+        SyncPeerTransportError::Cancelled => SecretSyncTransportError::Cancelled,
+        SyncPeerTransportError::Disconnected => SecretSyncTransportError::Disconnected,
+        _ => SecretSyncTransportError::Protocol,
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 enum PairingFrame {
     HostChallenge {
@@ -509,6 +630,27 @@ enum PairingFrame {
     Rejected,
 }
 
+/// A secret value on the wire: zeroized on drop, never printed.
+struct WireSecret(Zeroizing<String>);
+
+impl fmt::Debug for WireSecret {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("[REDACTED]")
+    }
+}
+
+impl Serialize for WireSecret {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.0.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for WireSecret {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer).map(|value| Self(Zeroizing::new(value)))
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 enum SyncWireFrame {
     Hello(SyncHello),
@@ -525,6 +667,18 @@ enum SyncWireFrame {
     BlobUnavailable {
         content_hash: ContentHash,
     },
+    SecretInventory(Vec<SyncSecretEntry>),
+    SecretRequest {
+        reference: SecretRef,
+    },
+    SecretValue {
+        reference: SecretRef,
+        value: WireSecret,
+    },
+    SecretUnavailable {
+        reference: SecretRef,
+    },
+    SecretsDone,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -535,6 +689,9 @@ enum ExpectedFrame {
     Acknowledgement,
     MediaDone,
     BlobChunk,
+    SecretInventory,
+    SecretValue,
+    SecretsDone,
 }
 
 impl ExpectedFrame {
@@ -550,6 +707,12 @@ impl ExpectedFrame {
                     Self::BlobChunk,
                     SyncWireFrame::BlobChunk(_) | SyncWireFrame::BlobUnavailable { .. }
                 )
+                | (Self::SecretInventory, SyncWireFrame::SecretInventory(_))
+                | (
+                    Self::SecretValue,
+                    SyncWireFrame::SecretValue { .. } | SyncWireFrame::SecretUnavailable { .. }
+                )
+                | (Self::SecretsDone, SyncWireFrame::SecretsDone)
         )
     }
 }
@@ -725,6 +888,8 @@ fn authenticated_transport<'a>(
         send_counter: 0,
         receive_counter: 0,
         media,
+        secrets: None,
+        served_secrets: BTreeMap::new(),
         pending: VecDeque::new(),
     }
 }
@@ -922,6 +1087,17 @@ fn validate_wire_frame(frame: &SyncWireFrame) -> Result<(), SyncPeerTransportErr
             .validate(&value.content_hash, value.offset)
             .map_err(|_| SyncPeerTransportError::Protocol),
         SyncWireFrame::BlobUnavailable { .. } => Ok(()),
+        SyncWireFrame::SecretInventory(entries) => {
+            if entries.len() > MAX_SYNC_SECRETS {
+                Err(SyncPeerTransportError::Protocol)
+            } else {
+                Ok(())
+            }
+        }
+        SyncWireFrame::SecretRequest { .. }
+        | SyncWireFrame::SecretValue { .. }
+        | SyncWireFrame::SecretUnavailable { .. }
+        | SyncWireFrame::SecretsDone => Ok(()),
     }
 }
 
@@ -1084,6 +1260,130 @@ mod tests {
             )
         );
         (host.expect("host session"), client.expect("client session"))
+    }
+
+    async fn secret_round(
+        source: &Database,
+        target: &Database,
+        source_secrets: &lettuce_settings::InMemorySecretStore,
+        target_secrets: &lettuce_settings::InMemorySecretStore,
+        at: i64,
+    ) -> (crate::SecretSyncReport, crate::SecretSyncReport) {
+        let source_device = source
+            .local_device_id(TimestampMillis::new(at))
+            .expect("source device");
+        let target_device = target
+            .local_device_id(TimestampMillis::new(at))
+            .expect("target device");
+        let cancellation = CancellationToken::new();
+        let (mut host, mut client) =
+            authenticated_pair(source_device, target_device, None, None).await;
+        host.serve_secrets(source_secrets);
+        client.serve_secrets(target_secrets);
+        let source_phase = crate::SyncSecretCoordinator::new(source, source_secrets);
+        let target_phase = crate::SyncSecretCoordinator::new(target, target_secrets);
+        let (sent, received) = tokio::join!(
+            source_phase.run(
+                &mut host,
+                source_device,
+                &cancellation,
+                TimestampMillis::new(at),
+            ),
+            target_phase.run(
+                &mut client,
+                target_device,
+                &cancellation,
+                TimestampMillis::new(at),
+            )
+        );
+        (sent.expect("source phase"), received.expect("target phase"))
+    }
+
+    async fn read_secret(
+        store: &lettuce_settings::InMemorySecretStore,
+        reference: lettuce_settings::SecretRef,
+        purpose: &lettuce_settings::SecretPurpose,
+    ) -> String {
+        use lettuce_settings::SecretStore;
+        store
+            .load(&reference, purpose)
+            .await
+            .expect("load")
+            .with(str::to_owned)
+    }
+
+    #[tokio::test]
+    async fn secret_phase_copies_missing_and_rotated_keys_into_the_secret_store() {
+        use lettuce_settings::{
+            InMemorySecretStore, SecretOwnerId, SecretPurpose, SecretRecord, SecretRef,
+            SecretStore, SecretValue,
+        };
+        use lettuce_speech::{AudioProvider, AudioProviderConfig, TtsConfigurationRepository};
+        let source = Database::open_in_memory().expect("source");
+        let target = Database::open_in_memory().expect("target");
+        let reference = SecretRef::new();
+        let owner = SecretOwnerId::new();
+        let provider = AudioProvider {
+            id: lettuce_types::AudioProviderId::new(),
+            secret_owner_id: owner,
+            label: "ElevenLabs".to_owned(),
+            api_key_ref: Some(reference),
+            config: AudioProviderConfig::Elevenlabs,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        };
+        for database in [&source, &target] {
+            database
+                .upsert_audio_provider(provider.clone(), None)
+                .expect("provider");
+        }
+        let purpose = SecretPurpose::AudioApiKey { owner };
+        let source_secrets = InMemorySecretStore::new();
+        let target_secrets = InMemorySecretStore::new();
+        source_secrets
+            .put(
+                SecretRecord::new(reference, purpose.clone()),
+                SecretValue::new("xi-first").expect("value"),
+                None,
+            )
+            .await
+            .expect("source key");
+        let (_, received) =
+            secret_round(&source, &target, &source_secrets, &target_secrets, 10).await;
+        assert_eq!(received.received, 1);
+        assert_eq!(
+            read_secret(&target_secrets, reference, &purpose).await,
+            "xi-first"
+        );
+        let (sent, received) =
+            secret_round(&source, &target, &source_secrets, &target_secrets, 20).await;
+        assert_eq!((sent.received, received.received), (0, 0));
+
+        let generation = source_secrets
+            .status(&reference, &purpose)
+            .await
+            .expect("status")
+            .generation;
+        source_secrets
+            .put(
+                SecretRecord::new(reference, purpose.clone()),
+                SecretValue::new("xi-rotated").expect("value"),
+                Some(generation),
+            )
+            .await
+            .expect("rotate");
+        let (_, received) =
+            secret_round(&source, &target, &source_secrets, &target_secrets, 30).await;
+        assert_eq!(received.received, 1);
+        assert_eq!(
+            read_secret(&target_secrets, reference, &purpose).await,
+            "xi-rotated"
+        );
+        assert_eq!(
+            read_secret(&source_secrets, reference, &purpose).await,
+            "xi-rotated"
+        );
     }
 
     #[tokio::test]

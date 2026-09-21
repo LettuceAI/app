@@ -9,7 +9,7 @@ use crate::{
     PERSONA_SYNC_VERSION, SyncDeviceId, canonical_batch_hash,
 };
 
-pub const SYNC_PROTOCOL_VERSION: u32 = 2;
+pub const SYNC_PROTOCOL_VERSION: u32 = 3;
 
 const MAX_APP_VERSION_BYTES: usize = 64;
 const MAX_DEVICE_NAME_BYTES: usize = 128;

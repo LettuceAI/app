@@ -33,6 +33,7 @@ mod memory_adapter;
 mod memory_embedding_adapter;
 mod memory_sync_adapter;
 mod row_sync_adapter;
+mod secret_sync_adapter;
 mod persona_adapter;
 mod prompt_adapter;
 mod restore_admission_adapter;
@@ -4998,6 +4999,7 @@ mod tests {
                 "sync_incoming_changes",
                 "sync_local_state",
                 "sync_peer_frontiers",
+                "sync_secret_versions",
                 "tool_executions",
                 "turn_lorebooks",
                 "usage_costs",

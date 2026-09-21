@@ -374,6 +374,19 @@ messages and voice examples is journaled like other referenced media (the
 referenced-media scan missed message media before, so messages with images
 never became ready to journal).
 
+Secrets (sync S12, protocol version 3). API keys and secret headers of
+provider accounts and audio providers never enter the change journal (it is
+SQLite). After the change exchange a session runs a secret phase over the
+PAKE-authenticated, ChaCha20-Poly1305-encrypted channel: each side lists the
+secrets its synced records reference with the version its value was last set
+at (`sync_secret_versions`, device-local: reference, secret-store generation,
+set-at time and device; a changed local generation gets a new version at the
+next session), fetches the values it lacks or holds an older version of and
+writes them into its native secret store. Values travel only inside
+encrypted frames, are zeroized after use and never printed; a side serves
+only secrets it listed. A secret the store cannot read or write is skipped
+and retried next session.
+
 Usage (sync S11). Cost bases of conversation usage events (`usage.cost_basis`,
 waits for its event), job inference usage evidence and its cost bases
 (memory, creation, companion and generation jobs) and imported legacy usage
