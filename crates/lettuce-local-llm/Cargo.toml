@@ -23,6 +23,8 @@ metal = ["llama-cpp-2/metal"]
 
 [dependencies]
 lettuce-types.workspace = true
+rand.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

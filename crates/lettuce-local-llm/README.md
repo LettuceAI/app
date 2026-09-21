@@ -62,6 +62,12 @@ features. whisper.cpp (lettuce-speech) links into the same binary.
 - `context_info` (desktop): the model editor's fit estimate (max and
   recommended context, memory, GPU layers, multi-GPU placement).
 - `mtp`: bundled NextN detection and external `mtp-*.gguf` discovery.
+- `sampler` (desktop): the legacy sampler chain unchanged: profiles
+  (balanced/creative/stable/reasoning and their defaults), the stage order
+  (default or the user's, deduplicated; an explicit empty list means no
+  stages), penalties only when a penalty is set, DRY/XTC/typical/min-p
+  parameters, the template's (lazy) grammar forced to the front, then `dist`
+  (seeded, random seed when none) above zero temperature or `greedy`.
 
 AMD Ryzen AI / handheld APUs (user requirement 2026-09-21) share one
 user-adjustable memory pool between the iGPU and the CPU. Legacy left iGPUs

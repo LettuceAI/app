@@ -18,3 +18,5 @@ pub mod llama;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod mtp;
 pub mod offload;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod sampler;

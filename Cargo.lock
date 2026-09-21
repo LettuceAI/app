@@ -1526,6 +1526,8 @@ dependencies = [
  "lettuce-types",
  "llama-cpp-2",
  "llama-cpp-sys-2",
+ "rand 0.8.8",
+ "serde_json",
  "sysinfo",
  "thiserror 2.0.20",
  "tracing",
