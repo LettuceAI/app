@@ -230,6 +230,10 @@ impl ProviderBackupRestoreWriter for Database {
             crate::tts_synthesis_adapter::insert_restored_in(&transaction, record)
                 .map_err(invalid)?;
         }
+        for record in &graph.job_backup.image_generations {
+            crate::image_generation_adapter::insert_restored_in(&transaction, record)
+                .map_err(invalid)?;
+        }
         let restored_at = lettuce_types::TimestampMillis::now().map_err(storage)?;
         for artifact in artifacts {
             crate::conversation_artifact_adapter::insert_trusted_artifact_in(

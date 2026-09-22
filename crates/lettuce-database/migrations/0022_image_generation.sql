@@ -1,0 +1,103 @@
+CREATE TABLE image_generations (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE RESTRICT,
+    request_id TEXT NOT NULL UNIQUE,
+    model_profile_id TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('direct', 'scene', 'playground', 'creation_helper')),
+    admitted_at INTEGER NOT NULL,
+    request_json TEXT NOT NULL CHECK (
+        json_valid(request_json)
+        AND json_extract(request_json, '$.format_version') = 1
+    ),
+    state TEXT NOT NULL CHECK (state IN ('pending', 'succeeded', 'failed', 'cancelled')),
+    state_json TEXT NOT NULL CHECK (
+        json_valid(state_json)
+        AND json_extract(state_json, '$.format_version') = 1
+        AND json_extract(state_json, '$.value.state') = state
+    ),
+    completed_at INTEGER,
+    CHECK ((state = 'pending') = (completed_at IS NULL))
+) STRICT;
+
+CREATE INDEX image_generations_source_idx
+    ON image_generations(source, admitted_at, job_id);
+
+CREATE TABLE image_generation_outputs (
+    job_id TEXT NOT NULL REFERENCES image_generations(job_id) ON DELETE CASCADE,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE RESTRICT,
+    PRIMARY KEY (job_id, ordinal)
+) STRICT;
+
+CREATE INDEX image_generation_outputs_asset_idx ON image_generation_outputs(asset_id);
+
+CREATE TRIGGER image_generation_outputs_insert_guard
+BEFORE INSERT ON image_generation_outputs
+WHEN NOT EXISTS (
+    SELECT 1
+      FROM image_generations
+     WHERE job_id = NEW.job_id
+       AND state = 'succeeded'
+       AND json_extract(state_json, '$.value.result.images[' || NEW.ordinal || '].asset_id')
+           = NEW.asset_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'image generation outputs must match its settled result');
+END;
+
+CREATE TRIGGER image_generation_outputs_immutable
+BEFORE UPDATE ON image_generation_outputs
+BEGIN
+    SELECT RAISE(ABORT, 'image generation outputs are immutable');
+END;
+
+CREATE TRIGGER image_generations_insert_guard
+BEFORE INSERT ON image_generations
+WHEN NEW.state != 'pending' OR NOT EXISTS (
+    SELECT 1
+      FROM jobs
+     WHERE id = NEW.job_id
+       AND kind = 'image_generate'
+       AND subject_kind = 'image_request'
+       AND subject_id = NEW.request_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'invalid image generation binding');
+END;
+
+CREATE TRIGGER image_generations_binding_immutable
+BEFORE UPDATE OF job_id, request_id, model_profile_id, source, admitted_at, request_json
+    ON image_generations
+BEGIN
+    SELECT RAISE(ABORT, 'image generation binding is immutable');
+END;
+
+CREATE TRIGGER image_generations_settle_once
+BEFORE UPDATE OF state, state_json, completed_at ON image_generations
+WHEN OLD.state != 'pending'
+    OR NEW.state = 'pending'
+    OR (NEW.state = 'succeeded' AND (
+        json_array_length(NEW.state_json, '$.value.result.images') = 0
+        OR json_extract(NEW.state_json, '$.value.result.request_id') != OLD.request_id
+        OR EXISTS (
+            SELECT 1
+              FROM json_each(NEW.state_json, '$.value.result.images') AS image
+             WHERE NOT EXISTS (
+                SELECT 1
+                  FROM media_assets AS asset
+                 WHERE asset.id = json_extract(image.value, '$.asset_id')
+                   AND asset.kind = 'generated_image'
+                   AND asset.origin = 'generated'
+                   AND json_extract(asset.provenance_json, '$.producing_job_id') = OLD.job_id
+             )
+        )
+    ))
+BEGIN
+    SELECT RAISE(ABORT, 'image generation can settle once with its own generated images');
+END;
+
+CREATE TRIGGER image_generations_pending_no_delete
+BEFORE DELETE ON image_generations
+WHEN OLD.state = 'pending'
+BEGIN
+    SELECT RAISE(ABORT, 'a pending image generation cannot be deleted');
+END;

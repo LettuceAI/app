@@ -364,7 +364,7 @@ impl JobStore for Database {
     }
 
     /// Prunes terminal jobs except those a speech transcription or synthesis
-    /// still binds (their evidence rows forbid deleting the job), together with
+    /// or an image generation still binds (their evidence rows forbid deleting the job), together with
     /// every ancestor such a kept job points at.
     fn prune(&self, policy: RetentionPolicy, now: Timestamp) -> Result<PruneReport, StoreError> {
         let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
@@ -376,7 +376,8 @@ impl JobStore for Database {
         let mut report = store.prune(policy, now);
         let bound = transaction
             .prepare(
-                "SELECT job_id FROM speech_transcriptions UNION SELECT job_id FROM speech_syntheses",
+                "SELECT job_id FROM speech_transcriptions UNION SELECT job_id FROM speech_syntheses
+                 UNION SELECT job_id FROM image_generations",
             )
             .and_then(|mut statement| {
                 statement

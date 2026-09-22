@@ -1642,6 +1642,8 @@ fn read_job_backup(
             .map_err(|_| ProviderBackupSourceError::InvalidData)?,
         speech_syntheses: crate::tts_synthesis_adapter::list_in(transaction)
             .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+        image_generations: crate::image_generation_adapter::list_in(transaction)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
     })
 }
 

@@ -1499,6 +1499,7 @@ dependencies = [
  "lettuce-conversations",
  "lettuce-creation",
  "lettuce-embeddings",
+ "lettuce-image-generation",
  "lettuce-jobs",
  "lettuce-media",
  "lettuce-memory",
@@ -1539,7 +1540,15 @@ dependencies = [
 name = "lettuce-image-generation"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "lettuce-conversations",
+ "lettuce-jobs",
+ "lettuce-media",
+ "lettuce-models",
  "lettuce-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -1760,6 +1769,7 @@ dependencies = [
  "lettuce-context",
  "lettuce-conversations",
  "lettuce-creation",
+ "lettuce-image-generation",
  "lettuce-jobs",
  "lettuce-media",
  "lettuce-memory",

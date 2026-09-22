@@ -20,6 +20,7 @@ mod local_llm_adapter;
 mod dynamic_memory_rewind_adapter;
 mod dynamic_memory_run_adapter;
 mod group_adapter;
+mod image_generation_adapter;
 mod growth_adapter;
 mod initial_inference_adapter;
 mod job_adapter;
@@ -189,6 +190,11 @@ const MIGRATION_21: Migration = Migration {
     sql: include_str!("../migrations/0021_local_llm.sql"),
 };
 
+const MIGRATION_22: Migration = Migration {
+    id: 22,
+    sql: include_str!("../migrations/0022_image_generation.sql"),
+};
+
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
 const MODEL_PROFILE_CONFIG_FORMAT_VERSION: u32 = 1;
 
@@ -297,6 +303,7 @@ impl Database {
                 MIGRATION_19,
                 MIGRATION_20,
                 MIGRATION_21,
+                MIGRATION_22,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -332,6 +339,7 @@ impl Database {
                 MIGRATION_19,
                 MIGRATION_20,
                 MIGRATION_21,
+                MIGRATION_22,
             ],
         )?;
         initialize_settings(&connection)?;
@@ -2729,7 +2737,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 21);
+        assert_eq!(count, 22);
 
         let changed = Migration {
             id: 1,
@@ -2800,7 +2808,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            21
+            22
         );
         let conversation_tables: i64 = connection
             .query_row(
@@ -3023,7 +3031,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            21
+            22
         );
         for column in [
             "target_kind",
@@ -4529,7 +4537,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            21
+            22
         );
         drop(connection);
         drop(database);
@@ -4579,7 +4587,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            21
+            22
         );
         drop(connection);
         drop(database);
@@ -4611,7 +4619,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(migration_count, 21);
+        assert_eq!(migration_count, 22);
         for table in [
             "groups",
             "group_members",
@@ -4660,7 +4668,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 21);
+        assert_eq!(count, 22);
         for table in [
             "prompt_documents",
             "prompt_entries",
@@ -4688,7 +4696,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            21
+            22
         );
         drop(connection);
         drop(reopened);
@@ -4724,7 +4732,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            21
+            22
         );
         let column: i64 = connection
             .query_row(
@@ -4751,7 +4759,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            21
+            22
         );
         drop(connection);
         drop(reopened);
@@ -4800,7 +4808,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            21
+            22
         );
         drop(connection);
         drop(database);
@@ -5021,6 +5029,8 @@ mod tests {
                 "group_scene_variants",
                 "group_starting_scenes",
                 "groups",
+                "image_generation_outputs",
+                "image_generations",
                 "installed_whisper_models",
                 "job_events",
                 "job_inference_usage",

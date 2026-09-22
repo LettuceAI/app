@@ -486,6 +486,66 @@ impl StableDiffusionSettings {
         *self == Self::default()
     }
 
+    /// These settings with every field `overrides` sets taking its place, as
+    /// legacy image requests spread per-request settings over the model's.
+    /// The stable-diffusion.cpp binding always stays the model's.
+    #[must_use]
+    pub fn overlaid_by(&self, overrides: &Self) -> Self {
+        fn pick<T: Clone>(overrides: &Option<T>, base: &Option<T>) -> Option<T> {
+            overrides.clone().or_else(|| base.clone())
+        }
+        Self {
+            steps: pick(&overrides.steps, &self.steps),
+            cfg_scale: pick(&overrides.cfg_scale, &self.cfg_scale),
+            sampler: pick(&overrides.sampler, &self.sampler),
+            scheduler: pick(&overrides.scheduler, &self.scheduler),
+            seed: pick(&overrides.seed, &self.seed),
+            negative_prompt: pick(&overrides.negative_prompt, &self.negative_prompt),
+            denoising_strength: pick(&overrides.denoising_strength, &self.denoising_strength),
+            image_cfg_scale: pick(&overrides.image_cfg_scale, &self.image_cfg_scale),
+            distilled_guidance: pick(&overrides.distilled_guidance, &self.distilled_guidance),
+            eta: pick(&overrides.eta, &self.eta),
+            flow_shift: pick(&overrides.flow_shift, &self.flow_shift),
+            size: pick(&overrides.size, &self.size),
+            vae_tiling_enabled: pick(&overrides.vae_tiling_enabled, &self.vae_tiling_enabled),
+            vae_tile_size_x: pick(&overrides.vae_tile_size_x, &self.vae_tile_size_x),
+            vae_tile_size_y: pick(&overrides.vae_tile_size_y, &self.vae_tile_size_y),
+            vae_tile_overlap: pick(&overrides.vae_tile_overlap, &self.vae_tile_overlap),
+            auto_resize_reference_images: pick(
+                &overrides.auto_resize_reference_images,
+                &self.auto_resize_reference_images,
+            ),
+            increase_reference_index: pick(
+                &overrides.increase_reference_index,
+                &self.increase_reference_index,
+            ),
+            hires_enabled: pick(&overrides.hires_enabled, &self.hires_enabled),
+            hires_upscaler: pick(&overrides.hires_upscaler, &self.hires_upscaler),
+            hires_scale: pick(&overrides.hires_scale, &self.hires_scale),
+            hires_width: pick(&overrides.hires_width, &self.hires_width),
+            hires_height: pick(&overrides.hires_height, &self.hires_height),
+            hires_steps: pick(&overrides.hires_steps, &self.hires_steps),
+            hires_denoising_strength: pick(
+                &overrides.hires_denoising_strength,
+                &self.hires_denoising_strength,
+            ),
+            slg_scale: pick(&overrides.slg_scale, &self.slg_scale),
+            slg_layers: pick(&overrides.slg_layers, &self.slg_layers),
+            slg_layer_start: pick(&overrides.slg_layer_start, &self.slg_layer_start),
+            slg_layer_end: pick(&overrides.slg_layer_end, &self.slg_layer_end),
+            cache_mode: pick(&overrides.cache_mode, &self.cache_mode),
+            cache_option: pick(&overrides.cache_option, &self.cache_option),
+            offload_mode: pick(&overrides.offload_mode, &self.offload_mode),
+            extra_prompt: pick(&overrides.extra_prompt, &self.extra_prompt),
+            prompt_writer_instructions: pick(
+                &overrides.prompt_writer_instructions,
+                &self.prompt_writer_instructions,
+            ),
+            base_loras: pick(&overrides.base_loras, &self.base_loras),
+            cpp: self.cpp.clone(),
+        }
+    }
+
     pub fn validate(&self) -> Result<(), ParameterValidationError> {
         check_u32("sd_steps", self.steps, 1, 150)?;
         check_f64("sd_cfg_scale", self.cfg_scale, 0.0, 30.0)?;
@@ -736,6 +796,39 @@ mod tests {
             Err(ParameterValidationError::InvalidValue(
                 "llama_kv_type_split"
             ))
+        );
+    }
+
+    #[test]
+    fn request_image_settings_override_the_model_field_by_field() {
+        let model = StableDiffusionSettings {
+            steps: Some(28),
+            cfg_scale: Some(6.5),
+            extra_prompt: Some("high detail".to_owned()),
+            cpp: StableDiffusionCppBinding {
+                profile_id: Some("z-image-turbo".to_owned()),
+                ..StableDiffusionCppBinding::default()
+            },
+            ..StableDiffusionSettings::default()
+        };
+        let request = StableDiffusionSettings {
+            steps: Some(8),
+            seed: Some(42),
+            cpp: StableDiffusionCppBinding {
+                profile_id: Some("other".to_owned()),
+                ..StableDiffusionCppBinding::default()
+            },
+            ..StableDiffusionSettings::default()
+        };
+        let effective = model.overlaid_by(&request);
+        assert_eq!(effective.steps, Some(8));
+        assert_eq!(effective.seed, Some(42));
+        assert_eq!(effective.cfg_scale, Some(6.5));
+        assert_eq!(effective.extra_prompt.as_deref(), Some("high detail"));
+        assert_eq!(effective.cpp, model.cpp);
+        assert_eq!(
+            model.overlaid_by(&StableDiffusionSettings::default()),
+            model
         );
     }
 }

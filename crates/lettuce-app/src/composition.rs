@@ -356,6 +356,11 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn image_generations(&self) -> crate::ImageGenerationCoordinator<'_, Database, Database> {
+        crate::ImageGenerationCoordinator::new(self.database.as_ref(), self.database.as_ref())
+    }
+
+    #[must_use]
     pub fn tts_syntheses(&self) -> crate::TtsSynthesisCoordinator<'_, Database, Database> {
         crate::TtsSynthesisCoordinator::new(self.database.as_ref(), self.database.as_ref())
     }

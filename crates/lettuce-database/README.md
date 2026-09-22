@@ -987,3 +987,14 @@ llama.cpp model profile for the file instead of inside the synced model
 config; deleted with the model) and `llm_generation_metrics` (legacy
 retention of the newest 500). Neither is backed up or synced; a restore
 carries the metrics and the reports of models that still exist.
+
+Migration 0022 stores one image generation per `image_generate` job
+(`image_generations`): the versioned request and its state (pending, then
+exactly once succeeded, failed with the user-facing message, or cancelled).
+Admission requires the matching job and image-request subject; the binding
+columns are immutable. A success can only name `generated_image` assets whose
+provenance names the same job, and `image_generation_outputs` keeps those
+assets from being deleted while the row exists. Terminal rows may be deleted
+(playground history, taking their output links with them), pending rows may
+not. Job pruning keeps jobs an image generation
+still binds, and backups carry the rows with the job backup.
