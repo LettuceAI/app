@@ -94,6 +94,14 @@ impl<'a, R: ?Sized, J: ?Sized> ImageGenerationCoordinator<'a, R, J> {
 
 const INTERRUPTED_MESSAGE: &str = "Image generation was interrupted.";
 
+/// The old playground's seed for local runs without one (0 to 2^31 - 1), drawn
+/// from the request id so a replayed admission asks for the same seed.
+fn playground_seed(request_id: lettuce_types::RequestId) -> u32 {
+    let hash = blake3::hash(request_id.to_string().as_bytes());
+    let bytes = hash.as_bytes();
+    u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) & 0x7fff_ffff
+}
+
 impl<
     R: ImageGenerationRepository + JobUsageLedger + LoraLibraryRepository + ?Sized,
     J: JobStore + ?Sized,
@@ -109,6 +117,13 @@ impl<
     {
         request.validate()?;
         let profile = resolve(models, &request)?;
+        let mut request = request;
+        if request.source == lettuce_image_generation::ImageGenerationSource::Playground
+            && profile.is_local_diffusion()
+            && request.settings.seed.is_none()
+        {
+            request.settings.seed = Some(playground_seed(request.id));
+        }
         let subject = JobSubject::new(SubjectKind::ImageRequest, request.id.to_string())
             .map_err(|_| ImageGenerationError::InvalidWork)?;
         let key = IdempotencyKey::new(format!("image-generate-{}", request.id))
@@ -872,8 +887,63 @@ mod tests {
             .expect("replay admission");
         assert!(!replay.created);
         assert_eq!(replay.record, record);
+        let history =
+            lettuce_image_generation::PlaygroundHistoryRepository::list_playground_history(
+                &fixture.database,
+                30,
+                None,
+            )
+            .expect("history");
+        assert_eq!(history.len(), 1);
+        assert_eq!(
+            history[0].origin,
+            lettuce_image_generation::PlaygroundOrigin::Generated
+        );
+        assert_eq!(history[0].job_id, Some(job.id));
+        assert_eq!(history[0].status, "complete");
+        assert_eq!(history[0].prompt, "a lighthouse");
+        assert_eq!(history[0].model_profile_id, Some(fixture.profile.id));
+        assert_eq!(
+            history[0]
+                .images
+                .iter()
+                .map(|image| image.asset_id)
+                .collect::<Vec<_>>(),
+            vec![Some(result.images[0].asset_id)]
+        );
         let graph = crate::backup_restore::assert_backup_round_trip(&fixture.database);
-        assert_eq!(graph.job_backup.image_generations, vec![record]);
+        assert_eq!(graph.job_backup.image_generations, vec![record.clone()]);
+        assert_eq!(graph.playground_history.entries.len(), 1);
+        assert_eq!(graph.playground_history.images.len(), 1);
+        assert_eq!(
+            lettuce_image_generation::PlaygroundHistoryRepository::delete_playground_history(
+                &fixture.database,
+                &history[0].id,
+                true,
+            ),
+            Ok(vec![result.images[0].asset_id])
+        );
+        assert_eq!(
+            MediaAssetRepository::get(&fixture.database, result.images[0].asset_id),
+            Ok(None)
+        );
+        assert_eq!(
+            lettuce_image_generation::PlaygroundHistoryRepository::delete_playground_history(
+                &fixture.database,
+                &history[0].id,
+                true,
+            ),
+            Ok(Vec::new())
+        );
+        assert!(
+            lettuce_image_generation::PlaygroundHistoryRepository::list_playground_history(
+                &fixture.database,
+                30,
+                None,
+            )
+            .expect("history")
+            .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -905,9 +975,13 @@ mod tests {
             )
             .expect("library record");
         let provider = Provider::default();
-        let result = run(&fixture, request(&fixture), &provider).await;
+        let request = request(&fixture);
+        let request_id = request.id;
+        let result = run(&fixture, request, &provider).await;
         assert!(matches!(result, ImageGenerationRunResult::Succeeded { .. }));
         let sent = provider.requests.lock().expect("requests");
+        assert_eq!(sent[0].settings.seed, Some(super::playground_seed(request_id)));
+        assert!(super::playground_seed(request_id) <= 2_147_483_647);
         assert_eq!(sent[0].prompt, "high detail, LibraryTrigger, a lighthouse");
         assert_eq!(sent[0].loras[0].keywords, vec!["LibraryTrigger"]);
     }
@@ -942,6 +1016,18 @@ mod tests {
             usage[0].result,
             Some(JobInferenceUsageResult::InferenceFailed)
         );
+        let history =
+            lettuce_image_generation::PlaygroundHistoryRepository::list_playground_history(
+                &fixture.database,
+                30,
+                None,
+            )
+            .expect("history");
+        assert_eq!(
+            (history[0].status.as_str(), history[0].error.as_deref()),
+            ("failed", Some("API error 400: bad size"))
+        );
+        assert!(history[0].images.is_empty());
 
         let provider = Provider {
             outcome: Some(Ok(vec![image(b"garbage".to_vec(), None)])),

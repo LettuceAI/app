@@ -225,6 +225,10 @@ impl ImageGenerationRepository for Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
         let inserted = insert_pending_row(&transaction, &record)?;
+        if inserted == 1 && record.request.source == ImageGenerationSource::Playground {
+            crate::playground_history_adapter::record_admission_in(&transaction, &record)
+                .map_err(storage)?;
+        }
         let stored =
             load_in(&transaction, record.job_id)?.ok_or(ImageGenerationRepositoryError::Storage)?;
         if inserted == 0 && stored.request != record.request {
@@ -273,6 +277,14 @@ impl ImageGenerationRepository for Database {
         }
         if settle_row(&transaction, job_id, &settled.state)? != 1 {
             return Err(ImageGenerationRepositoryError::Conflict);
+        }
+        if settled.request.source == ImageGenerationSource::Playground {
+            crate::playground_history_adapter::record_settlement_in(
+                &transaction,
+                job_id,
+                &settled.state,
+            )
+            .map_err(storage)?;
         }
         let stored =
             load_in(&transaction, job_id)?.ok_or(ImageGenerationRepositoryError::Storage)?;

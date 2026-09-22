@@ -51,6 +51,7 @@ mod embeddings;
 mod feature_parameters;
 mod image_generation;
 mod image_providers;
+mod playground;
 mod job_recovery;
 mod kokoro_assets;
 mod kokoro_download;

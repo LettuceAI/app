@@ -4,6 +4,7 @@
 
 mod catalog;
 mod media;
+mod playground;
 mod port;
 mod profile;
 mod prompt;
@@ -12,6 +13,7 @@ pub mod sd_runtime;
 
 pub use catalog::*;
 pub use media::*;
+pub use playground::*;
 pub use port::*;
 pub use profile::*;
 pub use prompt::*;
