@@ -24,6 +24,7 @@ mod literouter;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod llama_cpp;
 mod lmstudio;
+mod media;
 mod mistral;
 mod moonshot;
 mod nanogpt;
@@ -62,6 +63,7 @@ use lettuce_network::JsonClient;
 use lettuce_settings::SecretStore;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use llama_cpp::LocalLlama;
+pub use media::{ProviderMedia, ProviderMediaError, ProviderMediaSource};
 use openai_compatible::OpenAiWireProvider;
 
 /// Explicit dispatch over every remote chat provider the legacy app shipped.
@@ -75,6 +77,7 @@ pub struct RemoteProviders<S: ?Sized> {
     gemini_cache: gemini_cache::GeminiCache,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     local_llama: Option<LocalLlama>,
+    media: Option<Arc<dyn ProviderMediaSource>>,
 }
 
 impl<S: SecretStore + ?Sized> RemoteProviders<S> {
@@ -196,7 +199,15 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
             gemini_cache: gemini_cache::GeminiCache::default(),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             local_llama: None,
+            media: None,
         }
+    }
+
+    /// Where attachments are read when a request inlines them.
+    #[must_use]
+    pub fn with_media_source(mut self, media: Arc<dyn ProviderMediaSource>) -> Self {
+        self.media = Some(media);
+        self
     }
 
     /// Runs llama.cpp models on the embedded runtime.
@@ -255,7 +266,9 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
             }
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             ProviderProtocol::LlamaCpp => match &self.local_llama {
-                Some(local_llama) => llama_cpp::run(local_llama, &*self.runtime, request).await,
+                Some(local_llama) => {
+                    llama_cpp::run(local_llama, self.media.clone(), &*self.runtime, request).await
+                }
                 None => return Err(PortError::Rejected),
             },
             #[cfg(any(target_os = "android", target_os = "ios"))]

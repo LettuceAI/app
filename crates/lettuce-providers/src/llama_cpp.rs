@@ -30,14 +30,17 @@ use lettuce_local_llm::request::{
 };
 use lettuce_local_llm::tool_calls::LocalToolCall;
 use lettuce_models::{
-    LlamaCppSettings, LlamaFlashAttention, LlamaGpuDistributionMode, LlamaKvPlacement, LlamaKvType,
-    LlamaMtpPlacement, LlamaSamplerProfile, LlamaSamplerStage, ReasoningMode,
-    ResolvedLlamaSettings,
+    CapabilityStatus, LlamaCppSettings, LlamaFlashAttention, LlamaGpuDistributionMode,
+    LlamaKvPlacement, LlamaKvType, LlamaMtpPlacement, LlamaSamplerProfile, LlamaSamplerStage,
+    ReasoningMode, ResolvedLlamaSettings,
 };
 use serde_json::{Map, Value, json};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::common::{AdapterError, FALLBACK_MAX_OUTPUT_TOKENS, validate_common_request_with_tools};
+use base64::Engine as _;
+
+use crate::common::{AdapterError, FALLBACK_MAX_OUTPUT_TOKENS};
+use crate::media::{ProviderMedia, ProviderMediaSource};
 use crate::stream_normalize::StreamDelta;
 
 const LOCAL_FAILURE_CODE: &str = "LOCAL_INFERENCE_FAILED";
@@ -115,10 +118,14 @@ impl GenerationObserver for ForwardingObserver {
 
 pub(crate) async fn run(
     local: &LocalLlama,
+    media: Option<Arc<dyn ProviderMediaSource>>,
     runtime: &dyn InferenceRuntimePort,
     request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
-    validate_common_request_with_tools(&request)?;
+    request.validate().map_err(|_| AdapterError::Rejected)?;
+    if request.profile.output_policy != lettuce_conversations::OutputPolicy::Plain {
+        return Err(AdapterError::Rejected);
+    }
     let profile = &request.profile.chat_profile;
     let llama = profile.llama_cpp.as_deref().ok_or(AdapterError::Rejected)?;
     if profile.external_model_id == lettuce_models::UNPICKED_LOCAL_MODEL_FILE {
@@ -133,7 +140,8 @@ pub(crate) async fn run(
     let streaming = request.stream_sink.is_some()
         && profile.streaming_enabled
         && llama.settings.streaming_enabled != Some(false);
-    let generation = generation_request(&request, llama, streaming)?;
+    let attachments = load_attachments(&request, media).await?;
+    let generation = generation_request(&request, &attachments, llama, streaming)?;
     let cancel = Arc::clone(&generation.cancel);
     let (delta_sender, mut deltas) = mpsc::unbounded_channel();
     let (done_sender, mut done) = oneshot::channel();
@@ -218,6 +226,7 @@ async fn emit_delta(
 
 fn generation_request(
     request: &InferenceRequest,
+    attachments: &Attachments,
     llama: &ResolvedLlamaSettings,
     streaming: bool,
 ) -> Result<LlamaGenerationRequest, AdapterError> {
@@ -237,7 +246,7 @@ fn generation_request(
     Ok(LlamaGenerationRequest {
         request_id: Some(request.attempt_id.to_string()),
         model_path: profile.external_model_id.clone(),
-        messages: wire_messages(request)?,
+        messages: wire_messages(request, attachments)?,
         tools: tools.map(wire_tools),
         tool_choice: tools.map(|tools| wire_tool_choice(&tools.choice)),
         stop: Vec::new(),
@@ -406,7 +415,129 @@ fn wire_role(role: MessageRole) -> &'static str {
     }
 }
 
-fn wire_messages(request: &InferenceRequest) -> Result<Vec<Value>, AdapterError> {
+/// Legacy `audio_format_from_mime`.
+fn audio_format_from_mime(mime: &str) -> &'static str {
+    let mime = mime.to_ascii_lowercase();
+    if mime.contains("wav") {
+        "wav"
+    } else if mime.contains("mpeg") || mime.contains("mp3") {
+        "mp3"
+    } else if mime.contains("ogg") {
+        "ogg"
+    } else if mime.contains("flac") {
+        "flac"
+    } else if mime.contains("aac") {
+        "aac"
+    } else if mime.contains("aiff") || mime.contains("aif") {
+        "aiff"
+    } else if mime.contains("mp4") || mime.contains("m4a") {
+        "m4a"
+    } else {
+        "wav"
+    }
+}
+
+/// Legacy `build_multimodal_content`: the text first, then each attachment
+/// the model accepts, a single blank text part when nothing remains.
+fn multimodal_content(
+    text: &str,
+    attachments: &[ProviderMedia],
+    allow_image: bool,
+    allow_audio: bool,
+) -> Value {
+    let mut parts = Vec::new();
+    if !text.is_empty() {
+        parts.push(json!({ "type": "text", "text": text }));
+    }
+    for attachment in attachments {
+        if attachment.bytes.is_empty() {
+            continue;
+        }
+        let data = base64::engine::general_purpose::STANDARD.encode(&attachment.bytes);
+        if attachment.mime_type.starts_with("audio/") {
+            if allow_audio {
+                parts.push(json!({
+                    "type": "input_audio",
+                    "input_audio": {
+                        "data": data,
+                        "format": audio_format_from_mime(&attachment.mime_type),
+                    }
+                }));
+            }
+            continue;
+        }
+        if allow_image {
+            parts.push(json!({
+                "type": "image_url",
+                "image_url": {
+                    "url": format!("data:{};base64,{data}", attachment.mime_type),
+                    "detail": "auto",
+                }
+            }));
+        }
+    }
+    if parts.is_empty() {
+        parts.push(json!({ "type": "text", "text": " " }));
+    }
+    Value::Array(parts)
+}
+
+type Attachments = std::collections::HashMap<lettuce_types::AssetId, ProviderMedia>;
+
+fn allowed_inputs(request: &InferenceRequest) -> (bool, bool) {
+    let inputs = &request.profile.chat_profile.capabilities.input_modalities;
+    (
+        inputs.image == CapabilityStatus::Supported,
+        inputs.audio == CapabilityStatus::Supported,
+    )
+}
+
+/// Reads the user attachments the model can take, off the async executor.
+/// Every attachment must be granted; one that cannot be read is left out
+/// and its message keeps its shape, as legacy skipped attachments whose data
+/// was missing.
+async fn load_attachments(
+    request: &InferenceRequest,
+    media: Option<Arc<dyn ProviderMediaSource>>,
+) -> Result<Attachments, AdapterError> {
+    let (allow_image, allow_audio) = allowed_inputs(request);
+    if !allow_image && !allow_audio {
+        return Ok(Attachments::new());
+    }
+    let mut wanted = Vec::new();
+    for message in &request.context.messages {
+        if message.role != MessageRole::User {
+            continue;
+        }
+        for part in &message.parts {
+            if let ProviderContextPart::MediaAsset { asset_id, .. } = part {
+                if !request.media_grants.contains(asset_id) {
+                    return Err(AdapterError::Rejected);
+                }
+                if !wanted.contains(asset_id) {
+                    wanted.push(*asset_id);
+                }
+            }
+        }
+    }
+    let Some(media) = media.filter(|_| !wanted.is_empty()) else {
+        return Ok(Attachments::new());
+    };
+    tokio::task::spawn_blocking(move || {
+        wanted
+            .into_iter()
+            .filter_map(|asset_id| media.load(asset_id).ok().map(|loaded| (asset_id, loaded)))
+            .collect()
+    })
+    .await
+    .map_err(|_| AdapterError::Transport)
+}
+
+fn wire_messages(
+    request: &InferenceRequest,
+    loaded: &Attachments,
+) -> Result<Vec<Value>, AdapterError> {
+    let (allow_image, allow_audio) = allowed_inputs(request);
     let mut messages = Vec::new();
     for message in &request.context.messages {
         let results = message
@@ -437,6 +568,7 @@ fn wire_messages(request: &InferenceRequest) -> Result<Vec<Value>, AdapterError>
         }
         let mut content = String::new();
         let mut tool_calls = Vec::new();
+        let mut attachments = Vec::new();
         for part in &message.parts {
             match part {
                 ProviderContextPart::Text { text } => content.push_str(text),
@@ -455,14 +587,25 @@ fn wire_messages(request: &InferenceRequest) -> Result<Vec<Value>, AdapterError>
                         "function": { "name": call.name, "arguments": arguments },
                     }));
                 }
-                ProviderContextPart::MediaAsset { .. } | ProviderContextPart::ToolResult(_) => {
-                    return Err(AdapterError::Rejected);
+                ProviderContextPart::MediaAsset { asset_id, .. } => {
+                    if message.role == MessageRole::User && (allow_image || allow_audio) {
+                        attachments.push(loaded.get(asset_id).cloned().unwrap_or(ProviderMedia {
+                            mime_type: String::new(),
+                            bytes: Vec::new(),
+                        }));
+                    }
                 }
+                ProviderContextPart::ToolResult(_) => return Err(AdapterError::Rejected),
             }
         }
         let mut wire = Map::new();
         wire.insert("role".to_owned(), json!(wire_role(message.role)));
-        if tool_calls.is_empty() {
+        if !attachments.is_empty() {
+            wire.insert(
+                "content".to_owned(),
+                multimodal_content(&content, &attachments, allow_image, allow_audio),
+            );
+        } else if tool_calls.is_empty() {
             wire.insert("content".to_owned(), json!(content));
         } else {
             wire.insert(
@@ -473,6 +616,8 @@ fn wire_messages(request: &InferenceRequest) -> Result<Vec<Value>, AdapterError>
                     json!(content)
                 },
             );
+        }
+        if !tool_calls.is_empty() {
             wire.insert("tool_calls".to_owned(), Value::Array(tool_calls));
         }
         messages.push(Value::Object(wire));
@@ -654,7 +799,7 @@ mod tests {
                 },
             })],
         });
-        let messages = wire_messages(&inference).unwrap();
+        let messages = wire_messages(&inference, &Attachments::new()).unwrap();
         assert_eq!(
             messages[1],
             json!({"role": "system", "content": "scene text"})
@@ -703,7 +848,8 @@ mod tests {
         parameters.reasoning_budget_tokens = Some(2048);
         parameters.send_thinking_state = true;
         let llama = inference.profile.chat_profile.llama_cpp.clone().unwrap();
-        let generation = generation_request(&inference, &llama, false).unwrap();
+        let generation =
+            generation_request(&inference, &Attachments::new(), &llama, false).unwrap();
         assert_eq!(generation.model_path, "/models/local.gguf");
         assert_eq!(generation.max_tokens, Some(4096 + 2048));
         assert!(generation.reasoning.reasoning_configured);
@@ -742,7 +888,7 @@ mod tests {
             .parameters
             .send_thinking_state = false;
         inference.tools = None;
-        let plain = generation_request(&inference, &llama, false).unwrap();
+        let plain = generation_request(&inference, &Attachments::new(), &llama, false).unwrap();
         assert_eq!(plain.reasoning.enable_thinking, None);
         assert_eq!(plain.reasoning.chat_template_kwargs, None);
         assert!(!plain.reasoning.parallel_tool_calls);
@@ -898,5 +1044,240 @@ mod tests {
             json!("succeeded")
         );
         assert_eq!(host.metrics.lock().unwrap().len(), 1);
+    }
+
+    struct MemoryMedia(std::collections::HashMap<lettuce_types::AssetId, ProviderMedia>);
+
+    impl ProviderMediaSource for MemoryMedia {
+        fn load(
+            &self,
+            asset_id: lettuce_types::AssetId,
+        ) -> Result<ProviderMedia, crate::ProviderMediaError> {
+            self.0
+                .get(&asset_id)
+                .cloned()
+                .ok_or(crate::ProviderMediaError::Unavailable)
+        }
+    }
+
+    fn red_png() -> Vec<u8> {
+        let image = image::RgbImage::from_pixel(64, 64, image::Rgb([230, 20, 20]));
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
+        bytes.into_inner()
+    }
+
+    fn with_attachments(
+        capabilities_image: bool,
+    ) -> (InferenceRequest, MemoryMedia, lettuce_types::AssetId) {
+        let mut inference = llama_request(LlamaCppSettings::default());
+        if capabilities_image {
+            inference
+                .profile
+                .chat_profile
+                .capabilities
+                .input_modalities
+                .image = CapabilityStatus::Supported;
+        }
+        let image_id = lettuce_types::AssetId::new();
+        let audio_id = lettuce_types::AssetId::new();
+        inference.context.messages = vec![
+            ProviderNeutralMessage {
+                role: MessageRole::Assistant,
+                parts: vec![
+                    ProviderContextPart::Text {
+                        text: "a portrait".to_owned(),
+                    },
+                    ProviderContextPart::MediaAsset {
+                        asset_id: image_id,
+                        role: lettuce_conversations::MediaAssetRole::Inline,
+                    },
+                ],
+            },
+            ProviderNeutralMessage {
+                role: MessageRole::User,
+                parts: vec![
+                    ProviderContextPart::MediaAsset {
+                        asset_id: image_id,
+                        role: lettuce_conversations::MediaAssetRole::Attachment,
+                    },
+                    ProviderContextPart::Text {
+                        text: "What color is this?".to_owned(),
+                    },
+                    ProviderContextPart::MediaAsset {
+                        asset_id: audio_id,
+                        role: lettuce_conversations::MediaAssetRole::Attachment,
+                    },
+                ],
+            },
+        ];
+        inference.media_grants = vec![image_id, audio_id];
+        let media = MemoryMedia(
+            [
+                (
+                    image_id,
+                    ProviderMedia {
+                        mime_type: "image/png".to_owned(),
+                        bytes: vec![1, 2, 3],
+                    },
+                ),
+                (
+                    audio_id,
+                    ProviderMedia {
+                        mime_type: "audio/mpeg".to_owned(),
+                        bytes: vec![4, 5],
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        (inference, media, image_id)
+    }
+
+    #[test]
+    fn user_attachments_follow_the_model_input_capabilities_like_legacy() {
+        let (inference, media, _) = with_attachments(true);
+        let messages = wire_messages(&inference, &media.0).unwrap();
+        assert_eq!(
+            messages[0],
+            json!({"role": "assistant", "content": "a portrait"})
+        );
+        assert_eq!(
+            messages[1],
+            json!({"role": "user", "content": [
+                {"type": "text", "text": "What color is this?"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,AQID", "detail": "auto"}},
+            ]})
+        );
+        let (inference, media, _) = with_attachments(false);
+        let messages = wire_messages(&inference, &media.0).unwrap();
+        assert_eq!(
+            messages[1],
+            json!({"role": "user", "content": "What color is this?"})
+        );
+        assert_eq!(
+            multimodal_content(
+                "",
+                &[ProviderMedia {
+                    mime_type: "audio/x-wav".to_owned(),
+                    bytes: vec![9],
+                }],
+                false,
+                true,
+            ),
+            json!([{"type": "input_audio", "input_audio": {"data": "CQ==", "format": "wav"}}])
+        );
+        assert_eq!(
+            multimodal_content("", &[], true, false),
+            json!([{"type": "text", "text": " "}])
+        );
+    }
+
+    #[tokio::test]
+    async fn attachments_must_be_granted_and_unreadable_ones_are_skipped() {
+        let (mut inference, media, image_id) = with_attachments(true);
+        let source: Arc<dyn ProviderMediaSource> = Arc::new(MemoryMedia(
+            media
+                .0
+                .into_iter()
+                .filter(|(id, _)| *id == image_id)
+                .collect(),
+        ));
+        let loaded = load_attachments(&inference, Some(source.clone()))
+            .await
+            .unwrap();
+        assert_eq!(loaded.len(), 1);
+        let messages = wire_messages(&inference, &loaded).unwrap();
+        assert_eq!(messages[1]["content"].as_array().map(Vec::len), Some(2));
+        let none = wire_messages(&inference, &Attachments::new()).unwrap();
+        assert_eq!(
+            none[1]["content"],
+            json!([{"type": "text", "text": "What color is this?"}])
+        );
+        inference.media_grants.retain(|id| *id != image_id);
+        assert!(matches!(
+            load_attachments(&inference, Some(source)).await,
+            Err(AdapterError::Rejected)
+        ));
+    }
+
+    #[tokio::test]
+    #[ignore = "needs a vision GGUF in LETTUCE_VISION_MODEL and its projector in LETTUCE_VISION_MMPROJ"]
+    async fn describes_an_attached_image_through_the_inference_port() {
+        use lettuce_conversations::InferencePort;
+        let (Ok(model), Ok(mmproj)) = (
+            std::env::var("LETTUCE_VISION_MODEL"),
+            std::env::var("LETTUCE_VISION_MMPROJ"),
+        ) else {
+            return;
+        };
+        let runtime = Arc::new(lettuce_inference::InferenceRuntime::default());
+        let (mut inference, _, image_id) = with_attachments(true);
+        let media = Arc::new(MemoryMedia(
+            [(
+                image_id,
+                ProviderMedia {
+                    mime_type: "image/png".to_owned(),
+                    bytes: red_png(),
+                },
+            )]
+            .into_iter()
+            .collect(),
+        ));
+        let providers = crate::RemoteProviders::with_runtime(
+            Arc::new(lettuce_settings::InMemorySecretStore::default()),
+            Arc::new(lettuce_network::JsonClient::new().unwrap()),
+            runtime,
+        )
+        .with_local_llama(LocalLlama::new(
+            Arc::new(LlamaRuntime::start().unwrap()),
+            Arc::new(MemoryHost::default()),
+        ))
+        .with_media_source(media);
+        inference.profile.chat_profile.external_model_id = model;
+        inference.profile.chat_profile.llama_cpp = Some(Box::new(ResolvedLlamaSettings {
+            settings: LlamaCppSettings {
+                gpu_layers: Some(0),
+                mmproj_path: Some(mmproj),
+                ..LlamaCppSettings::default()
+            },
+            disable_sampler_profile_defaults: false,
+        }));
+        inference.profile.chat_profile.parameters.temperature = Some(0.0);
+        inference
+            .profile
+            .chat_profile
+            .parameters
+            .visible_max_output_tokens = Some(16);
+        inference
+            .profile
+            .chat_profile
+            .parameters
+            .total_completion_allowance = Some(16);
+        inference.context.messages = vec![ProviderNeutralMessage {
+            role: MessageRole::User,
+            parts: vec![
+                ProviderContextPart::Text {
+                    text: "What color is this image? Answer with one word.".to_owned(),
+                },
+                ProviderContextPart::MediaAsset {
+                    asset_id: image_id,
+                    role: lettuce_conversations::MediaAssetRole::Attachment,
+                },
+            ],
+        }];
+        inference.media_grants = vec![image_id];
+        let outcome = providers.run(inference).await.unwrap();
+        let text = outcome.candidates[0]
+            .parts
+            .iter()
+            .find_map(|part| match part {
+                MessagePart::Text { text } => Some(text.to_lowercase()),
+                _ => None,
+            })
+            .unwrap();
+        eprintln!("vision answer: {text}");
+        assert!(text.contains("red"));
     }
 }

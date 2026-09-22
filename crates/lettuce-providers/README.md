@@ -60,8 +60,12 @@ legacy-style delegation:
   switch only with `send_thinking_state`, the per-field llama settings from the
   chat profile, the conversation as prompt cache key for chat turns. Local
   failures are non-retryable `LOCAL_INFERENCE_FAILED`; metrics, the runtime
-  report and UI events go to the app's `LlamaHost`. Media parts are rejected
-  like the remote adapters until the media slice. Streaming turned off for
+  report and UI events go to the app's `LlamaHost`. User attachments are
+  inlined like legacy `build_multimodal_content` (text first, then images as
+  data URLs with `detail: auto` and audio as `input_audio`) when the model's
+  image/audio input is supported, read through the `ProviderMediaSource` the
+  host attaches; attachments on other roles or unsupported modalities are
+  dropped. The runtime needs the model's mmproj for them (legacy rule). Streaming turned off for
   the account or model runs the request unstreamed (legacy fallback). Cached
   and cache-write prompt tokens are always reported; legacy lost them on its
   non-streamed path.

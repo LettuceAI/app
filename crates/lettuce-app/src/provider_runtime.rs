@@ -80,6 +80,16 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
         })
     }
 
+    /// Reads attachments that requests inline (llama.cpp vision).
+    #[must_use]
+    pub fn with_media_source(
+        mut self,
+        media: Arc<dyn lettuce_providers::ProviderMediaSource>,
+    ) -> Self {
+        self.remote = self.remote.with_media_source(media);
+        self
+    }
+
     /// Runtime registry used by generation flows to attach a bounded stream
     /// consumer or cancellation token before calling the inference port.
     #[must_use]

@@ -2528,7 +2528,7 @@ fn legacy_scopes(
         audio: CapabilityStatus::Unsupported,
     };
     for value in values {
-        match value.as_str() {
+        match value.to_ascii_lowercase().as_str() {
             "text" => result.text = CapabilityStatus::Supported,
             "image" => result.image = CapabilityStatus::Supported,
             "audio" => result.audio = CapabilityStatus::Supported,
