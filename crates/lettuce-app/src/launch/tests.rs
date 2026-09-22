@@ -11298,3 +11298,156 @@ fn local_model_files_stay_on_their_device_while_the_profile_syncs() {
         }
     }
 }
+
+struct SceneImageProvider {
+    outcomes: Mutex<VecDeque<Result<Vec<lettuce_image_generation::ProviderImage>, lettuce_image_generation::ImageProviderError>>>,
+    prompts: Mutex<Vec<String>>,
+}
+
+#[async_trait::async_trait]
+impl lettuce_image_generation::ImageProviderPort for SceneImageProvider {
+    async fn generate(
+        &self,
+        request: lettuce_image_generation::ProviderImageRequest,
+    ) -> Result<lettuce_image_generation::ProviderImageOutput, lettuce_image_generation::ImageProviderError> {
+        self.prompts.lock().expect("prompts").push(request.prompt.clone());
+        let images = self
+            .outcomes
+            .lock()
+            .expect("outcomes")
+            .pop_front()
+            .expect("scripted outcome")?;
+        Ok(lettuce_image_generation::ProviderImageOutput { images, usage: None })
+    }
+}
+
+fn scene_png() -> lettuce_image_generation::ProviderImage {
+    let mut bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR".to_vec();
+    bytes.extend_from_slice(&2_u32.to_be_bytes());
+    bytes.extend_from_slice(&3_u32.to_be_bytes());
+    bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+    bytes.extend_from_slice(b"generated image bytes");
+    lettuce_image_generation::ProviderImage {
+        bytes,
+        declared_mime_type: Some("image/png".into()),
+        text: None,
+    }
+}
+
+#[tokio::test]
+async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message() {
+    use lettuce_media::LocalMediaBlobStore;
+    use lettuce_models::CapabilityStatus;
+    use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
+    let root = std::env::temp_dir().join(format!("lettuce-scene-image-{}", RequestId::new()));
+    let snapshot = DirectorySnapshot::new(&root).expect("directories");
+    let authority = FilesystemAuthority::new(&snapshot).expect("authority");
+    let catalog = root.join("catalog.sqlite");
+    let database = Database::open(&catalog).expect("database");
+    BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(NOW)
+        .expect("builtins");
+    let model_id = seed_model(&database, ProviderProtocol::OpenAiCompatible, "scene-images");
+    let mut model = ModelProfileRepository::get(&database, model_id)
+        .expect("model")
+        .expect("model exists");
+    let revision = model.revision;
+    model.config.capabilities.output_modalities.image = CapabilityStatus::Supported;
+    ModelProfileRepository::upsert(&database, model, Some(revision)).expect("image output");
+    let stored = lettuce_settings::GlobalSettingsStore::load(&database).expect("settings");
+    let mut settings = stored.settings;
+    settings.image_generation.scene_enabled = true;
+    settings.image_generation.scene_model_profile_id = Some(model_id);
+    lettuce_settings::GlobalSettingsStore::save(&database, settings, None, stored.revision)
+        .expect("scene settings");
+    let starter = starter_with(
+        CharacterId::new(),
+        0,
+        "Greeting",
+        vec![message(StarterRole::Assistant, "Welcome.")],
+    );
+    let starter_id = starter.id;
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), vec![starter], |_| {});
+    let conversation = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request_with_starter(character_id, "scene-image", starter_id), NOW)
+        .expect("launch")
+        .value
+        .conversation;
+    let timeline = ConversationReader::timeline_page(
+        &database,
+        conversation.id,
+        conversation.active_branch_id,
+        &lettuce_types::PageRequest::default(),
+    )
+    .expect("timeline");
+    let welcome = timeline.items.last().expect("welcome message");
+    let store = LocalMediaBlobStore::new(
+        authority.managed_files(),
+        authority
+            .read_capability(ManagedRoot::MediaBlobs)
+            .expect("read authority"),
+        authority
+            .write_capability(ManagedRoot::MediaBlobs)
+            .expect("write authority"),
+        Database::open(&catalog).expect("blob catalog"),
+        Database::open(&catalog).expect("asset catalog"),
+    );
+    let provider = SceneImageProvider {
+        outcomes: Mutex::new(VecDeque::from([Ok(Vec::new()), Ok(vec![scene_png()])])),
+        prompts: Mutex::new(Vec::new()),
+    };
+    let edited = crate::generate_scene_image(
+        &database,
+        &store,
+        &provider,
+        &crate::SceneImageRequest {
+            conversation_id: conversation.id,
+            message_id: welcome.message.id,
+            scene_prompt: "  A harbor at dusk ".into(),
+            request_id: RequestId::new(),
+        },
+        &lettuce_jobs::ResourceAvailability::all(),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .await
+    .expect("scene image");
+    assert_eq!(
+        *provider.prompts.lock().expect("prompts"),
+        vec!["A harbor at dusk".to_owned(), "A harbor at dusk".to_owned()]
+    );
+    let parts = &edited.value.revision.parts;
+    assert_eq!(parts[..parts.len() - 1], welcome.active_revision.as_ref().expect("revision").parts[..]);
+    assert!(matches!(
+        parts.last(),
+        Some(MessagePart::MediaAsset {
+            role: lettuce_conversations::MediaAssetRole::Attachment,
+            ..
+        })
+    ));
+
+    let refused = SceneImageProvider {
+        outcomes: Mutex::new(VecDeque::from([Err(
+            lettuce_image_generation::ImageProviderError::Failed("Quota exceeded".into()),
+        )])),
+        prompts: Mutex::new(Vec::new()),
+    };
+    let error = crate::generate_scene_image(
+        &database,
+        &store,
+        &refused,
+        &crate::SceneImageRequest {
+            conversation_id: conversation.id,
+            message_id: welcome.message.id,
+            scene_prompt: "Rain".into(),
+            request_id: RequestId::new(),
+        },
+        &lettuce_jobs::ResourceAvailability::all(),
+        TimestampMillis::new(NOW.get() + 20),
+    )
+    .await
+    .expect_err("provider failure");
+    assert_eq!(error, crate::SceneImageError::Generation("Quota exceeded".into()));
+    assert_eq!(refused.prompts.lock().expect("prompts").len(), 1);
+    std::fs::remove_dir_all(&root).ok();
+}

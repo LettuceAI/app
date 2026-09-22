@@ -1635,3 +1635,51 @@ without keywords) or the catalog's `scene_lora_primary_subject` /
 that cannot be read counts as having no LoRA and does not fail the turn.
 Open: an `artifact_id` image recommendation (made by the new app) has no
 resolvable LoRA file yet, so it binds as having no LoRA.
+
+Scene images (2026-09-23): `generate_scene_image` is legacy
+`chat_generate_scene_image` for a direct chat message:
+- The scene model comes from `image_feature_model(Scene)`, the character and
+  persona are read live, and the persona is the conversation's effective one.
+- A local diffusion model gets the trimmed scene prompt and the character and
+  persona recommendation LoRAs. A LoRA is kept when it has no keywords or one
+  of them appears in the prompt.
+- A remote model gets these input images, in order: character design
+  references (else the original avatar), one chat background (the
+  conversation's own, none when hidden, else the selected or default scene's,
+  else the character's), and persona design references (else the avatar). The
+  prompt is the legacy sections rendered from the `scene_image_*` catalog
+  entries.
+- The size is the model's own when it sets one, else `scene_default_size`,
+  else 1024x1024, and is always sent, since most remote adapters read only
+  the request size.
+- References whose image cannot be read are skipped, as legacy skipped files
+  it could not load; a subject whose design references are all unreadable
+  falls back to its avatar.
+- The request runs as an `ImageGenerate` job with source `Scene` and up to
+  three attempts. It retries only when no image came back or the error
+  mentions "no image".
+- The first image is added to the message as an attachment. The message is
+  read again after the generation and its current rendered content revised
+  with the image appended (keeping visibility, pin and scene flags), so an
+  edit or candidate switch made meanwhile is kept, where legacy overwrote it.
+  A message that is generating or changed concurrently yields
+  `MessageUnavailable`, and the retained image then stays unattached.
+- The caller passes the resources the jobs may use.
+
+Deviations from legacy:
+- Legacy's top-level message attachments survived switching variants. Here
+  the image belongs to the revised content, so selecting another candidate
+  hides it. Attaching to a generated candidate makes it an authored revision,
+  which drops that reply's provider replay artifact.
+- The image step uses the conversation's effective persona, including the
+  inherited default persona. Legacy's image step read only an explicit session
+  persona, while its prompt writer used the default. This is corrected to one
+  persona.
+- The image prompt is bounded at 64 KiB, so very long design notes fail the
+  request. Legacy had no bound.
+- More than 16 reference images drop persona references first; legacy had no
+  limit.
+- The scene prompt is not kept as the attachment's filename (legacy's seed for
+  "regenerate"). The image job keeps the request prompt.
+- Optimistic placeholders, askFirst approval and the prompt writer belong to
+  the next slices.
