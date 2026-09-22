@@ -134,7 +134,7 @@ where
                         AssetOrigin::Legacy,
                         RetentionClass::Persistent,
                         AssetProvenanceV1 {
-                            source_label: Some("Legacy import".to_owned()),
+                            source_label: Some(attachment_label(candidate)),
                             imported_format: Some("lettuceai-v92".to_owned()),
                             ..AssetProvenanceV1::default()
                         },
@@ -329,6 +329,21 @@ fn source_path(
     Ok(canonical)
 }
 
+/// A legacy attachment's filename (a generated image's prompt) when it has
+/// one, else the plain import label.
+fn attachment_label(candidate: &LegacyMediaCandidate) -> String {
+    candidate
+        .uses
+        .iter()
+        .find_map(|media_use| match media_use {
+            LegacyMediaUse::MessageAttachment {
+                label: Some(label), ..
+            } => Some(label.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| "Legacy import".to_owned())
+}
+
 fn asset_kind(candidate: &LegacyMediaCandidate) -> AssetKind {
     let all_persona_avatars = candidate
         .uses
@@ -346,6 +361,22 @@ fn asset_kind(candidate: &LegacyMediaCandidate) -> AssetKind {
         .uses
         .iter()
         .all(|media_use| matches!(media_use, LegacyMediaUse::AsrVoiceExample { .. }));
+    let attachments = candidate
+        .uses
+        .iter()
+        .filter_map(|media_use| match media_use {
+            LegacyMediaUse::MessageAttachment { audio, .. } => Some(*audio),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if !attachments.is_empty() && attachments.len() == candidate.uses.len() {
+        if attachments.iter().all(|audio| *audio) {
+            return AssetKind::MessageAudio;
+        }
+        if attachments.iter().all(|audio| !*audio) {
+            return AssetKind::MessageImage;
+        }
+    }
     if !candidate.uses.is_empty() && all_voice_examples {
         AssetKind::OtherAudio
     } else if !candidate.uses.is_empty() && all_persona_avatars {

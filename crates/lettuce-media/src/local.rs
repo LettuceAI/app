@@ -737,6 +737,13 @@ fn sniff_document(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     })
 }
 
+/// The kind ingestion would record for these bytes, or `None` when it would
+/// reject them as an unsupported image or audio format.
+#[must_use]
+pub fn sniff_media_kind(bytes: &[u8]) -> Option<MediaKind> {
+    sniff(bytes).ok().map(|sniffed| sniffed.kind)
+}
+
 fn sniff(bytes: &[u8]) -> Result<SniffedMedia, MediaStoreError> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         return sniff_png(bytes);

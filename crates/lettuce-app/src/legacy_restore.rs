@@ -527,6 +527,7 @@ mod tests {
         let session = uuid::Uuid::from_u128(3).to_string();
         let first_message = uuid::Uuid::from_u128(4).to_string();
         let second_message = uuid::Uuid::from_u128(5).to_string();
+        let attachment = uuid::Uuid::from_u128(6).to_string();
         let document = |kind, value: serde_json::Value| lettuce_transfer::LegacyBackupDocument {
             kind,
             bytes: zeroize::Zeroizing::new(serde_json::to_vec(&value).expect("document")),
@@ -541,6 +542,23 @@ mod tests {
                 zeroize::Zeroizing::new(PNG.to_vec()),
             )
         };
+        let mut reply = legacy_message(
+            &second_message,
+            "assistant",
+            Some(&first_message),
+            "Hello there",
+        );
+        reply["attachments"] = serde_json::json!([{
+            "id": attachment,
+            "data": "",
+            "mimeType": "image/png",
+            "filename": "a lighthouse at dusk",
+            "storagePath": format!("sessions/{character}/{session}/ai_{second_message}_{attachment}.webp")
+        }])
+        .to_string()
+        .into();
+        let mut greeting = legacy_message(&first_message, "user", None, "Hello Mira");
+        greeting["attachments"] = reply["attachments"].clone();
         let compatibility =
             lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
                 version: 1,
@@ -608,13 +626,8 @@ mod tests {
                             "created_at": 1,
                             "updated_at": 20,
                             "messages": [
-                                legacy_message(&first_message, "user", None, "Hello Mira"),
-                                legacy_message(
-                                    &second_message,
-                                    "assistant",
-                                    Some(&first_message),
-                                    "Hello there"
-                                )
+                                greeting,
+                                reply
                             ]
                         }]),
                     ),
@@ -628,11 +641,19 @@ mod tests {
                         lettuce_transfer::LegacyBackupMediaRoot::Avatars,
                         &[&format!("character-{character}"), "mira.png"],
                     ),
+                    media(
+                        lettuce_transfer::LegacyBackupMediaRoot::Sessions,
+                        &[
+                            character.as_str(),
+                            session.as_str(),
+                            &format!("ai_{second_message}_{attachment}.webp"),
+                        ],
+                    ),
                 ],
             })
             .expect("compatibility plan");
         let plan = compatibility.legacy_import_plan();
-        assert_eq!(plan.media.media.len(), 2);
+        assert_eq!(plan.media.media.len(), 3);
         let receipt = coordinator
             .replace(
                 OperationId::new(),
@@ -656,7 +677,45 @@ mod tests {
             .expect("restored graph");
         assert_eq!(graph.authored.personas.len(), 1);
         assert_eq!(graph.authored.characters.len(), 1);
-        assert_eq!(graph.authored.media_assets.len(), 2);
+        assert_eq!(graph.authored.media_assets.len(), 3);
+        let reply = graph.conversation_history.conversations[0]
+            .messages
+            .iter()
+            .find(|message| message.message.role == lettuce_conversations::MessageRole::Assistant)
+            .expect("assistant reply");
+        let attached = reply.revisions[0]
+            .parts
+            .iter()
+            .find_map(|part| match part {
+                lettuce_conversations::MessagePart::MediaAsset { asset_id, role } => {
+                    Some((*asset_id, *role))
+                }
+                _ => None,
+            })
+            .expect("legacy attachment part");
+        assert_eq!(
+            attached.1,
+            lettuce_conversations::MediaAssetRole::Attachment
+        );
+        let greeting = graph.conversation_history.conversations[0]
+            .messages
+            .iter()
+            .find(|message| message.message.role == lettuce_conversations::MessageRole::User)
+            .expect("user greeting");
+        assert!(greeting.revisions[0].parts.contains(
+            &lettuce_conversations::MessagePart::MediaAsset {
+                asset_id: attached.0,
+                role: lettuce_conversations::MediaAssetRole::Attachment,
+            }
+        ));
+        let asset = lettuce_media::MediaAssetRepository::get(&restored, attached.0)
+            .expect("read asset")
+            .expect("attachment asset");
+        assert_eq!(asset.kind, lettuce_media::AssetKind::MessageImage);
+        assert_eq!(
+            asset.provenance.source_label.as_deref(),
+            Some("a lighthouse at dusk")
+        );
         assert_eq!(graph.conversation_history.conversations.len(), 1);
         assert_eq!(
             graph.conversation_history.conversations[0].messages.len(),

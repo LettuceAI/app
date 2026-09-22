@@ -1941,6 +1941,9 @@ fn completed_media_assets(
             return Err(LegacyImportRepositoryError::Conflict);
         }
         for media_use in &candidate.uses {
+            if matches!(media_use, LegacyMediaUse::MessageAttachment { .. }) {
+                continue;
+            }
             if by_use.insert(media_use.clone(), *destination_id).is_some() {
                 return Err(LegacyImportRepositoryError::Conflict);
             }

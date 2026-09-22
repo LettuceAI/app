@@ -30,6 +30,7 @@ mod legacy_backup_model_settings;
 mod legacy_backup_pricing;
 mod legacy_backup_scheduled_notes;
 mod legacy_backup_sessions;
+mod legacy_backup_attachments;
 mod legacy_backup_images;
 mod legacy_backup_usage;
 mod legacy_import_backup;
@@ -63,6 +64,7 @@ pub use legacy_backup_model_settings::*;
 pub use legacy_backup_pricing::*;
 pub use legacy_backup_scheduled_notes::*;
 pub use legacy_backup_sessions::*;
+pub use legacy_backup_attachments::*;
 pub use legacy_backup_images::*;
 pub use legacy_backup_usage::*;
 pub use legacy_import_backup::*;
@@ -752,6 +754,13 @@ pub enum LegacyMediaUse {
     GroupBackground { group_id: GroupId },
     GroupSceneBackground { group_id: GroupId, scene_id: SceneId },
     AsrVoiceExample { source_id: i64 },
+    /// A chat message or group variant attachment; `audio` is what its bytes
+    /// hold, `label` its legacy filename (the prompt of a generated image).
+    MessageAttachment {
+        attachment_id: String,
+        audio: bool,
+        label: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

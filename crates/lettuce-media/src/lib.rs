@@ -24,6 +24,6 @@ pub use blob::{
 pub use local::{
     IngestRequest, IngestedMedia, LocalMediaBlobStore, LocalSyncMediaStore, MAX_MEDIA_BLOB_BYTES,
     MAX_SYNC_MEDIA_CHUNK_BYTES, MediaStoreError, OpenedMediaAsset, SyncMediaAsset,
-    install_backup_media_object,
+    install_backup_media_object, sniff_media_kind,
 };
 pub use repository::{MediaAssetRepository, MediaAssetRepositoryError};

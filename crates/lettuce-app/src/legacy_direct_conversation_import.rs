@@ -54,7 +54,29 @@ pub(crate) struct ImportContext {
     pub(crate) personas: BTreeMap<PersonaId, PersonaId>,
     prompts: BTreeMap<String, lettuce_types::PromptDocumentId>,
     lorebooks: BTreeMap<lettuce_types::LorebookId, lettuce_types::LorebookId>,
+    media: BTreeMap<String, lettuce_types::AssetId>,
     pub(crate) scope: LegacyIdScope,
+}
+
+impl ImportContext {
+    /// The imported media parts of legacy attachment columns, in legacy order
+    /// and once per attachment id; attachments the media plan left out (and
+    /// recorded) have no asset.
+    fn attachment_parts(&self, columns: &[&str]) -> Vec<MessagePart> {
+        let mut seen = std::collections::BTreeSet::new();
+        columns
+            .iter()
+            .flat_map(|raw| lettuce_transfer::legacy_message_attachments(raw))
+            .filter(|attachment| seen.insert(attachment.id.clone()))
+            .filter_map(|attachment| {
+                let asset_id = *self.media.get(attachment.stored_path()?)?;
+                Some(MessagePart::MediaAsset {
+                    asset_id,
+                    role: lettuce_conversations::MediaAssetRole::Attachment,
+                })
+            })
+            .collect()
+    }
 }
 
 /// The per-session values legacy let a chat override on top of its launch
@@ -83,6 +105,7 @@ pub(crate) struct TimelineMessage<'a> {
     pub model_source_id: Option<&'a str>,
     pub selected_variant_source_id: Option<&'a str>,
     pub reasoning: Option<&'a str>,
+    pub attachments_json: &'a str,
     pub variants: Vec<TimelineVariant<'a>>,
 }
 
@@ -94,6 +117,8 @@ pub(crate) struct TimelineVariant<'a> {
     pub completion_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
     pub reasoning: Option<&'a str>,
+    /// Legacy group variants kept their own attachments; direct ones had none.
+    pub attachments_json: Option<&'a str>,
     pub author: Option<ConversationParticipantId>,
 }
 
@@ -410,6 +435,7 @@ where
                 model_source_id: row.model_source_id.as_deref(),
                 selected_variant_source_id: row.selected_variant_source_id.as_deref(),
                 reasoning: row.reasoning.as_deref(),
+                attachments_json: &row.attachments_json,
                 variants: row
                     .variants
                     .iter()
@@ -421,6 +447,7 @@ where
                         completion_tokens: variant.usage.completion_tokens,
                         total_tokens: variant.usage.total_tokens,
                         reasoning: variant.reasoning.as_deref(),
+                        attachments_json: None,
                         author: Some(character),
                     })
                     .collect(),
@@ -1295,6 +1322,22 @@ struct SessionWriter<'a> {
 }
 
 impl SessionWriter<'_> {
+    /// A variant's own attachments (group chats) plus, for the variant legacy
+    /// rendered, the message's attachments.
+    fn variant_attachments(
+        &self,
+        legacy: &TimelineMessage<'_>,
+        variant: &TimelineVariant<'_>,
+        active: bool,
+    ) -> Vec<MessagePart> {
+        let mut columns = Vec::with_capacity(2);
+        columns.extend(variant.attachments_json);
+        if active {
+            columns.push(legacy.attachments_json);
+        }
+        self.context.attachment_parts(&columns)
+    }
+
     fn push(
         &mut self,
         legacy: &TimelineMessage<'_>,
@@ -1347,7 +1390,11 @@ impl SessionWriter<'_> {
                 ),
                 message_id,
                 sequence: Revision::INITIAL,
-                parts: parts(legacy.content, legacy.reasoning),
+                parts: parts(
+                    legacy.content,
+                    legacy.reasoning,
+                    self.context.attachment_parts(&[legacy.attachments_json]),
+                ),
                 authored_at: created_at,
                 source_turn_id: None,
                 provider_replay: None,
@@ -1371,6 +1418,11 @@ impl SessionWriter<'_> {
                         variant.reasoning.or((index == active_variant_index(legacy))
                             .then_some(legacy.reasoning)
                             .flatten()),
+                        self.variant_attachments(
+                            legacy,
+                            variant,
+                            index == active_variant_index(legacy),
+                        ),
                     ),
                     authored_at: timestamp(variant.created_at)?,
                     source_turn_id: None,
@@ -1413,10 +1465,24 @@ impl SessionWriter<'_> {
             },
             timeline_ordinal,
             initial_origin: origin,
+            historical_media_revision_ids: revisions
+                .iter()
+                .filter(|revision| {
+                    active_render_source != MessageRenderSource::Revision(revision.id)
+                        && has_media(&revision.parts)
+                })
+                .map(|revision| revision.id)
+                .collect(),
+            historical_media_candidate_ids: candidates
+                .iter()
+                .filter(|candidate| {
+                    active_render_source != MessageRenderSource::Candidate(candidate.id)
+                        && has_media(&candidate.parts)
+                })
+                .map(|candidate| candidate.id)
+                .collect(),
             revisions,
             candidates,
-            historical_media_revision_ids: Vec::new(),
-            historical_media_candidate_ids: Vec::new(),
         });
         Ok((message_id, role))
     }
@@ -1586,6 +1652,7 @@ impl SessionWriter<'_> {
                     variant.reasoning.or((index == active_index)
                         .then_some(legacy.reasoning)
                         .flatten()),
+                    self.variant_attachments(legacy, variant, index == active_index),
                 ),
                 model: model.clone(),
                 created_at: at,
@@ -1633,6 +1700,7 @@ pub(crate) fn import_context(
     let mut personas = BTreeMap::new();
     let mut prompts = BTreeMap::new();
     let mut lorebooks = BTreeMap::new();
+    let mut media = BTreeMap::new();
     for assignment in &admission.assignments {
         match assignment {
             LegacyImportAssignment::Prompt {
@@ -1666,6 +1734,13 @@ pub(crate) fn import_context(
             } => {
                 personas.insert(*legacy_id, *destination_id);
             }
+            LegacyImportAssignment::Media {
+                relative_path,
+                destination_id,
+                ..
+            } => {
+                media.insert(relative_path.clone(), *destination_id);
+            }
             _ => {}
         }
     }
@@ -1688,6 +1763,7 @@ pub(crate) fn import_context(
         personas,
         prompts,
         lorebooks,
+        media,
         scope: LegacyIdScope::new(source_fingerprint),
     }
 }
@@ -1702,7 +1778,18 @@ fn timestamp(value: u64) -> Result<TimestampMillis, Error> {
         .map_err(|_| Error::InvalidInput)
 }
 
-fn parts(content: &str, reasoning: Option<&str>) -> Vec<MessagePart> {
+fn has_media(parts: &[MessagePart]) -> bool {
+    parts
+        .iter()
+        .any(|part| matches!(part, MessagePart::MediaAsset { .. }))
+}
+
+/// Legacy chat parts: reasoning, the text, then its attachments.
+fn parts(
+    content: &str,
+    reasoning: Option<&str>,
+    attachments: Vec<MessagePart>,
+) -> Vec<MessagePart> {
     let mut parts = Vec::new();
     if let Some(reasoning) = reasoning.filter(|value| !value.trim().is_empty()) {
         parts.push(MessagePart::ReasoningSummary {
@@ -1714,5 +1801,6 @@ fn parts(content: &str, reasoning: Option<&str>) -> Vec<MessagePart> {
             text: content.to_owned(),
         });
     }
+    parts.extend(attachments);
     parts
 }

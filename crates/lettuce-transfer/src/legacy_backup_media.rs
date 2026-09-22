@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use crate::{
     LEGACY_MEDIA_OBJECT_BYTES_LIMIT, LEGACY_MEDIA_REFERENCE_LIMIT, LEGACY_MEDIA_TOTAL_BYTES_LIMIT,
-    LegacyBackupAuthoredPlan, LegacyBackupMedia, LegacyBackupMediaRoot, LegacyImportSkip,
-    LegacyImportSkipKind, LegacyImportSkipReason, LegacyMediaCandidate, LegacyMediaPlan,
-    LegacyMediaReference, LegacyMediaUse,
+    LegacyBackupAuthoredPlan, LegacyBackupDocumentKind, LegacyBackupMedia, LegacyBackupMediaRoot,
+    LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason, LegacyMediaCandidate,
+    LegacyMediaPlan, LegacyMediaReference, LegacyMediaUse, legacy_value_skip,
 };
 
 #[derive(Debug)]
@@ -155,6 +155,11 @@ pub fn plan_legacy_backup_authored_media(
             )?;
         }
     }
+
+    let mut skipped = skipped;
+    plan_attachments(&authored, &mut planned, &mut references, &mut skipped)?;
+    skipped.sort();
+    skipped.dedup();
 
     let mut total_bytes = 0_u64;
     let mut media = Vec::with_capacity(planned.len());
@@ -396,6 +401,146 @@ fn missing_skip(kind: LegacyImportSkipKind, source_key: String) -> LegacyImportS
     }
 }
 
+#[derive(serde::Deserialize)]
+struct AttachmentSession {
+    #[serde(default)]
+    messages: Vec<AttachmentMessage>,
+}
+
+#[derive(serde::Deserialize)]
+struct AttachmentMessage {
+    #[serde(default)]
+    attachments: Option<String>,
+    #[serde(default)]
+    variants: Vec<AttachmentVariant>,
+}
+
+#[derive(serde::Deserialize)]
+struct AttachmentVariant {
+    #[serde(default)]
+    attachments: Option<String>,
+}
+
+/// Every persisted attachment of direct messages, group messages and group
+/// variants becomes a media candidate. Files that are gone, outside
+/// `sessions/`, or not an image or audio format ingestion accepts are
+/// recorded instead (legacy rendered them broken or not at all).
+fn plan_attachments<'a>(
+    authored: &'a LegacyBackupAuthoredPlan,
+    planned: &mut BTreeMap<String, PlannedMedia<'a>>,
+    references: &mut u32,
+    skipped: &mut Vec<LegacyImportSkip>,
+) -> Result<(), LegacyBackupMediaPlanError> {
+    let source = &authored.configuration.source;
+    for kind in [
+        LegacyBackupDocumentKind::Sessions,
+        LegacyBackupDocumentKind::GroupSessions,
+    ] {
+        let Some(document) = source
+            .documents
+            .iter()
+            .find(|document| document.kind == kind)
+        else {
+            continue;
+        };
+        let Ok(sessions) = serde_json::from_slice::<Vec<AttachmentSession>>(&document.bytes) else {
+            continue;
+        };
+        let columns = sessions.iter().flat_map(|session| {
+            session.messages.iter().flat_map(|message| {
+                std::iter::once(message.attachments.as_deref()).chain(
+                    message
+                        .variants
+                        .iter()
+                        .map(|variant| variant.attachments.as_deref()),
+                )
+            })
+        });
+        for raw in columns.flatten() {
+            for attachment in crate::legacy_message_attachments(raw) {
+                plan_attachment(&source.media, planned, references, skipped, &attachment)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn plan_attachment<'a>(
+    source: &'a [LegacyBackupMedia],
+    planned: &mut BTreeMap<String, PlannedMedia<'a>>,
+    references: &mut u32,
+    skipped: &mut Vec<LegacyImportSkip>,
+    attachment: &crate::LegacyMessageAttachment,
+) -> Result<(), LegacyBackupMediaPlanError> {
+    let skip = |reason| legacy_value_skip("messages.attachments", &attachment.id, reason);
+    if attachment.is_placeholder() {
+        return Ok(());
+    }
+    let Some(path) = attachment.stored_path() else {
+        skipped.push(skip(LegacyImportSkipReason::MissingMediaFile));
+        return Ok(());
+    };
+    let segments = path.split('/').collect::<Vec<_>>();
+    let media = match segments.split_first() {
+        Some((&"sessions", rest))
+            if !rest.is_empty() && rest.iter().all(|segment| safe_component(segment, true)) =>
+        {
+            exact_media(source, LegacyBackupMediaRoot::Sessions, rest)
+        }
+        _ => None,
+    };
+    let Some(media) = media else {
+        skipped.push(skip(LegacyImportSkipReason::MissingMediaFile));
+        return Ok(());
+    };
+    if media.byte_len > LEGACY_MEDIA_OBJECT_BYTES_LIMIT {
+        skipped.push(skip(LegacyImportSkipReason::MalformedLegacyValue));
+        return Ok(());
+    }
+    let kind = media
+        .read()
+        .ok()
+        .and_then(|bytes| lettuce_media::sniff_media_kind(&bytes));
+    let audio = match kind {
+        Some(lettuce_media::MediaKind::Image) => false,
+        Some(lettuce_media::MediaKind::Audio) => true,
+        _ => {
+            skipped.push(skip(LegacyImportSkipReason::MalformedLegacyValue));
+            return Ok(());
+        }
+    };
+    let label = attachment.label().map(|(label, changed)| {
+        if changed {
+            skipped.push(legacy_value_skip(
+                "messages.attachments.filename",
+                &attachment.id,
+                LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+        }
+        label
+    });
+    let media_use = LegacyMediaUse::MessageAttachment {
+        attachment_id: attachment.id.clone(),
+        audio,
+        label,
+    };
+    if planned
+        .get(&archive_path(media))
+        .is_some_and(|item| item.uses.contains(&media_use))
+    {
+        return Ok(());
+    }
+    if *references >= LEGACY_MEDIA_REFERENCE_LIMIT {
+        skipped.push(legacy_value_skip(
+            "messages.attachments.limit",
+            &attachment.id,
+            LegacyImportSkipReason::MalformedLegacyValue,
+        ));
+        return Ok(());
+    }
+    add_planned(planned, media, media_use, references)
+}
+
 fn add_planned<'a>(
     planned: &mut BTreeMap<String, PlannedMedia<'a>>,
     media: &'a LegacyBackupMedia,
@@ -519,6 +664,162 @@ mod tests {
         let configuration =
             plan_legacy_backup_configuration(inventory).expect("configuration plan");
         plan_legacy_backup_authored(configuration).expect("authored plan")
+    }
+
+    fn png() -> Vec<u8> {
+        let mut bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR".to_vec();
+        bytes.extend_from_slice(&[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]);
+        bytes
+    }
+
+    fn wav() -> Vec<u8> {
+        let mut bytes = b"RIFF".to_vec();
+        bytes.extend_from_slice(&28_u32.to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16_u32.to_le_bytes());
+        bytes.extend_from_slice(&[1, 0, 1, 0, 0x44, 0xac, 0, 0, 0x88, 0x58, 1, 0, 2, 0, 16, 0]);
+        bytes
+    }
+
+    #[test]
+    fn persisted_message_attachments_become_media_and_the_rest_is_recorded() {
+        let attachment = |id: &str, path: Option<&str>, data: &str, filename: Option<&str>| json!({"id": id, "data": data, "mimeType": "image/png", "filename": filename, "storagePath": path});
+        let direct = json!([
+            attachment(
+                "user-image",
+                Some("sessions/char/session/user_m1_user-image.webp"),
+                "",
+                Some("photo.png")
+            ),
+            attachment(
+                "voice",
+                Some("sessions/char/session/user_m1_voice.wav"),
+                "",
+                None
+            ),
+            attachment("placeholder", None, "", None),
+            attachment("inline-only", None, "data:image/png;base64,AAAA", None),
+            attachment(
+                "gone",
+                Some("sessions/char/session/ai_m2_gone.webp"),
+                "",
+                None
+            ),
+            attachment(
+                "broken",
+                Some("sessions/char/session/ai_m2_broken.webp"),
+                "",
+                None
+            ),
+            attachment("escape", Some("../app.db"), "", None),
+        ])
+        .to_string();
+        let group_variant = json!([attachment(
+            "generated",
+            Some("sessions/group/session/ai_m3_generated.webp"),
+            "",
+            Some("a lighthouse\nat dusk")
+        )])
+        .to_string();
+        let documents = vec![document(
+            LegacyBackupDocumentKind::Sessions,
+            json!([{"id": "session", "messages": [
+                {"id": "m1", "attachments": direct, "variants": []},
+                {"id": "m3", "attachments": group_variant, "variants": [
+                    {"id": "v1", "attachments": group_variant}
+                ]}
+            ]}]),
+        )];
+        let plan = plan_legacy_backup_authored_media(authored(
+            documents,
+            vec![
+                media(
+                    LegacyBackupMediaRoot::Sessions,
+                    &["char", "session", "user_m1_user-image.webp"],
+                    &png(),
+                ),
+                media(
+                    LegacyBackupMediaRoot::Sessions,
+                    &["char", "session", "user_m1_voice.wav"],
+                    &wav(),
+                ),
+                media(
+                    LegacyBackupMediaRoot::Sessions,
+                    &["char", "session", "ai_m2_broken.webp"],
+                    b"not an image",
+                ),
+                media(
+                    LegacyBackupMediaRoot::Sessions,
+                    &["group", "session", "ai_m3_generated.webp"],
+                    &png(),
+                ),
+            ],
+        ))
+        .expect("attachment media plan");
+        let uses = plan
+            .media
+            .media
+            .iter()
+            .map(|candidate| (candidate.relative_path.as_str(), candidate.uses.clone()))
+            .collect::<Vec<_>>();
+        let attachment_use =
+            |id: &str, audio: bool, label: Option<&str>| LegacyMediaUse::MessageAttachment {
+                attachment_id: id.to_owned(),
+                audio,
+                label: label.map(str::to_owned),
+            };
+        assert_eq!(
+            uses,
+            vec![
+                (
+                    "sessions/char/session/user_m1_user-image.webp",
+                    vec![attachment_use("user-image", false, Some("photo.png"))]
+                ),
+                (
+                    "sessions/char/session/user_m1_voice.wav",
+                    vec![attachment_use("voice", true, None)]
+                ),
+                (
+                    "sessions/group/session/ai_m3_generated.webp",
+                    vec![attachment_use(
+                        "generated",
+                        false,
+                        Some("a lighthouse at dusk")
+                    )]
+                ),
+            ]
+        );
+        let skip = |field: &str, id: &str, reason| legacy_value_skip(field, id, reason);
+        let mut expected = vec![
+            skip(
+                "messages.attachments",
+                "inline-only",
+                LegacyImportSkipReason::MissingMediaFile,
+            ),
+            skip(
+                "messages.attachments",
+                "gone",
+                LegacyImportSkipReason::MissingMediaFile,
+            ),
+            skip(
+                "messages.attachments",
+                "broken",
+                LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+            skip(
+                "messages.attachments",
+                "escape",
+                LegacyImportSkipReason::MissingMediaFile,
+            ),
+            skip(
+                "messages.attachments.filename",
+                "generated",
+                LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+        ];
+        expected.sort();
+        expected.dedup();
+        assert_eq!(plan.media.skipped, expected);
     }
 
     #[test]

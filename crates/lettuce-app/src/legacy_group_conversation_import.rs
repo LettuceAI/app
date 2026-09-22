@@ -217,6 +217,7 @@ where
                     completion_tokens: variant.usage.completion_tokens,
                     total_tokens: variant.usage.total_tokens,
                     reasoning: variant.reasoning.as_deref(),
+                    attachments_json: Some(&variant.attachments_json),
                     author: author(variant.speaker_character_source_id.as_ref())?,
                 });
             }
@@ -233,6 +234,7 @@ where
                 model_source_id: row.model_source_id.as_deref(),
                 selected_variant_source_id: row.selected_variant_source_id.as_deref(),
                 reasoning: row.reasoning.as_deref(),
+                attachments_json: &row.attachments_json,
                 variants,
             });
         }

@@ -730,3 +730,16 @@ unique, at most 32); a sha256 that is not 64 hex characters, unknown sources,
 negative sizes and unparseable keyword JSON are replaced and recorded as
 legacy-value skips. The `images` import stage writes them, keeping whichever
 row of a path changed last.
+
+Legacy chat attachments (2026-09-22; previously dropped): every persisted
+attachment of direct messages, group messages and group variants
+(`sessions/<owner>/<session>/<file>`) is planned as a `MessageAttachment` media
+use, one use per file however many rows repeat it. Bytes are sniffed at
+planning: images become `message_image`, audio `message_audio`; the legacy
+filename (a generated image's prompt) becomes the asset's source label, cut to
+256 scalars without control characters. Missing, unsafe, oversized or
+unsupported files (legacy's raw `.webp` fallbacks, AAC/AIFF audio), inline-only
+data and attachments past the reference limit are recorded, never fatal.
+Conversation import appends them as `MediaAsset` attachment parts after the
+text; the rendered variant also gets the message's attachments, deduplicated
+by id; media on non-rendered revisions and candidates is historical.

@@ -953,6 +953,16 @@ pub(crate) fn plan_fingerprint(plan: &LegacyImportPlan) -> ContentHash {
                     hash.u32(4);
                     hash.i64(*source_id);
                 }
+                LegacyMediaUse::MessageAttachment {
+                    attachment_id,
+                    audio,
+                    label,
+                } => {
+                    hash.u32(11);
+                    hash.text(attachment_id);
+                    hash.u32(u32::from(*audio));
+                    hash.option(label.as_ref(), |hash, value| hash.text(value));
+                }
             }
         }
     }
