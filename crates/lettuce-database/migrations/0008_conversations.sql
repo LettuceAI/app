@@ -69,6 +69,9 @@ CREATE TABLE conversation_settings (
     speaker_selection_provenance TEXT NOT NULL DEFAULT 'launch_inherited' CHECK (speaker_selection_provenance IN ('launch_inherited', 'current_override')),
     companion_clock_json TEXT CHECK (companion_clock_json IS NULL OR (json_valid(companion_clock_json) AND json_extract(companion_clock_json, '$.format_version') = 1)),
     model_settings_json TEXT CHECK (model_settings_json IS NULL OR (json_valid(model_settings_json) AND json_extract(model_settings_json, '$.format_version') = 1)),
+    background_asset_id TEXT,
+    background_blob_kind TEXT NOT NULL DEFAULT 'image' CHECK (background_blob_kind = 'image'),
+    background_hidden INTEGER NOT NULL DEFAULT 0 CHECK (background_hidden IN (0, 1)),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     CHECK (author_note IS NULL OR (length(trim(author_note)) > 0 AND length(CAST(author_note AS BLOB)) <= 1048576)),
@@ -81,7 +84,10 @@ CREATE TABLE conversation_settings (
     CHECK ((persona_json IS NOT NULL) = (persona_provenance = 'current_override')),
     CHECK ((scene_json IS NOT NULL) = (scene_provenance = 'current_override')),
     CHECK ((speaker_selection IS NOT NULL) = (speaker_selection_provenance = 'current_override')),
-    CHECK (created_at <= updated_at)
+    CHECK (created_at <= updated_at),
+    CHECK (background_hidden = 0 OR background_asset_id IS NULL),
+    FOREIGN KEY (background_asset_id, background_blob_kind)
+        REFERENCES media_assets(id, blob_kind) ON DELETE RESTRICT
 ) STRICT;
 
 CREATE TABLE conversation_branches (

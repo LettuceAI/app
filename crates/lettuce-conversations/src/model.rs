@@ -82,6 +82,13 @@ pub enum ParticipantSource {
     System,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum ConversationBackground {
+    Image { asset_id: lettuce_types::AssetId },
+    Hidden,
+}
+
 /// The materialized settings record stored with a conversation.  Commands
 /// carry [`CurrentConversationSettingsPatch`] values; this type is the
 /// resolved, revisioned state returned by reads and mutations.
@@ -97,6 +104,10 @@ pub struct CurrentConversationSettings {
         skip_serializing_if = "lettuce_models::ModelSettingsLayer::is_empty"
     )]
     pub model_settings: lettuce_models::ModelSettingsLayer,
+    /// The background this conversation shows instead of the one its scene,
+    /// character or group provides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<ConversationBackground>,
     pub revision: Revision,
     pub author_note: Option<String>,
     pub author_note_provenance: crate::commands::SettingProvenance,

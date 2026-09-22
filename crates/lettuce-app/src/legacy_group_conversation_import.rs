@@ -184,6 +184,15 @@ where
                 speaker_selection: (speaker_selection != details.group.speaker_selection)
                     .then_some(speaker_selection),
                 model_settings: &lettuce_models::ModelSettingsLayer::default(),
+                background: context.background(
+                    &session.source_id,
+                    true,
+                    lettuce_transfer::legacy_group_session_background(
+                        &session.config_overrides_json,
+                    )
+                    .as_deref(),
+                ),
+                companion_clock: None,
             },
         )?;
         snapshots.extend(settings_snapshots);
@@ -254,6 +263,7 @@ where
                 memory,
                 memory_summary: Some(session.memory_summary.as_str()),
                 memory_summary_token_count: session.memory_summary_token_count,
+                memory_tool_events: Some(session.memory_tool_events_json.as_str()),
                 settings,
             },
             context,

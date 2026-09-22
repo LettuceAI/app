@@ -765,6 +765,9 @@ pub enum LegacyMediaUse {
     },
     /// Image `ordinal` of a legacy playground history entry.
     PlaygroundImage { generation_id: String, ordinal: u32 },
+    /// The background a direct (`group` false) or group session set for
+    /// itself.
+    ConversationBackground { session_id: String, group: bool },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

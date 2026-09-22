@@ -1052,6 +1052,7 @@ mod tests {
             scene: PatchValue::Keep,
             speaker_selection: PatchValue::Keep,
             companion_clock: PatchValue::Keep,
+            background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
         };
         assert!(
@@ -2474,6 +2475,7 @@ mod tests {
             scene: PatchValue::Keep,
             speaker_selection: PatchValue::Keep,
             companion_clock: PatchValue::Keep,
+            background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
         };
         let command = UpdateConversationSettings {
@@ -2509,6 +2511,7 @@ mod tests {
         );
         let existing = CurrentConversationSettings {
             companion_clock: None,
+            background: None,
             model_settings: Default::default(),
             revision: Revision::INITIAL,
             author_note: None,
@@ -2571,6 +2574,7 @@ mod tests {
             scene: PatchValue::Keep,
             speaker_selection: PatchValue::Keep,
             companion_clock: PatchValue::Keep,
+            background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
         };
         let created = set.apply(None, None).expect("create settings");
@@ -2597,6 +2601,7 @@ mod tests {
             scene: PatchValue::UseLaunchDefault,
             speaker_selection: PatchValue::Keep,
             companion_clock: PatchValue::Keep,
+            background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
         };
         let inherited = use_launch_default
@@ -2635,6 +2640,7 @@ mod tests {
             scene: PatchValue::Clear,
             speaker_selection: PatchValue::Keep,
             companion_clock: PatchValue::Keep,
+            background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
         };
         let disabled = clear
@@ -2769,6 +2775,7 @@ mod tests {
             scene: PatchValue::Set(scene),
             speaker_selection: PatchValue::Keep,
             companion_clock: PatchValue::Keep,
+            background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
         };
         let current = patch.apply(None, None).expect("context settings");
@@ -2856,6 +2863,7 @@ mod tests {
     fn persisted_settings_require_a_revision_and_validate_resolved_values() {
         let mut settings = CurrentConversationSettings {
             companion_clock: None,
+            background: None,
             model_settings: Default::default(),
             revision: Revision::INITIAL,
             author_note: None,

@@ -265,6 +265,9 @@ pub enum LegacyBackupMediaRoot {
     Attachments,
     Sessions,
     GeneratedImages,
+    /// Images legacy stored as `data:` URLs in database values, planned from
+    /// those values.
+    Inline,
 }
 
 impl LegacyBackupMediaRoot {
@@ -276,6 +279,7 @@ impl LegacyBackupMediaRoot {
             Self::Attachments => "attachments",
             Self::Sessions => "sessions",
             Self::GeneratedImages => "generated_images",
+            Self::Inline => "inline",
         }
     }
 }

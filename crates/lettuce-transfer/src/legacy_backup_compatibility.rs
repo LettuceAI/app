@@ -420,7 +420,11 @@ fn build_coverage(
     let mut seen_media = BTreeSet::new();
     let mut media = Vec::with_capacity(inventory.media.len());
     let mut media_byte_count = 0_u64;
-    for item in &inventory.media {
+    for item in inventory
+        .media
+        .iter()
+        .filter(|item| item.root != LegacyBackupMediaRoot::Inline)
+    {
         if !seen_media.insert((item.root, item.relative_segments.clone())) {
             return Err(LegacyBackupCompatibilityError::DuplicateInventory);
         }
@@ -540,6 +544,7 @@ fn media_root_name(root: LegacyBackupMediaRoot) -> &'static str {
         LegacyBackupMediaRoot::Attachments => "attachments",
         LegacyBackupMediaRoot::Sessions => "sessions",
         LegacyBackupMediaRoot::GeneratedImages => "generated_images",
+        LegacyBackupMediaRoot::Inline => "inline",
     }
 }
 
@@ -624,6 +629,41 @@ mod tests {
         assert_eq!(plan.coverage.media_object_count, 1);
         assert_eq!(plan.coverage.media_byte_count, 19);
         assert_eq!(plan.coverage.media[0].relative_segments.len(), 2);
+    }
+
+    #[test]
+    fn decoded_data_url_images_keep_the_plan_sealed() {
+        use base64::Engine as _;
+        let mut png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR".to_vec();
+        png.extend_from_slice(&[0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]);
+        let mut source = inventory();
+        source.documents.push(LegacyBackupDocument {
+            kind: LegacyBackupDocumentKind::Lorebooks,
+            bytes: Zeroizing::new(
+                serde_json::to_vec(&serde_json::json!([{
+                    "id": uuid::Uuid::from_u128(1).to_string(),
+                    "name": "World",
+                    "avatar_path": format!(
+                        "data:image/png;base64,{}",
+                        base64::engine::general_purpose::STANDARD.encode(&png)
+                    ),
+                    "created_at": 1,
+                    "updated_at": 1
+                }]))
+                .expect("lorebooks"),
+            ),
+        });
+
+        let plan = plan_legacy_backup_compatibility(source).expect("compatibility plan");
+
+        assert_eq!(plan.coverage.media_object_count, 0);
+        assert_eq!(plan.legacy_import_plan().media.media.len(), 1);
+        assert!(
+            plan.media(&plan.legacy_import_plan().media.media[0].relative_path)
+                .is_some()
+        );
+        plan.verify_seal()
+            .expect("inline media stays outside the sealed coverage");
     }
 
     #[test]

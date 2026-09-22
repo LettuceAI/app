@@ -1417,7 +1417,7 @@ fn read_current_settings(
 {
     transaction
         .query_row(
-            "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, companion_clock_json, model_settings_json FROM conversation_settings WHERE conversation_id = ?1",
+            "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, companion_clock_json, model_settings_json, background_asset_id, background_hidden FROM conversation_settings WHERE conversation_id = ?1",
             [conversation_id.to_string()],
             slice::read_settings,
         )
@@ -1447,7 +1447,7 @@ fn write_settings(
     if create {
         transaction
             .execute(
-                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at, companion_clock_json, model_settings_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?20, ?21, ?19, ?19, ?22, ?23)",
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at, companion_clock_json, model_settings_json, background_asset_id, background_hidden) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?20, ?21, ?19, ?19, ?22, ?23, ?24, ?25)",
                 params![
                     conversation_id.to_string(),
                     revision,
@@ -1472,6 +1472,8 @@ fn write_settings(
                     slice::provenance_name(settings.speaker_selection_provenance),
                     settings.companion_clock.as_ref().map(slice::encode).transpose()?,
                     crate::conversation_vertical_slice::encode_model_settings(&settings.model_settings)?,
+                    crate::conversation_vertical_slice::background_asset(settings.background),
+                    crate::conversation_vertical_slice::background_hidden(settings.background),
                 ],
             )
             .map_err(kernel::map_constraint)?;
@@ -1479,7 +1481,7 @@ fn write_settings(
     }
     let changed = transaction
         .execute(
-            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19, speaker_selection = ?21, speaker_selection_provenance = ?22, companion_clock_json = ?23, model_settings_json = ?24 WHERE conversation_id = ?1 AND revision = ?20",
+            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19, speaker_selection = ?21, speaker_selection_provenance = ?22, companion_clock_json = ?23, model_settings_json = ?24, background_asset_id = ?25, background_hidden = ?26 WHERE conversation_id = ?1 AND revision = ?20",
             params![
                 conversation_id.to_string(),
                 revision,
@@ -1505,6 +1507,8 @@ fn write_settings(
                 slice::provenance_name(settings.speaker_selection_provenance),
                 settings.companion_clock.as_ref().map(slice::encode).transpose()?,
                 crate::conversation_vertical_slice::encode_model_settings(&settings.model_settings)?,
+                crate::conversation_vertical_slice::background_asset(settings.background),
+                    crate::conversation_vertical_slice::background_hidden(settings.background),
             ],
         )
         .map_err(kernel::map_constraint)?;
@@ -11044,6 +11048,7 @@ mod tests {
                 scene: PatchValue::Keep,
                 speaker_selection: PatchValue::Keep,
                 companion_clock: PatchValue::Keep,
+                background: PatchValue::Keep,
                 model_settings: PatchValue::Keep,
             }
         };
@@ -11446,6 +11451,92 @@ mod tests {
     }
 
     #[test]
+    fn conversation_background_persists_an_image_or_hidden_override() {
+        let fixture = direct_fixture();
+        let asset = stage_media_asset(&fixture.database, "b1");
+        let update = |key: &str, background| {
+            let current =
+                ConversationReader::get(fixture.database.as_ref(), fixture.conversation_id)
+                    .expect("aggregate")
+                    .conversation
+                    .current_settings;
+            fixture.database.update_settings(
+                PreparedConversationSettingsUpdate::new(
+                    UpdateConversationSettings {
+                        conversation_id: fixture.conversation_id,
+                        expected_settings_revision: current.map(|settings| settings.revision),
+                        operation: token(key, "be"),
+                        patch: CurrentConversationSettingsPatch {
+                            background,
+                            ..Default::default()
+                        },
+                    },
+                    Vec::new(),
+                )
+                .expect("prepare background"),
+                TimestampMillis::new(50),
+            )
+        };
+        let background = || {
+            ConversationReader::get(fixture.database.as_ref(), fixture.conversation_id)
+                .expect("aggregate")
+                .conversation
+                .current_settings
+                .and_then(|settings| settings.background)
+        };
+        let image = lettuce_conversations::ConversationBackground::Image { asset_id: asset };
+        update("background-image", PatchValue::Set(image)).expect("set image");
+        assert_eq!(background(), Some(image));
+        update(
+            "background-hidden",
+            PatchValue::Set(lettuce_conversations::ConversationBackground::Hidden),
+        )
+        .expect("hide background");
+        assert_eq!(
+            background(),
+            Some(lettuce_conversations::ConversationBackground::Hidden)
+        );
+        assert!(
+            update(
+                "background-missing",
+                PatchValue::Set(lettuce_conversations::ConversationBackground::Image {
+                    asset_id: AssetId::new(),
+                }),
+            )
+            .is_err()
+        );
+        update("background-clear", PatchValue::Clear).expect("clear background");
+        assert_eq!(background(), None);
+
+        let mut connection = fixture.database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        let mut root = crate::conversation_sync_adapter::sync_load_conversation_root(
+            &transaction,
+            &fixture.conversation_id.to_string(),
+        )
+        .expect("load root")
+        .expect("root");
+        root.conversation
+            .current_settings
+            .as_mut()
+            .expect("settings")
+            .background = Some(lettuce_conversations::ConversationBackground::Image {
+            asset_id: AssetId::new(),
+        });
+        assert_eq!(
+            crate::conversation_sync_adapter::sync_replace_conversation_root(&transaction, &root),
+            Err(lettuce_conversations::ConversationRepositoryError::NotFound)
+        );
+        root.conversation
+            .current_settings
+            .as_mut()
+            .expect("settings")
+            .background = Some(image);
+        crate::conversation_sync_adapter::sync_replace_conversation_root(&transaction, &root)
+            .expect("apply with a present background");
+    }
+
+    #[test]
     fn settings_context_artifacts_are_atomic_and_historical_refs_survive_reset() {
         let fixture = direct_fixture();
         let prompt_id = lettuce_types::PromptDocumentId::new();
@@ -11460,6 +11551,7 @@ mod tests {
         let patch = |prompt: PatchValue<lettuce_conversations::PromptLaunchSnapshot>| {
             CurrentConversationSettingsPatch {
                 companion_clock: PatchValue::Keep,
+                background: PatchValue::Keep,
                 model_settings: PatchValue::Keep,
                 author_note: PatchValue::Keep,
                 memory: PatchValue::Keep,
@@ -11597,6 +11689,7 @@ mod tests {
              scene: PatchValue<lettuce_conversations::SceneLaunchSnapshot>| {
                 CurrentConversationSettingsPatch {
                     companion_clock: PatchValue::Keep,
+                    background: PatchValue::Keep,
                     model_settings: PatchValue::Keep,
                     author_note: PatchValue::Keep,
                     memory: PatchValue::Keep,

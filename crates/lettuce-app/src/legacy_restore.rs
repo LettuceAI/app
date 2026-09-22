@@ -576,6 +576,10 @@ mod tests {
             ])
             .to_string()
         }]);
+        let background = format!(
+            "data:image/png;base64,{}",
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, PNG)
+        );
         let mut greeting = legacy_message(&first_message, "user", None, "Hello Mira");
         greeting["attachments"] = reply["attachments"].clone();
         let compatibility =
@@ -619,7 +623,7 @@ mod tests {
                             "parent_session_id": null,
                             "branched_from_message_id": null,
                             "root_session_id": session,
-                            "background_image_path": null,
+                            "background_image_path": background,
                             "system_prompt": null,
                             "mode": "roleplay",
                             "selected_scene_id": null,
@@ -636,12 +640,17 @@ mod tests {
                             "presence_penalty": null,
                             "top_k": null,
                             "advanced_model_settings": "{\"temperature\":0.55,\"llamaThreads\":8}",
-                            "companion_state": null,
+                            "companion_state": "{\"preferences\":{\"timeAwarenessEnabled\":true,\"timeOverride\":{\"mode\":\"frozen\",\"anchorMs\":5000,\"setAtMs\":1}}}",
                             "memories": "[]",
                             "memory_embeddings": "[]",
-                            "memory_summary": null,
+                            "memory_summary": "They met at the lighthouse.",
                             "memory_summary_token_count": 0,
-                            "memory_tool_events": "[]",
+                            "memory_tool_events": serde_json::json!([
+                                {"status": "success", "windowMessageIds": [first_message]},
+                                {"status": "error", "windowMessageIds": [second_message]},
+                                {"revertedAt": 5, "windowMessageIds": [second_message]}
+                            ])
+                            .to_string(),
                             "memory_status": null,
                             "memory_error": null,
                             "memory_progress_step": 0,
@@ -680,7 +689,7 @@ mod tests {
             })
             .expect("compatibility plan");
         let plan = compatibility.legacy_import_plan();
-        assert_eq!(plan.media.media.len(), 4);
+        assert_eq!(plan.media.media.len(), 5);
         let receipt = coordinator
             .replace(
                 OperationId::new(),
@@ -704,7 +713,7 @@ mod tests {
             .expect("restored graph");
         assert_eq!(graph.authored.personas.len(), 1);
         assert_eq!(graph.authored.characters.len(), 1);
-        assert_eq!(graph.authored.media_assets.len(), 4);
+        assert_eq!(graph.authored.media_assets.len(), 5);
         let playground = &graph.playground_history;
         assert_eq!(playground.entries.len(), 1);
         assert_eq!(
@@ -789,6 +798,32 @@ mod tests {
             Some(0.55)
         );
         assert_eq!(settings.model_settings.llama_cpp.threads, Some(8));
+        assert_eq!(
+            settings.companion_clock,
+            Some(lettuce_conversations::CompanionClockSettings {
+                time_awareness_enabled: true,
+                time_override: lettuce_conversations::CompanionTimeOverride::Frozen {
+                    anchor_at: TimestampMillis::new(5_000),
+                },
+            })
+        );
+        let Some(lettuce_conversations::ConversationBackground::Image { asset_id }) =
+            settings.background
+        else {
+            panic!("imported conversation background");
+        };
+        assert_eq!(
+            lettuce_media::MediaAssetRepository::get(&restored, asset_id)
+                .expect("read asset")
+                .expect("background asset")
+                .kind,
+            lettuce_media::AssetKind::OtherImage
+        );
+        let summary = graph.memory.spaces[0]
+            .summary
+            .as_ref()
+            .expect("imported memory summary");
+        assert_eq!((summary.window_start, summary.window_end), (0, 1));
         let mut exported = graph.clone();
         lettuce_transfer::canonicalize_and_validate(&mut exported)
             .expect("a legacy-restored database backs up again");

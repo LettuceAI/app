@@ -206,6 +206,16 @@ fn validate_conversation(
     all_candidate_ids: &mut BTreeSet<lettuce_types::MessageCandidateId>,
 ) -> Result<(), ConversationHistoryBackupError> {
     let conversation_id = backup.aggregate.conversation.id;
+    if let Some(lettuce_conversations::ConversationBackground::Image { asset_id }) = backup
+        .aggregate
+        .conversation
+        .current_settings
+        .as_ref()
+        .and_then(|settings| settings.background)
+        && !media_asset_ids.contains(&asset_id)
+    {
+        return Err(ConversationHistoryBackupError::InvalidData);
+    }
     let branch_ids = backup
         .aggregate
         .branches

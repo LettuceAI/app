@@ -37,6 +37,7 @@ struct PlannedMedia<'a> {
 pub fn plan_legacy_backup_authored_media(
     mut authored: LegacyBackupAuthoredPlan,
 ) -> Result<LegacyBackupAuthoredMediaPlan, LegacyBackupMediaPlanError> {
+    inline_data_urls(&mut authored);
     let skipped = prune_missing_media(&mut authored)?;
     let mut planned = BTreeMap::<String, PlannedMedia<'_>>::new();
     let mut references = 0_u32;
@@ -159,6 +160,7 @@ pub fn plan_legacy_backup_authored_media(
     let mut skipped = skipped;
     plan_attachments(&authored, &mut planned, &mut references, &mut skipped)?;
     plan_playground_images(&authored, &mut planned, &mut references, &mut skipped)?;
+    plan_session_backgrounds(&authored, &mut planned, &mut references, &mut skipped)?;
     skipped.sort();
     skipped.dedup();
 
@@ -252,6 +254,9 @@ fn image_media<'a>(
     source: &'a [LegacyBackupMedia],
     reference: &LegacyMediaReference,
 ) -> Result<Option<&'a LegacyBackupMedia>, LegacyBackupMediaPlanError> {
+    if renderable_url(&reference.locator) {
+        return Ok(inline_media(source, &reference.locator));
+    }
     if !safe_component(&reference.locator, false) {
         return Err(LegacyBackupMediaPlanError::Unsafe {
             locator: reference.locator.clone(),
@@ -400,6 +405,281 @@ fn missing_skip(kind: LegacyImportSkipKind, source_key: String) -> LegacyImportS
         source_key,
         reason: LegacyImportSkipReason::MissingMediaFile,
     }
+}
+
+/// Legacy `isRenderableImageUrl`: values legacy displayed as they were
+/// instead of resolving them as a stored image id.
+fn renderable_url(locator: &str) -> bool {
+    let lower = locator.trim().to_ascii_lowercase();
+    [
+        "http://",
+        "https://",
+        "data:image",
+        "blob:",
+        "asset:",
+        "tauri:",
+    ]
+    .iter()
+    .any(|prefix| lower.starts_with(prefix))
+}
+
+fn inline_name(locator: &str) -> String {
+    blake3::hash(locator.trim().as_bytes()).to_hex().to_string()
+}
+
+/// The planned image of a `data:` URL value; other URLs have no bytes the
+/// import can read.
+fn inline_media<'a>(
+    source: &'a [LegacyBackupMedia],
+    locator: &str,
+) -> Option<&'a LegacyBackupMedia> {
+    let name = inline_name(locator);
+    source.iter().find(|media| {
+        media.root == LegacyBackupMediaRoot::Inline
+            && matches!(media.relative_segments.as_slice(), [segment] if *segment == name)
+    })
+}
+
+fn decode_data_url(locator: &str) -> Option<zeroize::Zeroizing<Vec<u8>>> {
+    use base64::Engine as _;
+    let (header, payload) = locator.trim().split_once(',')?;
+    let header = header.to_ascii_lowercase();
+    if !header.starts_with("data:image") || !header.ends_with(";base64") {
+        return None;
+    }
+    if u64::try_from(payload.len() / 4 * 3).ok()? > LEGACY_MEDIA_OBJECT_BYTES_LIMIT {
+        return None;
+    }
+    let bytes = zeroize::Zeroizing::new(
+        base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .ok()?,
+    );
+    (!bytes.is_empty()
+        && u64::try_from(bytes.len()).ok()? <= LEGACY_MEDIA_OBJECT_BYTES_LIMIT
+        && lettuce_media::sniff_media_kind(&bytes) == Some(lettuce_media::MediaKind::Image))
+    .then_some(bytes)
+}
+
+/// Adds every decodable `data:` image an image reference or session
+/// background holds as inline media, named by the value's hash.
+fn inline_data_urls(authored: &mut LegacyBackupAuthoredPlan) {
+    let mut locators = Vec::new();
+    for persona in &authored.personas.personas {
+        locators.extend(
+            persona
+                .design_references
+                .iter()
+                .map(|reference| reference.locator.clone()),
+        );
+    }
+    for lorebook in &authored.lorebooks.lorebooks {
+        locators.extend(
+            lorebook
+                .avatar
+                .iter()
+                .map(|reference| reference.locator.clone()),
+        );
+    }
+    for character in &authored.characters {
+        locators.extend(
+            character
+                .media
+                .background
+                .iter()
+                .map(|reference| reference.locator.clone()),
+        );
+        locators.extend(
+            character
+                .media
+                .design_references
+                .iter()
+                .map(|reference| reference.locator.clone()),
+        );
+        for scene in &character.scenes {
+            locators.extend(
+                scene
+                    .background
+                    .iter()
+                    .map(|reference| reference.locator.clone()),
+            );
+        }
+    }
+    for group in &authored.groups {
+        locators.extend(
+            group
+                .background
+                .iter()
+                .map(|reference| reference.locator.clone()),
+        );
+        if let Some(scene) = &group.starting_scene {
+            locators.extend(
+                scene
+                    .background
+                    .iter()
+                    .map(|reference| reference.locator.clone()),
+            );
+        }
+    }
+    locators.extend(
+        session_backgrounds(authored)
+            .into_iter()
+            .map(|background| background.value),
+    );
+    let media = &mut authored.configuration.source.media;
+    for locator in locators {
+        if !locator
+            .trim()
+            .to_ascii_lowercase()
+            .starts_with("data:image")
+            || inline_media(media, &locator).is_some()
+        {
+            continue;
+        }
+        if let Some(bytes) = decode_data_url(&locator) {
+            media.push(LegacyBackupMedia::from_bytes(
+                LegacyBackupMediaRoot::Inline,
+                vec![inline_name(&locator)],
+                bytes,
+            ));
+        }
+    }
+}
+
+/// The background a legacy direct session set for itself: `None` follows the
+/// scene or character, an empty value shows none.
+#[must_use]
+pub fn legacy_direct_session_background(column: Option<&str>) -> Option<String> {
+    column.map(str::to_owned)
+}
+
+/// The background a legacy group session set for itself (its
+/// `backgroundImagePath` override): `None` follows the group, an empty value
+/// shows none.
+#[must_use]
+pub fn legacy_group_session_background(config_overrides_json: &str) -> Option<String> {
+    let overrides = serde_json::from_str::<serde_json::Value>(config_overrides_json).ok()?;
+    let value = overrides.as_object()?.get("backgroundImagePath")?;
+    Some(value.as_str().unwrap_or_default().to_owned())
+}
+
+#[derive(serde::Deserialize)]
+struct BackgroundSession {
+    id: String,
+    #[serde(default)]
+    background_image_path: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct BackgroundGroupSession {
+    id: String,
+    #[serde(default)]
+    config_overrides: String,
+}
+
+struct SessionBackground {
+    session_id: String,
+    group: bool,
+    value: String,
+}
+
+fn session_backgrounds(authored: &LegacyBackupAuthoredPlan) -> Vec<SessionBackground> {
+    let document = |kind| {
+        authored
+            .configuration
+            .source
+            .documents
+            .iter()
+            .find(|document| document.kind == kind)
+    };
+    let mut backgrounds = Vec::new();
+    if let Some(sessions) = document(LegacyBackupDocumentKind::Sessions)
+        .and_then(|document| serde_json::from_slice::<Vec<BackgroundSession>>(&document.bytes).ok())
+    {
+        backgrounds.extend(sessions.into_iter().filter_map(|session| {
+            Some(SessionBackground {
+                value: legacy_direct_session_background(session.background_image_path.as_deref())?,
+                session_id: session.id,
+                group: false,
+            })
+        }));
+    }
+    if let Some(sessions) = document(LegacyBackupDocumentKind::GroupSessions).and_then(|document| {
+        serde_json::from_slice::<Vec<BackgroundGroupSession>>(&document.bytes).ok()
+    }) {
+        backgrounds.extend(sessions.into_iter().filter_map(|session| {
+            Some(SessionBackground {
+                value: legacy_group_session_background(&session.config_overrides)?,
+                session_id: session.id,
+                group: true,
+            })
+        }));
+    }
+    backgrounds
+}
+
+/// Every session background image becomes a media candidate; one whose image
+/// is gone or unreadable is recorded (legacy showed no background).
+fn plan_session_backgrounds<'a>(
+    authored: &'a LegacyBackupAuthoredPlan,
+    planned: &mut BTreeMap<String, PlannedMedia<'a>>,
+    references: &mut u32,
+    skipped: &mut Vec<LegacyImportSkip>,
+) -> Result<(), LegacyBackupMediaPlanError> {
+    let source = &authored.configuration.source.media;
+    for background in session_backgrounds(authored) {
+        let locator = background.value.trim();
+        if locator.is_empty() {
+            continue;
+        }
+        let field = if background.group {
+            "group_sessions.background_image_path"
+        } else {
+            "sessions.background_image_path"
+        };
+        let reference = LegacyMediaReference {
+            locator: locator.to_owned(),
+        };
+        let media = match image_media(source, &reference) {
+            Ok(Some(media)) => media,
+            Ok(None) => {
+                skipped.push(legacy_value_skip(
+                    field,
+                    &background.session_id,
+                    LegacyImportSkipReason::MissingMediaFile,
+                ));
+                continue;
+            }
+            Err(_) => {
+                skipped.push(legacy_value_skip(
+                    field,
+                    &background.session_id,
+                    LegacyImportSkipReason::MalformedLegacyValue,
+                ));
+                continue;
+            }
+        };
+        let media_use = LegacyMediaUse::ConversationBackground {
+            session_id: background.session_id.clone(),
+            group: background.group,
+        };
+        if planned
+            .get(&archive_path(media))
+            .is_some_and(|item| item.uses.contains(&media_use))
+        {
+            continue;
+        }
+        if *references >= LEGACY_MEDIA_REFERENCE_LIMIT {
+            skipped.push(legacy_value_skip(
+                &format!("{field}.limit"),
+                &background.session_id,
+                LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+            continue;
+        }
+        add_planned(planned, media, media_use, references)?;
+    }
+    Ok(())
 }
 
 #[derive(serde::Deserialize)]
@@ -664,6 +944,7 @@ pub(crate) fn archive_path(media: &LegacyBackupMedia) -> String {
         LegacyBackupMediaRoot::Attachments => "attachments",
         LegacyBackupMediaRoot::Sessions => "sessions",
         LegacyBackupMediaRoot::GeneratedImages => "generated_images",
+        LegacyBackupMediaRoot::Inline => "inline",
     };
     format!("{root}/{}", media.relative_segments.join("/"))
 }
@@ -1015,6 +1296,147 @@ mod tests {
             shared.content_hash,
             ContentHash::parse(blake3::hash(b"shared").to_hex().to_string()).expect("hash")
         );
+    }
+
+    #[test]
+    fn data_url_images_and_session_backgrounds_become_media() {
+        use base64::Engine as _;
+        let first = id(40);
+        let second = id(41);
+        let group = id(42);
+        let data_url = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(png())
+        );
+        let overrides =
+            |value: Value| json!({"version": 1, "backgroundImagePath": value}).to_string();
+        let documents = vec![
+            document(
+                LegacyBackupDocumentKind::Characters,
+                json!([
+                    {
+                        "id": first,
+                        "name": "Mira",
+                        "background_image_path": "https://example.com/bg.png",
+                        "created_at": 1,
+                        "updated_at": 1
+                    },
+                    {"id": second, "name": "Sol", "created_at": 1, "updated_at": 1}
+                ]),
+            ),
+            document(
+                LegacyBackupDocumentKind::GroupCharacters,
+                json!([{
+                    "id": group,
+                    "name": "Crew",
+                    "character_ids": format!("[\"{first}\",\"{second}\"]"),
+                    "background_image_path": data_url,
+                    "created_at": 1,
+                    "updated_at": 1
+                }]),
+            ),
+            document(
+                LegacyBackupDocumentKind::Sessions,
+                json!([
+                    {"id": "direct-image", "background_image_path": "room"},
+                    {"id": "direct-hidden", "background_image_path": ""},
+                    {"id": "direct-inherit", "background_image_path": null}
+                ]),
+            ),
+            document(
+                LegacyBackupDocumentKind::GroupSessions,
+                Value::Array(
+                    [
+                        ("group-override", overrides(json!(data_url))),
+                        ("group-hidden", overrides(Value::Null)),
+                        ("group-inherit", "{\"version\":1}".to_owned()),
+                        ("group-gone", overrides(json!("gone"))),
+                        ("group-broken", overrides(json!("data:image/png;base64,!!"))),
+                    ]
+                    .into_iter()
+                    .map(|(session, config_overrides)| {
+                        json!({
+                            "id": session,
+                            "group_character_id": group,
+                            "name": "Crew",
+                            "created_at": 1,
+                            "updated_at": 1,
+                            "config_overrides": config_overrides
+                        })
+                    })
+                    .collect(),
+                ),
+            ),
+        ];
+        let plan = plan_legacy_backup_authored_media(authored(
+            documents,
+            vec![media(LegacyBackupMediaRoot::Images, &["room.png"], &png())],
+        ))
+        .expect("media plan");
+        let inline = format!("inline/{}", blake3::hash(data_url.as_bytes()).to_hex());
+        let uses = plan
+            .media
+            .media
+            .iter()
+            .map(|candidate| (candidate.relative_path.clone(), candidate.uses.clone()))
+            .collect::<Vec<_>>();
+        let background = |session: &str, group| LegacyMediaUse::ConversationBackground {
+            session_id: session.to_owned(),
+            group,
+        };
+        assert_eq!(
+            uses,
+            vec![
+                (
+                    "images/room.png".to_owned(),
+                    vec![background("direct-image", false)]
+                ),
+                (
+                    inline.clone(),
+                    vec![
+                        LegacyMediaUse::GroupBackground {
+                            group_id: group.parse().expect("group id")
+                        },
+                        background("group-override", true),
+                    ]
+                ),
+            ]
+        );
+        let candidate = &plan.media.media[1];
+        assert_eq!(candidate.byte_len, png().len() as u64);
+        assert_eq!(
+            candidate.content_hash,
+            ContentHash::parse(blake3::hash(&png()).to_hex().to_string()).expect("hash")
+        );
+        assert!(plan.authored.characters[0].media.background.is_none());
+        let mut expected = vec![
+            missing_skip(
+                LegacyImportSkipKind::CharacterMedia,
+                format!("{first}:background"),
+            ),
+            legacy_value_skip(
+                "group_sessions.background_image_path",
+                "group-gone",
+                LegacyImportSkipReason::MissingMediaFile,
+            ),
+            legacy_value_skip(
+                "group_sessions.background_image_path",
+                "group-broken",
+                LegacyImportSkipReason::MissingMediaFile,
+            ),
+        ];
+        expected.sort();
+        assert_eq!(plan.media.skipped, expected);
+        assert_eq!(
+            legacy_direct_session_background(Some("")),
+            Some(String::new())
+        );
+        assert_eq!(legacy_direct_session_background(None), None);
+        assert_eq!(
+            legacy_group_session_background(&overrides(Value::Null)),
+            Some(String::new())
+        );
+        assert_eq!(legacy_group_session_background("{\"version\":1}"), None);
     }
 
     #[test]

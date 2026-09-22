@@ -76,8 +76,22 @@ memory: legacy memories that fit the rewrite's memory item become the
 conversation's memory space with ids derived per session (legacy branches
 copied memories with the same ids) and deterministic short ids, stored embeddings of
 64-768 dimensions become ready projections under their legacy source version,
-and a legacy summary covers the latest visible user and assistant messages,
-the messages the runtime summary cursor counts.
+and a legacy summary covers the visible user and assistant messages up to
+legacy's summary cursor, the last message of the newest memory cycle in
+`memoryToolEvents` that still advanced it (not reverted, not an error or user
+edit, anchored in this conversation; the pool carrier reads the shared pool's
+events). Messages after it stay unsummarized, so the runtime picks them up like
+legacy would have. Corrected: the summary used to claim the whole dialogue.
+Deviation: without a usable cycle legacy restarted at message 0, which a
+summary window cannot express, so the summary covers the first message.
+Not yet imported: the per-cycle tool log and its revert (no rewrite
+equivalent) and the cursors of non-carrier pool conversations (backups do not
+carry per-conversation memory cursors).
+A direct session's `companionState.preferences` (time awareness and its
+frozen/ticking override, read like legacy `temporal.rs`: an override missing
+its anchor runs on real time) becomes the conversation's `companion_clock`;
+defaults keep none. A session's own background becomes the conversation
+`background` (see lettuce-transfer).
 A legacy direct session of a companion character is imported as a companion
 conversation: it binds the character's shared memory pool, which takes the
 legacy companion shared memory when legacy kept one and otherwise the memories

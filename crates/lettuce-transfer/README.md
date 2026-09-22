@@ -744,6 +744,20 @@ Conversation import appends them as `MediaAsset` attachment parts after the
 text; the rendered variant also gets the message's attachments, deduplicated
 by id; media on non-rendered revisions and candidates is historical.
 
+Legacy `data:` images and session backgrounds (2026-09-22; previously
+fatal or dropped): legacy stored group and group-session backgrounds (and
+sometimes other images) as `data:image/...;base64,` URLs. Every such value in
+an image reference or session background is decoded into in-memory
+`inline/<blake3 of the URL text>` media before planning; other URLs legacy
+displayed as-is (`http(s)`, `blob:`, `asset:`, `tauri:`) and undecodable or
+non-image data are missing media and recorded, where they used to abort the
+whole import as unsafe. A session's own background is planned as a
+`ConversationBackground` use: a direct session's `background_image_path`, a
+group session's `config_overrides.backgroundImagePath` (legacy resolved every
+other group session value from its group, which the conversation now follows
+live). Conversation import sets the image, or `Hidden` when the value was
+empty or its image could not be imported, as legacy then showed none.
+
 Old playground history (2026-09-22; `playground_generations`, live database
 only) is planned beside the LoRA library as `plan.images.playground` and
 written by the `images` stage into the app's own `playground_history` /

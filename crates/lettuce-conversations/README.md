@@ -231,3 +231,11 @@ defers to the next layer. It is patched with `CurrentConversationSettingsPatch
 .model_settings`, stored in `conversation_settings.model_settings_json` (NULL
 when empty) and travels with the conversation history in backups. Runtime
 resolution wiring is a later slice.
+
+`CurrentConversationSettings.background` (`ConversationBackground`) is the
+background a conversation sets for itself: `Image { asset_id }` or `Hidden`;
+`None` follows the selected scene, then the character (direct) or the group
+(group), like legacy. It is patched with `CurrentConversationSettingsPatch
+.background`, stored in `conversation_settings.background_asset_id` /
+`background_hidden` (the asset must be an image; deleting it is restricted) and
+travels in backups and sync with its media.

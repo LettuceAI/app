@@ -978,6 +978,8 @@ pub struct CurrentConversationSettingsPatch {
     pub companion_clock: PatchValue<crate::CompanionClockSettings>,
     #[serde(default)]
     pub model_settings: PatchValue<lettuce_models::ModelSettingsLayer>,
+    #[serde(default)]
+    pub background: PatchValue<crate::model::ConversationBackground>,
     pub author_note: PatchValue<String>,
     pub memory: PatchValue<crate::snapshot::MemorySettingsSnapshot>,
     pub model_override: PatchValue<ModelSelectionSnapshot>,
@@ -1110,6 +1112,7 @@ impl CurrentConversationSettingsPatch {
         }
         let empty = crate::model::CurrentConversationSettings {
             companion_clock: None,
+            background: None,
             model_settings: Default::default(),
             revision,
             author_note: None,
@@ -1196,6 +1199,11 @@ impl CurrentConversationSettingsPatch {
                 PatchValue::Keep => base.model_settings.clone(),
                 PatchValue::Set(settings) => settings.clone(),
                 PatchValue::Clear | PatchValue::UseLaunchDefault => Default::default(),
+            },
+            background: match self.background {
+                PatchValue::Keep => base.background,
+                PatchValue::Set(background) => Some(background),
+                PatchValue::Clear | PatchValue::UseLaunchDefault => None,
             },
             revision,
             author_note,

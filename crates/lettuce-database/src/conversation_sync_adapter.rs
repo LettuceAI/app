@@ -247,14 +247,26 @@ pub(crate) fn sync_replace_conversation_root(
             return Err(ConversationRepositoryError::NotFound);
         }
     }
-    let exists: bool = transaction
+    if let Some(lettuce_conversations::ConversationBackground::Image { asset_id }) = conversation
+        .current_settings
+        .as_ref()
+        .and_then(|settings| settings.background)
+        && !exists(
+            transaction,
+            "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id = ?1)",
+            [asset_id.to_string()],
+        )?
+    {
+        return Err(ConversationRepositoryError::NotFound);
+    }
+    let present: bool = transaction
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
             [conversation.id.to_string()],
             |row| row.get(0),
         )
         .map_err(storage)?;
-    if exists {
+    if present {
         transaction
             .execute(
                 "UPDATE conversations SET lifecycle = ?2, title = ?3, revision = revision + 1 WHERE id = ?1",

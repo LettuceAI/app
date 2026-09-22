@@ -55,10 +55,31 @@ pub(crate) struct ImportContext {
     prompts: BTreeMap<String, lettuce_types::PromptDocumentId>,
     lorebooks: BTreeMap<lettuce_types::LorebookId, lettuce_types::LorebookId>,
     media: BTreeMap<String, lettuce_types::AssetId>,
+    backgrounds: BTreeMap<(String, bool), lettuce_types::AssetId>,
     pub(crate) scope: LegacyIdScope,
 }
 
 impl ImportContext {
+    /// A session's own legacy background: `value` is what it set, `None` when
+    /// it followed its scene, character or group. A background whose image
+    /// did not import (recorded) shows none, as legacy did.
+    pub(crate) fn background(
+        &self,
+        session_id: &str,
+        group: bool,
+        value: Option<&str>,
+    ) -> Option<lettuce_conversations::ConversationBackground> {
+        value?;
+        Some(
+            match self.backgrounds.get(&(session_id.to_owned(), group)) {
+                Some(asset_id) => lettuce_conversations::ConversationBackground::Image {
+                    asset_id: *asset_id,
+                },
+                None => lettuce_conversations::ConversationBackground::Hidden,
+            },
+        )
+    }
+
     /// The imported media parts of legacy attachment columns, in legacy order
     /// and once per attachment id; attachments the media plan left out (and
     /// recorded) have no asset.
@@ -89,6 +110,8 @@ pub(crate) struct SessionSettingsSource<'a> {
     pub lorebook_source_ids: Option<&'a [String]>,
     pub speaker_selection: Option<lettuce_conversations::GroupSpeakerSelectionSnapshot>,
     pub model_settings: &'a lettuce_models::ModelSettingsLayer,
+    pub background: Option<lettuce_conversations::ConversationBackground>,
+    pub companion_clock: Option<lettuce_conversations::CompanionClockSettings>,
 }
 
 /// One legacy chat row in the shape both direct and group sessions share.
@@ -137,6 +160,7 @@ pub(crate) struct LegacyConversationSource<'a> {
     pub memory: Option<&'a LegacyBackupMemoryEmbeddingOwner>,
     pub memory_summary: Option<&'a str>,
     pub memory_summary_token_count: u64,
+    pub memory_tool_events: Option<&'a str>,
     pub settings: Option<lettuce_conversations::CurrentConversationSettings>,
 }
 
@@ -416,6 +440,18 @@ where
                 lorebook_source_ids: session.lorebook_source_ids_override.as_deref(),
                 speaker_selection: None,
                 model_settings: &session.generation_settings.model_settings,
+                background: context.background(
+                    &session.source_id,
+                    false,
+                    lettuce_transfer::legacy_direct_session_background(
+                        session.background_image_locator.as_deref(),
+                    )
+                    .as_deref(),
+                ),
+                companion_clock: session
+                    .companion_state_json
+                    .as_deref()
+                    .and_then(legacy_companion_clock),
             },
         )?;
         snapshots.extend(settings_snapshots);
@@ -472,6 +508,9 @@ where
                     .as_deref()
                     .filter(|_| companion.is_none()),
                 memory_summary_token_count: session.memory_summary_token_count,
+                memory_tool_events: companion
+                    .is_none()
+                    .then_some(session.memory_tool_events_json.as_str()),
                 settings,
             },
             context,
@@ -623,11 +662,12 @@ fn attach_companion_pools(
         let mut pool = None;
         for carrier in candidates {
             let session = &sessions[carrier];
-            let (owner, summary, summary_token_count) = match shared_owner {
+            let (owner, summary, summary_token_count, tool_events) = match shared_owner {
                 Some(owner) => (
                     Some(owner),
                     shared_state.and_then(|state| state.memory_summary.as_deref()),
                     shared_state.map_or(0, |state| state.memory_summary_token_count),
+                    shared_state.map(|state| state.memory_tool_events_json.as_str()),
                 ),
                 None => (
                     memory_owner(
@@ -637,6 +677,7 @@ fn attach_companion_pools(
                     ),
                     session.memory_summary.as_deref(),
                     session.memory_summary_token_count,
+                    Some(session.memory_tool_events_json.as_str()),
                 ),
             };
             let record = &mapped[carrier].0;
@@ -647,6 +688,7 @@ fn attach_companion_pools(
                 owner,
                 summary,
                 summary_token_count,
+                tool_events,
                 &record.history.messages,
                 record.history.aggregate.conversation.updated_at,
             )?;
@@ -666,6 +708,46 @@ fn attach_companion_pools(
         }
     }
     Ok(())
+}
+
+/// Legacy `companion_time_awareness_enabled` / `companion_effective_now`: the
+/// session's `preferences` switch and time override. An override missing its
+/// anchor ran on real time; preferences at their defaults keep no clock.
+fn legacy_companion_clock(json: &str) -> Option<lettuce_conversations::CompanionClockSettings> {
+    use lettuce_conversations::{CompanionClockSettings, CompanionTimeOverride};
+    let state = serde_json::from_str::<serde_json::Value>(json).ok()?;
+    let preferences = state.get("preferences")?;
+    let time_awareness_enabled = preferences
+        .get("timeAwarenessEnabled")
+        .or_else(|| preferences.get("time_awareness_enabled"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let time_override = preferences.get("timeOverride");
+    let millis = |key: &str| {
+        time_override
+            .and_then(|value| value.get(key))
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|value| i64::try_from(value).ok())
+            .map(TimestampMillis::new)
+    };
+    let time_override = match time_override
+        .and_then(|value| value.get("mode"))
+        .and_then(serde_json::Value::as_str)
+    {
+        Some("frozen") => millis("anchorMs").map_or(CompanionTimeOverride::Live, |anchor_at| {
+            CompanionTimeOverride::Frozen { anchor_at }
+        }),
+        Some("ticking") => match (millis("anchorMs"), millis("setAtMs")) {
+            (Some(anchor_at), Some(set_at)) => CompanionTimeOverride::Ticking { anchor_at, set_at },
+            _ => CompanionTimeOverride::Live,
+        },
+        _ => CompanionTimeOverride::Live,
+    };
+    let clock = CompanionClockSettings {
+        time_awareness_enabled,
+        time_override,
+    };
+    (clock != CompanionClockSettings::default()).then_some(clock)
 }
 
 /// Legacy stored a companion session's runtime state as camelCase JSON; values
@@ -933,12 +1015,15 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
         && lorebooks_provenance == SettingProvenance::LaunchInherited
         && input.speaker_selection.is_none()
         && input.model_settings.is_empty()
+        && input.background.is_none()
+        && input.companion_clock.is_none()
     {
         return Ok((None, drafts));
     }
     Ok((
         Some(CurrentConversationSettings {
-            companion_clock: None,
+            companion_clock: input.companion_clock,
+            background: input.background,
             model_settings: input.model_settings.clone(),
             revision: Revision::INITIAL,
             author_note_provenance: provenance(author_note.is_some()),
@@ -986,6 +1071,7 @@ fn memory_space(
     owner: Option<&LegacyBackupMemoryEmbeddingOwner>,
     summary: Option<&str>,
     summary_token_count: u64,
+    tool_events: Option<&str>,
     messages: &[BackupMessage],
     updated_at: TimestampMillis,
 ) -> Result<(Option<BackupMemorySpace>, Vec<BackupMemoryProjection>), Error> {
@@ -1077,29 +1163,37 @@ fn memory_space(
             });
         }
     }
+    let in_dialogue = |message: &&BackupMessage| {
+        message.message.visibility == MessageVisibility::Visible
+            && matches!(
+                message.message.role,
+                MessageRole::User | MessageRole::Assistant
+            )
+    };
     let dialogue = messages
         .iter()
-        .filter(|message| {
-            message.message.visibility == MessageVisibility::Visible
-                && matches!(
-                    message.message.role,
-                    MessageRole::User | MessageRole::Assistant
-                )
-        })
+        .filter(in_dialogue)
         .map(|message| message.message.id)
         .collect::<Vec<_>>();
     let summary = summary
         .filter(|text| !text.trim().is_empty() && !dialogue.is_empty())
         .map(|text| {
-            let window = dialogue.len().min(MAX_MEMORY_SUMMARY_SOURCE_MESSAGES);
-            let start = dialogue.len() - window;
+            let anchor = legacy_summary_anchor(scope, tool_events, messages);
+            let end = messages
+                .iter()
+                .position(|message| Some(message.message.id) == anchor)
+                .map_or(0, |anchor| {
+                    messages[..=anchor].iter().filter(in_dialogue).count()
+                })
+                .clamp(1, dialogue.len());
+            let start = end - end.min(MAX_MEMORY_SUMMARY_SOURCE_MESSAGES);
             Ok::<_, Error>(MemorySummary {
                 space_id,
                 text: text.to_owned(),
                 token_count: u32::try_from(summary_token_count).unwrap_or(u32::MAX),
                 window_start: u64::try_from(start).map_err(|_| Error::InvalidInput)?,
-                window_end: u64::try_from(dialogue.len()).map_err(|_| Error::InvalidInput)?,
-                source_message_ids: dialogue[start..].to_vec(),
+                window_end: u64::try_from(end).map_err(|_| Error::InvalidInput)?,
+                source_message_ids: dialogue[start..end].to_vec(),
                 updated_at,
             })
         })
@@ -1120,6 +1214,48 @@ fn memory_space(
         }),
         projections,
     ))
+}
+
+/// Legacy `resolve_last_valid_window_end`: the last message of the newest
+/// memory cycle that still advances the cursor (not reverted, not an error or
+/// user edit) and whose anchor is a user or assistant message of this
+/// conversation.
+fn legacy_summary_anchor(
+    scope: LegacyIdScope,
+    tool_events: Option<&str>,
+    messages: &[BackupMessage],
+) -> Option<MessageId> {
+    use serde_json::Value;
+    let events = serde_json::from_str::<Vec<Value>>(tool_events?).ok()?;
+    events.iter().rev().find_map(|event| {
+        if event.get("revertedAt").and_then(Value::as_u64).is_some()
+            || matches!(
+                event.get("status").and_then(Value::as_str),
+                Some("error" | "user_edit")
+            )
+        {
+            return None;
+        }
+        let anchor = MessageId::from_uuid(
+            scope.source(
+                event
+                    .get("windowMessageIds")?
+                    .as_array()?
+                    .last()?
+                    .as_str()?,
+            ),
+        );
+        messages
+            .iter()
+            .any(|message| {
+                message.message.id == anchor
+                    && matches!(
+                        message.message.role,
+                        MessageRole::User | MessageRole::Assistant
+                    )
+            })
+            .then_some(anchor)
+    })
 }
 
 /// Legacy branch sessions copied their parent's memories with the same ids,
@@ -1290,6 +1426,7 @@ pub(crate) fn conversation_record(
         source.memory,
         source.memory_summary,
         source.memory_summary_token_count,
+        source.memory_tool_events,
         &writer.messages,
         updated_at,
     )?;
@@ -1758,12 +1895,33 @@ pub(crate) fn import_context(
             ))
         })
         .collect();
+    let backgrounds = plan
+        .media
+        .media
+        .iter()
+        .flat_map(|candidate| {
+            candidate
+                .uses
+                .iter()
+                .filter_map(|media_use| match media_use {
+                    lettuce_transfer::LegacyMediaUse::ConversationBackground {
+                        session_id,
+                        group,
+                    } => Some((
+                        (session_id.clone(), *group),
+                        *media.get(&candidate.relative_path)?,
+                    )),
+                    _ => None,
+                })
+        })
+        .collect();
     ImportContext {
         models,
         personas,
         prompts,
         lorebooks,
         media,
+        backgrounds,
         scope: LegacyIdScope::new(source_fingerprint),
     }
 }

@@ -1679,7 +1679,19 @@ fn conversation_apply_error(
 
 const CONVERSATION_CODEC: SnapshotCodec = SnapshotCodec {
     kind: lettuce_sync::CONVERSATION_SYNC_KIND,
-    assets: no_assets,
+    assets: |bytes| {
+        serde_json::from_slice::<crate::conversation_sync_adapter::SyncConversationRoot>(bytes)
+            .ok()
+            .and_then(|root| root.conversation.current_settings)
+            .and_then(|settings| match settings.background {
+                Some(lettuce_conversations::ConversationBackground::Image { asset_id }) => {
+                    Some(asset_id.to_string())
+                }
+                _ => None,
+            })
+            .into_iter()
+            .collect()
+    },
     empty: None,
     seed: None,
     decode: |id, bytes| {
@@ -2481,6 +2493,7 @@ fn journal_referenced_media(
              UNION SELECT asset_id FROM group_scene_assets
              UNION SELECT asset_id FROM revision_media_refs
              UNION SELECT asset_id FROM candidate_media_refs
+             UNION SELECT background_asset_id FROM conversation_settings WHERE background_asset_id IS NOT NULL
              UNION SELECT audio_asset_id FROM asr_voice_examples
              ORDER BY asset_id",
         )
