@@ -3311,6 +3311,7 @@ mod smoke_tests {
             .collect(),
             relationship_defaults: lettuce_companions::RelationshipDefaults::default(),
             prompting: lettuce_companions::CompanionPromptingConfig::default(),
+            time_awareness: false,
         };
         let character = Character::new(
             character_id,

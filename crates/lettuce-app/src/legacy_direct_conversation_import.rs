@@ -367,7 +367,10 @@ where
             .map_err(|_| Error::Conflict)?;
         let (plan, mut snapshots) = prepared.into_parts();
         let conversation_id = ConversationId::from_uuid(context.scope.source(&session.source_id));
-        let companion = launch_companion.map(|(owner, initial)| {
+        let companion_time_awareness = launch_companion
+            .as_ref()
+            .is_some_and(|(_, _, time_awareness)| *time_awareness);
+        let companion = launch_companion.map(|(owner, initial, _)| {
             let owner = CompanionStateOwner {
                 conversation_id,
                 ..owner
@@ -451,7 +454,15 @@ where
                 companion_clock: session
                     .companion_state_json
                     .as_deref()
-                    .and_then(legacy_companion_clock),
+                    .and_then(legacy_companion_clock)
+                    .or_else(|| {
+                        companion_time_awareness.then(|| {
+                            lettuce_conversations::CompanionClockSettings {
+                                time_awareness_enabled: true,
+                                ..Default::default()
+                            }
+                        })
+                    }),
             },
         )?;
         snapshots.extend(settings_snapshots);
@@ -710,19 +721,27 @@ fn attach_companion_pools(
     Ok(())
 }
 
-/// Legacy `companion_time_awareness_enabled` / `companion_effective_now`: the
-/// session's `preferences` switch and time override. An override missing its
-/// anchor ran on real time; preferences at their defaults keep no clock.
+/// Legacy `companion_time_awareness_enabled` / `companion_effective_now` over
+/// the saved `companionState`: its `preferences` switch (off when absent) and
+/// time override, where an override missing its anchor ran on real time. A
+/// session without saved state takes the companion's default, which legacy
+/// seeded on its next save.
 fn legacy_companion_clock(json: &str) -> Option<lettuce_conversations::CompanionClockSettings> {
     use lettuce_conversations::{CompanionClockSettings, CompanionTimeOverride};
     let state = serde_json::from_str::<serde_json::Value>(json).ok()?;
-    let preferences = state.get("preferences")?;
+    if state.is_null() {
+        return None;
+    }
+    let preferences = state.get("preferences");
     let time_awareness_enabled = preferences
-        .get("timeAwarenessEnabled")
-        .or_else(|| preferences.get("time_awareness_enabled"))
+        .and_then(|value| {
+            value
+                .get("timeAwarenessEnabled")
+                .or_else(|| value.get("time_awareness_enabled"))
+        })
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
-    let time_override = preferences.get("timeOverride");
+    let time_override = preferences.and_then(|value| value.get("timeOverride"));
     let millis = |key: &str| {
         time_override
             .and_then(|value| value.get(key))
@@ -743,11 +762,10 @@ fn legacy_companion_clock(json: &str) -> Option<lettuce_conversations::Companion
         },
         _ => CompanionTimeOverride::Live,
     };
-    let clock = CompanionClockSettings {
+    Some(CompanionClockSettings {
         time_awareness_enabled,
         time_override,
-    };
-    (clock != CompanionClockSettings::default()).then_some(clock)
+    })
 }
 
 /// Legacy stored a companion session's runtime state as camelCase JSON; values
@@ -1961,4 +1979,41 @@ fn parts(
     }
     parts.extend(attachments);
     parts
+}
+
+#[cfg(test)]
+mod tests {
+    use lettuce_conversations::{CompanionClockSettings, CompanionTimeOverride};
+
+    use super::*;
+
+    #[test]
+    fn saved_companion_state_decides_the_clock_like_legacy_temporal_reads() {
+        assert_eq!(legacy_companion_clock("null"), None);
+        assert_eq!(
+            legacy_companion_clock("{}"),
+            Some(CompanionClockSettings::default())
+        );
+        assert_eq!(
+            legacy_companion_clock(
+                r#"{"preferences":{"time_awareness_enabled":true,"timeOverride":{"mode":"frozen"}}}"#
+            ),
+            Some(CompanionClockSettings {
+                time_awareness_enabled: true,
+                time_override: CompanionTimeOverride::Live,
+            })
+        );
+        assert_eq!(
+            legacy_companion_clock(
+                r#"{"preferences":{"timeAwarenessEnabled":true,"timeOverride":{"mode":"ticking","anchorMs":10,"setAtMs":4}}}"#
+            ),
+            Some(CompanionClockSettings {
+                time_awareness_enabled: true,
+                time_override: CompanionTimeOverride::Ticking {
+                    anchor_at: TimestampMillis::new(10),
+                    set_at: TimestampMillis::new(4),
+                },
+            })
+        );
+    }
 }

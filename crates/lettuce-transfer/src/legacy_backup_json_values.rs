@@ -19,8 +19,14 @@ use crate::{
     legacy_value_skip,
 };
 
-const COMPANION_SECTIONS: [&str; 4] =
-    ["soul", "authoredFacts", "relationshipDefaults", "prompting"];
+const COMPANION_SECTIONS: [&str; 6] = [
+    "soul",
+    "authoredFacts",
+    "relationshipDefaults",
+    "prompting",
+    "timeAwareness",
+    "context",
+];
 const SOUL_FACT_KEYS: [&str; 17] = [
     "id",
     "category",
@@ -145,6 +151,30 @@ pub(crate) fn legacy_companion(
         }
     };
     let mut config = CompanionSoulConfig::default();
+    let mut flag = |value: Option<Value>, field: &str| match value {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(value)) => value,
+        Some(_) => {
+            skipped.push(malformed(&format!("{FIELD}.{field}"), character_key));
+            false
+        }
+    };
+    let top_level = flag(object.remove("timeAwareness"), "timeAwareness");
+    let context = match object.remove("context") {
+        None | Some(Value::Null) => false,
+        Some(Value::Object(mut context)) => {
+            let enabled = flag(context.remove("timeAwareness"), "context.timeAwareness");
+            for key in context.keys() {
+                skipped.push(unknown(&format!("{FIELD}.context.{key}"), character_key));
+            }
+            enabled
+        }
+        Some(_) => {
+            skipped.push(malformed(&format!("{FIELD}.context"), character_key));
+            false
+        }
+    };
+    config.time_awareness = top_level || context;
     if let Some(soul) = object.remove("soul") {
         config.soul = merged_section::<CompanionSoulIdentity>(
             soul,
@@ -782,7 +812,19 @@ mod tests {
         assert_eq!(soul.prompting.style_notes, "soft");
         assert!(soul.prompting.prompt_template_id.is_none());
         assert_eq!(companion.prompt_source_id.as_deref(), Some("prompt-1"));
-        assert_eq!(skipped.len(), 4);
+        assert!(soul.time_awareness);
+        assert_eq!(skipped.len(), 3);
+
+        let mut context_skips = Vec::new();
+        let context = legacy_companion(
+            Some(json!({"context": {"timeAwareness": true, "extra": 1}, "timeAwareness": false})),
+            "character-3",
+            true,
+            TimestampMillis::new(1),
+            &mut context_skips,
+        );
+        assert!(context.soul.expect("companion soul").time_awareness);
+        assert_eq!(context_skips.len(), 1);
 
         let mut roleplay = Vec::new();
         let dropped = legacy_companion(

@@ -87,10 +87,11 @@ summary window cannot express, so the summary covers the first message.
 Not yet imported: the per-cycle tool log and its revert (no rewrite
 equivalent) and the cursors of non-carrier pool conversations (backups do not
 carry per-conversation memory cursors).
-A direct session's `companionState.preferences` (time awareness and its
-frozen/ticking override, read like legacy `temporal.rs`: an override missing
-its anchor runs on real time) becomes the conversation's `companion_clock`;
-defaults keep none. A session's own background becomes the conversation
+A direct session's saved `companionState.preferences` (time awareness, off
+when absent, and its frozen/ticking override, read like legacy `temporal.rs`:
+an override missing its anchor runs on real time) becomes the conversation's
+`companion_clock`; a companion session without saved state takes the
+character's `time_awareness`, which legacy seeded on its next save. A session's own background becomes the conversation
 `background` (see lettuce-transfer).
 A legacy direct session of a companion character is imported as a companion
 conversation: it binds the character's shared memory pool, which takes the

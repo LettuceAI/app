@@ -181,6 +181,13 @@ The authored companion configuration also preserves the legacy nested
 `prompting.promptTemplateId` and `prompting.styleNotes` fields. The template ID
 remains a typed prompt-document reference, while style notes feed the exact
 prompt-state renderer without reinterpretation.
+`CompanionSoulConfig.time_awareness` (legacy `timeAwareness` or
+`context.timeAwareness`) is the default for new conversations, like legacy's
+seeded session preference: a companion launch writes an enabled
+`companion_clock` into the new conversation's settings
+(`PreparedCompanionLaunch::with_time_awareness`), and later changes to the
+character leave existing conversations alone. `companion.memory` stays dropped: legacy only ever read
+`sharedAcrossSessions` from it.
 
 Typed companion turn effects copy their relationship, felt/expressed/blocked,
 and ordered signal changes directly from the existing legacy-math transition;

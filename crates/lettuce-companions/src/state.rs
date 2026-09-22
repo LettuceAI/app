@@ -417,6 +417,7 @@ pub struct PreparedCompanionLaunch {
     conversation: PreparedConversationLaunch,
     owner: CompanionStateOwner,
     initial: CompanionRuntimeState,
+    time_awareness: bool,
 }
 
 impl PreparedCompanionLaunch {
@@ -437,7 +438,21 @@ impl PreparedCompanionLaunch {
             conversation,
             owner,
             initial,
+            time_awareness: false,
         })
+    }
+
+    /// Starts the conversation time aware, the companion's default for new
+    /// conversations (legacy seeded it into the new session's preferences).
+    #[must_use]
+    pub fn with_time_awareness(mut self, time_awareness: bool) -> Self {
+        self.time_awareness = time_awareness;
+        self
+    }
+
+    #[must_use]
+    pub const fn time_awareness(&self) -> bool {
+        self.time_awareness
     }
 
     #[must_use]

@@ -251,6 +251,10 @@ pub struct CompanionSoulConfig {
     pub relationship_defaults: RelationshipDefaults,
     #[serde(default)]
     pub prompting: CompanionPromptingConfig,
+    /// Whether this companion's conversations are time aware unless a
+    /// conversation sets its own clock (legacy `timeAwareness`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub time_awareness: bool,
 }
 
 pub fn initial_soul_state(
@@ -789,6 +793,7 @@ mod tests {
             }],
             relationship_defaults: RelationshipDefaults::default(),
             prompting: CompanionPromptingConfig::default(),
+            time_awareness: false,
         };
         let state = initial_soul_state(Some(&config), TimestampMillis::new(42)).expect("state");
         assert_eq!(state.revision, Revision::INITIAL);
@@ -833,6 +838,7 @@ mod tests {
                 prompt_template_id: Some(PromptDocumentId::new()),
                 style_notes: " restrained ".into(),
             },
+            time_awareness: false,
         };
         let value = serde_json::to_value(&config).expect("serialize");
         assert_eq!(value["soul"]["relationalStyle"], "Slow trust");

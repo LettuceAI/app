@@ -1425,7 +1425,7 @@ fn read_current_settings(
         .map_err(slice::db)
 }
 
-fn write_settings(
+pub(crate) fn write_settings(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     settings: &lettuce_conversations::CurrentConversationSettings,

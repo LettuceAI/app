@@ -87,6 +87,14 @@ pub trait DirectLaunchSources:
 {
 }
 
+/// The companion state a direct launch seeds, and whether the companion
+/// starts it time aware.
+pub(crate) type LaunchCompanion = (
+    CompanionStateOwner,
+    lettuce_companions::CompanionRuntimeState,
+    bool,
+);
+
 impl<T> DirectLaunchSources for T where
     T: CharacterRepository
         + PersonaRepository
@@ -138,9 +146,10 @@ where
                 return Err(self.already_launched_or(&request.operation_key, error));
             }
         };
-        if let Some((owner, initial)) = companion {
+        if let Some((owner, initial, time_awareness)) = companion {
             let launch = PreparedCompanionLaunch::new(launch, owner, initial)
-                .map_err(LaunchSourceError::Companion)?;
+                .map_err(LaunchSourceError::Companion)?
+                .with_time_awareness(time_awareness);
             return CompanionConversationCreator::create_companion_conversation(
                 self.sources,
                 launch,
@@ -183,16 +192,8 @@ where
     pub(crate) fn prepare_direct_parts(
         &self,
         request: &DirectConversationLaunchRequest,
-    ) -> Result<
-        (
-            PreparedConversationLaunch,
-            Option<(
-                CompanionStateOwner,
-                lettuce_companions::CompanionRuntimeState,
-            )>,
-        ),
-        ConversationLaunchError,
-    > {
+    ) -> Result<(PreparedConversationLaunch, Option<LaunchCompanion>), ConversationLaunchError>
+    {
         if request.format_version != DIRECT_LAUNCH_REQUEST_FORMAT_V1 {
             return Err(ConversationLaunchError::InvalidRequest {
                 field: "format_version",
@@ -540,6 +541,7 @@ where
                     &config.soul.regulation_style,
                     &config.relationship_defaults,
                 ),
+                config.time_awareness,
             )
         });
         Ok((launch, companion))

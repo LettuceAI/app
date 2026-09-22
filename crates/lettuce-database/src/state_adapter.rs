@@ -818,11 +818,33 @@ impl CompanionConversationCreator for Database {
         now: TimestampMillis,
     ) -> Result<lettuce_conversations::CreateConversationResult, CompanionLaunchRepositoryError>
     {
+        let time_awareness = launch.time_awareness();
         let (conversation, owner, initial) = launch.into_parts();
         let memory = crate::conversation_creator::MemoryBinding::CompanionPool(owner.character_id);
         crate::conversation_creator::create_with_hook(self, conversation, now, memory, |tx, _| {
             create_in(tx, owner, &initial, now).map_err(conversation_state_error)?;
-            ensure_continuity_episode_in(tx, owner, now).map_err(conversation_state_error)
+            ensure_continuity_episode_in(tx, owner, now).map_err(conversation_state_error)?;
+            if time_awareness {
+                let settings = lettuce_conversations::CurrentConversationSettingsPatch {
+                    companion_clock: lettuce_conversations::PatchValue::Set(
+                        lettuce_conversations::CompanionClockSettings {
+                            time_awareness_enabled: true,
+                            ..Default::default()
+                        },
+                    ),
+                    ..Default::default()
+                }
+                .apply(None, None)
+                .map_err(lettuce_conversations::ConversationRepositoryError::Invalid)?;
+                crate::conversation_mutations::write_settings(
+                    tx,
+                    owner.conversation_id,
+                    &settings,
+                    true,
+                    now,
+                )?;
+            }
+            Ok(())
         })
         .map_err(CompanionLaunchRepositoryError::Conversation)
     }

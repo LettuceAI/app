@@ -750,6 +750,40 @@ fn archived_character_is_rejected() {
 }
 
 #[test]
+fn a_time_aware_companion_starts_its_new_conversations_time_aware() {
+    let database = database_with_builtins();
+    let seed = |time_awareness| {
+        seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+            defaults.interaction_mode = InteractionMode::Companion;
+            defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig {
+                time_awareness,
+                ..lettuce_companions::CompanionSoulConfig::default()
+            });
+        })
+    };
+    let clock = |character_id, key: &str| {
+        let launched = ConversationLaunchPlanner::new(&database)
+            .launch_direct(&request(character_id, key), NOW)
+            .expect("launch companion")
+            .value;
+        let conversation = ConversationReader::get(&database, launched.conversation.id)
+            .expect("conversation")
+            .conversation;
+        crate::companion_clock::companion_clock_context(&database, &conversation)
+            .expect("clock context")
+            .clock
+    };
+    assert_eq!(
+        clock(seed(true), "time-aware-companion"),
+        Some(lettuce_conversations::CompanionClockSettings {
+            time_awareness_enabled: true,
+            ..lettuce_conversations::CompanionClockSettings::default()
+        })
+    );
+    assert_eq!(clock(seed(false), "plain-companion"), None);
+}
+
+#[test]
 fn companion_character_launch_seeds_normalized_runtime_state() {
     let database = database_with_builtins();
     let persona_id = seed_persona(&database, "Mira");
