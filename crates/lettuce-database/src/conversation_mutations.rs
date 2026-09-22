@@ -6419,6 +6419,7 @@ mod tests {
             stream_sink: None,
             media_grants: Vec::new(),
             tools: None,
+            prompt_cache_key: None,
         };
         let usage_event_id = UsageEventId::new();
         let binding = InitialInferenceBinding::from_request(fixture.conversation_id, &request)

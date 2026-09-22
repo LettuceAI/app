@@ -21,6 +21,8 @@ mod gemini_generate;
 mod groq;
 mod intenserp;
 mod literouter;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod llama_cpp;
 mod lmstudio;
 mod mistral;
 mod moonshot;
@@ -58,6 +60,8 @@ use lettuce_inference::{InferenceRuntime, InferenceRuntimePort};
 use lettuce_models::{ProviderAccount, ProviderProtocol};
 use lettuce_network::JsonClient;
 use lettuce_settings::SecretStore;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub use llama_cpp::LocalLlama;
 use openai_compatible::OpenAiWireProvider;
 
 /// Explicit dispatch over every remote chat provider the legacy app shipped.
@@ -69,6 +73,8 @@ pub struct RemoteProviders<S: ?Sized> {
     runtime: Arc<dyn InferenceRuntimePort>,
     replay_artifacts: Option<Arc<dyn ProviderReplayArtifactPort>>,
     gemini_cache: gemini_cache::GeminiCache,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    local_llama: Option<LocalLlama>,
 }
 
 impl<S: SecretStore + ?Sized> RemoteProviders<S> {
@@ -188,7 +194,17 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
             runtime,
             replay_artifacts,
             gemini_cache: gemini_cache::GeminiCache::default(),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            local_llama: None,
         }
+    }
+
+    /// Runs llama.cpp models on the embedded runtime.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[must_use]
+    pub fn with_local_llama(mut self, local_llama: LocalLlama) -> Self {
+        self.local_llama = Some(local_llama);
+        self
     }
 }
 
@@ -237,9 +253,16 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
             ProviderProtocol::Ollama if kind.eq_ignore_ascii_case("ollama") => {
                 ollama::run(&*self.secret_store, &self.network, &*self.runtime, request).await
             }
-            ProviderProtocol::Ollama
-            | ProviderProtocol::LlamaCpp
-            | ProviderProtocol::StableDiffusion => return Err(PortError::Rejected),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            ProviderProtocol::LlamaCpp => match &self.local_llama {
+                Some(local_llama) => llama_cpp::run(local_llama, &*self.runtime, request).await,
+                None => return Err(PortError::Rejected),
+            },
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            ProviderProtocol::LlamaCpp => return Err(PortError::Rejected),
+            ProviderProtocol::Ollama | ProviderProtocol::StableDiffusion => {
+                return Err(PortError::Rejected);
+            }
         };
         result.map_err(Into::into)
     }
@@ -637,7 +660,7 @@ mod integration_tests {
         }
     }
 
-    fn profile(
+    pub(crate) fn profile(
         kind: &str,
         endpoint: String,
         config: ProviderConfig,
@@ -672,7 +695,7 @@ mod integration_tests {
         }
     }
 
-    fn request(profile: ResolvedInferenceProfile) -> InferenceRequest {
+    pub(crate) fn request(profile: ResolvedInferenceProfile) -> InferenceRequest {
         InferenceRequest {
             turn_id: GenerationTurnId::new(),
             attempt_id: GenerationAttemptId::new(),
@@ -683,6 +706,7 @@ mod integration_tests {
             stream_sink: None,
             media_grants: Vec::new(),
             tools: None,
+            prompt_cache_key: None,
         }
     }
 

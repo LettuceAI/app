@@ -340,6 +340,7 @@ fn build_request(
         tools: Some(growth_tool_request(&|key| {
             text.render_with(key, []).unwrap_or_default()
         })),
+        prompt_cache_key: None,
     };
     request
         .validate()

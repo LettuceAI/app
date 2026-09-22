@@ -109,6 +109,7 @@ impl<
             tools: Some(lettuce_memory::memory_repair_tool_request(&|key| {
                 text.render_with(key, []).unwrap_or_default()
             })),
+            prompt_cache_key: None,
         };
         request
             .validate()

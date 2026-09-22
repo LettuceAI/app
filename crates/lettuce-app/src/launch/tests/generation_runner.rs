@@ -3646,6 +3646,7 @@ async fn cancellation_during_provider_retains_usage_and_settles_cancelled() {
         stream_sink: None,
         media_grants: vec![],
         tools: None,
+        prompt_cache_key: None,
     };
     let binding =
         InitialInferenceBinding::from_request(scenario.conversation_id, &request).expect("binding");

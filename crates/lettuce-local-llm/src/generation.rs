@@ -84,6 +84,27 @@ pub trait RuntimeReportStore: Send + Sync {
     fn store(&self, model_path: &str, report: &Value) -> Result<bool, String>;
 }
 
+/// What the application gives local generations: the runtime report store,
+/// the metrics sink and the events legacy sent to the frontend.
+pub trait LlamaHost: RuntimeReportStore {
+    fn record_metrics(&self, record: LlamaMetricsRecord);
+    fn event(&self, event: LlamaHostEvent);
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum LlamaHostEvent {
+    ModelLoadProgress(crate::engine::ModelLoadProgress),
+    GpuFallback,
+    Heartbeat {
+        request_id: Option<String>,
+        heartbeat: GenerationHeartbeat,
+    },
+    Notice(LlamaNotice),
+    RuntimeReportUpdated {
+        model_path: String,
+    },
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LlamaNotice {
     /// MTP was requested but a vision request runs without it.

@@ -562,6 +562,7 @@ fn build_creation_inference_request(
             &attempt.tool_request,
             &|key| text.runtime.render_with(key, []).unwrap_or_default(),
         )),
+        prompt_cache_key: None,
     };
     request.validate()?;
     Ok(request)

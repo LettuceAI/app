@@ -680,6 +680,7 @@ impl<
             stream_sink: input.stream_sink,
             media_grants: input.media_grants.clone(),
             tools: None,
+            prompt_cache_key: Some(conversation_id.to_string()),
         };
         let binding = InitialInferenceBinding::from_request(conversation_id, &request)?;
         if turn.status == GenerationTurnStatus::CancellationRequested {

@@ -323,6 +323,7 @@ fn build_request(
         tools: Some(consolidation_tool_request(&|key| {
             text.render_with(key, []).unwrap_or_default()
         })),
+        prompt_cache_key: None,
     };
     request
         .validate()

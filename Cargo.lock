@@ -1674,6 +1674,7 @@ dependencies = [
  "lettuce-conversations",
  "lettuce-inference",
  "lettuce-jobs",
+ "lettuce-local-llm",
  "lettuce-models",
  "lettuce-network",
  "lettuce-settings",

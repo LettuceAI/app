@@ -808,6 +808,7 @@ where
             stream_sink: None,
             media_grants: Vec::new(),
             tools: Some(tools),
+            prompt_cache_key: None,
         };
         let binding = SpeakerInferenceBinding::from_request(work.conversation_id, &request)
             .map_err(|_| ConversationGenerationInputError::InvalidTurn)?;

@@ -476,6 +476,7 @@ fn build_request(
         stream_sink,
         media_grants: Vec::new(),
         tools: (!structured_fallback).then(|| text.tools.clone()),
+        prompt_cache_key: None,
     };
     request
         .validate()

@@ -754,6 +754,7 @@ fn build_first_request(
         stream_sink,
         media_grants: Vec::new(),
         tools: Some(run.tool_request.clone()),
+        prompt_cache_key: None,
     };
     request
         .validate()
@@ -1049,6 +1050,7 @@ mod tests {
             stream_sink: None,
             media_grants: Vec::new(),
             tools: Some(dynamic_memory_tool_request()),
+            prompt_cache_key: None,
         }
     }
 

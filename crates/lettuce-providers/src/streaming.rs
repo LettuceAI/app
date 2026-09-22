@@ -135,7 +135,7 @@ fn ensure_not_cancelled(
     }
 }
 
-async fn emit(
+pub(crate) async fn emit(
     runtime: &dyn InferenceRuntimePort,
     request: &InferenceRequest,
     sequence: u64,

@@ -508,6 +508,7 @@ fn build_summary_request(
                 Vec::new(),
             )?,
         )),
+        prompt_cache_key: None,
     };
     request
         .validate()

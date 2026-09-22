@@ -429,6 +429,7 @@ fn build_request(
         tools: (!structured_fallback).then(|| {
             lorebook_keyword_tool_request(&|key| tool_texts.get(key).cloned().unwrap_or_default())
         }),
+        prompt_cache_key: None,
     };
     request
         .validate()

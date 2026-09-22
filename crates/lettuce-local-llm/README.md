@@ -134,5 +134,11 @@ model: K q8_0 34 MiB and V q4_0 18 MiB at 2048 cells, as predicted). The
 context params, compute probe, drafter, context key, runtime report
 (`k=<type>,v=<type>`) and planning config follow the pair.
 
-Next: the inference port adapter, llama settings on the resolved chat
-profile, report/metrics storage and the runtime commands.
+`LlamaHost` is what the application provides: the runtime report store, the
+metrics sink and the frontend events (model load progress, GPU fallback,
+heartbeats, notices, report updates). The provider adapter lives in
+`lettuce-providers` (`llama_cpp.rs`).
+
+Next: report/metrics storage and host events in the app, the runtime
+commands (devices, embedded template, unload, context info), then
+stable-diffusion.cpp.

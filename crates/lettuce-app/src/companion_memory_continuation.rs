@@ -160,6 +160,7 @@ impl<
             stream_sink,
             media_grants: Vec::new(),
             tools: Some(run.tool_request.clone()),
+            prompt_cache_key: None,
         };
         request
             .validate()

@@ -1865,6 +1865,10 @@ pub struct InferenceRequest {
     pub stream_sink: Option<lettuce_types::RequestId>,
     pub media_grants: Vec<lettuce_types::AssetId>,
     pub tools: Option<crate::ToolRequest>,
+    /// Lets a local runtime reuse the previous turn's prompt; set to the
+    /// conversation for chat turns, as legacy used the session id.
+    #[serde(default)]
+    pub prompt_cache_key: Option<String>,
 }
 
 impl InferenceRequest {

@@ -431,6 +431,7 @@ fn build_request(
                 tool_texts.get(key).cloned().unwrap_or_default()
             })
         }),
+        prompt_cache_key: None,
     };
     request
         .validate()

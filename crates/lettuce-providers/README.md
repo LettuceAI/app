@@ -50,6 +50,21 @@ legacy-style delegation:
 - Gemini generateContent (`GeminiWireProvider`): `gemini` (+ `google`,
   `google-gemini`), `gemini-agent-platform-express`
 - Ollama native `/api/chat`: `ollama`
+- Embedded llama.cpp (desktop, `llama_cpp.rs`, enabled with
+  `RemoteProviders::with_local_llama`): legacy `LlamaCppAdapter` and
+  `build_llama_extra_fields` mapped onto the ported runtime. OpenAI-shaped
+  messages (assistant tool-call turns carry null content when they have no
+  text, tool results are `tool` messages), `parallel_tool_calls` whenever
+  tools are offered, output cap plus reasoning budget (4096 fallback), the
+  reasoning request turning on the template's reasoning format, the thinking
+  switch only with `send_thinking_state`, the per-field llama settings from the
+  chat profile, the conversation as prompt cache key for chat turns. Local
+  failures are non-retryable `LOCAL_INFERENCE_FAILED`; metrics, the runtime
+  report and UI events go to the app's `LlamaHost`. Media parts are rejected
+  like the remote adapters until the media slice. Streaming turned off for
+  the account or model runs the request unstreamed (legacy fallback). Cached
+  and cache-write prompt tokens are always reported; legacy lost them on its
+  non-streamed path.
 
 Legacy aliases (`cerebras.ai`, `chutes.ai`, `nvidia-nim`, `moonshot-ai`,
 `z.ai`) resolve; unknown kinds, `lettuce-host` and `lettuce-engine` are

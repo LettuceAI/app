@@ -195,6 +195,7 @@ fn fixture(database: &Database) -> (ConversationId, InferenceRequest, JobHandle)
             tools: Some(crate::companion_memory_run::test_memory_tool_request(
                 false, false,
             )),
+            prompt_cache_key: None,
         },
         JobHandle::new(job.id),
     )

@@ -498,6 +498,7 @@ where
             stream_sink: streaming.then_some(request.request_id),
             media_grants: Vec::new(),
             tools: None,
+            prompt_cache_key: None,
         };
         request
             .validate()
