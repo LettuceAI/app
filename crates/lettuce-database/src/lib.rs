@@ -1421,6 +1421,34 @@ pub(crate) fn sync_ids(connection: &Connection, table: &str) -> rusqlite::Result
         .collect()
 }
 
+impl lettuce_models::ModelCatalog for Database {
+    fn provider_accounts(&self) -> Result<Vec<ProviderAccount>, ModelRepositoryError> {
+        let connection = self.connection().map_err(|_| ModelRepositoryError::Storage)?;
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT {PROVIDER_ACCOUNT_COLUMNS} FROM provider_accounts ORDER BY created_at, id"
+            ))
+            .map_err(model_error)?;
+        statement
+            .query_map([], provider_from_row)
+            .and_then(Iterator::collect)
+            .map_err(model_error)
+    }
+
+    fn model_profiles(&self) -> Result<Vec<ModelProfile>, ModelRepositoryError> {
+        let connection = self.connection().map_err(|_| ModelRepositoryError::Storage)?;
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT {MODEL_PROFILE_COLUMNS} FROM model_profiles ORDER BY created_at, id"
+            ))
+            .map_err(model_error)?;
+        statement
+            .query_map([], model_from_row)
+            .and_then(Iterator::collect)
+            .map_err(model_error)
+    }
+}
+
 pub(crate) fn sync_load_provider_account(
     connection: &Connection,
     id: &str,

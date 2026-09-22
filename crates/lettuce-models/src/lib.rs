@@ -677,6 +677,13 @@ pub trait ModelLookup: Send + Sync {
     ) -> Result<Option<ModelProfile>, ModelRepositoryError>;
 }
 
+/// Every provider account and model profile, oldest first like the old
+/// settings list (`ORDER BY created_at`), ties by id.
+pub trait ModelCatalog: Send + Sync {
+    fn provider_accounts(&self) -> Result<Vec<ProviderAccount>, ModelRepositoryError>;
+    fn model_profiles(&self) -> Result<Vec<ModelProfile>, ModelRepositoryError>;
+}
+
 pub trait ModelProfileRepository: Send + Sync {
     fn upsert(
         &self,
