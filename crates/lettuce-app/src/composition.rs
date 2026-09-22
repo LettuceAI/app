@@ -20,9 +20,12 @@ pub struct AppBackend {
     inference_runtime: Arc<InferenceRuntime>,
     whisper_runtime: Arc<WhisperCppRuntime<Database>>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    local_llama: std::sync::OnceLock<Option<lettuce_providers::LocalLlama>>,
+    local_llama: crate::local_diffusion::SharedLocalLlama,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     llama_events: Option<crate::LlamaEventSink>,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    pub(crate) local_diffusion:
+        Option<Arc<lettuce_image_generation::sd_runtime::server::LocalDiffusionEngine>>,
 }
 
 impl AppBackend {
@@ -57,9 +60,11 @@ impl AppBackend {
             built_in_prompt_ids,
             inference_runtime: Arc::new(InferenceRuntime::default()),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            local_llama: std::sync::OnceLock::new(),
+            local_llama: Arc::new(std::sync::OnceLock::new()),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             llama_events: None,
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            local_diffusion: None,
         })
     }
 
@@ -69,6 +74,23 @@ impl AppBackend {
     pub fn with_llama_event_sink(mut self, sink: crate::LlamaEventSink) -> Self {
         self.llama_events = Some(sink);
         self
+    }
+
+    /// Starts the embedded stable-diffusion.cpp engine over the host's
+    /// folders; call before the first llama.cpp request so the two runtimes
+    /// exclude each other.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    pub fn with_local_diffusion(
+        mut self,
+        paths: lettuce_image_generation::sd_runtime::layout::DiffusionPaths,
+        progress: Arc<dyn lettuce_image_generation::sd_runtime::output::GenerationProgressSink>,
+    ) -> Result<Self, lettuce_network::JsonClientError> {
+        self.local_diffusion = Some(crate::local_diffusion::start_engine(
+            paths,
+            progress,
+            Arc::clone(&self.local_llama),
+        )?);
+        Ok(self)
     }
 
     /// The embedded llama.cpp runtime if it already started.
@@ -84,13 +106,21 @@ impl AppBackend {
         self.local_llama
             .get_or_init(
                 || match lettuce_local_llm::generation::LlamaRuntime::start() {
-                    Ok(runtime) => Some(lettuce_providers::LocalLlama::new(
-                        Arc::new(runtime),
-                        Arc::new(crate::DatabaseLlamaHost::new(
-                            Arc::clone(&self.database),
-                            self.llama_events.clone(),
-                        )),
-                    )),
+                    Ok(runtime) => {
+                        let llama = lettuce_providers::LocalLlama::new(
+                            Arc::new(runtime),
+                            Arc::new(crate::DatabaseLlamaHost::new(
+                                Arc::clone(&self.database),
+                                self.llama_events.clone(),
+                            )),
+                        );
+                        Some(match &self.local_diffusion {
+                            Some(engine) => llama.with_exclusion(Arc::new(
+                                crate::local_diffusion::DiffusionExclusion(Arc::clone(engine)),
+                            )),
+                            None => llama,
+                        })
+                    }
                     Err(error) => {
                         tracing::warn!(%error, "llama.cpp inference worker failed to start");
                         None

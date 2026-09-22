@@ -79,7 +79,19 @@ stable-diffusion.cpp (in progress):
   components, active build and policy files) so legacy installs are reused,
   and LoRA path normalization with the FLUX.2 Klein tensor alias cache.
 
-Next: the sd-server process (spawn, reuse by key, readiness, OOM retry with
-CPU offload, cancel, llama.cpp exclusion), installs as jobs, model
-registration, the remote provider adapters and ComfyUI, then the scene,
-playground and creation-helper callers.
+- `sd_runtime::server::LocalDiffusionEngine`: the managed sd-server
+  (legacy arguments and order, reuse while the model/build/policy key is the
+  same, five-minute readiness, native job API polled every 500 ms for ten
+  minutes, one retry with `--offload-to-cpu` after an out-of-memory failure
+  under the automatic policy, cancel through the engine job or by stopping
+  the server, shutdown). It implements `ImageProviderPort` for the managed
+  `sdcpp` account; the job's cancellation token cancels the engine job.
+  Verified against the real engine (Vulkan build, FLUX.2 Klein 4B, a Klein
+  LoRA whose compatibility cache equals legacy's byte for byte).
+
+The app composes it (`AppBackend::with_local_diffusion`): starting the image
+server unloads llama.cpp, and every llama.cpp request stops the image server
+first (a failed stop fails that request, as legacy did).
+
+Next: the remote provider adapters and ComfyUI, the LoRA library, upscale,
+runnability, then the scene, playground and creation-helper callers.

@@ -46,11 +46,20 @@ use crate::stream_normalize::StreamDelta;
 const LOCAL_FAILURE_CODE: &str = "LOCAL_INFERENCE_FAILED";
 const LOCAL_MODEL_NOT_PICKED_CODE: &str = "LOCAL_MODEL_FILE_NOT_PICKED";
 
+/// Another local runtime that must give way before llama.cpp runs; legacy
+/// stopped the stable-diffusion.cpp server before every llama.cpp request.
+#[async_trait::async_trait]
+pub trait LocalRuntimeExclusion: Send + Sync {
+    /// Fails the llama.cpp request when the other runtime could not stop.
+    async fn before_local_llama(&self) -> Result<(), String>;
+}
+
 /// The embedded runtime and the application services it reports to.
 #[derive(Clone)]
 pub struct LocalLlama {
     runtime: Arc<LlamaRuntime>,
     host: Arc<dyn LlamaHost>,
+    exclusion: Option<Arc<dyn LocalRuntimeExclusion>>,
 }
 
 impl std::fmt::Debug for LocalLlama {
@@ -62,7 +71,17 @@ impl std::fmt::Debug for LocalLlama {
 impl LocalLlama {
     #[must_use]
     pub fn new(runtime: Arc<LlamaRuntime>, host: Arc<dyn LlamaHost>) -> Self {
-        Self { runtime, host }
+        Self {
+            runtime,
+            host,
+            exclusion: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_exclusion(mut self, exclusion: Arc<dyn LocalRuntimeExclusion>) -> Self {
+        self.exclusion = Some(exclusion);
+        self
     }
 
     #[must_use]
@@ -134,6 +153,17 @@ pub(crate) async fn run(
             status: 400,
             code: Some(LOCAL_MODEL_NOT_PICKED_CODE.to_owned()),
             message: None,
+            request_id: None,
+        }));
+    }
+    if let Some(exclusion) = &local.exclusion
+        && let Err(message) = exclusion.before_local_llama().await
+    {
+        return Err(AdapterError::Provider(ProviderFailure {
+            kind: ProviderFailureKind::RequestRejected,
+            status: 500,
+            code: Some(LOCAL_FAILURE_CODE.to_owned()),
+            message: Some(message),
             request_id: None,
         }));
     }

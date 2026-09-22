@@ -306,6 +306,7 @@ impl<R: ImageGenerationRepository + JobUsageLedger + ?Sized, J: JobStore + ?Size
                     model_profile_id: profile.model_profile_id,
                     account: profile.account.clone(),
                     external_model_id: profile.external_model_id.clone(),
+                    model_display_name: profile.display_name.clone(),
                     prompt,
                     settings,
                     loras,

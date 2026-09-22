@@ -56,3 +56,8 @@ set and `.`/`..` are refused. The earlier single-segment check rejected
 Kokoro's pinned `onnx/` and `voices/` files, so real Kokoro installs failed.
 `open_https` serves pinned HTTPS artifacts such as GitHub release assets with
 the same range handling.
+
+`BulkHttpClient` carries image requests and results: 64 MiB requests,
+256 MiB responses and no retries (legacy never retried an image request, and
+a retry could run a paid or long generation twice). `status_text` prints a
+status with its reason phrase as legacy error texts did.

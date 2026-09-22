@@ -10,6 +10,8 @@ use tokio::time::sleep;
 
 pub const MAX_REQUEST_BYTES: usize = 2 * 1024 * 1024;
 const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_BULK_REQUEST_BYTES: usize = 64 * 1024 * 1024;
+const MAX_BULK_RESPONSE_BYTES: usize = 256 * 1024 * 1024;
 const MAX_METADATA_BYTES: usize = 256;
 const MAX_ENDPOINT_BYTES: usize = 4096;
 const MAX_PATH_BYTES: usize = 1024;
@@ -725,6 +727,131 @@ impl JsonClient {
     }
 }
 
+/// An HTTP status as legacy printed it: the code and its reason phrase.
+#[must_use]
+pub fn status_text(status: u16) -> String {
+    reqwest::StatusCode::from_u16(status)
+        .map_or_else(|_| status.to_string(), |status| status.to_string())
+}
+
+/// A buffered client for image requests and results, which carry encoded
+/// images: 64 MiB requests, 256 MiB responses and no retries, since legacy
+/// never retried an image request and a retry could run a paid or long
+/// generation twice.
+#[derive(Clone)]
+pub struct BulkHttpClient {
+    strict: reqwest::Client,
+    insecure: reqwest::Client,
+}
+
+impl fmt::Debug for BulkHttpClient {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("BulkHttpClient")
+    }
+}
+
+impl BulkHttpClient {
+    pub fn new() -> Result<Self, JsonClientError> {
+        Self::with_tls(&TlsPolicy::default())
+    }
+
+    pub fn with_tls(policy: &TlsPolicy) -> Result<Self, JsonClientError> {
+        let roots: Vec<reqwest::Certificate> = policy
+            .trusted_roots_pem
+            .iter()
+            .filter_map(|pem| reqwest::Certificate::from_pem(pem.as_bytes()).ok())
+            .collect();
+        Ok(Self {
+            strict: build_client(&roots, false)?,
+            insecure: build_client(&roots, true)?,
+        })
+    }
+
+    fn client(&self, allow_invalid_tls: bool) -> &reqwest::Client {
+        if allow_invalid_tls {
+            &self.insecure
+        } else {
+            &self.strict
+        }
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is a distinct transport concern; bundling them hides the policy"
+    )]
+    pub async fn get(
+        &self,
+        endpoint: &str,
+        path: &str,
+        query: &[JsonQueryParameter<'_>],
+        static_headers: &[JsonStaticHeader],
+        auth: JsonAuth,
+        secret_headers: Vec<JsonSecretHeader>,
+        allow_invalid_tls: bool,
+    ) -> Result<JsonResponse, JsonClientError> {
+        let mut url = build_url(endpoint, path)?;
+        validate_query(query)?;
+        if !query.is_empty() {
+            url.query_pairs_mut()
+                .extend_pairs(query.iter().map(|entry| (entry.name, entry.value)));
+        }
+        validate_header_collection(static_headers, &auth, &secret_headers)?;
+        let request = self
+            .client(allow_invalid_tls)
+            .get(url)
+            .timeout(GENERATION_TIMEOUT);
+        let request = apply_static_headers(request, static_headers)?;
+        let request = apply_auth(request, auth)?;
+        let request = apply_secret_headers(request, secret_headers)?;
+        let response = request
+            .send()
+            .await
+            .map_err(|_| JsonClientError::Transport)?;
+        read_response_limited(response, MAX_BULK_RESPONSE_BYTES).await
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is a distinct transport concern; bundling them hides the policy"
+    )]
+    pub async fn post_json(
+        &self,
+        endpoint: &str,
+        path: &str,
+        query: &[JsonQueryParameter<'_>],
+        body: Vec<u8>,
+        static_headers: &[JsonStaticHeader],
+        auth: JsonAuth,
+        secret_headers: Vec<JsonSecretHeader>,
+        allow_invalid_tls: bool,
+    ) -> Result<JsonResponse, JsonClientError> {
+        if body.len() > MAX_BULK_REQUEST_BYTES {
+            return Err(JsonClientError::RequestTooLarge);
+        }
+        let mut url = build_url(endpoint, path)?;
+        validate_query(query)?;
+        if !query.is_empty() {
+            url.query_pairs_mut()
+                .extend_pairs(query.iter().map(|entry| (entry.name, entry.value)));
+        }
+        validate_header_collection(static_headers, &auth, &secret_headers)?;
+        let request = self
+            .client(allow_invalid_tls)
+            .post(url)
+            .timeout(GENERATION_TIMEOUT)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(body);
+        let request = apply_static_headers(request, static_headers)?;
+        let request = apply_auth(request, auth)?;
+        let request = apply_secret_headers(request, secret_headers)?;
+        let response = request
+            .send()
+            .await
+            .map_err(|_| JsonClientError::Transport)?;
+        read_response_limited(response, MAX_BULK_RESPONSE_BYTES).await
+    }
+}
+
 fn response_stream(
     response: reqwest::Response,
     idle_timeout: Duration,
@@ -834,6 +961,13 @@ fn apply_auth(
 }
 
 async fn read_response(response: reqwest::Response) -> Result<JsonResponse, JsonClientError> {
+    read_response_limited(response, MAX_RESPONSE_BYTES).await
+}
+
+async fn read_response_limited(
+    response: reqwest::Response,
+    max_bytes: usize,
+) -> Result<JsonResponse, JsonClientError> {
     let status = response.status().as_u16();
     let request_id = bounded_header(&response, "x-request-id")
         .or_else(|| bounded_header(&response, "request-id"));
@@ -841,7 +975,7 @@ async fn read_response(response: reqwest::Response) -> Result<JsonResponse, Json
     let content_type = bounded_header(&response, "content-type");
     if response
         .content_length()
-        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+        .is_some_and(|length| length > max_bytes as u64)
     {
         return Err(JsonClientError::ResponseTooLarge);
     }
@@ -852,7 +986,7 @@ async fn read_response(response: reqwest::Response) -> Result<JsonResponse, Json
         .await
         .map_err(|_| JsonClientError::Transport)?
     {
-        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+        if body.len().saturating_add(chunk.len()) > max_bytes {
             return Err(JsonClientError::ResponseTooLarge);
         }
         body.extend_from_slice(&chunk);
@@ -1233,6 +1367,49 @@ mod tests {
         }
         assert_eq!(body, b"data: first\n\ndata: second\n\n");
         server.await.expect("server task");
+    }
+
+    #[tokio::test]
+    async fn bulk_requests_carry_large_bodies_and_are_never_retried() {
+        let (endpoint, request) =
+            test_server("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 4\r\n\r\nbusy")
+                .await;
+        let body = vec![b'x'; MAX_REQUEST_BYTES + 1];
+        let response = BulkHttpClient::new()
+            .expect("client")
+            .post_json(
+                &endpoint,
+                "/sdcpp/v1/img_gen",
+                &[],
+                body.clone(),
+                &[],
+                JsonAuth::None,
+                Vec::new(),
+                false,
+            )
+            .await
+            .expect("unretried response");
+        assert_eq!(response.status, 503);
+        assert_eq!(response.body, b"busy");
+        let request = request.await.expect("request");
+        assert!(request.ends_with(&body));
+        assert_eq!(
+            BulkHttpClient::new()
+                .expect("client")
+                .post_json(
+                    &endpoint,
+                    "/x",
+                    &[],
+                    vec![0; MAX_BULK_REQUEST_BYTES + 1],
+                    &[],
+                    JsonAuth::None,
+                    Vec::new(),
+                    false,
+                )
+                .await
+                .map(|response| response.status),
+            Err(JsonClientError::RequestTooLarge)
+        );
     }
 
     #[tokio::test]

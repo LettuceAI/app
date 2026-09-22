@@ -29,6 +29,7 @@ pub struct ProviderImageRequest {
     pub model_profile_id: ModelProfileId,
     pub account: ProviderAccount,
     pub external_model_id: String,
+    pub model_display_name: String,
     pub prompt: String,
     pub settings: StableDiffusionSettings,
     pub loras: Vec<StableDiffusionLora>,

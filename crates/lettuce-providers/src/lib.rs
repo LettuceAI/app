@@ -62,7 +62,7 @@ use lettuce_models::{ProviderAccount, ProviderProtocol};
 use lettuce_network::JsonClient;
 use lettuce_settings::SecretStore;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub use llama_cpp::LocalLlama;
+pub use llama_cpp::{LocalLlama, LocalRuntimeExclusion};
 pub use media::{ProviderMedia, ProviderMediaError, ProviderMediaSource};
 use openai_compatible::OpenAiWireProvider;
 

@@ -636,6 +636,22 @@ pub trait ProviderAccountRepository: Send + Sync {
     fn delete_with_profiles(&self, id: ProviderAccountId) -> Result<(), ModelRepositoryError>;
 }
 
+/// Finds records by their natural identity, for installers that register
+/// the same account or model again (legacy matched by provider and label,
+/// and by model name).
+pub trait ModelLookup: Send + Sync {
+    fn account_by_kind_and_label(
+        &self,
+        provider_kind: &str,
+        label: &str,
+    ) -> Result<Option<ProviderAccount>, ModelRepositoryError>;
+    fn profile_by_external_id(
+        &self,
+        provider_account_id: ProviderAccountId,
+        external_model_id: &str,
+    ) -> Result<Option<ModelProfile>, ModelRepositoryError>;
+}
+
 pub trait ModelProfileRepository: Send + Sync {
     fn upsert(
         &self,

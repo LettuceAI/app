@@ -2,7 +2,6 @@
 //! layout is legacy's, so builds and models a legacy install already
 //! downloaded keep working.
 
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -25,6 +24,9 @@ pub struct DiffusionPaths {
     pub downloads: PathBuf,
     /// The configurable image model folder; components live below it.
     pub image_root: PathBuf,
+    /// `<app>/models/image` when the user moved the image folder elsewhere:
+    /// legacy kept using components already downloaded there.
+    pub default_image_root: Option<PathBuf>,
     /// `<app>/models/loras`
     pub loras: PathBuf,
     /// `<app>/models/upscalers`
@@ -38,9 +40,11 @@ impl DiffusionPaths {
     /// folder the user configured.
     #[must_use]
     pub fn legacy_layout(app_dir: &Path, image_root: PathBuf) -> Self {
+        let default_image_root = app_dir.join("models").join("image");
         Self {
             runtimes: app_dir.join("runtimes").join("stable-diffusion.cpp"),
             downloads: app_dir.join("downloads").join("sdcpp"),
+            default_image_root: (default_image_root != image_root).then_some(default_image_root),
             image_root,
             loras: app_dir.join("models").join("loras"),
             upscalers: app_dir.join("models").join("upscalers"),
@@ -72,11 +76,21 @@ impl DiffusionPaths {
         ]
     }
 
+    /// The component in the image folder, or in the default folder when only
+    /// that one has it (legacy `component_path`).
     #[must_use]
     pub fn component_path(&self, component: &DiffusionComponent) -> PathBuf {
-        Self::component_segments(component)
+        let relative = Self::component_segments(component)
             .iter()
-            .fold(self.image_root.clone(), |path, segment| path.join(segment))
+            .fold(PathBuf::new(), |path, segment| path.join(segment));
+        let configured = self.image_root.join(&relative);
+        if let Some(default) = &self.default_image_root {
+            let fallback = default.join(&relative);
+            if !configured.exists() && fallback.exists() {
+                return fallback;
+            }
+        }
+        configured
     }
 }
 
@@ -127,8 +141,10 @@ fn archive_marker(root: &Path, archive: &str) -> PathBuf {
 }
 
 /// Records which archives make up an engine build before any is extracted.
-pub fn write_runtime_manifest(root: &Path, asset: &RuntimeAsset) -> std::io::Result<()> {
-    std::fs::create_dir_all(root)?;
+pub fn write_runtime_manifest(root: &Path, asset: &RuntimeAsset) -> Result<(), String> {
+    std::fs::create_dir_all(root).map_err(|error| {
+        format!("Failed to create stable-diffusion.cpp runtime directory: {error}")
+    })?;
     let mut archives = vec![asset.name.clone()];
     archives.extend(
         asset
@@ -136,9 +152,10 @@ pub fn write_runtime_manifest(root: &Path, asset: &RuntimeAsset) -> std::io::Res
             .iter()
             .map(|dependency| dependency.name.clone()),
     );
-    let manifest =
-        serde_json::to_vec_pretty(&RuntimeManifest { archives }).map_err(std::io::Error::other)?;
+    let manifest = serde_json::to_vec_pretty(&RuntimeManifest { archives })
+        .map_err(|error| format!("Failed to serialize runtime manifest: {error}"))?;
     std::fs::write(root.join(MANIFEST_FILE), manifest)
+        .map_err(|error| format!("Failed to write runtime manifest: {error}"))
 }
 
 /// A build is complete when its server exists and, when a manifest lists
@@ -164,52 +181,41 @@ pub fn runtime_root_is_complete(root: &Path) -> bool {
         })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum ExtractionError {
-    #[error("Failed to read stable-diffusion.cpp runtime archive")]
-    Archive,
-    #[error("Failed to extract runtime file")]
-    Write,
-}
-
 /// Unpacks one archive into an engine build folder. Entries that would leave
 /// the folder are skipped; the server and CLI become executable on Unix.
 pub fn extract_runtime_archive(
     archive: &Path,
     archive_name: &str,
     destination: &Path,
-) -> Result<(), ExtractionError> {
-    std::fs::create_dir_all(destination).map_err(|_| ExtractionError::Write)?;
-    let file = std::fs::File::open(archive).map_err(|_| ExtractionError::Archive)?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|_| ExtractionError::Archive)?;
+) -> Result<(), String> {
+    std::fs::create_dir_all(destination).map_err(|error| {
+        format!("Failed to create stable-diffusion.cpp runtime directory: {error}")
+    })?;
+    let file = std::fs::File::open(archive)
+        .map_err(|error| format!("Failed to open stable-diffusion.cpp runtime archive: {error}"))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|error| format!("Failed to read stable-diffusion.cpp runtime archive: {error}"))?;
     for index in 0..archive.len() {
         let mut entry = archive
             .by_index(index)
-            .map_err(|_| ExtractionError::Archive)?;
+            .map_err(|error| format!("Failed to read runtime archive entry: {error}"))?;
         let Some(relative) = entry.enclosed_name() else {
             continue;
         };
         let output = destination.join(relative);
         if entry.is_dir() {
-            std::fs::create_dir_all(&output).map_err(|_| ExtractionError::Write)?;
+            std::fs::create_dir_all(&output)
+                .map_err(|error| format!("Failed to create runtime directory: {error}"))?;
             continue;
         }
         if let Some(parent) = output.parent() {
-            std::fs::create_dir_all(parent).map_err(|_| ExtractionError::Write)?;
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("Failed to create runtime directory: {error}"))?;
         }
-        let mut output_file = std::fs::File::create(&output).map_err(|_| ExtractionError::Write)?;
-        let mut buffer = vec![0_u8; 1024 * 1024];
-        loop {
-            let read = entry
-                .read(&mut buffer)
-                .map_err(|_| ExtractionError::Archive)?;
-            if read == 0 {
-                break;
-            }
-            output_file
-                .write_all(&buffer[..read])
-                .map_err(|_| ExtractionError::Write)?;
-        }
+        let mut output_file = std::fs::File::create(&output)
+            .map_err(|error| format!("Failed to extract runtime file: {error}"))?;
+        std::io::copy(&mut entry, &mut output_file)
+            .map_err(|error| format!("Failed to extract runtime file: {error}"))?;
     }
     #[cfg(unix)]
     {
@@ -218,15 +224,16 @@ pub fn extract_runtime_archive(
             let path = destination.join(executable);
             if path.exists() {
                 let mut permissions = std::fs::metadata(&path)
-                    .map_err(|_| ExtractionError::Write)?
+                    .map_err(|error| format!("Failed to inspect runtime executable: {error}"))?
                     .permissions();
                 permissions.set_mode(0o755);
-                std::fs::set_permissions(path, permissions).map_err(|_| ExtractionError::Write)?;
+                std::fs::set_permissions(path, permissions)
+                    .map_err(|error| format!("Failed to mark runtime executable: {error}"))?;
             }
         }
     }
     std::fs::write(archive_marker(destination, archive_name), b"ok")
-        .map_err(|_| ExtractionError::Write)
+        .map_err(|error| format!("Failed to finalize runtime extraction: {error}"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -375,6 +382,8 @@ pub fn save_compute_policy(
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use lettuce_types::OperationId;
 
     use super::*;

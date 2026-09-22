@@ -15,6 +15,7 @@ pub struct ResolvedImageProfile {
     pub model_revision: Revision,
     pub account: ProviderAccount,
     pub external_model_id: String,
+    pub display_name: String,
     pub settings: StableDiffusionSettings,
     /// Legacy asked providers that can answer with text for text alongside
     /// the image when the model outputs text.
@@ -79,6 +80,7 @@ pub fn resolve_image_profile(
         model_revision: profile.revision,
         account: account.clone(),
         external_model_id: profile.external_model_id.clone(),
+        display_name: profile.display_name.clone(),
         settings: profile.config.stable_diffusion.clone(),
         text_output: capabilities.output_modalities.text == CapabilityStatus::Supported,
     })
