@@ -7,6 +7,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod artifact_install;
+mod avatar_prompt;
 mod asr_learning_transfer;
 mod built_in_prompts;
 mod companion_clock;
@@ -123,6 +124,7 @@ mod whisper_catalog;
 mod whisper_download;
 mod whisper_models;
 
+pub use avatar_prompt::{AvatarPromptError, AvatarPromptRequest, avatar_image_prompt};
 pub use artifact_install::*;
 pub use asr_learning_transfer::*;
 pub use built_in_prompts::*;

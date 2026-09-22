@@ -648,6 +648,17 @@ explicit reset of one or every protected prompt. Consumers keep the returned
 catalog keys and entry keys are compatibility identities; user-facing names
 and content remain editable, while purpose and lifecycle protection do not.
 
+Avatar image prompts (`avatar_image_prompt`, 2026-09-22) read the active
+`prompt_app_avatar_generation` / `prompt_app_avatar_edit` documents the way
+legacy's avatar sheet did: enabled non-blank entries in document order whose
+`hasSubjectDescription` / `hasCurrentDescription` conditions hold (other
+conditions pass), joined by blank lines, then legacy's nine placeholders
+replaced in order with trimmed values; nothing else is substituted. With no
+entry selected the bundled seed's enabled entries stand in for legacy's
+template text. Local stable-diffusion.cpp models get the request as typed.
+The creation helper's Rust path (template text, untrimmed, no conditions) is
+not ported yet.
+
 `AppBackend::open` is the supported production database-open path. It opens the
 caller-provided SQLite path, applies database migrations, bootstraps the
 catalog, and returns the database together with the complete typed prompt ID
