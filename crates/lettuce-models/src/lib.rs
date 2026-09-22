@@ -56,7 +56,22 @@ pub struct SecretHeader {
 pub enum ProviderConfig {
     Standard,
     Custom(CustomProviderConfig),
+    #[serde(rename = "comfyui")]
+    ComfyUi(ComfyUiConfig),
 }
+
+/// The API-format ComfyUI workflows a ComfyUI account runs (legacy
+/// credential config `txt2imgWorkflow` / `img2imgWorkflow`).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComfyUiConfig {
+    #[serde(default)]
+    pub txt2img_workflow: Option<String>,
+    #[serde(default)]
+    pub img2img_workflow: Option<String>,
+}
+
+const MAX_COMFYUI_WORKFLOW_BYTES: usize = 4 * 1024 * 1024;
 
 /// The legacy custom (OpenAI- or Anthropic-format) provider settings.
 /// `models_path` being `None` means model fetching is disabled.
@@ -308,6 +323,7 @@ pub enum ProviderConnectionValidationError {
     Path,
     Authentication,
     SecretHeaders,
+    Workflow,
 }
 
 /// Validates the non-secret connection metadata shared by storage and
@@ -322,6 +338,15 @@ pub fn validate_provider_connection(
     }
     if let Some(endpoint) = account.endpoint.as_deref() {
         validate_endpoint(endpoint)?;
+    }
+    if let ProviderConfig::ComfyUi(config) = &account.config
+        && (!account.provider_kind.eq_ignore_ascii_case("comfyui")
+            || [&config.txt2img_workflow, &config.img2img_workflow]
+                .into_iter()
+                .flatten()
+                .any(|workflow| workflow.len() > MAX_COMFYUI_WORKFLOW_BYTES))
+    {
+        return Err(ProviderConnectionValidationError::Workflow);
     }
     if let ProviderConfig::Custom(CustomProviderConfig {
         chat_path,

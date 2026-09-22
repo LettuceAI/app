@@ -340,7 +340,7 @@ fn validate_identity(
 
 fn validate_credentials(account: &ProviderAccount) -> Result<(), ChatProfileResolutionError> {
     let required = match &account.config {
-        ProviderConfig::Standard => matches!(
+        ProviderConfig::Standard | ProviderConfig::ComfyUi(_) => matches!(
             account.protocol,
             ProviderProtocol::OpenAiCompatible
                 | ProviderProtocol::Anthropic

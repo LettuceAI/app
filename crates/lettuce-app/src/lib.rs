@@ -49,6 +49,7 @@ mod dynamic_memory_delete_after;
 mod embeddings;
 mod feature_parameters;
 mod image_generation;
+mod image_providers;
 mod job_recovery;
 mod kokoro_assets;
 mod kokoro_download;
@@ -164,6 +165,7 @@ pub use dynamic_memory_delete_after::*;
 pub use embeddings::*;
 pub use feature_parameters::*;
 pub use image_generation::*;
+pub use image_providers::AppImageProviders;
 pub use job_recovery::*;
 pub use kokoro_assets::*;
 pub use kokoro_download::*;
@@ -184,8 +186,6 @@ pub use legacy_media_import::*;
 pub use legacy_provider_secret_import::*;
 pub use legacy_restore::*;
 pub use launch::*;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub use local_diffusion::AppImageProviders;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use local_diffusion_install::*;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

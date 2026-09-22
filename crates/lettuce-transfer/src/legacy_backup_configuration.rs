@@ -2583,6 +2583,28 @@ fn legacy_provider_config(
     object: &Map<String, Value>,
 ) -> Result<(ProviderConfig, Vec<&'static str>), LegacyBackupConfigurationError> {
     let mut mapped = vec!["streamingEnabled", "allowInvalidTls"];
+    if kind.eq_ignore_ascii_case("comfyui") {
+        mapped.extend(["txt2imgWorkflow", "img2imgWorkflow"]);
+        let workflow =
+            |key: &'static str| -> Result<Option<String>, LegacyBackupConfigurationError> {
+                object
+                    .get(key)
+                    .filter(|value| !value.is_null())
+                    .map(|value| {
+                        value.as_str().map(str::to_owned).ok_or_else(|| {
+                            malformed(LegacyBackupDocumentKind::ProviderCredentials, "config")
+                        })
+                    })
+                    .transpose()
+            };
+        return Ok((
+            ProviderConfig::ComfyUi(lettuce_models::ComfyUiConfig {
+                txt2img_workflow: workflow("txt2imgWorkflow")?,
+                img2img_workflow: workflow("img2imgWorkflow")?,
+            }),
+            mapped,
+        ));
+    }
     if !kind.eq_ignore_ascii_case("custom") && !kind.eq_ignore_ascii_case("custom-anthropic") {
         return Ok((ProviderConfig::Standard, mapped));
     }
@@ -3124,6 +3146,31 @@ mod tests {
                 source_key: orphan_model.to_string(),
                 reason: crate::LegacyImportSkipReason::MissingProviderAccount,
             }]
+        );
+    }
+
+    #[test]
+    fn comfyui_credentials_keep_their_workflows() {
+        let comfy = ProviderAccountId::new();
+        let config = json!({
+            "txt2imgWorkflow": "{\"3\":{\"inputs\":{\"text\":\"%PROMPT%\"}}}",
+            "img2imgWorkflow": "{\"4\":{}}"
+        })
+        .to_string();
+        let plan = plan_legacy_backup_configuration(inventory(vec![document(
+            LegacyBackupDocumentKind::ProviderCredentials,
+            json!([{"id": comfy, "provider_id": "comfyui", "label": "Comfy", "config": config}]),
+        )]))
+        .expect("comfyui credentials plan");
+        let account = &plan.provider_models.provider_accounts[0];
+        assert_eq!(account.protocol, ProviderProtocol::StableDiffusion);
+        assert!(account.deferred_config_fields.is_empty());
+        assert_eq!(
+            account.config,
+            ProviderConfig::ComfyUi(lettuce_models::ComfyUiConfig {
+                txt2img_workflow: Some(r#"{"3":{"inputs":{"text":"%PROMPT%"}}}"#.to_owned()),
+                img2img_workflow: Some(r#"{"4":{}}"#.to_owned()),
+            })
         );
     }
 

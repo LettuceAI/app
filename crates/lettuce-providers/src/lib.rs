@@ -19,6 +19,7 @@ mod gemini_cache;
 mod gemini_express;
 mod gemini_generate;
 mod groq;
+mod images;
 mod intenserp;
 mod literouter;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -44,6 +45,7 @@ mod xai;
 mod zai;
 
 pub use catalog::{provider_descriptor, provider_descriptors};
+pub use images::RemoteImageProviders;
 pub use descriptor::{
     ApiKeyRequirement, KeyVerification, ParameterFlags, PromptCachingSupport, ProviderDescriptor,
     ProviderRequestError, ReasoningSupport, RemoteModel,

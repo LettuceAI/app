@@ -1792,6 +1792,28 @@ fn legacy_provider_config(
     object: &Map<String, Value>,
 ) -> Result<(ProviderConfig, Vec<&'static str>), LegacyDatabasePreflightError> {
     let mut mapped = vec!["streamingEnabled", "allowInvalidTls"];
+    if provider_kind.eq_ignore_ascii_case("comfyui") {
+        mapped.extend(["txt2imgWorkflow", "img2imgWorkflow"]);
+        let workflow = |key: &'static str| -> Result<Option<String>, LegacyDatabasePreflightError> {
+            object
+                .get(key)
+                .filter(|value| !value.is_null())
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| provider_malformed("config"))
+                })
+                .transpose()
+        };
+        return Ok((
+            ProviderConfig::ComfyUi(lettuce_models::ComfyUiConfig {
+                txt2img_workflow: workflow("txt2imgWorkflow")?,
+                img2img_workflow: workflow("img2imgWorkflow")?,
+            }),
+            mapped,
+        ));
+    }
     if !provider_kind.eq_ignore_ascii_case("custom")
         && !provider_kind.eq_ignore_ascii_case("custom-anthropic")
     {
@@ -2836,6 +2858,52 @@ mod tests {
                     reason: lettuce_transfer::LegacyImportSkipReason::MissingModelProfile,
                 },
             ]
+        );
+        drop(connection);
+        std::fs::remove_file(path).expect("remove legacy database");
+    }
+
+    #[test]
+    fn provider_model_plan_keeps_comfyui_workflows() {
+        let path = provider_model_database();
+        let comfy_id = ProviderAccountId::new();
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute("INSERT INTO settings VALUES (1,NULL,NULL,92,10,10)", [])
+            .expect("insert settings");
+        connection
+            .execute(
+                "INSERT INTO provider_credentials (id,provider_id,label,base_url,config) VALUES (?1,'comfyui','Comfy','http://127.0.0.1:8188',?2)",
+                rusqlite::params![
+                    comfy_id.to_string(),
+                    r#"{"txt2imgWorkflow":"{\"3\":{\"inputs\":{\"text\":\"%PROMPT%\"}}}","img2imgWorkflow":null,"streamingEnabled":false}"#
+                ],
+            )
+            .expect("insert comfyui");
+        let plan = plan_legacy_provider_models(&path).expect("plan provider models");
+        let comfy = &plan.provider_accounts[0];
+        assert_eq!(comfy.protocol, ProviderProtocol::StableDiffusion);
+        assert_eq!(
+            comfy.config,
+            ProviderConfig::ComfyUi(lettuce_models::ComfyUiConfig {
+                txt2img_workflow: Some(r#"{"3":{"inputs":{"text":"%PROMPT%"}}}"#.to_owned()),
+                img2img_workflow: None,
+            })
+        );
+        assert!(!comfy.streaming_enabled);
+
+        connection
+            .execute(
+                "UPDATE provider_credentials SET config='{\"txt2imgWorkflow\":7}'",
+                [],
+            )
+            .expect("corrupt workflow");
+        assert_eq!(
+            plan_legacy_provider_models(&path),
+            Err(LegacyDatabasePreflightError::MalformedRecord {
+                table: "provider_credentials",
+                field: "config"
+            })
         );
         drop(connection);
         std::fs::remove_file(path).expect("remove legacy database");

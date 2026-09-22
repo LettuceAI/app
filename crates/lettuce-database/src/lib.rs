@@ -233,6 +233,7 @@ fn decode_provider_config(payload: &str) -> Result<ProviderConfig, ()> {
     let config = serde_json::from_value::<ProviderConfig>(value.clone()).map_err(|_| ())?;
     let allowed_fields = match config {
         ProviderConfig::Standard => &["kind"][..],
+        ProviderConfig::ComfyUi(_) => &["kind", "txt2img_workflow", "img2img_workflow"][..],
         ProviderConfig::Custom(_) => &[
             "kind",
             "chat_path",
@@ -3405,6 +3406,29 @@ mod tests {
             ProviderAccountRepository::upsert(&database, expected, None),
             Err(ModelRepositoryError::AlreadyExists)
         ));
+    }
+
+    #[test]
+    fn comfyui_workflows_round_trip_and_stay_bound_to_comfyui() {
+        let database = Database::open_in_memory().expect("open database");
+        let mut comfy = provider();
+        comfy.provider_kind = "comfyui".into();
+        comfy.protocol = ProviderProtocol::StableDiffusion;
+        comfy.config = ProviderConfig::ComfyUi(lettuce_models::ComfyUiConfig {
+            txt2img_workflow: Some("{\"3\":{\"inputs\":{\"text\":\"%PROMPT%\"}}}".into()),
+            img2img_workflow: None,
+        });
+        let stored = ProviderAccountRepository::upsert(&database, comfy.clone(), None)
+            .expect("insert comfyui account");
+        assert_eq!(stored, comfy);
+        assert_eq!(
+            ProviderAccountRepository::get(&database, comfy.id).expect("read account"),
+            Some(comfy)
+        );
+
+        let mut misbound = provider();
+        misbound.config = ProviderConfig::ComfyUi(lettuce_models::ComfyUiConfig::default());
+        assert!(ProviderAccountRepository::upsert(&database, misbound, None).is_err());
     }
 
     #[test]

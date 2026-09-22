@@ -739,6 +739,7 @@ mod tests {
         ));
         let providers = crate::AppImageProviders {
             local: Some(Arc::clone(&engine)),
+            remote: None,
         };
         let model = register_catalog_model(
             backend.database(),

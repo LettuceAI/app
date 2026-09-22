@@ -109,5 +109,8 @@ Not yet ported: the runnability probe, Hugging Face image bundles and the
 component library (they need the Hugging Face browser), importing legacy
 `image_loras` and `playground_generations` rows.
 
-Next: the remote provider adapters and ComfyUI, then the scene, playground
-and creation-helper callers.
+Remote providers live in `lettuce-providers::RemoteImageProviders` (the
+legacy adapters and ComfyUI); the app's `AppImageProviders` routes sdcpp
+accounts to the embedded engine and every other kind there.
+
+Next: the scene, playground and creation-helper callers.

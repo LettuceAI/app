@@ -203,3 +203,22 @@ Featherless use `max_tokens` + effort; LiteRouter, IntenseRP
 with neither effort nor budget. Anthropic adds the budget and forces
 temperature 1.0 only when thinking is actually sent (reasoning on with a
 budget). Nothing rejects effort or budget with reasoning off.
+
+Remote image generation (`RemoteImageProviders`, 2026-09-22) ports legacy
+`generate_image` for every kind but sdcpp: the eleven legacy adapters
+(OpenAI and its `custom`/`lettuce-host` aliases, OpenRouter, Pollinations,
+Gemini with the key as `?key=`, Gemini Express with `x-goog-api-key`,
+Stability, xAI, NanoGPT, LiteRouter binary responses, Automatic1111,
+Diffusers) with their endpoints, fields, defaults and parsers, and ComfyUI
+(upload, legacy `%TOKEN%` substitution, `/prompt`, `/history` polled every
+1.5 s up to 400 times, `/view`). One request per generation over
+`BulkHttpClient`, never retried; error texts are legacy's. Linked results are
+downloaded, data URLs and raw base64 decoded, usage found the way legacy's
+`extract_usage` did. The job's cancellation token ends the request. ComfyUI
+workflows are the account's `ProviderConfig::ComfyUi` (both legacy importers
+now keep `txt2imgWorkflow`/`img2imgWorkflow`; they were dropped before).
+Deliberate corrections: a `custom` or `lettuce-host` account without an
+endpoint fails instead of sending its key to api.openai.com. Open gaps: image,
+audio and total token counts from `extract_usage` are not kept
+(`InferenceUsage` has no fields for them, chat usage has the same gap);
+providers' remote result URLs are not kept beside the stored bytes.

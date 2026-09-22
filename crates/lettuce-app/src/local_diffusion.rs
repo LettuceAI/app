@@ -6,15 +6,11 @@
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
+use lettuce_image_generation::LOCAL_DIFFUSION_PROVIDER_KIND;
 use lettuce_image_generation::sd_runtime::layout::DiffusionPaths;
 use lettuce_image_generation::sd_runtime::output::GenerationProgressSink;
 use lettuce_image_generation::sd_runtime::policy::HardwareGpu;
 use lettuce_image_generation::sd_runtime::server::{EngineHost, LocalDiffusionEngine};
-use lettuce_image_generation::{
-    ImageProviderError, ImageProviderPort, LOCAL_DIFFUSION_PROVIDER_KIND, ProviderImageOutput,
-    ProviderImageRequest,
-};
-use lettuce_models::ProviderProtocol;
 use lettuce_providers::{LocalLlama, LocalRuntimeExclusion};
 
 pub(crate) type SharedLocalLlama = Arc<OnceLock<Option<LocalLlama>>>;
@@ -86,54 +82,12 @@ pub(crate) fn start_engine(
     )))
 }
 
-/// Routes an image request to the provider that serves its account.
-#[derive(Clone)]
-pub struct AppImageProviders {
-    pub(crate) local: Option<Arc<LocalDiffusionEngine>>,
-}
-
-impl std::fmt::Debug for AppImageProviders {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("AppImageProviders")
-            .field("local", &self.local.is_some())
-            .finish()
-    }
-}
-
-#[async_trait]
-impl ImageProviderPort for AppImageProviders {
-    async fn generate(
-        &self,
-        request: ProviderImageRequest,
-    ) -> Result<ProviderImageOutput, ImageProviderError> {
-        let local = request.account.protocol == ProviderProtocol::StableDiffusion
-            && request
-                .account
-                .provider_kind
-                .eq_ignore_ascii_case(LOCAL_DIFFUSION_PROVIDER_KIND);
-        match (&self.local, local) {
-            (Some(engine), true) => engine.generate(request).await,
-            _ => Err(ImageProviderError::Unsupported(
-                request.account.provider_kind.clone(),
-            )),
-        }
-    }
-}
-
 impl crate::AppBackend {
     /// The embedded stable-diffusion.cpp engine, when the host configured
     /// its folders.
     #[must_use]
     pub fn local_diffusion(&self) -> Option<&Arc<LocalDiffusionEngine>> {
         self.local_diffusion.as_ref()
-    }
-
-    #[must_use]
-    pub fn image_providers(&self) -> AppImageProviders {
-        AppImageProviders {
-            local: self.local_diffusion.clone(),
-        }
     }
 }
 

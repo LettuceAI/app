@@ -18,6 +18,7 @@ async-trait.workspace = true
 base64.workspace = true
 blake3.workspace = true
 lettuce-conversations.workspace = true
+lettuce-image-generation.workspace = true
 lettuce-inference.workspace = true
 lettuce-local-llm.workspace = true
 lettuce-models.workspace = true
