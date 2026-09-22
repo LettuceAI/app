@@ -103,6 +103,7 @@ mod provider_backup;
 mod provider_media;
 mod provider_runtime;
 mod runtime_text;
+mod scene_loras;
 mod staged_lorebook_coherence_dispatch;
 mod staged_lorebook_coherence_execution;
 mod staged_lorebook_dispatch;

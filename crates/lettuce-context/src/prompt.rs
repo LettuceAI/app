@@ -158,6 +158,46 @@ pub enum PromptEntryInfoSource {
     Mixed,
 }
 
+/// The scene image protocol variant a chat asks for: legacy kept its
+/// protocol entries only when scene generation was on and resolved a model,
+/// and only the variant of that model (local or remote).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SceneImageProtocolKind {
+    Remote,
+    Local,
+}
+
+/// Legacy `append_image_directive_instructions` kept the direct-chat prompt
+/// entries with these ids only when scene generation was on and resolved a
+/// model of the same variant; imported copies carry that rule as a
+/// condition. Other purposes never ran the filter.
+#[must_use]
+pub fn legacy_scene_protocol_conditions(
+    purpose: PromptPurpose,
+    legacy_entry_id: &str,
+    conditions: Option<PromptEntryCondition>,
+) -> Option<PromptEntryCondition> {
+    let value = match legacy_entry_id {
+        _ if !matches!(
+            purpose,
+            PromptPurpose::DirectChat | PromptPurpose::CompanionChat
+        ) =>
+        {
+            return conditions;
+        }
+        "entry_scene_image_protocol" => SceneImageProtocolKind::Remote,
+        "entry_scene_image_protocol_local" => SceneImageProtocolKind::Local,
+        _ => return conditions,
+    };
+    Some(PromptEntryCondition::All {
+        conditions: conditions
+            .into_iter()
+            .chain([PromptEntryCondition::SceneImageProtocol { value }])
+            .collect(),
+    })
+}
+
 /// The closed condition vocabulary used by legacy prompt entries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
@@ -168,6 +208,7 @@ pub enum PromptEntryCondition {
     AvatarGenerationEnabled { value: bool },
     IsLocalImageGenerationModel { value: bool },
     IsSceneGenerationLocalImageModel { value: bool },
+    SceneImageProtocol { value: SceneImageProtocolKind },
     HasScene { value: bool },
     HasSceneDirection { value: bool },
     HasPersona { value: bool },
@@ -686,6 +727,7 @@ pub struct PromptConditionContext {
     pub avatar_generation_enabled: bool,
     pub is_local_image_generation_model: bool,
     pub is_scene_generation_local_image_model: bool,
+    pub scene_image_protocol: Option<SceneImageProtocolKind>,
     pub has_scene: bool,
     pub has_scene_direction: bool,
     pub has_persona: bool,
@@ -732,6 +774,9 @@ pub fn matches_condition(
         }
         PromptEntryCondition::IsSceneGenerationLocalImageModel { value } => {
             *value == context.is_scene_generation_local_image_model
+        }
+        PromptEntryCondition::SceneImageProtocol { value } => {
+            context.scene_image_protocol == Some(*value)
         }
         PromptEntryCondition::HasScene { value } => *value == context.has_scene,
         PromptEntryCondition::HasSceneDirection { value } => *value == context.has_scene_direction,
@@ -997,6 +1042,10 @@ pub enum PromptVariable {
     MemoryCategory,
     DuplicateCosine,
     DuplicateThreshold,
+    RangeEnd,
+    ReferenceRange,
+    ReferenceSource,
+    OtherSubjectName,
 }
 
 impl PromptVariable {
@@ -1139,6 +1188,10 @@ impl PromptVariable {
             Self::MemoryCategory => "{{memory_category}}",
             Self::DuplicateCosine => "{{duplicate_cosine}}",
             Self::DuplicateThreshold => "{{duplicate_threshold}}",
+            Self::RangeEnd => "{{range_end}}",
+            Self::ReferenceRange => "{{reference_range}}",
+            Self::ReferenceSource => "{{reference_source}}",
+            Self::OtherSubjectName => "{{other_subject_name}}",
         }
     }
 
@@ -1280,6 +1333,10 @@ impl PromptVariable {
         Self::MemoryCategory,
         Self::DuplicateCosine,
         Self::DuplicateThreshold,
+        Self::RangeEnd,
+        Self::ReferenceRange,
+        Self::ReferenceSource,
+        Self::OtherSubjectName,
     ];
 
     /// Mirrors the legacy prompt editor's allowed-variable contract.

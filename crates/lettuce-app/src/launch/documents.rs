@@ -455,6 +455,18 @@ fn prompt_condition(value: &PromptEntryCondition) -> PromptEntryConditionV1 {
         PromptEntryCondition::IsSceneGenerationLocalImageModel { value } => {
             PromptEntryConditionV1::IsSceneGenerationLocalImageModel { value: *value }
         }
+        PromptEntryCondition::SceneImageProtocol { value } => {
+            PromptEntryConditionV1::SceneImageProtocol {
+                value: match value {
+                    lettuce_context::SceneImageProtocolKind::Remote => {
+                        lettuce_conversations::SceneImageProtocolV1::Remote
+                    }
+                    lettuce_context::SceneImageProtocolKind::Local => {
+                        lettuce_conversations::SceneImageProtocolV1::Local
+                    }
+                },
+            }
+        }
         PromptEntryCondition::HasScene { value } => {
             PromptEntryConditionV1::HasScene { value: *value }
         }

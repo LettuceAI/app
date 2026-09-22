@@ -2016,6 +2016,9 @@ mod tests {
             PromptEntryCondition::AvatarGenerationEnabled { value: true },
             PromptEntryCondition::IsLocalImageGenerationModel { value: true },
             PromptEntryCondition::IsSceneGenerationLocalImageModel { value: true },
+            PromptEntryCondition::SceneImageProtocol {
+                value: lettuce_context::SceneImageProtocolKind::Local,
+            },
             PromptEntryCondition::HasScene { value: true },
             PromptEntryCondition::HasSceneDirection { value: true },
             PromptEntryCondition::HasPersona { value: true },

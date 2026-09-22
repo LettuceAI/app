@@ -281,6 +281,29 @@ where
                 companion_state.as_deref(),
                 scheduled_notes.as_deref(),
             );
+            for (variable, binding, filler) in [
+                (
+                    PromptVariable::CharacterLoraKeywords,
+                    &request.prompt_values.character_scene_lora,
+                    "scene_lora_primary_subject",
+                ),
+                (
+                    PromptVariable::PersonaLoraKeywords,
+                    &request.prompt_values.persona_scene_lora,
+                    "scene_lora_secondary_subject",
+                ),
+            ] {
+                let value = match binding {
+                    Some(lettuce_conversations::SceneLoraBinding::Keywords(keywords)) => {
+                        keywords.clone()
+                    }
+                    Some(lettuce_conversations::SceneLoraBinding::NoLora) => {
+                        runtime.fragment(filler, [])?.unwrap_or_default()
+                    }
+                    None => continue,
+                };
+                values.purpose_values.insert(variable, value);
+            }
             values.key_memories = match runtime.section("runtime_group_key_memories") {
                 Some(section) if group && !key_lines.is_empty() => section.text,
                 _ if group => String::new(),
@@ -1429,6 +1452,18 @@ fn prompt_condition(condition: &PromptEntryConditionV1) -> PromptEntryCondition 
         PromptEntryConditionV1::IsSceneGenerationLocalImageModel { value } => {
             PromptEntryCondition::IsSceneGenerationLocalImageModel { value: *value }
         }
+        PromptEntryConditionV1::SceneImageProtocol { value } => {
+            PromptEntryCondition::SceneImageProtocol {
+                value: match value {
+                    lettuce_conversations::SceneImageProtocolV1::Remote => {
+                        lettuce_context::SceneImageProtocolKind::Remote
+                    }
+                    lettuce_conversations::SceneImageProtocolV1::Local => {
+                        lettuce_context::SceneImageProtocolKind::Local
+                    }
+                },
+            }
+        }
         PromptEntryConditionV1::HasScene { value } => {
             PromptEntryCondition::HasScene { value: *value }
         }
@@ -1666,6 +1701,14 @@ fn prompt_conditions(
         avatar_generation_enabled: runtime.avatar_generation_enabled,
         is_local_image_generation_model: runtime.is_local_image_generation_model,
         is_scene_generation_local_image_model: runtime.is_scene_generation_local_image_model,
+        scene_image_protocol: runtime.scene_image_protocol.map(|protocol| match protocol {
+            lettuce_conversations::SceneImageProtocol::Remote => {
+                lettuce_context::SceneImageProtocolKind::Remote
+            }
+            lettuce_conversations::SceneImageProtocol::Local => {
+                lettuce_context::SceneImageProtocolKind::Local
+            }
+        }),
         has_scene: !scene.trim().is_empty(),
         has_scene_direction: !scene_direction.trim().is_empty(),
         has_persona: snapshot.persona.is_some() && settings.persona.is_some(),

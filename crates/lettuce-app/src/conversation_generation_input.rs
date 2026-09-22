@@ -189,6 +189,8 @@ where
         + CompanionScheduledNoteRepository
         + ModelProfileRepository
         + lettuce_models::GlobalModelSettingsRepository
+        + lettuce_models::ModelCatalog
+        + lettuce_image_generation::sd_runtime::lora_library::LoraLibraryRepository
         + ProviderAccountRepository
         + lettuce_conversations::InitialInferenceRepository
         + SpeakerInferenceRepository
@@ -1009,11 +1011,39 @@ where
         };
         let conversation_message_count =
             conversation_message_count(&timeline.items, turn.operation, source_message_id);
+        let images = &global_settings.image_generation;
+        let scene_model_is_local = !group && {
+            let mut resolving = global_settings.clone();
+            resolving.image_generation.scene_enabled = true;
+            crate::image_feature_model(self.repository, &resolving, crate::ImageFeature::Scene)
+                .is_ok_and(|model| model.is_local_diffusion())
+        };
+        let scene_image_protocol = (!group && images.scene_enabled)
+            .then(|| {
+                crate::image_feature_model(
+                    self.repository,
+                    &global_settings,
+                    crate::ImageFeature::Scene,
+                )
+                .ok()
+            })
+            .flatten()
+            .map(|model| {
+                if model.is_local_diffusion() {
+                    lettuce_conversations::SceneImageProtocol::Local
+                } else {
+                    lettuce_conversations::SceneImageProtocol::Remote
+                }
+            });
         let prompt_runtime = PromptRuntimeFacts {
             provider_id: Some(account.provider_kind),
             provider_label: Some(account.label),
             input_scopes: modality_scopes(profile.capabilities.input_modalities),
             output_scopes: modality_scopes(profile.capabilities.output_modalities),
+            scene_generation_enabled: images.scene_enabled,
+            avatar_generation_enabled: images.avatar_enabled,
+            is_scene_generation_local_image_model: scene_model_is_local,
+            scene_image_protocol,
             dynamic_memory_enabled: dynamic_memory,
             time_awareness_enabled: clock.time_awareness_enabled(),
             conversation_message_count: Some(conversation_message_count),
@@ -1021,6 +1051,19 @@ where
         };
         let context_window = history_window(&global_settings, dynamic_memory, group);
         let mut prompt_values = runtime.prompt_values;
+        if scene_model_is_local
+            && let ConversationKind::Direct(details) = &aggregate.conversation.kind
+        {
+            let (character_lora, persona_lora) = crate::scene_loras::subject_loras(
+                self.repository,
+                details.character.source_id,
+                settings.persona.as_ref().map(|persona| persona.source_id),
+            );
+            prompt_values.character_scene_lora =
+                Some(crate::scene_loras::subject_binding(character_lora.as_ref()));
+            prompt_values.persona_scene_lora =
+                persona_lora.map(|lora| crate::scene_loras::subject_binding(lora.as_ref()));
+        }
         crate::companion_clock::fill_time_values(&mut prompt_values, reference_now);
         let context = ConversationContextAssembler::new(self.repository)
             .assemble(ContextRequest {

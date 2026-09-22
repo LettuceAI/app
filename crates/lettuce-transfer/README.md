@@ -767,3 +767,12 @@ ids kept as `source_asset_id`). Each image file (`images/<assetId>.<ext>`) is
 planned as a `PlaygroundImage` generated-image asset; missing, ambiguous or
 unusable files and lossy `images_json` entries are recorded and the image
 keeps a null asset. Playground history travels in its own v2 backup section.
+
+Scene image protocol (2026-09-23): legacy user prompt templates of the direct
+or companion purpose that copied `entry_scene_image_protocol` / `_local` get
+`lettuce_context::legacy_scene_protocol_conditions`. Both the backup and the
+live-database converter add the condition, so they keep legacy's ID filter. A
+configured `sceneGenerationModelId` that is missing or cannot output images is
+cleared and recorded, and scene generation is turned off: legacy generated no
+scenes with it, where the rewrite would otherwise fall back to the first image
+model.

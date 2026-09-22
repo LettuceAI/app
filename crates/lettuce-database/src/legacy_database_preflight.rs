@@ -638,6 +638,11 @@ fn plan_legacy_prompts_with_limit(
         let mut entries = rows
             .into_iter()
             .map(|entry| {
+                let conditions = lettuce_context::legacy_scene_protocol_conditions(
+                    purpose,
+                    &entry.id,
+                    entry.conditions,
+                );
                 let candidate = LegacyPromptEntryCandidate {
                     source_id: entry.id,
                     draft: PromptEntryDraft {
@@ -651,7 +656,7 @@ fn plan_legacy_prompts_with_limit(
                         conditional_min_messages: entry.conditional_min_messages,
                         interval_turns: entry.interval_turns,
                         system_prompt: entry.system_prompt,
-                        conditions: entry.conditions,
+                        conditions,
                         payload: entry.prompt_entry_payload,
                     },
                 };

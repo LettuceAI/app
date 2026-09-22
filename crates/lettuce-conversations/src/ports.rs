@@ -1359,6 +1359,13 @@ impl ContextWindowPolicy {
 /// Runtime values required by the prompt condition vocabulary.  Authored
 /// snapshot facts remain owned by the assembler; these values are supplied by
 /// the current model/runtime admission step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneImageProtocol {
+    Remote,
+    Local,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PromptRuntimeFacts {
     pub provider_id: Option<String>,
@@ -1369,6 +1376,9 @@ pub struct PromptRuntimeFacts {
     pub avatar_generation_enabled: bool,
     pub is_local_image_generation_model: bool,
     pub is_scene_generation_local_image_model: bool,
+    /// Which scene image protocol the chat prompt asks for; none when scene
+    /// generation is off or resolves no image model.
+    pub scene_image_protocol: Option<SceneImageProtocol>,
     pub dynamic_memory_enabled: bool,
     pub has_active_scheduled_note: bool,
     pub time_awareness_enabled: bool,
@@ -1419,8 +1429,23 @@ impl PromptRuntimeFacts {
 /// Pre-resolved authored/runtime strings which the pure prompt renderer cannot
 /// derive from booleans. `None` means the value is unavailable; the assembler
 /// must not manufacture a replacement.
+/// How a subject of a local scene image is named in the chat prompt's scene
+/// protocol (legacy `local_scene_subject_binding`): by its LoRA's trigger
+/// keywords (empty when the LoRA has none), or by the generic subject filler
+/// when it has no LoRA.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SceneLoraBinding {
+    Keywords(String),
+    NoLora,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PromptRuntimeValues {
+    /// The character's and persona's local scene LoRA bindings; set only when
+    /// the chat asks for the local scene image protocol, and the persona's only
+    /// when the chat has a persona.
+    pub character_scene_lora: Option<SceneLoraBinding>,
+    pub persona_scene_lora: Option<SceneLoraBinding>,
     pub content_rules: Option<String>,
     pub companion_state: Option<String>,
     pub scheduled_notes: Option<String>,
@@ -1459,6 +1484,25 @@ impl PromptRuntimeValues {
                     value,
                     crate::validation::MAX_AUTHORED_TEXT_BYTES,
                     false,
+                )?;
+            }
+        }
+        for (field, binding) in [
+            (
+                "context_runtime_values.character_scene_lora",
+                &self.character_scene_lora,
+            ),
+            (
+                "context_runtime_values.persona_scene_lora",
+                &self.persona_scene_lora,
+            ),
+        ] {
+            if let Some(SceneLoraBinding::Keywords(keywords)) = binding {
+                crate::validation::validate_text(
+                    field,
+                    keywords,
+                    crate::validation::MAX_AUTHORED_TEXT_BYTES,
+                    true,
                 )?;
             }
         }

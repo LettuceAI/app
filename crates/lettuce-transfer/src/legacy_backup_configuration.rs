@@ -2019,7 +2019,11 @@ fn map_prompts(
                     conditional_min_messages: entry.conditional_min_messages,
                     interval_turns: entry.interval_turns,
                     system_prompt: entry.system_prompt,
-                    conditions: entry.conditions,
+                    conditions: lettuce_context::legacy_scene_protocol_conditions(
+                        purpose,
+                        &source_id,
+                        entry.conditions,
+                    ),
                     payload: entry.prompt_entry_payload,
                 };
                 if source_id.trim().is_empty() || draft.validate().is_err() {
@@ -2775,6 +2779,7 @@ fn reconcile_selections(
             && supported(capabilities.input_modalities.image)
             && supported(capabilities.output_modalities.text)
     };
+    let configured_scene_model = settings.image_model_profile_ids.scene;
     let images = &mut settings.image_model_profile_ids;
     for (field, value, compatible) in [
         (
@@ -2813,6 +2818,9 @@ fn reconcile_selections(
             &id.to_string(),
             reason,
         ));
+    }
+    if configured_scene_model.is_some() && settings.image_model_profile_ids.scene.is_none() {
+        settings.value.image_generation.scene_enabled = false;
     }
     for (field, value, purpose) in [
         (
@@ -3761,6 +3769,37 @@ mod tests {
     }
 
     #[test]
+    fn imported_scene_protocol_copies_keep_the_legacy_variant_filter() {
+        use lettuce_context::{PromptEntryCondition, SceneImageProtocolKind};
+        let chat = PromptEntryCondition::ChatMode {
+            value: lettuce_context::PromptEntryChatMode::Direct,
+        };
+        assert_eq!(
+            lettuce_context::legacy_scene_protocol_conditions(
+                PromptPurpose::DirectChat,
+                "entry_scene_image_protocol_local",
+                Some(chat.clone()),
+            ),
+            Some(PromptEntryCondition::All {
+                conditions: vec![
+                    chat.clone(),
+                    PromptEntryCondition::SceneImageProtocol {
+                        value: SceneImageProtocolKind::Local,
+                    },
+                ],
+            })
+        );
+        assert_eq!(
+            lettuce_context::legacy_scene_protocol_conditions(
+                PromptPurpose::GroupChatRoleplay,
+                "entry_scene_image_protocol",
+                Some(chat.clone()),
+            ),
+            Some(chat)
+        );
+    }
+
+    #[test]
     fn unknown_structured_fallback_format_is_malformed() {
         let error = plan_legacy_backup_configuration(inventory(vec![document(
             LegacyBackupDocumentKind::Settings,
@@ -4265,6 +4304,12 @@ mod tests {
                 plan.provider_models.skipped
             );
         }
+        let unusable_scene = plan_legacy_backup_configuration(inventory(documents(json!({
+            "sceneGenerationEnabled": true,
+            "sceneGenerationModelId": missing_model,
+        }))))
+        .expect("plan");
+        assert!(!unusable_scene.settings.value.image_generation.scene_enabled);
         assert!(matches!(
             plan_legacy_backup_configuration(inventory(documents(json!({
                 "sceneGenerationMode": "sometimes"

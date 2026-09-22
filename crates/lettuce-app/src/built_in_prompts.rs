@@ -810,6 +810,10 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "memory_category"
             | "duplicate_cosine"
             | "duplicate_threshold"
+            | "range_end"
+            | "reference_range"
+            | "reference_source"
+            | "other_subject_name"
     )
 }
 
@@ -1027,6 +1031,38 @@ mod tests {
     };
     use lettuce_types::{PromptEntryId, Revision};
     use std::sync::Mutex;
+
+    #[test]
+    fn scene_image_protocol_entries_follow_the_resolved_scene_model_variant() {
+        use lettuce_context::{PromptConditionContext, SceneImageProtocolKind, matches_condition};
+        let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
+        let entry = |key: &str| {
+            catalog
+                .seeds()
+                .iter()
+                .flat_map(|seed| &seed.entries)
+                .find(|entry| entry.built_in_entry_key.as_deref() == Some(key))
+                .and_then(|entry| entry.conditions.clone())
+                .expect("protocol conditions")
+        };
+        let remote = entry("entry_scene_image_protocol");
+        let local = entry("entry_scene_image_protocol_local");
+        let active = |protocol: Option<SceneImageProtocolKind>| {
+            let context = PromptConditionContext {
+                is_scene_generation_local_image_model: protocol
+                    == Some(SceneImageProtocolKind::Local),
+                scene_image_protocol: protocol,
+                ..PromptConditionContext::default()
+            };
+            (
+                matches_condition(&remote, &context),
+                matches_condition(&local, &context),
+            )
+        };
+        assert_eq!(active(None), (false, false));
+        assert_eq!(active(Some(SceneImageProtocolKind::Remote)), (true, false));
+        assert_eq!(active(Some(SceneImageProtocolKind::Local)), (false, true));
+    }
 
     #[test]
     fn catalog_is_the_exact_closed_legacy_set() {

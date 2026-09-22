@@ -1619,3 +1619,19 @@ names a template for some models that carry none) and `unload_local_llama`.
 `ProviderMediaSource`; the host attaches it with
 `ProviderRuntime::with_media_source` so llama.cpp vision can read
 attachments.
+
+Scene image protocol in the chat prompt (2026-09-23): the default prompt's
+`entry_scene_image_protocol` / `_local` entries carry a `sceneImageProtocol`
+condition. Direct chats set that fact only when scene generation is on and the
+scene image model resolves (`image_feature_model`), picking the variant of that
+model. This is legacy's `append_image_directive_instructions` ID filter as data.
+Before this change the remote entry was active in every direct chat. The facts
+`sceneGenerationEnabled`/`avatarGenerationEnabled` carry the settings in every
+chat. `isSceneGenerationLocalImageModel` and the `{{lora_keywords[...]}}` values
+follow the resolved scene model whether or not scenes are on, like legacy
+(`scene_loras`). A subject names its LoRA's trigger keywords (blank for a LoRA
+without keywords) or the catalog's `scene_lora_primary_subject` /
+`scene_lora_secondary_subject` filler when it has none. A character or persona
+that cannot be read counts as having no LoRA and does not fail the turn.
+Open: an `artifact_id` image recommendation (made by the new app) has no
+resolvable LoRA file yet, so it binds as having no LoRA.

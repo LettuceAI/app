@@ -743,6 +743,13 @@ pub enum PromptEntryInfoSourceV1 {
     Mixed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneImageProtocolV1 {
+    Remote,
+    Local,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PromptEntryConditionV1 {
@@ -752,6 +759,7 @@ pub enum PromptEntryConditionV1 {
     AvatarGenerationEnabled { value: bool },
     IsLocalImageGenerationModel { value: bool },
     IsSceneGenerationLocalImageModel { value: bool },
+    SceneImageProtocol { value: SceneImageProtocolV1 },
     HasScene { value: bool },
     HasSceneDirection { value: bool },
     HasPersona { value: bool },
