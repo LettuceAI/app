@@ -1364,12 +1364,23 @@ impl LegacyImportRepository for Database {
         settings.image_generation.avatar_model_profile_id = model(images.avatar)?;
         settings.image_generation.scene_model_profile_id = model(images.scene)?;
         settings.image_generation.scene_writer_model_profile_id = model(images.scene_writer)?;
-        settings.image_generation.creation_helper_model_profile_id =
-            model(images.creation_helper)?;
+        settings.image_generation.creation_helper_model_profile_id = model(images.creation_helper)?;
         settings.help_me_reply.roleplay_prompt_id =
             prompt(&candidate.help_me_reply_prompt_source_ids.roleplay)?;
         settings.help_me_reply.conversational_prompt_id =
             prompt(&candidate.help_me_reply_prompt_source_ids.conversational)?;
+        let features = candidate.feature_model_profile_ids;
+        let feature_prompts = &candidate.feature_prompt_source_ids;
+        settings.creation_helper.model_profile_id = model(features.creation_helper)?;
+        settings.lorebook_entry_generator.model_profile_id = model(features.lorebook_entry)?;
+        settings.lorebook_entry_generator.entry_prompt_id =
+            prompt(&feature_prompts.lorebook_entry)?;
+        settings.lorebook_entry_generator.keyword_prompt_id =
+            prompt(&feature_prompts.lorebook_keyword)?;
+        settings.companion_soul_writer.model_profile_id = model(features.soul_writer)?;
+        settings.companion_soul_writer.fallback_model_profile_id =
+            model(features.soul_writer_fallback)?;
+        settings.companion_soul_writer.prompt_id = prompt(&feature_prompts.soul_writer)?;
         let payload = serde_json::to_string(&settings)
             .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
         let earlier_settings = transaction

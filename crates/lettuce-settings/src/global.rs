@@ -25,6 +25,12 @@ pub struct GlobalSettings {
     pub embedding: EmbeddingSettings,
     #[serde(default)]
     pub image_generation: ImageGenerationSettings,
+    #[serde(default)]
+    pub creation_helper: CreationHelperSettings,
+    #[serde(default)]
+    pub lorebook_entry_generator: LorebookEntryGeneratorSettings,
+    #[serde(default)]
+    pub companion_soul_writer: CompanionSoulWriterSettings,
     #[serde(default = "default_manual_mode_context_window")]
     pub manual_mode_context_window: u32,
 }
@@ -51,6 +57,9 @@ impl Default for GlobalSettings {
             help_me_reply: HelpMeReplySettings::default(),
             embedding: EmbeddingSettings::default(),
             image_generation: ImageGenerationSettings::default(),
+            creation_helper: CreationHelperSettings::default(),
+            lorebook_entry_generator: LorebookEntryGeneratorSettings::default(),
+            companion_soul_writer: CompanionSoulWriterSettings::default(),
             manual_mode_context_window: default_manual_mode_context_window(),
         }
     }
@@ -66,7 +75,7 @@ impl GlobalSettings {
 
     /// Every model profile the settings payload selects.
     #[must_use]
-    pub fn selected_model_profiles(&self) -> [Option<ModelProfileId>; 6] {
+    pub fn selected_model_profiles(&self) -> [Option<ModelProfileId>; 10] {
         let image = &self.image_generation;
         [
             self.lorebook_generator.selection.model_profile_id,
@@ -75,6 +84,10 @@ impl GlobalSettings {
             image.scene_model_profile_id,
             image.scene_writer_model_profile_id,
             image.creation_helper_model_profile_id,
+            self.creation_helper.model_profile_id,
+            self.lorebook_entry_generator.model_profile_id,
+            self.companion_soul_writer.model_profile_id,
+            self.companion_soul_writer.fallback_model_profile_id,
         ]
     }
 
@@ -89,6 +102,10 @@ impl GlobalSettings {
             &mut image.scene_model_profile_id,
             &mut image.scene_writer_model_profile_id,
             &mut image.creation_helper_model_profile_id,
+            &mut self.creation_helper.model_profile_id,
+            &mut self.lorebook_entry_generator.model_profile_id,
+            &mut self.companion_soul_writer.model_profile_id,
+            &mut self.companion_soul_writer.fallback_model_profile_id,
         ] {
             if selection.is_some_and(&removed) {
                 *selection = None;
@@ -133,6 +150,87 @@ impl Default for ImageGenerationSettings {
             scene_model_profile_id: None,
             scene_writer_model_profile_id: None,
             creation_helper_model_profile_id: None,
+        }
+    }
+}
+
+/// How the creation helper asks for tool calls when a model has no native
+/// tool calling (legacy `creationHelperToolFallback`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CreationHelperToolFallback {
+    #[default]
+    Native,
+    Json,
+    Xml,
+}
+
+/// Legacy `creationHelper*` advanced settings: the chat model (unset means
+/// the default model), streaming, the tools it may call (unset means all)
+/// and its tool-call fallback.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CreationHelperSettings {
+    pub model_profile_id: Option<ModelProfileId>,
+    pub streaming: bool,
+    pub enabled_tools: Option<Vec<String>>,
+    pub tool_fallback: CreationHelperToolFallback,
+}
+
+impl Default for CreationHelperSettings {
+    fn default() -> Self {
+        Self {
+            model_profile_id: None,
+            streaming: true,
+            enabled_tools: None,
+            tool_fallback: CreationHelperToolFallback::Native,
+        }
+    }
+}
+
+/// Legacy `lorebookEntryGenerator*` and
+/// `lorebookKeywordGeneratorPromptTemplateId` advanced settings: the model
+/// (unset means the first text model), the entry and keyword prompts (unset
+/// means the built-in ones) and the structured fallback format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LorebookEntryGeneratorSettings {
+    pub model_profile_id: Option<ModelProfileId>,
+    pub entry_prompt_id: Option<PromptDocumentId>,
+    pub keyword_prompt_id: Option<PromptDocumentId>,
+    pub structured_fallback_format: MemoryStructuredFallbackFormat,
+}
+
+impl Default for LorebookEntryGeneratorSettings {
+    fn default() -> Self {
+        Self {
+            model_profile_id: None,
+            entry_prompt_id: None,
+            keyword_prompt_id: None,
+            structured_fallback_format: MemoryStructuredFallbackFormat::Json,
+        }
+    }
+}
+
+/// Legacy `companionSoulWriter*` advanced settings: the model (unset means
+/// the default model, then the first text model), its fallback model, the
+/// prompt (unset means the built-in one) and the structured fallback format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CompanionSoulWriterSettings {
+    pub model_profile_id: Option<ModelProfileId>,
+    pub fallback_model_profile_id: Option<ModelProfileId>,
+    pub prompt_id: Option<PromptDocumentId>,
+    pub structured_fallback_format: MemoryStructuredFallbackFormat,
+}
+
+impl Default for CompanionSoulWriterSettings {
+    fn default() -> Self {
+        Self {
+            model_profile_id: None,
+            fallback_model_profile_id: None,
+            prompt_id: None,
+            structured_fallback_format: MemoryStructuredFallbackFormat::Json,
         }
     }
 }

@@ -53,6 +53,22 @@ a synced snapshot drops selections of models this device lacks. Deliberate
 change: legacy's creation helper failed with "No image generation model
 configured" when its saved image model was gone; the cleared selection now
 means the first suitable model, like avatar and scene generation did.
+`creation_helper` (legacy `creationHelperModelId`, `creationHelperStreaming`
+on by default, `creationHelperEnabledTools` unset for every tool,
+`creationHelperToolFallback` native/json/xml), `lorebook_entry_generator`
+(`lorebookEntryGenerator*` model, entry prompt and JSON-default fallback
+format plus `lorebookKeywordGeneratorPromptTemplateId`) and
+`companion_soul_writer` (`companionSoulWriter*` model, fallback model, prompt
+and JSON-default fallback format) keep the choices those jobs made before they
+ran; the jobs themselves still take a resolved profile per request, picked by
+`lettuce_app::{creation_helper_model, lorebook_entry_generator_model,
+soul_writer_model, soul_writer_fallback_model}` with legacy's fallbacks.
+Deliberate change: legacy never cleared these selections when a model was
+deleted, so its creation helper failed with "Model not found" and its lorebook
+entry writer with "Configured lorebook entry generator model could not be
+resolved"; the cleared selection now falls back like an unset one (default
+model, first text model). `creation_helper.enabled_tools` is kept although
+only dead legacy code read it; a consumer honoring it would change behavior.
 An optional group-chat policy lives beside the direct policy in global settings,
 matching the legacy settings editor and persistence owner. Group launches use
 that complete override when present and otherwise inherit the direct policy.

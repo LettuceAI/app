@@ -3930,6 +3930,8 @@ mod tests {
         settings.lorebook_generator.selection.model_profile_id = Some(kept.id);
         settings.image_generation.avatar_model_profile_id = Some(removed.id);
         settings.image_generation.scene_writer_model_profile_id = Some(kept.id);
+        settings.companion_soul_writer.fallback_model_profile_id = Some(removed.id);
+        settings.creation_helper.model_profile_id = Some(kept.id);
         let saved = GlobalSettingsStore::save(&database, settings, None, initial.revision)
             .expect("save selections");
         ModelProfileRepository::delete_and_clear_default(&database, removed.id)
@@ -3938,6 +3940,11 @@ mod tests {
         assert!(after.revision > saved.revision);
         assert_eq!(after.settings.help_me_reply.model_profile_id, None);
         assert_eq!(after.settings.image_generation.avatar_model_profile_id, None);
+        assert_eq!(
+            after.settings.companion_soul_writer.fallback_model_profile_id,
+            None
+        );
+        assert_eq!(after.settings.creation_helper.model_profile_id, Some(kept.id));
         assert_eq!(
             after.settings.lorebook_generator.selection.model_profile_id,
             Some(kept.id)

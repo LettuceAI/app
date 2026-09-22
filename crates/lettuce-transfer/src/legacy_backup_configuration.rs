@@ -14,9 +14,10 @@ use lettuce_models::{
     ProviderProtocol, QueryParameterName, WireRole,
 };
 use lettuce_settings::{
+    CompanionSoulWriterSettings, CreationHelperSettings, CreationHelperToolFallback,
     DynamicMemorySettings, EmbeddingSettings, GlobalSettings, HeaderName, HelpMeReplySettings,
-    HelpMeReplyStyle, ImageGenerationSettings, LorebookGeneratorSelection,
-    LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
+    HelpMeReplyStyle, ImageGenerationSettings, LorebookEntryGeneratorSettings,
+    LorebookGeneratorSelection, LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
     MemoryStructuredFallbackFormat, PureMode, SceneGenerationMode, SecretOwnerId, SecretPurpose,
     SecretRef, SecretValue,
 };
@@ -109,6 +110,8 @@ pub struct LegacyBackupSettingsCandidate {
     pub help_me_reply_model_profile_id: Option<ModelProfileId>,
     pub help_me_reply_prompt_source_ids: HelpMeReplyPromptSources,
     pub image_model_profile_ids: ImageModelSources,
+    pub feature_model_profile_ids: FeatureModelSources,
+    pub feature_prompt_source_ids: FeaturePromptSources,
     pub deprecated_system_prompt: Option<String>,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
@@ -133,6 +136,27 @@ pub struct ImageModelSources {
 pub struct HelpMeReplyPromptSources {
     pub roleplay: Option<String>,
     pub conversational: Option<String>,
+}
+
+/// Legacy `creationHelperModelId`, `lorebookEntryGeneratorModelId`,
+/// `companionSoulWriterModelId` and `companionSoulWriterFallbackModelId`, as
+/// source ids.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FeatureModelSources {
+    pub creation_helper: Option<ModelProfileId>,
+    pub lorebook_entry: Option<ModelProfileId>,
+    pub soul_writer: Option<ModelProfileId>,
+    pub soul_writer_fallback: Option<ModelProfileId>,
+}
+
+/// Legacy `lorebookEntryGeneratorPromptTemplateId`,
+/// `lorebookKeywordGeneratorPromptTemplateId` and
+/// `companionSoulWriterPromptTemplateId`, retained as source ids.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FeaturePromptSources {
+    pub lorebook_entry: Option<String>,
+    pub lorebook_keyword: Option<String>,
+    pub soul_writer: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -700,6 +724,18 @@ fn map_settings(
         "sceneGenerationModelId",
         "sceneWriterModelId",
         "creationHelperImageModelId",
+        "creationHelperModelId",
+        "creationHelperStreaming",
+        "creationHelperEnabledTools",
+        "creationHelperToolFallback",
+        "lorebookEntryGeneratorModelId",
+        "lorebookEntryGeneratorPromptTemplateId",
+        "lorebookKeywordGeneratorPromptTemplateId",
+        "lorebookEntryGeneratorStructuredFallbackFormat",
+        "companionSoulWriterModelId",
+        "companionSoulWriterFallbackModelId",
+        "companionSoulWriterPromptTemplateId",
+        "companionSoulWriterStructuredFallbackFormat",
     ]);
     for field in advanced
         .keys()
@@ -749,6 +785,23 @@ fn map_settings(
             dynamic_memory_llama_sampler_overwrite_enabled,
             help_me_reply,
             image_generation: map_image_generation(advanced)?,
+            creation_helper: map_creation_helper(advanced)?,
+            lorebook_entry_generator: LorebookEntryGeneratorSettings {
+                structured_fallback_format: fallback_format(
+                    advanced,
+                    "lorebookEntryGeneratorStructuredFallbackFormat",
+                    MemoryStructuredFallbackFormat::Json,
+                )?,
+                ..LorebookEntryGeneratorSettings::default()
+            },
+            companion_soul_writer: CompanionSoulWriterSettings {
+                structured_fallback_format: fallback_format(
+                    advanced,
+                    "companionSoulWriterStructuredFallbackFormat",
+                    MemoryStructuredFallbackFormat::Json,
+                )?,
+                ..CompanionSoulWriterSettings::default()
+            },
             embedding: EmbeddingSettings {
                 dimensions: optional_u32(advanced, "embeddingDimensions")?
                     .and_then(|value| u16::try_from(value).ok()),
@@ -781,10 +834,79 @@ fn map_settings(
             scene_writer: advanced_id(advanced, "sceneWriterModelId")?,
             creation_helper: advanced_id(advanced, "creationHelperImageModelId")?,
         },
+        feature_model_profile_ids: FeatureModelSources {
+            creation_helper: advanced_id(advanced, "creationHelperModelId")?,
+            lorebook_entry: advanced_id(advanced, "lorebookEntryGeneratorModelId")?,
+            soul_writer: advanced_id(advanced, "companionSoulWriterModelId")?,
+            soul_writer_fallback: advanced_id(advanced, "companionSoulWriterFallbackModelId")?,
+        },
+        feature_prompt_source_ids: FeaturePromptSources {
+            lorebook_entry: normalized_string(advanced, "lorebookEntryGeneratorPromptTemplateId")?,
+            lorebook_keyword: normalized_string(
+                advanced,
+                "lorebookKeywordGeneratorPromptTemplateId",
+            )?,
+            soul_writer: normalized_string(advanced, "companionSoulWriterPromptTemplateId")?,
+        },
         deprecated_system_prompt: normalize_option(row.system_prompt.clone()),
         created_at: TimestampMillis::new(created),
         updated_at: TimestampMillis::new(updated),
     })
+}
+
+/// Legacy `creationHelperStreaming` (default on), `creationHelperEnabledTools`
+/// (the string entries of an array, as legacy read it; anything else means
+/// every tool) and `creationHelperToolFallback` (`from_setting`: json, xml,
+/// otherwise native).
+fn map_creation_helper(
+    advanced: &Map<String, Value>,
+) -> Result<CreationHelperSettings, LegacyBackupConfigurationError> {
+    let mut result = CreationHelperSettings::default();
+    result.streaming = optional_bool_value(
+        advanced,
+        "creationHelperStreaming",
+        result.streaming,
+        LegacyBackupDocumentKind::Settings,
+    )?;
+    result.enabled_tools = advanced
+        .get("creationHelperEnabledTools")
+        .and_then(Value::as_array)
+        .map(|tools| {
+            tools
+                .iter()
+                .filter_map(|tool| tool.as_str().map(str::to_owned))
+                .collect()
+        });
+    result.tool_fallback = match advanced
+        .get("creationHelperToolFallback")
+        .and_then(Value::as_str)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("json") => CreationHelperToolFallback::Json,
+        Some("xml") => CreationHelperToolFallback::Xml,
+        _ => CreationHelperToolFallback::Native,
+    };
+    Ok(result)
+}
+
+/// A legacy `json` / `xml` structured fallback format setting.
+fn fallback_format(
+    advanced: &Map<String, Value>,
+    key: &str,
+    default: MemoryStructuredFallbackFormat,
+) -> Result<MemoryStructuredFallbackFormat, LegacyBackupConfigurationError> {
+    match advanced.get(key).filter(|value| !value.is_null()) {
+        None => Ok(default),
+        Some(value) => match value.as_str() {
+            Some("json") => Ok(MemoryStructuredFallbackFormat::Json),
+            Some("xml") => Ok(MemoryStructuredFallbackFormat::Xml),
+            _ => Err(malformed(
+                LegacyBackupDocumentKind::Settings,
+                format!("advanced_settings.{key}"),
+            )),
+        },
+    }
 }
 
 /// Legacy `avatarGenerationEnabled` (default on), `sceneGenerationEnabled`
@@ -2211,6 +2333,22 @@ fn reconcile_selections(
             "settings.advanced_settings.helpMeReplyModelId",
             &mut settings.help_me_reply_model_profile_id,
         ),
+        (
+            "settings.advanced_settings.creationHelperModelId",
+            &mut settings.feature_model_profile_ids.creation_helper,
+        ),
+        (
+            "settings.advanced_settings.lorebookEntryGeneratorModelId",
+            &mut settings.feature_model_profile_ids.lorebook_entry,
+        ),
+        (
+            "settings.advanced_settings.companionSoulWriterModelId",
+            &mut settings.feature_model_profile_ids.soul_writer,
+        ),
+        (
+            "settings.advanced_settings.companionSoulWriterFallbackModelId",
+            &mut settings.feature_model_profile_ids.soul_writer_fallback,
+        ),
     ] {
         let Some(id) = *value else {
             continue;
@@ -2324,6 +2462,21 @@ fn reconcile_selections(
             "settings.advanced_settings.helpMeReplyConversationalPromptTemplateId",
             &mut settings.help_me_reply_prompt_source_ids.conversational,
             Some(PromptPurpose::ReplyHelperConversational),
+        ),
+        (
+            "settings.advanced_settings.lorebookEntryGeneratorPromptTemplateId",
+            &mut settings.feature_prompt_source_ids.lorebook_entry,
+            Some(PromptPurpose::LorebookEntryWriter),
+        ),
+        (
+            "settings.advanced_settings.lorebookKeywordGeneratorPromptTemplateId",
+            &mut settings.feature_prompt_source_ids.lorebook_keyword,
+            Some(PromptPurpose::LorebookKeywordGenerator),
+        ),
+        (
+            "settings.advanced_settings.companionSoulWriterPromptTemplateId",
+            &mut settings.feature_prompt_source_ids.soul_writer,
+            Some(PromptPurpose::CompanionSoulWriter),
         ),
     ] {
         let Some(id) = value.take() else {
@@ -3633,7 +3786,12 @@ mod tests {
                     LegacyBackupDocumentKind::Models,
                     json!([
                         model(image_model, "vendor/image", "[\"text\"]", "[\"image\"]"),
-                        model(vision_model, "vendor/vision", "[\"text\",\"image\"]", "[\"text\"]"),
+                        model(
+                            vision_model,
+                            "vendor/vision",
+                            "[\"text\",\"image\"]",
+                            "[\"text\"]"
+                        ),
                     ]),
                 ),
             ]
@@ -3678,7 +3836,10 @@ mod tests {
         let image = &plan.settings.value.image_generation;
         assert!(image.avatar_enabled && !image.scene_enabled);
         assert_eq!(image.scene_mode, SceneGenerationMode::Auto);
-        assert_eq!(plan.settings.image_model_profile_ids, ImageModelSources::default());
+        assert_eq!(
+            plan.settings.image_model_profile_ids,
+            ImageModelSources::default()
+        );
         let skip = |field: &str, id: ModelProfileId, reason| crate::LegacyImportSkip {
             kind: crate::LegacyImportSkipKind::ModelReference,
             source_key: format!("settings.advanced_settings.{field}:{id}"),
@@ -3722,7 +3883,7 @@ mod tests {
         let model_id = ModelProfileId::new();
         let audio_id = AudioProviderId::new();
         let voice_id = VoiceProfileId::new();
-        let advanced_settings = json!({
+        let mut advanced_settings = json!({
             "appUpdateChecksEnabled": false,
             "embeddingDimensions": 512,
             "manualModeContextWindow": 30,
@@ -3762,6 +3923,25 @@ mod tests {
                 "unknownKnob": 1
             }
         });
+        advanced_settings
+            .as_object_mut()
+            .expect("advanced settings object")
+            .extend(
+                json!({
+                    "creationHelperModelId": model_id,
+                    "creationHelperStreaming": false,
+                    "creationHelperEnabledTools": ["set_name", 7],
+                    "creationHelperToolFallback": "XML",
+                    "lorebookEntryGeneratorModelId": model_id,
+                    "lorebookEntryGeneratorPromptTemplateId": "prompt-main",
+                    "lorebookEntryGeneratorStructuredFallbackFormat": "xml",
+                    "companionSoulWriterFallbackModelId": model_id,
+                    "companionSoulWriterStructuredFallbackFormat": "xml"
+                })
+                .as_object()
+                .expect("feature settings")
+                .clone(),
+            );
         let documents = vec![
             document(
                 LegacyBackupDocumentKind::Settings,
@@ -4014,6 +4194,51 @@ mod tests {
         assert_eq!(help_me_reply.history_count(), 10);
         assert_eq!(help_me_reply.style, HelpMeReplyStyle::Conversational);
         assert_eq!(plan.settings.help_me_reply_model_profile_id, Some(model_id));
+        let creation_helper = &plan.settings.value.creation_helper;
+        assert!(!creation_helper.streaming);
+        assert_eq!(
+            creation_helper.enabled_tools.as_deref(),
+            Some(&["set_name".to_owned()][..])
+        );
+        assert_eq!(
+            creation_helper.tool_fallback,
+            CreationHelperToolFallback::Xml
+        );
+        assert_eq!(
+            plan.settings
+                .value
+                .lorebook_entry_generator
+                .structured_fallback_format,
+            MemoryStructuredFallbackFormat::Xml
+        );
+        assert_eq!(
+            plan.settings
+                .value
+                .companion_soul_writer
+                .structured_fallback_format,
+            MemoryStructuredFallbackFormat::Xml
+        );
+        assert_eq!(
+            plan.settings.feature_model_profile_ids,
+            FeatureModelSources {
+                creation_helper: Some(model_id),
+                lorebook_entry: Some(model_id),
+                soul_writer: None,
+                soul_writer_fallback: Some(model_id),
+            }
+        );
+        assert_eq!(plan.settings.feature_prompt_source_ids.lorebook_entry, None);
+        assert!(plan.prompts.skipped.iter().any(|skip| skip.source_key
+            == "settings.advanced_settings.lorebookEntryGeneratorPromptTemplateId:prompt-main"));
+        assert!(!plan.notices.iter().any(|notice| {
+            notice.field.starts_with("advanced_settings.creationHelper")
+                || notice
+                    .field
+                    .starts_with("advanced_settings.companionSoulWriter")
+                || notice
+                    .field
+                    .starts_with("advanced_settings.lorebookEntryGenerator")
+        }));
         assert_eq!(
             plan.settings.help_me_reply_prompt_source_ids,
             HelpMeReplyPromptSources::default()

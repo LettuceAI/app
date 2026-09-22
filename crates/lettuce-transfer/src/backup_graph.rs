@@ -814,6 +814,9 @@ pub fn canonicalize_and_validate(
             memory_prompts.manager_prompt_id,
             help_me_reply.roleplay_prompt_id,
             help_me_reply.conversational_prompt_id,
+            graph.settings.value.lorebook_entry_generator.entry_prompt_id,
+            graph.settings.value.lorebook_entry_generator.keyword_prompt_id,
+            graph.settings.value.companion_soul_writer.prompt_id,
         ]
         .into_iter()
         .flatten()

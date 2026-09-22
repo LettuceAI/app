@@ -182,6 +182,8 @@ mod tests {
             help_me_reply_model_profile_id: None,
             help_me_reply_prompt_source_ids: HelpMeReplyPromptSources::default(),
             image_model_profile_ids: lettuce_transfer::ImageModelSources::default(),
+            feature_model_profile_ids: lettuce_transfer::FeatureModelSources::default(),
+            feature_prompt_source_ids: lettuce_transfer::FeaturePromptSources::default(),
             deprecated_system_prompt: None,
             created_at: TimestampMillis::new(1),
             updated_at: TimestampMillis::new(1),

@@ -1,5 +1,6 @@
-//! Which model an image feature uses: the old app's settings choice when it
-//! suits the feature, else the first suitable model in settings order.
+//! Which model an image or text feature uses: the old app's settings choice
+//! when it suits the feature, else its fallback (the default model or the
+//! first suitable model in settings order).
 
 use lettuce_image_generation::LOCAL_DIFFUSION_PROVIDER_KIND;
 use lettuce_models::{
@@ -27,6 +28,14 @@ pub enum ImageFeatureModelError {
     SceneModelUnsupported,
     #[error("{0}")]
     SceneWriter(&'static str),
+    #[error("No model configured")]
+    NoModel,
+    #[error("Model not found")]
+    ModelNotFound,
+    #[error("{0}")]
+    LorebookEntryGenerator(&'static str),
+    #[error("{0}")]
+    SoulWriter(&'static str),
     #[error("model storage is unavailable")]
     Storage,
 }
@@ -138,6 +147,107 @@ pub fn image_feature_model<C: ModelCatalog + ?Sized>(
         .or_else(|| candidates.first())
         .cloned()
         .ok_or(ImageFeatureModelError::NoImageModel)
+}
+
+/// The old `supports_lorebook_entry_writer_model` /
+/// `supports_text_generation_model`.
+fn generates_text(model: &FeatureModel) -> bool {
+    let capabilities = &model.profile.config.capabilities;
+    supported(capabilities.input_modalities.text) && supported(capabilities.output_modalities.text)
+}
+
+/// The creation helper's chat model: its own setting, else the default
+/// model; legacy checked no capability.
+pub fn creation_helper_model<C: ModelCatalog + ?Sized>(
+    models: &C,
+    settings: &GlobalSettings,
+    default_model: Option<ModelProfileId>,
+) -> Result<FeatureModel, ImageFeatureModelError> {
+    let id = settings
+        .creation_helper
+        .model_profile_id
+        .or(default_model)
+        .ok_or(ImageFeatureModelError::NoModel)?;
+    preferred(&catalog(models)?, Some(id))
+        .cloned()
+        .ok_or(ImageFeatureModelError::ModelNotFound)
+}
+
+/// The old `resolve_lorebook_entry_writer_target`, used by the entry writer
+/// and the keyword generator: the configured model must generate text,
+/// otherwise the first model that does.
+pub fn lorebook_entry_generator_model<C: ModelCatalog + ?Sized>(
+    models: &C,
+    settings: &GlobalSettings,
+) -> Result<FeatureModel, ImageFeatureModelError> {
+    let all = catalog(models)?;
+    if let Some(id) = settings.lorebook_entry_generator.model_profile_id {
+        let model =
+            preferred(&all, Some(id)).ok_or(ImageFeatureModelError::LorebookEntryGenerator(
+                "Configured lorebook entry generator model could not be resolved",
+            ))?;
+        return if generates_text(model) {
+            Ok(model.clone())
+        } else {
+            Err(ImageFeatureModelError::LorebookEntryGenerator(
+                "Configured lorebook entry generator model must support text input and text output",
+            ))
+        };
+    }
+    all.into_iter()
+        .find(generates_text)
+        .ok_or(ImageFeatureModelError::LorebookEntryGenerator(
+            "No compatible lorebook entry generator model is configured",
+        ))
+}
+
+/// The old `resolve_companion_soul_writer_target`: a model the request names
+/// must generate text; otherwise the configured model, then the default
+/// model, then the first model that generates text, skipping unsuitable ones.
+pub fn soul_writer_model<C: ModelCatalog + ?Sized>(
+    models: &C,
+    settings: &GlobalSettings,
+    default_model: Option<ModelProfileId>,
+    requested: Option<ModelProfileId>,
+) -> Result<FeatureModel, ImageFeatureModelError> {
+    let all = catalog(models)?;
+    if let Some(id) = requested {
+        let model = preferred(&all, Some(id)).ok_or(ImageFeatureModelError::SoulWriter(
+            "Selected Soul writer model could not be resolved",
+        ))?;
+        return if generates_text(model) {
+            Ok(model.clone())
+        } else {
+            Err(ImageFeatureModelError::SoulWriter(
+                "Selected Soul writer model must support text input and text output",
+            ))
+        };
+    }
+    [
+        settings.companion_soul_writer.model_profile_id,
+        default_model,
+    ]
+    .into_iter()
+    .find_map(|id| preferred(&all, id).filter(|model| generates_text(model)))
+    .or_else(|| all.iter().find(|model| generates_text(model)))
+    .cloned()
+    .ok_or(ImageFeatureModelError::SoulWriter(
+        "No text generation model is configured",
+    ))
+}
+
+/// The old `resolve_companion_soul_writer_fallback_target`: the configured
+/// fallback model when it generates text.
+pub fn soul_writer_fallback_model<C: ModelCatalog + ?Sized>(
+    models: &C,
+    settings: &GlobalSettings,
+) -> Result<Option<FeatureModel>, ImageFeatureModelError> {
+    Ok(preferred(
+        &catalog(models)?,
+        settings.companion_soul_writer.fallback_model_profile_id,
+    )
+    .filter(|model| generates_text(model))
+    .cloned())
 }
 
 /// The old `resolve_scene_writer_target`: vision input is required unless the
@@ -301,5 +411,85 @@ mod tests {
             scene_writer_model(&database, &settings, true),
             Err(ImageFeatureModelError::SceneWriter(_))
         ));
+    }
+
+    #[test]
+    fn text_features_follow_the_old_model_fallbacks() {
+        let database = lettuce_database::Database::open_in_memory().expect("database");
+        let remote =
+            ProviderAccountRepository::upsert(&database, account("openai"), None).expect("account");
+        let image = profile(&remote, "image", 1, true, false);
+        let first_text = profile(&remote, "first-text", 2, false, false);
+        let second_text = profile(&remote, "second-text", 3, false, false);
+        for model in [&second_text, &image, &first_text] {
+            ModelProfileRepository::upsert(&database, model.clone(), None).expect("model");
+        }
+        let id = |result: Result<FeatureModel, ImageFeatureModelError>| {
+            result.map(|model| model.profile.id)
+        };
+        let mut settings = GlobalSettings::default();
+        assert_eq!(
+            id(creation_helper_model(&database, &settings, None)),
+            Err(ImageFeatureModelError::NoModel)
+        );
+        assert_eq!(
+            id(creation_helper_model(&database, &settings, Some(image.id))),
+            Ok(image.id)
+        );
+        assert_eq!(
+            id(lorebook_entry_generator_model(&database, &settings)),
+            Ok(first_text.id)
+        );
+        assert_eq!(
+            id(soul_writer_model(
+                &database,
+                &settings,
+                Some(image.id),
+                None
+            )),
+            Ok(first_text.id)
+        );
+        assert_eq!(
+            id(soul_writer_model(
+                &database,
+                &settings,
+                None,
+                Some(image.id)
+            )),
+            Err(ImageFeatureModelError::SoulWriter(
+                "Selected Soul writer model must support text input and text output"
+            ))
+        );
+        settings.creation_helper.model_profile_id = Some(ModelProfileId::new());
+        settings.lorebook_entry_generator.model_profile_id = Some(image.id);
+        settings.companion_soul_writer.model_profile_id = Some(image.id);
+        settings.companion_soul_writer.fallback_model_profile_id = Some(second_text.id);
+        assert_eq!(
+            id(creation_helper_model(
+                &database,
+                &settings,
+                Some(first_text.id)
+            )),
+            Err(ImageFeatureModelError::ModelNotFound)
+        );
+        assert!(matches!(
+            lorebook_entry_generator_model(&database, &settings),
+            Err(ImageFeatureModelError::LorebookEntryGenerator(_))
+        ));
+        assert_eq!(
+            id(soul_writer_model(
+                &database,
+                &settings,
+                Some(second_text.id),
+                None
+            )),
+            Ok(second_text.id)
+        );
+        assert_eq!(
+            soul_writer_fallback_model(&database, &settings)
+                .expect("fallback")
+                .map(|model| model.profile.id),
+            Some(second_text.id)
+        );
     }
 }

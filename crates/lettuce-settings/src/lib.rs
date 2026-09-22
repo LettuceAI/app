@@ -18,10 +18,11 @@ mod native_secrets;
 mod secrets;
 
 pub use global::{
+    CompanionSoulWriterSettings, CreationHelperSettings, CreationHelperToolFallback,
     DynamicMemoryPromptSelection, DynamicMemorySettings, EmbeddingSettings,
     GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
-    HelpMeReplySettings, HelpMeReplyStyle, ImageGenerationSettings, LorebookGeneratorSelection,
-    LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
+    HelpMeReplySettings, HelpMeReplyStyle, ImageGenerationSettings, LorebookEntryGeneratorSettings,
+    LorebookGeneratorSelection, LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
     MemoryStructuredFallbackFormat, PureMode, SceneGenerationMode, StoredGlobalSettings,
 };
 
