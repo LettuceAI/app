@@ -41,6 +41,7 @@ use crate::common::{AdapterError, FALLBACK_MAX_OUTPUT_TOKENS, validate_common_re
 use crate::stream_normalize::StreamDelta;
 
 const LOCAL_FAILURE_CODE: &str = "LOCAL_INFERENCE_FAILED";
+const LOCAL_MODEL_NOT_PICKED_CODE: &str = "LOCAL_MODEL_FILE_NOT_PICKED";
 
 /// The embedded runtime and the application services it reports to.
 #[derive(Clone)]
@@ -115,6 +116,15 @@ pub(crate) async fn run(
     validate_common_request_with_tools(&request)?;
     let profile = &request.profile.chat_profile;
     let llama = profile.llama_cpp.as_deref().ok_or(AdapterError::Rejected)?;
+    if profile.external_model_id == lettuce_models::UNPICKED_LOCAL_MODEL_FILE {
+        return Err(AdapterError::Provider(ProviderFailure {
+            kind: ProviderFailureKind::RequestRejected,
+            status: 400,
+            code: Some(LOCAL_MODEL_NOT_PICKED_CODE.to_owned()),
+            message: None,
+            request_id: None,
+        }));
+    }
     let streaming = request.stream_sink.is_some()
         && profile.streaming_enabled
         && llama.settings.streaming_enabled != Some(false);

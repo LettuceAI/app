@@ -980,3 +980,10 @@ name keeps its last value like legacy's JSON parsing. Unknown scope names,
 invalid advanced setting values and header names or values the new types
 reject still abort. Every
 other malformed record still aborts.
+
+Migration 0021 holds the embedded llama.cpp runtime's device-local state:
+`llama_runtime_reports` (legacy `llamaLastRuntimeReport`, now on the newest
+llama.cpp model profile for the file instead of inside the synced model
+config; deleted with the model) and `llm_generation_metrics` (legacy
+retention of the newest 500). Neither is backed up or synced; a restore
+carries the metrics and the reports of models that still exist.

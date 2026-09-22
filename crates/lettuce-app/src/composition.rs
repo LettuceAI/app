@@ -19,6 +19,10 @@ pub struct AppBackend {
     built_in_prompt_ids: BuiltInPromptIds,
     inference_runtime: Arc<InferenceRuntime>,
     whisper_runtime: Arc<WhisperCppRuntime<Database>>,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    local_llama: std::sync::OnceLock<Option<lettuce_providers::LocalLlama>>,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    llama_events: Option<crate::LlamaEventSink>,
 }
 
 impl AppBackend {
@@ -52,7 +56,42 @@ impl AppBackend {
             database,
             built_in_prompt_ids,
             inference_runtime: Arc::new(InferenceRuntime::default()),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            local_llama: std::sync::OnceLock::new(),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            llama_events: None,
         })
+    }
+
+    /// Sends the embedded llama.cpp runtime's frontend events to the host.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[must_use]
+    pub fn with_llama_event_sink(mut self, sink: crate::LlamaEventSink) -> Self {
+        self.llama_events = Some(sink);
+        self
+    }
+
+    /// The embedded llama.cpp runtime, started on first use like legacy's
+    /// worker; `None` when its thread could not start.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    fn local_llama(&self) -> Option<lettuce_providers::LocalLlama> {
+        self.local_llama
+            .get_or_init(
+                || match lettuce_local_llm::generation::LlamaRuntime::start() {
+                    Ok(runtime) => Some(lettuce_providers::LocalLlama::new(
+                        Arc::new(runtime),
+                        Arc::new(crate::DatabaseLlamaHost::new(
+                            Arc::clone(&self.database),
+                            self.llama_events.clone(),
+                        )),
+                    )),
+                    Err(error) => {
+                        tracing::warn!(%error, "llama.cpp inference worker failed to start");
+                        None
+                    }
+                },
+            )
+            .clone()
     }
 
     #[must_use]
@@ -755,6 +794,8 @@ impl AppBackend {
             secret_store,
             tls_policy,
             Arc::clone(&self.inference_runtime),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            self.local_llama(),
         )
     }
 

@@ -15,12 +15,14 @@ const DEVICE_LOCAL_TABLES: &[&str] = &[
     "sync_incoming_changes",
     "sync_conflicts",
     "installed_whisper_models",
+    "llm_generation_metrics",
 ];
 
 impl Database {
     /// Copies device-local state from the previous database file: the sync
-    /// journal, installed Whisper model manifests and the discovered voices of
-    /// audio providers that exist in this database.
+    /// journal, installed Whisper model manifests, local generation metrics,
+    /// and the discovered voices and llama.cpp runtime reports of audio
+    /// providers and models that exist in this database.
     pub fn carry_device_local_state_from(&self, previous: &Path) -> Result<(), DatabaseError> {
         let previous = previous
             .to_str()
@@ -38,6 +40,10 @@ impl Database {
             }
             transaction.execute(
                 "INSERT INTO main.discovered_tts_voices SELECT * FROM previous.discovered_tts_voices WHERE provider_id IN (SELECT id FROM main.audio_providers)",
+                [],
+            )?;
+            transaction.execute(
+                "INSERT INTO main.llama_runtime_reports SELECT report.* FROM previous.llama_runtime_reports report JOIN main.model_profiles model ON model.id = report.model_profile_id AND model.external_model_id = report.model_path",
                 [],
             )?;
             transaction.commit()

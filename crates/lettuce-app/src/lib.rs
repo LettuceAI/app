@@ -67,6 +67,8 @@ mod legacy_provider_secret_import;
 mod legacy_restore;
 mod legacy_provider_model_import;
 mod launch;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod local_llama;
 mod lorebook_entry_dispatch;
 mod lorebook_entry_execution;
 mod lorebook_entry_job;
@@ -173,6 +175,8 @@ pub use legacy_media_import::*;
 pub use legacy_provider_secret_import::*;
 pub use legacy_restore::*;
 pub use launch::*;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub use local_llama::*;
 pub use lorebook_entry_dispatch::*;
 pub use lorebook_entry_execution::*;
 pub use lorebook_entry_job::*;

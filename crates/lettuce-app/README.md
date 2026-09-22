@@ -1579,3 +1579,9 @@ section at a time (data sections, then each media blob and conversation
 artifact read, checked and appended before the next is loaded), so export
 memory is bounded by the largest single object instead of the library;
 `export` is the in-memory wrapper.
+
+Desktop builds start the embedded llama.cpp worker on first use (legacy
+lazy worker) and attach it to `provider_runtime`; `DatabaseLlamaHost` stores
+runtime reports and metrics, and the frontend events go to the
+`LlamaEventSink` the host attaches with `with_llama_event_sink` (logged at
+debug level until then).

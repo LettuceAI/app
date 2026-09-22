@@ -43,6 +43,8 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
             secret_store,
             tls_policy,
             Arc::new(InferenceRuntime::default()),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            None,
         )
     }
 
@@ -51,21 +53,30 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
         secret_store: Arc<S>,
         tls_policy: &TlsPolicy,
         inference_runtime: Arc<InferenceRuntime>,
+        #[cfg(not(any(target_os = "android", target_os = "ios")))] local_llama: Option<
+            lettuce_providers::LocalLlama,
+        >,
     ) -> Result<Self, ProviderRuntimeInitializationError> {
         let network = Arc::new(
             JsonClient::with_tls(tls_policy)
                 .map_err(ProviderRuntimeInitializationError::Network)?,
         );
         let runtime_port: Arc<dyn InferenceRuntimePort> = inference_runtime.clone();
+        let remote = RemoteProviders::with_runtime_and_replay(
+            secret_store,
+            network,
+            runtime_port,
+            Some(database.clone()),
+        );
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let remote = match local_llama {
+            Some(local_llama) => remote.with_local_llama(local_llama),
+            None => remote,
+        };
         Ok(Self {
             database: database.clone(),
             inference_runtime,
-            remote: RemoteProviders::with_runtime_and_replay(
-                secret_store,
-                network,
-                runtime_port,
-                Some(database.clone()),
-            ),
+            remote,
         })
     }
 
