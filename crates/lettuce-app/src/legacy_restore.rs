@@ -373,6 +373,10 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .legacy_creation_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("creation helper"))?;
+        backend
+            .legacy_image_importer()
+            .execute_database_import(&admission, import, at)
+            .map_err(stage("images"))?;
         match backend
             .complete_legacy_import(run_id, at)
             .map_err(stage("completion"))?

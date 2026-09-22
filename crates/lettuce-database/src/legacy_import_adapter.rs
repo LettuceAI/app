@@ -1120,6 +1120,90 @@ impl LegacyImportRepository for Database {
         Ok(receipt)
     }
 
+    /// Legacy LoRA library rows keep their device-local paths; a path the
+    /// library already knows keeps whichever row changed last.
+    fn materialize_images(
+        &self,
+        request: lettuce_transfer::LegacyImageMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let record_count = u64::try_from(request.loras.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        match start_stage(
+            &transaction,
+            request.run_id,
+            (&request.plan_fingerprint, &request.source_fingerprint),
+            LegacyImportStage::Images,
+            record_count,
+            None,
+        )? {
+            StageStart::Replayed(receipt) => {
+                transaction
+                    .commit()
+                    .map_err(|_| LegacyImportRepositoryError::Storage)?;
+                return Ok(receipt);
+            }
+            StageStart::Ready(_) => {}
+        }
+        let count = |value: u64| {
+            i64::try_from(value).map_err(|_| LegacyImportRepositoryError::InvalidInput)
+        };
+        for lora in &request.loras {
+            transaction
+                .execute(
+                    "INSERT INTO image_loras (
+                        path, filename, bytes_on_disk, modified_at, sha256, keywords,
+                        keyword_source, architecture, architecture_source, created_at, updated_at
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                     ON CONFLICT(path) DO UPDATE SET
+                        filename = excluded.filename,
+                        bytes_on_disk = excluded.bytes_on_disk,
+                        modified_at = excluded.modified_at,
+                        sha256 = excluded.sha256,
+                        keywords = excluded.keywords,
+                        keyword_source = excluded.keyword_source,
+                        architecture = excluded.architecture,
+                        architecture_source = excluded.architecture_source,
+                        created_at = excluded.created_at,
+                        updated_at = excluded.updated_at
+                     WHERE excluded.updated_at > image_loras.updated_at",
+                    params![
+                        lora.path,
+                        lora.filename,
+                        count(lora.bytes_on_disk)?,
+                        count(lora.modified_at)?,
+                        lora.sha256,
+                        serde_json::to_string(&lora.keywords)
+                            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                        lora.keyword_source,
+                        lora.architecture,
+                        lora.architecture_source,
+                        lora.created_at,
+                        lora.updated_at,
+                    ],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+        }
+        insert_stage_result(
+            &transaction,
+            request.run_id,
+            LegacyImportStage::Images,
+            record_count,
+            request.completed_at,
+        )?;
+        let receipt = load_stage_receipt(&transaction, request.run_id, LegacyImportStage::Images)?
+            .ok_or(LegacyImportRepositoryError::Storage)?;
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(receipt)
+    }
+
     fn materialize_group_conversations(
         &self,
         request: lettuce_transfer::LegacyDirectConversationMaterializationRequest,
@@ -2509,6 +2593,7 @@ const fn stage_name(stage: LegacyImportStage) -> &'static str {
         LegacyImportStage::GroupConversations => "group_conversations",
         LegacyImportStage::UsageRecords => "usage_records",
         LegacyImportStage::CreationHelper => "creation_helper",
+        LegacyImportStage::Images => "images",
     }
 }
 

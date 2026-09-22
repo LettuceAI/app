@@ -30,6 +30,7 @@ mod legacy_backup_model_settings;
 mod legacy_backup_pricing;
 mod legacy_backup_scheduled_notes;
 mod legacy_backup_sessions;
+mod legacy_backup_images;
 mod legacy_backup_usage;
 mod legacy_import_backup;
 mod memory_backup;
@@ -62,6 +63,7 @@ pub use legacy_backup_model_settings::*;
 pub use legacy_backup_pricing::*;
 pub use legacy_backup_scheduled_notes::*;
 pub use legacy_backup_sessions::*;
+pub use legacy_backup_images::*;
 pub use legacy_backup_usage::*;
 pub use legacy_import_backup::*;
 pub use memory_backup::*;
@@ -1152,11 +1154,12 @@ pub enum LegacyImportStage {
     GroupConversations,
     UsageRecords,
     CreationHelper,
+    Images,
 }
 
 impl LegacyImportStage {
     /// Every stage a legacy run needs before it counts as a completed import.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Characters,
         Self::Groups,
         Self::Audio,
@@ -1165,6 +1168,7 @@ impl LegacyImportStage {
         Self::GroupConversations,
         Self::UsageRecords,
         Self::CreationHelper,
+        Self::Images,
     ];
 }
 
@@ -1257,6 +1261,16 @@ pub struct LegacyUsageMaterializationRequest {
     pub plan_fingerprint: ContentHash,
     pub source_fingerprint: ContentHash,
     pub records: Vec<LegacyBackupUsageRecord>,
+    pub completed_at: TimestampMillis,
+}
+
+/// The legacy image-generation rows of one admitted run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyImageMaterializationRequest {
+    pub run_id: LegacyImportRunId,
+    pub plan_fingerprint: ContentHash,
+    pub source_fingerprint: ContentHash,
+    pub loras: Vec<LegacyImageLoraRecord>,
     pub completed_at: TimestampMillis,
 }
 
@@ -1376,6 +1390,11 @@ pub trait LegacyImportRepository: Send + Sync {
     fn materialize_usage_records(
         &self,
         request: LegacyUsageMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
+
+    fn materialize_images(
+        &self,
+        request: LegacyImageMaterializationRequest,
     ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
 
     fn materialize_creation_helper(

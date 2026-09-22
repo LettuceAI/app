@@ -138,6 +138,12 @@ pub fn read_legacy_database_documents(
             Value::Array(lorebooks(&connection)?),
         )?,
     ];
+    if table_exists(&connection, "image_loras")? {
+        documents.push(document(
+            LegacyBackupDocumentKind::ImageLoras,
+            Value::Array(image_loras(&connection)?),
+        )?);
+    }
     documents.sort_by_key(|document| document.kind);
     Ok(documents)
 }
@@ -1119,6 +1125,29 @@ fn usage_records(connection: &Connection) -> Result<Vec<Value>, LegacyDatabasePr
     Ok(records)
 }
 
+fn image_loras(connection: &Connection) -> Result<Vec<Value>, LegacyDatabasePreflightError> {
+    rows(
+        connection,
+        "SELECT path, filename, bytes_on_disk, modified_at, sha256, keywords, keyword_source, architecture, architecture_source, created_at, updated_at FROM image_loras ORDER BY path",
+        [],
+        |r| {
+            Ok(json!({
+                "path": r.get::<_, String>(0)?,
+                "filename": r.get::<_, String>(1)?,
+                "bytes_on_disk": r.get::<_, i64>(2)?,
+                "modified_at": r.get::<_, i64>(3)?,
+                "sha256": r.get::<_, Option<String>>(4)?,
+                "keywords": r.get::<_, Option<String>>(5)?,
+                "keyword_source": r.get::<_, Option<String>>(6)?,
+                "architecture": r.get::<_, Option<String>>(7)?,
+                "architecture_source": r.get::<_, Option<String>>(8)?,
+                "created_at": r.get::<_, i64>(9)?,
+                "updated_at": r.get::<_, i64>(10)?,
+            }))
+        },
+    )
+}
+
 fn lorebooks(connection: &Connection) -> Result<Vec<Value>, LegacyDatabasePreflightError> {
     let mut lorebooks = rows(
         connection,
@@ -1318,6 +1347,8 @@ mod tests {
         CREATE TABLE asr_corrections (id INTEGER PRIMARY KEY, wrong TEXT NOT NULL, normalized_wrong TEXT NOT NULL, correct TEXT NOT NULL, normalized_correct TEXT NOT NULL, language TEXT, scope TEXT NOT NULL, confidence REAL NOT NULL, use_count INTEGER NOT NULL, accepted_count INTEGER NOT NULL, rejected_count INTEGER NOT NULL, seen_count INTEGER NOT NULL, last_seen_at TEXT, user_approved INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE TABLE asr_ignored_suggestions (id INTEGER PRIMARY KEY, wrong TEXT NOT NULL, normalized_wrong TEXT NOT NULL, correct TEXT NOT NULL, normalized_correct TEXT NOT NULL, language TEXT, scope TEXT NOT NULL, ignored_count INTEGER NOT NULL, last_ignored_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE TABLE asr_voice_examples (id INTEGER PRIMARY KEY, audio_path TEXT NOT NULL, expected_text TEXT NOT NULL, normalized_expected_text TEXT NOT NULL, whisper_output TEXT, normalized_whisper_output TEXT, language TEXT, scope TEXT NOT NULL, term_id INTEGER, correction_id INTEGER, created_at TEXT NOT NULL);
+        CREATE TABLE image_loras (path TEXT PRIMARY KEY, filename TEXT NOT NULL, bytes_on_disk INTEGER NOT NULL DEFAULT 0, modified_at INTEGER NOT NULL DEFAULT 0, sha256 TEXT, keywords TEXT NOT NULL DEFAULT '[]', keyword_source TEXT NOT NULL DEFAULT 'none', architecture TEXT, architecture_source TEXT NOT NULL DEFAULT 'none', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+        INSERT INTO image_loras (path, filename, bytes_on_disk, modified_at, keywords, keyword_source, created_at, updated_at) VALUES ('/loras/ink.safetensors', 'ink.safetensors', 64, 9, '[\"ink\"]', 'manual', 1, 2);
     ";
 
     fn id(value: u128) -> String {
@@ -1450,7 +1481,10 @@ mod tests {
 
         let documents = read_legacy_database_documents(&path).expect("legacy documents");
 
-        assert_eq!(documents.len(), 22);
+        assert_eq!(documents.len(), 23);
+        let loras = document_value(&documents, LegacyBackupDocumentKind::ImageLoras);
+        assert_eq!(loras[0]["keywords"], "[\"ink\"]");
+        assert_eq!(loras[0]["keyword_source"], "manual");
         let settings = document_value(&documents, LegacyBackupDocumentKind::Settings);
         assert_eq!(settings["app_state"], json!({}));
         let lorebooks = document_value(&documents, LegacyBackupDocumentKind::Lorebooks);
@@ -1497,7 +1531,8 @@ mod tests {
             media: Vec::new(),
         })
         .expect("compatibility plan");
-        assert_eq!(plan.coverage.present_document_count, 22);
+        assert_eq!(plan.coverage.present_document_count, 23);
+        assert_eq!(plan.images.loras[0].keywords, vec!["ink".to_owned()]);
         std::fs::remove_file(path).expect("remove fixture");
     }
 

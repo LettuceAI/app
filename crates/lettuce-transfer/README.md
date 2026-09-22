@@ -720,3 +720,13 @@ The legacy app `settings.advanced_model_settings` goes through the same mapper
 into `LegacyBackupSettingsCandidate.model_settings` (replacing the former
 Unsupported notice); the settings import stage writes it as the global model
 settings, and backup version 2 carries it in `BackupGlobalSettings.model_settings`.
+
+Legacy `image_loras` (2026-09-22) is read only from the live legacy database
+(archives never carried it) as the `ImageLoras` document and planned beside
+the compatibility chain (`plan.images`, sealed by its content hash and
+re-derived by `verify_seal`). Rows keep their paths relative to the LoRA root;
+keywords are normalized like legacy read them back (trimmed, case-insensitive
+unique, at most 32); a sha256 that is not 64 hex characters, unknown sources,
+negative sizes and unparseable keyword JSON are replaced and recorded as
+legacy-value skips. The `images` import stage writes them, keeping whichever
+row of a path changed last.
