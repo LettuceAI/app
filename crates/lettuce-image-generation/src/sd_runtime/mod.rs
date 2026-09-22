@@ -4,6 +4,7 @@
 pub mod fit;
 pub mod inventory;
 pub mod layout;
+pub mod lora_library;
 pub mod loras;
 pub mod output;
 pub mod payload;

@@ -727,6 +727,43 @@ impl JsonClient {
     }
 }
 
+/// One field of a multipart request.
+pub enum MultipartField {
+    Text {
+        name: String,
+        value: String,
+    },
+    File {
+        name: String,
+        filename: String,
+        mime_type: String,
+        bytes: Vec<u8>,
+    },
+}
+
+impl fmt::Debug for MultipartField {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Text { name, .. } => formatter
+                .debug_struct("Text")
+                .field("name", name)
+                .finish_non_exhaustive(),
+            Self::File {
+                name,
+                filename,
+                mime_type,
+                bytes,
+            } => formatter
+                .debug_struct("File")
+                .field("name", name)
+                .field("filename", filename)
+                .field("mime_type", mime_type)
+                .field("bytes", &bytes.len())
+                .finish(),
+        }
+    }
+}
+
 /// An HTTP status as legacy printed it: the code and its reason phrase.
 #[must_use]
 pub fn status_text(status: u16) -> String {
@@ -742,6 +779,7 @@ pub fn status_text(status: u16) -> String {
 pub struct BulkHttpClient {
     strict: reqwest::Client,
     insecure: reqwest::Client,
+    fetch: reqwest::Client,
 }
 
 impl fmt::Debug for BulkHttpClient {
@@ -764,6 +802,12 @@ impl BulkHttpClient {
         Ok(Self {
             strict: build_client(&roots, false)?,
             insecure: build_client(&roots, true)?,
+            fetch: reqwest::Client::builder()
+                .redirect(redirect::Policy::limited(MAX_ARTIFACT_REDIRECTS))
+                .connect_timeout(CONNECT_TIMEOUT)
+                .timeout(GENERATION_TIMEOUT)
+                .build()
+                .map_err(|_| JsonClientError::ClientConfiguration)?,
         })
     }
 
@@ -845,6 +889,83 @@ impl BulkHttpClient {
         let request = apply_auth(request, auth)?;
         let request = apply_secret_headers(request, secret_headers)?;
         let response = request
+            .send()
+            .await
+            .map_err(|_| JsonClientError::Transport)?;
+        read_response_limited(response, MAX_BULK_RESPONSE_BYTES).await
+    }
+}
+
+impl BulkHttpClient {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is a distinct transport concern; bundling them hides the policy"
+    )]
+    pub async fn post_multipart(
+        &self,
+        endpoint: &str,
+        path: &str,
+        fields: Vec<MultipartField>,
+        static_headers: &[JsonStaticHeader],
+        auth: JsonAuth,
+        secret_headers: Vec<JsonSecretHeader>,
+        allow_invalid_tls: bool,
+    ) -> Result<JsonResponse, JsonClientError> {
+        let size = fields
+            .iter()
+            .map(|field| match field {
+                MultipartField::Text { value, .. } => value.len(),
+                MultipartField::File { bytes, .. } => bytes.len(),
+            })
+            .sum::<usize>();
+        if size > MAX_BULK_REQUEST_BYTES {
+            return Err(JsonClientError::RequestTooLarge);
+        }
+        let url = build_url(endpoint, path)?;
+        validate_header_collection(static_headers, &auth, &secret_headers)?;
+        let mut form = reqwest::multipart::Form::new();
+        for field in fields {
+            form = match field {
+                MultipartField::Text { name, value } => form.text(name, value),
+                MultipartField::File {
+                    name,
+                    filename,
+                    mime_type,
+                    bytes,
+                } => form.part(
+                    name,
+                    reqwest::multipart::Part::bytes(bytes)
+                        .file_name(filename)
+                        .mime_str(&mime_type)
+                        .map_err(|_| JsonClientError::InvalidRequest)?,
+                ),
+            };
+        }
+        let request = self
+            .client(allow_invalid_tls)
+            .post(url)
+            .timeout(GENERATION_TIMEOUT)
+            .multipart(form);
+        let request = apply_static_headers(request, static_headers)?;
+        let request = apply_auth(request, auth)?;
+        let request = apply_secret_headers(request, secret_headers)?;
+        let response = request
+            .send()
+            .await
+            .map_err(|_| JsonClientError::Transport)?;
+        read_response_limited(response, MAX_BULK_RESPONSE_BYTES).await
+    }
+
+    /// Fetches an image a provider linked to (legacy downloaded result URLs
+    /// with a plain client); only HTTP(S) URLs are followed.
+    pub async fn fetch_url(&self, url: &str) -> Result<JsonResponse, JsonClientError> {
+        let parsed = Url::parse(url).map_err(|_| JsonClientError::InvalidUrl)?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(JsonClientError::InvalidUrl);
+        }
+        let response = self
+            .fetch
+            .get(parsed)
             .send()
             .await
             .map_err(|_| JsonClientError::Transport)?;

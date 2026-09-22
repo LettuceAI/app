@@ -1,5 +1,8 @@
 use std::time::Duration;
 
+use lettuce_image_generation::sd_runtime::lora_library::{
+    LoraLibraryRepository, LoraLibraryRepositoryError, hydrate_lora_keywords,
+};
 use lettuce_image_generation::{
     ImageGenerationRecord, ImageGenerationRepository, ImageGenerationRepositoryError,
     ImageGenerationRequest, ImageGenerationResult, ImageGenerationState, ImageInput, ImageMedia,
@@ -64,6 +67,8 @@ pub enum ImageGenerationError {
     Provider(#[from] ImageProviderError),
     #[error("image generation usage could not be recorded")]
     Usage,
+    #[error("the LoRA library could not be read")]
+    LoraLibrary(#[from] LoraLibraryRepositoryError),
     #[error("image generation persistence failed: {0}")]
     Repository(#[from] ImageGenerationRepositoryError),
     #[error("image generation job failed: {0}")]
@@ -89,8 +94,10 @@ impl<'a, R: ?Sized, J: ?Sized> ImageGenerationCoordinator<'a, R, J> {
 
 const INTERRUPTED_MESSAGE: &str = "Image generation was interrupted.";
 
-impl<R: ImageGenerationRepository + JobUsageLedger + ?Sized, J: JobStore + ?Sized>
-    ImageGenerationCoordinator<'_, R, J>
+impl<
+    R: ImageGenerationRepository + JobUsageLedger + LoraLibraryRepository + ?Sized,
+    J: JobStore + ?Sized,
+> ImageGenerationCoordinator<'_, R, J>
 {
     pub fn admit<M>(
         &self,
@@ -274,10 +281,17 @@ impl<R: ImageGenerationRepository + JobUsageLedger + ?Sized, J: JobStore + ?Size
         let cancellation = work.handle.cancellation_token();
         check_cancelled(&work.handle)?;
         let profile = resolve(models, request)?;
-        let settings = profile.settings.overlaid_by(&request.settings);
+        let mut settings = profile.settings.overlaid_by(&request.settings);
+        let mut request_loras = request.loras.clone();
+        if profile.is_local_diffusion() {
+            if let Some(base) = settings.base_loras.as_mut() {
+                hydrate_lora_keywords(self.generations, base)?;
+            }
+            hydrate_lora_keywords(self.generations, &mut request_loras)?;
+        }
         let loras = merge_loras(
             settings.base_loras.as_deref().unwrap_or_default(),
-            &request.loras,
+            &request_loras,
         );
         let prompt = compose_image_prompt(
             &request.prompt,
@@ -857,6 +871,42 @@ mod tests {
         assert_eq!(replay.record, record);
         let graph = crate::backup_restore::assert_backup_round_trip(&fixture.database);
         assert_eq!(graph.job_backup.image_generations, vec![record]);
+    }
+
+    #[tokio::test]
+    async fn local_diffusion_requests_take_lora_keywords_from_the_library() {
+        use lettuce_image_generation::sd_runtime::lora_library::{
+            LoraArchitectureSource, LoraKeywordSource, LoraLibraryRepository, LoraRecord,
+        };
+
+        let fixture = fixture(
+            "sdcpp",
+            ProviderProtocol::StableDiffusion,
+            CapabilityStatus::Supported,
+        );
+        fixture
+            .database
+            .save_lora(
+                &LoraRecord {
+                    path: "style.safetensors".into(),
+                    filename: "style.safetensors".into(),
+                    bytes_on_disk: 1,
+                    modified_at: 1,
+                    sha256: None,
+                    keywords: vec!["LibraryTrigger".into()],
+                    keyword_source: LoraKeywordSource::Manual,
+                    architecture: None,
+                    architecture_source: LoraArchitectureSource::None,
+                },
+                NOW,
+            )
+            .expect("library record");
+        let provider = Provider::default();
+        let result = run(&fixture, request(&fixture), &provider).await;
+        assert!(matches!(result, ImageGenerationRunResult::Succeeded { .. }));
+        let sent = provider.requests.lock().expect("requests");
+        assert_eq!(sent[0].prompt, "high detail, LibraryTrigger, a lighthouse");
+        assert_eq!(sent[0].loras[0].keywords, vec!["LibraryTrigger"]);
     }
 
     #[tokio::test]

@@ -81,7 +81,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 keyring = { version = "=3.6.3", default-features = false }
 keyring-core = "=0.7.4"
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "backup"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots", "multipart"] }
 rand = "0.8"
 sha2 = "0.10"
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dynamic", "half", "ndarray"] }

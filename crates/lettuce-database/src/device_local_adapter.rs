@@ -16,11 +16,13 @@ const DEVICE_LOCAL_TABLES: &[&str] = &[
     "sync_conflicts",
     "installed_whisper_models",
     "llm_generation_metrics",
+    "image_loras",
 ];
 
 impl Database {
     /// Copies device-local state from the previous database file: the sync
     /// journal, installed Whisper model manifests, local generation metrics,
+    /// the local LoRA library,
     /// and the discovered voices and llama.cpp runtime reports of audio
     /// providers and models that exist in this database.
     pub fn carry_device_local_state_from(&self, previous: &Path) -> Result<(), DatabaseError> {

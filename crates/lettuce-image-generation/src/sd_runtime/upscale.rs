@@ -87,9 +87,15 @@ impl LocalDiffusionEngine {
         Ok(self.upscaler_inventory())
     }
 
-    /// Upscales one image with the recommended upscaler when installed, else
-    /// the first one, using the active engine build's command-line tool.
-    pub async fn upscale(&self, image: &[u8]) -> Result<Vec<u8>, String> {
+    /// Whether an upscale can run, checked before the image is read as
+    /// legacy did.
+    pub fn check_upscale_ready(&self) -> Result<(), String> {
+        self.upscale_target().map(|_| ())
+    }
+
+    fn upscale_target(
+        &self,
+    ) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf), String> {
         let inventory = self.upscaler_inventory();
         let model = if inventory.recommended_installed {
             inventory.recommended_filename.clone()
@@ -112,6 +118,13 @@ impl LocalDiffusionEngine {
                 executable.display()
             ));
         }
+        Ok((model_path, runtime_dir, executable))
+    }
+
+    /// Upscales one image with the recommended upscaler when installed, else
+    /// the first one, using the active engine build's command-line tool.
+    pub async fn upscale(&self, image: &[u8]) -> Result<Vec<u8>, String> {
+        let (model_path, runtime_dir, executable) = self.upscale_target()?;
         let work_dir = &self.paths().upscale_scratch;
         std::fs::create_dir_all(work_dir)
             .map_err(|error| format!("Failed to prepare the upscale work directory: {error}"))?;

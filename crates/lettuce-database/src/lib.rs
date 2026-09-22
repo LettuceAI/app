@@ -22,6 +22,7 @@ mod dynamic_memory_rewind_adapter;
 mod dynamic_memory_run_adapter;
 mod group_adapter;
 mod image_generation_adapter;
+mod image_lora_adapter;
 mod growth_adapter;
 mod initial_inference_adapter;
 mod job_adapter;
@@ -5032,6 +5033,7 @@ mod tests {
                 "groups",
                 "image_generation_outputs",
                 "image_generations",
+                "image_loras",
                 "installed_whisper_models",
                 "job_events",
                 "job_inference_usage",

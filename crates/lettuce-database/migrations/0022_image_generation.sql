@@ -101,3 +101,21 @@ WHEN OLD.state = 'pending'
 BEGIN
     SELECT RAISE(ABORT, 'a pending image generation cannot be deleted');
 END;
+
+CREATE TABLE image_loras (
+    path TEXT PRIMARY KEY CHECK (length(path) > 0),
+    filename TEXT NOT NULL,
+    bytes_on_disk INTEGER NOT NULL CHECK (bytes_on_disk >= 0),
+    modified_at INTEGER NOT NULL CHECK (modified_at >= 0),
+    sha256 TEXT CHECK (sha256 IS NULL OR length(sha256) = 64),
+    keywords TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(keywords) AND json_type(keywords) = 'array'),
+    keyword_source TEXT NOT NULL DEFAULT 'none'
+        CHECK (keyword_source IN ('none', 'metadata', 'civitai', 'manual')),
+    architecture TEXT,
+    architecture_source TEXT NOT NULL DEFAULT 'none'
+        CHECK (architecture_source IN ('none', 'metadata', 'civitai')),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX image_loras_sha256_idx ON image_loras(sha256) WHERE sha256 IS NOT NULL;

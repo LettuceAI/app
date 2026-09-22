@@ -28,6 +28,12 @@ pub trait ImageMedia: Send + Sync {
         policy: ImageOutputPolicy,
         image: ProviderImage,
     ) -> Result<GeneratedImage, ImageMediaError>;
+    /// Stores an image made from another one (an upscale) as a new asset.
+    fn ingest_derived(
+        &self,
+        source_label: &str,
+        image: ProviderImage,
+    ) -> Result<GeneratedImage, ImageMediaError>;
 }
 
 impl<BR, AR> ImageMedia for LocalMediaBlobStore<BR, AR>
@@ -64,9 +70,8 @@ where
             ImageOutputPolicy::Retained => RetentionClass::Persistent,
             ImageOutputPolicy::Preview { expires_at } => RetentionClass::Temporary { expires_at },
         };
-        let mut request = IngestRequest::new(
-            AssetKind::GeneratedImage,
-            AssetOrigin::Generated,
+        store_generated(
+            self,
             retention,
             AssetProvenanceV1 {
                 producing_job_id: Some(job_id),
@@ -74,21 +79,56 @@ where
                 source_label: Some("image_generation".into()),
                 ..AssetProvenanceV1::default()
             },
-        );
-        if let Some(mime_type) = image.declared_mime_type {
-            request = request.with_declared_mime_type(mime_type);
-        }
-        let ingested = self
-            .ingest(image.bytes.as_slice(), request)
-            .map_err(ImageMediaError::Output)?;
-        Ok(GeneratedImage {
-            asset_id: ingested.asset.id,
-            content_hash: ingested.blob.content_hash,
-            mime_type: ingested.blob.mime_type,
-            byte_size: ingested.blob.byte_size,
-            width: ingested.blob.width,
-            height: ingested.blob.height,
-            text: image.text,
-        })
+            image,
+        )
     }
+
+    fn ingest_derived(
+        &self,
+        source_label: &str,
+        image: ProviderImage,
+    ) -> Result<GeneratedImage, ImageMediaError> {
+        store_generated(
+            self,
+            RetentionClass::Persistent,
+            AssetProvenanceV1 {
+                source_label: Some(source_label.to_owned()),
+                ..AssetProvenanceV1::default()
+            },
+            image,
+        )
+    }
+}
+
+fn store_generated<BR, AR>(
+    store: &LocalMediaBlobStore<BR, AR>,
+    retention: RetentionClass,
+    provenance: AssetProvenanceV1,
+    image: ProviderImage,
+) -> Result<GeneratedImage, ImageMediaError>
+where
+    BR: MediaBlobRepository,
+    AR: MediaAssetRepository,
+{
+    let mut request = IngestRequest::new(
+        AssetKind::GeneratedImage,
+        AssetOrigin::Generated,
+        retention,
+        provenance,
+    );
+    if let Some(mime_type) = image.declared_mime_type {
+        request = request.with_declared_mime_type(mime_type);
+    }
+    let ingested = store
+        .ingest(image.bytes.as_slice(), request)
+        .map_err(ImageMediaError::Output)?;
+    Ok(GeneratedImage {
+        asset_id: ingested.asset.id,
+        content_hash: ingested.blob.content_hash,
+        mime_type: ingested.blob.mime_type,
+        byte_size: ingested.blob.byte_size,
+        width: ingested.blob.width,
+        height: ingested.blob.height,
+        text: image.text,
+    })
 }

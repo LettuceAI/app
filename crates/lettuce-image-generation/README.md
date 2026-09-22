@@ -93,5 +93,21 @@ The app composes it (`AppBackend::with_local_diffusion`): starting the image
 server unloads llama.cpp, and every llama.cpp request stops the image server
 first (a failed stop fails that request, as legacy did).
 
-Next: the remote provider adapters and ComfyUI, the LoRA library, upscale,
-runnability, then the scene, playground and creation-helper callers.
+- `sd_runtime::lora_library`: the local LoRA library (legacy `image_loras`):
+  metadata keywords and architecture from safetensors headers, reuse of a
+  copy's discovery by hash, CivitAI lookup by hash (one request, like
+  legacy), user keywords that are never replaced, import with the
+  same-name check, delete refused while a local model uses the LoRA.
+  Generations on the local engine take LoRA keywords from the library before
+  the prompt is composed, as legacy did for sdcpp.
+- App commands: installed catalog variants, uninstall (shared files kept,
+  unused engine build removed on request; the check reads each model's
+  stored build instead of legacy's active one), registration repair, LoRA
+  library, upscale of a stored image into a new asset.
+
+Not yet ported: the runnability probe, Hugging Face image bundles and the
+component library (they need the Hugging Face browser), importing legacy
+`image_loras` and `playground_generations` rows.
+
+Next: the remote provider adapters and ComfyUI, then the scene, playground
+and creation-helper callers.
