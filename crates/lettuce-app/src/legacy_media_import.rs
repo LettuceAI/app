@@ -369,6 +369,14 @@ fn asset_kind(candidate: &LegacyMediaCandidate) -> AssetKind {
             _ => None,
         })
         .collect::<Vec<_>>();
+    if candidate
+        .uses
+        .iter()
+        .all(|media_use| matches!(media_use, LegacyMediaUse::PlaygroundImage { .. }))
+        && !candidate.uses.is_empty()
+    {
+        return AssetKind::GeneratedImage;
+    }
     if !attachments.is_empty() && attachments.len() == candidate.uses.len() {
         if attachments.iter().all(|audio| *audio) {
             return AssetKind::MessageAudio;

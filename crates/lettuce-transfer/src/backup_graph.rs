@@ -85,6 +85,8 @@ pub struct ProviderBackupGraph {
     pub creation: CreationBackup,
     #[serde(default)]
     pub legacy_imports: crate::LegacyImportBackup,
+    #[serde(default)]
+    pub playground_history: crate::PlaygroundHistoryBackup,
     pub accounts: Vec<ProviderAccount>,
     pub profiles: Vec<ModelProfile>,
     pub prompts: Vec<PromptDocument>,
@@ -687,6 +689,28 @@ pub fn canonicalize_and_validate(
             }
             crate::LegacyImportBackupError::InvalidData => ProviderBackupGraphError::InvalidGraph,
         })?;
+    graph
+        .playground_history
+        .canonicalize_and_validate()
+        .map_err(|error| match error {
+            crate::PlaygroundHistoryBackupError::LimitExceeded => {
+                ProviderBackupGraphError::LimitExceeded
+            }
+            crate::PlaygroundHistoryBackupError::InvalidData => {
+                ProviderBackupGraphError::InvalidGraph
+            }
+        })?;
+    let asset_ids = graph
+        .authored
+        .media_assets
+        .iter()
+        .map(|asset| asset.id.to_string())
+        .collect::<std::collections::BTreeSet<_>>();
+    if graph.playground_history.images.iter().any(|image| {
+        crate::backup_sql_text(image, "asset_id").is_some_and(|asset| !asset_ids.contains(asset))
+    }) {
+        return Err(ProviderBackupGraphError::InvalidGraph);
+    }
     graph.asr_learning.vocabulary.sort_by_key(|term| term.id);
     graph.asr_learning.corrections.sort_by_key(|rule| rule.id);
     graph
@@ -1459,6 +1483,7 @@ mod tests {
         ProviderBackupGraph {
             creation: CreationBackup::default(),
             legacy_imports: crate::LegacyImportBackup::default(),
+            playground_history: crate::PlaygroundHistoryBackup::default(),
             version: PROVIDER_BACKUP_GRAPH_VERSION,
             accounts: vec![ProviderAccount {
                 id: ProviderAccountId::new(),

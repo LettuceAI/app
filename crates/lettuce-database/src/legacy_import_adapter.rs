@@ -1132,9 +1132,9 @@ impl LegacyImportRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
-        let record_count = u64::try_from(request.loras.len())
+        let record_count = u64::try_from(request.loras.len() + request.playground.len())
             .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
-        match start_stage(
+        let admission = match start_stage(
             &transaction,
             request.run_id,
             (&request.plan_fingerprint, &request.source_fingerprint),
@@ -1148,7 +1148,85 @@ impl LegacyImportRepository for Database {
                     .map_err(|_| LegacyImportRepositoryError::Storage)?;
                 return Ok(receipt);
             }
-            StageStart::Ready(_) => {}
+            StageStart::Ready(admission) => admission,
+        };
+        let assignments = AssignmentMaps::from_admission(&admission)?;
+        let imported_media = assignments
+            .media
+            .iter()
+            .map(|(path, (asset_id, _, _))| (*asset_id, path.as_str()))
+            .collect::<BTreeMap<_, _>>();
+        for asset_id in request
+            .playground
+            .iter()
+            .flat_map(|entry| entry.assets.iter().flatten())
+        {
+            let path = imported_media
+                .get(asset_id)
+                .ok_or(LegacyImportRepositoryError::Conflict)?;
+            load_media_completion(&transaction, request.run_id, path)?
+                .filter(|completion| completion.destination_asset_id == *asset_id)
+                .ok_or(LegacyImportRepositoryError::Conflict)?;
+        }
+        for entry in &request.playground {
+            let generation = &entry.generation;
+            if entry.assets.len() != generation.images.len() {
+                return Err(LegacyImportRepositoryError::InvalidInput);
+            }
+            let model_profile_id = generation
+                .model_id
+                .parse::<ModelProfileId>()
+                .ok()
+                .and_then(|id| assignments.models.get(&id))
+                .map(ToString::to_string);
+            transaction
+                .execute(
+                    "INSERT INTO playground_history (
+                        id, origin, import_run_id, source_id, created_at, provider_kind,
+                        source_model_id, model_profile_id, model_name, prompt, negative_prompt,
+                        seed, params_json, status, error
+                     ) VALUES (?1, 'imported', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                    params![
+                        entry.id,
+                        request.run_id.to_string(),
+                        generation.source_id,
+                        generation.created_at,
+                        generation.provider_id,
+                        generation.model_id,
+                        model_profile_id,
+                        generation.model_name,
+                        generation.prompt,
+                        generation.negative_prompt,
+                        generation.seed,
+                        generation.params_json,
+                        generation.status,
+                        generation.error,
+                    ],
+                )
+                .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+            for (ordinal, (image, asset_id)) in
+                generation.images.iter().zip(&entry.assets).enumerate()
+            {
+                transaction
+                    .execute(
+                        "INSERT INTO playground_history_images (
+                            history_id, ordinal, asset_id, source_asset_id, mime_type, url,
+                            width, height
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                        params![
+                            entry.id,
+                            i64::try_from(ordinal)
+                                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                            asset_id.map(|id| id.to_string()),
+                            image.legacy_asset_id,
+                            image.mime_type,
+                            image.url,
+                            image.width,
+                            image.height,
+                        ],
+                    )
+                    .map_err(|_| LegacyImportRepositoryError::Conflict)?;
+            }
         }
         let count = |value: u64| {
             i64::try_from(value).map_err(|_| LegacyImportRepositoryError::InvalidInput)
@@ -1941,7 +2019,10 @@ fn completed_media_assets(
             return Err(LegacyImportRepositoryError::Conflict);
         }
         for media_use in &candidate.uses {
-            if matches!(media_use, LegacyMediaUse::MessageAttachment { .. }) {
+            if matches!(
+                media_use,
+                LegacyMediaUse::MessageAttachment { .. } | LegacyMediaUse::PlaygroundImage { .. }
+            ) {
                 continue;
             }
             if by_use.insert(media_use.clone(), *destination_id).is_some() {

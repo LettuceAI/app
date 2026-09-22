@@ -1,5 +1,6 @@
 //! Legacy image-generation rows that only the live legacy database holds:
-//! the local LoRA library (`image_loras`). Rows keep their device-local
+//! the local LoRA library (`image_loras`) and the playground history
+//! (`playground_generations`). LoRA rows keep their device-local
 //! paths; values the new library rejects are replaced and recorded, and
 //! keywords are normalized the way legacy read them back (trimmed, unique,
 //! at most 32).
@@ -16,6 +17,7 @@ use crate::{
 };
 
 const LORA_RECORD_LIMIT: usize = 100_000;
+const PLAYGROUND_RECORD_LIMIT: usize = 100_000;
 const KEYWORD_SOURCES: [&str; 4] = ["none", "metadata", "civitai", "manual"];
 const ARCHITECTURE_SOURCES: [&str; 3] = ["none", "metadata", "civitai"];
 
@@ -34,9 +36,37 @@ pub struct LegacyImageLoraRecord {
     pub updated_at: i64,
 }
 
+/// One legacy playground history entry, kept as legacy stored it; its
+/// images are resolved to media by the media plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyPlaygroundGeneration {
+    pub source_id: String,
+    pub created_at: i64,
+    pub provider_id: String,
+    pub model_id: String,
+    pub model_name: String,
+    pub prompt: String,
+    pub negative_prompt: Option<String>,
+    pub seed: Option<i64>,
+    pub params_json: String,
+    pub status: String,
+    pub error: Option<String>,
+    pub images: Vec<LegacyPlaygroundImage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyPlaygroundImage {
+    pub legacy_asset_id: String,
+    pub mime_type: Option<String>,
+    pub url: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LegacyBackupImagePlan {
     pub loras: Vec<LegacyImageLoraRecord>,
+    pub playground: Vec<LegacyPlaygroundGeneration>,
     pub notices: Vec<LegacyBackupConversionNotice>,
     pub skipped: Vec<LegacyImportSkip>,
 }
@@ -47,6 +77,65 @@ pub enum LegacyBackupImageError {
     Malformed { field: String },
     #[error("legacy image document exceeds its record limit")]
     LimitExceeded,
+}
+
+#[derive(Deserialize)]
+struct PlaygroundRow {
+    id: String,
+    created_at: i64,
+    provider_id: String,
+    model_id: String,
+    model_name: String,
+    prompt: String,
+    negative_prompt: Option<String>,
+    seed: Option<i64>,
+    params_json: String,
+    status: String,
+    error: Option<String>,
+    images_json: String,
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlaygroundImageRow {
+    asset_id: String,
+    #[serde(default)]
+    mime_type: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    width: Option<Value>,
+    #[serde(default)]
+    height: Option<Value>,
+}
+
+/// The images of a legacy `images_json` column the way legacy parsed it (an
+/// unreadable column is no images); entries without an asset id are dropped.
+#[must_use]
+pub fn legacy_playground_images(raw: &str) -> Option<Vec<LegacyPlaygroundImage>> {
+    let values = serde_json::from_str::<Vec<Value>>(raw).ok()?;
+    Some(
+        values
+            .into_iter()
+            .filter_map(|value| serde_json::from_value::<PlaygroundImageRow>(value).ok())
+            .filter(|image| !image.asset_id.trim().is_empty())
+            .map(|image| LegacyPlaygroundImage {
+                legacy_asset_id: image.asset_id,
+                mime_type: image.mime_type,
+                url: image.url,
+                width: image
+                    .width
+                    .and_then(|value| value.as_u64())
+                    .and_then(|value| u32::try_from(value).ok()),
+                height: image
+                    .height
+                    .and_then(|value| value.as_u64())
+                    .and_then(|value| u32::try_from(value).ok()),
+            })
+            .collect(),
+    )
 }
 
 #[derive(Deserialize)]
@@ -72,12 +161,24 @@ pub fn plan_legacy_backup_images(
     inventory: &LegacyBackupInventory,
 ) -> Result<LegacyBackupImagePlan, LegacyBackupImageError> {
     let mut plan = LegacyBackupImagePlan::default();
+    plan_playground(inventory, &mut plan)?;
+    plan_loras(inventory, &mut plan)?;
+    plan.notices.sort();
+    plan.notices.dedup();
+    plan.skipped.sort();
+    Ok(plan)
+}
+
+fn plan_loras(
+    inventory: &LegacyBackupInventory,
+    plan: &mut LegacyBackupImagePlan,
+) -> Result<(), LegacyBackupImageError> {
     let Some(document) = inventory
         .documents
         .iter()
         .find(|document| document.kind == LegacyBackupDocumentKind::ImageLoras)
     else {
-        return Ok(plan);
+        return Ok(());
     };
     let rows: Vec<LoraRow> = serde_json::from_slice(&document.bytes).map_err(|_| malformed("$"))?;
     if rows.len() > LORA_RECORD_LIMIT {
@@ -102,10 +203,80 @@ pub fn plan_legacy_backup_images(
         }
         plan.loras.push(map_row(row, &mut plan.skipped));
     }
-    plan.notices.sort();
-    plan.notices.dedup();
-    plan.skipped.sort();
-    Ok(plan)
+    Ok(())
+}
+
+fn plan_playground(
+    inventory: &LegacyBackupInventory,
+    plan: &mut LegacyBackupImagePlan,
+) -> Result<(), LegacyBackupImageError> {
+    let Some(document) = inventory
+        .documents
+        .iter()
+        .find(|document| document.kind == LegacyBackupDocumentKind::PlaygroundGenerations)
+    else {
+        return Ok(());
+    };
+    let rows: Vec<PlaygroundRow> =
+        serde_json::from_slice(&document.bytes).map_err(|_| malformed("$"))?;
+    if rows.len() > PLAYGROUND_RECORD_LIMIT {
+        return Err(LegacyBackupImageError::LimitExceeded);
+    }
+    let mut ids = BTreeSet::new();
+    for (index, row) in rows.into_iter().enumerate() {
+        if !row.extra.is_empty() {
+            plan.notices.push(LegacyBackupConversionNotice {
+                kind: LegacyBackupConversionNoticeKind::Unsupported,
+                document: LegacyBackupDocumentKind::PlaygroundGenerations,
+                field: format!("[{index}]"),
+            });
+        }
+        if row.id.trim().is_empty() || !ids.insert(row.id.clone()) {
+            plan.skipped.push(legacy_value_skip(
+                "playground_generations.id",
+                &index.to_string(),
+                LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+            continue;
+        }
+        let parsed = legacy_playground_images(&row.images_json);
+        let lossless = parsed.as_ref().is_some_and(|images| {
+            serde_json::from_str::<Vec<Value>>(&row.images_json).is_ok_and(|raw| {
+                raw.len() == images.len()
+                    && raw.iter().zip(images).all(|(raw, image)| {
+                        ["width", "height"]
+                            .iter()
+                            .zip([image.width, image.height])
+                            .all(|(field, parsed)| {
+                                raw.get(*field).is_none_or(Value::is_null) || parsed.is_some()
+                            })
+                    })
+            })
+        });
+        if !lossless {
+            plan.skipped.push(legacy_value_skip(
+                "playground_generations.images_json",
+                &row.id,
+                LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+        }
+        let images = parsed.unwrap_or_default();
+        plan.playground.push(LegacyPlaygroundGeneration {
+            source_id: row.id,
+            created_at: row.created_at,
+            provider_id: row.provider_id,
+            model_id: row.model_id,
+            model_name: row.model_name,
+            prompt: row.prompt,
+            negative_prompt: row.negative_prompt,
+            seed: row.seed,
+            params_json: row.params_json,
+            status: row.status,
+            error: row.error,
+            images,
+        });
+    }
+    Ok(())
 }
 
 fn map_row(row: LoraRow, skipped: &mut Vec<LegacyImportSkip>) -> LegacyImageLoraRecord {
@@ -300,6 +471,76 @@ mod tests {
         expected.sort();
         assert_eq!(plan.skipped, expected);
         assert_eq!(plan.notices.len(), 1);
+    }
+
+    #[test]
+    fn playground_rows_keep_their_values_and_record_unreadable_images() {
+        let entry = |id: &str, images_json: &str| {
+            json!({
+                "id": id,
+                "created_at": 5,
+                "provider_id": "sdcpp",
+                "model_id": "model",
+                "model_name": "Flux",
+                "prompt": "harbor",
+                "negative_prompt": null,
+                "seed": 7,
+                "params_json": "not json",
+                "status": "complete",
+                "error": null,
+                "images_json": images_json
+            })
+        };
+        let mut inventory = inventory(json!([]));
+        inventory.documents = vec![LegacyBackupDocument {
+            kind: LegacyBackupDocumentKind::PlaygroundGenerations,
+            bytes: zeroize::Zeroizing::new(
+                serde_json::to_vec(&json!([
+                    entry(
+                        "a",
+                        "[{\"assetId\":\"img-1\",\"width\":512,\"height\":-1},{\"filePath\":\"x\"}]"
+                    ),
+                    entry("b", "broken"),
+                    entry("a", "[]"),
+                ]))
+                .expect("rows"),
+            ),
+        }];
+        let plan = plan_legacy_backup_images(&inventory).expect("plan");
+        assert_eq!(plan.playground.len(), 2);
+        let first = &plan.playground[0];
+        assert_eq!(first.params_json, "not json");
+        assert_eq!(first.seed, Some(7));
+        assert_eq!(
+            first.images,
+            vec![LegacyPlaygroundImage {
+                legacy_asset_id: "img-1".to_owned(),
+                mime_type: None,
+                url: None,
+                width: Some(512),
+                height: None,
+            }]
+        );
+        assert!(plan.playground[1].images.is_empty());
+        let mut expected = vec![
+            legacy_value_skip(
+                "playground_generations.images_json",
+                "a",
+                LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+            legacy_value_skip(
+                "playground_generations.images_json",
+                "b",
+                LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+            legacy_value_skip(
+                "playground_generations.id",
+                "2",
+                LegacyImportSkipReason::MalformedLegacyValue,
+            ),
+        ];
+        expected.sort();
+        assert_eq!(plan.skipped, expected);
     }
 
     #[test]

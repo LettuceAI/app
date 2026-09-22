@@ -557,6 +557,25 @@ mod tests {
         }])
         .to_string()
         .into();
+        let playground_image = uuid::Uuid::from_u128(7).to_string();
+        let playground = serde_json::json!([{
+            "id": "playground-1",
+            "created_at": 30,
+            "provider_id": "sdcpp",
+            "model_id": "missing-model",
+            "model_name": "Flux",
+            "prompt": "a lighthouse",
+            "negative_prompt": null,
+            "seed": 42,
+            "params_json": "{\"size\":\"512x512\"}",
+            "status": "complete",
+            "error": null,
+            "images_json": serde_json::json!([
+                {"assetId": playground_image, "filePath": "/old/images/x.png", "mimeType": "image/png", "width": 1, "height": 1},
+                {"assetId": "gone-image", "filePath": "/old/images/gone.png", "mimeType": "image/png"}
+            ])
+            .to_string()
+        }]);
         let mut greeting = legacy_message(&first_message, "user", None, "Hello Mira");
         greeting["attachments"] = reply["attachments"].clone();
         let compatibility =
@@ -566,6 +585,10 @@ mod tests {
                 app_version: "legacy".into(),
                 source_hash: ContentHash::parse("ef".repeat(32)).expect("source hash"),
                 documents: vec![
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::PlaygroundGenerations,
+                        playground,
+                    ),
                     document(
                         lettuce_transfer::LegacyBackupDocumentKind::Personas,
                         serde_json::json!([{
@@ -642,6 +665,10 @@ mod tests {
                         &[&format!("character-{character}"), "mira.png"],
                     ),
                     media(
+                        lettuce_transfer::LegacyBackupMediaRoot::Images,
+                        &[&format!("{playground_image}.png")],
+                    ),
+                    media(
                         lettuce_transfer::LegacyBackupMediaRoot::Sessions,
                         &[
                             character.as_str(),
@@ -653,7 +680,7 @@ mod tests {
             })
             .expect("compatibility plan");
         let plan = compatibility.legacy_import_plan();
-        assert_eq!(plan.media.media.len(), 3);
+        assert_eq!(plan.media.media.len(), 4);
         let receipt = coordinator
             .replace(
                 OperationId::new(),
@@ -677,7 +704,37 @@ mod tests {
             .expect("restored graph");
         assert_eq!(graph.authored.personas.len(), 1);
         assert_eq!(graph.authored.characters.len(), 1);
-        assert_eq!(graph.authored.media_assets.len(), 3);
+        assert_eq!(graph.authored.media_assets.len(), 4);
+        let playground = &graph.playground_history;
+        assert_eq!(playground.entries.len(), 1);
+        assert_eq!(
+            lettuce_transfer::backup_sql_text(&playground.entries[0], "origin"),
+            Some("imported")
+        );
+        assert_eq!(
+            lettuce_transfer::backup_sql_text(&playground.entries[0], "params_json"),
+            Some("{\"size\":\"512x512\"}")
+        );
+        assert_eq!(playground.images.len(), 2);
+        let generated = lettuce_transfer::backup_sql_text(&playground.images[0], "asset_id")
+            .expect("imported playground image")
+            .parse::<lettuce_types::AssetId>()
+            .expect("asset id");
+        assert_eq!(
+            lettuce_media::MediaAssetRepository::get(&restored, generated)
+                .expect("read asset")
+                .expect("playground asset")
+                .kind,
+            lettuce_media::AssetKind::GeneratedImage
+        );
+        assert_eq!(
+            playground.images[1].get("asset_id"),
+            Some(&lettuce_transfer::BackupSqlValue::Null)
+        );
+        assert_eq!(
+            lettuce_transfer::backup_sql_text(&playground.images[1], "source_asset_id"),
+            Some("gone-image")
+        );
         let reply = graph.conversation_history.conversations[0]
             .messages
             .iter()

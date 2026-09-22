@@ -18,7 +18,7 @@ use crate::{
     plan_legacy_backup_scheduled_notes, plan_legacy_backup_usage,
 };
 
-const DOCUMENT_KINDS: [LegacyBackupDocumentKind; 24] = [
+const DOCUMENT_KINDS: [LegacyBackupDocumentKind; 25] = [
     LegacyBackupDocumentKind::Meta,
     LegacyBackupDocumentKind::Settings,
     LegacyBackupDocumentKind::ProviderCredentials,
@@ -43,6 +43,7 @@ const DOCUMENT_KINDS: [LegacyBackupDocumentKind; 24] = [
     LegacyBackupDocumentKind::Lorebooks,
     LegacyBackupDocumentKind::CharacterLorebooks,
     LegacyBackupDocumentKind::ImageLoras,
+    LegacyBackupDocumentKind::PlaygroundGenerations,
 ];
 const META_ENTRY_LIMIT: usize = 10_000;
 const META_TEXT_LIMIT: usize = 1_000_000;
@@ -568,6 +569,7 @@ fn document_name(kind: LegacyBackupDocumentKind) -> &'static str {
         LegacyBackupDocumentKind::Lorebooks => "lorebooks",
         LegacyBackupDocumentKind::CharacterLorebooks => "character_lorebooks",
         LegacyBackupDocumentKind::ImageLoras => "image_loras",
+        LegacyBackupDocumentKind::PlaygroundGenerations => "playground_generations",
     }
 }
 
@@ -596,7 +598,7 @@ mod tests {
 
         assert_eq!(plan.coverage.documents.len(), DOCUMENT_KINDS.len());
         assert_eq!(plan.coverage.present_document_count, 0);
-        assert_eq!(plan.coverage.absent_document_count, 24);
+        assert_eq!(plan.coverage.absent_document_count, 25);
         assert_eq!(plan.coverage.media_object_count, 0);
         assert_eq!(plan.coverage.media_byte_count, 0);
         assert!(plan.coverage.documents.iter().all(|item| !item.present));

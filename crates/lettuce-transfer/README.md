@@ -743,3 +743,13 @@ data and attachments past the reference limit are recorded, never fatal.
 Conversation import appends them as `MediaAsset` attachment parts after the
 text; the rendered variant also gets the message's attachments, deduplicated
 by id; media on non-rendered revisions and candidates is historical.
+
+Old playground history (2026-09-22; `playground_generations`, live database
+only) is planned beside the LoRA library as `plan.images.playground` and
+written by the `images` stage into the app's own `playground_history` /
+`playground_history_images` tables as `origin = imported` entries (ids derived
+from the source id, `params_json` and status kept verbatim, the old image asset
+ids kept as `source_asset_id`). Each image file (`images/<assetId>.<ext>`) is
+planned as a `PlaygroundImage` generated-image asset; missing, ambiguous or
+unusable files and lossy `images_json` entries are recorded and the image
+keeps a null asset. Playground history travels in its own v2 backup section.

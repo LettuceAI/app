@@ -28,6 +28,7 @@ mod initial_inference_adapter;
 mod job_adapter;
 mod legacy_import_adapter;
 mod legacy_import_backup_adapter;
+mod playground_history_adapter;
 mod lorebook_adapter;
 mod lorebook_entry_run_adapter;
 mod lorebook_keyword_run_adapter;
@@ -5230,6 +5231,8 @@ mod tests {
                 "persona_lorebook_bindings",
                 "persona_media",
                 "personas",
+                "playground_history",
+                "playground_history_images",
                 "prompt_documents",
                 "prompt_entries",
                 "provider_accounts",

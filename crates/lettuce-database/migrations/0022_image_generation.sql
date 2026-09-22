@@ -119,3 +119,41 @@ CREATE TABLE image_loras (
 ) STRICT;
 
 CREATE INDEX image_loras_sha256_idx ON image_loras(sha256) WHERE sha256 IS NOT NULL;
+
+CREATE TABLE playground_history (
+    id TEXT PRIMARY KEY,
+    origin TEXT NOT NULL CHECK (origin IN ('generated', 'imported')),
+    job_id TEXT,
+    import_run_id TEXT,
+    source_id TEXT,
+    created_at INTEGER NOT NULL,
+    provider_kind TEXT NOT NULL,
+    source_model_id TEXT,
+    model_profile_id TEXT,
+    model_name TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    negative_prompt TEXT,
+    seed INTEGER,
+    params_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    error TEXT,
+    CHECK ((origin = 'imported') = (import_run_id IS NOT NULL AND source_id IS NOT NULL)),
+    UNIQUE (import_run_id, source_id)
+) STRICT;
+
+CREATE INDEX playground_history_created_idx ON playground_history(created_at, id);
+
+CREATE TABLE playground_history_images (
+    history_id TEXT NOT NULL REFERENCES playground_history(id) ON DELETE CASCADE,
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    asset_id TEXT REFERENCES media_assets(id) ON DELETE RESTRICT,
+    source_asset_id TEXT,
+    mime_type TEXT,
+    url TEXT,
+    width INTEGER CHECK (width IS NULL OR width >= 0),
+    height INTEGER CHECK (height IS NULL OR height >= 0),
+    PRIMARY KEY (history_id, ordinal)
+) STRICT;
+
+CREATE INDEX playground_history_images_asset_idx ON playground_history_images(asset_id);
+CREATE INDEX playground_history_images_source_idx ON playground_history_images(source_asset_id);

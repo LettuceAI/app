@@ -33,6 +33,7 @@ mod legacy_backup_sessions;
 mod legacy_backup_attachments;
 mod legacy_backup_images;
 mod legacy_backup_usage;
+mod playground_history_backup;
 mod legacy_import_backup;
 mod memory_backup;
 mod memory_projection_backup;
@@ -67,6 +68,7 @@ pub use legacy_backup_sessions::*;
 pub use legacy_backup_attachments::*;
 pub use legacy_backup_images::*;
 pub use legacy_backup_usage::*;
+pub use playground_history_backup::*;
 pub use legacy_import_backup::*;
 pub use memory_backup::*;
 pub use memory_projection_backup::*;
@@ -761,6 +763,8 @@ pub enum LegacyMediaUse {
         audio: bool,
         label: Option<String>,
     },
+    /// Image `ordinal` of a legacy playground history entry.
+    PlaygroundImage { generation_id: String, ordinal: u32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1280,7 +1284,18 @@ pub struct LegacyImageMaterializationRequest {
     pub plan_fingerprint: ContentHash,
     pub source_fingerprint: ContentHash,
     pub loras: Vec<LegacyImageLoraRecord>,
+    pub playground: Vec<LegacyPlaygroundImport>,
     pub completed_at: TimestampMillis,
+}
+
+/// A legacy playground entry with the imported asset of each image (none
+/// when the media plan recorded the file as missing or unusable).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyPlaygroundImport {
+    /// The playground history id the entry gets, derived from the source.
+    pub id: String,
+    pub generation: LegacyPlaygroundGeneration,
+    pub assets: Vec<Option<AssetId>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

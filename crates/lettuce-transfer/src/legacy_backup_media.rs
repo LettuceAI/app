@@ -158,6 +158,7 @@ pub fn plan_legacy_backup_authored_media(
 
     let mut skipped = skipped;
     plan_attachments(&authored, &mut planned, &mut references, &mut skipped)?;
+    plan_playground_images(&authored, &mut planned, &mut references, &mut skipped)?;
     skipped.sort();
     skipped.dedup();
 
@@ -460,6 +461,82 @@ fn plan_attachments<'a>(
             for attachment in crate::legacy_message_attachments(raw) {
                 plan_attachment(&source.media, planned, references, skipped, &attachment)?;
             }
+        }
+    }
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+struct PlaygroundEntry {
+    id: String,
+    #[serde(default)]
+    images_json: String,
+}
+
+/// Every image of a legacy playground history entry (legacy wrote it to
+/// `images/<assetId>.<ext>`) becomes a generated-image candidate; images whose
+/// file is gone, not unique or not an image are recorded.
+fn plan_playground_images<'a>(
+    authored: &'a LegacyBackupAuthoredPlan,
+    planned: &mut BTreeMap<String, PlannedMedia<'a>>,
+    references: &mut u32,
+    skipped: &mut Vec<LegacyImportSkip>,
+) -> Result<(), LegacyBackupMediaPlanError> {
+    let source = &authored.configuration.source;
+    let Some(document) = source
+        .documents
+        .iter()
+        .find(|document| document.kind == LegacyBackupDocumentKind::PlaygroundGenerations)
+    else {
+        return Ok(());
+    };
+    let Ok(entries) = serde_json::from_slice::<Vec<PlaygroundEntry>>(&document.bytes) else {
+        return Ok(());
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    for entry in entries {
+        if entry.id.trim().is_empty() || !seen.insert(entry.id.clone()) {
+            continue;
+        }
+        let Some(images) = crate::legacy_playground_images(&entry.images_json) else {
+            continue;
+        };
+        for (ordinal, image) in images.iter().enumerate() {
+            let key = format!("{}:{ordinal}", entry.id);
+            let skip = |reason| legacy_value_skip("playground_generations.images", &key, reason);
+            let reference = LegacyMediaReference {
+                locator: image.legacy_asset_id.clone(),
+            };
+            let media = match image_media(&source.media, &reference) {
+                Ok(Some(media)) => media,
+                Ok(None) => {
+                    skipped.push(skip(LegacyImportSkipReason::MissingMediaFile));
+                    continue;
+                }
+                Err(_) => {
+                    skipped.push(skip(LegacyImportSkipReason::MalformedLegacyValue));
+                    continue;
+                }
+            };
+            let is_image = media.byte_len <= LEGACY_MEDIA_OBJECT_BYTES_LIMIT
+                && media
+                    .read()
+                    .ok()
+                    .and_then(|bytes| lettuce_media::sniff_media_kind(&bytes))
+                    == Some(lettuce_media::MediaKind::Image);
+            if !is_image {
+                skipped.push(skip(LegacyImportSkipReason::MalformedLegacyValue));
+                continue;
+            }
+            let media_use = LegacyMediaUse::PlaygroundImage {
+                generation_id: entry.id.clone(),
+                ordinal: bounded_ordinal(ordinal)?,
+            };
+            if *references >= LEGACY_MEDIA_REFERENCE_LIMIT {
+                skipped.push(skip(LegacyImportSkipReason::MalformedLegacyValue));
+                continue;
+            }
+            add_planned(planned, media, media_use, references)?;
         }
     }
     Ok(())

@@ -144,6 +144,12 @@ pub fn read_legacy_database_documents(
             Value::Array(image_loras(&connection)?),
         )?);
     }
+    if table_exists(&connection, "playground_generations")? {
+        documents.push(document(
+            LegacyBackupDocumentKind::PlaygroundGenerations,
+            Value::Array(playground_generations(&connection)?),
+        )?);
+    }
     documents.sort_by_key(|document| document.kind);
     Ok(documents)
 }
@@ -1123,6 +1129,32 @@ fn usage_records(connection: &Connection) -> Result<Vec<Value>, LegacyDatabasePr
         record["metadata"] = Value::Array(metadata);
     }
     Ok(records)
+}
+
+fn playground_generations(
+    connection: &Connection,
+) -> Result<Vec<Value>, LegacyDatabasePreflightError> {
+    rows(
+        connection,
+        "SELECT id, created_at, provider_id, model_id, model_name, prompt, negative_prompt, seed, params_json, status, error, images_json FROM playground_generations ORDER BY created_at, id",
+        [],
+        |r| {
+            Ok(json!({
+                "id": r.get::<_, String>(0)?,
+                "created_at": r.get::<_, i64>(1)?,
+                "provider_id": r.get::<_, String>(2)?,
+                "model_id": r.get::<_, String>(3)?,
+                "model_name": r.get::<_, String>(4)?,
+                "prompt": r.get::<_, String>(5)?,
+                "negative_prompt": r.get::<_, Option<String>>(6)?,
+                "seed": r.get::<_, Option<i64>>(7)?,
+                "params_json": r.get::<_, String>(8)?,
+                "status": r.get::<_, String>(9)?,
+                "error": r.get::<_, Option<String>>(10)?,
+                "images_json": r.get::<_, String>(11)?,
+            }))
+        },
+    )
 }
 
 fn image_loras(connection: &Connection) -> Result<Vec<Value>, LegacyDatabasePreflightError> {

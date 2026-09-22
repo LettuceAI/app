@@ -98,7 +98,7 @@ const USAGE_RECORD_COLUMNS: &[&str] = &[
     "metadata_json",
 ];
 
-fn read_rows(
+pub(crate) fn read_rows(
     transaction: &Transaction<'_>,
     table: &str,
     columns: &[&str],
@@ -189,7 +189,7 @@ pub(crate) fn read_in(transaction: &Transaction<'_>) -> rusqlite::Result<LegacyI
     })
 }
 
-fn insert_rows<'a>(
+pub(crate) fn insert_rows<'a>(
     transaction: &Transaction<'_>,
     table: &str,
     columns: &[&str],

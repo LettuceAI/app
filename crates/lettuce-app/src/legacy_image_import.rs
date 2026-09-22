@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
+
 use lettuce_transfer::{
     LegacyBackupImagePlan, LegacyImageMaterializationRequest, LegacyImportAdmission,
-    LegacyImportPlan, LegacyImportRepository, LegacyImportRepositoryError,
-    LegacyImportStageReceipt,
+    LegacyImportAssignment, LegacyImportPlan, LegacyImportRepository, LegacyImportRepositoryError,
+    LegacyImportStageReceipt, LegacyMediaUse, LegacyPlaygroundImport,
 };
+use lettuce_types::AssetId;
 use lettuce_types::TimestampMillis;
 
 #[derive(Debug)]
@@ -16,7 +19,8 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImageImportCoordinator<'a, R>
         Self { repository }
     }
 
-    /// Writes the legacy LoRA library rows of an admitted run.
+    /// Writes the legacy LoRA library rows and playground history of an
+    /// admitted run, linking each playground image to its imported asset.
     pub fn execute(
         &self,
         admission: &LegacyImportAdmission,
@@ -32,12 +36,19 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImageImportCoordinator<'a, R>
             .source_fingerprint
             .clone()
             .ok_or(LegacyImportRepositoryError::InvalidInput)?;
+        let playground = playground_imports(
+            admission,
+            plan,
+            images,
+            &lettuce_transfer::LegacyIdScope::new(&source_fingerprint),
+        );
         self.repository
             .materialize_images(LegacyImageMaterializationRequest {
                 run_id: admission.run_id,
                 plan_fingerprint,
                 source_fingerprint,
                 loras: images.loras.clone(),
+                playground,
                 completed_at,
             })
     }
@@ -55,6 +66,60 @@ impl<'a, R: LegacyImportRepository + ?Sized> LegacyImageImportCoordinator<'a, R>
             completed_at,
         )
     }
+}
+
+fn playground_imports(
+    admission: &LegacyImportAdmission,
+    plan: &LegacyImportPlan,
+    images: &LegacyBackupImagePlan,
+    scope: &lettuce_transfer::LegacyIdScope,
+) -> Vec<LegacyPlaygroundImport> {
+    let assets = admission
+        .assignments
+        .iter()
+        .filter_map(|assignment| match assignment {
+            LegacyImportAssignment::Media {
+                relative_path,
+                destination_id,
+                ..
+            } => Some((relative_path.as_str(), *destination_id)),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut by_image = BTreeMap::<(&str, u32), AssetId>::new();
+    for candidate in &plan.media.media {
+        let Some(asset_id) = assets.get(candidate.relative_path.as_str()) else {
+            continue;
+        };
+        for media_use in &candidate.uses {
+            if let LegacyMediaUse::PlaygroundImage {
+                generation_id,
+                ordinal,
+            } = media_use
+            {
+                by_image.insert((generation_id.as_str(), *ordinal), *asset_id);
+            }
+        }
+    }
+    images
+        .playground
+        .iter()
+        .map(|generation| LegacyPlaygroundImport {
+            id: scope
+                .derived(&generation.source_id, "playground-history")
+                .to_string(),
+            assets: (0..generation.images.len())
+                .map(|ordinal| {
+                    u32::try_from(ordinal).ok().and_then(|ordinal| {
+                        by_image
+                            .get(&(generation.source_id.as_str(), ordinal))
+                            .copied()
+                    })
+                })
+                .collect(),
+            generation: generation.clone(),
+        })
+        .collect()
 }
 
 #[cfg(test)]

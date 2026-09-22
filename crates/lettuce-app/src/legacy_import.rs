@@ -484,6 +484,24 @@ fn valid_persona_bindings(personas: &LegacyPersonaPlan, lorebooks: &LegacyLorebo
         })
 }
 
+/// Attachments and playground images the media plan could not import:
+/// missing or unusable files, labels it shortened, the reference limit.
+fn recorded_message_or_playground_media(skip: &lettuce_transfer::LegacyImportSkip) -> bool {
+    use lettuce_transfer::LegacyImportSkipReason::{MalformedLegacyValue, MissingMediaFile};
+    skip.kind == lettuce_transfer::LegacyImportSkipKind::LegacyValue
+        && matches!(skip.reason, MissingMediaFile | MalformedLegacyValue)
+        && skip.source_key.split_once(':').is_some_and(|(field, row)| {
+            !row.trim().is_empty()
+                && matches!(
+                    field,
+                    "messages.attachments"
+                        | "messages.attachments.filename"
+                        | "messages.attachments.limit"
+                        | "playground_generations.images"
+                )
+        })
+}
+
 fn valid_media_skips(
     media: &LegacyMediaPlan,
     personas: &LegacyPersonaPlan,
@@ -503,7 +521,8 @@ fn valid_media_skips(
         .windows(2)
         .all(|pair| (pair[0].kind, &pair[0].source_key) < (pair[1].kind, &pair[1].source_key))
         && media.skipped.iter().all(|skip| {
-            skip.reason == lettuce_transfer::LegacyImportSkipReason::MissingMediaFile
+            recorded_message_or_playground_media(skip)
+                || skip.reason == lettuce_transfer::LegacyImportSkipReason::MissingMediaFile
                 && match skip.kind {
                     PersonaAvatar => persona(&skip.source_key).is_some_and(|persona| {
                         persona.avatar.is_none() && persona.avatar_crop.is_none()
@@ -962,6 +981,14 @@ pub(crate) fn plan_fingerprint(plan: &LegacyImportPlan) -> ContentHash {
                     hash.text(attachment_id);
                     hash.u32(u32::from(*audio));
                     hash.option(label.as_ref(), |hash, value| hash.text(value));
+                }
+                LegacyMediaUse::PlaygroundImage {
+                    generation_id,
+                    ordinal,
+                } => {
+                    hash.u32(12);
+                    hash.text(generation_id);
+                    hash.u32(*ordinal);
                 }
             }
         }

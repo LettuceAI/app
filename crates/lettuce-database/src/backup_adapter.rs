@@ -1298,10 +1298,13 @@ impl ProviderBackupSource for Database {
         let creation = read_creation(&transaction)?;
         let legacy_imports = crate::legacy_import_backup_adapter::read_in(&transaction)
             .map_err(backup_error)?;
+        let playground_history = crate::playground_history_adapter::read_in(&transaction)
+            .map_err(backup_error)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             creation,
             legacy_imports,
+            playground_history,
             version: PROVIDER_BACKUP_GRAPH_VERSION,
             accounts,
             profiles,
