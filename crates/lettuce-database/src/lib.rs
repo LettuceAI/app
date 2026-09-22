@@ -78,8 +78,8 @@ use lettuce_models::{
     ProviderProtocol, SecretHeader, validate_provider_connection,
 };
 use lettuce_settings::{
-    GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
-    SecretOwnerId, SecretRef, StoredGlobalSettings,
+    DeviceUiStateStore, GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore,
+    GlobalSettingsStoreError, SecretOwnerId, SecretRef, StoredGlobalSettings,
 };
 use lettuce_sync::{MediaSyncError, MediaSyncRepository};
 use lettuce_types::{
@@ -622,6 +622,9 @@ pub(crate) fn sync_write_app_settings(
         .model_settings
         .validate()
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    if !snapshot.settings.ui_preferences.within_bounds() {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
     let present = |table: &str, id: Option<String>| -> Result<Option<String>, rusqlite::Error> {
         let Some(id) = id else { return Ok(None) };
         let exists: bool = connection.query_row(
@@ -670,6 +673,57 @@ pub(crate) fn sync_write_app_settings(
         ],
     )?;
     Ok(())
+}
+
+/// Writes the app shell's install state inside `transaction`.
+pub(crate) fn write_device_ui_state(
+    transaction: &Connection,
+    state: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), rusqlite::Error> {
+    let state = serde_json::to_string(state).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    transaction.execute(
+        "INSERT INTO device_ui_state (id, state_json, updated_at) VALUES (1, ?1, ?2) \
+         ON CONFLICT(id) DO UPDATE SET state_json = excluded.state_json, updated_at = excluded.updated_at",
+        params![state, now().map_err(|_| rusqlite::Error::InvalidQuery)?.get()],
+    )?;
+    Ok(())
+}
+
+impl DeviceUiStateStore for Database {
+    fn load_device_ui_state(
+        &self,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, GlobalSettingsStoreError> {
+        let connection = self
+            .connection()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let state: Option<String> = connection
+            .query_row("SELECT state_json FROM device_ui_state WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .optional()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        state.map_or_else(
+            || Ok(serde_json::Map::new()),
+            |state| serde_json::from_str(&state).map_err(|_| GlobalSettingsStoreError::InvalidData),
+        )
+    }
+
+    fn save_device_ui_state(
+        &self,
+        state: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<(), GlobalSettingsStoreError> {
+        let connection = self
+            .connection()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        write_device_ui_state(&connection, &state).map_err(|error| match error {
+            rusqlite::Error::SqliteFailure(failure, _)
+                if failure.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
+                GlobalSettingsStoreError::InvalidData
+            }
+            _ => GlobalSettingsStoreError::Storage,
+        })
+    }
 }
 
 impl GlobalSettingsStore for Database {
@@ -723,6 +777,9 @@ impl GlobalSettingsStore for Database {
         default_model_profile_id: Option<ModelProfileId>,
         expected_revision: Revision,
     ) -> Result<StoredGlobalSettings, GlobalSettingsStoreError> {
+        if !settings.ui_preferences.within_bounds() {
+            return Err(GlobalSettingsStoreError::InvalidData);
+        }
         let payload =
             serde_json::to_string(&settings).map_err(|_| GlobalSettingsStoreError::InvalidData)?;
         let next = expected_revision
@@ -5207,6 +5264,7 @@ mod tests {
                 "creation_staged_lorebook_writer_runs",
                 "creation_turns",
                 "creation_workflows",
+                "device_ui_state",
                 "discovered_tts_voices",
                 "dynamic_memory_admitted_tool_calls",
                 "dynamic_memory_background_round_settlements",

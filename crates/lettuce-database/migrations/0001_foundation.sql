@@ -30,6 +30,16 @@ CREATE TABLE model_profiles (
 
 CREATE INDEX model_profiles_account_idx ON model_profiles(provider_account_id);
 
+CREATE TABLE device_ui_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    state_json TEXT NOT NULL CHECK (
+        json_valid(state_json)
+        AND json_type(state_json) = 'object'
+        AND length(CAST(state_json AS BLOB)) <= 262144
+    ),
+    updated_at INTEGER NOT NULL
+) STRICT;
+
 CREATE TABLE app_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     default_model_profile_id TEXT REFERENCES model_profiles(id) ON DELETE RESTRICT,

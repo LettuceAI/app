@@ -19,11 +19,12 @@ mod secrets;
 
 pub use global::{
     CompanionSoulWriterSettings, CreationHelperSettings, CreationHelperToolFallback,
-    DynamicMemoryPromptSelection, DynamicMemorySettings, EmbeddingSettings,
+    DeviceUiStateStore, DynamicMemoryPromptSelection, DynamicMemorySettings, EmbeddingSettings,
     GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
     HelpMeReplySettings, HelpMeReplyStyle, ImageGenerationSettings, LorebookEntryGeneratorSettings,
     LorebookGeneratorSelection, LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
-    MemoryStructuredFallbackFormat, PureMode, SceneGenerationMode, StoredGlobalSettings,
+    MAX_UI_PREFERENCES_BYTES, MemoryStructuredFallbackFormat, PureMode, SceneGenerationMode,
+    StoredGlobalSettings, UiPreferences,
 };
 
 pub use secrets::{

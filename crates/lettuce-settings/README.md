@@ -69,6 +69,22 @@ entry writer with "Configured lorebook entry generator model could not be
 resolved"; the cleared selection now falls back like an unset one (default
 model, first text model). `creation_helper.enabled_tools` is kept although
 only dead legacy code read it; a consumer honoring it would change behavior.
+`ui_preferences` (`UiPreferences`, at most 256 KiB) is the app shell's own
+JSON document under legacy's key names: `theme`, `settingsCardOpacity`,
+`customColors`, `customColorPresets`, `chatsViewMode`, `groupChatsViewMode`,
+`accessibility`, `navigationStyle`, `navigationSide`, `headerStyle`,
+`navItems`, `navAlign`, `navEdge`, the global `chatAppearance` and
+`llamaSamplerPresets`. Only the shell read them in legacy, so the backend stores,
+bounds and syncs the document without interpreting it.
+`auto_download_character_card_avatars` (legacy
+`autoDownloadCharacterCardAvatars`, older `autoDownloadDiscoveryAvatars`,
+default on, read like legacy: the first boolean of the two keys) is typed
+because character-card import (not yet ported) reads it.
+`DeviceUiStateStore` keeps (up to the same 256 KiB) the shell's state about this install (legacy
+`onboarding`, `tooltips`, `lastSeenAppVersion` and the `appActiveUsage*`
+counters) in the device-local `device_ui_state` row, which never syncs or
+enters backups; a restore keeps an imported legacy install's state, otherwise
+the previous database's.
 An optional group-chat policy lives beside the direct policy in global settings,
 matching the legacy settings editor and persistence owner. Group launches use
 that complete override when present and otherwise inherit the direct policy.

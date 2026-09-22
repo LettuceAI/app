@@ -729,6 +729,7 @@ pub fn canonicalize_and_validate(
     if graph.settings.revision.get() == 0
         || graph.settings.created_at > graph.settings.updated_at
         || graph.settings.model_settings.validate().is_err()
+        || !graph.settings.value.ui_preferences.within_bounds()
     {
         return Err(ProviderBackupGraphError::InvalidGraph);
     }

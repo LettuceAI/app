@@ -31,6 +31,12 @@ pub struct GlobalSettings {
     pub lorebook_entry_generator: LorebookEntryGeneratorSettings,
     #[serde(default)]
     pub companion_soul_writer: CompanionSoulWriterSettings,
+    #[serde(default, skip_serializing_if = "UiPreferences::is_empty")]
+    pub ui_preferences: UiPreferences,
+    /// Legacy `autoDownloadCharacterCardAvatars`: fetch http(s) avatars a
+    /// character card links to while importing it.
+    #[serde(default = "default_true")]
+    pub auto_download_character_card_avatars: bool,
     #[serde(default = "default_manual_mode_context_window")]
     pub manual_mode_context_window: u32,
 }
@@ -60,6 +66,8 @@ impl Default for GlobalSettings {
             creation_helper: CreationHelperSettings::default(),
             lorebook_entry_generator: LorebookEntryGeneratorSettings::default(),
             companion_soul_writer: CompanionSoulWriterSettings::default(),
+            ui_preferences: UiPreferences::default(),
+            auto_download_character_card_avatars: true,
             manual_mode_context_window: default_manual_mode_context_window(),
         }
     }
@@ -151,6 +159,29 @@ impl Default for ImageGenerationSettings {
             scene_writer_model_profile_id: None,
             creation_helper_model_profile_id: None,
         }
+    }
+}
+
+/// The largest serialized [`UiPreferences`] document.
+pub const MAX_UI_PREFERENCES_BYTES: usize = 256 * 1024;
+
+/// Preferences only the app shell reads (theme, colors, view modes,
+/// navigation, sounds and haptics, the base chat appearance, saved sampler
+/// orders), kept as the shell's own JSON document under legacy's key names.
+/// The backend stores, syncs and bounds it but never interprets it.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UiPreferences(pub serde_json::Map<String, serde_json::Value>);
+
+impl UiPreferences {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[must_use]
+    pub fn within_bounds(&self) -> bool {
+        serde_json::to_vec(&self.0).is_ok_and(|bytes| bytes.len() <= MAX_UI_PREFERENCES_BYTES)
     }
 }
 
@@ -467,6 +498,20 @@ pub enum GlobalSettingsStoreError {
     InvalidData,
     #[error("settings storage failed")]
     Storage,
+}
+
+/// The app shell's state about this install (legacy onboarding progress,
+/// dismissed hints, the last version seen, active-usage counters): a JSON
+/// object under legacy's key names that never syncs or enters backups.
+pub trait DeviceUiStateStore: Send + Sync {
+    fn load_device_ui_state(
+        &self,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, GlobalSettingsStoreError>;
+
+    fn save_device_ui_state(
+        &self,
+        state: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<(), GlobalSettingsStoreError>;
 }
 
 pub trait GlobalSettingsStore: Send + Sync {

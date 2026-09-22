@@ -182,6 +182,7 @@ mod tests {
             help_me_reply_model_profile_id: None,
             help_me_reply_prompt_source_ids: HelpMeReplyPromptSources::default(),
             image_model_profile_ids: lettuce_transfer::ImageModelSources::default(),
+            device_ui_state: serde_json::Map::new(),
             feature_model_profile_ids: lettuce_transfer::FeatureModelSources::default(),
             feature_prompt_source_ids: lettuce_transfer::FeaturePromptSources::default(),
             deprecated_system_prompt: None,

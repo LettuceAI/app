@@ -1540,7 +1540,10 @@ const APP_SETTINGS_CODEC: SnapshotCodec = SnapshotCodec {
     decode: |id, bytes| {
         let snapshot: crate::SyncAppSettings =
             serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
-        if id != "application" || snapshot.model_settings.validate().is_err() {
+        if id != "application"
+            || snapshot.model_settings.validate().is_err()
+            || !snapshot.settings.ui_preferences.within_bounds()
+        {
             return Err(ApplyOneError::Corrupt);
         }
         Ok(())

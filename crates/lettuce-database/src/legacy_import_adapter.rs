@@ -1391,6 +1391,10 @@ impl LegacyImportRepository for Database {
             )
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
         if !earlier_settings {
+            if !candidate.device_ui_state.is_empty() {
+                crate::write_device_ui_state(&transaction, &candidate.device_ui_state)
+                    .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            }
             let changed = transaction
                 .execute(
                     "UPDATE app_settings SET payload_json=?1,dynamic_memory_model_profile_id=?2,group_speaker_model_profile_id=?3,revision=revision+1,created_at=MIN(created_at,?5),updated_at=?4,model_settings_json=?6 WHERE id=1",

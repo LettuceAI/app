@@ -22,7 +22,8 @@ const DEVICE_LOCAL_TABLES: &[&str] = &[
 impl Database {
     /// Copies device-local state from the previous database file: the sync
     /// journal, installed Whisper model manifests, local generation metrics,
-    /// the local LoRA library,
+    /// the local LoRA library, the app shell's install state unless the new
+    /// file already has one (an imported legacy install's),
     /// and the discovered voices and llama.cpp runtime reports of audio
     /// providers and models that exist in this database.
     pub fn carry_device_local_state_from(&self, previous: &Path) -> Result<(), DatabaseError> {
@@ -40,6 +41,10 @@ impl Database {
                     [],
                 )?;
             }
+            transaction.execute(
+                "INSERT OR IGNORE INTO main.device_ui_state SELECT * FROM previous.device_ui_state",
+                [],
+            )?;
             transaction.execute(
                 "INSERT INTO main.discovered_tts_voices SELECT * FROM previous.discovered_tts_voices WHERE provider_id IN (SELECT id FROM main.audio_providers)",
                 [],
@@ -61,6 +66,44 @@ mod tests {
     use lettuce_types::{OperationId, TimestampMillis};
 
     use crate::Database;
+
+    #[test]
+    fn install_ui_state_is_carried_unless_the_new_file_has_its_own() {
+        use lettuce_settings::DeviceUiStateStore;
+        let root = std::env::temp_dir().join(format!("device-ui-{}", OperationId::new()));
+        std::fs::create_dir_all(&root).expect("fixture root");
+        let previous_path = root.join("previous.sqlite3");
+        let previous = Database::open(&previous_path).expect("previous database");
+        let state = |value: &str| {
+            serde_json::json!({"lastSeenAppVersion": value})
+                .as_object()
+                .expect("state")
+                .clone()
+        };
+        assert!(previous.load_device_ui_state().expect("empty").is_empty());
+        previous
+            .save_device_ui_state(state("1.0.0"))
+            .expect("save previous state");
+        let carried = Database::open(root.join("carried.sqlite3")).expect("carried database");
+        carried
+            .carry_device_local_state_from(&previous_path)
+            .expect("carry");
+        assert_eq!(
+            carried.load_device_ui_state().expect("carried"),
+            state("1.0.0")
+        );
+        let imported = Database::open(root.join("imported.sqlite3")).expect("imported database");
+        imported
+            .save_device_ui_state(state("2.0.0"))
+            .expect("imported state");
+        imported
+            .carry_device_local_state_from(&previous_path)
+            .expect("carry");
+        assert_eq!(
+            imported.load_device_ui_state().expect("kept"),
+            state("2.0.0")
+        );
+    }
 
     #[test]
     fn device_local_sync_identity_moves_to_the_restored_database() {

@@ -19,7 +19,7 @@ use lettuce_settings::{
     HelpMeReplyStyle, ImageGenerationSettings, LorebookEntryGeneratorSettings,
     LorebookGeneratorSelection, LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
     MemoryStructuredFallbackFormat, PureMode, SceneGenerationMode, SecretOwnerId, SecretPurpose,
-    SecretRef, SecretValue,
+    SecretRef, SecretValue, UiPreferences,
 };
 use lettuce_speech::{AudioProvider, AudioProviderConfig, UserVoice};
 use lettuce_types::{
@@ -110,6 +110,9 @@ pub struct LegacyBackupSettingsCandidate {
     pub help_me_reply_model_profile_id: Option<ModelProfileId>,
     pub help_me_reply_prompt_source_ids: HelpMeReplyPromptSources,
     pub image_model_profile_ids: ImageModelSources,
+    /// This install's legacy onboarding, hint, last-seen-version and
+    /// active-usage state, verbatim under its legacy keys.
+    pub device_ui_state: Map<String, Value>,
     pub feature_model_profile_ids: FeatureModelSources,
     pub feature_prompt_source_ids: FeaturePromptSources,
     pub deprecated_system_prompt: Option<String>,
@@ -690,7 +693,7 @@ fn map_settings(
             "advanced_settings.lorebookGeneratorMaxTokens",
         ));
     }
-    let mapped_advanced = BTreeSet::from([
+    let mut mapped_advanced = BTreeSet::from([
         "appUpdateChecksEnabled",
         "dynamicMemory",
         "groupDynamicMemory",
@@ -737,6 +740,7 @@ fn map_settings(
         "companionSoulWriterPromptTemplateId",
         "companionSoulWriterStructuredFallbackFormat",
     ]);
+    mapped_advanced.extend(UI_PREFERENCE_ADVANCED_KEYS);
     for field in advanced
         .keys()
         .filter(|field| !mapped_advanced.contains(field.as_str()))
@@ -750,8 +754,13 @@ fn map_settings(
     for field in app.keys().filter(|field| {
         !matches!(
             field.as_str(),
-            "pureModeLevel" | "pureModeEnabled" | "analyticsEnabled"
-        )
+            "pureModeLevel"
+                | "pureModeEnabled"
+                | "analyticsEnabled"
+                | "autoDownloadCharacterCardAvatars"
+                | "autoDownloadDiscoveryAvatars"
+        ) && !UI_PREFERENCE_APP_KEYS.contains(&field.as_str())
+            && !DEVICE_UI_STATE_KEYS.contains(&field.as_str())
     }) {
         notices.push(notice(
             LegacyBackupConversionNoticeKind::Unsupported,
@@ -794,6 +803,14 @@ fn map_settings(
                 )?,
                 ..LorebookEntryGeneratorSettings::default()
             },
+            ui_preferences: ui_preferences(app, advanced, notices),
+            auto_download_character_card_avatars: [
+                "autoDownloadCharacterCardAvatars",
+                "autoDownloadDiscoveryAvatars",
+            ]
+            .iter()
+            .find_map(|key| app.get(*key).and_then(Value::as_bool))
+            .unwrap_or(true),
             companion_soul_writer: CompanionSoulWriterSettings {
                 structured_fallback_format: fallback_format(
                     advanced,
@@ -834,6 +851,7 @@ fn map_settings(
             scene_writer: advanced_id(advanced, "sceneWriterModelId")?,
             creation_helper: advanced_id(advanced, "creationHelperImageModelId")?,
         },
+        device_ui_state: device_ui_state(app, notices),
         feature_model_profile_ids: FeatureModelSources {
             creation_helper: advanced_id(advanced, "creationHelperModelId")?,
             lorebook_entry: advanced_id(advanced, "lorebookEntryGeneratorModelId")?,
@@ -852,6 +870,107 @@ fn map_settings(
         created_at: TimestampMillis::new(created),
         updated_at: TimestampMillis::new(updated),
     })
+}
+
+/// Legacy app-state keys only the app shell read, kept in `ui_preferences`.
+const UI_PREFERENCE_APP_KEYS: [&str; 6] = [
+    "theme",
+    "settingsCardOpacity",
+    "customColors",
+    "customColorPresets",
+    "chatsViewMode",
+    "groupChatsViewMode",
+];
+
+/// Legacy advanced-settings keys only the app shell read, kept in
+/// `ui_preferences`.
+const UI_PREFERENCE_ADVANCED_KEYS: [&str; 9] = [
+    "accessibility",
+    "navigationStyle",
+    "navigationSide",
+    "headerStyle",
+    "navItems",
+    "navAlign",
+    "navEdge",
+    "chatAppearance",
+    "llamaSamplerPresets",
+];
+
+/// Legacy app-state keys that describe this install rather than the user's
+/// preferences: onboarding progress, dismissed hints, the last version seen
+/// and the active-usage counters.
+const DEVICE_UI_STATE_KEYS: [&str; 7] = [
+    "onboarding",
+    "tooltips",
+    "lastSeenAppVersion",
+    "appActiveUsageMs",
+    "appActiveUsageByDayMs",
+    "appActiveUsageStartedAtMs",
+    "appActiveUsageLastUpdatedAtMs",
+];
+
+/// This install's shell state, verbatim under its legacy keys; a document past
+/// the device state bound is dropped and recorded.
+fn device_ui_state(
+    app: &Map<String, Value>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> Map<String, Value> {
+    let state = DEVICE_UI_STATE_KEYS
+        .iter()
+        .filter_map(|key| {
+            app.get(*key)
+                .filter(|value| !value.is_null())
+                .map(|value| ((*key).to_owned(), value.clone()))
+        })
+        .collect::<Map<String, Value>>();
+    if serde_json::to_vec(&state)
+        .is_ok_and(|bytes| bytes.len() <= lettuce_settings::MAX_UI_PREFERENCES_BYTES)
+    {
+        state
+    } else {
+        notices.push(notice(
+            LegacyBackupConversionNoticeKind::Lossy,
+            LegacyBackupDocumentKind::Settings,
+            "app_state.device_ui_state",
+        ));
+        Map::new()
+    }
+}
+
+/// The shell-only preferences, verbatim under their legacy keys; a document
+/// past the size bound is dropped and recorded.
+fn ui_preferences(
+    app: &Map<String, Value>,
+    advanced: &Map<String, Value>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> UiPreferences {
+    let preferences = UiPreferences(
+        UI_PREFERENCE_APP_KEYS
+            .iter()
+            .map(|key| (app, *key))
+            .chain(
+                UI_PREFERENCE_ADVANCED_KEYS
+                    .iter()
+                    .map(|key| (advanced, *key)),
+            )
+            .filter_map(|(object, key)| {
+                object
+                    .get(key)
+                    .filter(|value| !value.is_null())
+                    .map(|value| (key.to_owned(), value.clone()))
+            })
+            .collect(),
+    );
+    if preferences.within_bounds() {
+        preferences
+    } else {
+        notices.push(notice(
+            LegacyBackupConversionNoticeKind::Lossy,
+            LegacyBackupDocumentKind::Settings,
+            "app_state.ui_preferences",
+        ));
+        UiPreferences::default()
+    }
 }
 
 /// Legacy `creationHelperStreaming` (default on), `creationHelperEnabledTools`
@@ -3936,7 +4055,8 @@ mod tests {
                     "lorebookEntryGeneratorPromptTemplateId": "prompt-main",
                     "lorebookEntryGeneratorStructuredFallbackFormat": "xml",
                     "companionSoulWriterFallbackModelId": model_id,
-                    "companionSoulWriterStructuredFallbackFormat": "xml"
+                    "companionSoulWriterStructuredFallbackFormat": "xml",
+                    "navigationStyle": "sidebar"
                 })
                 .as_object()
                 .expect("feature settings")
@@ -3948,7 +4068,7 @@ mod tests {
                 json!({
                     "default_provider_credential_id": provider_id,
                     "default_model_id": model_id,
-                    "app_state": {"pureModeEnabled": false, "analyticsEnabled": false, "theme": "dark"},
+                    "app_state": {"pureModeEnabled": false, "analyticsEnabled": false, "theme": "dark", "customColors": {"accent": "#abcdef"}, "onboarding": {"completed": true, "skipped": false, "providerSetupCompleted": true, "modelSetupCompleted": true}, "autoDownloadCharacterCardAvatars": false},
                     "advanced_model_settings": {"temperature": 0.2, "topK": 5},
                     "prompt_template_id": "prompt-main",
                     "system_prompt": "Old global prompt",
@@ -4194,6 +4314,29 @@ mod tests {
         assert_eq!(help_me_reply.history_count(), 10);
         assert_eq!(help_me_reply.style, HelpMeReplyStyle::Conversational);
         assert_eq!(plan.settings.help_me_reply_model_profile_id, Some(model_id));
+        let preferences = &plan.settings.value.ui_preferences.0;
+        assert_eq!(preferences.get("theme"), Some(&json!("dark")));
+        assert_eq!(
+            preferences.get("customColors"),
+            Some(&json!({"accent": "#abcdef"}))
+        );
+        assert_eq!(preferences.get("navigationStyle"), Some(&json!("sidebar")));
+        assert_eq!(
+            plan.settings
+                .device_ui_state
+                .get("onboarding")
+                .and_then(|value| value.get("completed")),
+            Some(&json!(true))
+        );
+        assert!(!plan.settings.value.auto_download_character_card_avatars);
+        assert!(
+            !plan
+                .notices
+                .iter()
+                .any(|notice| notice.field == "app_state.theme"
+                    || notice.field == "app_state.onboarding"
+                    || notice.field == "advanced_settings.navigationStyle")
+        );
         let creation_helper = &plan.settings.value.creation_helper;
         assert!(!creation_helper.streaming);
         assert_eq!(
