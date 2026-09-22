@@ -1000,12 +1000,17 @@ fn parse_response_with_replay(
         provider_response_id: None,
         candidates,
         usage: parsed.usage_metadata.and_then(|usage| {
+            let (image_tokens, audio_tokens, total_tokens) =
+                crate::common::usage_modalities(&usage.other);
             Some(InferenceUsage {
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
                 cached_input_tokens: usage.cached_content_token_count,
                 reasoning_tokens: usage.thoughts_token_count,
+                image_tokens,
+                audio_tokens,
+                total_tokens,
                 input_tokens: usage.prompt_token_count?,
                 output_tokens: usage.candidates_token_count?,
             })
@@ -1274,6 +1279,8 @@ struct UsageMetadata {
     prompt_token_count: Option<u64>,
     #[serde(rename = "candidatesTokenCount")]
     candidates_token_count: Option<u64>,
+    #[serde(flatten)]
+    other: serde_json::Map<String, serde_json::Value>,
 }
 
 #[cfg(test)]
@@ -1845,7 +1852,7 @@ mod tests {
     #[test]
     fn preserves_thought_parts_and_reads_native_usage() {
         let outcome = parse_response(response(
-            r#"{"candidates":[{"content":{"parts":[{"text":"hidden","thought":true},{"text":"vis"},{"text":"ible"}],"role":"model"},"finishReason":"MAX_TOKENS"}],"usageMetadata":{"promptTokenCount":9,"candidatesTokenCount":4,"totalTokenCount":19,"cachedContentTokenCount":2,"thoughtsTokenCount":6}}"#,
+            r#"{"candidates":[{"content":{"parts":[{"text":"hidden","thought":true},{"text":"vis"},{"text":"ible"}],"role":"model"},"finishReason":"MAX_TOKENS"}],"usageMetadata":{"promptTokenCount":9,"candidatesTokenCount":4,"totalTokenCount":19,"cachedContentTokenCount":2,"thoughtsTokenCount":6,"promptTokensDetails":[{"modality":"TEXT","tokenCount":5},{"modality":"AUDIO","tokenCount":3},{"modality":"audio","tokenCount":1}]}}"#,
         ))
         .expect("response");
         assert_eq!(
@@ -1863,6 +1870,9 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: Some(4),
+                total_tokens: Some(19),
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,

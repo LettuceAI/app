@@ -1889,6 +1889,10 @@ fn aggregate_usage(
     let mut reasoning_tokens = Some(0u64);
     let mut cache_write_tokens = Some(0u64);
     let mut web_search_requests = Some(0u64);
+    let mut image_tokens = Some(0u64);
+    let mut audio_tokens = Some(0u64);
+    let mut total_tokens = 0u64;
+    let mut total_reported = false;
     let mut provider_reported_cost = lettuce_conversations::ProviderReportedCost::new(0.0);
     for usage in usages {
         let Some(usage) = usage else {
@@ -1908,6 +1912,14 @@ fn aggregate_usage(
         web_search_requests = web_search_requests
             .zip(usage.web_search_requests)
             .and_then(|(a, b)| a.checked_add(b));
+        image_tokens = image_tokens
+            .zip(usage.image_tokens)
+            .and_then(|(a, b)| a.checked_add(b));
+        audio_tokens = audio_tokens
+            .zip(usage.audio_tokens)
+            .and_then(|(a, b)| a.checked_add(b));
+        total_tokens = total_tokens.saturating_add(usage.effective_total_tokens());
+        total_reported |= usage.total_tokens.is_some();
         provider_reported_cost = provider_reported_cost
             .zip(usage.provider_reported_cost)
             .and_then(|(a, b)| a.checked_add(b));
@@ -1921,6 +1933,9 @@ fn aggregate_usage(
             web_search_requests,
             cached_input_tokens,
             reasoning_tokens,
+            image_tokens,
+            audio_tokens,
+            total_tokens: total_reported.then_some(total_tokens),
             input_tokens,
             output_tokens,
         },
@@ -1940,6 +1955,9 @@ mod tests {
         assert_eq!(
             aggregate_usage(&[
                 Some(InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     provider_reported_cost: ProviderReportedCost::new(0.125),
                     cache_write_tokens: Some(3),
                     web_search_requests: Some(0),
@@ -1949,6 +1967,9 @@ mod tests {
                     output_tokens: 2,
                 }),
                 Some(InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     provider_reported_cost: ProviderReportedCost::new(0.25),
                     cache_write_tokens: Some(2),
                     web_search_requests: None,
@@ -1959,6 +1980,9 @@ mod tests {
                 }),
             ]),
             Some(UsageCounters::Known(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: ProviderReportedCost::new(0.375),
                 cache_write_tokens: Some(5),
                 web_search_requests: None,
@@ -1981,6 +2005,9 @@ mod tests {
             ))
         );
         let huge = InferenceUsage {
+            image_tokens: None,
+            audio_tokens: None,
+            total_tokens: None,
             provider_reported_cost: None,
             cache_write_tokens: None,
             web_search_requests: None,
@@ -1990,5 +2017,38 @@ mod tests {
             output_tokens: 0,
         };
         assert_eq!(aggregate_usage(&[Some(huge.clone()), Some(huge)]), None);
+    }
+
+    #[test]
+    fn usage_aggregation_keeps_reported_totals_and_modalities() {
+        let usage = |image, audio, total, input, output| InferenceUsage {
+            image_tokens: image,
+            audio_tokens: audio,
+            total_tokens: total,
+            provider_reported_cost: None,
+            cache_write_tokens: None,
+            web_search_requests: None,
+            cached_input_tokens: None,
+            reasoning_tokens: None,
+            input_tokens: input,
+            output_tokens: output,
+        };
+        let Some(UsageCounters::Known(combined)) = aggregate_usage(&[
+            Some(usage(Some(4), Some(1), Some(30), 10, 5)),
+            Some(usage(Some(2), None, None, 7, 3)),
+        ]) else {
+            panic!("known usage");
+        };
+        assert_eq!(combined.image_tokens, Some(6));
+        assert_eq!(combined.audio_tokens, None);
+        assert_eq!(combined.total_tokens, Some(40));
+        let Some(UsageCounters::Known(unreported)) = aggregate_usage(&[
+            Some(usage(None, None, None, 10, 5)),
+            Some(usage(None, None, None, 7, 3)),
+        ]) else {
+            panic!("known usage");
+        };
+        assert_eq!(unreported.total_tokens, None);
+        assert_eq!(unreported.effective_total_tokens(), 25);
     }
 }

@@ -2009,8 +2009,26 @@ pub struct InferenceUsage {
     pub cached_input_tokens: Option<u64>,
     #[serde(default)]
     pub reasoning_tokens: Option<u64>,
+    #[serde(default)]
+    pub image_tokens: Option<u64>,
+    #[serde(default)]
+    pub audio_tokens: Option<u64>,
+    /// The total the provider reported; `input + output` when it reported none.
+    #[serde(default)]
+    pub total_tokens: Option<u64>,
     pub input_tokens: u64,
     pub output_tokens: u64,
+}
+
+impl InferenceUsage {
+    /// The reported total, else input plus output (legacy's fallback).
+    #[must_use]
+    pub const fn effective_total_tokens(&self) -> u64 {
+        match self.total_tokens {
+            Some(total) => total,
+            None => self.input_tokens.saturating_add(self.output_tokens),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

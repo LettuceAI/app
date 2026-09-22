@@ -11,6 +11,9 @@ struct UsageSummary {
     cached_prompt_tokens: Option<u64>,
     cache_write_tokens: Option<u64>,
     reasoning_tokens: Option<u64>,
+    image_tokens: Option<u64>,
+    audio_tokens: Option<u64>,
+    total_tokens: Option<u64>,
     web_search_requests: Option<u64>,
     api_cost: Option<f64>,
 }
@@ -103,9 +106,7 @@ fn usage_from_map(map: &Map<String, Value>) -> Option<UsageSummary> {
     });
     let image_tokens = take_first(map, &["image_tokens", "imageTokens"]).or_else(|| {
         details(map, "prompt_tokens_details")
-            .and_then(|details| {
-                take_first(details, &["image_tokens", "imageTokens", "cached_tokens"])
-            })
+            .and_then(|details| take_first(details, &["image_tokens", "imageTokens"]))
             .or_else(|| {
                 details(map, "completion_tokens_details")
                     .and_then(|details| take_first(details, &["image_tokens", "imageTokens"]))
@@ -148,12 +149,7 @@ fn usage_from_map(map: &Map<String, Value>) -> Option<UsageSummary> {
         )
     });
     let api_cost = take_first_f64(map, &["cost", "total_cost", "totalCost"]);
-    let total_tokens = take_first(map, &["total_tokens", "totalTokens"]).or_else(|| {
-        match (prompt_tokens, completion_tokens) {
-            (Some(prompt), Some(completion)) => Some(prompt + completion),
-            _ => None,
-        }
-    });
+    let total_tokens = take_first(map, &["total_tokens", "totalTokens"]);
     if prompt_tokens.is_none()
         && completion_tokens.is_none()
         && total_tokens.is_none()
@@ -171,6 +167,9 @@ fn usage_from_map(map: &Map<String, Value>) -> Option<UsageSummary> {
         cached_prompt_tokens,
         cache_write_tokens,
         reasoning_tokens,
+        image_tokens,
+        audio_tokens,
+        total_tokens,
         web_search_requests,
         api_cost,
     })
@@ -228,6 +227,9 @@ pub(crate) fn extract_usage(data: &Value) -> Option<InferenceUsage> {
         web_search_requests: summary.web_search_requests,
         cached_input_tokens: summary.cached_prompt_tokens,
         reasoning_tokens: summary.reasoning_tokens,
+        image_tokens: summary.image_tokens,
+        audio_tokens: summary.audio_tokens,
+        total_tokens: summary.total_tokens,
         input_tokens: summary.prompt_tokens.unwrap_or_default(),
         output_tokens: summary.completion_tokens.unwrap_or_default(),
     })
@@ -245,6 +247,22 @@ mod tests {
         }))
         .expect("usage");
         assert_eq!((usage.input_tokens, usage.output_tokens), (12, 4));
+        assert_eq!(usage.total_tokens, Some(16));
+        let usage = extract_usage(&serde_json::json!({
+            "usage": {"input_tokens": 5, "output_tokens": 0,
+                      "input_tokens_details": {"image_tokens": 1},
+                      "prompt_tokens_details": {"cached_tokens": 4, "audio_tokens": 2}}
+        }))
+        .expect("usage");
+        assert_eq!(
+            usage.image_tokens, None,
+            "cached prompt tokens are not image tokens"
+        );
+        assert_eq!(usage.audio_tokens, Some(2));
+        assert_eq!(usage.total_tokens, None);
+        let usage = extract_usage(&serde_json::json!({"usage": {"image_tokens": 1056}}))
+            .expect("image-only usage");
+        assert_eq!(usage.image_tokens, Some(1056));
         let usage = extract_usage(&serde_json::json!({
             "choices": [],
             "usage": {"prompt_tokens": 3, "completion_tokens": 9, "cost": 0.04,

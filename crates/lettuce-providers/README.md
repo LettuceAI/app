@@ -218,7 +218,9 @@ downloaded, data URLs and raw base64 decoded, usage found the way legacy's
 workflows are the account's `ProviderConfig::ComfyUi` (both legacy importers
 now keep `txt2imgWorkflow`/`img2imgWorkflow`; they were dropped before).
 Deliberate corrections: a `custom` or `lettuce-host` account without an
-endpoint fails instead of sending its key to api.openai.com. Open gaps: image,
-audio and total token counts from `extract_usage` are not kept
-(`InferenceUsage` has no fields for them, chat usage has the same gap);
+endpoint fails instead of sending its key to api.openai.com. Open gap:
 providers' remote result URLs are not kept beside the stored bytes.
+
+Image, audio and total token counts are read the way legacy `usage_from_value`
+did (OpenAI `usage`, Gemini `usageMetadata` incl. AUDIO modality details) for
+chat and image responses; Anthropic, Ollama and llama.cpp never reported them.

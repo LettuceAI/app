@@ -92,6 +92,7 @@ pub(crate) struct TimelineVariant<'a> {
     pub created_at: u64,
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
+    pub total_tokens: Option<u64>,
     pub reasoning: Option<&'a str>,
     pub author: Option<ConversationParticipantId>,
 }
@@ -418,6 +419,7 @@ where
                         created_at: variant.created_at,
                         prompt_tokens: variant.usage.prompt_tokens,
                         completion_tokens: variant.usage.completion_tokens,
+                        total_tokens: variant.usage.total_tokens,
                         reasoning: variant.reasoning.as_deref(),
                         author: Some(character),
                     })
@@ -1547,6 +1549,9 @@ impl SessionWriter<'_> {
                     web_search_requests: None,
                     cached_input_tokens: None,
                     reasoning_tokens: None,
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: variant.total_tokens,
                     input_tokens,
                     output_tokens,
                 }),

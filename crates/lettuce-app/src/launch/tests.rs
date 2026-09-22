@@ -1185,6 +1185,9 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     provider_replay: None,
                 }],
                 usage: Some(InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     provider_reported_cost: None,
                     cache_write_tokens: None,
                     web_search_requests: None,
@@ -1222,6 +1225,9 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     provider_replay: None,
                 }],
                 usage: Some(InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     provider_reported_cost: None,
                     cache_write_tokens: None,
                     web_search_requests: None,
@@ -1335,7 +1341,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     tool_calls: Vec::new(),
                     provider_replay: None,
                 }],
-                usage: Some(InferenceUsage { provider_reported_cost: None, cache_write_tokens: None, web_search_requests: None, input_tokens: 30, output_tokens: 5, cached_input_tokens: None, reasoning_tokens: Some(0) }),
+                usage: Some(InferenceUsage { image_tokens: None, audio_tokens: None, total_tokens: None, provider_reported_cost: None, cache_write_tokens: None, web_search_requests: None, input_tokens: 30, output_tokens: 5, cached_input_tokens: None, reasoning_tokens: Some(0) }),
                 finish_reason: lettuce_conversations::FinishReason::Stop,
                 provider_finish_reason: None,
                 provider_request_id: Some("soul-no-tools".into()),
@@ -1351,7 +1357,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     tool_calls: Vec::new(),
                     provider_replay: None,
                 }],
-                usage: Some(InferenceUsage { provider_reported_cost: None, cache_write_tokens: None, web_search_requests: None, input_tokens: 50, output_tokens: 5, cached_input_tokens: None, reasoning_tokens: Some(0) }),
+                usage: Some(InferenceUsage { image_tokens: None, audio_tokens: None, total_tokens: None, provider_reported_cost: None, cache_write_tokens: None, web_search_requests: None, input_tokens: 50, output_tokens: 5, cached_input_tokens: None, reasoning_tokens: Some(0) }),
                 finish_reason: lettuce_conversations::FinishReason::Stop,
                 provider_finish_reason: None,
                 provider_request_id: Some("soul-structured".into()),
@@ -1598,6 +1604,9 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     assert!(interrupted_usage.iter().any(|entry| entry.result == Some(JobInferenceUsageResult::InferenceFailed)));
     let retry_request = interrupted_inference.requests.lock().expect("requests")[1].clone();
     let failed_usage = InferenceUsage {
+        image_tokens: None,
+        audio_tokens: None,
+        total_tokens: None,
         provider_reported_cost: None,
         cache_write_tokens: None,
         web_search_requests: None,
@@ -1809,6 +1818,9 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     provider_replay: None,
                 }],
                 usage: Some(InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     provider_reported_cost: None,
                     cache_write_tokens: None,
                     web_search_requests: None,
@@ -1833,6 +1845,9 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     provider_replay: None,
                 }],
                 usage: Some(InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     provider_reported_cost: None,
                     cache_write_tokens: None,
                     web_search_requests: None,
@@ -2185,6 +2200,9 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
@@ -2377,6 +2395,9 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
@@ -4194,6 +4215,9 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
@@ -4324,6 +4348,9 @@ async fn lorebook_keyword_admission_freezes_legacy_inputs_and_replays() {
                     provider_replay: None,
                 }],
                 usage: Some(InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     provider_reported_cost: None,
                     cache_write_tokens: None,
                     web_search_requests: None,
@@ -4966,6 +4993,9 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: Some(3),
                 web_search_requests: Some(0),
@@ -5325,6 +5355,9 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
@@ -5684,6 +5717,9 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
@@ -5993,6 +6029,9 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
@@ -6351,6 +6390,9 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             provider_response_id: Some("gen-invalid-planner".into()),
             candidates: Vec::new(),
             usage: Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 input_tokens: 6, output_tokens: 1, cached_input_tokens: None,
                 cache_write_tokens: None, reasoning_tokens: None, web_search_requests: None,
                 provider_reported_cost: None,
@@ -7024,6 +7066,9 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 provider_response_id: Some("gen-cancelled-response".into()),
                 candidates: Vec::new(),
                 usage: Some(InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     input_tokens: 9, output_tokens: 2, cached_input_tokens: None,
                     cache_write_tokens: None, reasoning_tokens: None, web_search_requests: None,
                     provider_reported_cost: lettuce_conversations::ProviderReportedCost::new(0.01),
@@ -7380,6 +7425,9 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
@@ -7546,6 +7594,9 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                     provider_replay: None,
                 }],
                 usage: Some(InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     provider_reported_cost: None,
                     cache_write_tokens: None,
                     web_search_requests: None,

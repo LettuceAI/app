@@ -534,6 +534,9 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
                 web_search_requests: None,
                 cached_input_tokens: None,
                 reasoning_tokens: None,
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 input_tokens,
                 output_tokens,
             }),
@@ -782,6 +785,9 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,

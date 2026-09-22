@@ -622,6 +622,21 @@ fn aggregate_usage(
                 .reasoning_tokens
                 .zip(second.reasoning_tokens)
                 .and_then(|(a, b)| a.checked_add(b)),
+            image_tokens: first
+                .image_tokens
+                .zip(second.image_tokens)
+                .and_then(|(a, b)| a.checked_add(b)),
+            audio_tokens: first
+                .audio_tokens
+                .zip(second.audio_tokens)
+                .and_then(|(a, b)| a.checked_add(b)),
+            total_tokens: (first.total_tokens.is_some() || second.total_tokens.is_some()).then(
+                || {
+                    first
+                        .effective_total_tokens()
+                        .saturating_add(second.effective_total_tokens())
+                },
+            ),
             input_tokens: first.input_tokens.saturating_add(second.input_tokens),
             output_tokens: first.output_tokens.saturating_add(second.output_tokens),
         }),
@@ -691,6 +706,9 @@ mod tests {
     fn fallback_usage_preserves_known_details_without_inventing_missing_counts() {
         let usage = |cached, reasoning| {
             Some(lettuce_conversations::InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,

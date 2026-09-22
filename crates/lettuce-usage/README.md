@@ -22,6 +22,13 @@ changed counters, outcome, provenance, or timestamp conflict. Provider-missing
 counters remain an explicit unavailable reason; the ledger never invents zero
 usage. SQLite persistence lives in `lettuce-database`.
 
+Counters carry image, audio and total tokens like legacy usage records
+(2026-09-22). `total_tokens` is only a total the provider reported; readers use
+`InferenceUsage::effective_total_tokens` (reported, else input + output, the
+legacy fallback). Legacy counted cached prompt tokens as image tokens when a
+provider sent no image count; that is not reproduced. Several calls combine
+image/audio only when every call reported them, and a total when any call did.
+
 `JobUsageLedger` retains job-owned inference dispatches for companion, lorebook,
 creation-helper and conversation memory-continuation workflows. Conversation
 terminal events may aggregate these same dispatches; reports must not add both

@@ -215,6 +215,7 @@ where
                     created_at: variant.created_at,
                     prompt_tokens: variant.usage.prompt_tokens,
                     completion_tokens: variant.usage.completion_tokens,
+                    total_tokens: variant.usage.total_tokens,
                     reasoning: variant.reasoning.as_deref(),
                     author: author(variant.speaker_character_source_id.as_ref())?,
                 });

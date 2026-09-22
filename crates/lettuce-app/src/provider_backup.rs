@@ -874,6 +874,9 @@ mod tests {
                 attempt_id,
                 outcome: UsageOutcome::Failed,
                 usage: UsageCounters::Known(lettuce_conversations::InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     provider_reported_cost: None,
                     cache_write_tokens: Some(3),
                     web_search_requests: Some(0),
@@ -1160,6 +1163,9 @@ mod tests {
                 attempt_id: effect_attempt_id,
                 outcome: UsageOutcome::Succeeded,
                 usage: UsageCounters::Known(lettuce_conversations::InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     provider_reported_cost: None,
                     cache_write_tokens: None,
                     web_search_requests: None,
@@ -1786,6 +1792,9 @@ mod tests {
                 usage_id,
                 JobInferenceUsageResult::Response {
                     usage: Some(lettuce_conversations::InferenceUsage {
+                        image_tokens: None,
+                        audio_tokens: None,
+                        total_tokens: None,
                         provider_reported_cost: None,
                         cache_write_tokens: Some(3),
                         web_search_requests: Some(0),

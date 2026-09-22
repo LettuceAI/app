@@ -75,6 +75,70 @@ pub(crate) fn openai_usage_extras(
     )
 }
 
+/// Image, audio and total token counts as legacy `usage_from_value` and
+/// `usage_from_map` read them from an OpenAI `usage` or Gemini
+/// `usageMetadata` object (the buffered path also took image tokens from
+/// `completion_tokens_details`, so both paths do here). Legacy also
+/// counted `prompt_tokens_details.cached_tokens` as image tokens; cached
+/// prompt tokens are not image tokens, so that fallback is not kept.
+pub(crate) fn usage_modalities(
+    usage: &serde_json::Map<String, serde_json::Value>,
+) -> (Option<u64>, Option<u64>, Option<u64>) {
+    let first = |value: &serde_json::Map<String, serde_json::Value>, names: &[&str]| {
+        names
+            .iter()
+            .find_map(|name| value.get(*name).and_then(serde_json::Value::as_u64))
+    };
+    let details = |name: &str| usage.get(name).and_then(serde_json::Value::as_object);
+    let image = first(usage, &["image_tokens", "imageTokens"])
+        .or_else(|| {
+            details("prompt_tokens_details")
+                .and_then(|value| first(value, &["image_tokens", "imageTokens"]))
+        })
+        .or_else(|| {
+            details("completion_tokens_details")
+                .and_then(|value| first(value, &["image_tokens", "imageTokens"]))
+        });
+    let audio = first(usage, &["audio_tokens", "audioTokens"])
+        .or_else(|| {
+            details("prompt_tokens_details")
+                .and_then(|value| first(value, &["audio_tokens", "audioTokens"]))
+        })
+        .or_else(|| {
+            details("completion_tokens_details")
+                .and_then(|value| first(value, &["audio_tokens", "audioTokens"]))
+        })
+        .or_else(|| modality_token_count(usage.get("promptTokensDetails"), "AUDIO"))
+        .or_else(|| modality_token_count(usage.get("candidatesTokensDetails"), "AUDIO"));
+    let total = first(usage, &["total_tokens", "totalTokens", "totalTokenCount"]);
+    (image, audio, total)
+}
+
+/// Legacy `modality_token_count`: the sum of a Gemini modality's entries.
+pub(crate) fn modality_token_count(
+    details: Option<&serde_json::Value>,
+    modality: &str,
+) -> Option<u64> {
+    let mut total = 0_u64;
+    let mut found = false;
+    for entry in details?.as_array()? {
+        let entry_modality = entry
+            .get("modality")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if entry_modality.eq_ignore_ascii_case(modality)
+            && let Some(count) = entry
+                .get("tokenCount")
+                .or_else(|| entry.get("token_count"))
+                .and_then(serde_json::Value::as_u64)
+        {
+            total += count;
+            found = true;
+        }
+    }
+    found.then_some(total)
+}
+
 pub(crate) fn openai_reported_cost(
     usage: &serde_json::Map<String, serde_json::Value>,
 ) -> Option<lettuce_conversations::ProviderReportedCost> {

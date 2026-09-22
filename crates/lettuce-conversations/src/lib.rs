@@ -1344,6 +1344,9 @@ mod tests {
             attempt_id: GenerationAttemptId::new(),
             outcome: UsageOutcome::Succeeded,
             usage: UsageCounters::Known(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,

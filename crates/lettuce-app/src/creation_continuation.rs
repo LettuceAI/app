@@ -794,6 +794,10 @@ fn aggregate_round_usage(
     let mut reasoning_tokens = Some(0u64);
     let mut cache_write_tokens = Some(0u64);
     let mut web_search_requests = Some(0u64);
+    let mut image_tokens = Some(0u64);
+    let mut audio_tokens = Some(0u64);
+    let mut total_tokens = 0u64;
+    let mut total_reported = false;
     let mut provider_reported_cost = lettuce_conversations::ProviderReportedCost::new(0.0);
     for round in rounds {
         let Some(usage) = &round.usage else {
@@ -813,6 +817,14 @@ fn aggregate_round_usage(
         web_search_requests = web_search_requests
             .zip(usage.web_search_requests)
             .and_then(|(a, b)| a.checked_add(b));
+        image_tokens = image_tokens
+            .zip(usage.image_tokens)
+            .and_then(|(a, b)| a.checked_add(b));
+        audio_tokens = audio_tokens
+            .zip(usage.audio_tokens)
+            .and_then(|(a, b)| a.checked_add(b));
+        total_tokens = total_tokens.saturating_add(usage.effective_total_tokens());
+        total_reported |= usage.total_tokens.is_some();
         provider_reported_cost = provider_reported_cost
             .zip(usage.provider_reported_cost)
             .and_then(|(a, b)| a.checked_add(b));
@@ -830,6 +842,9 @@ fn aggregate_round_usage(
             web_search_requests,
             cached_input_tokens,
             reasoning_tokens,
+            image_tokens,
+            audio_tokens,
+            total_tokens: total_reported.then_some(total_tokens),
             input_tokens,
             output_tokens,
         },
@@ -1047,6 +1062,9 @@ mod tests {
                 provider_replay: None,
             }],
             usage: Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
@@ -1206,6 +1224,9 @@ mod tests {
         assert_eq!(
             result.usage,
             UsageCounters::Known(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
@@ -1484,6 +1505,9 @@ mod tests {
                     parts: Vec::new(),
                     provider_replay: None,
                     usage: Some(InferenceUsage {
+                        image_tokens: None,
+                        audio_tokens: None,
+                        total_tokens: None,
                         provider_reported_cost: None,
                         cache_write_tokens: None,
                         web_search_requests: None,

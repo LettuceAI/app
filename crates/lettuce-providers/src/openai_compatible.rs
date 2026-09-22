@@ -766,12 +766,17 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
                 crate::common::openai_usage_details(&usage.details);
             let (cache_write_tokens, web_search_requests) =
                 crate::common::openai_usage_extras(&usage.details);
+            let (image_tokens, audio_tokens, total_tokens) =
+                crate::common::usage_modalities(&usage.details);
             Some(InferenceUsage {
                 provider_reported_cost: crate::common::openai_reported_cost(&usage.details),
                 cache_write_tokens,
                 web_search_requests,
                 cached_input_tokens,
                 reasoning_tokens,
+                image_tokens,
+                audio_tokens,
+                total_tokens,
                 input_tokens: usage.input()?,
                 output_tokens: usage.output()?,
             })
@@ -1548,6 +1553,62 @@ mod tests {
     }
 
     #[test]
+    fn image_audio_and_total_tokens_follow_legacy_usage_lookup() {
+        use crate::stream_framing::StreamRecord;
+        use crate::stream_normalize::{StreamNormalizer, StreamProtocol};
+        let cases = [
+            (
+                serde_json::json!({"imageTokens":7,"audio_tokens":2,"totalTokens":40,"prompt_tokens_details":{"image_tokens":1,"audio_tokens":9}}),
+                Some(7),
+                Some(2),
+                Some(40),
+            ),
+            (
+                serde_json::json!({"prompt_tokens_details":{"imageTokens":5,"cached_tokens":8},"completion_tokens_details":{"audioTokens":3},"total_tokens":16}),
+                Some(5),
+                Some(3),
+                Some(16),
+            ),
+            (
+                serde_json::json!({"completion_tokens_details":{"image_tokens":1290}}),
+                Some(1290),
+                None,
+                None,
+            ),
+            (
+                serde_json::json!({"prompt_tokens_details":{"cached_tokens":8}}),
+                None,
+                None,
+                None,
+            ),
+        ];
+        for (mut usage, image, audio, total) in cases {
+            usage["prompt_tokens"] = 10.into();
+            usage["completion_tokens"] = 5.into();
+            let buffered = serde_json::json!({"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":usage});
+            let buffered = parse_response(response(&buffered.to_string()))
+                .expect("buffered response")
+                .usage
+                .expect("usage");
+            let mut stream = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+            for data in [
+                serde_json::json!({"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":usage}).to_string(),
+                serde_json::json!({"choices":[],"usage":{"completion_tokens":5}}).to_string(),
+                "[DONE]".to_owned(),
+            ] {
+                stream
+                    .consume(&StreamRecord { event: None, data })
+                    .expect("stream record");
+            }
+            let (_, streamed) = stream.finish().expect("finished stream");
+            assert_eq!(streamed.usage, Some(buffered.clone()));
+            assert_eq!(buffered.image_tokens, image);
+            assert_eq!(buffered.audio_tokens, audio);
+            assert_eq!(buffered.total_tokens, total);
+        }
+    }
+
+    #[test]
     fn maps_ordered_text_choices_and_optional_usage_without_response_id_coupling() {
         let outcome = parse_response(response(
             r#"{
@@ -1573,6 +1634,9 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
@@ -1618,6 +1682,9 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,

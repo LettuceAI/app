@@ -316,11 +316,17 @@ fn hydrate(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawUsageEvent> {
         cache_write_tokens: row.get(15)?,
         web_search_requests: row.get(16)?,
         provider_reported_cost: row.get(17)?,
+        image_tokens: row.get(18)?,
+        audio_tokens: row.get(19)?,
+        total_tokens: row.get(20)?,
     })
 }
 
 struct RawUsageEvent {
     provider_reported_cost: Option<f64>,
+    image_tokens: Option<i64>,
+    audio_tokens: Option<i64>,
+    total_tokens: Option<i64>,
     cache_write_tokens: Option<i64>,
     web_search_requests: Option<i64>,
     cached_input_tokens: Option<i64>,
@@ -366,6 +372,21 @@ impl RawUsageEvent {
                     .map_err(|_| UsageLedgerError::Storage)?,
                 reasoning_tokens: self
                     .reasoning_tokens
+                    .map(u64::try_from)
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?,
+                image_tokens: self
+                    .image_tokens
+                    .map(u64::try_from)
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?,
+                audio_tokens: self
+                    .audio_tokens
+                    .map(u64::try_from)
+                    .transpose()
+                    .map_err(|_| UsageLedgerError::Storage)?,
+                total_tokens: self
+                    .total_tokens
                     .map(u64::try_from)
                     .transpose()
                     .map_err(|_| UsageLedgerError::Storage)?,
@@ -437,7 +458,7 @@ impl RawUsageEvent {
 
 const SELECT_EVENT: &str = "SELECT id, turn_id, attempt_id, outcome, counters_kind,
     input_tokens, output_tokens, unavailable_reason, model_profile_id, model_revision,
-    provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost FROM usage_events";
+    provider_account_id, provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost, image_tokens, audio_tokens, total_tokens FROM usage_events";
 
 pub(crate) fn load_all_usage_in(
     transaction: &rusqlite::Transaction<'_>,
@@ -488,6 +509,16 @@ pub(crate) fn insert_usage_event_in(
         ),
         UsageCounters::Unavailable(_) => (None, None, None, None),
     };
+    let (image, audio, total) = match &event.record.usage {
+        UsageCounters::Known(usage) => (usage.image_tokens, usage.audio_tokens, usage.total_tokens),
+        UsageCounters::Unavailable(_) => (None, None, None),
+    };
+    let [image, audio, total] = [image, audio, total].map(|value| {
+        value
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|_| UsageLedgerError::Invalid)
+    });
     let cached = cached
         .map(i64::try_from)
         .transpose()
@@ -512,8 +543,8 @@ pub(crate) fn insert_usage_event_in(
                 "INSERT INTO usage_events (id, conversation_id, turn_id, attempt_id, outcome,
                     counters_kind, input_tokens, output_tokens, unavailable_reason,
                     model_profile_id, model_revision, provider_account_id,
-                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+                    provider_account_revision, recorded_at, cached_input_tokens, reasoning_tokens, cache_write_tokens, web_search_requests, provider_reported_cost, image_tokens, audio_tokens, total_tokens)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
                 params![
                     event.id.to_string(),
                     conversation_id,
@@ -542,6 +573,9 @@ pub(crate) fn insert_usage_event_in(
                     cache_write.map(i64::try_from).transpose().map_err(|_| UsageLedgerError::Invalid)?,
                     web_search.map(i64::try_from).transpose().map_err(|_| UsageLedgerError::Invalid)?,
                     provider_reported_cost,
+                    image?,
+                    audio?,
+                    total?,
                 ],
             )
             .map_err(|_| UsageLedgerError::Storage)?;
@@ -802,6 +836,9 @@ mod tests {
         let result = JobInferenceUsageResult::Response {
             provider_response_id: Some("gen-retry".into()),
             usage: Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 input_tokens: 120,
                 output_tokens: 30,
                 cached_input_tokens: Some(10),
@@ -969,6 +1006,9 @@ mod tests {
                 attempt_id,
                 outcome: UsageOutcome::Succeeded,
                 usage: UsageCounters::Known(InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     provider_reported_cost: None,
                     cache_write_tokens: None,
                     web_search_requests: None,
@@ -994,6 +1034,9 @@ mod tests {
             usage.reasoning_tokens = Some(12);
             usage.cache_write_tokens = Some(3);
             usage.web_search_requests = Some(0);
+            usage.image_tokens = Some(1056);
+            usage.audio_tokens = Some(0);
+            usage.total_tokens = Some(1100);
             usage.provider_reported_cost = lettuce_conversations::ProviderReportedCost::new(0.0125);
         }
         let first = UsageLedger::record(&database, record.clone()).expect("record");
@@ -1003,6 +1046,14 @@ mod tests {
         }
         assert_eq!(
             UsageLedger::record(&database, changed),
+            Err(UsageLedgerError::Conflict)
+        );
+        let mut changed_total = record.clone();
+        if let UsageCounters::Known(usage) = &mut changed_total.usage {
+            usage.total_tokens = None;
+        }
+        assert_eq!(
+            UsageLedger::record(&database, changed_total),
             Err(UsageLedgerError::Conflict)
         );
         let retry = UsageLedger::record(&database, record).expect("retry");
@@ -1155,6 +1206,9 @@ mod tests {
         let event = UsageLedger::record(&database, record.clone()).expect("record");
         let mut changed = record;
         changed.usage = UsageCounters::Known(InferenceUsage {
+            image_tokens: None,
+            audio_tokens: None,
+            total_tokens: None,
             provider_reported_cost: None,
             cache_write_tokens: None,
             web_search_requests: None,

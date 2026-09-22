@@ -67,6 +67,9 @@ pub(crate) struct StreamNormalizer {
     reasoning_tokens: Option<u64>,
     cache_write_tokens: Option<u64>,
     web_search_requests: Option<u64>,
+    image_tokens: Option<u64>,
+    audio_tokens: Option<u64>,
+    total_tokens: Option<u64>,
     provider_reported_cost: Option<lettuce_conversations::ProviderReportedCost>,
     finish_reason: FinishReason,
     provider_finish_reason: Option<String>,
@@ -134,6 +137,9 @@ impl StreamNormalizer {
             reasoning_tokens: None,
             cache_write_tokens: None,
             web_search_requests: None,
+            image_tokens: None,
+            audio_tokens: None,
+            total_tokens: None,
             provider_reported_cost: None,
             output_tokens: None,
             finish_reason: FinishReason::Stop,
@@ -266,6 +272,9 @@ impl StreamNormalizer {
                 provider_reported_cost: self.provider_reported_cost,
                 cache_write_tokens: self.cache_write_tokens,
                 web_search_requests: self.web_search_requests,
+                image_tokens: self.image_tokens,
+                audio_tokens: self.audio_tokens,
+                total_tokens: self.total_tokens,
                 cached_input_tokens: self.cached_input_tokens,
                 reasoning_tokens: self.reasoning_tokens,
                 input_tokens,
@@ -418,6 +427,13 @@ impl StreamNormalizer {
                 .unwrap_or_default();
             self.cache_write_tokens = cache_write_tokens.or(self.cache_write_tokens);
             self.web_search_requests = web_search_requests.or(self.web_search_requests);
+            let (image_tokens, audio_tokens, total_tokens) = usage
+                .as_object()
+                .map(crate::common::usage_modalities)
+                .unwrap_or_default();
+            self.image_tokens = image_tokens.or(self.image_tokens);
+            self.audio_tokens = audio_tokens.or(self.audio_tokens);
+            self.total_tokens = total_tokens.or(self.total_tokens);
             self.input_tokens =
                 token(usage, &["prompt_tokens", "input_tokens"]).or(self.input_tokens);
             let (cached_input_tokens, reasoning_tokens) = usage
@@ -811,6 +827,10 @@ impl StreamNormalizer {
             self.cached_input_tokens = token(usage, &["cachedContentTokenCount"]);
             self.reasoning_tokens = token(usage, &["thoughtsTokenCount"]);
             self.output_tokens = token(usage, &["candidatesTokenCount"]);
+            (self.image_tokens, self.audio_tokens, self.total_tokens) = usage
+                .as_object()
+                .map(crate::common::usage_modalities)
+                .unwrap_or_default();
         }
         let mut deltas = Vec::new();
         if let Some(candidate) = value
@@ -1702,6 +1722,17 @@ mod tests {
         assert_eq!(usage.output_tokens, 1);
         assert_eq!(usage.cached_input_tokens, Some(0));
         assert_eq!(usage.reasoning_tokens, Some(3));
+        assert_eq!(usage.total_tokens, None);
+        assert_eq!(usage.audio_tokens, None);
+
+        let mut audio = StreamNormalizer::new(StreamProtocol::Gemini, None);
+        audio.consume(&record(r#"{"candidates":[{"content":{"parts":[{"text":"hi"}]}}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":1,"totalTokenCount":3}}"#)).unwrap();
+        audio.consume(&record(r#"{"candidates":[{"content":{"parts":[{"text":"!"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":2,"totalTokenCount":9,"candidatesTokensDetails":[{"modality":"AUDIO","tokenCount":6}]}}"#)).unwrap();
+        let (_, outcome) = audio.finish().unwrap();
+        let usage = outcome.usage.unwrap();
+        assert_eq!(usage.total_tokens, Some(9));
+        assert_eq!(usage.audio_tokens, Some(6));
+        assert_eq!(usage.image_tokens, None);
     }
 
     #[test]

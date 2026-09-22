@@ -624,6 +624,12 @@ fn list_calls_in(
     Ok(rows)
 }
 
+fn optional_count(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Option<u64>> {
+    row.get::<_, Option<i64>>(index)?
+        .map(u64::try_from)
+        .transpose()
+        .map_err(|_| rusqlite::Error::InvalidQuery)
+}
 fn list_rounds_in(
     transaction: &Transaction<'_>,
     owner: CreationAttemptOwner,
@@ -634,7 +640,7 @@ fn list_rounds_in(
         .prepare(
             "SELECT ordinal,first_call_ordinal,call_count,parts_json,\
                     provider_replay_artifact_id,provider_replay_retention,input_tokens,\
-                    output_tokens,finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost \
+                    output_tokens,finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost,image_tokens,audio_tokens,total_tokens \
              FROM creation_inference_rounds \
              WHERE workflow_id=?1 AND turn_id=?2 AND attempt_id=?3 ORDER BY ordinal",
         )
@@ -704,6 +710,9 @@ fn list_rounds_in(
                                     .map(u64::try_from)
                                     .transpose()
                                     .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                                image_tokens: optional_count(row, 16)?,
+                                audio_tokens: optional_count(row, 17)?,
+                                total_tokens: optional_count(row, 18)?,
                                 input_tokens: u64::try_from(input_tokens)
                                     .map_err(|_| rusqlite::Error::InvalidQuery)?,
                                 output_tokens: u64::try_from(output_tokens)
@@ -765,8 +774,8 @@ fn insert_round_rows_in(
             "INSERT INTO creation_inference_rounds \
              (workflow_id,turn_id,attempt_id,ordinal,first_call_ordinal,call_count,parts_json,\
               provider_replay_artifact_id,provider_replay_retention,input_tokens,output_tokens,\
-              finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+              finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost,image_tokens,audio_tokens,total_tokens) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)",
             params![
                 requested.workflow_id.to_string(),
                 requested.turn_id.to_string(),
@@ -792,6 +801,9 @@ fn insert_round_rows_in(
                 requested.usage.as_ref().and_then(|u| u.cache_write_tokens).map(sql_u64).transpose()?,
                 requested.usage.as_ref().and_then(|u| u.web_search_requests).map(sql_u64).transpose()?,
                 requested.usage.as_ref().and_then(|u| u.provider_reported_cost).map(lettuce_conversations::ProviderReportedCost::get),
+                requested.usage.as_ref().and_then(|u| u.image_tokens).map(sql_u64).transpose()?,
+                requested.usage.as_ref().and_then(|u| u.audio_tokens).map(sql_u64).transpose()?,
+                requested.usage.as_ref().and_then(|u| u.total_tokens).map(sql_u64).transpose()?,
             ],
         )
         .map_err(|error| match error.sqlite_error_code() {
@@ -2863,6 +2875,9 @@ mod tests {
                 .unwrap_or_default(),
             provider_replay: replay,
             usage: Some(lettuce_conversations::InferenceUsage {
+                image_tokens: Some(2),
+                audio_tokens: Some(0),
+                total_tokens: Some(40),
                 provider_reported_cost: lettuce_conversations::ProviderReportedCost::new(0.0125),
                 cache_write_tokens: Some(3),
                 web_search_requests: Some(0),

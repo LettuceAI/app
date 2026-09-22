@@ -1025,6 +1025,9 @@ fn parse_response_with_replay(
                 }),
                 cached_input_tokens: usage.cache_read_input_tokens,
                 reasoning_tokens: None,
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 input_tokens: usage.input_tokens?,
                 output_tokens: usage.output_tokens?,
             })
@@ -1551,6 +1554,9 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: Some(10),
                 web_search_requests: Some(0),

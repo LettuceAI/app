@@ -398,6 +398,21 @@ where
                     .reasoning_tokens
                     .zip(primary_usage.reasoning_tokens)
                     .and_then(|(a, b)| a.checked_add(b));
+                usage.image_tokens = usage
+                    .image_tokens
+                    .zip(primary_usage.image_tokens)
+                    .and_then(|(a, b)| a.checked_add(b));
+                usage.audio_tokens = usage
+                    .audio_tokens
+                    .zip(primary_usage.audio_tokens)
+                    .and_then(|(a, b)| a.checked_add(b));
+                usage.total_tokens = (usage.total_tokens.is_some()
+                    || primary_usage.total_tokens.is_some())
+                .then(|| {
+                    usage
+                        .effective_total_tokens()
+                        .saturating_add(primary_usage.effective_total_tokens())
+                });
                 usage.input_tokens = usage
                     .input_tokens
                     .saturating_add(primary_usage.input_tokens);
@@ -1101,6 +1116,9 @@ mod tests {
                 Ok(text_outcome(
                     "plain prose",
                     Some(InferenceUsage {
+                        image_tokens: None,
+                        audio_tokens: None,
+                        total_tokens: None,
                         provider_reported_cost: None,
                         cache_write_tokens: None,
                         web_search_requests: None,
@@ -1113,6 +1131,9 @@ mod tests {
                 Ok(text_outcome(
                     "<memory_ops><done summary=\"captured\" /></memory_ops>",
                     Some(InferenceUsage {
+                        image_tokens: None,
+                        audio_tokens: None,
+                        total_tokens: None,
                         provider_reported_cost: None,
                         cache_write_tokens: None,
                         web_search_requests: None,
@@ -1152,6 +1173,9 @@ mod tests {
         assert_eq!(
             outcome.usage,
             Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,
@@ -1216,6 +1240,9 @@ mod tests {
             let mut cancelled = text_outcome(
                 "partial",
                 Some(InferenceUsage {
+                    image_tokens: None,
+                    audio_tokens: None,
+                    total_tokens: None,
                     input_tokens: 3,
                     output_tokens: 1,
                     cached_input_tokens: None,
@@ -1636,6 +1663,9 @@ mod tests {
                 provider_replay: None,
             }],
             usage: Some(lettuce_conversations::InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 provider_reported_cost: None,
                 cache_write_tokens: None,
                 web_search_requests: None,

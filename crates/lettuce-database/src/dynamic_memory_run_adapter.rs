@@ -40,6 +40,13 @@ fn sql_u64(value: u64) -> Result<i64, DynamicMemoryRunRepositoryError> {
     i64::try_from(value).map_err(|_| DynamicMemoryRunRepositoryError::Storage)
 }
 
+fn optional_count(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Option<u64>> {
+    row.get::<_, Option<i64>>(index)?
+        .map(u64::try_from)
+        .transpose()
+        .map_err(|_| rusqlite::Error::InvalidQuery)
+}
+
 fn status_name(status: DynamicMemoryAttemptStatus) -> &'static str {
     match status {
         DynamicMemoryAttemptStatus::Created => "created",
@@ -222,7 +229,7 @@ pub(crate) fn load_summary_checkpoint_in(
         .query_row(
             "SELECT attempt_id,space_id,expected_memory_revision,resulting_memory_revision,
                     summary_text,token_count,request_context_json,input_tokens,output_tokens,
-                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost
+                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost,image_tokens,audio_tokens,total_tokens
                FROM dynamic_memory_summary_checkpoints WHERE run_id=?1",
             [run_id.to_string()],
             |row| {
@@ -254,6 +261,9 @@ pub(crate) fn load_summary_checkpoint_in(
                     row.get::<_, Option<i64>>(13)?.map(u64::try_from).transpose().map_err(|_| rusqlite::Error::InvalidQuery)?,
                     row.get::<_, Option<i64>>(14)?.map(u64::try_from).transpose().map_err(|_| rusqlite::Error::InvalidQuery)?,
                     row.get::<_, Option<f64>>(15)?.map(lettuce_conversations::ProviderReportedCost::try_from).transpose().map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    optional_count(row, 16)?,
+                    optional_count(row, 17)?,
+                    optional_count(row, 18)?,
                 ))
             },
         )
@@ -276,6 +286,9 @@ pub(crate) fn load_summary_checkpoint_in(
         cache_write_tokens,
         web_search_requests,
         provider_reported_cost,
+        image_tokens,
+        audio_tokens,
+        total_tokens,
     )) = row
     else {
         return Ok(None);
@@ -293,6 +306,9 @@ pub(crate) fn load_summary_checkpoint_in(
             web_search_requests,
             cached_input_tokens,
             reasoning_tokens,
+            image_tokens,
+            audio_tokens,
+            total_tokens,
             input_tokens: u64::try_from(input).map_err(storage)?,
             output_tokens: u64::try_from(output).map_err(storage)?,
         }),
@@ -393,7 +409,7 @@ pub(crate) fn list_rounds_in(
         .prepare(
             "SELECT ordinal,first_call_ordinal,call_count,request_context_json,parts_json,provider_replay_artifact_id,\
                     provider_replay_retention,input_tokens,output_tokens,finish_reason,\
-                    provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost,kind \
+                    provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost,kind,image_tokens,audio_tokens,total_tokens \
              FROM dynamic_memory_inference_rounds \
              WHERE run_id=?1 AND attempt_id=?2 ORDER BY ordinal",
         )
@@ -459,6 +475,9 @@ pub(crate) fn list_rounds_in(
                             .map(u64::try_from)
                             .transpose()
                             .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        image_tokens: optional_count(row, 18)?,
+                        audio_tokens: optional_count(row, 19)?,
+                        total_tokens: optional_count(row, 20)?,
                         input_tokens: u64::try_from(input)
                             .map_err(|_| rusqlite::Error::InvalidQuery)?,
                         output_tokens: u64::try_from(output)
@@ -644,8 +663,8 @@ fn insert_round_in(
             "INSERT INTO dynamic_memory_inference_rounds \
              (run_id,attempt_id,ordinal,first_call_ordinal,call_count,request_context_json,parts_json,\
               provider_replay_artifact_id,provider_replay_retention,input_tokens,output_tokens,\
-              finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost,kind) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
+              finish_reason,provider_request_id,admitted_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost,kind,image_tokens,audio_tokens,total_tokens) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23)",
             params![
                 round.run_id.to_string(),
                 round.attempt_id.to_string(),
@@ -673,6 +692,9 @@ fn insert_round_in(
                     DynamicMemoryRoundKind::Manager => "manager",
                     DynamicMemoryRoundKind::Repair => "repair",
                 },
+                round.usage.as_ref().and_then(|u| u.image_tokens).map(sql_u64).transpose()?,
+                round.usage.as_ref().and_then(|u| u.audio_tokens).map(sql_u64).transpose()?,
+                round.usage.as_ref().and_then(|u| u.total_tokens).map(sql_u64).transpose()?,
             ],
         )
         .map_err(storage)?;
@@ -896,8 +918,8 @@ pub(crate) fn insert_restored_run_in(
                     run_id,attempt_id,space_id,expected_memory_revision,
                     resulting_memory_revision,summary_text,token_count,
                     request_context_json,input_tokens,output_tokens,
-                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost
-                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost,image_tokens,audio_tokens,total_tokens
+                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
                 params![
                     checkpoint.run_id.to_string(),
                     checkpoint.attempt_id.to_string(),
@@ -918,6 +940,9 @@ pub(crate) fn insert_restored_run_in(
                     usage
                         .and_then(|usage| usage.provider_reported_cost)
                         .map(lettuce_conversations::ProviderReportedCost::get),
+                    usage.and_then(|usage| usage.image_tokens).map(sql_u64).transpose()?,
+                    usage.and_then(|usage| usage.audio_tokens).map(sql_u64).transpose()?,
+                    usage.and_then(|usage| usage.total_tokens).map(sql_u64).transpose()?,
                 ],
             )
             .map_err(storage)?;
@@ -1706,8 +1731,8 @@ impl DynamicMemoryRunRepository for Database {
                     run_id,attempt_id,space_id,expected_memory_revision,
                     resulting_memory_revision,summary_text,token_count,
                     request_context_json,input_tokens,output_tokens,
-                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost
-                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+                    provider_request_id,settled_at,cached_input_tokens,reasoning_tokens,cache_write_tokens,web_search_requests,provider_reported_cost,image_tokens,audio_tokens,total_tokens
+                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
                 params![
                     run.id.to_string(),
                     attempt.id.to_string(),
@@ -1736,6 +1761,9 @@ impl DynamicMemoryRunRepository for Database {
                     commit.usage.as_ref().and_then(|u| u.cache_write_tokens).map(sql_u64).transpose()?,
                     commit.usage.as_ref().and_then(|u| u.web_search_requests).map(sql_u64).transpose()?,
                     commit.usage.as_ref().and_then(|u| u.provider_reported_cost).map(lettuce_conversations::ProviderReportedCost::get),
+                    commit.usage.as_ref().and_then(|u| u.image_tokens).map(sql_u64).transpose()?,
+                    commit.usage.as_ref().and_then(|u| u.audio_tokens).map(sql_u64).transpose()?,
+                    commit.usage.as_ref().and_then(|u| u.total_tokens).map(sql_u64).transpose()?,
                 ],
             )
             .map_err(storage)?;
@@ -2170,6 +2198,9 @@ mod tests {
                 budget: Default::default(),
             },
             usage: Some(InferenceUsage {
+                image_tokens: Some(2),
+                audio_tokens: Some(0),
+                total_tokens: Some(40),
                 provider_reported_cost: lettuce_conversations::ProviderReportedCost::new(0.0125),
                 cache_write_tokens: Some(3),
                 web_search_requests: Some(0),
@@ -2897,7 +2928,18 @@ mod tests {
                 text: "Found a durable preference".into(),
             }],
             provider_replay: None,
-            usage: None,
+            usage: Some(InferenceUsage {
+                provider_reported_cost: None,
+                cache_write_tokens: Some(1),
+                web_search_requests: None,
+                cached_input_tokens: Some(2),
+                reasoning_tokens: Some(3),
+                image_tokens: Some(4),
+                audio_tokens: Some(5),
+                total_tokens: Some(60),
+                input_tokens: 30,
+                output_tokens: 20,
+            }),
             finish_reason: DynamicMemoryRoundFinishReason::Stop,
             kind: DynamicMemoryRoundKind::Manager,
             provider_request_id: Some("memory-request-1".into()),
@@ -2926,6 +2968,20 @@ mod tests {
                 .admit_dynamic_memory_inference_round(run_id, parent_id, 0, 0, round)
                 .expect("round replay"),
             admitted_round
+        );
+        let stored_usage = database
+            .list_dynamic_memory_inference_rounds(run_id, parent_id)
+            .expect("rounds")[0]
+            .usage
+            .clone()
+            .expect("round usage");
+        assert_eq!(
+            (
+                stored_usage.image_tokens,
+                stored_usage.audio_tokens,
+                stored_usage.total_tokens
+            ),
+            (Some(4), Some(5), Some(60))
         );
         let memory_id = MemoryId::new();
         let parent_settlement = database

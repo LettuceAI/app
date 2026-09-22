@@ -213,6 +213,9 @@ fn outcome() -> InferenceOutcome {
             provider_replay: None,
         }],
         usage: Some(InferenceUsage {
+            image_tokens: None,
+            audio_tokens: None,
+            total_tokens: None,
             input_tokens: 20,
             output_tokens: 5,
             cached_input_tokens: Some(3),

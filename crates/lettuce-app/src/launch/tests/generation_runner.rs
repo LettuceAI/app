@@ -158,6 +158,9 @@ fn input(scenario: &Scenario) -> ConversationGenerationInput {
 
 fn usage(input_tokens: u64, output_tokens: u64) -> Option<InferenceUsage> {
     Some(InferenceUsage {
+        image_tokens: None,
+        audio_tokens: None,
+        total_tokens: None,
         provider_reported_cost: None,
         cache_write_tokens: None,
         web_search_requests: None,

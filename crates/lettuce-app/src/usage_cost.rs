@@ -222,6 +222,9 @@ mod tests {
         let result = JobInferenceUsageResult::Response {
             provider_response_id: Some("gen-cost".into()),
             usage: Some(InferenceUsage {
+                image_tokens: None,
+                audio_tokens: None,
+                total_tokens: None,
                 input_tokens: 120,
                 output_tokens: 30,
                 cached_input_tokens: Some(10),
