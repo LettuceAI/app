@@ -1683,3 +1683,14 @@ Deviations from legacy:
   "regenerate"). The image job keeps the request prompt.
 - Optimistic placeholders, askFirst approval and the prompt writer belong to
   the next slices.
+
+Soul growth edits (2026-09-23): `clear_companion_soul_growth` (count of
+entries removed), `remove_companion_soul_growth` and
+`set_companion_soul_growth_lock` (true when the entry exists) edit the
+companion's character-wide Soul. Legacy addressed them through a session,
+whose character owned the Soul. The old relationship page called all three
+(remove by list position, now by id). A write that conflicts with a
+concurrent growth or consolidation run is prepared again on the newer Soul, up
+to three times. Deviation: legacy's clear emptied the shared Soul but other
+sessions of the character re-persisted their own copies on their next save;
+the rewrite's clear really clears the companion's Soul.

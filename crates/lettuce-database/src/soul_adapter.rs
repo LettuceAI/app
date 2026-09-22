@@ -370,6 +370,23 @@ fn change_hash(change: &SoulChangeSet) -> [u8; 32] {
         put_hash_part(&mut hasher, item.fact_id.as_bytes());
         put_hash_part(&mut hasher, item.superseded_by.as_bytes());
     }
+    if !change.user_edits.is_empty() {
+        hasher.update(&(change.user_edits.len() as u64).to_le_bytes());
+        for edit in &change.user_edits {
+            match edit {
+                lettuce_companions::SoulUserEdit::ClearAll => put_hash_part(&mut hasher, b"clear"),
+                lettuce_companions::SoulUserEdit::Remove { fact_id } => {
+                    put_hash_part(&mut hasher, b"remove");
+                    put_hash_part(&mut hasher, fact_id.as_bytes());
+                }
+                lettuce_companions::SoulUserEdit::SetLocked { fact_id, locked } => {
+                    put_hash_part(&mut hasher, b"lock");
+                    put_hash_part(&mut hasher, fact_id.as_bytes());
+                    hasher.update(&[u8::from(*locked)]);
+                }
+            }
+        }
+    }
     *hasher.finalize().as_bytes()
 }
 
@@ -763,6 +780,7 @@ mod tests {
             resulting_revision: Revision::new(2),
             additions: Vec::new(),
             supersessions: Vec::new(),
+            user_edits: Vec::new(),
             applied_at: TimestampMillis::new(3),
         };
         database
@@ -774,6 +792,94 @@ mod tests {
             .expect("state");
         assert_eq!(stored.facts.len(), 40);
         assert_eq!(stored.facts[0].id, "old-1");
+    }
+
+    #[test]
+    fn user_edits_clear_remove_and_lock_soul_growth_like_legacy() {
+        use lettuce_companions::{SoulUserEdit, prepare_user_edit};
+        let database = Database::open_in_memory().expect("database");
+        let character_id = CharacterId::new();
+        insert_character(&database, character_id, "edits");
+        let fact = |id: &str| SoulFact {
+            id: id.to_owned(),
+            category: SoulCategory::Likes,
+            value: format!("value {id}"),
+            kind: SoulFactKind::Authored,
+            policy: SoulFactPolicy::Adaptive,
+            slot: id.to_owned(),
+            confidence: 1.0,
+            evidence_count: 1,
+            weight: 1.0,
+            valid_from: TimestampMillis::new(1),
+            valid_until: None,
+            locked: false,
+            source_memory_ids: Vec::new(),
+            created_at: TimestampMillis::new(1),
+            supersedes: Vec::new(),
+            superseded_by: None,
+            superseded_at: None,
+        };
+        database
+            .create(
+                owner(character_id),
+                SoulState {
+                    revision: Revision::INITIAL,
+                    facts: vec![fact("tea"), fact("chess")],
+                },
+                TimestampMillis::new(1),
+            )
+            .expect("create");
+        let run = |edit: SoulUserEdit, at: i64| {
+            let state = database
+                .get(owner(character_id))
+                .expect("get")
+                .expect("state");
+            match prepare_user_edit(&state, edit, TimestampMillis::new(at)).expect("prepare") {
+                Some(change) => {
+                    database
+                        .apply(owner(character_id), OperationRecordId::new(), change)
+                        .expect("apply");
+                    true
+                }
+                None => false,
+            }
+        };
+        let lock = |id: &str, locked| SoulUserEdit::SetLocked {
+            fact_id: id.to_owned(),
+            locked,
+        };
+        assert!(run(lock("tea", true), 2));
+        assert!(!run(lock("tea", true), 3));
+        let state = database
+            .get(owner(character_id))
+            .expect("get")
+            .expect("state");
+        assert!(
+            state
+                .facts
+                .iter()
+                .any(|fact| fact.id == "tea" && fact.locked)
+        );
+        assert!(run(
+            SoulUserEdit::Remove {
+                fact_id: "chess".to_owned()
+            },
+            4
+        ));
+        assert!(!run(
+            SoulUserEdit::Remove {
+                fact_id: "chess".to_owned()
+            },
+            5
+        ));
+        assert!(run(SoulUserEdit::ClearAll, 6));
+        let state = database
+            .get(owner(character_id))
+            .expect("get")
+            .expect("state");
+        assert!(state.facts.is_empty());
+        assert_eq!(state.revision, Revision::new(4));
+        assert!(!run(SoulUserEdit::ClearAll, 7));
     }
 
     #[test]

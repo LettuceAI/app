@@ -226,3 +226,20 @@ cleanup failures. Only provider/content failures continue through the existing
 alternate-model policy. Admission/settlement fault injection verifies no extra
 provider call or false checkpoint; a successful later retry retains the pending
 usage record independently from completed dispatches.
+
+Soul growth user edits (2026-09-23): `SoulChangeSet.user_edits` carries legacy
+`companion_clear_soul_growth` (every entry, authored ones and locked ones
+included), `companion_remove_soul_growth` (one entry, now by its stable id
+instead of list position) and `companion_set_soul_growth_lock`.
+`prepare_user_edit` returns `None` for an edit that changes nothing, where
+legacy answered without a write. The edits go through the CAS-guarded,
+receipt-recorded `SoulRepository::apply`. Change hashes include the edits only
+when there are any, so existing receipts keep their hashes. A locked fact still
+cannot be superseded by growth or consolidation. User edits never prune superseded
+history (legacy's edits did not bound it). Known limit: sync treats an
+authored-only, unsuperseded Soul (including an empty one, which is what a
+companion without authored facts starts from on every device) as an
+untouched seed that loses to a concurrent learned change. So a clear, or an
+edit that leaves only authored facts, made while another device grows the
+Soul concurrently, is overridden by that growth. Telling them apart needs a
+synced "edited by the user" marker in the Soul payload.

@@ -353,13 +353,56 @@ pub struct SoulSupersession {
     pub superseded_by: String,
 }
 
+/// A user's direct edit of Soul growth (legacy `companion_clear_soul_growth`,
+/// `companion_remove_soul_growth` and `companion_set_soul_growth_lock`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SoulUserEdit {
+    ClearAll,
+    Remove { fact_id: String },
+    SetLocked { fact_id: String, locked: bool },
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoulChangeSet {
     pub expected_revision: Revision,
     pub resulting_revision: Revision,
     pub additions: Vec<SoulFact>,
     pub supersessions: Vec<SoulSupersession>,
+    pub user_edits: Vec<SoulUserEdit>,
     pub applied_at: TimestampMillis,
+}
+
+/// The change set for one user edit, or `None` when it changes nothing: legacy
+/// answered clearing an empty Soul with 0, removing an unknown entry with
+/// false and setting a lock to its current value with true, all without a
+/// write.
+pub fn prepare_user_edit(
+    state: &SoulState,
+    edit: SoulUserEdit,
+    now: TimestampMillis,
+) -> Result<Option<SoulChangeSet>, SoulPolicyError> {
+    let changes = match &edit {
+        SoulUserEdit::ClearAll => !state.facts.is_empty(),
+        SoulUserEdit::Remove { fact_id } => state.facts.iter().any(|fact| &fact.id == fact_id),
+        SoulUserEdit::SetLocked { fact_id, locked } => state
+            .facts
+            .iter()
+            .any(|fact| &fact.id == fact_id && fact.locked != *locked),
+    };
+    if !changes {
+        return Ok(None);
+    }
+    Ok(Some(SoulChangeSet {
+        expected_revision: state.revision,
+        resulting_revision: state
+            .revision
+            .next()
+            .map_err(|_| SoulPolicyError::InvalidFact)?,
+        additions: Vec::new(),
+        supersessions: Vec::new(),
+        user_edits: vec![edit],
+        applied_at: now,
+    }))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -671,6 +714,7 @@ fn prepare_change_set(
             .map_err(|_| SoulPolicyError::InvalidFact)?,
         additions,
         supersessions,
+        user_edits: Vec::new(),
         applied_at: now,
     })
 }
@@ -696,6 +740,25 @@ pub fn apply_change_set(
         return Err(SoulPolicyError::InvalidFact);
     }
     let mut facts = state.facts.clone();
+    for edit in &change_set.user_edits {
+        match edit {
+            SoulUserEdit::ClearAll => facts.clear(),
+            SoulUserEdit::Remove { fact_id } => {
+                let before = facts.len();
+                facts.retain(|fact| &fact.id != fact_id);
+                if facts.len() == before {
+                    return Err(SoulPolicyError::InvalidFact);
+                }
+            }
+            SoulUserEdit::SetLocked { fact_id, locked } => {
+                facts
+                    .iter_mut()
+                    .find(|fact| &fact.id == fact_id)
+                    .ok_or(SoulPolicyError::InvalidFact)?
+                    .locked = *locked;
+            }
+        }
+    }
     for supersession in &change_set.supersessions {
         let fact = facts
             .iter_mut()
@@ -710,7 +773,7 @@ pub fn apply_change_set(
     facts.extend(change_set.additions.clone());
 
     let superseded_count = facts.iter().filter(|entry| !entry.is_active()).count();
-    if superseded_count > MAX_SUPERSEDED_HISTORY {
+    if change_set.user_edits.is_empty() && superseded_count > MAX_SUPERSEDED_HISTORY {
         let mut to_drop = superseded_count - MAX_SUPERSEDED_HISTORY;
         facts.retain(|entry| {
             if to_drop > 0 && !entry.is_active() {
@@ -1109,6 +1172,7 @@ mod tests {
                 resulting_revision: Revision::new(2),
                 additions: Vec::new(),
                 supersessions: Vec::new(),
+                user_edits: Vec::new(),
                 applied_at: TimestampMillis::new(2),
             },
         )
