@@ -23,6 +23,8 @@ pub struct GlobalSettings {
     pub help_me_reply: HelpMeReplySettings,
     #[serde(default)]
     pub embedding: EmbeddingSettings,
+    #[serde(default)]
+    pub image_generation: ImageGenerationSettings,
     #[serde(default = "default_manual_mode_context_window")]
     pub manual_mode_context_window: u32,
 }
@@ -48,6 +50,7 @@ impl Default for GlobalSettings {
             dynamic_memory_llama_sampler_overwrite_enabled: true,
             help_me_reply: HelpMeReplySettings::default(),
             embedding: EmbeddingSettings::default(),
+            image_generation: ImageGenerationSettings::default(),
             manual_mode_context_window: default_manual_mode_context_window(),
         }
     }
@@ -59,6 +62,78 @@ impl GlobalSettings {
         self.group_dynamic_memory
             .as_ref()
             .unwrap_or(&self.dynamic_memory)
+    }
+
+    /// Every model profile the settings payload selects.
+    #[must_use]
+    pub fn selected_model_profiles(&self) -> [Option<ModelProfileId>; 6] {
+        let image = &self.image_generation;
+        [
+            self.lorebook_generator.selection.model_profile_id,
+            self.help_me_reply.model_profile_id,
+            image.avatar_model_profile_id,
+            image.scene_model_profile_id,
+            image.scene_writer_model_profile_id,
+            image.creation_helper_model_profile_id,
+        ]
+    }
+
+    /// Unselects every profile `removed` accepts; true when one was selected.
+    pub fn clear_model_profiles(&mut self, removed: impl Fn(ModelProfileId) -> bool) -> bool {
+        let image = &mut self.image_generation;
+        let mut changed = false;
+        for selection in [
+            &mut self.lorebook_generator.selection.model_profile_id,
+            &mut self.help_me_reply.model_profile_id,
+            &mut image.avatar_model_profile_id,
+            &mut image.scene_model_profile_id,
+            &mut image.scene_writer_model_profile_id,
+            &mut image.creation_helper_model_profile_id,
+        ] {
+            if selection.is_some_and(&removed) {
+                *selection = None;
+                changed = true;
+            }
+        }
+        changed
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneGenerationMode {
+    #[default]
+    Auto,
+    AskFirst,
+    Manual,
+}
+
+/// Legacy `avatarGeneration*`, `sceneGeneration*`, `sceneWriterModelId` and
+/// `creationHelperImageModelId` advanced settings; unset models mean the first
+/// suitable model, as legacy chose.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ImageGenerationSettings {
+    pub avatar_enabled: bool,
+    pub avatar_model_profile_id: Option<ModelProfileId>,
+    pub scene_enabled: bool,
+    pub scene_mode: SceneGenerationMode,
+    pub scene_model_profile_id: Option<ModelProfileId>,
+    pub scene_writer_model_profile_id: Option<ModelProfileId>,
+    pub creation_helper_model_profile_id: Option<ModelProfileId>,
+}
+
+impl Default for ImageGenerationSettings {
+    fn default() -> Self {
+        Self {
+            avatar_enabled: true,
+            avatar_model_profile_id: None,
+            scene_enabled: false,
+            scene_mode: SceneGenerationMode::Auto,
+            scene_model_profile_id: None,
+            scene_writer_model_profile_id: None,
+            creation_helper_model_profile_id: None,
+        }
     }
 }
 
@@ -322,6 +397,36 @@ pub trait GlobalSettingsStore: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_generation_defaults_match_the_legacy_schema_and_older_payloads() {
+        let defaults = ImageGenerationSettings::default();
+        assert!(defaults.avatar_enabled && !defaults.scene_enabled);
+        assert_eq!(defaults.scene_mode, SceneGenerationMode::Auto);
+        let mut older = serde_json::to_value(GlobalSettings::default()).expect("settings");
+        older
+            .as_object_mut()
+            .expect("object")
+            .remove("image_generation");
+        let older: GlobalSettings = serde_json::from_value(older).expect("older payload");
+        assert_eq!(older.image_generation, defaults);
+        let mut settings = GlobalSettings::default();
+        let kept = ModelProfileId::new();
+        let removed = ModelProfileId::new();
+        settings.image_generation.scene_model_profile_id = Some(removed);
+        settings.image_generation.scene_writer_model_profile_id = Some(kept);
+        settings.help_me_reply.model_profile_id = Some(removed);
+        assert!(settings.clear_model_profiles(|id| id == removed));
+        assert_eq!(
+            settings
+                .selected_model_profiles()
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>(),
+            vec![kept]
+        );
+        assert!(!settings.clear_model_profiles(|id| id == removed));
+    }
 
     #[test]
     fn dynamic_memory_defaults_match_the_legacy_schema() {

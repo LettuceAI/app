@@ -45,7 +45,14 @@ overrides); a zero history count reads as ten, as legacy ignored it. `embedding.
 `embeddingDimensions` preference; unset means the embedding default.
 `manual_mode_context_window` (legacy `manualModeContextWindow`, default 50) is
 the history window for chats without dynamic memory; dynamic chats use the
-summary interval instead.
+summary interval instead. `image_generation` carries legacy `avatarGeneration*`,
+`sceneGeneration*`, `sceneWriterModelId` and `creationHelperImageModelId`
+(avatar on, scenes off, `auto` mode, no models). Every model the payload
+selects is unselected when that model is deleted locally or through sync, and
+a synced snapshot drops selections of models this device lacks. Deliberate
+change: legacy's creation helper failed with "No image generation model
+configured" when its saved image model was gone; the cleared selection now
+means the first suitable model, like avatar and scene generation did.
 An optional group-chat policy lives beside the direct policy in global settings,
 matching the legacy settings editor and persistence owner. Group launches use
 that complete override when present and otherwise inherit the direct policy.

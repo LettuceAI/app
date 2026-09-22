@@ -447,6 +447,34 @@ fn to_u64(value: i64) -> Result<u64, rusqlite::Error> {
     u64::try_from(value).map_err(|_| rusqlite::Error::InvalidQuery)
 }
 
+/// Unselects deleted model profiles inside the settings payload (help me
+/// reply, lorebook generator, image features), which has no foreign key.
+fn clear_deleted_settings_models(
+    connection: &Connection,
+    removed: impl Fn(ModelProfileId) -> bool,
+) -> Result<(), rusqlite::Error> {
+    let (format_version, payload): (u32, String) = connection.query_row(
+        "SELECT format_version, payload_json FROM app_settings WHERE id=1",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    if format_version != GLOBAL_SETTINGS_FORMAT_VERSION {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    let mut settings: GlobalSettings =
+        serde_json::from_str(&payload).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    if settings.clear_model_profiles(removed) {
+        connection.execute(
+            "UPDATE app_settings SET payload_json=?1, revision=revision+1, updated_at=?2 WHERE id=1",
+            params![
+                serde_json::to_string(&settings).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                now()?.get()
+            ],
+        )?;
+    }
+    Ok(())
+}
+
 fn to_i64(value: u64) -> Result<i64, rusqlite::Error> {
     i64::try_from(value).map_err(|_| rusqlite::Error::InvalidQuery)
 }
@@ -606,6 +634,14 @@ pub(crate) fn sync_write_app_settings(
         }
         Ok(exists.then_some(id))
     };
+    let mut settings = snapshot.settings.clone();
+    let mut absent = Vec::new();
+    for selected in settings.selected_model_profiles().into_iter().flatten() {
+        if present("model_profiles", Some(selected.to_string()))?.is_none() {
+            absent.push(selected);
+        }
+    }
+    settings.clear_model_profiles(|id| absent.contains(&id));
     connection.execute(
         "UPDATE app_settings SET default_model_profile_id=?1, dynamic_memory_model_profile_id=?2, \
          group_speaker_model_profile_id=?3, default_prompt_document_id=?4, payload_json=?5, \
@@ -624,7 +660,7 @@ pub(crate) fn sync_write_app_settings(
                 "prompt_documents",
                 snapshot.default_prompt_document_id.map(|id| id.to_string())
             )?,
-            serde_json::to_string(&snapshot.settings).map_err(|_| rusqlite::Error::InvalidQuery)?,
+            serde_json::to_string(&settings).map_err(|_| rusqlite::Error::InvalidQuery)?,
             encode_global_model_settings(&snapshot.model_settings)
                 .map_err(|_| rusqlite::Error::InvalidQuery)?,
             to_i64(snapshot.revision.get())?,
@@ -691,9 +727,10 @@ impl GlobalSettingsStore for Database {
         let next = expected_revision
             .next()
             .map_err(|_| GlobalSettingsStoreError::Storage)?;
-        let changed = self
+        let connection = self
             .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let changed = connection
             .execute(
                 "UPDATE app_settings SET default_model_profile_id=?1, payload_json=?2, \
                  revision=?3, updated_at=?4 WHERE id=1 AND revision=?5",
@@ -714,6 +751,7 @@ impl GlobalSettingsStore for Database {
                 }
                 _ => GlobalSettingsStoreError::Storage,
             })?;
+        drop(connection);
         if changed == 0 {
             return Err(GlobalSettingsStoreError::StaleRevision);
         }
@@ -1141,6 +1179,17 @@ impl Database {
                 params![id.to_string(), now().map_err(model_error)?.get()],
             )
             .map_err(model_error)?;
+        let deleted = {
+            let mut statement = transaction
+                .prepare("SELECT id FROM model_profiles WHERE provider_account_id=?1")
+                .map_err(model_error)?;
+            statement
+                .query_map([id.to_string()], |row| parse_id::<ModelProfileId>(row.get(0)?))
+                .and_then(|rows| rows.collect::<rusqlite::Result<std::collections::BTreeSet<_>>>())
+                .map_err(model_error)?
+        };
+        clear_deleted_settings_models(&transaction, |profile| deleted.contains(&profile))
+            .map_err(model_error)?;
         transaction
             .execute(
                 "DELETE FROM model_profiles WHERE provider_account_id=?1",
@@ -1289,6 +1338,8 @@ impl Database {
                  WHERE id=1 AND (default_model_profile_id=?1 OR dynamic_memory_model_profile_id=?1 OR group_speaker_model_profile_id=?1)",
                 params![id.to_string(), now().map_err(model_error)?.get()],
             )
+            .map_err(model_error)?;
+        clear_deleted_settings_models(&transaction, |profile| profile == id)
             .map_err(model_error)?;
         let changed = transaction
             .execute("DELETE FROM model_profiles WHERE id=?1", [id.to_string()])
@@ -1572,8 +1623,8 @@ pub(crate) fn sync_delete_model_profile(
     id: &str,
     now: TimestampMillis,
 ) -> Result<bool, ModelRepositoryError> {
-    let now = now.get();
-    sync_delete_unless_referenced(
+    let now_millis = now.get();
+    let deleted = sync_delete_unless_referenced(
         connection,
         &[
             (
@@ -1583,11 +1634,16 @@ pub(crate) fn sync_delete_model_profile(
                  group_speaker_model_profile_id=CASE WHEN group_speaker_model_profile_id=?1 THEN NULL ELSE group_speaker_model_profile_id END, \
                  revision=revision+1, updated_at=?2 \
                  WHERE id=1 AND (default_model_profile_id=?1 OR dynamic_memory_model_profile_id=?1 OR group_speaker_model_profile_id=?1)",
-                &[&id, &now],
+                &[&id, &now_millis],
             ),
             ("DELETE FROM model_profiles WHERE id=?1", &[&id]),
         ],
-    )
+    )?;
+    if deleted {
+        clear_deleted_settings_models(connection, |profile| profile.to_string() == id)
+            .map_err(model_error)?;
+    }
+    Ok(deleted)
 }
 
 pub(crate) fn insert_media_blob_row(
@@ -3824,6 +3880,89 @@ mod tests {
                 Err(GlobalSettingsStoreError::InvalidData)
             );
         }
+    }
+
+    #[test]
+    fn settings_model_selections_are_cleared_with_their_model() {
+        let database = Database::open_in_memory().expect("database");
+        let account = ProviderAccountRepository::upsert(&database, provider(), None)
+            .expect("account");
+        let kept = ModelProfileRepository::upsert(&database, profile(account.id), None)
+            .expect("kept model");
+        let removed = ModelProfileRepository::upsert(&database, profile(account.id), None)
+            .expect("removed model");
+        let initial = GlobalSettingsStore::load(&database).expect("settings");
+        assert_eq!(
+            initial.settings.image_generation,
+            lettuce_settings::ImageGenerationSettings::default()
+        );
+        let mut settings = initial.settings;
+        settings.help_me_reply.model_profile_id = Some(removed.id);
+        settings.lorebook_generator.selection.model_profile_id = Some(kept.id);
+        settings.image_generation.avatar_model_profile_id = Some(removed.id);
+        settings.image_generation.scene_writer_model_profile_id = Some(kept.id);
+        let saved = GlobalSettingsStore::save(&database, settings, None, initial.revision)
+            .expect("save selections");
+        ModelProfileRepository::delete_and_clear_default(&database, removed.id)
+            .expect("delete model");
+        let after = GlobalSettingsStore::load(&database).expect("reload");
+        assert!(after.revision > saved.revision);
+        assert_eq!(after.settings.help_me_reply.model_profile_id, None);
+        assert_eq!(after.settings.image_generation.avatar_model_profile_id, None);
+        assert_eq!(
+            after.settings.lorebook_generator.selection.model_profile_id,
+            Some(kept.id)
+        );
+        assert_eq!(
+            after.settings.image_generation.scene_writer_model_profile_id,
+            Some(kept.id)
+        );
+        ProviderAccountRepository::delete_with_profiles(&database, account.id)
+            .expect("delete account");
+        let after = GlobalSettingsStore::load(&database).expect("reload");
+        assert!(
+            after
+                .settings
+                .selected_model_profiles()
+                .iter()
+                .all(Option::is_none)
+        );
+    }
+
+    #[test]
+    fn synced_settings_and_model_deletes_never_leave_payload_selections_dangling() {
+        let database = Database::open_in_memory().expect("database");
+        let account = ProviderAccountRepository::upsert(&database, provider(), None)
+            .expect("account");
+        let model = ModelProfileRepository::upsert(&database, profile(account.id), None)
+            .expect("model");
+        let initial = GlobalSettingsStore::load(&database).expect("settings");
+        let mut settings = initial.settings;
+        settings.image_generation.scene_model_profile_id = Some(model.id);
+        GlobalSettingsStore::save(&database, settings, None, initial.revision)
+            .expect("save selection");
+        {
+            let connection = database.connection().expect("connection");
+            assert!(
+                crate::sync_delete_model_profile(&connection, &model.id.to_string(), TimestampMillis::new(50))
+                    .expect("sync delete")
+            );
+        }
+        assert_eq!(
+            GlobalSettingsStore::load(&database)
+                .expect("reload")
+                .settings
+                .image_generation
+                .scene_model_profile_id,
+            None
+        );
+        let connection = database.connection().expect("connection");
+        let mut snapshot = crate::sync_load_app_settings(&connection).expect("snapshot");
+        snapshot.settings.image_generation.avatar_model_profile_id = Some(model.id);
+        snapshot.settings.help_me_reply.model_profile_id = Some(model.id);
+        crate::sync_write_app_settings(&connection, &snapshot).expect("sync write");
+        let written = crate::sync_load_app_settings(&connection).expect("written");
+        assert!(written.settings.selected_model_profiles().iter().all(Option::is_none));
     }
 
     #[test]

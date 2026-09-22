@@ -184,7 +184,11 @@ prompt templates but not yet materialized into settings on import;
 (default true); the `helpMeReply*` keys map to `help_me_reply` (a zero history
 count is a lossy notice, an unknown style is malformed, the model id and the
 two prompt template ids are retained and orphan-checked like the other
-selections); only unknown keys remain unsupported notices. Version-2 backup graphs reject a
+selections); the image feature keys map to `image_generation` (an unknown
+scene mode is malformed; avatar, scene and creation-helper model ids must name
+image-output models and the scene writer a text+image-input, text-output
+model, else they are skipped as missing or incompatible references); only
+unknown keys remain unsupported notices. Version-2 backup graphs reject a
 settings document whose dynamic-memory prompt overrides name a prompt outside
 the graph.
 

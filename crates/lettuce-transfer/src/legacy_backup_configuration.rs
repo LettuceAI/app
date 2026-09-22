@@ -15,9 +15,10 @@ use lettuce_models::{
 };
 use lettuce_settings::{
     DynamicMemorySettings, EmbeddingSettings, GlobalSettings, HeaderName, HelpMeReplySettings,
-    HelpMeReplyStyle, LorebookGeneratorSelection, LorebookGeneratorSettings,
-    MemoryRetrievalStrategy, MemoryRunMode, MemoryStructuredFallbackFormat, PureMode,
-    SecretOwnerId, SecretPurpose, SecretRef, SecretValue,
+    HelpMeReplyStyle, ImageGenerationSettings, LorebookGeneratorSelection,
+    LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
+    MemoryStructuredFallbackFormat, PureMode, SceneGenerationMode, SecretOwnerId, SecretPurpose,
+    SecretRef, SecretValue,
 };
 use lettuce_speech::{AudioProvider, AudioProviderConfig, UserVoice};
 use lettuce_types::{
@@ -107,9 +108,20 @@ pub struct LegacyBackupSettingsCandidate {
     pub dynamic_memory_prompt_source_ids: DynamicMemoryPromptSources,
     pub help_me_reply_model_profile_id: Option<ModelProfileId>,
     pub help_me_reply_prompt_source_ids: HelpMeReplyPromptSources,
+    pub image_model_profile_ids: ImageModelSources,
     pub deprecated_system_prompt: Option<String>,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
+}
+
+/// Legacy `avatarGenerationModelId`, `sceneGenerationModelId`,
+/// `sceneWriterModelId` and `creationHelperImageModelId`, as source ids.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ImageModelSources {
+    pub avatar: Option<ModelProfileId>,
+    pub scene: Option<ModelProfileId>,
+    pub scene_writer: Option<ModelProfileId>,
+    pub creation_helper: Option<ModelProfileId>,
 }
 
 /// Legacy `dynamicMemorySummarizerPromptTemplateId` /
@@ -681,6 +693,13 @@ fn map_settings(
         "lorebookGeneratorWriterPromptTemplateId",
         "lorebookGeneratorRefinePromptTemplateId",
         "lorebookGeneratorCoherencePromptTemplateId",
+        "avatarGenerationEnabled",
+        "avatarGenerationModelId",
+        "sceneGenerationEnabled",
+        "sceneGenerationMode",
+        "sceneGenerationModelId",
+        "sceneWriterModelId",
+        "creationHelperImageModelId",
     ]);
     for field in advanced
         .keys()
@@ -729,6 +748,7 @@ fn map_settings(
             dynamic_memory_prompts: lettuce_settings::DynamicMemoryPromptSelection::default(),
             dynamic_memory_llama_sampler_overwrite_enabled,
             help_me_reply,
+            image_generation: map_image_generation(advanced)?,
             embedding: EmbeddingSettings {
                 dimensions: optional_u32(advanced, "embeddingDimensions")?
                     .and_then(|value| u16::try_from(value).ok()),
@@ -755,10 +775,48 @@ fn map_settings(
                 "helpMeReplyConversationalPromptTemplateId",
             )?,
         },
+        image_model_profile_ids: ImageModelSources {
+            avatar: advanced_id(advanced, "avatarGenerationModelId")?,
+            scene: advanced_id(advanced, "sceneGenerationModelId")?,
+            scene_writer: advanced_id(advanced, "sceneWriterModelId")?,
+            creation_helper: advanced_id(advanced, "creationHelperImageModelId")?,
+        },
         deprecated_system_prompt: normalize_option(row.system_prompt.clone()),
         created_at: TimestampMillis::new(created),
         updated_at: TimestampMillis::new(updated),
     })
+}
+
+/// Legacy `avatarGenerationEnabled` (default on), `sceneGenerationEnabled`
+/// (default off) and `sceneGenerationMode`; the model ids travel separately.
+fn map_image_generation(
+    advanced: &Map<String, Value>,
+) -> Result<ImageGenerationSettings, LegacyBackupConfigurationError> {
+    let mut result = ImageGenerationSettings::default();
+    result.avatar_enabled = optional_bool_value(
+        advanced,
+        "avatarGenerationEnabled",
+        result.avatar_enabled,
+        LegacyBackupDocumentKind::Settings,
+    )?;
+    result.scene_enabled = optional_bool_value(
+        advanced,
+        "sceneGenerationEnabled",
+        result.scene_enabled,
+        LegacyBackupDocumentKind::Settings,
+    )?;
+    result.scene_mode = match advanced.get("sceneGenerationMode").and_then(Value::as_str) {
+        None | Some("auto") => SceneGenerationMode::Auto,
+        Some("askFirst") => SceneGenerationMode::AskFirst,
+        Some("manual") => SceneGenerationMode::Manual,
+        Some(_) => {
+            return Err(malformed(
+                LegacyBackupDocumentKind::Settings,
+                "advanced_settings.sceneGenerationMode",
+            ));
+        }
+    };
+    Ok(result)
 }
 
 fn map_help_me_reply(
@@ -2172,6 +2230,55 @@ fn reconcile_selections(
             reason,
         ));
     }
+    let supported = |status: CapabilityStatus| status == CapabilityStatus::Supported;
+    let image_model = |model: &crate::LegacyModelProfileCandidate| {
+        supported(model.config.capabilities.output_modalities.image)
+    };
+    let vision_text_model = |model: &crate::LegacyModelProfileCandidate| {
+        let capabilities = &model.config.capabilities;
+        supported(capabilities.input_modalities.text)
+            && supported(capabilities.input_modalities.image)
+            && supported(capabilities.output_modalities.text)
+    };
+    let images = &mut settings.image_model_profile_ids;
+    for (field, value, compatible) in [
+        (
+            "settings.advanced_settings.avatarGenerationModelId",
+            &mut images.avatar,
+            &image_model as &dyn Fn(&crate::LegacyModelProfileCandidate) -> bool,
+        ),
+        (
+            "settings.advanced_settings.sceneGenerationModelId",
+            &mut images.scene,
+            &image_model,
+        ),
+        (
+            "settings.advanced_settings.sceneWriterModelId",
+            &mut images.scene_writer,
+            &vision_text_model,
+        ),
+        (
+            "settings.advanced_settings.creationHelperImageModelId",
+            &mut images.creation_helper,
+            &image_model,
+        ),
+    ] {
+        let Some(id) = *value else {
+            continue;
+        };
+        let reason = match providers.model_profiles.iter().find(|model| model.id == id) {
+            None => LegacyImportSkipReason::MissingModelProfile,
+            Some(model) if !compatible(model) => LegacyImportSkipReason::IncompatibleReference,
+            Some(_) => continue,
+        };
+        *value = None;
+        providers.skipped.push(reference(
+            LegacyImportSkipKind::ModelReference,
+            field,
+            &id.to_string(),
+            reason,
+        ));
+    }
     for (field, value, purpose) in [
         (
             "settings.prompt_template_id",
@@ -3480,6 +3587,133 @@ mod tests {
         ];
         expected.sort();
         assert_eq!(prompts.skipped, expected);
+    }
+
+    #[test]
+    fn image_feature_settings_keep_suitable_models_and_record_the_rest() {
+        let provider_id = ProviderAccountId::new();
+        let image_model = ModelProfileId::new();
+        let vision_model = ModelProfileId::new();
+        let missing_model = ModelProfileId::new();
+        let model = |id: ModelProfileId, name: &str, input: &str, output: &str| {
+            json!({
+                "id": id,
+                "name": name,
+                "provider_id": "openrouter",
+                "provider_credential_id": provider_id,
+                "provider_label": "Router",
+                "display_name": name,
+                "created_at": 15,
+                "model_type": "multimodel",
+                "input_scopes": input,
+                "output_scopes": output,
+            })
+        };
+        let settings = |advanced: Value| {
+            document(
+                LegacyBackupDocumentKind::Settings,
+                json!({
+                    "default_provider_credential_id": null,
+                    "default_model_id": null,
+                    "app_state": {},
+                    "advanced_settings": advanced,
+                    "created_at": 10,
+                    "updated_at": 20
+                }),
+            )
+        };
+        let documents = |advanced: Value| {
+            vec![
+                settings(advanced),
+                document(
+                    LegacyBackupDocumentKind::ProviderCredentials,
+                    json!([{"id": provider_id, "provider_id": "openrouter", "label": "Router"}]),
+                ),
+                document(
+                    LegacyBackupDocumentKind::Models,
+                    json!([
+                        model(image_model, "vendor/image", "[\"text\"]", "[\"image\"]"),
+                        model(vision_model, "vendor/vision", "[\"text\",\"image\"]", "[\"text\"]"),
+                    ]),
+                ),
+            ]
+        };
+        let plan = plan_legacy_backup_configuration(inventory(documents(json!({
+            "avatarGenerationEnabled": false,
+            "avatarGenerationModelId": image_model,
+            "sceneGenerationEnabled": true,
+            "sceneGenerationMode": "askFirst",
+            "sceneGenerationModelId": image_model,
+            "sceneWriterModelId": vision_model,
+            "creationHelperImageModelId": image_model,
+        }))))
+        .expect("plan");
+        let image = &plan.settings.value.image_generation;
+        assert!(!image.avatar_enabled && image.scene_enabled);
+        assert_eq!(image.scene_mode, SceneGenerationMode::AskFirst);
+        assert_eq!(
+            plan.settings.image_model_profile_ids,
+            ImageModelSources {
+                avatar: Some(image_model),
+                scene: Some(image_model),
+                scene_writer: Some(vision_model),
+                creation_helper: Some(image_model),
+            }
+        );
+        assert!(
+            !plan
+                .notices
+                .iter()
+                .any(|notice| notice.field.contains("Generation")
+                    || notice.field.contains("sceneWriter")
+                    || notice.field.contains("creationHelperImage"))
+        );
+
+        let plan = plan_legacy_backup_configuration(inventory(documents(json!({
+            "avatarGenerationModelId": vision_model,
+            "sceneWriterModelId": image_model,
+            "creationHelperImageModelId": missing_model,
+        }))))
+        .expect("plan");
+        let image = &plan.settings.value.image_generation;
+        assert!(image.avatar_enabled && !image.scene_enabled);
+        assert_eq!(image.scene_mode, SceneGenerationMode::Auto);
+        assert_eq!(plan.settings.image_model_profile_ids, ImageModelSources::default());
+        let skip = |field: &str, id: ModelProfileId, reason| crate::LegacyImportSkip {
+            kind: crate::LegacyImportSkipKind::ModelReference,
+            source_key: format!("settings.advanced_settings.{field}:{id}"),
+            reason,
+        };
+        for expected in [
+            skip(
+                "avatarGenerationModelId",
+                vision_model,
+                crate::LegacyImportSkipReason::IncompatibleReference,
+            ),
+            skip(
+                "sceneWriterModelId",
+                image_model,
+                crate::LegacyImportSkipReason::IncompatibleReference,
+            ),
+            skip(
+                "creationHelperImageModelId",
+                missing_model,
+                crate::LegacyImportSkipReason::MissingModelProfile,
+            ),
+        ] {
+            assert!(
+                plan.provider_models.skipped.contains(&expected),
+                "{expected:?} in {:?}",
+                plan.provider_models.skipped
+            );
+        }
+        assert!(matches!(
+            plan_legacy_backup_configuration(inventory(documents(json!({
+                "sceneGenerationMode": "sometimes"
+            })))),
+            Err(LegacyBackupConfigurationError::Malformed { ref field, .. })
+                if field == "advanced_settings.sceneGenerationMode"
+        ));
     }
 
     #[test]

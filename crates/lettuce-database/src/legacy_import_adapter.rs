@@ -1198,6 +1198,12 @@ impl LegacyImportRepository for Database {
             manager_prompt_id: prompt(&candidate.dynamic_memory_prompt_source_ids.manager)?,
         };
         settings.help_me_reply.model_profile_id = model(candidate.help_me_reply_model_profile_id)?;
+        let images = candidate.image_model_profile_ids;
+        settings.image_generation.avatar_model_profile_id = model(images.avatar)?;
+        settings.image_generation.scene_model_profile_id = model(images.scene)?;
+        settings.image_generation.scene_writer_model_profile_id = model(images.scene_writer)?;
+        settings.image_generation.creation_helper_model_profile_id =
+            model(images.creation_helper)?;
         settings.help_me_reply.roleplay_prompt_id =
             prompt(&candidate.help_me_reply_prompt_source_ids.roleplay)?;
         settings.help_me_reply.conversational_prompt_id =

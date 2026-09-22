@@ -774,12 +774,13 @@ pub fn canonicalize_and_validate(
     let generator = &graph.settings.value.lorebook_generator.selection;
     let memory_prompts = &graph.settings.value.dynamic_memory_prompts;
     let help_me_reply = &graph.settings.value.help_me_reply;
-    if generator
-        .model_profile_id
-        .is_some_and(|id| !profile_ids.contains_key(&id))
-        || help_me_reply
-            .model_profile_id
-            .is_some_and(|id| !profile_ids.contains_key(&id))
+    if graph
+        .settings
+        .value
+        .selected_model_profiles()
+        .into_iter()
+        .flatten()
+        .any(|id| !profile_ids.contains_key(&id))
         || [
             generator.planner_prompt_id,
             generator.writer_prompt_id,
