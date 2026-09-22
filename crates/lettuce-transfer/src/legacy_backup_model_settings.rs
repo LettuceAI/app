@@ -251,7 +251,6 @@ fn chat_parameters(reader: &mut Reader<'_>, provider_kind: &str) -> ChatParamete
         _ => None,
     });
     let reasoning_budget_tokens = reader.u32("reasoningBudgetTokens", 1024, u32::MAX);
-    let enabled_reasoning = reasoning_mode != Some(ReasoningMode::Disabled);
     let caching_enabled = reader.bool("promptCachingEnabled");
     let retention = reader.choice("promptCachingTtl", |value| match value {
         "in_memory" => Some(PromptCacheRetention::InMemory),
@@ -303,8 +302,8 @@ fn chat_parameters(reader: &mut Reader<'_>, provider_kind: &str) -> ChatParamete
         presence_penalty: reader.f64("presencePenalty", -2.0, 2.0),
         repetition_penalty: reader.f64("ollamaRepeatPenalty", f64::MIN_POSITIVE, 2.0),
         reasoning_mode,
-        reasoning_effort: reasoning_effort.filter(|_| enabled_reasoning),
-        reasoning_budget_tokens: reasoning_budget_tokens.filter(|_| enabled_reasoning),
+        reasoning_effort,
+        reasoning_budget_tokens,
         prompt_caching,
         send_thinking_state: reader.bool("forceSendThinkingState"),
         ollama: OllamaOptions {

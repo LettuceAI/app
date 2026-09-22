@@ -17,8 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::{
     AdapterError, AuthPlan, Credentials, RemoteModel, STANDARD_HEADERS, decode_json,
     generation_policy, load_auth, load_secret_headers, max_output_tokens,
-    reject_unsupported_features, validate_common_request_with_tools, validate_prompt_caching,
-    validate_supported_reasoning,
+    validate_common_request_with_tools, validate_prompt_caching, validate_supported_reasoning,
 };
 use crate::descriptor::{
     ApiKeyRequirement, ParameterFlags, PromptCachingSupport, ProviderDescriptor, ReasoningSupport,
@@ -54,9 +53,6 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     }
     validate_supported_reasoning(&profile.parameters)?;
     validate_tool_features(profile, request.tools.as_ref())?;
-    if profile.parameters.reasoning_mode != Some(ReasoningMode::Enabled) {
-        reject_unsupported_features(&profile.parameters)?;
-    }
     validate_prompt_caching(DESCRIPTOR.prompt_caching, &profile.parameters)?;
     let base = api_base(profile.endpoint.as_deref().unwrap_or(DEFAULT_ENDPOINT));
     let streaming = request.stream_sink.is_some();

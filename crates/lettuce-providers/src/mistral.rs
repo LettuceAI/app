@@ -16,6 +16,10 @@ impl OpenAiWireProvider for Mistral {
         &DESCRIPTOR
     }
 
+    fn reasoning_policy(&self) -> crate::openai_compatible::ReasoningWirePolicy {
+        crate::openai_compatible::ReasoningWirePolicy::Ignored
+    }
+
     fn auth(&self, _config: &ProviderConfig) -> Result<AuthPlan, AdapterError> {
         HeaderName::new("X-API-KEY")
             .map(AuthPlan::Header)

@@ -97,3 +97,10 @@ cache types resolve as one unit. App features use the feature slot's sampler
 as the session layer (legacy synthetic session); dynamic memory can replace
 the sampler with the legacy fixed memory sampler (direct: DRY 0.8/1.75/2/-1,
 group: DRY multiplier 0), which also turns off the profile defaults.
+
+Reasoning resolves like legacy (user decision 2026-09-22): the mode is on
+only when set to enabled (session, then model); an effort or budget never
+turns it on. The budget resolves even when reasoning is off (explicit, else
+low 2048 / medium 8192 / high 16384 from the effort) and the total output
+allowance is the visible cap plus the budget. Legacy imports keep effort and
+budget with reasoning off.

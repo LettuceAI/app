@@ -196,8 +196,6 @@ pub enum ChatProfileResolutionError {
     VisibleOutputLimitExceeded { requested: u32, available: u32 },
     #[error("resolved total output allowance {requested} exceeds capability limit {available}")]
     TotalOutputLimitExceeded { requested: u32, available: u32 },
-    #[error("reasoning is disabled but effort or budget is configured")]
-    ContradictoryReasoning,
     #[error("chat parameter is invalid: {field}")]
     InvalidParameter { field: &'static str },
     #[error("provider-specific model options do not match the selected provider")]
@@ -480,24 +478,8 @@ fn resolve_parameters(
         &session.reasoning_budget_tokens,
         profile.reasoning_budget_tokens,
     );
-    let reasoning_mode = if reasoning_mode.is_none()
-        && (reasoning_effort.is_some() || reasoning_budget_tokens.is_some())
-    {
-        Some(ReasoningMode::Enabled)
-    } else {
-        reasoning_mode
-    };
     let reasoning_budget_tokens =
-        if reasoning_mode == Some(ReasoningMode::Enabled) && reasoning_budget_tokens.is_none() {
-            reasoning_effort.map(reasoning_budget)
-        } else {
-            reasoning_budget_tokens
-        };
-    if reasoning_mode == Some(ReasoningMode::Disabled)
-        && (reasoning_effort.is_some() || reasoning_budget_tokens.is_some())
-    {
-        return Err(ChatProfileResolutionError::ContradictoryReasoning);
-    }
+        reasoning_budget_tokens.or_else(|| reasoning_effort.map(reasoning_budget));
     let visible = resolve_common(
         &operation.max_output_tokens,
         &session.max_output_tokens,
@@ -1372,5 +1354,34 @@ mod tests {
         assert!(resolve(&profile, &session_on));
         profile.config.chat_parameters.send_thinking_state = Some(false);
         assert!(!resolve(&profile, &session_on));
+    }
+
+    #[test]
+    fn reasoning_stays_off_unless_enabled_and_the_budget_resolves_like_legacy() {
+        let (expected, mut profile, account) = fixture();
+        profile.config.chat_parameters.reasoning_effort = Some(ReasoningEffort::High);
+        profile.config.chat_parameters.max_output_tokens = Some(100);
+        profile.config.capabilities.max_total_completion_tokens = None;
+        let resolve = |profile: &crate::ModelProfile| {
+            resolve_chat_profile(
+                &expected,
+                profile,
+                &account,
+                &ChatParameterResolutionInput::default(),
+                &ChatRequirements::default(),
+            )
+            .expect("resolved")
+            .parameters
+        };
+        let off = resolve(&profile);
+        assert_eq!(off.reasoning_mode, None);
+        assert_eq!(off.reasoning_budget_tokens, Some(16_384));
+        assert_eq!(off.total_completion_allowance, Some(16_484));
+        profile.config.chat_parameters.reasoning_mode = Some(ReasoningMode::Disabled);
+        let disabled = resolve(&profile);
+        assert_eq!(disabled.reasoning_mode, Some(ReasoningMode::Disabled));
+        assert_eq!(disabled.reasoning_effort, Some(ReasoningEffort::High));
+        profile.config.chat_parameters.reasoning_budget_tokens = Some(3000);
+        assert_eq!(resolve(&profile).reasoning_budget_tokens, Some(3000));
     }
 }

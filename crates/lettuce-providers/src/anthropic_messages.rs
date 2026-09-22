@@ -19,8 +19,8 @@ use uuid::Uuid;
 
 use crate::common::{
     AdapterError, AuthPlan, Credentials, RemoteModel, decode_json, generation_policy, load_auth,
-    load_secret_headers, max_output_tokens, reject_unsupported_features,
-    validate_common_request_with_tools, validate_prompt_caching, validate_supported_reasoning,
+    load_secret_headers, max_output_tokens, validate_common_request_with_tools,
+    validate_prompt_caching, validate_supported_reasoning,
 };
 use crate::descriptor::ProviderDescriptor;
 
@@ -137,20 +137,13 @@ pub(crate) trait AnthropicWireProvider: Sync {
 
     fn validate_parameters(&self, parameters: &ResolvedChatParameters) -> Result<(), AdapterError> {
         validate_supported_reasoning(parameters)?;
-        match parameters.reasoning_mode {
-            Some(ReasoningMode::Enabled) if parameters.reasoning_budget_tokens.is_none() => {
-                return Err(AdapterError::Rejected);
-            }
-            Some(ReasoningMode::Enabled)
-                if parameters.total_completion_allowance.is_none()
-                    && max_output_tokens(parameters)
-                        .checked_add(parameters.reasoning_budget_tokens.unwrap_or_default())
-                        .is_none() =>
-            {
-                return Err(AdapterError::Rejected);
-            }
-            Some(ReasoningMode::Enabled) => {}
-            Some(ReasoningMode::Disabled) | None => reject_unsupported_features(parameters)?,
+        if anthropic_thinking(parameters).is_some()
+            && parameters.total_completion_allowance.is_none()
+            && max_output_tokens(parameters)
+                .checked_add(parameters.reasoning_budget_tokens.unwrap_or_default())
+                .is_none()
+        {
+            return Err(AdapterError::Rejected);
         }
         validate_prompt_caching(self.descriptor().prompt_caching, parameters)
     }
@@ -716,14 +709,20 @@ fn validate_tool_sequence(turns: &[Turn]) -> Result<(), AdapterError> {
     Ok(())
 }
 
+/// Legacy: the budget is added to the output cap only when thinking is sent.
 fn anthropic_max_tokens(parameters: &ResolvedChatParameters) -> u32 {
+    if anthropic_thinking(parameters).is_none() {
+        return max_output_tokens(parameters);
+    }
     parameters.total_completion_allowance.unwrap_or_else(|| {
-        max_output_tokens(parameters) + parameters.reasoning_budget_tokens.unwrap_or(0)
+        max_output_tokens(parameters)
+            .saturating_add(parameters.reasoning_budget_tokens.unwrap_or(0))
     })
 }
 
+/// Legacy: thinking requires temperature 1.0; otherwise the user's value.
 fn anthropic_temperature(parameters: &ResolvedChatParameters) -> Option<f64> {
-    if parameters.reasoning_mode == Some(ReasoningMode::Enabled) {
+    if anthropic_thinking(parameters).is_some() {
         Some(1.0)
     } else {
         parameters.temperature
@@ -1743,5 +1742,25 @@ mod tests {
                 ..
             }))
         ));
+    }
+
+    #[test]
+    fn thinking_and_its_budget_apply_only_with_reasoning_on_and_a_budget() {
+        let mut parameters = crate::integration_tests::parameters();
+        parameters.temperature = Some(0.7);
+        parameters.visible_max_output_tokens = Some(100);
+        parameters.reasoning_budget_tokens = Some(2048);
+        parameters.total_completion_allowance = Some(2148);
+        assert_eq!(super::anthropic_max_tokens(&parameters), 100);
+        assert_eq!(super::anthropic_temperature(&parameters), Some(0.7));
+        assert!(super::anthropic_thinking(&parameters).is_none());
+        parameters.reasoning_mode = Some(ReasoningMode::Enabled);
+        assert_eq!(super::anthropic_max_tokens(&parameters), 2148);
+        assert_eq!(super::anthropic_temperature(&parameters), Some(1.0));
+        assert!(super::anthropic_thinking(&parameters).is_some());
+        parameters.reasoning_budget_tokens = None;
+        parameters.total_completion_allowance = Some(100);
+        assert_eq!(super::anthropic_max_tokens(&parameters), 100);
+        assert_eq!(super::anthropic_temperature(&parameters), Some(0.7));
     }
 }

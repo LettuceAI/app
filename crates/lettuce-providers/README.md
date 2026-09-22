@@ -188,3 +188,14 @@ HTTP `provider_request_id`. Omitted/null SSE IDs preserve the earlier identity;
 changed or non-string IDs reject the stream. Other native adapters currently
 leave response identity unknown. Companion dispatch evidence retains this ID
 before workflow validation; other workflow checkpoints are not yet wired to it.
+
+Reasoning wire behaviour follows each legacy adapter (2026-09-22): with
+reasoning off, OpenAI-envelope providers still send `max_tokens` = cap +
+budget, except Mistral (reasoning ignored) and custom OpenAI-format (budget
+never added; `reasoning: {effort, max_tokens}` when on); LM Studio sends
+`max_completion_tokens`, the effort and a `reasoning` object; DeepSeek,
+Featherless use `max_tokens` + effort; LiteRouter, IntenseRP
+`max_completion_tokens` + effort; OpenRouter sends `reasoning: {}` when on
+with neither effort nor budget. Anthropic adds the budget and forces
+temperature 1.0 only when thinking is actually sent (reasoning on with a
+budget). Nothing rejects effort or budget with reasoning off.

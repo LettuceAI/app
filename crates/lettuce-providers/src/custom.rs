@@ -18,6 +18,10 @@ impl OpenAiWireProvider for Custom {
         &DESCRIPTOR
     }
 
+    fn reasoning_policy(&self) -> crate::openai_compatible::ReasoningWirePolicy {
+        crate::openai_compatible::ReasoningWirePolicy::ReasoningObject
+    }
+
     fn accepts(&self, config: &ProviderConfig) -> bool {
         matches!(config, ProviderConfig::Custom(_))
     }

@@ -9,6 +9,10 @@ impl OpenAiWireProvider for Featherless {
     fn descriptor(&self) -> &'static ProviderDescriptor {
         &DESCRIPTOR
     }
+
+    fn reasoning_policy(&self) -> crate::openai_compatible::ReasoningWirePolicy {
+        crate::openai_compatible::ReasoningWirePolicy::MaxTokens
+    }
 }
 
 pub(crate) const DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {

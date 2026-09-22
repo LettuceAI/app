@@ -40,11 +40,6 @@ impl ChatParameterProfile {
             }
         }
         validate_positive("reasoning_budget_tokens", self.reasoning_budget_tokens)?;
-        if self.reasoning_mode == Some(ReasoningMode::Disabled)
-            && (self.reasoning_effort.is_some() || self.reasoning_budget_tokens.is_some())
-        {
-            return Err(ParameterValidationError::InvalidValue("reasoning"));
-        }
         self.ollama.validate()?;
         self.openrouter.validate()?;
         Ok(())

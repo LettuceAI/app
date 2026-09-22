@@ -12,6 +12,10 @@ impl OpenAiWireProvider for IntenseRp {
         &DESCRIPTOR
     }
 
+    fn reasoning_policy(&self) -> crate::openai_compatible::ReasoningWirePolicy {
+        crate::openai_compatible::ReasoningWirePolicy::MaxCompletionTokens
+    }
+
     fn auth(&self, _config: &ProviderConfig) -> Result<AuthPlan, AdapterError> {
         Ok(AuthPlan::None)
     }

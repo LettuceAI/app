@@ -23,8 +23,8 @@ use uuid::Uuid;
 
 use crate::common::{
     AdapterError, AuthPlan, Credentials, RemoteModel, decode_json, generation_policy, load_auth,
-    load_secret_headers, max_output_tokens, reject_unsupported_features,
-    validate_common_request_with_tools, validate_prompt_caching, validate_supported_reasoning,
+    load_secret_headers, max_output_tokens, validate_common_request_with_tools,
+    validate_prompt_caching, validate_supported_reasoning,
 };
 use crate::descriptor::ProviderDescriptor;
 use crate::gemini_cache::{GeminiCache, PreparedCache};
@@ -97,9 +97,9 @@ pub(crate) trait GeminiWireProvider: Sync {
 
     fn validate_parameters(&self, parameters: &ResolvedChatParameters) -> Result<(), AdapterError> {
         validate_supported_reasoning(parameters)?;
-        if parameters.reasoning_mode != Some(ReasoningMode::Enabled) {
-            reject_unsupported_features(parameters)?;
-        } else if parameters.reasoning_budget_tokens > Some(i32::MAX as u32) {
+        if parameters.reasoning_mode == Some(ReasoningMode::Enabled)
+            && parameters.reasoning_budget_tokens > Some(i32::MAX as u32)
+        {
             return Err(AdapterError::Rejected);
         }
         validate_prompt_caching(self.descriptor().prompt_caching, parameters)

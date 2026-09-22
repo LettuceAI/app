@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) use crate::common::{ACCEPT_ONLY, AdapterError, AuthPlan, NO_HEADERS, STANDARD_HEADERS};
 use crate::common::{
     Credentials, RemoteModel, decode_json, generation_policy, load_auth, load_secret_headers,
-    max_output_tokens, parse_openai_model_list, reject_unsupported_features, skip_image_data,
+    max_output_tokens, parse_openai_model_list, skip_image_data,
     validate_common_request_with_tools, validate_prompt_caching, validate_supported_reasoning,
 };
 use crate::descriptor::ProviderDescriptor;
@@ -87,17 +87,11 @@ pub(crate) trait OpenAiWireProvider: Sync {
     }
 
     fn validate_parameters(&self, parameters: &ResolvedChatParameters) -> Result<(), AdapterError> {
-        if self.reasoning_policy() == ReasoningWirePolicy::Unsupported {
-            reject_unsupported_features(parameters)?;
-        } else {
-            validate_supported_reasoning(parameters)?;
-        }
+        validate_supported_reasoning(parameters)?;
         validate_prompt_caching(self.descriptor().prompt_caching, parameters)
     }
 
-    fn reasoning_policy(&self) -> ReasoningWirePolicy {
-        ReasoningWirePolicy::Unsupported
-    }
+    fn reasoning_policy(&self) -> ReasoningWirePolicy;
 
     fn wire_parameters(&self, parameters: &ResolvedChatParameters) -> WireParameters {
         standard_parameters(parameters)
@@ -164,7 +158,15 @@ pub(crate) fn standard_parameters(parameters: &ResolvedChatParameters) -> WirePa
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReasoningWirePolicy {
-    Unsupported,
+    /// Legacy Mistral: reasoning settings are ignored and the budget is not
+    /// added to the output cap.
+    Ignored,
+    /// Legacy custom OpenAI-format providers: a `reasoning` object with the
+    /// effort and budget, the output cap unchanged.
+    ReasoningObject,
+    /// Legacy LM Studio: `max_completion_tokens`, the effort and a
+    /// `reasoning` object.
+    MaxCompletionTokensAndReasoningObject,
     MaxCompletionTokens,
     MaxTokens,
     OpenRouter,
@@ -543,7 +545,21 @@ fn apply_reasoning(
     body: &mut serde_json::Map<String, serde_json::Value>,
 ) -> Result<(), AdapterError> {
     let enabled = parameters.reasoning_mode == Some(ReasoningMode::Enabled);
+    let total = parameters.total_completion_allowance.map_or_else(
+        || {
+            max_output_tokens(parameters)
+                .checked_add(parameters.reasoning_budget_tokens.unwrap_or(0))
+                .ok_or(AdapterError::Rejected)
+        },
+        Ok,
+    )?;
     if !enabled {
+        match policy {
+            ReasoningWirePolicy::Ignored | ReasoningWirePolicy::ReasoningObject => {}
+            _ => {
+                body.insert("max_tokens".to_owned(), total.into());
+            }
+        }
         if policy == ReasoningWirePolicy::Zai {
             body.insert(
                 "thinking".to_owned(),
@@ -553,17 +569,30 @@ fn apply_reasoning(
         return Ok(());
     }
 
-    let total = parameters.total_completion_allowance.map_or_else(
-        || {
-            max_output_tokens(parameters)
-                .checked_add(parameters.reasoning_budget_tokens.unwrap_or(0))
-                .ok_or(AdapterError::Rejected)
-        },
-        Ok,
-    )?;
     let effort = parameters.reasoning_effort.map(reasoning_effort);
+    let reasoning_object = || {
+        let mut reasoning = serde_json::Map::new();
+        if let Some(effort) = effort {
+            reasoning.insert("effort".to_owned(), effort.into());
+        }
+        if let Some(budget) = parameters.reasoning_budget_tokens {
+            reasoning.insert("max_tokens".to_owned(), budget.into());
+        }
+        serde_json::Value::Object(reasoning)
+    };
     match policy {
-        ReasoningWirePolicy::Unsupported => {}
+        ReasoningWirePolicy::Ignored => {}
+        ReasoningWirePolicy::ReasoningObject => {
+            body.insert("reasoning".to_owned(), reasoning_object());
+        }
+        ReasoningWirePolicy::MaxCompletionTokensAndReasoningObject => {
+            body.remove("max_tokens");
+            body.insert("max_completion_tokens".to_owned(), total.into());
+            if let Some(effort) = effort {
+                body.insert("reasoning_effort".to_owned(), effort.into());
+            }
+            body.insert("reasoning".to_owned(), reasoning_object());
+        }
         ReasoningWirePolicy::MaxCompletionTokens => {
             body.remove("max_tokens");
             body.insert("max_completion_tokens".to_owned(), total.into());
@@ -585,7 +614,7 @@ fn apply_reasoning(
             } else if let Some(budget) = parameters.reasoning_budget_tokens {
                 serde_json::json!({ "max_tokens": budget })
             } else {
-                serde_json::json!({ "enabled": true })
+                serde_json::json!({})
             };
             body.insert("reasoning".to_owned(), reasoning);
         }
@@ -1359,6 +1388,84 @@ mod tests {
             serde_json::json!({ "type": "disabled" })
         );
         assert!(disabled.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn reasoning_off_still_adds_the_budget_to_the_output_cap_like_legacy() {
+        let mut parameters = reasoning_parameters();
+        parameters.reasoning_mode = None;
+        for policy in [
+            ReasoningWirePolicy::MaxCompletionTokens,
+            ReasoningWirePolicy::MaxTokens,
+            ReasoningWirePolicy::OpenRouter,
+            ReasoningWirePolicy::EnableThinking,
+            ReasoningWirePolicy::MaxCompletionTokensAndReasoningObject,
+        ] {
+            let mut body = base_body();
+            apply_reasoning(policy, &parameters, &mut body).expect("reasoning wire");
+            assert_eq!(
+                serde_json::Value::Object(body),
+                serde_json::json!({ "max_tokens": 120 }),
+                "{policy:?}"
+            );
+        }
+        for policy in [
+            ReasoningWirePolicy::Ignored,
+            ReasoningWirePolicy::ReasoningObject,
+        ] {
+            let mut body = base_body();
+            apply_reasoning(policy, &parameters, &mut body).expect("reasoning wire");
+            assert_eq!(body["max_tokens"], 100, "{policy:?}");
+        }
+    }
+
+    #[test]
+    fn legacy_reasoning_objects_for_custom_lm_studio_and_mistral() {
+        let parameters = reasoning_parameters();
+        let mut custom = base_body();
+        apply_reasoning(
+            ReasoningWirePolicy::ReasoningObject,
+            &parameters,
+            &mut custom,
+        )
+        .expect("reasoning wire");
+        assert_eq!(
+            serde_json::Value::Object(custom),
+            serde_json::json!({
+                "max_tokens": 100,
+                "reasoning": { "effort": "medium", "max_tokens": 20 },
+            })
+        );
+        let mut lm_studio = base_body();
+        apply_reasoning(
+            ReasoningWirePolicy::MaxCompletionTokensAndReasoningObject,
+            &parameters,
+            &mut lm_studio,
+        )
+        .expect("reasoning wire");
+        assert_eq!(
+            serde_json::Value::Object(lm_studio),
+            serde_json::json!({
+                "max_completion_tokens": 120,
+                "reasoning_effort": "medium",
+                "reasoning": { "effort": "medium", "max_tokens": 20 },
+            })
+        );
+        let mut mistral = base_body();
+        apply_reasoning(ReasoningWirePolicy::Ignored, &parameters, &mut mistral)
+            .expect("reasoning wire");
+        assert_eq!(
+            serde_json::Value::Object(mistral),
+            serde_json::json!({ "max_tokens": 100 })
+        );
+        let mut bare = reasoning_parameters();
+        bare.reasoning_effort = None;
+        bare.reasoning_budget_tokens = None;
+        bare.total_completion_allowance = Some(100);
+        let mut openrouter = base_body();
+        apply_reasoning(ReasoningWirePolicy::OpenRouter, &bare, &mut openrouter)
+            .expect("reasoning wire");
+        assert_eq!(openrouter["reasoning"], serde_json::json!({}));
     }
 
     fn response(body: &str) -> JsonResponse {

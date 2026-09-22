@@ -1,7 +1,6 @@
 use lettuce_conversations::{InferenceRequest, PortError, ProviderFailure, ProviderFailureKind};
 use lettuce_models::{
-    PromptCaching, ProviderAccount, ReasoningMode, ResolvedChatParameters, ResolvedChatProfile,
-    SecretHeader,
+    PromptCaching, ProviderAccount, ResolvedChatParameters, ResolvedChatProfile, SecretHeader,
 };
 use lettuce_network::{
     JsonAuth, JsonClientError, JsonSecretHeader, JsonStaticHeader, RequestPolicy, RequestTimeout,
@@ -278,41 +277,21 @@ pub(crate) fn validate_common_request_with_tools(
     Ok(())
 }
 
-pub(crate) fn reject_unsupported_features(
-    parameters: &ResolvedChatParameters,
-) -> Result<(), AdapterError> {
-    if parameters.reasoning_mode == Some(ReasoningMode::Enabled)
-        || parameters.reasoning_effort.is_some()
-        || parameters.reasoning_budget_tokens.is_some()
-        || parameters.total_completion_allowance != parameters.visible_max_output_tokens
-    {
-        return Err(AdapterError::Rejected);
-    }
-    Ok(())
-}
-
+/// The output allowance must be the visible cap plus the reasoning budget,
+/// as resolution computes it whether or not reasoning is on.
 pub(crate) fn validate_supported_reasoning(
     parameters: &ResolvedChatParameters,
 ) -> Result<(), AdapterError> {
-    if parameters.reasoning_mode != Some(ReasoningMode::Enabled)
-        && (parameters.reasoning_effort.is_some()
-            || parameters.reasoning_budget_tokens.is_some()
-            || parameters.total_completion_allowance != parameters.visible_max_output_tokens)
-    {
+    let expected = match (
+        parameters.visible_max_output_tokens,
+        parameters.reasoning_budget_tokens,
+    ) {
+        (Some(visible), Some(budget)) => visible.checked_add(budget),
+        (Some(visible), None) => Some(visible),
+        (None, _) => None,
+    };
+    if parameters.total_completion_allowance != expected {
         return Err(AdapterError::Rejected);
-    }
-    if parameters.reasoning_mode == Some(ReasoningMode::Enabled) {
-        let expected = match (
-            parameters.visible_max_output_tokens,
-            parameters.reasoning_budget_tokens,
-        ) {
-            (Some(visible), Some(budget)) => visible.checked_add(budget),
-            (Some(visible), None) => Some(visible),
-            (None, _) => None,
-        };
-        if parameters.total_completion_allowance != expected {
-            return Err(AdapterError::Rejected);
-        }
     }
     Ok(())
 }

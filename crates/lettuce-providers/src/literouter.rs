@@ -13,6 +13,10 @@ impl OpenAiWireProvider for LiteRouter {
         &DESCRIPTOR
     }
 
+    fn reasoning_policy(&self) -> crate::openai_compatible::ReasoningWirePolicy {
+        crate::openai_compatible::ReasoningWirePolicy::MaxCompletionTokens
+    }
+
     fn wire_parameters(&self, parameters: &ResolvedChatParameters) -> WireParameters {
         OpenAi.wire_parameters(parameters)
     }

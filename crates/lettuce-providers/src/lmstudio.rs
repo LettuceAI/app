@@ -12,6 +12,10 @@ impl OpenAiWireProvider for LmStudio {
         &DESCRIPTOR
     }
 
+    fn reasoning_policy(&self) -> crate::openai_compatible::ReasoningWirePolicy {
+        crate::openai_compatible::ReasoningWirePolicy::MaxCompletionTokensAndReasoningObject
+    }
+
     fn auth(&self, _config: &ProviderConfig) -> Result<AuthPlan, AdapterError> {
         Ok(AuthPlan::OptionalBearer)
     }
