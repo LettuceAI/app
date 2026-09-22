@@ -827,6 +827,19 @@ impl AppBackend {
             .launch_group(request, now)
     }
 
+    /// The TLS trust every provider client is built with: this device's
+    /// trusted certificates (legacy `trustedCertificates`).
+    pub fn tls_policy(
+        &self,
+    ) -> Result<lettuce_network::TlsPolicy, lettuce_settings::GlobalSettingsStoreError> {
+        Ok(lettuce_network::TlsPolicy {
+            trusted_roots_pem: lettuce_settings::DeviceSettingsStore::load_device_settings(
+                self.database.as_ref(),
+            )?
+            .trusted_roots_pem(),
+        })
+    }
+
     /// Builds the reusable remote-provider application service with the
     /// host's real secret backend and current TLS trust policy. No in-memory
     /// credential fallback is created here.

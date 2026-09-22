@@ -15,8 +15,8 @@ use lettuce_models::{
 };
 use lettuce_settings::{
     CompanionSoulWriterSettings, CreationHelperSettings, CreationHelperToolFallback,
-    DynamicMemorySettings, EmbeddingSettings, GlobalSettings, HeaderName, HelpMeReplySettings,
-    HelpMeReplyStyle, ImageGenerationSettings, LorebookEntryGeneratorSettings,
+    DeviceSettings, DynamicMemorySettings, EmbeddingSettings, GlobalSettings, HeaderName,
+    HelpMeReplySettings, HelpMeReplyStyle, ImageGenerationSettings, LorebookEntryGeneratorSettings,
     LorebookGeneratorSelection, LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
     MemoryStructuredFallbackFormat, PureMode, SceneGenerationMode, SecretOwnerId, SecretPurpose,
     SecretRef, SecretValue, UiPreferences,
@@ -113,6 +113,10 @@ pub struct LegacyBackupSettingsCandidate {
     /// This install's legacy onboarding, hint, last-seen-version and
     /// active-usage state, verbatim under its legacy keys.
     pub device_ui_state: Map<String, Value>,
+    /// This install's legacy trusted certificates, host API (without its
+    /// token), embedding preferences and models folder; exposed host API
+    /// models still name their source model ids.
+    pub device_settings: DeviceSettings,
     pub feature_model_profile_ids: FeatureModelSources,
     pub feature_prompt_source_ids: FeaturePromptSources,
     pub deprecated_system_prompt: Option<String>,
@@ -741,6 +745,14 @@ fn map_settings(
         "companionSoulWriterStructuredFallbackFormat",
     ]);
     mapped_advanced.extend(UI_PREFERENCE_ADVANCED_KEYS);
+    mapped_advanced.extend([
+        "hostApi",
+        "embeddingModelVersion",
+        "embeddingMaxTokens",
+        "embeddingKeepModelLoaded",
+        "customLlmModelsDir",
+        "sdDefaultSize",
+    ]);
     for field in advanced
         .keys()
         .filter(|field| !mapped_advanced.contains(field.as_str()))
@@ -759,6 +771,7 @@ fn map_settings(
                 | "analyticsEnabled"
                 | "autoDownloadCharacterCardAvatars"
                 | "autoDownloadDiscoveryAvatars"
+                | "trustedCertificates"
         ) && !UI_PREFERENCE_APP_KEYS.contains(&field.as_str())
             && !DEVICE_UI_STATE_KEYS.contains(&field.as_str())
     }) {
@@ -793,7 +806,10 @@ fn map_settings(
             dynamic_memory_prompts: lettuce_settings::DynamicMemoryPromptSelection::default(),
             dynamic_memory_llama_sampler_overwrite_enabled,
             help_me_reply,
-            image_generation: map_image_generation(advanced)?,
+            image_generation: ImageGenerationSettings {
+                scene_default_size: scene_default_size(advanced, notices),
+                ..map_image_generation(advanced)?
+            },
             creation_helper: map_creation_helper(advanced)?,
             lorebook_entry_generator: LorebookEntryGeneratorSettings {
                 structured_fallback_format: fallback_format(
@@ -852,6 +868,7 @@ fn map_settings(
             creation_helper: advanced_id(advanced, "creationHelperImageModelId")?,
         },
         device_ui_state: device_ui_state(app, notices),
+        device_settings: map_device_settings(app, advanced, notices),
         feature_model_profile_ids: FeatureModelSources {
             creation_helper: advanced_id(advanced, "creationHelperModelId")?,
             lorebook_entry: advanced_id(advanced, "lorebookEntryGeneratorModelId")?,
@@ -908,6 +925,251 @@ const DEVICE_UI_STATE_KEYS: [&str; 7] = [
     "appActiveUsageStartedAtMs",
     "appActiveUsageLastUpdatedAtMs",
 ];
+
+/// Legacy device settings: entries that cannot be kept are dropped and
+/// recorded, display names and labels past the bound are shortened and
+/// recorded, and a value of the wrong type is recorded, so the result always
+/// validates. The host API bearer token is recorded as not yet imported; it
+/// belongs in the secret store with the host API runtime.
+fn map_device_settings(
+    app: &Map<String, Value>,
+    advanced: &Map<String, Value>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> DeviceSettings {
+    let mut lossy_fields = Vec::new();
+    let present = |object: &Map<String, Value>, key: &str| {
+        object.get(key).filter(|value| !value.is_null()).cloned()
+    };
+    let mut typed = |value: Option<Value>, field: &str, expected: fn(&Value) -> bool| {
+        let value = value?;
+        if expected(&value) {
+            Some(value)
+        } else {
+            lossy_fields.push(field.to_owned());
+            None
+        }
+    };
+    let certificates = typed(
+        present(app, "trustedCertificates"),
+        "app_state.trustedCertificates",
+        Value::is_array,
+    );
+    let host = typed(
+        present(advanced, "hostApi"),
+        "advanced_settings.hostApi",
+        Value::is_object,
+    );
+    let version = typed(
+        present(advanced, "embeddingModelVersion"),
+        "advanced_settings.embeddingModelVersion",
+        Value::is_string,
+    );
+    let tokens = typed(
+        present(advanced, "embeddingMaxTokens"),
+        "advanced_settings.embeddingMaxTokens",
+        Value::is_u64,
+    );
+    let keep_loaded = typed(
+        present(advanced, "embeddingKeepModelLoaded"),
+        "advanced_settings.embeddingKeepModelLoaded",
+        Value::is_boolean,
+    );
+    let folder = typed(
+        present(advanced, "customLlmModelsDir"),
+        "advanced_settings.customLlmModelsDir",
+        Value::is_string,
+    );
+    let host_enabled = host.as_ref().and_then(|host| {
+        typed(
+            host.get("enabled")
+                .filter(|value| !value.is_null())
+                .cloned(),
+            "advanced_settings.hostApi.enabled",
+            Value::is_boolean,
+        )
+    });
+    let exposed = host.as_ref().and_then(|host| {
+        typed(
+            host.get("exposedModels")
+                .filter(|value| !value.is_null())
+                .cloned(),
+            "advanced_settings.hostApi.exposedModels",
+            Value::is_array,
+        )
+    });
+    let mut settings = DeviceSettings::default();
+    for (index, value) in certificates
+        .as_ref()
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        let field = format!("app_state.trustedCertificates[{index}]");
+        let certificate = (|| {
+            Some(lettuce_settings::TrustedCertificate {
+                id: Uuid::parse_str(value.get("id")?.as_str()?).ok()?,
+                name: value.get("name")?.as_str()?.to_owned(),
+                pem: value.get("pem")?.as_str()?.to_owned(),
+                imported_at: value.get("importedAt")?.as_i64()?,
+            })
+        })()
+        .map(|certificate| lettuce_settings::TrustedCertificate {
+            name: shorten_name(
+                &certificate.name,
+                format!("{field}.name"),
+                &mut lossy_fields,
+            ),
+            ..certificate
+        });
+        let mut candidate = settings.clone();
+        candidate.trusted_certificates.extend(certificate.clone());
+        match certificate {
+            Some(certificate) if candidate.validate().is_ok() => {
+                settings.trusted_certificates.push(certificate);
+            }
+            _ => lossy_fields.push(field),
+        }
+    }
+    let mut token_unsupported = false;
+    if let Some(host) = host.as_ref().and_then(Value::as_object) {
+        settings.host_api.enabled = host_enabled
+            .as_ref()
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if let Some(address) = host.get("bindAddress").and_then(Value::as_str) {
+            if address.trim().is_empty() || address.len() > lettuce_settings::MAX_DEVICE_NAME_BYTES
+            {
+                lossy_fields.push("advanced_settings.hostApi.bindAddress".to_owned());
+            } else {
+                settings.host_api.bind_address = address.to_owned();
+            }
+        }
+        if let Some(port) = host.get("port").filter(|value| !value.is_null()) {
+            match port.as_u64().and_then(|port| u16::try_from(port).ok()) {
+                Some(port) if port != 0 => settings.host_api.port = port,
+                _ => lossy_fields.push("advanced_settings.hostApi.port".to_owned()),
+            }
+        }
+        token_unsupported = host
+            .get("token")
+            .and_then(Value::as_str)
+            .is_some_and(|token| !token.trim().is_empty());
+        for (index, value) in exposed
+            .as_ref()
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let field = format!("advanced_settings.hostApi.exposedModels[{index}]");
+            let model = (|| {
+                Some(lettuce_settings::HostApiExposedModel {
+                    id: value.get("id")?.as_str()?.to_owned(),
+                    model_profile_id: ModelProfileId::from_str(value.get("modelId")?.as_str()?)
+                        .ok()?,
+                    enabled: value
+                        .get("enabled")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(true),
+                    label: value.get("label").and_then(Value::as_str).map(|label| {
+                        shorten_name(label, format!("{field}.label"), &mut lossy_fields)
+                    }),
+                })
+            })();
+            let mut candidate = settings.clone();
+            candidate.host_api.exposed_models.extend(model.clone());
+            match model {
+                Some(model) if candidate.validate().is_ok() => {
+                    settings.host_api.exposed_models.push(model);
+                }
+                _ => lossy_fields.push(field),
+            }
+        }
+    }
+    settings.embedding.model_version = match version.as_ref().and_then(Value::as_str) {
+        Some("v3") => Some(lettuce_settings::EmbeddingModelVersion::V3),
+        Some("v4") => Some(lettuce_settings::EmbeddingModelVersion::V4),
+        None => None,
+        Some(_) => {
+            lossy_fields.push("advanced_settings.embeddingModelVersion".to_owned());
+            None
+        }
+    };
+    settings.embedding.max_tokens = tokens
+        .as_ref()
+        .and_then(Value::as_u64)
+        .map(|tokens| u16::try_from(tokens.clamp(512, 4096)).unwrap_or(4096));
+    settings.embedding.keep_model_loaded = keep_loaded
+        .as_ref()
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if let Some(folder) = folder
+        .as_ref()
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|folder| !folder.is_empty())
+    {
+        if folder.len() > 4096 {
+            lossy_fields.push("advanced_settings.customLlmModelsDir".to_owned());
+        } else {
+            settings.llm_models_dir = Some(folder.to_owned());
+        }
+    }
+    notices.extend(lossy_fields.into_iter().map(|field| {
+        notice(
+            LegacyBackupConversionNoticeKind::Lossy,
+            LegacyBackupDocumentKind::Settings,
+            field,
+        )
+    }));
+    if token_unsupported {
+        notices.push(notice(
+            LegacyBackupConversionNoticeKind::Unsupported,
+            LegacyBackupDocumentKind::Settings,
+            "advanced_settings.hostApi.token",
+        ));
+    }
+    settings
+}
+
+/// A display name or label cut to the device-settings bound at a character
+/// boundary; a cut is recorded.
+fn shorten_name(value: &str, field: String, lossy: &mut Vec<String>) -> String {
+    if value.len() <= lettuce_settings::MAX_DEVICE_NAME_BYTES {
+        return value.to_owned();
+    }
+    lossy.push(field);
+    let mut end = lettuce_settings::MAX_DEVICE_NAME_BYTES;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value[..end].to_owned()
+}
+
+/// Legacy `sdDefaultSize` (read by scene generation only, no writer):
+/// trimmed, and dropped when blank or longer than an image option may be.
+fn scene_default_size(
+    advanced: &Map<String, Value>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> Option<String> {
+    let size = advanced
+        .get("sdDefaultSize")
+        .and_then(Value::as_str)?
+        .trim();
+    if size.is_empty() {
+        return None;
+    }
+    if size.len() > 64 {
+        notices.push(notice(
+            LegacyBackupConversionNoticeKind::Lossy,
+            LegacyBackupDocumentKind::Settings,
+            "advanced_settings.sdDefaultSize",
+        ));
+        return None;
+    }
+    Some(size.to_owned())
+}
 
 /// This install's shell state, verbatim under its legacy keys; a document past
 /// the device state bound is dropped and recorded.
@@ -2487,6 +2749,22 @@ fn reconcile_selections(
             reason,
         ));
     }
+    settings
+        .device_settings
+        .host_api
+        .exposed_models
+        .retain(|exposed| {
+            let present = model_ids.contains(&exposed.model_profile_id);
+            if !present {
+                providers.skipped.push(reference(
+                    LegacyImportSkipKind::ModelReference,
+                    "settings.advanced_settings.hostApi.exposedModels",
+                    &exposed.model_profile_id.to_string(),
+                    LegacyImportSkipReason::MissingModelProfile,
+                ));
+            }
+            present
+        });
     let supported = |status: CapabilityStatus| status == CapabilityStatus::Supported;
     let image_model = |model: &crate::LegacyModelProfileCandidate| {
         supported(model.config.capabilities.output_modalities.image)
@@ -4056,7 +4334,22 @@ mod tests {
                     "lorebookEntryGeneratorStructuredFallbackFormat": "xml",
                     "companionSoulWriterFallbackModelId": model_id,
                     "companionSoulWriterStructuredFallbackFormat": "xml",
-                    "navigationStyle": "sidebar"
+                    "navigationStyle": "sidebar",
+                    "hostApi": {
+                        "enabled": true,
+                        "bindAddress": "127.0.0.1",
+                        "port": 4444,
+                        "token": "secret-token",
+                        "exposedModels": [
+                            {"id": "main", "modelId": model_id, "label": "L".repeat(300)},
+                            {"id": "gone", "modelId": ModelProfileId::new()}
+                        ]
+                    },
+                    "embeddingModelVersion": "v4",
+                    "embeddingMaxTokens": 4096,
+                    "embeddingKeepModelLoaded": true,
+                    "customLlmModelsDir": " /models/gguf ",
+                    "sdDefaultSize": "768x768"
                 })
                 .as_object()
                 .expect("feature settings")
@@ -4068,7 +4361,7 @@ mod tests {
                 json!({
                     "default_provider_credential_id": provider_id,
                     "default_model_id": model_id,
-                    "app_state": {"pureModeEnabled": false, "analyticsEnabled": false, "theme": "dark", "customColors": {"accent": "#abcdef"}, "onboarding": {"completed": true, "skipped": false, "providerSetupCompleted": true, "modelSetupCompleted": true}, "autoDownloadCharacterCardAvatars": false},
+                    "app_state": {"pureModeEnabled": false, "analyticsEnabled": false, "theme": "dark", "customColors": {"accent": "#abcdef"}, "onboarding": {"completed": true, "skipped": false, "providerSetupCompleted": true, "modelSetupCompleted": true}, "autoDownloadCharacterCardAvatars": false, "trustedCertificates": [{"id": "5b1f7a8e-8c43-4d7c-9f0e-2d5b7a1c3e44", "name": "corp.pem", "pem": "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----", "importedAt": 5}, {"id": "bad", "name": "x", "pem": "y", "importedAt": 1}]},
                     "advanced_model_settings": {"temperature": 0.2, "topK": 5},
                     "prompt_template_id": "prompt-main",
                     "system_prompt": "Old global prompt",
@@ -4329,6 +4622,40 @@ mod tests {
             Some(&json!(true))
         );
         assert!(!plan.settings.value.auto_download_character_card_avatars);
+        let device = &plan.settings.device_settings;
+        assert_eq!(device.trusted_certificates.len(), 1);
+        assert_eq!(device.trusted_certificates[0].imported_at, 5);
+        assert!(device.host_api.enabled);
+        assert_eq!(device.host_api.bind_address, "127.0.0.1");
+        assert_eq!(device.host_api.port, 4444);
+        assert_eq!(device.host_api.exposed_models.len(), 1);
+        assert_eq!(device.host_api.exposed_models[0].model_profile_id, model_id);
+        assert_eq!(
+            device.host_api.exposed_models[0]
+                .label
+                .as_deref()
+                .map(str::len),
+            Some(256)
+        );
+        assert_eq!(device.embedding.max_tokens, Some(4096));
+        assert!(device.embedding.keep_model_loaded);
+        assert_eq!(device.llm_models_dir.as_deref(), Some("/models/gguf"));
+        assert_eq!(
+            plan.settings
+                .value
+                .image_generation
+                .scene_default_size
+                .as_deref(),
+            Some("768x768")
+        );
+        let field_notice = |field: &str| plan.notices.iter().any(|notice| notice.field == field);
+        assert!(field_notice("advanced_settings.hostApi.token"));
+        assert!(field_notice("app_state.trustedCertificates[1]"));
+        assert!(!field_notice("advanced_settings.hostApi"));
+        assert!(plan.provider_models.skipped.iter().any(|skip| {
+            skip.source_key
+                .starts_with("settings.advanced_settings.hostApi.exposedModels")
+        }));
         assert!(
             !plan
                 .notices

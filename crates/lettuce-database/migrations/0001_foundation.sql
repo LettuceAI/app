@@ -40,6 +40,16 @@ CREATE TABLE device_ui_state (
     updated_at INTEGER NOT NULL
 ) STRICT;
 
+CREATE TABLE device_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    settings_json TEXT NOT NULL CHECK (
+        json_valid(settings_json)
+        AND json_type(settings_json) = 'object'
+        AND length(CAST(settings_json AS BLOB)) <= 134217728
+    ),
+    updated_at INTEGER NOT NULL
+) STRICT;
+
 CREATE TABLE app_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     default_model_profile_id TEXT REFERENCES model_profiles(id) ON DELETE RESTRICT,

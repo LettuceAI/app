@@ -22,8 +22,9 @@ const DEVICE_LOCAL_TABLES: &[&str] = &[
 impl Database {
     /// Copies device-local state from the previous database file: the sync
     /// journal, installed Whisper model manifests, local generation metrics,
-    /// the local LoRA library, the app shell's install state unless the new
-    /// file already has one (an imported legacy install's),
+    /// the local LoRA library, the app shell's install state and the device
+    /// settings unless the new file already has them (an imported legacy
+    /// install's),
     /// and the discovered voices and llama.cpp runtime reports of audio
     /// providers and models that exist in this database.
     pub fn carry_device_local_state_from(&self, previous: &Path) -> Result<(), DatabaseError> {
@@ -43,6 +44,10 @@ impl Database {
             }
             transaction.execute(
                 "INSERT OR IGNORE INTO main.device_ui_state SELECT * FROM previous.device_ui_state",
+                [],
+            )?;
+            transaction.execute(
+                "INSERT OR IGNORE INTO main.device_settings SELECT * FROM previous.device_settings",
                 [],
             )?;
             transaction.execute(
@@ -102,6 +107,29 @@ mod tests {
         assert_eq!(
             imported.load_device_ui_state().expect("kept"),
             state("2.0.0")
+        );
+
+        use lettuce_settings::DeviceSettingsStore;
+        let mut device = lettuce_settings::DeviceSettings {
+            llm_models_dir: Some("/models".into()),
+            ..Default::default()
+        };
+        previous
+            .save_device_settings(device.clone())
+            .expect("save device settings");
+        device.host_api.port = 0;
+        assert!(previous.save_device_settings(device).is_err());
+        let restored = Database::open(root.join("restored.sqlite3")).expect("restored database");
+        restored
+            .carry_device_local_state_from(&previous_path)
+            .expect("carry");
+        assert_eq!(
+            restored
+                .load_device_settings()
+                .expect("carried settings")
+                .llm_models_dir
+                .as_deref(),
+            Some("/models")
         );
     }
 

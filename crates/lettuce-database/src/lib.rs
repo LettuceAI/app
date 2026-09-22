@@ -78,7 +78,7 @@ use lettuce_models::{
     ProviderProtocol, SecretHeader, validate_provider_connection,
 };
 use lettuce_settings::{
-    DeviceUiStateStore, GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore,
+    DeviceSettings, DeviceSettingsStore, DeviceUiStateStore, GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore,
     GlobalSettingsStoreError, SecretOwnerId, SecretRef, StoredGlobalSettings,
 };
 use lettuce_sync::{MediaSyncError, MediaSyncRepository};
@@ -687,6 +687,53 @@ pub(crate) fn write_device_ui_state(
         params![state, now().map_err(|_| rusqlite::Error::InvalidQuery)?.get()],
     )?;
     Ok(())
+}
+
+/// Writes this device's settings inside `transaction`.
+pub(crate) fn write_device_settings(
+    transaction: &Connection,
+    settings: &DeviceSettings,
+) -> Result<(), rusqlite::Error> {
+    settings
+        .validate()
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let settings = serde_json::to_string(settings).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    transaction.execute(
+        "INSERT INTO device_settings (id, settings_json, updated_at) VALUES (1, ?1, ?2) \
+         ON CONFLICT(id) DO UPDATE SET settings_json = excluded.settings_json, updated_at = excluded.updated_at",
+        params![settings, now().map_err(|_| rusqlite::Error::InvalidQuery)?.get()],
+    )?;
+    Ok(())
+}
+
+impl DeviceSettingsStore for Database {
+    fn load_device_settings(&self) -> Result<DeviceSettings, GlobalSettingsStoreError> {
+        let connection = self
+            .connection()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let settings: Option<String> = connection
+            .query_row(
+                "SELECT settings_json FROM device_settings WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        settings.map_or_else(
+            || Ok(DeviceSettings::default()),
+            |settings| {
+                serde_json::from_str(&settings).map_err(|_| GlobalSettingsStoreError::InvalidData)
+            },
+        )
+    }
+
+    fn save_device_settings(&self, settings: DeviceSettings) -> Result<(), GlobalSettingsStoreError> {
+        settings.validate()?;
+        let connection = self
+            .connection()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        write_device_settings(&connection, &settings).map_err(|_| GlobalSettingsStoreError::Storage)
+    }
 }
 
 impl DeviceUiStateStore for Database {
@@ -5264,6 +5311,7 @@ mod tests {
                 "creation_staged_lorebook_writer_runs",
                 "creation_turns",
                 "creation_workflows",
+                "device_settings",
                 "device_ui_state",
                 "discovered_tts_voices",
                 "dynamic_memory_admitted_tool_calls",

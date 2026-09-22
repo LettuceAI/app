@@ -146,6 +146,9 @@ pub struct ImageGenerationSettings {
     pub scene_model_profile_id: Option<ModelProfileId>,
     pub scene_writer_model_profile_id: Option<ModelProfileId>,
     pub creation_helper_model_profile_id: Option<ModelProfileId>,
+    /// Legacy `sdDefaultSize`: the scene image size when the scene model sets
+    /// none; unset means 1024x1024.
+    pub scene_default_size: Option<String>,
 }
 
 impl Default for ImageGenerationSettings {
@@ -158,6 +161,7 @@ impl Default for ImageGenerationSettings {
             scene_model_profile_id: None,
             scene_writer_model_profile_id: None,
             creation_helper_model_profile_id: None,
+            scene_default_size: None,
         }
     }
 }

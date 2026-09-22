@@ -1391,6 +1391,15 @@ impl LegacyImportRepository for Database {
             )
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
         if !earlier_settings {
+            let mut device_settings = candidate.device_settings.clone();
+            for exposed in &mut device_settings.host_api.exposed_models {
+                exposed.model_profile_id = model(Some(exposed.model_profile_id))?
+                    .ok_or(LegacyImportRepositoryError::Conflict)?;
+            }
+            if device_settings != lettuce_settings::DeviceSettings::default() {
+                crate::write_device_settings(&transaction, &device_settings)
+                    .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            }
             if !candidate.device_ui_state.is_empty() {
                 crate::write_device_ui_state(&transaction, &candidate.device_ui_state)
                     .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;

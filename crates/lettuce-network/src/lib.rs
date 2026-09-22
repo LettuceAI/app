@@ -445,11 +445,7 @@ impl JsonClient {
     }
 
     pub fn with_tls(policy: &TlsPolicy) -> Result<Self, JsonClientError> {
-        let roots: Vec<reqwest::Certificate> = policy
-            .trusted_roots_pem
-            .iter()
-            .filter_map(|pem| reqwest::Certificate::from_pem(pem.as_bytes()).ok())
-            .collect();
+        let roots = trusted_roots(policy);
         Ok(Self {
             strict: build_client(&roots, false)?,
             insecure: build_client(&roots, true)?,
@@ -794,11 +790,7 @@ impl BulkHttpClient {
     }
 
     pub fn with_tls(policy: &TlsPolicy) -> Result<Self, JsonClientError> {
-        let roots: Vec<reqwest::Certificate> = policy
-            .trusted_roots_pem
-            .iter()
-            .filter_map(|pem| reqwest::Certificate::from_pem(pem.as_bytes()).ok())
-            .collect();
+        let roots = trusted_roots(policy);
         Ok(Self {
             strict: build_client(&roots, false)?,
             insecure: build_client(&roots, true)?,
@@ -1007,6 +999,30 @@ fn apply_secret_headers(
         request = sensitive_header(request, header_name, header_value);
     }
     Ok(request)
+}
+
+/// Legacy `apply_trusted_certificates`: a root the TLS stack cannot parse is
+/// skipped with a warning. The rustls backend only parses roots while it
+/// builds a client, so each one is tried alone first; one bad root would
+/// otherwise fail every client.
+fn trusted_roots(policy: &TlsPolicy) -> Vec<reqwest::Certificate> {
+    policy
+        .trusted_roots_pem
+        .iter()
+        .filter_map(|pem| {
+            let root = reqwest::Certificate::from_pem(pem.as_bytes()).ok()?;
+            if reqwest::Client::builder()
+                .add_root_certificate(root.clone())
+                .build()
+                .is_ok()
+            {
+                Some(root)
+            } else {
+                tracing::warn!("Skipping invalid trusted certificate");
+                None
+            }
+        })
+        .collect()
 }
 
 fn build_client(
@@ -1354,6 +1370,18 @@ mod tests {
         net::TcpListener,
         sync::oneshot,
     };
+
+    #[test]
+    fn an_unparsable_trusted_root_is_skipped_instead_of_failing_every_client() {
+        let policy = TlsPolicy {
+            trusted_roots_pem: vec![
+                "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----".to_owned(),
+            ],
+        };
+        assert!(trusted_roots(&policy).is_empty());
+        assert!(JsonClient::with_tls(&policy).is_ok());
+        assert!(BulkHttpClient::with_tls(&policy).is_ok());
+    }
 
     async fn test_server(response: &'static str) -> (String, oneshot::Receiver<Vec<u8>>) {
         let listener = TcpListener::bind("127.0.0.1:0")

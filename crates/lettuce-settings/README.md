@@ -85,6 +85,23 @@ because character-card import (not yet ported) reads it.
 counters) in the device-local `device_ui_state` row, which never syncs or
 enters backups; a restore keeps an imported legacy install's state, otherwise
 the previous database's.
+`DeviceSettingsStore` keeps the typed `DeviceSettings` of this device in the
+device-local `device_settings` row (same carry rule): legacy
+`trustedCertificates` (checked like legacy's importer: `BEGIN`/`END
+CERTIFICATE` markers, no duplicate PEM, up to 1 MiB each so CA bundles fit;
+over-long names are shortened, not dropped; `AppBackend::tls_policy` builds
+the `TlsPolicy` the host passes to provider clients, and a root the TLS stack
+cannot parse is tried alone and skipped with a warning, where legacy's rustls
+build failed every client), `hostApi` without its bearer token (the token is
+recorded as not imported and moves to the secret store with the host API
+runtime; exposed models point at the imported model profiles, and like legacy
+an exposure whose model is later deleted or absent after a restore stays and
+is refused when requested),
+`embeddingModelVersion`/`embeddingMaxTokens`/`embeddingKeepModelLoaded` and
+`customLlmModelsDir`. Legacy synced and backed these up with its settings row;
+they describe one machine (paths, network trust, listeners, installed files),
+so the rewrite keeps them per device. `image_generation.scene_default_size` is
+legacy `sdDefaultSize` (portable, used by scene generation only).
 An optional group-chat policy lives beside the direct policy in global settings,
 matching the legacy settings editor and persistence owner. Group launches use
 that complete override when present and otherwise inherit the direct policy.
