@@ -1585,3 +1585,7 @@ lazy worker) and attach it to `provider_runtime`; `DatabaseLlamaHost` stores
 runtime reports and metrics, and the frontend events go to the
 `LlamaEventSink` the host attaches with `with_llama_event_sink` (logged at
 debug level until then).
+The legacy llama.cpp commands are `AppBackend` methods: `llama_backend_devices`
+(integrated GPUs included, see lettuce-local-llm), `llama_context_info`,
+`llama_embedded_chat_template` (still loads the model on the CPU: llama.cpp
+names a template for some models that carry none) and `unload_local_llama`.

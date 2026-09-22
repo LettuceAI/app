@@ -71,6 +71,12 @@ impl AppBackend {
         self
     }
 
+    /// The embedded llama.cpp runtime if it already started.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    pub(crate) fn started_local_llama(&self) -> Option<lettuce_providers::LocalLlama> {
+        self.local_llama.get().cloned().flatten()
+    }
+
     /// The embedded llama.cpp runtime, started on first use like legacy's
     /// worker; `None` when its thread could not start.
     #[cfg(not(any(target_os = "android", target_os = "ios")))]

@@ -61,6 +61,11 @@ impl LocalLlama {
     pub fn new(runtime: Arc<LlamaRuntime>, host: Arc<dyn LlamaHost>) -> Self {
         Self { runtime, host }
     }
+
+    #[must_use]
+    pub fn runtime(&self) -> &Arc<LlamaRuntime> {
+        &self.runtime
+    }
 }
 
 struct ForwardingObserver {

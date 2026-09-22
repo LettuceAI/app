@@ -324,6 +324,47 @@ pub fn plan_smart_gpu_offload(
     ))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum EmbeddedTemplateError {
+    #[error("llama.cpp model path is empty")]
+    EmptyPath,
+    #[error("llama.cpp model path not found: {0}")]
+    NotFound(String),
+    #[error(transparent)]
+    Backend(#[from] LlamaRuntimeError),
+    #[error("Failed to load llama model for embedded template read: {0}")]
+    Load(String),
+    #[error("No embedded GGUF chat template found: {0}")]
+    Missing(String),
+    #[error("Failed to decode embedded GGUF chat template: {0}")]
+    Decode(String),
+}
+
+/// The chat template the model file carries, as the model editor shows it.
+/// The model is loaded (on the CPU) because llama.cpp names a template for
+/// some models that carry none.
+pub fn embedded_chat_template(model_path: &str) -> Result<String, EmbeddedTemplateError> {
+    if model_path.trim().is_empty() {
+        return Err(EmbeddedTemplateError::EmptyPath);
+    }
+    if !Path::new(model_path).exists() {
+        return Err(EmbeddedTemplateError::NotFound(model_path.to_string()));
+    }
+    let backend = shared_backend()?;
+    let model = LlamaModel::load_from_file(
+        backend.as_ref(),
+        model_path,
+        &LlamaModelParams::default().with_n_gpu_layers(0),
+    )
+    .map_err(|error| EmbeddedTemplateError::Load(error.to_string()))?;
+    let template = model
+        .chat_template(None)
+        .map_err(|error| EmbeddedTemplateError::Missing(error.to_string()))?;
+    template
+        .to_string()
+        .map_err(|error| EmbeddedTemplateError::Decode(error.to_string()))
+}
+
 /// VRAM a bundled MTP draft of this model needs.
 pub fn estimate_mtp_gpu_reserve_bytes(
     model_path: &str,
