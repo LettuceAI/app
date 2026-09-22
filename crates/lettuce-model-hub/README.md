@@ -100,3 +100,10 @@ ID, revision, path, size and SHA-256 still match their voice bytes. A missing,
 malformed or mismatched sidecar makes that voice unavailable to verified
 synthesis but never deletes or overwrites its binary. Explicit managed removal
 deletes the verified voice and its matching sidecar.
+
+`PinnedArtifactStore` generalizes the Kokoro install store for any artifact
+with a known size and (usually) SHA-256: partial names bind the source
+identity, destination, digest and size; downloads resume; complete files are
+verified before an atomic rename; an installed file that fails verification
+(or an oversized partial) is replaced. A missing digest checks the size
+only, as legacy did for release assets without one.

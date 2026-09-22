@@ -2,12 +2,15 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod catalog;
 mod media;
 mod port;
 mod profile;
 mod prompt;
 mod request;
+pub mod sd_runtime;
 
+pub use catalog::*;
 pub use media::*;
 pub use port::*;
 pub use profile::*;

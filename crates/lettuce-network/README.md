@@ -49,3 +49,10 @@ segments, sends an optional byte range, accepts only coherent complete or
 partial responses, limits redirects to five HTTPS locations, applies a
 per-chunk idle timeout, and leaves backpressure and cancellation with the
 caller. The model-hub layer owns expected-size and digest verification.
+
+Artifact paths may have several segments (`onnx/model.onnx`,
+`split_files/vae/ae.safetensors`); each segment keeps the strict character
+set and `.`/`..` are refused. The earlier single-segment check rejected
+Kokoro's pinned `onnx/` and `voices/` files, so real Kokoro installs failed.
+`open_https` serves pinned HTTPS artifacts such as GitHub release assets with
+the same range handling.

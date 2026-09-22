@@ -244,7 +244,38 @@ impl ArtifactDownloadClient {
             .extend(repository.split('/'))
             .push("resolve")
             .push(revision)
-            .push(filename);
+            .extend(filename.split('/'));
+        self.open(url, offset, expected_size).await
+    }
+
+    /// Opens a pinned HTTPS artifact, such as a GitHub release asset, whose
+    /// size is known; redirects stay on HTTPS.
+    pub async fn open_https(
+        &self,
+        url: &str,
+        offset: u64,
+        expected_size: u64,
+    ) -> Result<ArtifactDownloadStream, ArtifactDownloadError> {
+        let url = Url::parse(url).map_err(|_| ArtifactDownloadError::InvalidRequest)?;
+        if url.scheme() != "https"
+            || url.host_str().is_none_or(str::is_empty)
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.fragment().is_some()
+            || expected_size == 0
+            || offset > expected_size
+        {
+            return Err(ArtifactDownloadError::InvalidRequest);
+        }
+        self.open(url, offset, expected_size).await
+    }
+
+    async fn open(
+        &self,
+        url: Url,
+        offset: u64,
+        expected_size: u64,
+    ) -> Result<ArtifactDownloadStream, ArtifactDownloadError> {
         let mut request = self.client.get(url);
         if offset > 0 {
             request = request.header(header::RANGE, format!("bytes={offset}-"));
@@ -312,7 +343,10 @@ fn valid_repository(repository: &str) -> bool {
 }
 
 fn valid_artifact_filename(filename: &str) -> bool {
-    valid_path_segment(filename) && filename.len() <= MAX_PATH_BYTES
+    filename.len() <= MAX_PATH_BYTES
+        && filename
+            .split('/')
+            .all(|segment| valid_path_segment(segment) && segment != "." && segment != "..")
 }
 
 fn valid_path_segment(value: &str) -> bool {
@@ -1460,6 +1494,11 @@ mod tests {
         assert!(valid_repository("ggerganov/whisper.cpp"));
         assert!(!valid_repository("ggerganov/whisper.cpp/extra"));
         assert!(!valid_artifact_filename("../ggml-base.bin"));
+        assert!(valid_artifact_filename("onnx/model_quantized.onnx"));
+        assert!(valid_artifact_filename("split_files/vae/ae.safetensors"));
+        assert!(!valid_artifact_filename("split_files/../ae.safetensors"));
+        assert!(!valid_artifact_filename("/ae.safetensors"));
+        assert!(!valid_artifact_filename("split_files//ae.safetensors"));
     }
 
     #[tokio::test]

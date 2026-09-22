@@ -62,5 +62,24 @@ Deliberate corrections:
 - Request bounds legacy lacked: at most 10 images, 16 input images, a 64 KiB
   prompt, and trimmed size/quality/style values.
 
-Next: the stable-diffusion.cpp runtime, the remote provider adapters and
-ComfyUI, then the scene, playground and creation-helper callers.
+stable-diffusion.cpp (in progress):
+
+- `resources/stable-diffusion-cpp-catalog.json`: the legacy one-click model
+  catalog (8 profiles, variants, pinned repository/revision/size/SHA-256 of
+  every component, the bundle markers legacy used to recognise user-picked
+  files) and the pinned RealESRGAN upscaler, extracted mechanically from the
+  legacy source. `catalog.rs` types and validates it and keeps legacy's
+  lookups and error texts.
+- `sd_runtime`: the frozen auto-fit placement estimate and `--backend`
+  specs, the per-build compute policy (legacy name-based files migrate),
+  engine device matching, the native `img_gen` payload with legacy defaults
+  and reference rules, console output (240-line tail, OOM signatures,
+  throttled progress per stream), GitHub release filtering per platform, the
+  legacy on-disk layout (engine builds, archives, content-addressed
+  components, active build and policy files) so legacy installs are reused,
+  and LoRA path normalization with the FLUX.2 Klein tensor alias cache.
+
+Next: the sd-server process (spawn, reuse by key, readiness, OOM retry with
+CPU offload, cancel, llama.cpp exclusion), installs as jobs, model
+registration, the remote provider adapters and ComfyUI, then the scene,
+playground and creation-helper callers.

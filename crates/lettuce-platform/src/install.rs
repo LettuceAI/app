@@ -224,6 +224,23 @@ impl ConfinedInstallStore {
         }
     }
 
+    /// Removes a stale partial or installed file by key; `false` when there
+    /// was none.
+    pub fn discard(&self, key: &ObjectKey) -> Result<bool, PlatformError> {
+        let path = path_for(key);
+        match self.root.symlink_metadata(&path) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() || !metadata.is_file() {
+                    return Err(PlatformError::SymlinkEscape);
+                }
+                self.root.remove_file(&path).map_err(PlatformError::from)?;
+                Ok(true)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(PlatformError::from(error)),
+        }
+    }
+
     #[must_use]
     pub fn owns_installed_path(&self, target: &ObjectKey, path: &Path) -> bool {
         self.root_path.join(path_for(target)) == path
