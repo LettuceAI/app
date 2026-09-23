@@ -138,12 +138,12 @@ impl AudioProviderVerifier for ElevenLabsTtsRuntime {
     }
 }
 
-#[async_trait]
-impl VoiceDiscovery for ElevenLabsTtsRuntime {
-    async fn fetch_configured_voices(
+impl ElevenLabsTtsRuntime {
+    async fn fetch_voices(
         &self,
         provider: &AudioProvider,
         credential: &SecretValue,
+        search: Option<&str>,
     ) -> Result<Vec<DiscoveredVoiceDraft>, VoiceDiscoveryError> {
         provider
             .validate()
@@ -159,9 +159,16 @@ impl VoiceDiscovery for ElevenLabsTtsRuntime {
         };
         let response = self
             .network
-            .get_json(
+            .get_json_with_query(
                 &self.endpoint,
                 "/v1/voices",
+                &search
+                    .map(|value| JsonQueryParameter {
+                        name: "search",
+                        value,
+                    })
+                    .into_iter()
+                    .collect::<Vec<_>>(),
                 &[],
                 auth,
                 Vec::new(),
@@ -177,7 +184,9 @@ impl VoiceDiscovery for ElevenLabsTtsRuntime {
         }
         let response: ElevenLabsVoicesResponse =
             serde_json::from_slice(&response.body).map_err(|_| VoiceDiscoveryError::InvalidData)?;
-        if response.has_more || response.voices.len() > crate::MAX_DISCOVERED_VOICES {
+        if (response.has_more && search.is_none())
+            || response.voices.len() > crate::MAX_DISCOVERED_VOICES
+        {
             return Err(VoiceDiscoveryError::InvalidData);
         }
         response
@@ -201,6 +210,29 @@ impl VoiceDiscovery for ElevenLabsTtsRuntime {
                 Ok(voice)
             })
             .collect()
+    }
+}
+
+#[async_trait]
+impl VoiceDiscovery for ElevenLabsTtsRuntime {
+    async fn fetch_configured_voices(
+        &self,
+        provider: &AudioProvider,
+        credential: &SecretValue,
+    ) -> Result<Vec<DiscoveredVoiceDraft>, VoiceDiscoveryError> {
+        self.fetch_voices(provider, credential, None).await
+    }
+}
+
+#[async_trait]
+impl crate::VoiceSearch for ElevenLabsTtsRuntime {
+    async fn search_voices(
+        &self,
+        provider: &AudioProvider,
+        credential: &SecretValue,
+        search: &str,
+    ) -> Result<Vec<DiscoveredVoiceDraft>, VoiceDiscoveryError> {
+        self.fetch_voices(provider, credential, Some(search)).await
     }
 }
 
@@ -697,6 +729,36 @@ mod tests {
         assert_eq!(value["generated_voice_id"], "generated-1");
         assert_eq!(value["voice_description"], "A warm and expressive narrator");
         assert!(value.get("labels").is_none());
+    }
+
+    #[tokio::test]
+    async fn searches_the_voice_library_by_text() {
+        let body = br#"{"voices":[{"voice_id":"voice-2","name":"Deep"}],"has_more":true}"#;
+        let headers = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+        let response = headers
+            .into_bytes()
+            .into_iter()
+            .chain(body.iter().copied())
+            .collect();
+        let (endpoint, captured) = server(response).await;
+        let runtime = ElevenLabsTtsRuntime::with_endpoint(
+            Arc::new(JsonClient::new().expect("network client")),
+            endpoint,
+        );
+        let voices = crate::VoiceSearch::search_voices(
+            &runtime,
+            &request("voice").provider,
+            &SecretValue::new("api-key-canary").expect("secret"),
+            "deep narrator",
+        )
+        .await
+        .expect("voice search");
+        assert_eq!(voices[0].voice_id, "voice-2");
+        let captured = captured.lock().expect("captured request");
+        assert!(
+            String::from_utf8_lossy(&captured)
+                .starts_with("GET /v1/voices?search=deep+narrator HTTP/1.1")
+        );
     }
 
     #[tokio::test]

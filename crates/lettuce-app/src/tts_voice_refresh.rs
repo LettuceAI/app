@@ -2,7 +2,7 @@ use lettuce_settings::{SecretPurpose, SecretStore, SecretStoreError};
 use lettuce_speech::{
     AudioProviderConfig, DiscoveredVoice, DiscoveredVoiceRepository, TtsConfigurationRepository,
     TtsConfigurationRepositoryError, VoiceDiscovery, VoiceDiscoveryError,
-    VoiceDiscoveryRepositoryError, materialize_discovered_voices,
+    VoiceDiscoveryRepositoryError, VoiceSearch, materialize_discovered_voices,
 };
 use lettuce_types::{AudioProviderId, TimestampMillis};
 
@@ -34,6 +34,48 @@ where
         self.repository
             .list_discovered_voices(provider_id)
             .map_err(TtsVoiceRefreshError::Repository)
+    }
+
+    /// Voices of an ElevenLabs account's library matching `search`, not
+    /// cached; an OpenAI-compatible provider has none to search.
+    pub async fn search<D: VoiceSearch + ?Sized>(
+        &self,
+        provider_id: AudioProviderId,
+        search: &str,
+        searcher: &D,
+        now: TimestampMillis,
+    ) -> Result<Vec<DiscoveredVoice>, TtsVoiceRefreshError> {
+        let provider = self
+            .repository
+            .get_audio_provider(provider_id)
+            .map_err(TtsVoiceRefreshError::Configuration)?
+            .ok_or(TtsVoiceRefreshError::Configuration(
+                TtsConfigurationRepositoryError::NotFound,
+            ))?;
+        match &provider.config {
+            AudioProviderConfig::OpenAiCompatible { .. } => return Ok(Vec::new()),
+            AudioProviderConfig::Elevenlabs => {}
+            _ => return Err(TtsVoiceRefreshError::InvalidInput),
+        }
+        let reference = provider
+            .api_key_ref
+            .ok_or(TtsVoiceRefreshError::InvalidInput)?;
+        let credential = self
+            .secrets
+            .load(
+                &reference,
+                &SecretPurpose::AudioApiKey {
+                    owner: provider.secret_owner_id,
+                },
+            )
+            .await
+            .map_err(TtsVoiceRefreshError::SecretStore)?;
+        let drafts = searcher
+            .search_voices(&provider, &credential, search)
+            .await
+            .map_err(TtsVoiceRefreshError::Discovery)?;
+        materialize_discovered_voices(provider.id, drafts, now)
+            .map_err(TtsVoiceRefreshError::Discovery)
     }
 
     pub async fn refresh<D: VoiceDiscovery + ?Sized>(

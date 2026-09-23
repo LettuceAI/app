@@ -265,3 +265,8 @@ style lookup, 240-sample linear crossfade and 24 kHz mono PCM16 WAV encoding
 are preserved. Nonfinite or oversized inference output fails before media
 ingestion. Routing persisted Kokoro TTS requests into this runtime remains the
 application boundary's responsibility.
+
+Voice search: `VoiceSearch` (ElevenLabs) searches the account's voice library
+by text (`/v1/voices?search=`); unlike the cached refresh, a search result may
+be one page of more. `TtsVoiceRefreshCoordinator::search` returns the matches
+without caching them, nothing for an OpenAI-compatible provider, like legacy.

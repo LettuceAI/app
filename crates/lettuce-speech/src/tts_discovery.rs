@@ -102,6 +102,17 @@ pub trait VoiceDiscovery: Send + Sync {
     ) -> Result<Vec<DiscoveredVoiceDraft>, VoiceDiscoveryError>;
 }
 
+/// A provider's voice library searched by text (ElevenLabs).
+#[async_trait]
+pub trait VoiceSearch: Send + Sync {
+    async fn search_voices(
+        &self,
+        provider: &AudioProvider,
+        credential: &SecretValue,
+        search: &str,
+    ) -> Result<Vec<DiscoveredVoiceDraft>, VoiceDiscoveryError>;
+}
+
 pub trait DiscoveredVoiceRepository: Send + Sync {
     fn replace_discovered_voices(
         &self,
