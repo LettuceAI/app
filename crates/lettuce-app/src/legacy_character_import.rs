@@ -793,6 +793,9 @@ mod tests {
             companion_session(companion_second_id, 400, None),
             companion_session(companion_third_id, 500, None),
         ];
+        let mut direct_sessions = direct_sessions;
+        direct_sessions[0].memories_json =
+            r#"[" The user likes night shifts ", "Alice is allergic to cats", "  "]"#.to_owned();
         let direct_memories = vec![session_memory.clone(), companion_memory];
         let companion_shared = lettuce_transfer::LegacyBackupCompanionSharedMemory {
             ordinal: 0,
@@ -891,9 +894,14 @@ mod tests {
             .iter()
             .find(|space| space.conversation_id == conv(session_id))
             .expect("imported memory space");
-        assert_eq!(space.snapshot.items.len(), 1);
+        assert_eq!(space.snapshot.items.len(), 2);
         assert_eq!(space.snapshot.items[0].text, "The user likes night shifts");
         assert!(space.snapshot.items[0].is_pinned);
+        assert_eq!(space.snapshot.items[1].text, "Alice is allergic to cats");
+        assert_eq!(
+            space.snapshot.items[1].volatility,
+            lettuce_memory::Score::LEGACY_VOLATILITY
+        );
         assert_eq!(graph.memory_projections.projections.len(), 3);
         let scene_conversation = lettuce_conversations::ConversationReader::get(
             backend.database(),

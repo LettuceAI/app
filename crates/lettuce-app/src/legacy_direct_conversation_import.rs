@@ -57,6 +57,7 @@ pub(crate) struct ImportContext {
     media: BTreeMap<String, lettuce_types::AssetId>,
     backgrounds: BTreeMap<(String, bool), lettuce_types::AssetId>,
     pub(crate) scope: LegacyIdScope,
+    dynamic_memory_enabled: bool,
 }
 
 impl ImportContext {
@@ -162,6 +163,7 @@ pub(crate) struct LegacyConversationSource<'a> {
     pub updated_at: u64,
     pub messages: Vec<TimelineMessage<'a>>,
     pub memory: Option<&'a LegacyBackupMemoryEmbeddingOwner>,
+    pub memory_texts: Option<&'a str>,
     pub memory_summary: Option<&'a str>,
     pub memory_summary_token_count: u64,
     pub memory_tool_events: Option<&'a str>,
@@ -205,7 +207,12 @@ where
         )? {
             return Ok(receipt);
         }
-        let context = import_context(admission, plan, &source_fingerprint);
+        let mut context = import_context(admission, plan, &source_fingerprint);
+        context.dynamic_memory_enabled = lettuce_settings::GlobalSettingsStore::load(self.sources)
+            .map_err(|_| Error::Storage)?
+            .settings
+            .dynamic_memory
+            .enabled;
         let mut mapped = Vec::with_capacity(sessions.len());
         for session in sessions {
             let memory = memory_owner(
@@ -215,7 +222,22 @@ where
             );
             mapped.push(self.map_session(session, memory, companions, &context)?);
         }
-        attach_companion_pools(&mut mapped, sessions, memories, companions, context.scope)?;
+        let mut dynamic_companions = std::collections::BTreeSet::new();
+        for (_, pending) in &mapped {
+            if let Some(pending) = pending
+                && self.dynamic_memory_active(pending.owner.character_id, &context)?
+            {
+                dynamic_companions.insert(pending.owner.character_id);
+            }
+        }
+        attach_companion_pools(
+            &mut mapped,
+            sessions,
+            memories,
+            companions,
+            &dynamic_companions,
+            context.scope,
+        )?;
         let mut conversations = assign_companion_episodes(mapped)?;
         conversations.sort_by_key(|record| {
             let episode = record
@@ -303,6 +325,22 @@ where
         )
     }
 
+    /// Whether legacy ran this character's chats on dynamic memory: the
+    /// global switch and the character's dynamic memory type.
+    fn dynamic_memory_active(
+        &self,
+        character_id: CharacterId,
+        context: &ImportContext,
+    ) -> Result<bool, Error> {
+        Ok(context.dynamic_memory_enabled
+            && lettuce_characters::CharacterRepository::get(self.sources, character_id)
+                .map_err(|_| Error::Storage)?
+                .is_some_and(|details| {
+                    details.character.defaults.memory_policy
+                        == lettuce_characters::MemoryPolicy::Dynamic
+                }))
+    }
+
     /// Soul facts and scheduled notes belong to companion characters the
     /// import wrote; a character imported in another interaction mode keeps none.
     fn is_companion(
@@ -352,6 +390,11 @@ where
         } else {
             session.title.clone()
         };
+        let memory_texts = shown_memory_texts(
+            self.dynamic_memory_active(character_id, context)?,
+            memory,
+            &session.memories_json,
+        );
         let request = DirectConversationLaunchRequest {
             format_version: DIRECT_LAUNCH_REQUEST_FORMAT_V1,
             title,
@@ -514,6 +557,7 @@ where
                 updated_at: session.updated_at,
                 messages,
                 memory,
+                memory_texts,
                 memory_summary: session.memory_summary.as_deref(),
                 memory_summary_token_count: session.memory_summary_token_count,
                 memory_tool_events: Some(session.memory_tool_events_json.as_str()),
@@ -633,6 +677,7 @@ fn attach_companion_pools(
     sessions: &[LegacyBackupDirectSession],
     memories: &[LegacyBackupMemoryEmbeddingOwner],
     companions: &[LegacyBackupCompanionSharedMemory],
+    dynamic_companions: &std::collections::BTreeSet<CharacterId>,
     scope: LegacyIdScope,
 ) -> Result<(), Error> {
     let character_of = |pending: &Option<PendingCompanion>| {
@@ -661,32 +706,39 @@ fn attach_companion_pools(
             memories,
             LegacyBackupMemoryOwnerKind::CompanionShared,
             &legacy_character_id.to_string(),
-        )
-        .filter(|owner| {
+        );
+        let dynamic = dynamic_companions.contains(&character_id);
+        let shared_texts = shared_state
+            .and_then(|state| shown_memory_texts(dynamic, shared_owner, &state.memories_json));
+        let shared = shared_owner.is_some_and(|owner| {
             owner.memories.iter().any(|memory| {
                 memory.materialization != LegacyBackupMemoryMaterialization::RetainedEvidence
             })
-        });
+        }) || !unembedded_memory_texts(shared_owner, shared_texts).is_empty();
         let mut pool = None;
         for carrier in candidates {
             let session = &sessions[carrier];
-            let (owner, summary, summary_token_count, tool_events) = match shared_owner {
-                Some(owner) => (
-                    Some(owner),
+            let (owner, texts, summary, summary_token_count, tool_events) = if shared {
+                (
+                    shared_owner,
+                    shared_texts,
                     shared_state.and_then(|state| state.memory_summary.as_deref()),
                     shared_state.map_or(0, |state| state.memory_summary_token_count),
                     shared_state.map(|state| state.memory_tool_events_json.as_str()),
-                ),
-                None => (
-                    memory_owner(
-                        memories,
-                        LegacyBackupMemoryOwnerKind::DirectConversation,
-                        &session.source_id,
-                    ),
+                )
+            } else {
+                let owner = memory_owner(
+                    memories,
+                    LegacyBackupMemoryOwnerKind::DirectConversation,
+                    &session.source_id,
+                );
+                (
+                    owner,
+                    shown_memory_texts(dynamic, owner, &session.memories_json),
                     session.memory_summary.as_deref(),
                     session.memory_summary_token_count,
                     Some(session.memory_tool_events_json.as_str()),
-                ),
+                )
             };
             let record = &mapped[carrier].0;
             let (space, projections) = memory_space(
@@ -694,6 +746,7 @@ fn attach_companion_pools(
                 record.history.aggregate.conversation.id,
                 &format!("companion-pool:{legacy_character_id}"),
                 owner,
+                texts,
                 summary,
                 summary_token_count,
                 tool_events,
@@ -1094,6 +1147,7 @@ fn memory_space(
     conversation_id: ConversationId,
     source_id: &str,
     owner: Option<&LegacyBackupMemoryEmbeddingOwner>,
+    texts: Option<&str>,
     summary: Option<&str>,
     summary_token_count: u64,
     tool_events: Option<&str>,
@@ -1188,6 +1242,16 @@ fn memory_space(
             });
         }
     }
+    for (index, text) in unembedded_memory_texts(owner, texts) {
+        if items.len() == lettuce_memory::MAX_MEMORY_ITEMS {
+            break;
+        }
+        let id = memory_item_id(scope, source_id, &format!("text:{index}"));
+        let short_id = MemoryShortId::allocate(id, |candidate| {
+            items.iter().any(|item| item.short_id == candidate)
+        });
+        items.push(MemoryItem::written(id, short_id, text, updated_at));
+    }
     let in_dialogue = |message: &&BackupMessage| {
         message.message.visibility == MessageVisibility::Visible
             && matches!(
@@ -1281,6 +1345,46 @@ fn legacy_summary_anchor(
             })
             .then_some(anchor)
     })
+}
+
+/// The memory texts a chat showed: all of them on manual memory, and on
+/// dynamic memory only while it had no embeddings.
+pub(crate) fn shown_memory_texts<'a>(
+    dynamic: bool,
+    owner: Option<&LegacyBackupMemoryEmbeddingOwner>,
+    texts: &'a str,
+) -> Option<&'a str> {
+    (!dynamic || owner.is_none_or(|owner| owner.memories.is_empty())).then_some(texts)
+}
+
+/// The owner's memory texts that none of its embeddings carries, with their
+/// index in the text list.
+fn unembedded_memory_texts(
+    owner: Option<&LegacyBackupMemoryEmbeddingOwner>,
+    texts: Option<&str>,
+) -> Vec<(usize, String)> {
+    let mut embedded = owner
+        .into_iter()
+        .flat_map(|owner| &owner.memories)
+        .map(|memory| memory.text.trim())
+        .collect::<Vec<_>>();
+    let texts = texts
+        .and_then(|texts| serde_json::from_str::<Vec<String>>(texts).ok())
+        .unwrap_or_default();
+    let mut unembedded = Vec::new();
+    for (index, text) in texts.iter().enumerate() {
+        let text = text.trim();
+        if text.is_empty() || text.len() > lettuce_memory::MAX_MEMORY_TEXT_BYTES {
+            continue;
+        }
+        match embedded.iter().position(|embedded| *embedded == text) {
+            Some(position) => {
+                embedded.swap_remove(position);
+            }
+            None => unembedded.push((index, text.to_owned())),
+        }
+    }
+    unembedded
 }
 
 /// Legacy branch sessions copied their parent's memories with the same ids,
@@ -1449,6 +1553,7 @@ pub(crate) fn conversation_record(
         conversation_id,
         source.source_id,
         source.memory,
+        source.memory_texts,
         source.memory_summary,
         source.memory_summary_token_count,
         source.memory_tool_events,
@@ -1949,6 +2054,7 @@ pub(crate) fn import_context(
         media,
         backgrounds,
         scope: LegacyIdScope::new(source_fingerprint),
+        dynamic_memory_enabled: false,
     }
 }
 

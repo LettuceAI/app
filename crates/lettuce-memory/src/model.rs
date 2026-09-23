@@ -183,6 +183,40 @@ pub struct MemoryItem {
 }
 
 impl MemoryItem {
+    /// A memory a person wrote: full importance, default volatility, no
+    /// source turn, and no token count until one is measured.
+    #[must_use]
+    pub fn written(
+        id: MemoryId,
+        short_id: MemoryShortId,
+        text: String,
+        at: TimestampMillis,
+    ) -> Self {
+        Self {
+            id,
+            short_id,
+            text,
+            category: MemoryCategory::Other,
+            source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
+            token_count: 0,
+            is_cold: false,
+            is_pinned: false,
+            importance: Score::FULL,
+            persistence_importance: Score::FULL,
+            prompt_importance: Score::FULL,
+            volatility: Score::LEGACY_VOLATILITY,
+            access_count: 0,
+            created_at: at,
+            last_accessed_at: at,
+        }
+    }
+
     pub(crate) fn validate(&self) -> Result<(), MemoryValidationError> {
         validate_memory_text(&self.text)?;
         if self.is_pinned && self.is_cold {

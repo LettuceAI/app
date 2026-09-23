@@ -83,7 +83,14 @@ memory: legacy memories that fit the rewrite's memory item become the
 conversation's memory space with ids derived per session (legacy branches
 copied memories with the same ids) and deterministic short ids, stored embeddings of
 64-768 dimensions become ready projections under their legacy source version,
-and a legacy summary covers the visible user and assistant messages up to
+memory texts that no embedding carries become memories of their own (legacy
+kept texts apart from embeddings; manual memory, branched chats and character
+file imports held texts without embeddings that its prompt and memory list
+used) with legacy's manual defaults and no token count, but only where legacy
+showed them: always on manual memory, on dynamic memory only while the chat
+had no embeddings (dynamic = the global switch and the character's memory type
+for direct and companion chats, the session's memory type for groups).
+Corrected: those texts were dropped. A legacy summary covers the visible user and assistant messages up to
 legacy's summary cursor, the last message of the newest memory cycle in
 `memoryToolEvents` that still advanced it (not reverted, not an error or user
 edit, anchored in this conversation; the pool carrier reads the shared pool's

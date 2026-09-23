@@ -293,6 +293,11 @@ where
                 updated_at: session.updated_at,
                 messages,
                 memory,
+                memory_texts: crate::legacy_direct_conversation_import::shown_memory_texts(
+                    session.memory_policy == "dynamic",
+                    memory,
+                    &session.memories_json,
+                ),
                 memory_summary: Some(session.memory_summary.as_str()),
                 memory_summary_token_count: session.memory_summary_token_count,
                 memory_tool_events: Some(session.memory_tool_events_json.as_str()),
