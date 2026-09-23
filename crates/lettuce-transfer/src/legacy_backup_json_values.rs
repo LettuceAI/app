@@ -19,13 +19,14 @@ use crate::{
     legacy_value_skip,
 };
 
-const COMPANION_SECTIONS: [&str; 6] = [
+const COMPANION_SECTIONS: [&str; 7] = [
     "soul",
     "authoredFacts",
     "relationshipDefaults",
     "prompting",
     "timeAwareness",
     "context",
+    "memory",
 ];
 const SOUL_FACT_KEYS: [&str; 17] = [
     "id",
@@ -115,12 +116,27 @@ pub(crate) fn legacy_companion(
         soul: None,
         prompt_source_id: None,
     };
+    let private_memory = || LegacyCompanion {
+        soul: Some(CompanionSoulConfig {
+            share_memory_across_chats: false,
+            ..CompanionSoulConfig::default()
+        }),
+        prompt_source_id: None,
+    };
     let Some(value) = value.filter(|value| !value.is_null()) else {
-        return none();
+        return if companion_mode {
+            private_memory()
+        } else {
+            none()
+        };
     };
     let Value::Object(mut object) = value else {
         skipped.push(malformed(FIELD, character_key));
-        return none();
+        return if companion_mode {
+            private_memory()
+        } else {
+            none()
+        };
     };
     if !companion_mode {
         skipped.push(unknown(FIELD, character_key));
@@ -175,6 +191,30 @@ pub(crate) fn legacy_companion(
         }
     };
     config.time_awareness = top_level || context;
+    config.share_memory_across_chats = match object.remove("memory") {
+        None | Some(Value::Null) => true,
+        Some(Value::Object(mut memory)) => {
+            let shared = match memory.remove("sharedAcrossSessions") {
+                None | Some(Value::Null) => true,
+                Some(Value::Bool(value)) => value,
+                Some(_) => {
+                    skipped.push(malformed(
+                        &format!("{FIELD}.memory.sharedAcrossSessions"),
+                        character_key,
+                    ));
+                    false
+                }
+            };
+            for key in memory.keys() {
+                skipped.push(unknown(&format!("{FIELD}.memory.{key}"), character_key));
+            }
+            shared
+        }
+        Some(_) => {
+            skipped.push(malformed(&format!("{FIELD}.memory"), character_key));
+            false
+        }
+    };
     if let Some(soul) = object.remove("soul") {
         config.soul = merged_section::<CompanionSoulIdentity>(
             soul,
@@ -241,7 +281,7 @@ pub(crate) fn legacy_companion(
     }
     if !valid_companion(&config, created_at) {
         skipped.push(malformed(FIELD, character_key));
-        return none();
+        return private_memory();
     }
     LegacyCompanion {
         soul: Some(config),
@@ -814,6 +854,38 @@ mod tests {
         assert_eq!(companion.prompt_source_id.as_deref(), Some("prompt-1"));
         assert!(soul.time_awareness);
         assert_eq!(skipped.len(), 3);
+
+        assert!(soul.share_memory_across_chats);
+        assert!(soul.share_soul_growth_across_chats);
+
+        let mut memory_skips = Vec::new();
+        let private = legacy_companion(
+            Some(json!({"memory": {"sharedAcrossSessions": false, "maxEntries": 5}})),
+            "character-4",
+            true,
+            TimestampMillis::new(1),
+            &mut memory_skips,
+        );
+        assert!(
+            !private
+                .soul
+                .expect("companion soul")
+                .share_memory_across_chats
+        );
+        assert_eq!(memory_skips.len(), 1);
+        let unset = legacy_companion(
+            None,
+            "character-5",
+            true,
+            TimestampMillis::new(1),
+            &mut memory_skips,
+        );
+        assert!(
+            !unset
+                .soul
+                .expect("companion soul")
+                .share_memory_across_chats
+        );
 
         let mut context_skips = Vec::new();
         let context = legacy_companion(

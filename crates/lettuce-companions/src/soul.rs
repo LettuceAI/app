@@ -240,7 +240,7 @@ pub struct CompanionPromptingConfig {
     pub style_notes: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CompanionSoulConfig {
     #[serde(default)]
@@ -255,6 +255,37 @@ pub struct CompanionSoulConfig {
     /// conversation sets its own clock (legacy `timeAwareness`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub time_awareness: bool,
+    /// Whether the companion's conversations use one memory pool (legacy
+    /// `memory.sharedAcrossSessions`); off, each uses its own memory.
+    #[serde(default = "shared", skip_serializing_if = "is_shared")]
+    pub share_memory_across_chats: bool,
+    /// Whether the companion's conversations grow one Soul; off, each grows
+    /// its own.
+    #[serde(default = "shared", skip_serializing_if = "is_shared")]
+    pub share_soul_growth_across_chats: bool,
+}
+
+const fn shared() -> bool {
+    true
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+const fn is_shared(value: &bool) -> bool {
+    *value
+}
+
+impl Default for CompanionSoulConfig {
+    fn default() -> Self {
+        Self {
+            soul: CompanionSoulIdentity::default(),
+            authored_facts: Vec::new(),
+            relationship_defaults: RelationshipDefaults::default(),
+            prompting: CompanionPromptingConfig::default(),
+            time_awareness: false,
+            share_memory_across_chats: true,
+            share_soul_growth_across_chats: true,
+        }
+    }
 }
 
 pub fn initial_soul_state(
@@ -857,6 +888,8 @@ mod tests {
             relationship_defaults: RelationshipDefaults::default(),
             prompting: CompanionPromptingConfig::default(),
             time_awareness: false,
+            share_memory_across_chats: true,
+            share_soul_growth_across_chats: true,
         };
         let state = initial_soul_state(Some(&config), TimestampMillis::new(42)).expect("state");
         assert_eq!(state.revision, Revision::INITIAL);
@@ -902,8 +935,20 @@ mod tests {
                 style_notes: " restrained ".into(),
             },
             time_awareness: false,
+            share_memory_across_chats: true,
+            share_soul_growth_across_chats: true,
         };
         let value = serde_json::to_value(&config).expect("serialize");
+        assert!(value.get("shareMemoryAcrossChats").is_none());
+        let private: CompanionSoulConfig =
+            serde_json::from_value(serde_json::json!({"shareMemoryAcrossChats": false}))
+                .expect("private memory");
+        assert!(!private.share_memory_across_chats);
+        assert!(private.share_soul_growth_across_chats);
+        assert_eq!(
+            serde_json::to_value(&private).expect("serialize")["shareMemoryAcrossChats"],
+            false
+        );
         assert_eq!(value["soul"]["relationalStyle"], "Slow trust");
         assert!(value.get("authoredFacts").is_some());
         assert_eq!(

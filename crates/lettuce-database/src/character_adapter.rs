@@ -3312,6 +3312,8 @@ mod smoke_tests {
             relationship_defaults: lettuce_companions::RelationshipDefaults::default(),
             prompting: lettuce_companions::CompanionPromptingConfig::default(),
             time_awareness: false,
+            share_memory_across_chats: true,
+            share_soul_growth_across_chats: true,
         };
         let character = Character::new(
             character_id,

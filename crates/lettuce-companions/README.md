@@ -186,8 +186,12 @@ prompt-state renderer without reinterpretation.
 seeded session preference: a companion launch writes an enabled
 `companion_clock` into the new conversation's settings
 (`PreparedCompanionLaunch::with_time_awareness`), and later changes to the
-character leave existing conversations alone. `companion.memory` stays dropped: legacy only ever read
-`sharedAcrossSessions` from it.
+character leave existing conversations alone.
+`share_memory_across_chats` is legacy `memory.sharedAcrossSessions` (default
+on; a companion-mode character whose legacy config is missing or unreadable
+imports it off, as legacy read it). `share_soul_growth_across_chats` is new
+(default on). The other legacy `memory` keys were never read and are recorded
+as dropped. The runtime reads both toggles in later slices.
 
 Typed companion turn effects copy their relationship, felt/expressed/blocked,
 and ordered signal changes directly from the existing legacy-math transition;
