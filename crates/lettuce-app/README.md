@@ -1936,3 +1936,11 @@ character, a prompt that is missing or not the character's chat purpose, and
 lorebooks that are missing or archived are left off; legacy copied the ids
 as they were) and exports a starter as `chat_template_<name>_<date>.usc` or
 `.json`.
+
+Model files: `AppBackend::model_files()` imports a model file as a new chat
+model on the provider account with the file's provider id and label, else the
+provider's only account (`NoProviderAccount` otherwise; legacy stored the model
+without credentials, which a model profile cannot be), returning the settings
+that were out of range or unknown, and exports a model as
+`model_<display name>_<date>.json` or `.usc`. Like legacy, every imported model
+is a chat model.

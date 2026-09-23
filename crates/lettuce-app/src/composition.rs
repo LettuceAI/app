@@ -407,6 +407,11 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn model_files(&self) -> crate::ModelFileCoordinator<'_, Database> {
+        crate::ModelFileCoordinator::new(self.database.as_ref())
+    }
+
+    #[must_use]
     pub fn prompt_files(&self) -> crate::PromptFileCoordinator<'_, Database> {
         crate::PromptFileCoordinator::new(self.database.as_ref())
     }

@@ -908,3 +908,21 @@ Chat template files (`chat_template_transfer`): a starter is written as a USC
 template}` JSON; reading accepts a USC card, that JSON or a bare template
 object with a non-blank name and keeps user and assistant messages with string
 content. References are resolved by the caller.
+
+Model files (`model_transfer`): a model profile is written as the old app's
+model JSON or a USC 1.0 `model_profile` card, with `advancedModelSettings`
+rebuilt by `legacy_advanced_model_settings`, the reverse of
+`legacy_model_parameters` for every value legacy could hold (reading it back
+gives the same settings; rewrite-only values such as split KV types, cleared
+feature overrides and feature-level context/reasoning/caching/Ollama resource
+overrides have no legacy key and are not written; a pinned OpenRouter provider
+is written with its id as its name, which legacy required). A reasoning
+budget under 1024 or a repeat penalty over 2.0, which the domain allows but
+legacy's editor did not, is written and reads back as lossy under the legacy
+rules. A model file's `llamaLastRuntimeReport` is ignored like legacy's upsert
+ignored it. Reading takes a USC
+card or a model object: name and provider id required and trimmed, label and
+display name default to them, scopes keep text/image/audio in that order
+(text when none), and advanced settings are taken when they are an object.
+Legacy's model prompt template and deprecated system prompt are not carried
+(the rewrite's models have no prompt).

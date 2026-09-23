@@ -685,3 +685,437 @@ pub(crate) fn legacy_settings_layer(
         parameters.unknown_fields,
     )
 }
+
+struct Writer(Map<String, Value>);
+
+impl Writer {
+    fn put(&mut self, key: &str, value: Option<impl Into<Value>>) {
+        if let Some(value) = value {
+            self.0.insert(key.to_owned(), value.into());
+        }
+    }
+
+    fn put_override<T: Into<Value> + Clone>(&mut self, key: &str, value: &ParameterOverride<T>) {
+        if let ParameterOverride::Set(value) = value {
+            self.0.insert(key.to_owned(), value.clone().into());
+        }
+    }
+}
+
+fn sampler_profile_name(profile: LlamaSamplerProfile) -> &'static str {
+    match profile {
+        LlamaSamplerProfile::Balanced => "balanced",
+        LlamaSamplerProfile::Creative => "creative",
+        LlamaSamplerProfile::Stable => "stable",
+        LlamaSamplerProfile::Reasoning => "reasoning",
+    }
+}
+
+fn sampler_stage_name(stage: LlamaSamplerStage) -> &'static str {
+    match stage {
+        LlamaSamplerStage::Penalties => "penalties",
+        LlamaSamplerStage::Grammar => "grammar",
+        LlamaSamplerStage::TopK => "top_k",
+        LlamaSamplerStage::TopP => "top_p",
+        LlamaSamplerStage::MinP => "min_p",
+        LlamaSamplerStage::Dry => "dry",
+        LlamaSamplerStage::Typical => "typical",
+        LlamaSamplerStage::Xtc => "xtc",
+        LlamaSamplerStage::Temp => "temp",
+    }
+}
+
+fn write_sampler(writer: &mut Writer, sampler: &LlamaSamplerSettings) {
+    writer.put(
+        "llamaSamplerProfile",
+        sampler.profile.map(sampler_profile_name),
+    );
+    writer.put(
+        "llamaSamplerOrder",
+        sampler.order.as_ref().map(|order| {
+            order
+                .iter()
+                .map(|stage| Value::from(sampler_stage_name(*stage)))
+                .collect::<Vec<_>>()
+        }),
+    );
+    writer.put("llamaMinP", sampler.min_p);
+    writer.put("llamaTypicalP", sampler.typical_p);
+    writer.put("llamaRepeatPenalty", sampler.repeat_penalty);
+    writer.put("llamaNPenRange", sampler.n_pen_range);
+    writer.put("llamaDryMultiplier", sampler.dry_multiplier);
+    writer.put("llamaDryBase", sampler.dry_base);
+    writer.put("llamaDryAllowedLength", sampler.dry_allowed_length);
+    writer.put("llamaDryPenaltyLastN", sampler.dry_penalty_last_n);
+    writer.put(
+        "llamaDrySequenceBreakers",
+        sampler.dry_sequence_breakers.clone(),
+    );
+    writer.put("llamaXtcProbability", sampler.xtc_probability);
+    writer.put("llamaXtcThreshold", sampler.xtc_threshold);
+    writer.put("llamaSeed", sampler.seed);
+}
+
+fn feature_slot_value(slot: &FeatureGenerationParameters) -> Option<Value> {
+    let mut writer = Writer(Map::new());
+    let parameters = &slot.parameters;
+    writer.put_override("temperature", &parameters.temperature);
+    writer.put_override("topP", &parameters.top_p);
+    writer.put_override("topK", &parameters.top_k);
+    writer.put_override("maxOutputTokens", &parameters.max_output_tokens);
+    writer.put_override("frequencyPenalty", &parameters.frequency_penalty);
+    writer.put_override("presencePenalty", &parameters.presence_penalty);
+    writer.put_override("ollamaRepeatPenalty", &parameters.repetition_penalty);
+    let ollama = &parameters.ollama;
+    writer.put_override("ollamaTfsZ", &ollama.tfs_z);
+    writer.put_override("ollamaTypicalP", &ollama.typical_p);
+    writer.put_override("ollamaMinP", &ollama.min_p);
+    writer.put_override("ollamaMirostat", &ollama.mirostat);
+    writer.put_override("ollamaMirostatTau", &ollama.mirostat_tau);
+    writer.put_override("ollamaMirostatEta", &ollama.mirostat_eta);
+    writer.put_override("ollamaSeed", &ollama.seed);
+    writer.put_override("ollamaStop", &ollama.stop);
+    write_sampler(&mut writer, &slot.llama_sampler);
+    (!writer.0.is_empty()).then_some(Value::Object(writer.0))
+}
+
+/// A model's typed settings back in the shape of legacy
+/// `advancedModelSettings`: the reverse of [`legacy_model_parameters`] for
+/// every value legacy could hold.
+#[must_use]
+pub fn legacy_advanced_model_settings(
+    chat: &ChatParameterProfile,
+    features: &FeatureParameters,
+    llama: &LlamaCppSettings,
+    sd: &StableDiffusionSettings,
+) -> Map<String, Value> {
+    let mut writer = Writer(Map::new());
+    for key in [
+        "temperature",
+        "topP",
+        "maxOutputTokens",
+        "contextLength",
+        "frequencyPenalty",
+        "presencePenalty",
+        "topK",
+    ] {
+        writer.0.insert(key.to_owned(), Value::Null);
+    }
+    writer.put("temperature", chat.temperature);
+    writer.put("topP", chat.top_p);
+    writer.put("topK", chat.top_k);
+    writer.put("maxOutputTokens", chat.max_output_tokens);
+    writer.put("contextLength", chat.context_length);
+    writer.put("frequencyPenalty", chat.frequency_penalty);
+    writer.put("presencePenalty", chat.presence_penalty);
+    writer.put("ollamaRepeatPenalty", chat.repetition_penalty);
+    writer.put(
+        "reasoningEnabled",
+        chat.reasoning_mode
+            .map(|mode| mode == ReasoningMode::Enabled),
+    );
+    writer.put(
+        "reasoningEffort",
+        chat.reasoning_effort.map(|effort| match effort {
+            ReasoningEffort::Low => "low",
+            ReasoningEffort::Medium => "medium",
+            ReasoningEffort::High => "high",
+        }),
+    );
+    writer.put("reasoningBudgetTokens", chat.reasoning_budget_tokens);
+    match chat.prompt_caching {
+        Some(PromptCaching::Enabled { retention }) => {
+            writer.put("promptCachingEnabled", Some(true));
+            writer.put(
+                "promptCachingTtl",
+                Some(match retention {
+                    PromptCacheRetention::InMemory => "in_memory",
+                    PromptCacheRetention::FiveMinutes => "5min",
+                    PromptCacheRetention::OneHour => "1h",
+                    PromptCacheRetention::TwentyFourHours => "24h",
+                }),
+            );
+        }
+        Some(PromptCaching::Disabled) => writer.put("promptCachingEnabled", Some(false)),
+        None => {}
+    }
+    writer.put("forceSendThinkingState", chat.send_thinking_state);
+    let ollama = &chat.ollama;
+    writer.put("ollamaNumKeep", ollama.num_keep);
+    writer.put("ollamaNumBatch", ollama.num_batch);
+    writer.put("ollamaNumGpu", ollama.num_gpu);
+    writer.put("ollamaNumThread", ollama.num_thread);
+    writer.put("ollamaTfsZ", ollama.tfs_z);
+    writer.put("ollamaTypicalP", ollama.typical_p);
+    writer.put("ollamaMinP", ollama.min_p);
+    writer.put("ollamaMirostat", ollama.mirostat);
+    writer.put("ollamaMirostatTau", ollama.mirostat_tau);
+    writer.put("ollamaMirostatEta", ollama.mirostat_eta);
+    writer.put("ollamaSeed", ollama.seed);
+    writer.put("ollamaStop", ollama.stop.clone());
+    writer.put(
+        "openRouterProvider",
+        chat.openrouter
+            .pinned_provider
+            .as_ref()
+            .map(|id| serde_json::json!({ "id": id, "name": id })),
+    );
+    writer.put("llamaGpuLayers", llama.gpu_layers);
+    writer.put("llamaMultiGpuEnabled", llama.multi_gpu_enabled);
+    writer.put("llamaGpuDeviceIds", llama.gpu_device_ids.clone());
+    writer.put(
+        "llamaGpuDistributionMode",
+        llama.gpu_distribution_mode.map(|mode| match mode {
+            LlamaGpuDistributionMode::Balanced => "balanced",
+            LlamaGpuDistributionMode::Proportional => "proportional",
+            LlamaGpuDistributionMode::Priority => "priority",
+            LlamaGpuDistributionMode::Manual => "manual",
+        }),
+    );
+    writer.put(
+        "llamaGpuManualLayers",
+        llama.gpu_manual_layers.as_ref().map(|layers| {
+            layers
+                .iter()
+                .map(|layer| serde_json::json!({"deviceId": layer.device_id, "layers": layer.layers}))
+                .collect::<Vec<_>>()
+        }),
+    );
+    writer.put("llamaCpuLayers", llama.cpu_layers);
+    writer.put(
+        "llamaKvPlacement",
+        llama.kv_placement.map(|placement| match placement {
+            LlamaKvPlacement::Auto => "auto",
+            LlamaKvPlacement::Split => "split",
+            LlamaKvPlacement::SystemRam => "systemRam",
+            LlamaKvPlacement::Pin => "pin",
+        }),
+    );
+    writer.put("llamaMainGpu", llama.main_gpu);
+    writer.put("llamaSingleGpuDeviceId", llama.single_gpu_device_id);
+    writer.put(
+        "llamaPriorityVramLimitBytes",
+        llama.priority_vram_limit_bytes,
+    );
+    writer.put("llamaThreads", llama.threads);
+    writer.put("llamaThreadsBatch", llama.threads_batch);
+    writer.put("llamaRopeFreqBase", llama.rope_freq_base);
+    writer.put("llamaRopeFreqScale", llama.rope_freq_scale);
+    writer.put("llamaOffloadKqv", llama.offload_kqv);
+    writer.put("llamaBatchSize", llama.batch_size);
+    writer.put("llamaUbatchSize", llama.ubatch_size);
+    writer.put(
+        "llamaKvType",
+        llama
+            .kv_type
+            .and_then(|kv_type| serde_json::to_value(kv_type).ok()),
+    );
+    writer.put(
+        "llamaFlashAttention",
+        llama.flash_attention.map(|mode| match mode {
+            LlamaFlashAttention::Auto => "auto",
+            LlamaFlashAttention::Enabled => "enabled",
+            LlamaFlashAttention::Disabled => "disabled",
+        }),
+    );
+    writer.put("llamaSwaFull", llama.swa_full);
+    writer.put(
+        "llamaChatTemplateOverride",
+        llama.chat_template_override.clone(),
+    );
+    writer.put(
+        "llamaChatTemplatePreset",
+        llama.chat_template_preset.clone(),
+    );
+    writer.put("llamaMmprojPath", llama.mmproj_path.clone());
+    writer.put("llamaRawCompletionFallback", llama.raw_completion_fallback);
+    writer.put("llamaStrictMode", llama.strict_mode);
+    writer.put("llamaMtpEnabled", llama.mtp_enabled);
+    writer.put(
+        "llamaMtpPlacement",
+        llama.mtp_placement.map(|placement| match placement {
+            LlamaMtpPlacement::Auto => "auto",
+            LlamaMtpPlacement::Gpu => "gpu",
+            LlamaMtpPlacement::Cpu => "cpu",
+        }),
+    );
+    writer.put("llamaMtpDraftTokens", llama.mtp_draft_tokens);
+    writer.put("llamaMtpModelPath", llama.mtp_model_path.clone());
+    writer.put("llamaStreamingEnabled", llama.streaming_enabled);
+    write_sampler(&mut writer, &llama.sampler);
+    writer.put("sdSteps", sd.steps);
+    writer.put("sdCfgScale", sd.cfg_scale);
+    writer.put("sdSampler", sd.sampler.clone());
+    writer.put("sdScheduler", sd.scheduler.clone());
+    writer.put("sdSeed", sd.seed);
+    writer.put("sdNegativePrompt", sd.negative_prompt.clone());
+    writer.put("sdDenoisingStrength", sd.denoising_strength);
+    writer.put("sdImageCfgScale", sd.image_cfg_scale);
+    writer.put("sdDistilledGuidance", sd.distilled_guidance);
+    writer.put("sdEta", sd.eta);
+    writer.put("sdFlowShift", sd.flow_shift);
+    writer.put("sdSize", sd.size.clone());
+    writer.put("sdVaeTilingEnabled", sd.vae_tiling_enabled);
+    writer.put("sdVaeTileSizeX", sd.vae_tile_size_x);
+    writer.put("sdVaeTileSizeY", sd.vae_tile_size_y);
+    writer.put("sdVaeTileOverlap", sd.vae_tile_overlap);
+    writer.put("sdAutoResizeRefImages", sd.auto_resize_reference_images);
+    writer.put("sdIncreaseRefIndex", sd.increase_reference_index);
+    writer.put("sdHiresEnabled", sd.hires_enabled);
+    writer.put("sdHiresUpscaler", sd.hires_upscaler.clone());
+    writer.put("sdHiresScale", sd.hires_scale);
+    writer.put("sdHiresWidth", sd.hires_width);
+    writer.put("sdHiresHeight", sd.hires_height);
+    writer.put("sdHiresSteps", sd.hires_steps);
+    writer.put("sdHiresDenoisingStrength", sd.hires_denoising_strength);
+    writer.put("sdSlgScale", sd.slg_scale);
+    writer.put("sdSlgLayers", sd.slg_layers.clone());
+    writer.put("sdSlgLayerStart", sd.slg_layer_start);
+    writer.put("sdSlgLayerEnd", sd.slg_layer_end);
+    writer.put(
+        "sdCacheMode",
+        sd.cache_mode.map(|mode| match mode {
+            StableDiffusionCacheMode::Disabled => "disabled",
+            StableDiffusionCacheMode::Easycache => "easycache",
+            StableDiffusionCacheMode::Ucache => "ucache",
+            StableDiffusionCacheMode::Dbcache => "dbcache",
+            StableDiffusionCacheMode::Taylorseer => "taylorseer",
+            StableDiffusionCacheMode::CacheDit => "cache-dit",
+            StableDiffusionCacheMode::Spectrum => "spectrum",
+        }),
+    );
+    writer.put("sdCacheOption", sd.cache_option.clone());
+    writer.put(
+        "sdOffloadMode",
+        sd.offload_mode.map(|mode| match mode {
+            StableDiffusionOffloadMode::Auto => "auto",
+            StableDiffusionOffloadMode::Gpu => "gpu",
+            StableDiffusionOffloadMode::Mixed => "mixed",
+        }),
+    );
+    writer.put("sdExtraPrompt", sd.extra_prompt.clone());
+    writer.put(
+        "sdPromptWriterInstructions",
+        sd.prompt_writer_instructions.clone(),
+    );
+    writer.put(
+        "sdBaseLoras",
+        sd.base_loras.as_ref().map(|loras| {
+            loras
+                .iter()
+                .map(|lora| {
+                    serde_json::json!({
+                        "path": lora.path,
+                        "multiplier": lora.multiplier,
+                        "isHighNoise": lora.is_high_noise,
+                        "keywords": lora.keywords,
+                    })
+                })
+                .collect::<Vec<_>>()
+        }),
+    );
+    let cpp = &sd.cpp;
+    writer.put("sdcppProfileId", cpp.profile_id.clone());
+    writer.put("sdcppVariantId", cpp.variant_id.clone());
+    writer.put("sdcppTextEncoderPath", cpp.text_encoder_path.clone());
+    writer.put("sdcppVaePath", cpp.vae_path.clone());
+    writer.put("sdcppVisionEncoderPath", cpp.vision_encoder_path.clone());
+    writer.put("sdcppRuntimeRelease", cpp.runtime_release.clone());
+    writer.put("sdcppRuntimeAsset", cpp.runtime_asset.clone());
+    writer.put("sdcppRuntimeBackend", cpp.runtime_backend.clone());
+    writer.put("sdcppMaxReferenceImages", cpp.max_reference_images);
+    writer.put("sdcppSupportsLora", cpp.supports_lora);
+    writer.put("sdcppSupportsTextToImage", cpp.supports_text_to_image);
+    writer.put("sdcppSupportsImageEdit", cpp.supports_image_edit);
+    writer.put("sdcppRecommendedForScenes", cpp.recommended_for_scenes);
+    writer.put("sdcppRequiresReferenceImage", cpp.requires_reference_image);
+    let slots = [
+        ("dynamicMemory", &features.dynamic_memory),
+        ("companionSoulWriter", &features.companion_soul_writer),
+        ("companionMemory", &features.companion_memory),
+        ("lorebookEntryGenerator", &features.lorebook_entry_generator),
+        ("lorebookGenerator", &features.lorebook_generator),
+        ("sceneWriter", &features.scene_writer),
+        ("helpMeReply", &features.help_me_reply),
+        ("groupSpeakerSelection", &features.group_speaker_selection),
+        ("creationHelper", &features.creation_helper),
+    ]
+    .into_iter()
+    .filter_map(|(name, slot)| Some((name.to_owned(), feature_slot_value(slot)?)))
+    .collect::<Map<_, _>>();
+    if !slots.is_empty() {
+        writer
+            .0
+            .insert("featureGenerationSettings".to_owned(), Value::Object(slots));
+    }
+    writer.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn written_settings_read_back_as_the_same_settings() {
+        let legacy: Value = serde_json::from_str(
+            r#"{
+            "temperature": 0.7, "topP": 0.9, "topK": 40, "maxOutputTokens": 1024,
+            "contextLength": 8192, "frequencyPenalty": 0.2, "presencePenalty": -0.1,
+            "ollamaRepeatPenalty": 1.1, "reasoningEnabled": true, "reasoningEffort": "high",
+            "reasoningBudgetTokens": 2048, "promptCachingEnabled": true, "promptCachingTtl": "1h",
+            "forceSendThinkingState": false, "ollamaNumKeep": 4, "ollamaNumBatch": 512,
+            "ollamaNumGpu": 20, "ollamaNumThread": 8, "ollamaTfsZ": 0.9, "ollamaTypicalP": 0.8,
+            "ollamaMinP": 0.05, "ollamaMirostat": 2, "ollamaMirostatTau": 5.0,
+            "ollamaMirostatEta": 0.1, "ollamaSeed": 7, "ollamaStop": ["</s>"],
+            "openRouterProvider": {"id": "Together"},
+            "llamaGpuLayers": 33, "llamaMultiGpuEnabled": true, "llamaGpuDeviceIds": [0, 1],
+            "llamaGpuDistributionMode": "manual",
+            "llamaGpuManualLayers": [{"deviceId": 0, "layers": 20}],
+            "llamaCpuLayers": 2, "llamaKvPlacement": "split", "llamaMainGpu": 0,
+            "llamaSingleGpuDeviceId": 1, "llamaPriorityVramLimitBytes": 1000,
+            "llamaThreads": 8, "llamaThreadsBatch": 8, "llamaRopeFreqBase": 10000.0,
+            "llamaRopeFreqScale": 1.0, "llamaOffloadKqv": true, "llamaBatchSize": 512,
+            "llamaUbatchSize": 256, "llamaKvType": "q8_0", "llamaFlashAttention": "auto",
+            "llamaSwaFull": false, "llamaChatTemplateOverride": "{{x}}",
+            "llamaChatTemplatePreset": "chatml", "llamaMmprojPath": "/m.gguf",
+            "llamaRawCompletionFallback": true, "llamaStrictMode": false,
+            "llamaMtpEnabled": true, "llamaMtpPlacement": "gpu", "llamaMtpDraftTokens": 3,
+            "llamaMtpModelPath": "/mtp.gguf", "llamaStreamingEnabled": true,
+            "llamaSamplerProfile": "creative", "llamaSamplerOrder": ["top_k", "temp"],
+            "llamaMinP": 0.1, "llamaDryMultiplier": 0.8, "llamaDrySequenceBreakers": ["\\n"],
+            "llamaSeed": 42,
+            "sdSteps": 20, "sdCfgScale": 7.0, "sdSampler": "euler", "sdSeed": 3,
+            "sdSize": "512x512", "sdCacheMode": "cache-dit", "sdOffloadMode": "mixed",
+            "sdBaseLoras": [{"path": "/l.safetensors", "multiplier": 0.8, "isHighNoise": false, "keywords": ["x"]}],
+            "sdcppProfileId": "flux", "sdcppSupportsLora": true,
+            "featureGenerationSettings": {
+                "dynamicMemory": {"temperature": 0.4, "llamaXtcProbability": 0.2, "ollamaStop": ["x"]},
+                "creationHelper": {"topP": 0.5}
+            }
+        }"#,
+        )
+        .expect("legacy settings");
+        let object = legacy.as_object().expect("object");
+        let first = legacy_model_parameters("openai", object);
+        assert!(first.lossy_fields.is_empty(), "{:?}", first.lossy_fields);
+        assert!(
+            first.unknown_fields.is_empty(),
+            "{:?}",
+            first.unknown_fields
+        );
+        let written = legacy_advanced_model_settings(
+            &first.chat_parameters,
+            &first.feature_parameters,
+            &first.llama_cpp,
+            &first.stable_diffusion,
+        );
+        let second = legacy_model_parameters("openai", &written);
+        assert!(second.lossy_fields.is_empty(), "{:?}", second.lossy_fields);
+        assert!(
+            second.unknown_fields.is_empty(),
+            "{:?}",
+            second.unknown_fields
+        );
+        assert_eq!(second, first);
+    }
+}

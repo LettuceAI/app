@@ -202,7 +202,7 @@ pub fn parse_chat_template_import(
         let prompt = string(template.get("promptTemplateId"));
         return normalized(template, prompt);
     }
-    if value.is_object() {
+    if value.is_object() || value.is_array() {
         let prompt = string(value.get("promptTemplateId"));
         return normalized(&value, prompt);
     }
