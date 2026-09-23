@@ -183,6 +183,10 @@ mod tests {
             help_me_reply_prompt_source_ids: HelpMeReplyPromptSources::default(),
             image_model_profile_ids: lettuce_transfer::ImageModelSources::default(),
             device_ui_state: serde_json::Map::new(),
+            app_usage_days: vec![lettuce_usage::AppUsageDay {
+                day: "2026-09-01".into(),
+                active_ms: 3_000,
+            }],
             device_settings: lettuce_settings::DeviceSettings::default(),
             feature_model_profile_ids: lettuce_transfer::FeatureModelSources::default(),
             feature_prompt_source_ids: lettuce_transfer::FeaturePromptSources::default(),
@@ -228,6 +232,14 @@ mod tests {
         assert!(!receipt.replayed);
         let stored = GlobalSettingsStore::load(backend.database()).expect("settings after");
         assert!(!stored.settings.analytics_enabled);
+        assert_eq!(
+            lettuce_usage::AppUsageRepository::app_usage_days(backend.database())
+                .expect("usage days"),
+            vec![lettuce_usage::AppUsageDay {
+                day: "2026-09-01".into(),
+                active_ms: 3_000,
+            }]
+        );
         assert_eq!(stored.settings.manual_mode_context_window, 30);
         let (model_settings, _) =
             lettuce_models::GlobalModelSettingsRepository::global_model_settings(

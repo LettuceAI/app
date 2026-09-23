@@ -1400,6 +1400,20 @@ impl LegacyImportRepository for Database {
                 crate::write_device_ui_state(&transaction, &candidate.device_ui_state)
                     .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
             }
+            for day in &candidate.app_usage_days {
+                transaction
+                    .execute(
+                        "INSERT INTO app_usage_days (day, active_ms, updated_at) VALUES (?1, ?2, ?3)
+                         ON CONFLICT (day) DO UPDATE SET active_ms = MAX(active_ms, excluded.active_ms)",
+                        params![
+                            day.day,
+                            i64::try_from(day.active_ms)
+                                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+                            request.completed_at.get(),
+                        ],
+                    )
+                    .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            }
             let changed = transaction
                 .execute(
                     "UPDATE app_settings SET payload_json=?1,dynamic_memory_model_profile_id=?2,group_speaker_model_profile_id=?3,revision=revision+1,created_at=MIN(created_at,?5),updated_at=?4,model_settings_json=?6 WHERE id=1",

@@ -5246,6 +5246,7 @@ mod tests {
             tables,
             vec![
                 "app_settings",
+                "app_usage_days",
                 "asr_corrections",
                 "asr_ignored_suggestions",
                 "asr_vocabulary_terms",

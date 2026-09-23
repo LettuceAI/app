@@ -10,6 +10,8 @@ mod costing;
 pub use costing::*;
 mod job_usage;
 pub use job_usage::*;
+mod app_usage;
+pub use app_usage::*;
 
 use lettuce_conversations::UsageRecord;
 use lettuce_types::{GenerationAttemptId, GenerationTurnId, UsageEventId};

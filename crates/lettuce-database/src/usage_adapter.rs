@@ -11,6 +11,59 @@ use rusqlite::{OptionalExtension, params};
 
 use crate::Database;
 
+impl lettuce_usage::AppUsageRepository for Database {
+    fn add_app_usage(
+        &self,
+        day: &str,
+        active_ms: u64,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<(), lettuce_usage::AppUsageError> {
+        if !lettuce_usage::is_app_usage_day(day) {
+            return Err(lettuce_usage::AppUsageError::InvalidDay);
+        }
+        let active_ms =
+            i64::try_from(active_ms).map_err(|_| lettuce_usage::AppUsageError::Storage)?;
+        self.connection()
+            .and_then(|connection| {
+                connection
+                    .execute(
+                        "INSERT INTO app_usage_days (day, active_ms, updated_at) VALUES (?1, ?2, ?3)
+                         ON CONFLICT (day) DO UPDATE
+                         SET active_ms = active_ms + excluded.active_ms, updated_at = excluded.updated_at",
+                        params![day, active_ms, now.get()],
+                    )
+                    .map_err(crate::DatabaseError::from)
+            })
+            .map(|_| ())
+            .map_err(|_| lettuce_usage::AppUsageError::Storage)
+    }
+
+    fn app_usage_days(
+        &self,
+    ) -> Result<Vec<lettuce_usage::AppUsageDay>, lettuce_usage::AppUsageError> {
+        let storage = |_| lettuce_usage::AppUsageError::Storage;
+        let connection = self.connection().map_err(storage)?;
+        let mut statement = connection
+            .prepare("SELECT day, active_ms FROM app_usage_days ORDER BY day")
+            .map_err(|_| lettuce_usage::AppUsageError::Storage)?;
+        let mut days = Vec::new();
+        for row in statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|_| lettuce_usage::AppUsageError::Storage)?
+        {
+            let (day, active_ms) = row.map_err(|_| lettuce_usage::AppUsageError::Storage)?;
+            days.push(lettuce_usage::AppUsageDay {
+                day,
+                active_ms: u64::try_from(active_ms)
+                    .map_err(|_| lettuce_usage::AppUsageError::Storage)?,
+            });
+        }
+        Ok(days)
+    }
+}
+
 impl lettuce_usage::JobUsageLedger for Database {
     fn admit_job_usage(
         &self,

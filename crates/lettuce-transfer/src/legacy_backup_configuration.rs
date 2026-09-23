@@ -110,9 +110,11 @@ pub struct LegacyBackupSettingsCandidate {
     pub help_me_reply_model_profile_id: Option<ModelProfileId>,
     pub help_me_reply_prompt_source_ids: HelpMeReplyPromptSources,
     pub image_model_profile_ids: ImageModelSources,
-    /// This install's legacy onboarding, hint, last-seen-version and
-    /// active-usage state, verbatim under its legacy keys.
+    /// This install's legacy onboarding, hint and last-seen-version state,
+    /// verbatim under its legacy keys.
     pub device_ui_state: Map<String, Value>,
+    /// This install's legacy per-day app usage (`appActiveUsageByDayMs`).
+    pub app_usage_days: Vec<lettuce_usage::AppUsageDay>,
     /// This install's legacy trusted certificates, embedding preferences and
     /// models folder.
     pub device_settings: DeviceSettings,
@@ -773,6 +775,7 @@ fn map_settings(
                 | "trustedCertificates"
         ) && !UI_PREFERENCE_APP_KEYS.contains(&field.as_str())
             && !DEVICE_UI_STATE_KEYS.contains(&field.as_str())
+            && !APP_USAGE_KEYS.contains(&field.as_str())
     }) {
         notices.push(notice(
             LegacyBackupConversionNoticeKind::Unsupported,
@@ -867,6 +870,7 @@ fn map_settings(
             creation_helper: advanced_id(advanced, "creationHelperImageModelId")?,
         },
         device_ui_state: device_ui_state(app, notices),
+        app_usage_days: app_usage_days(app, notices),
         device_settings: map_device_settings(app, advanced, notices),
         feature_model_profile_ids: FeatureModelSources {
             creation_helper: advanced_id(advanced, "creationHelperModelId")?,
@@ -915,15 +919,59 @@ const UI_PREFERENCE_ADVANCED_KEYS: [&str; 9] = [
 /// Legacy app-state keys that describe this install rather than the user's
 /// preferences: onboarding progress, dismissed hints, the last version seen
 /// and the active-usage counters.
-const DEVICE_UI_STATE_KEYS: [&str; 7] = [
-    "onboarding",
-    "tooltips",
-    "lastSeenAppVersion",
+const DEVICE_UI_STATE_KEYS: [&str; 3] = ["onboarding", "tooltips", "lastSeenAppVersion"];
+
+const APP_USAGE_KEYS: [&str; 4] = [
     "appActiveUsageMs",
     "appActiveUsageByDayMs",
     "appActiveUsageStartedAtMs",
     "appActiveUsageLastUpdatedAtMs",
 ];
+
+/// Legacy per-day usage; an unreadable day is dropped and recorded, and a
+/// total above the days' sum (time legacy counted before it kept days) is
+/// recorded as lost.
+fn app_usage_days(
+    app: &Map<String, Value>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> Vec<lettuce_usage::AppUsageDay> {
+    let mut days = Vec::new();
+    for (day, value) in app
+        .get("appActiveUsageByDayMs")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        match value.as_u64() {
+            Some(active_ms) if lettuce_usage::is_app_usage_day(day) => {
+                days.push(lettuce_usage::AppUsageDay {
+                    day: day.clone(),
+                    active_ms,
+                });
+            }
+            _ => notices.push(notice(
+                LegacyBackupConversionNoticeKind::Lossy,
+                LegacyBackupDocumentKind::Settings,
+                "app_state.appActiveUsageByDayMs",
+            )),
+        }
+    }
+    let counted = days
+        .iter()
+        .fold(0_u64, |total, day| total.saturating_add(day.active_ms));
+    if app
+        .get("appActiveUsageMs")
+        .and_then(Value::as_u64)
+        .is_some_and(|total| total > counted)
+    {
+        notices.push(notice(
+            LegacyBackupConversionNoticeKind::Lossy,
+            LegacyBackupDocumentKind::Settings,
+            "app_state.appActiveUsageMs",
+        ));
+    }
+    days
+}
 
 /// Legacy device settings: entries that cannot be kept are dropped and
 /// recorded, display names and labels past the bound are shortened and
@@ -4379,7 +4427,7 @@ mod tests {
                 json!({
                     "default_provider_credential_id": provider_id,
                     "default_model_id": model_id,
-                    "app_state": {"pureModeEnabled": false, "analyticsEnabled": false, "theme": "dark", "customColors": {"accent": "#abcdef"}, "onboarding": {"completed": true, "skipped": false, "providerSetupCompleted": true, "modelSetupCompleted": true}, "autoDownloadCharacterCardAvatars": false, "trustedCertificates": [{"id": "5b1f7a8e-8c43-4d7c-9f0e-2d5b7a1c3e44", "name": "corp.pem", "pem": "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----", "importedAt": 5}, {"id": "bad", "name": "x", "pem": "y", "importedAt": 1}]},
+                    "app_state": {"pureModeEnabled": false, "analyticsEnabled": false, "theme": "dark", "customColors": {"accent": "#abcdef"}, "onboarding": {"completed": true, "skipped": false, "providerSetupCompleted": true, "modelSetupCompleted": true}, "appActiveUsageMs": 9000, "appActiveUsageByDayMs": {"2026-09-01": 3000, "2026-09-02": 4000, "bad": 5}, "appActiveUsageStartedAtMs": 1, "appActiveUsageLastUpdatedAtMs": 2, "autoDownloadCharacterCardAvatars": false, "trustedCertificates": [{"id": "5b1f7a8e-8c43-4d7c-9f0e-2d5b7a1c3e44", "name": "corp.pem", "pem": "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----", "importedAt": 5}, {"id": "bad", "name": "x", "pem": "y", "importedAt": 1}]},
                     "advanced_model_settings": {"temperature": 0.2, "topK": 5},
                     "prompt_template_id": "prompt-main",
                     "system_prompt": "Old global prompt",
@@ -4640,6 +4688,37 @@ mod tests {
             Some(&json!(true))
         );
         assert!(!plan.settings.value.auto_download_character_card_avatars);
+        assert_eq!(
+            plan.settings.app_usage_days,
+            vec![
+                lettuce_usage::AppUsageDay {
+                    day: "2026-09-01".into(),
+                    active_ms: 3_000,
+                },
+                lettuce_usage::AppUsageDay {
+                    day: "2026-09-02".into(),
+                    active_ms: 4_000,
+                },
+            ]
+        );
+        assert!(
+            !plan
+                .settings
+                .device_ui_state
+                .contains_key("appActiveUsageMs")
+        );
+        for field in [
+            "app_state.appActiveUsageByDayMs",
+            "app_state.appActiveUsageMs",
+        ] {
+            assert!(plan.notices.iter().any(|notice| notice.field == field));
+        }
+        assert!(
+            !plan
+                .notices
+                .iter()
+                .any(|notice| notice.field == "app_state.appActiveUsageStartedAtMs")
+        );
         let device = &plan.settings.device_settings;
         assert_eq!(device.trusted_certificates.len(), 1);
         assert_eq!(device.trusted_certificates[0].imported_at, 5);

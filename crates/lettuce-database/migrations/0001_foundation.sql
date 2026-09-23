@@ -40,6 +40,15 @@ CREATE TABLE device_ui_state (
     updated_at INTEGER NOT NULL
 ) STRICT;
 
+CREATE TABLE app_usage_days (
+    day TEXT PRIMARY KEY CHECK (
+        length(day) = 10
+        AND day GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+    ),
+    active_ms INTEGER NOT NULL CHECK (active_ms >= 0),
+    updated_at INTEGER NOT NULL
+) STRICT;
+
 CREATE TABLE device_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     settings_json TEXT NOT NULL CHECK (

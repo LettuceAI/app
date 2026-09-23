@@ -1811,3 +1811,15 @@ the local diffusion engine from taking or continuing work; `shutdown().await`
 also stops its server process. The host calls them on exit request, as legacy
 did on `ExitRequested`; the app-usage flush and analytics exit event follow
 with their own slices.
+
+App usage (2026-09-23, redesigned with the user): `AppActiveUsageTracker`
+counts only the time the window is focused (legacy never paused on blur, so it
+counted the time the app was open) and `flush` adds it atomically to the
+device-local `app_usage_days` table (`lettuce_usage::AppUsageRepository`, one
+row per local day; never synced or backed up, carried across a restore). The
+host flushes every 30 s and on exit like legacy. Legacy kept a total, a day map,
+a started-at and a last-updated field inside the settings JSON with a
+read-modify-write; the import writes `appActiveUsageByDayMs` into the table
+(max per day, so replays and earlier usage are kept), records an unreadable
+day or a total above the days' sum as lost, and drops the two timestamps,
+which the table's days and `updated_at` replace.

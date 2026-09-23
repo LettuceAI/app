@@ -6,6 +6,7 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod app_active_usage;
 mod artifact_install;
 mod avatar_prompt;
 mod asr_learning_transfer;
@@ -138,6 +139,7 @@ mod whisper_download;
 mod whisper_models;
 
 pub use avatar_prompt::{AvatarPromptError, AvatarPromptRequest, avatar_image_prompt};
+pub use app_active_usage::*;
 pub use artifact_install::*;
 pub use asr_learning_transfer::*;
 pub use built_in_prompts::*;

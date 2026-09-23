@@ -22,9 +22,9 @@ const DEVICE_LOCAL_TABLES: &[&str] = &[
 impl Database {
     /// Copies device-local state from the previous database file: the sync
     /// journal, installed Whisper model manifests, local generation metrics,
-    /// the local LoRA library, the app shell's install state and the device
-    /// settings unless the new file already has them (an imported legacy
-    /// install's),
+    /// the local LoRA library, the app shell's install state, the device
+    /// settings and each day of app usage unless the new file already has
+    /// them (an imported legacy install's),
     /// and the discovered voices and llama.cpp runtime reports of audio
     /// providers and models that exist in this database.
     pub fn carry_device_local_state_from(&self, previous: &Path) -> Result<(), DatabaseError> {
@@ -48,6 +48,10 @@ impl Database {
             )?;
             transaction.execute(
                 "INSERT OR IGNORE INTO main.device_settings SELECT * FROM previous.device_settings",
+                [],
+            )?;
+            transaction.execute(
+                "INSERT OR IGNORE INTO main.app_usage_days SELECT * FROM previous.app_usage_days",
                 [],
             )?;
             transaction.execute(
@@ -89,6 +93,17 @@ mod tests {
         previous
             .save_device_ui_state(state("1.0.0"))
             .expect("save previous state");
+        use lettuce_usage::AppUsageRepository;
+        previous
+            .add_app_usage("2026-09-20", 1_000, TimestampMillis::new(1))
+            .expect("usage");
+        previous
+            .add_app_usage("2026-09-20", 500, TimestampMillis::new(2))
+            .expect("usage adds");
+        assert_eq!(
+            previous.add_app_usage("20-09-2026", 1, TimestampMillis::new(3)),
+            Err(lettuce_usage::AppUsageError::InvalidDay)
+        );
         let carried = Database::open(root.join("carried.sqlite3")).expect("carried database");
         carried
             .carry_device_local_state_from(&previous_path)
@@ -96,6 +111,13 @@ mod tests {
         assert_eq!(
             carried.load_device_ui_state().expect("carried"),
             state("1.0.0")
+        );
+        assert_eq!(
+            carried.app_usage_days().expect("carried usage"),
+            vec![lettuce_usage::AppUsageDay {
+                day: "2026-09-20".into(),
+                active_ms: 1_500,
+            }]
         );
         let imported = Database::open(root.join("imported.sqlite3")).expect("imported database");
         imported
