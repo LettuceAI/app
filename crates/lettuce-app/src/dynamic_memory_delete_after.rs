@@ -124,9 +124,16 @@ where
         )?;
         let (removed_message_ids, rewind_at) = removed_messages(&tombstone)?;
         let operation_id = OperationId::from_uuid(tombstone.operation.id.as_uuid());
+        let active_space = self
+            .repository
+            .get_for_conversation(command.conversation_id)?
+            .map(|memory| memory.id);
         let runs = self
             .repository
-            .list_dynamic_memory_runs(command.conversation_id, DELETE_AFTER_SCAN_LIMIT)?;
+            .list_dynamic_memory_runs(command.conversation_id, DELETE_AFTER_SCAN_LIMIT)?
+            .into_iter()
+            .filter(|run| Some(run.space_id) == active_space)
+            .collect::<Vec<_>>();
         let effects = self
             .repository
             .list_for_conversation(command.conversation_id, DELETE_AFTER_SCAN_LIMIT)

@@ -422,7 +422,8 @@ fn read_creation_outbox(
     Ok(record.clone())
 }
 
-/// Where a new conversation's memory space comes from.
+/// A new conversation's memory: its own space, and for a companion also its
+/// character's pool.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum MemoryBinding {
     PerConversation,
@@ -540,7 +541,11 @@ where
                 )?;
             }
             MemoryBinding::CompanionPool(character_id) => {
-                crate::memory_adapter::bind_companion_pool_in(
+                crate::memory_adapter::create_conversation_space_in(
+                    &transaction,
+                    plan.conversation_id,
+                )?;
+                crate::memory_adapter::join_companion_pool_in(
                     &transaction,
                     plan.conversation_id,
                     character_id,

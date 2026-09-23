@@ -52,7 +52,8 @@ impl MemoryBackup {
         {
             return Err(MemoryBackupError::InvalidData);
         }
-        self.spaces.sort_by_key(|space| space.conversation_id);
+        self.spaces
+            .sort_by_key(|space| (space.conversation_id, space.snapshot.id));
         self.pools.sort_by_key(|pool| pool.character_id);
         let space_ids = self
             .spaces
@@ -111,11 +112,13 @@ impl MemoryBackup {
             let bound = std::iter::once(space.conversation_id)
                 .chain(space.shared_conversation_ids.iter().copied())
                 .collect::<Vec<_>>();
+            let pool = pool_spaces.contains(&space.snapshot.id);
             if bound.iter().any(|id| !known_conversations.contains(id))
                 || space.snapshot.validate().is_err()
+                || (!pool && !space.shared_conversation_ids.is_empty())
                 || bound
                     .iter()
-                    .any(|id| spaces.insert(*id, space.snapshot.id).is_some())
+                    .any(|id| spaces.insert((*id, pool), space.snapshot.id).is_some())
                 || !space_ids.insert(space.snapshot.id)
                 || space.snapshot.items.iter().any(|item| {
                     memory_owners.insert(item.id, space.snapshot.id).is_some()
@@ -160,13 +163,18 @@ impl MemoryBackup {
                 return Err(MemoryBackupError::InvalidData);
             }
         }
+        let binds = |conversation_id: ConversationId, space_id: lettuce_types::MemorySpaceId| {
+            [false, true]
+                .iter()
+                .any(|pool| spaces.get(&(conversation_id, *pool)) == Some(&space_id))
+        };
         let mut access_owners = BTreeSet::new();
         for receipt in &self.retrieval_accesses {
             let access = &receipt.access;
             if !access_owners.insert((access.conversation_id, access.turn_id, access.attempt_id))
                 || attempts.get(&(access.turn_id, access.attempt_id))
                     != Some(&access.conversation_id)
-                || spaces.get(&access.conversation_id) != Some(&access.space_id)
+                || !binds(access.conversation_id, access.space_id)
                 || access.selected_memory_ids.is_empty()
                 || access.selected_memory_ids.len() > 4096
                 || access
@@ -207,25 +215,33 @@ impl MemoryBackup {
             }
         }
         for effect in &effects.effects {
-            let Some(space_id) = spaces.get(&effect.conversation_id) else {
+            let bound = [false, true]
+                .iter()
+                .filter_map(|pool| spaces.get(&(effect.conversation_id, *pool)))
+                .collect::<Vec<_>>();
+            if bound.is_empty() {
                 if effect.memory_changes == Default::default() {
                     continue;
                 }
                 return Err(MemoryBackupError::InvalidData);
-            };
+            }
             if effect
                 .memory_changes
                 .added
                 .iter()
                 .chain(&effect.memory_changes.updated)
                 .chain(&effect.memory_changes.superseded)
-                .any(|id| memory_owners.get(id).is_some_and(|owner| owner != space_id))
+                .any(|id| {
+                    memory_owners
+                        .get(id)
+                        .is_some_and(|owner| !bound.contains(&owner))
+                })
             {
                 return Err(MemoryBackupError::InvalidData);
             }
         }
         for rewind in &effects.rewinds {
-            if spaces.get(&rewind.conversation_id) != Some(&rewind.space_id)
+            if !binds(rewind.conversation_id, rewind.space_id)
                 || rewind.resulting_memory.items.iter().any(|item| {
                     memory_owners
                         .get(&item.id)

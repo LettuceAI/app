@@ -71,6 +71,27 @@ fn invalid() -> rusqlite::Error {
     rusqlite::Error::InvalidQuery
 }
 
+/// Whether the character's companion conversations use its memory pool: only
+/// a companion does, and one without companion settings shares, as a new
+/// companion does.
+pub(crate) fn companion_memory_shared_in(
+    connection: &Connection,
+    character_id: CharacterId,
+) -> Result<bool, rusqlite::Error> {
+    let defaults: String = connection.query_row(
+        "SELECT defaults_json FROM characters WHERE id = ?1",
+        [character_id.to_string()],
+        |row| row.get(0),
+    )?;
+    let defaults: CharacterDefaults = decode(defaults, DEFAULTS_VERSION)?;
+    Ok(
+        defaults.interaction_mode == lettuce_characters::InteractionMode::Companion
+            && defaults
+                .companion_soul
+                .is_none_or(|config| config.share_memory_across_chats),
+    )
+}
+
 fn db_error(error: rusqlite::Error) -> RepositoryError {
     match error {
         rusqlite::Error::InvalidQuery => {

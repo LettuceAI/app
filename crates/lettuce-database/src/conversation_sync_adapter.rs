@@ -98,9 +98,11 @@ fn memory_binding(
 ) -> Result<SyncMemoryBinding, ConversationRepositoryError> {
     let binding: Option<Option<String>> = connection
         .query_row(
-            "SELECT pool.character_id FROM conversation_memory_spaces binding
+            "SELECT pool.character_id FROM conversation_memory_spaces own
+             LEFT JOIN conversation_memory_spaces binding
+                    ON binding.conversation_id = own.conversation_id AND binding.pooled = 1
              LEFT JOIN companion_memory_pools pool ON pool.space_id = binding.space_id
-             WHERE binding.conversation_id = ?1",
+             WHERE own.conversation_id = ?1 AND own.pooled = 0",
             [conversation_id.to_string()],
             |row| row.get(0),
         )
@@ -300,7 +302,8 @@ pub(crate) fn sync_replace_conversation_root(
             crate::memory_adapter::create_conversation_space_in(transaction, conversation.id)?;
         }
         SyncMemoryBinding::CompanionPool(character) => {
-            crate::memory_adapter::bind_companion_pool_in(
+            crate::memory_adapter::create_conversation_space_in(transaction, conversation.id)?;
+            crate::memory_adapter::join_companion_pool_in(
                 transaction,
                 conversation.id,
                 *character,

@@ -864,7 +864,7 @@ mod tests {
         assert_eq!(space.snapshot.items.len(), 1);
         assert_eq!(space.snapshot.items[0].text, "The user likes night shifts");
         assert!(space.snapshot.items[0].is_pinned);
-        assert_eq!(graph.memory_projections.projections.len(), 2);
+        assert_eq!(graph.memory_projections.projections.len(), 3);
         let episodes = [companion_first_id, companion_second_id, companion_third_id]
             .map(conv)
             .map(|id| {
@@ -895,11 +895,16 @@ mod tests {
             .spaces
             .iter()
             .find(|space| {
-                space
-                    .snapshot
-                    .items
+                graph
+                    .memory
+                    .pools
                     .iter()
-                    .any(|item| item.text == "Nia remembers the lighthouse")
+                    .any(|entry| entry.space_id == space.snapshot.id)
+                    && space
+                        .snapshot
+                        .items
+                        .iter()
+                        .any(|item| item.text == "Nia remembers the lighthouse")
             })
             .expect("companion memory pool");
         let mut bound = pool.shared_conversation_ids.clone();
@@ -912,6 +917,16 @@ mod tests {
         ];
         expected_bound.sort();
         assert_eq!(bound, expected_bound);
+        for conversation in &expected_bound {
+            assert!(
+                graph.memory.spaces.iter().any(|space| {
+                    space.conversation_id == *conversation
+                        && space.shared_conversation_ids.is_empty()
+                        && space.snapshot.id != pool.snapshot.id
+                }),
+                "each companion conversation keeps its own memory beside the pool"
+            );
+        }
         assert!(
             lettuce_companions::CompanionStateRepository::get(
                 backend.database(),

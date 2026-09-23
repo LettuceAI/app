@@ -11989,6 +11989,7 @@ mod tests {
                         token("history-restore", "ef"),
                     ),
                     memory: None,
+                    pool: None,
                     memory_projections: &[],
                     runtime: &[],
                     companion: None,

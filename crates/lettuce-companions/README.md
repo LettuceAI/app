@@ -189,9 +189,13 @@ seeded session preference: a companion launch writes an enabled
 character leave existing conversations alone.
 `share_memory_across_chats` is legacy `memory.sharedAcrossSessions` (default
 on; a companion-mode character whose legacy config is missing or unreadable
-imports it off, as legacy read it). `share_soul_growth_across_chats` is new
+imports it off, as legacy read it; a null or mistyped `memory` or
+`sharedAcrossSessions` also imports off, as legacy's failed parse did).
+Legacy companion sessions keep their own memories beside the imported pool.
+`share_soul_growth_across_chats` is new
 (default on). The other legacy `memory` keys were never read and are recorded
-as dropped. The runtime reads both toggles in later slices.
+as dropped. Memory follows the memory toggle (`lettuce-database` README); the soul
+growth toggle has no runtime effect yet.
 
 Typed companion turn effects copy their relationship, felt/expressed/blocked,
 and ordered signal changes directly from the existing legacy-math transition;

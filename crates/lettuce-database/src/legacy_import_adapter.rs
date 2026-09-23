@@ -2647,6 +2647,7 @@ fn materialize_conversations(
                     operation,
                 ),
                 memory: record.memory.as_ref(),
+                pool: record.pool.as_ref(),
                 memory_projections: &record.memory_projections,
                 runtime: &[],
                 companion: record.companion.as_ref(),

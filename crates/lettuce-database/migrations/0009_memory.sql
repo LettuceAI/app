@@ -3,9 +3,13 @@ CREATE TABLE memory_spaces (
     revision INTEGER NOT NULL CHECK (revision >= 1)
 ) STRICT;
 
+-- The memory spaces a conversation can use: its own (pooled = 0) and, for a
+-- companion conversation, its character's pool (pooled = 1).
 CREATE TABLE conversation_memory_spaces (
-    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
+    pooled INTEGER NOT NULL DEFAULT 0 CHECK (pooled IN (0, 1)),
+    PRIMARY KEY (conversation_id, pooled),
     UNIQUE (conversation_id, space_id)
 ) STRICT;
 CREATE INDEX conversation_memory_spaces_space_idx ON conversation_memory_spaces(space_id);

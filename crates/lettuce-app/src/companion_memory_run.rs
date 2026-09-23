@@ -100,7 +100,6 @@ impl<
         match self.repository.load_dynamic_memory_run(run_id) {
             Ok(run) => {
                 if run.conversation_id != conversation_id
-                    || run.space_id != snapshot.id
                     || run
                         .source_messages
                         .iter()

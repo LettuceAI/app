@@ -69,7 +69,9 @@ impl DynamicMemoryBackup {
             .flat_map(|entry| {
                 std::iter::once(entry.conversation_id)
                     .chain(entry.shared_conversation_ids.iter().copied())
-                    .map(move |conversation_id| (conversation_id, &entry.snapshot))
+                    .map(move |conversation_id| {
+                        ((conversation_id, entry.snapshot.id), &entry.snapshot)
+                    })
             })
             .collect::<BTreeMap<_, _>>();
         let messages = history
@@ -120,11 +122,8 @@ impl DynamicMemoryBackup {
                 || !run_ids.insert(entry.run.id)
                 || !conversations.contains(&entry.run.conversation_id)
                 || spaces
-                    .get(&entry.run.conversation_id)
-                    .is_none_or(|snapshot| {
-                        snapshot.id != entry.run.space_id
-                            || entry.run.starting_memory.revision > snapshot.revision
-                    })
+                    .get(&(entry.run.conversation_id, entry.run.space_id))
+                    .is_none_or(|snapshot| entry.run.starting_memory.revision > snapshot.revision)
                 || entry.run.source_messages.iter().any(|source| {
                     messages.get(&source.message_id).is_none_or(
                         |(conversation_id, role, sources)| {

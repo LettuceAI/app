@@ -784,6 +784,82 @@ fn a_time_aware_companion_starts_its_new_conversations_time_aware() {
 }
 
 #[test]
+fn the_share_memory_toggle_picks_the_pool_or_each_conversations_own_memory() {
+    use lettuce_memory::MemoryRepository;
+    let database = database_with_builtins();
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let launch = |key: &str| {
+        ConversationLaunchPlanner::new(&database)
+            .launch_direct(&request(character_id, key), NOW)
+            .expect("launch companion")
+            .value
+            .conversation
+            .id
+    };
+    let (first, second) = (launch("shared-first"), launch("shared-second"));
+    let space = |conversation| {
+        database
+            .get_for_conversation(conversation)
+            .expect("memory space")
+            .expect("bound space")
+            .id
+    };
+    let pool = space(first);
+    assert_eq!(space(second), pool);
+    let set_shared = |shared| {
+        let character = CharacterRepository::get(&database, character_id)
+            .expect("character")
+            .expect("exists")
+            .character;
+        let mut defaults = character.defaults.clone();
+        defaults
+            .companion_soul
+            .as_mut()
+            .expect("companion config")
+            .share_memory_across_chats = shared;
+        CharacterRepository::update_defaults(
+            &database,
+            character_id,
+            character.revision,
+            defaults,
+            NOW,
+        )
+        .expect("update defaults");
+    };
+    set_shared(false);
+    let (first_own, second_own) = (space(first), space(second));
+    assert_ne!(first_own, pool);
+    assert_ne!(second_own, pool);
+    assert_ne!(first_own, second_own);
+    set_shared(true);
+    assert_eq!(space(first), pool);
+    assert_eq!(space(second), pool);
+    set_shared(false);
+    assert_eq!(space(first), first_own);
+    set_shared(true);
+    let character = CharacterRepository::get(&database, character_id)
+        .expect("character")
+        .expect("exists")
+        .character;
+    let mut roleplay = character.defaults.clone();
+    roleplay.interaction_mode = InteractionMode::Roleplay;
+    roleplay.companion_soul = None;
+    CharacterRepository::update_defaults(
+        &database,
+        character_id,
+        character.revision,
+        roleplay,
+        NOW,
+    )
+    .expect("switch to roleplay");
+    assert_eq!(space(first), first_own);
+    assert_eq!(space(second), second_own);
+}
+
+#[test]
 fn companion_character_launch_seeds_normalized_runtime_state() {
     let database = database_with_builtins();
     let persona_id = seed_persona(&database, "Mira");

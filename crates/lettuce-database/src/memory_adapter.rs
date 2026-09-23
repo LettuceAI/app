@@ -132,8 +132,8 @@ pub(crate) fn insert_item_at(
 }
 
 /// Creates a companion character's memory pool from an imported snapshot, or
-/// binds the conversation to the pool when an earlier conversation created it.
-/// Returns whether this call created the pool.
+/// makes the conversation a member of the pool an earlier conversation
+/// created. Returns whether this call created the pool.
 pub(crate) fn insert_pool_space_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
@@ -148,7 +148,7 @@ pub(crate) fn insert_pool_space_in(
         )
         .map_err(space_storage_error)?;
     if exists {
-        bind_companion_pool_in(transaction, conversation_id, character_id)?;
+        join_companion_pool_in(transaction, conversation_id, character_id)?;
         return Ok(false);
     }
     space.validate().map_err(space_storage_error)?;
@@ -167,19 +167,14 @@ pub(crate) fn insert_pool_space_in(
             params![character_id.to_string(), space.id.to_string()],
         )
         .map_err(space_storage_error)?;
-    transaction
-        .execute(
-            "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
-            params![conversation_id.to_string(), space.id.to_string()],
-        )
-        .map_err(space_storage_error)?;
+    insert_pool_binding_in(transaction, conversation_id, space.id)?;
     insert_items(transaction, space.id, &space.items).map_err(space_storage_error)?;
     Ok(true)
 }
 
-/// Binds a companion conversation to its character's shared memory pool,
-/// creating the pool space the first time the companion needs memory.
-pub(crate) fn bind_companion_pool_in(
+/// Makes a companion conversation a member of its character's memory pool,
+/// creating the pool space the first time the companion needs one.
+pub(crate) fn join_companion_pool_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     character_id: lettuce_types::CharacterId,
@@ -211,13 +206,77 @@ pub(crate) fn bind_companion_pool_in(
             space_id
         }
     };
+    insert_pool_binding_in(transaction, conversation_id, space_id)?;
+    Ok(space_id)
+}
+
+fn insert_pool_binding_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    space_id: MemorySpaceId,
+) -> Result<(), lettuce_conversations::ConversationRepositoryError> {
     transaction
         .execute(
-            "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+            "INSERT INTO conversation_memory_spaces (conversation_id, space_id, pooled)
+             VALUES (?1, ?2, 1)",
             params![conversation_id.to_string(), space_id.to_string()],
         )
         .map_err(space_storage_error)?;
-    Ok(space_id)
+    Ok(())
+}
+
+/// The memory space a conversation uses now: its companion pool while the
+/// character shares memory across chats, else its own space (legacy
+/// `resolve_effective_memory_owner`, read on every use).
+pub(crate) fn active_space_id_in(
+    connection: &rusqlite::Connection,
+    conversation_id: ConversationId,
+) -> rusqlite::Result<Option<MemorySpaceId>> {
+    let pool = connection
+        .query_row(
+            "SELECT pool.character_id, pool.space_id FROM conversation_memory_spaces binding
+               JOIN companion_memory_pools pool ON pool.space_id = binding.space_id
+              WHERE binding.conversation_id = ?1 AND binding.pooled = 1",
+            [conversation_id.to_string()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    if let Some((character_id, space_id)) = pool {
+        let character_id = character_id
+            .parse()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?;
+        if crate::character_adapter::companion_memory_shared_in(connection, character_id)? {
+            return space_id
+                .parse()
+                .map(Some)
+                .map_err(|_| rusqlite::Error::InvalidQuery);
+        }
+    }
+    connection
+        .query_row(
+            "SELECT space_id FROM conversation_memory_spaces
+              WHERE conversation_id = ?1 AND pooled = 0",
+            [conversation_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .map(|value| value.parse().map_err(|_| rusqlite::Error::InvalidQuery))
+        .transpose()
+}
+
+/// The conversations that can write a space: its owner, or a pool's members.
+pub(crate) fn space_conversations_in(
+    connection: &rusqlite::Connection,
+    space_id: MemorySpaceId,
+    limit: u32,
+) -> rusqlite::Result<Vec<String>> {
+    connection
+        .prepare(
+            "SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = ?1
+             ORDER BY 1 LIMIT ?2",
+        )?
+        .query_map(params![space_id.to_string(), limit], |row| row.get(0))?
+        .collect()
 }
 
 fn space_storage_error<E>(_: E) -> lettuce_conversations::ConversationRepositoryError {
@@ -474,15 +533,7 @@ pub(crate) fn replace_summary_in(
     if summary.is_some_and(|summary| summary.space_id != space_id || summary.validate().is_err()) {
         return Err(storage("invalid replacement summary"));
     }
-    let bindings = transaction
-        .prepare(
-            "SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = ?1 LIMIT 2",
-        )
-        .map_err(storage)?
-        .query_map([space_id.to_string()], |row| row.get::<_, String>(0))
-        .map_err(storage)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(storage)?;
+    let bindings = space_conversations_in(transaction, space_id, 2).map_err(storage)?;
     let conversation_id = match (bindings.as_slice(), summary) {
         ([], _) => return Err(MemoryRepositoryError::NotFound),
         ([only], _) => only.clone(),
@@ -618,6 +669,7 @@ pub(crate) fn run_cursor_in(
                 AND NOT EXISTS (
                     SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
                      WHERE rewind.conversation_id = run.conversation_id
+                       AND rewind.space_id = run.space_id
                        AND rewind.applied_at >= checkpoint.settled_at
                 )",
             params![space_id.to_string(), conversation_id.to_string()],
@@ -715,16 +767,7 @@ impl MemoryRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(storage)?;
-        let space_id = transaction
-            .query_row(
-                "SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1",
-                [conversation_id.to_string()],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(storage)?
-            .map(parse_id)
-            .transpose()?;
+        let space_id = active_space_id_in(&transaction, conversation_id).map_err(storage)?;
         let snapshot = space_id
             .map(|space_id| get_in(&transaction, space_id))
             .transpose()?
@@ -1318,10 +1361,10 @@ mod tests {
             let mut connection = database.connection().expect("connection");
             let transaction = connection.transaction().expect("transaction");
             let first_space =
-                crate::memory_adapter::bind_companion_pool_in(&transaction, first, character_id)
+                crate::memory_adapter::join_companion_pool_in(&transaction, first, character_id)
                     .expect("first binding");
             let second_space =
-                crate::memory_adapter::bind_companion_pool_in(&transaction, second, character_id)
+                crate::memory_adapter::join_companion_pool_in(&transaction, second, character_id)
                     .expect("second binding");
             transaction.commit().expect("commit");
             (first_space, second_space)
@@ -1387,6 +1430,15 @@ mod tests {
                     rusqlite::params![lettuce_types::ConversationId::new().to_string(), private_space.to_string()],
                 )
                 .is_err()
+        );
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                    rusqlite::params![lettuce_types::ConversationId::new().to_string(), first_space.to_string()],
+                )
+                .is_err(),
+            "a pool is never a conversation's own space"
         );
     }
 }

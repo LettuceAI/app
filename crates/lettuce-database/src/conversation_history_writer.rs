@@ -39,7 +39,10 @@ pub(crate) struct HistoricalConversation<'a> {
     pub usage: &'a [UsageEvent],
     pub snapshots: Vec<SnapshotArtifactDraft>,
     pub creation: HistoricalCreation<'a>,
+    /// The conversation's own memory space.
     pub memory: Option<&'a BackupMemorySpace>,
+    /// The companion memory pool the conversation belongs to.
+    pub pool: Option<&'a BackupMemorySpace>,
     pub memory_projections: &'a [BackupMemoryProjection],
     pub runtime: &'a [lettuce_transfer::BackupGenerationAttemptRuntime],
     pub companion: Option<&'a lettuce_transfer::LegacyCompanionConversation>,
@@ -98,57 +101,53 @@ pub(crate) fn insert_historical_conversation(
         .map_err(ConversationRepositoryError::ArtifactReference)?;
     }
     slice::save_conversation(transaction, conversation)?;
-    let mut memory_created = false;
-    match (input.companion, input.memory) {
-        (Some(companion), Some(space)) => {
-            memory_created = crate::memory_adapter::insert_pool_space_in(
-                transaction,
-                conversation_id,
-                companion.owner.character_id,
-                &space.snapshot,
-            )?;
-        }
-        (Some(companion), None)
-            if conversation_creator::conversation_uses_memory(&conversation.kind) =>
+    let uses_memory = conversation_creator::conversation_uses_memory(&conversation.kind);
+    let own_created = match input.memory {
+        Some(space)
+            if space.conversation_id == conversation_id
+                && space.shared_conversation_ids.is_empty() =>
         {
-            crate::memory_adapter::bind_companion_pool_in(
+            crate::memory_adapter::insert_space_in(transaction, conversation_id, &space.snapshot)?;
+            true
+        }
+        Some(_) => return Err(invalid("history.memory_space")),
+        None if uses_memory => {
+            crate::memory_adapter::create_conversation_space_in(transaction, conversation_id)?;
+            false
+        }
+        None => false,
+    };
+    let pool_character = match (input.companion, &conversation.kind) {
+        (Some(companion), _) => Some(companion.owner.character_id),
+        (None, ConversationKind::Direct(details)) if input.pool.is_some() => {
+            Some(details.character.source_id)
+        }
+        (None, _) if input.pool.is_some() => return Err(invalid("history.memory_pool")),
+        (None, _) => None,
+    };
+    let pool_created = match (input.pool, pool_character) {
+        (Some(space), Some(character_id))
+            if space.conversation_id == conversation_id
+                || space.shared_conversation_ids.contains(&conversation_id) =>
+        {
+            crate::memory_adapter::insert_pool_space_in(
                 transaction,
                 conversation_id,
-                companion.owner.character_id,
-            )?;
+                character_id,
+                &space.snapshot,
+            )?
         }
-        (Some(_), None) => {}
-        (None, memory) => match memory {
-            Some(space)
-                if space.conversation_id == conversation_id
-                    || space.shared_conversation_ids.contains(&conversation_id) =>
-            {
-                if space.shared_conversation_ids.is_empty() {
-                    crate::memory_adapter::insert_space_in(
-                        transaction,
-                        conversation_id,
-                        &space.snapshot,
-                    )?;
-                    memory_created = true;
-                } else {
-                    let ConversationKind::Direct(details) = &conversation.kind else {
-                        return Err(invalid("history.memory_pool"));
-                    };
-                    memory_created = crate::memory_adapter::insert_pool_space_in(
-                        transaction,
-                        conversation_id,
-                        details.character.source_id,
-                        &space.snapshot,
-                    )?;
-                }
-            }
-            Some(_) => return Err(invalid("history.memory_space")),
-            None if conversation_creator::conversation_uses_memory(&conversation.kind) => {
-                crate::memory_adapter::create_conversation_space_in(transaction, conversation_id)?;
-            }
-            None => {}
-        },
-    }
+        (Some(_), _) => return Err(invalid("history.memory_pool")),
+        (None, Some(character_id)) if uses_memory => {
+            crate::memory_adapter::join_companion_pool_in(
+                transaction,
+                conversation_id,
+                character_id,
+            )?;
+            false
+        }
+        (None, _) => false,
+    };
     insert_snapshot_refs(transaction, input.history)?;
 
     let branches = aggregate
@@ -257,13 +256,29 @@ pub(crate) fn insert_historical_conversation(
         )
         .map_err(slice::db)?;
 
-    insert_memory_state(
-        transaction,
-        conversation_id,
-        input.memory,
-        memory_created,
-        input.memory_projections,
-    )?;
+    let known = [input.memory, input.pool]
+        .into_iter()
+        .flatten()
+        .map(|space| space.snapshot.id)
+        .collect::<BTreeSet<_>>();
+    if input
+        .memory_projections
+        .iter()
+        .any(|projection| !known.contains(&projection.space_id))
+    {
+        return Err(invalid("history.memory_projection_space"));
+    }
+    for (space, created) in [(input.memory, own_created), (input.pool, pool_created)] {
+        if let Some(space) = space {
+            insert_memory_state(
+                transaction,
+                conversation_id,
+                space,
+                created,
+                input.memory_projections,
+            )?;
+        }
+    }
     if let Some(companion) = input.companion {
         crate::state_adapter::create_in(
             transaction,
@@ -305,22 +320,15 @@ pub(crate) fn insert_historical_conversation(
 fn insert_memory_state(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
-    memory: Option<&BackupMemorySpace>,
+    space: &BackupMemorySpace,
     created: bool,
     projections: &[BackupMemoryProjection],
 ) -> Result<(), ConversationRepositoryError> {
-    let Some(space) = memory else {
-        return if projections.is_empty() {
-            Ok(())
-        } else {
-            Err(invalid("history.memory_projections"))
-        };
-    };
     let space_id = space.snapshot.id;
-    for projection in projections.iter().filter(|_| created) {
-        if projection.space_id != space_id {
-            return Err(invalid("history.memory_projection_space"));
-        }
+    for projection in projections
+        .iter()
+        .filter(|projection| created && projection.space_id == space_id)
+    {
         let (status, vector) = match &projection.state {
             BackupMemoryProjectionState::Ready { vector_le_hex } => (
                 "ready",

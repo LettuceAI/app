@@ -695,20 +695,30 @@ revision and items (`memory_adapter::insert_space_in`), its summary and its
 embedding projections, after the messages the summary cites.
 
 A companion character has one shared memory pool (`companion_memory_pools`,
-user decision 2026-09-14): companion conversation creation binds the pool space
-instead of a fresh space, and `conversation_memory_spaces` allows a second
-binding only for a pool space. The summary row stays per space and records the
+user decision 2026-09-14), and each companion conversation also keeps its own
+space (user decision 2026-09-23, legacy's two stores): `conversation_memory_spaces`
+holds a conversation's own space (`pooled = 0`, never shared) and, for a
+companion conversation, a `pooled = 1` row for the character's pool. The
+character's `share_memory_across_chats` toggle picks which one the
+conversation uses (`memory_adapter::active_space_id_in`, read on every use like
+legacy `resolve_effective_memory_owner`); flipping it copies and deletes
+nothing. The summary row stays per space and records the
 conversation that wrote it; `replace_summary_in` takes that conversation from
 the summary's source messages when a space is shared. `summary_cursor` gives each
 conversation its own cursor inside one read transaction: its own summary
 window; when another conversation of the pool wrote the summary, its latest
 settled run that no later suffix rewind of that conversation invalidated; with no
-summary, 0. A suffix rewind in a shared pool keeps the pool's memories and
-summary (legacy only rewound that session's own tool events) and still records
-the rewind and invalidates the conversation's effects. Backups export a
-shared space once with `shared_conversation_ids`.
-The history writer creates or binds a companion pool for a companion
-conversation (`memory_adapter::insert_pool_space_in`), creates its companion
+summary, 0. A suffix rewind in a pool keeps the pool's memories and summary,
+even with one member (legacy never rewound the shared state; it only rewound
+that session's own tool events), and still records the rewind and invalidates
+the conversation's effects. Rewinds, their prior-summary search and the run
+cursor only look at runs of the space the rewind touches, so a conversation's
+own and pool runs never undo each other. A character stops sharing when it
+leaves companion mode. Backups export a
+pool once with its members in `shared_conversation_ids` and each own space
+separately.
+The history writer creates the conversation's own space and creates or joins
+its companion pool (`memory_adapter::insert_pool_space_in`), creates its companion
 session state and writes its legacy continuity episode
 (`state_adapter::insert_continuity_episode_in`, else the normal episode chain);
 the conversation stages also replace imported Soul facts

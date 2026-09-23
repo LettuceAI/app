@@ -192,10 +192,10 @@ pub(crate) fn legacy_companion(
     };
     config.time_awareness = top_level || context;
     config.share_memory_across_chats = match object.remove("memory") {
-        None | Some(Value::Null) => true,
+        None => true,
         Some(Value::Object(mut memory)) => {
             let shared = match memory.remove("sharedAcrossSessions") {
-                None | Some(Value::Null) => true,
+                None => true,
                 Some(Value::Bool(value)) => value,
                 Some(_) => {
                     skipped.push(malformed(
@@ -205,8 +205,8 @@ pub(crate) fn legacy_companion(
                     false
                 }
             };
-            for key in memory.keys() {
-                skipped.push(unknown(&format!("{FIELD}.memory.{key}"), character_key));
+            if !memory.is_empty() {
+                skipped.push(unknown(&format!("{FIELD}.memory"), character_key));
             }
             shared
         }
@@ -281,7 +281,13 @@ pub(crate) fn legacy_companion(
     }
     if !valid_companion(&config, created_at) {
         skipped.push(malformed(FIELD, character_key));
-        return private_memory();
+        return LegacyCompanion {
+            soul: Some(CompanionSoulConfig {
+                share_memory_across_chats: config.share_memory_across_chats,
+                ..CompanionSoulConfig::default()
+            }),
+            prompt_source_id: None,
+        };
     }
     LegacyCompanion {
         soul: Some(config),

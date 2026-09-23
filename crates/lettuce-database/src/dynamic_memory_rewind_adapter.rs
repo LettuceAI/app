@@ -4,7 +4,7 @@ use lettuce_memory::{
     DynamicMemorySuffixRewind, DynamicMemorySuffixRewindError, DynamicMemorySuffixRewindReceipt,
     DynamicMemorySuffixRewindRepository, MemoryChangeSet, MemoryRepositoryError, MemorySummary,
 };
-use lettuce_types::{DynamicMemoryRunId, MemorySpaceId, OperationId};
+use lettuce_types::{DynamicMemoryRunId, OperationId};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{
@@ -150,6 +150,7 @@ fn load_receipt(
 fn prior_summary(
     transaction: &Transaction<'_>,
     conversation_id: lettuce_types::ConversationId,
+    space_id: lettuce_types::MemorySpaceId,
     invalid_run_id: DynamicMemoryRunId,
     invalid_window_start: u64,
 ) -> Result<(Option<DynamicMemoryRunId>, Option<MemorySummary>), DynamicMemorySuffixRewindError> {
@@ -159,6 +160,7 @@ fn prior_summary(
                FROM dynamic_memory_runs run
                JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id=run.id
               WHERE run.conversation_id=?1 AND run.id<>?2 AND run.summary_window_end<=?3
+                AND run.space_id=?4
               ORDER BY run.summary_window_end DESC, run.summary_window_start DESC,
                        checkpoint.settled_at DESC, run.id DESC
               LIMIT 1",
@@ -166,6 +168,7 @@ fn prior_summary(
                 conversation_id.to_string(),
                 invalid_run_id.to_string(),
                 i64::try_from(invalid_window_start).map_err(storage)?,
+                space_id.to_string(),
             ],
             |row| row.get::<_, String>(0),
         )
@@ -219,16 +222,8 @@ impl DynamicMemorySuffixRewindRepository for Database {
             transaction.commit().map_err(storage)?;
             return Ok(receipt);
         }
-        let space_id = transaction
-            .query_row(
-                "SELECT space_id FROM conversation_memory_spaces WHERE conversation_id=?1",
-                [rewind.conversation_id.to_string()],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
+        let space_id = memory_adapter::active_space_id_in(&transaction, rewind.conversation_id)
             .map_err(storage)?
-            .map(parse_id::<MemorySpaceId>)
-            .transpose()?
             .ok_or(DynamicMemorySuffixRewindError::NotFound)?;
         let current = memory_adapter::get_in(&transaction, space_id)
             .map_err(memory_error)?
@@ -238,7 +233,7 @@ impl DynamicMemorySuffixRewindRepository for Database {
         }
         let shared_pool = transaction
             .query_row(
-                "SELECT count(*) > 1 FROM conversation_memory_spaces WHERE space_id=?1",
+                "SELECT EXISTS(SELECT 1 FROM companion_memory_pools WHERE space_id = ?1)",
                 [space_id.to_string()],
                 |row| row.get::<_, bool>(0),
             )
@@ -275,6 +270,7 @@ impl DynamicMemorySuffixRewindRepository for Database {
                     let (prior_run_id, summary) = prior_summary(
                         &transaction,
                         rewind.conversation_id,
+                        space_id,
                         invalid_run_id,
                         run.summary_window.start,
                     )?;

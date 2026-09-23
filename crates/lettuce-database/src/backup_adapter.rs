@@ -231,7 +231,7 @@ fn read_memory(
 ) -> Result<MemoryBackup, ProviderBackupSourceError> {
     let owners = transaction
         .prepare(&format!(
-            "SELECT conversation_id,space_id FROM conversation_memory_spaces ORDER BY conversation_id LIMIT {}",
+            "SELECT conversation_id,space_id FROM conversation_memory_spaces ORDER BY conversation_id, pooled LIMIT {}",
             MAX_BACKUP_MEMORY_SPACES + 1
         ))
         .and_then(|mut statement| {

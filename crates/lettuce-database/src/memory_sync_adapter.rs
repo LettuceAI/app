@@ -27,8 +27,8 @@ fn exchanged_space_id() -> MemorySpaceId {
 
 const OWNERS: &str = "SELECT 'pool:' || character_id AS owner, space_id FROM companion_memory_pools
      UNION ALL
-     SELECT 'conversation:' || binding.conversation_id AS owner, binding.space_id FROM conversation_memory_spaces binding
-      WHERE NOT EXISTS (SELECT 1 FROM companion_memory_pools pool WHERE pool.space_id = binding.space_id)";
+     SELECT 'conversation:' || conversation_id AS owner, space_id FROM conversation_memory_spaces
+      WHERE pooled = 0";
 
 pub(crate) fn valid_owner(owner: &str) -> bool {
     match owner.split_once(':') {
@@ -296,9 +296,7 @@ pub(crate) fn sync_delete_memory_summary(
 pub(crate) fn sync_memory_cursor_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
     connection
         .prepare(
-            "SELECT binding.conversation_id FROM conversation_memory_spaces binding
-               JOIN companion_memory_pools pool ON pool.space_id = binding.space_id
-              ORDER BY 1",
+            "SELECT conversation_id FROM conversation_memory_spaces WHERE pooled = 1 ORDER BY 1",
         )?
         .query_map([], |row| row.get(0))?
         .collect()
@@ -313,9 +311,8 @@ pub(crate) fn sync_load_memory_cursor(
 ) -> Result<Option<u64>, MemoryRepositoryError> {
     let space: Option<String> = transaction
         .query_row(
-            "SELECT binding.space_id FROM conversation_memory_spaces binding
-               JOIN companion_memory_pools pool ON pool.space_id = binding.space_id
-              WHERE binding.conversation_id = ?1",
+            "SELECT space_id FROM conversation_memory_spaces
+              WHERE conversation_id = ?1 AND pooled = 1",
             [conversation_id.to_string()],
             |row| row.get(0),
         )

@@ -2309,12 +2309,18 @@ mod tests {
             corrupt_effects.canonicalize_and_validate(&history, &runtime),
             Err(lettuce_transfer::CompanionEffectBackupError::InvalidData)
         );
-        assert_eq!(memory.spaces.len(), 2);
+        assert_eq!(memory.spaces.len(), 3);
         let direct_memory = memory
             .spaces
             .iter()
-            .find(|space| space.conversation_id == direct_conversation.id)
+            .find(|space| space.snapshot.id == memory_after_projection_edit.id)
             .expect("direct memory");
+        assert!(
+            direct_memory.conversation_id == direct_conversation.id
+                || direct_memory
+                    .shared_conversation_ids
+                    .contains(&direct_conversation.id)
+        );
         assert_eq!(
             direct_memory.snapshot.revision,
             memory_after_projection_edit.revision

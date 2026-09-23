@@ -1201,12 +1201,6 @@ where
         shape: MemoryPromptShape,
         now: TimestampMillis,
     ) -> Result<Option<MemoryContribution>, ConversationGenerationInputError> {
-        let memory = MemoryRepository::get_for_conversation(self.repository, work.conversation_id)
-            .map_err(ConversationGenerationInputError::Memory)?
-            .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
-        let summary = MemorySummaryRepository::get_summary(self.repository, memory.id)
-            .map_err(ConversationGenerationInputError::Memory)?
-            .map(|summary| summary.text);
         let prior_access = MemoryRetrievalRepository::get_retrieval_access(
             self.repository,
             work.conversation_id,
@@ -1214,6 +1208,15 @@ where
             work.attempt_id,
         )
         .map_err(ConversationGenerationInputError::Memory)?;
+        let memory = match &prior_access {
+            Some(receipt) => MemoryRepository::get(self.repository, receipt.access.space_id),
+            None => MemoryRepository::get_for_conversation(self.repository, work.conversation_id),
+        }
+        .map_err(ConversationGenerationInputError::Memory)?
+        .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
+        let summary = MemorySummaryRepository::get_summary(self.repository, memory.id)
+            .map_err(ConversationGenerationInputError::Memory)?
+            .map(|summary| summary.text);
         let (selected, revision, restored_promotions, effective_now) = if let Some(receipt) =
             prior_access
         {

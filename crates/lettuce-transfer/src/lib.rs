@@ -1228,7 +1228,10 @@ pub struct LegacyConversationRecord {
     pub turns: Vec<lettuce_conversations::GenerationTurn>,
     pub usage: Vec<lettuce_usage::UsageEvent>,
     pub snapshots: Vec<lettuce_conversations::SnapshotArtifactDraft>,
+    /// The conversation's own memory.
     pub memory: Option<BackupMemorySpace>,
+    /// The companion memory pool, on each of the character's conversations.
+    pub pool: Option<BackupMemorySpace>,
     pub memory_projections: Vec<BackupMemoryProjection>,
     pub companion: Option<LegacyCompanionConversation>,
 }

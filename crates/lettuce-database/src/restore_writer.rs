@@ -310,21 +310,35 @@ impl ProviderBackupRestoreWriter for Database {
                 .iter()
                 .flat_map(|turn| usage.get(&turn.id).into_iter().flatten().cloned())
                 .collect::<Vec<_>>();
-            let memory = graph.memory.spaces.iter().find(|space| {
-                space.conversation_id == conversation_id
-                    || space.shared_conversation_ids.contains(&conversation_id)
+            let is_pool = |space: &&lettuce_transfer::BackupMemorySpace| {
+                graph
+                    .memory
+                    .pools
+                    .iter()
+                    .any(|pool| pool.space_id == space.snapshot.id)
+            };
+            let memory = graph
+                .memory
+                .spaces
+                .iter()
+                .find(|space| space.conversation_id == conversation_id && !is_pool(space));
+            let pool = graph.memory.spaces.iter().find(|space| {
+                is_pool(space)
+                    && (space.conversation_id == conversation_id
+                        || space.shared_conversation_ids.contains(&conversation_id))
             });
-            let projections = memory
-                .map(|space| {
+            let projections = [memory, pool]
+                .into_iter()
+                .flatten()
+                .flat_map(|space| {
                     graph
                         .memory_projections
                         .projections
                         .iter()
                         .filter(|projection| projection.space_id == space.snapshot.id)
                         .cloned()
-                        .collect::<Vec<_>>()
                 })
-                .unwrap_or_default();
+                .collect::<Vec<_>>();
             let (operations, events_out) = outbox
                 .get(&conversation_id)
                 .map_or((&[][..], &[][..]), |outbox| {
@@ -342,6 +356,7 @@ impl ProviderBackupRestoreWriter for Database {
                         events: events_out,
                     },
                     memory,
+                    pool,
                     memory_projections: &projections,
                     runtime: &attempt_runtime,
                     companion: None,

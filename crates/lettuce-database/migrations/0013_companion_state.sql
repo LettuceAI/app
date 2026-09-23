@@ -334,10 +334,29 @@ CREATE TABLE companion_memory_pools (
     space_id TEXT NOT NULL UNIQUE REFERENCES memory_spaces(id) ON DELETE RESTRICT
 ) STRICT;
 
-CREATE TRIGGER conversation_memory_spaces_shared_guard
+CREATE TRIGGER conversation_memory_spaces_own_guard
 BEFORE INSERT ON conversation_memory_spaces
-WHEN EXISTS (SELECT 1 FROM conversation_memory_spaces WHERE space_id = NEW.space_id)
+WHEN NEW.pooled = 0 AND (
+    EXISTS (SELECT 1 FROM conversation_memory_spaces WHERE space_id = NEW.space_id)
+    OR EXISTS (SELECT 1 FROM companion_memory_pools WHERE space_id = NEW.space_id)
+)
+BEGIN
+    SELECT RAISE(ABORT, 'a conversation owns its memory space alone');
+END;
+
+CREATE TRIGGER conversation_memory_spaces_pool_guard
+BEFORE INSERT ON conversation_memory_spaces
+WHEN NEW.pooled = 1
   AND NOT EXISTS (SELECT 1 FROM companion_memory_pools WHERE space_id = NEW.space_id)
 BEGIN
     SELECT RAISE(ABORT, 'only a companion memory pool is shared across conversations');
+END;
+
+CREATE TRIGGER companion_memory_pools_space_guard
+BEFORE INSERT ON companion_memory_pools
+WHEN EXISTS (
+    SELECT 1 FROM conversation_memory_spaces WHERE space_id = NEW.space_id AND pooled = 0
+)
+BEGIN
+    SELECT RAISE(ABORT, 'a conversation memory space is not a companion memory pool');
 END;

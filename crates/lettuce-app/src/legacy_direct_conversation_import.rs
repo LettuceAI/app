@@ -513,15 +513,10 @@ where
                 created_at: session.created_at,
                 updated_at: session.updated_at,
                 messages,
-                memory: memory.filter(|_| companion.is_none()),
-                memory_summary: session
-                    .memory_summary
-                    .as_deref()
-                    .filter(|_| companion.is_none()),
+                memory,
+                memory_summary: session.memory_summary.as_deref(),
                 memory_summary_token_count: session.memory_summary_token_count,
-                memory_tool_events: companion
-                    .is_none()
-                    .then_some(session.memory_tool_events_json.as_str()),
+                memory_tool_events: Some(session.memory_tool_events_json.as_str()),
                 settings,
             },
             context,
@@ -627,10 +622,12 @@ fn assign_companion_episodes(
         .collect())
 }
 
-/// A companion character shares one memory pool across its conversations. The
-/// pool takes the legacy shared memory when legacy kept one, otherwise the
-/// memories of the character's most recently updated session that has any
-/// (user decision 2026-09-14); its summary window belongs to that session.
+/// A companion character's conversations belong to one memory pool and keep
+/// their own memories beside it; the share-memory toggle picks which one they
+/// use, as legacy's live owner resolution did. The pool takes the legacy
+/// shared memory when legacy kept one, otherwise a copy of the memories of
+/// the character's most recently updated session that has any (user decision
+/// 2026-09-14); its summary window belongs to that session.
 fn attach_companion_pools(
     mapped: &mut [(LegacyConversationRecord, Option<PendingCompanion>)],
     sessions: &[LegacyBackupDirectSession],
@@ -708,13 +705,23 @@ fn attach_companion_pools(
                 break;
             }
         }
-        let Some((space, projections)) = pool else {
+        let Some((mut space, projections)) = pool else {
             continue;
         };
+        space.shared_conversation_ids = mapped
+            .iter()
+            .filter(|(record, pending)| {
+                character_of(pending) == Some(character_id)
+                    && record.history.aggregate.conversation.id != space.conversation_id
+            })
+            .map(|(record, _)| record.history.aggregate.conversation.id)
+            .collect();
         for (record, pending) in mapped.iter_mut() {
             if character_of(pending) == Some(character_id) {
-                record.memory = Some(space.clone());
-                record.memory_projections = projections.clone();
+                record.pool = Some(space.clone());
+                record
+                    .memory_projections
+                    .extend(projections.iter().cloned());
             }
         }
     }
@@ -1460,6 +1467,7 @@ pub(crate) fn conversation_record(
         usage: writer.usage,
         snapshots: source.snapshots,
         memory,
+        pool: None,
         memory_projections,
         companion: None,
     })
