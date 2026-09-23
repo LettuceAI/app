@@ -93,8 +93,8 @@ use serde::{Deserialize, Serialize};
 
 /// The legacy table layout the importer reads: schema 92, which releases up to
 /// 2.2.5 kept (93-94 only repaired group columns 2.2.0 already created, 95
-/// repaired group session overrides the importer does not read, 96 reordered
-/// columns and renamed tables outside the schema).
+/// rewrote group session override encodings the importer reads in both forms,
+/// 96 reordered columns and renamed tables outside the schema).
 pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
 /// Every legacy schema version the importer accepts (user decision
 /// 2026-09-23): 2.2.0 stored 92 or 94, 2.2.1 stored 95, 2.2.2-2.2.5 96.

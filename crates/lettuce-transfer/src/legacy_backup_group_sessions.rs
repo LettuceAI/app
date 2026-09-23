@@ -304,6 +304,91 @@ pub fn plan_legacy_backup_group_sessions(
     })
 }
 
+/// Legacy `resolve_group_session_config`: a session linked to a group reads
+/// each setting from its own `config_overrides`, else from the group, never
+/// from its own columns. Values legacy 2.2.1's repair migration rewrote (a
+/// string-encoded `startingScene`, a numeric `disableCharacterLorebooks`) are
+/// read the way the repair left them.
+fn resolve_group_session_config(row: &mut SessionRow, group: &Value) {
+    let overrides = serde_json::from_str::<Value>(&row.config_overrides)
+        .ok()
+        .and_then(|value| value.as_object().cloned());
+    let value = |key: &str| {
+        overrides
+            .as_ref()
+            .and_then(|object| object.get(key).cloned())
+    };
+    let text = |key: &str| group.get(key).and_then(Value::as_str).map(str::to_owned);
+    let array = |override_value: Option<Value>, fallback: Option<String>| -> Vec<String> {
+        override_value
+            .and_then(|value| match value {
+                Value::String(raw) => serde_json::from_str(&raw).ok(),
+                value => serde_json::from_value(value).ok(),
+            })
+            .or_else(|| fallback.and_then(|raw| serde_json::from_str(&raw).ok()))
+            .unwrap_or_default()
+    };
+    let members = array(value("characterIds"), text("character_ids"));
+    let mut muted = array(value("mutedCharacterIds"), text("muted_character_ids"));
+    muted.retain(|id| members.contains(id));
+    row.character_ids = serde_json::to_string(&members).unwrap_or_else(|_| "[]".to_owned());
+    row.muted_character_ids = serde_json::to_string(&muted).unwrap_or_else(|_| "[]".to_owned());
+    row.persona_id = match value("personaId") {
+        Some(value) => value.as_str().map(str::to_owned),
+        None => text("persona_id"),
+    };
+    row.chat_type = match value("chatType") {
+        Some(value) => value.as_str().unwrap_or("conversation").to_owned(),
+        None => text("chat_type").unwrap_or_else(|| "conversation".to_owned()),
+    };
+    row.starting_scene = match value("startingScene") {
+        Some(Value::Null) => None,
+        Some(Value::String(encoded)) => serde_json::from_str::<Value>(&encoded)
+            .ok()
+            .filter(Value::is_object)
+            .map(|value| value.to_string()),
+        Some(value) => Some(value.to_string()),
+        None => text("starting_scene")
+            .filter(|raw| serde_json::from_str::<Value>(raw).is_ok_and(|value| !value.is_null())),
+    };
+    row.lorebook_ids = serde_json::to_string(&array(value("lorebookIds"), text("lorebook_ids")))
+        .unwrap_or_else(|_| "[]".to_owned());
+    row.disable_character_lorebooks = match value("disableCharacterLorebooks") {
+        Some(Value::Bool(flag)) => flag,
+        Some(Value::Number(flag)) => flag.as_i64().unwrap_or(0) != 0,
+        Some(_) => false,
+        None => match group.get("disable_character_lorebooks") {
+            Some(Value::Bool(flag)) => *flag,
+            Some(Value::Number(flag)) => flag.as_i64().unwrap_or(0) != 0,
+            _ => false,
+        },
+    };
+    row.speaker_selection_method = Some(match value("speakerSelectionMethod") {
+        Some(value) => value.as_str().unwrap_or("llm").to_owned(),
+        None => text("speaker_selection_method").unwrap_or_else(|| "llm".to_owned()),
+    });
+    row.memory_type = Some(match value("memoryType") {
+        Some(value) => value.as_str().unwrap_or("manual").to_owned(),
+        None => text("memory_type").unwrap_or_else(|| "manual".to_owned()),
+    });
+    let model_overrides: BTreeMap<String, String> = match value("characterModelOverrides") {
+        Some(value) => serde_json::from_value(value).unwrap_or_default(),
+        None => text("character_model_overrides")
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default(),
+    };
+    row.character_model_overrides =
+        serde_json::to_string(&model_overrides).unwrap_or_else(|_| "{}".to_owned());
+    row.group_chat_prompt_template_id = match value("groupChatPromptTemplateId") {
+        Some(value) => value.as_str().map(str::to_owned),
+        None => text("group_chat_prompt_template_id"),
+    };
+    row.group_chat_roleplay_prompt_template_id = match value("groupChatRoleplayPromptTemplateId") {
+        Some(value) => value.as_str().map(str::to_owned),
+        None => text("group_chat_roleplay_prompt_template_id"),
+    };
+}
+
 fn map_sessions(
     rows: Vec<SessionRow>,
     source: &LegacyBackupDirectSessionPlan,
@@ -358,7 +443,22 @@ fn map_sessions(
     let mut message_count = 0_usize;
     let mut variant_count = 0_usize;
     let mut sessions = Vec::with_capacity(rows.len());
-    for (session_index, row) in rows.into_iter().enumerate() {
+    let group_rows = authored
+        .configuration
+        .source
+        .documents
+        .iter()
+        .find(|document| document.kind == LegacyBackupDocumentKind::GroupCharacters)
+        .and_then(|document| serde_json::from_slice::<Vec<Value>>(&document.bytes).ok())
+        .unwrap_or_default();
+    for (session_index, mut row) in rows.into_iter().enumerate() {
+        if let Some(group) = row.group_character_id.as_deref().and_then(|group_id| {
+            group_rows
+                .iter()
+                .find(|group| group.get("id").and_then(Value::as_str) == Some(group_id))
+        }) {
+            resolve_group_session_config(&mut row, group);
+        }
         let path = format!("[{session_index}]");
         report_extra(&path, &row.extra, notices);
         validate_identifier(&row.id, &format!("{path}.id"))?;
@@ -404,11 +504,18 @@ fn map_sessions(
         {
             return Err(orphan(format!("{path}.muted_character_ids")));
         }
-        validate_optional_reference(
-            row.persona_id.as_deref(),
-            &persona_ids,
-            &format!("{path}.persona_id"),
-        )?;
+        if row
+            .persona_id
+            .as_deref()
+            .is_some_and(|persona_id| !contains_case_insensitive(&persona_ids, persona_id))
+        {
+            row.persona_id = None;
+            skipped.push(crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::PersonaReference,
+                source_key: format!("group_sessions.persona_id:{}", row.id),
+                reason: crate::LegacyImportSkipReason::MissingPersona,
+            });
+        }
         let session_key = row.id.clone();
         let reference = |kind, key: String, reason| crate::LegacyImportSkip {
             kind,
@@ -1235,17 +1342,6 @@ fn string_map(
     Ok(values)
 }
 
-fn validate_optional_reference(
-    value: Option<&str>,
-    values: &BTreeSet<String>,
-    field: &str,
-) -> Result<(), LegacyBackupGroupSessionError> {
-    if value.is_some_and(|value| !contains_case_insensitive(values, value)) {
-        return Err(orphan(field));
-    }
-    Ok(())
-}
-
 fn contains_case_insensitive(values: &BTreeSet<String>, expected: &str) -> bool {
     values
         .iter()
@@ -1460,6 +1556,17 @@ mod tests {
         })
     }
 
+    fn set_override(row: &mut Value, key: &str, value: Value) {
+        let mut overrides: Value = serde_json::from_str(
+            row["config_overrides"]
+                .as_str()
+                .expect("config overrides fixture"),
+        )
+        .expect("config overrides json");
+        overrides[key] = value;
+        row["config_overrides"] = json!(overrides.to_string());
+    }
+
     fn session(
         session_id: &str,
         group_id: &str,
@@ -1509,7 +1616,17 @@ mod tests {
             "memory_progress_step": 2,
             "speaker_selection_method": "director_action",
             "memory_type": "dynamic",
-            "config_overrides": "{\"version\":1,\"temperature\":0.7}",
+            "config_overrides": json!({
+                "version": 1,
+                "temperature": 0.7,
+                "mutedCharacterIds": &characters[1..],
+                "chatType": "roleplay",
+                "startingScene": scene,
+                "disableCharacterLorebooks": true,
+                "speakerSelectionMethod": "director_action",
+                "memoryType": "dynamic"
+            })
+            .to_string(),
             "parent_session_id": parent_id,
             "branched_from_message_id": branch_message_id,
             "root_session_id": root_id,
@@ -1586,6 +1703,47 @@ mod tests {
     }
 
     #[test]
+    fn linked_sessions_read_the_group_unless_overridden_like_legacy() {
+        let characters = vec![id(80), id(81)];
+        let group = id(82);
+        let root = id(83);
+        let mut row = session(
+            &root,
+            &group,
+            &characters,
+            None,
+            &root,
+            None,
+            vec![message(&id(84), None, None, None)],
+        );
+        row["config_overrides"] = json!("{\"version\":1}");
+        let plan =
+            plan_legacy_backup_group_sessions(source(json!([row.clone()]), &characters, &group))
+                .expect("group values");
+        let session = &plan.sessions[0];
+        assert_eq!(session.chat_mode, "conversation");
+        assert_eq!(session.speaker_selection, "director");
+        assert!(session.muted_member_source_ids.is_empty());
+        assert!(session.starting_scene_json.is_none());
+        assert!(!session.disable_character_lorebooks);
+
+        let scene = row["starting_scene"].as_str().expect("scene").to_owned();
+        set_override(&mut row, "startingScene", json!(scene));
+        set_override(&mut row, "disableCharacterLorebooks", json!(1));
+        set_override(&mut row, "personaId", json!(id(85)));
+        let plan = plan_legacy_backup_group_sessions(source(json!([row]), &characters, &group))
+            .expect("pre-2.2.1 override encodings and a deleted persona");
+        let session = &plan.sessions[0];
+        assert!(session.starting_scene_json.is_some());
+        assert!(session.disable_character_lorebooks);
+        assert_eq!(session.persona_source_id, None);
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.reason == crate::LegacyImportSkipReason::MissingPersona
+                && skip.source_key == format!("group_sessions.persona_id:{root}")
+        }));
+    }
+
+    #[test]
     fn director_sessions_need_no_persisted_selected_speaker() {
         let characters = vec![id(20), id(21)];
         let group = id(22);
@@ -1600,9 +1758,7 @@ mod tests {
             None,
             vec![message(&message_id, None, None, None)],
         );
-        row["muted_character_ids"] = serde_json::to_string(&characters)
-            .expect("all muted")
-            .into();
+        set_override(&mut row, "mutedCharacterIds", json!(characters));
         let plan = plan_legacy_backup_group_sessions(source(json!([row]), &characters, &group))
             .expect("director session without selected speaker");
         assert_eq!(plan.sessions[0].speaker_selection, "director_action");
@@ -1634,12 +1790,17 @@ mod tests {
                 Some(&variant_id),
             )],
         );
-        row["group_chat_prompt_template_id"] = json!("deleted-prompt");
-        row["lorebook_ids"] = json!(format!("[\"{missing_lorebook}\"]"));
-        row["character_model_overrides"] = json!(format!(
-            "{{\"{}\":\"{missing_model}\",\"{former_member}\":\"{missing_model}\"}}",
-            characters[0]
-        ));
+        set_override(
+            &mut row,
+            "groupChatPromptTemplateId",
+            json!("deleted-prompt"),
+        );
+        set_override(&mut row, "lorebookIds", json!([missing_lorebook]));
+        set_override(
+            &mut row,
+            "characterModelOverrides",
+            json!({ characters[0].clone(): missing_model, former_member.clone(): missing_model }),
+        );
         row["messages"][0]["model_id"] = json!(missing_model);
         row["messages"][0]["variants"][0]["model_id"] = json!(missing_model);
         row["messages"][0]["selected_variant_id"] = json!(missing_variant);
@@ -1650,7 +1811,7 @@ mod tests {
         )
         .expect("starting scene json");
         scene["selectedVariantId"] = json!(id(50));
-        row["starting_scene"] = json!(scene.to_string());
+        set_override(&mut row, "startingScene", scene);
         let plan = plan_legacy_backup_group_sessions(source(json!([row]), &characters, &group))
             .expect("stale group session references are cleared");
         let session = &plan.sessions[0];
@@ -1741,7 +1902,7 @@ mod tests {
             characters[1].clone(),
             deleted.clone(),
         ];
-        let row = session(
+        let mut row = session(
             &root,
             &group,
             &members,
@@ -1750,6 +1911,7 @@ mod tests {
             None,
             vec![message(&message_id, Some(&deleted), None, None)],
         );
+        set_override(&mut row, "characterIds", json!(members));
         let plan = plan_legacy_backup_group_sessions(source(json!([row]), &characters, &group))
             .expect("deleted members are kept");
         assert_eq!(plan.sessions[0].member_source_ids, members);

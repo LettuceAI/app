@@ -168,8 +168,9 @@ It performs no source migration or destination writes during preflight. It accep
 `LEGACY_DATABASE_SCHEMA_VERSIONS` (92 to 96, user decision 2026-09-23): the
 released 2.2.0 stored 92 or 94, 2.2.1 stored 95 and 2.2.2 to 2.2.5 stored 96.
 Those versions keep the 92 table layout the reader expects: 93 and 94 only
-repaired group columns, 95 repaired group session overrides the importer does
-not read, and 96 reordered columns and renamed leftover tables. Older
+repaired group columns, 95 rewrote group session override encodings the
+importer reads in both forms, and 96 reordered columns and renamed leftover
+tables. Older
 databases are refused: the old app migrates them to its current version when
 opened once, and pre-SQLite `.bin` stores are not read (legacy imported them
 itself on startup).
