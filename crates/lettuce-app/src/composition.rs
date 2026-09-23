@@ -102,6 +102,27 @@ impl AppBackend {
         Ok(self)
     }
 
+    /// First exit step: cancels every running inference and stops the local
+    /// diffusion engine from taking or continuing work.
+    pub fn begin_shutdown(&self) {
+        if let Err(error) = self.inference_runtime.cancel_all() {
+            tracing::warn!(%error, "could not cancel running inference on exit");
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        if let Some(engine) = &self.local_diffusion {
+            engine.begin_shutdown();
+        }
+    }
+
+    /// Stops the local diffusion server process.
+    pub async fn shutdown(&self) {
+        self.begin_shutdown();
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        if let Some(engine) = &self.local_diffusion {
+            engine.shutdown().await;
+        }
+    }
+
     /// The embedded llama.cpp runtime if it already started.
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(crate) fn started_local_llama(&self) -> Option<lettuce_providers::LocalLlama> {

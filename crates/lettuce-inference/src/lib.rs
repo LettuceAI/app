@@ -93,6 +93,21 @@ impl InferenceRuntime {
         Ok(())
     }
 
+    /// Cancels every registered execution; returns how many were signalled.
+    pub fn cancel_all(&self) -> Result<usize, InferenceRuntimeError> {
+        let tokens = self
+            .cancellations
+            .lock()
+            .map_err(|_| InferenceRuntimeError::Unavailable)?
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        for token in &tokens {
+            token.cancel();
+        }
+        Ok(tokens.len())
+    }
+
     pub fn request_cancel(&self, job_id: JobId) -> Result<bool, InferenceRuntimeError> {
         let token = self
             .cancellations
@@ -218,6 +233,19 @@ mod tests {
                 text: "delta".to_owned(),
             },
         }
+    }
+
+    #[test]
+    fn cancel_all_signals_every_registered_execution() {
+        let runtime = InferenceRuntime::default();
+        let tokens = [CancellationToken::new(), CancellationToken::new()];
+        for token in &tokens {
+            runtime
+                .register_cancellation(JobId::new(), token.clone())
+                .expect("register");
+        }
+        assert_eq!(runtime.cancel_all().expect("cancel all"), 2);
+        assert!(tokens.iter().all(CancellationToken::is_cancelled));
     }
 
     #[tokio::test]

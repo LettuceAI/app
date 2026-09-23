@@ -1804,3 +1804,10 @@ Every open clears the cached smart-offload layer count
 (`actualGpuLayersUsed`) from each llama.cpp runtime report, keeping the rest of
 the report, as legacy did on every start (free VRAM differs between sessions);
 a failure is logged and the open continues.
+
+Exit: `AppBackend::begin_shutdown` cancels every running inference
+(`InferenceRuntime::cancel_all`, legacy `AbortRegistry::abort_all`) and stops
+the local diffusion engine from taking or continuing work; `shutdown().await`
+also stops its server process. The host calls them on exit request, as legacy
+did on `ExitRequested`; the app-usage flush and analytics exit event follow
+with their own slices.
