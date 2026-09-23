@@ -133,7 +133,7 @@ CREATE UNIQUE INDEX legacy_import_runs_active_source_uq
 
 CREATE TABLE legacy_import_assignments (
     run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
-    source_kind TEXT NOT NULL CHECK (source_kind IN ('provider_account','model_profile','provider_api_key','provider_secret_header','prompt','persona','lorebook','lorebook_entry','asr_vocabulary','asr_correction','asr_ignored_suggestion','asr_voice_example','media')),
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('provider_account','model_profile','provider_api_key','provider_secret_header','provider_sprout_api_key','prompt','persona','lorebook','lorebook_entry','asr_vocabulary','asr_correction','asr_ignored_suggestion','asr_voice_example','media')),
     source_key TEXT NOT NULL CHECK (length(trim(source_key)) > 0),
     source_detail TEXT NOT NULL DEFAULT '',
     destination_id TEXT NOT NULL,
@@ -159,7 +159,7 @@ CREATE TABLE legacy_import_assignments (
 
 CREATE TABLE legacy_import_secret_completions (
     run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
-    source_kind TEXT NOT NULL CHECK (source_kind IN ('provider_api_key','provider_secret_header')),
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('provider_api_key','provider_secret_header','provider_sprout_api_key')),
     source_key TEXT NOT NULL,
     source_detail TEXT NOT NULL DEFAULT '',
     destination_ref TEXT NOT NULL,

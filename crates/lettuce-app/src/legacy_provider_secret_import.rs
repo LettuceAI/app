@@ -4,7 +4,7 @@ use lettuce_settings::{SecretPurpose, SecretRecord, SecretState, SecretStore, Se
 use lettuce_transfer::{
     LegacyImportAdmission, LegacyImportAssignment, LegacyImportProviderSecretSource,
     LegacyImportRepository, LegacyImportRepositoryError, LegacyImportSecretCompletion,
-    LegacyImportSecretCompletionRequest, LegacyPendingProviderSecret, LegacyProviderSecretSource,
+    LegacyImportSecretCompletionRequest, LegacyProviderSecretSource,
     LegacyProviderSecretSourceError,
 };
 use lettuce_types::TimestampMillis;
@@ -158,13 +158,7 @@ fn secret_purpose(
     owner: lettuce_settings::SecretOwnerId,
     source: &LegacyImportProviderSecretSource,
 ) -> SecretPurpose {
-    match &source.secret {
-        LegacyPendingProviderSecret::ApiKey => SecretPurpose::ProviderApiKey { owner },
-        LegacyPendingProviderSecret::Header { name } => SecretPurpose::ProviderSecretHeader {
-            owner,
-            name: name.clone(),
-        },
-    }
+    source.secret.purpose(owner)
 }
 
 #[cfg(test)]

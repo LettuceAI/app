@@ -48,7 +48,10 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request_with_tools(&request)?;
     let profile = &request.profile.chat_profile;
-    if !matches!(profile.provider_config, ProviderConfig::Standard) {
+    if !matches!(
+        profile.provider_config,
+        ProviderConfig::Standard | ProviderConfig::Ollama(_)
+    ) {
         return Err(AdapterError::Rejected);
     }
     validate_supported_reasoning(&profile.parameters)?;
@@ -169,7 +172,10 @@ pub(crate) async fn list_models<S: SecretStore + ?Sized>(
     network: &JsonClient,
     account: &ProviderAccount,
 ) -> Result<Vec<RemoteModel>, AdapterError> {
-    if !matches!(account.config, ProviderConfig::Standard) {
+    if !matches!(
+        account.config,
+        ProviderConfig::Standard | ProviderConfig::Ollama(_)
+    ) {
         return Err(AdapterError::Rejected);
     }
     let base = api_base(account.endpoint.as_deref().unwrap_or(DEFAULT_ENDPOINT));

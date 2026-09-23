@@ -1974,3 +1974,8 @@ files and moves the whole folder: files are copied, every stored model path
 inside it (llama.cpp and stable-diffusion.cpp, one transaction) is rewired,
 then the originals go. Corrected: legacy left stable-diffusion.cpp paths
 pointing at the old folder.
+
+Sprout: `sprout_runnability_hardware` asks an Ollama account's active Sprout
+probe for the remote machine's memory (bearer key from the secret store), so
+Hugging Face runnability and recommendations for that account are judged
+against the remote hardware, as legacy did.

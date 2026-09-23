@@ -109,3 +109,8 @@ Model paths: `rewrite_path_prefix` and `relocate_profile_paths` rewrite the
 absolute file paths a profile stores (a local model's own file, llama.cpp
 projector and MTP draft, stable-diffusion.cpp components and base LoRAs);
 `ModelPathRelocation` applies them to every profile in one transaction.
+
+Ollama accounts may carry `ProviderConfig::Ollama` with the Sprout hardware
+probe next to a remote server (`enabled`, `url`, `api_key_ref` into the
+account's `SproutApiKey` secret); `active_sprout` is the probe when switched on
+with a URL. Everything that accepts a standard Ollama account accepts it.

@@ -276,8 +276,9 @@ fn validate_plan(
 
 fn legacy_value_skip(skip: &lettuce_transfer::LegacyImportSkip, prefixes: &[&str]) -> bool {
     use lettuce_transfer::LegacyImportSkipReason::{MalformedLegacyValue, UnknownLegacyValue};
-    const FALLBACKS: [(&str, lettuce_transfer::LegacyImportSkipReason); 12] = [
+    const FALLBACKS: [(&str, lettuce_transfer::LegacyImportSkipReason); 13] = [
         ("provider_credentials.config", MalformedLegacyValue),
+        ("provider_credentials.config.sproutUrl", MalformedLegacyValue),
         ("provider_credentials.headers", MalformedLegacyValue),
         ("models.input_scopes", MalformedLegacyValue),
         ("models.output_scopes", MalformedLegacyValue),
@@ -782,6 +783,7 @@ pub(crate) fn plan_fingerprint(plan: &LegacyImportPlan) -> ContentHash {
                     hash.u32(2);
                     hash.text(name.as_str());
                 }
+                LegacyPendingProviderSecret::SproutApiKey => hash.u32(3),
             }
         }
         hash.u64(provider.deferred_config_fields.len() as u64);
@@ -1105,8 +1107,8 @@ mod tests {
         ProviderAccountRepository, ProviderConfig, ProviderProtocol,
     };
     use lettuce_settings::{
-        GlobalSettingsStore, HeaderName, InMemorySecretStore, SecretOwnerId, SecretPurpose,
-        SecretRecord, SecretStore, SecretValue,
+        GlobalSettingsStore, HeaderName, InMemorySecretStore, SecretOwnerId, SecretRecord,
+        SecretStore, SecretValue,
     };
     use lettuce_transfer::{
         LegacyAsrPlan, LegacyAsrVoiceExampleCandidate, LegacyDatabaseInventory,
@@ -1179,6 +1181,19 @@ mod tests {
             default_prompt_source_id: None,
             deprecated_system_prompt: None,
         }
+    }
+
+    #[test]
+    fn an_unusable_sprout_url_is_an_accepted_provider_skip() {
+        let skip = lettuce_transfer::LegacyImportSkip {
+            kind: lettuce_transfer::LegacyImportSkipKind::LegacyValue,
+            source_key: "provider_credentials.config.sproutUrl:ollama-1".to_owned(),
+            reason: lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+        };
+        assert!(super::legacy_value_skip(
+            &skip,
+            &["provider_credentials.", "models."]
+        ));
     }
 
     #[test]
@@ -1499,21 +1514,14 @@ mod tests {
                 continue;
             };
             let owner = owners[&source.provider_account_id];
-            let purpose = match &source.secret {
-                LegacyPendingProviderSecret::ApiKey => SecretPurpose::ProviderApiKey { owner },
-                LegacyPendingProviderSecret::Header { name } => {
-                    SecretPurpose::ProviderSecretHeader {
-                        owner,
-                        name: name.clone(),
-                    }
-                }
-            };
+            let purpose = source.secret.purpose(owner);
             let value = match &source.secret {
                 LegacyPendingProviderSecret::ApiKey => "api-canary-value",
                 LegacyPendingProviderSecret::Header { name } if name.as_str() == "x-alpha-key" => {
                     "alpha-canary-value"
                 }
                 LegacyPendingProviderSecret::Header { .. } => "zeta-canary-value",
+                LegacyPendingProviderSecret::SproutApiKey => "sprout-canary-value",
             };
             let status = secret_store
                 .put(

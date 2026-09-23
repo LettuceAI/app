@@ -1525,6 +1525,7 @@ impl LegacyImportRepository for Database {
                 .ok_or(LegacyImportRepositoryError::Conflict)?;
             let mut api_key_ref = None;
             let mut secret_headers = Vec::new();
+            let mut config = candidate.config.clone();
             for secret in &candidate.pending_secrets {
                 let source = LegacyImportProviderSecretSource {
                     provider_account_id: candidate.id,
@@ -1551,6 +1552,17 @@ impl LegacyImportRepository for Database {
                             secret_ref: destination_ref,
                         });
                     }
+                    LegacyPendingProviderSecret::SproutApiKey => {
+                        let lettuce_models::ProviderConfig::Ollama(lettuce_models::OllamaConfig {
+                            sprout: Some(sprout),
+                        }) = &mut config
+                        else {
+                            return Err(LegacyImportRepositoryError::InvalidInput);
+                        };
+                        if sprout.api_key_ref.replace(destination_ref).is_some() {
+                            return Err(LegacyImportRepositoryError::InvalidInput);
+                        }
+                    }
                 }
             }
             let account = ProviderAccount {
@@ -1565,7 +1577,7 @@ impl LegacyImportRepository for Database {
                 allow_invalid_tls: candidate.allow_invalid_tls,
                 api_key_ref,
                 secret_headers,
-                config: candidate.config.clone(),
+                config,
                 revision: Revision::INITIAL,
                 created_at: candidate.created_at,
                 updated_at: candidate.updated_at,
@@ -1730,6 +1742,7 @@ fn secret_source_parts(source: &LegacyImportProviderSecretSource) -> (&str, &str
     match &source.secret {
         LegacyPendingProviderSecret::ApiKey => ("provider_api_key", ""),
         LegacyPendingProviderSecret::Header { name } => ("provider_secret_header", name.as_str()),
+        LegacyPendingProviderSecret::SproutApiKey => ("provider_sprout_api_key", ""),
     }
 }
 
@@ -2987,6 +3000,7 @@ fn insert_assignments(
             LegacyPendingProviderSecret::Header { name } => {
                 ("provider_secret_header", name.as_str())
             }
+            LegacyPendingProviderSecret::SproutApiKey => ("provider_sprout_api_key", ""),
         };
         insert_assignment(
             transaction,
@@ -3395,7 +3409,7 @@ fn load_assignments(
 ) -> Result<Vec<LegacyImportAssignment>, LegacyImportRepositoryError> {
     let mut statement = transaction
         .prepare(
-            "SELECT source_kind,source_key,source_detail,destination_id,auxiliary_id,expected_byte_len,expected_content_hash FROM legacy_import_assignments WHERE run_id=?1 ORDER BY CASE source_kind WHEN 'provider_account' THEN 1 WHEN 'model_profile' THEN 2 WHEN 'provider_api_key' THEN 3 WHEN 'provider_secret_header' THEN 4 WHEN 'prompt' THEN 5 WHEN 'persona' THEN 6 WHEN 'lorebook' THEN 7 WHEN 'lorebook_entry' THEN 8 WHEN 'asr_vocabulary' THEN 9 WHEN 'asr_correction' THEN 10 WHEN 'asr_ignored_suggestion' THEN 11 WHEN 'asr_voice_example' THEN 12 ELSE 13 END,source_key,source_detail",
+            "SELECT source_kind,source_key,source_detail,destination_id,auxiliary_id,expected_byte_len,expected_content_hash FROM legacy_import_assignments WHERE run_id=?1 ORDER BY CASE source_kind WHEN 'provider_account' THEN 1 WHEN 'model_profile' THEN 2 WHEN 'provider_api_key' THEN 3 WHEN 'provider_secret_header' THEN 4 WHEN 'provider_sprout_api_key' THEN 5 WHEN 'prompt' THEN 6 WHEN 'persona' THEN 7 WHEN 'lorebook' THEN 8 WHEN 'lorebook_entry' THEN 9 WHEN 'asr_vocabulary' THEN 10 WHEN 'asr_correction' THEN 11 WHEN 'asr_ignored_suggestion' THEN 12 WHEN 'asr_voice_example' THEN 13 ELSE 14 END,source_key,source_detail",
         )
         .map_err(|_| LegacyImportRepositoryError::Storage)?;
     statement
@@ -3463,6 +3477,17 @@ fn parse_assignment(
                 provider_account_id: ProviderAccountId::from_str(&source_key)
                     .map_err(|_| LegacyImportRepositoryError::Storage)?,
                 secret: LegacyPendingProviderSecret::ApiKey,
+            },
+            destination_ref: SecretRef::from_uuid(
+                uuid::Uuid::parse_str(&destination_id)
+                    .map_err(|_| LegacyImportRepositoryError::Storage)?,
+            ),
+        }),
+        "provider_sprout_api_key" => Ok(LegacyImportAssignment::ProviderSecret {
+            source: LegacyImportProviderSecretSource {
+                provider_account_id: ProviderAccountId::from_str(&source_key)
+                    .map_err(|_| LegacyImportRepositoryError::Storage)?,
+                secret: LegacyPendingProviderSecret::SproutApiKey,
             },
             destination_ref: SecretRef::from_uuid(
                 uuid::Uuid::parse_str(&destination_id)
@@ -3785,6 +3810,7 @@ mod tests {
                     Some(match &source.secret {
                         LegacyPendingProviderSecret::ApiKey => "api_key",
                         LegacyPendingProviderSecret::Header { name } => name.as_str(),
+                        LegacyPendingProviderSecret::SproutApiKey => "sprout",
                     })
                 }
                 _ => None,

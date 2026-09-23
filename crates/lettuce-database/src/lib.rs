@@ -238,6 +238,7 @@ fn decode_provider_config(payload: &str) -> Result<ProviderConfig, ()> {
     let allowed_fields = match config {
         ProviderConfig::Standard => &["kind"][..],
         ProviderConfig::ComfyUi(_) => &["kind", "txt2img_workflow", "img2img_workflow"][..],
+        ProviderConfig::Ollama(_) => &["kind", "sprout"][..],
         ProviderConfig::Custom(_) => &[
             "kind",
             "chat_path",

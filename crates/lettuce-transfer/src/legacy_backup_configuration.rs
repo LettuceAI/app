@@ -483,6 +483,9 @@ pub fn plan_legacy_backup_configuration(
                 *owner,
                 LegacyPendingProviderSecret::Header { name: name.clone() },
             ),
+            SecretPurpose::SproutApiKey { owner } => {
+                (*owner, LegacyPendingProviderSecret::SproutApiKey)
+            }
             _ => continue,
         };
         let provider = provider_models
@@ -1589,6 +1592,18 @@ fn map_provider_models(
                 .cloned()
                 .map(|name| LegacyPendingProviderSecret::Header { name }),
         );
+        if let Some(sprout) = crate::legacy_sprout_config(&row.provider_id, &config_value) {
+            if sprout.key.is_some() {
+                pending_secrets.push(LegacyPendingProviderSecret::SproutApiKey);
+            }
+            if sprout.url_rejected {
+                notices.push(notice(
+                    LegacyBackupConversionNoticeKind::Lossy,
+                    LegacyBackupDocumentKind::ProviderCredentials,
+                    format!("[{index}].config.sproutUrl"),
+                ));
+            }
+        }
         if row
             .api_key_ref
             .as_ref()
@@ -2365,6 +2380,31 @@ fn map_provider_secrets(
         } else {
             BTreeMap::new()
         };
+        let sprout_key = row
+            .config
+            .as_deref()
+            .and_then(|config| serde_json::from_str::<Value>(config).ok())
+            .and_then(|config| {
+                config
+                    .as_object()
+                    .and_then(|object| crate::legacy_sprout_config(&row.provider_id, object))
+            })
+            .and_then(|sprout| sprout.key);
+        if let Some(value) = sprout_key {
+            result.push(ProviderBackupSecret {
+                reference: deterministic_secret_ref(&format!("provider:{id}:sprout")),
+                purpose: SecretPurpose::SproutApiKey {
+                    owner: provider.secret_owner_id,
+                },
+                generation: 1,
+                value: SecretValue::new(value).map_err(|_| {
+                    malformed(
+                        LegacyBackupDocumentKind::ProviderCredentials,
+                        format!("[{index}].config.sproutApiKey"),
+                    )
+                })?,
+            });
+        }
         for (name, value) in headers {
             let reference = deterministic_secret_ref(&format!(
                 "provider:{}:header:{}",
@@ -3192,6 +3232,10 @@ fn legacy_provider_config(
     object: &Map<String, Value>,
 ) -> Result<(ProviderConfig, Vec<&'static str>), LegacyBackupConfigurationError> {
     let mut mapped = vec!["streamingEnabled", "allowInvalidTls"];
+    if let Some(sprout) = crate::legacy_sprout_config(kind, object) {
+        mapped.extend(crate::LEGACY_SPROUT_CONFIG_KEYS);
+        return Ok((sprout.config, mapped));
+    }
     if kind.eq_ignore_ascii_case("comfyui") {
         mapped.extend(["txt2imgWorkflow", "img2imgWorkflow"]);
         let workflow =
@@ -3523,6 +3567,9 @@ impl crate::LegacyProviderSecretSource for LegacyBackupConfigurationPlan {
                 source.provider_account_id,
                 name.as_str().to_ascii_lowercase()
             )),
+            LegacyPendingProviderSecret::SproutApiKey => {
+                deterministic_secret_ref(&format!("provider:{}:sprout", source.provider_account_id))
+            }
         };
         self.secrets
             .iter()

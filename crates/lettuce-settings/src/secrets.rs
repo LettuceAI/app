@@ -161,6 +161,10 @@ pub enum SecretPurpose {
     },
     HuggingFaceAccessToken,
     CivitaiAccessToken,
+    /// The key of the Sprout hardware probe an Ollama account points at.
+    SproutApiKey {
+        owner: SecretOwnerId,
+    },
 }
 
 const APP_SECRET_NAMESPACE: Uuid = Uuid::from_u128(0x6c65_7474_7563_6541_7070_5365_6372_6574);
@@ -175,7 +179,8 @@ impl SecretPurpose {
             Self::CivitaiAccessToken => "civitai-access-token",
             Self::ProviderApiKey { .. }
             | Self::ProviderSecretHeader { .. }
-            | Self::AudioApiKey { .. } => return None,
+            | Self::AudioApiKey { .. }
+            | Self::SproutApiKey { .. } => return None,
         };
         Some(SecretRef::from_uuid(Uuid::new_v5(
             &APP_SECRET_NAMESPACE,

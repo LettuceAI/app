@@ -473,9 +473,9 @@ pub(crate) fn custom_config(
 ) -> Result<&lettuce_models::CustomProviderConfig, AdapterError> {
     match config {
         lettuce_models::ProviderConfig::Custom(config) => Ok(config),
-        lettuce_models::ProviderConfig::Standard | lettuce_models::ProviderConfig::ComfyUi(_) => {
-            Err(AdapterError::Rejected)
-        }
+        lettuce_models::ProviderConfig::Standard
+        | lettuce_models::ProviderConfig::ComfyUi(_)
+        | lettuce_models::ProviderConfig::Ollama(_) => Err(AdapterError::Rejected),
     }
 }
 

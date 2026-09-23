@@ -134,3 +134,7 @@ KV type). A parity test pins every output against the legacy functions run on
 the same fixtures (`tests/fixtures/legacy_runnability.txt`). Corrected: the
 GPU-candidate pass paired files with the wrong file's context limits whenever
 an earlier file had no size.
+
+Sprout: `sprout_hardware` reads a Sprout `/specs` report (schema 1) into the
+runnability hardware: the largest free VRAM of a discrete GPU, else of the
+integrated GPUs, which then count as unified memory.

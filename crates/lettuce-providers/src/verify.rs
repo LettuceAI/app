@@ -139,7 +139,7 @@ pub(crate) async fn verify_api_key<S: SecretStore + ?Sized>(
     }
     if !matches!(
         account.config,
-        ProviderConfig::Standard | ProviderConfig::Custom(_)
+        ProviderConfig::Standard | ProviderConfig::Custom(_) | ProviderConfig::Ollama(_)
     ) {
         return Err(AdapterError::Rejected);
     }

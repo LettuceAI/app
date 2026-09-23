@@ -926,3 +926,10 @@ display name default to them, scopes keep text/image/audio in that order
 (text when none), and advanced settings are taken when they are an object.
 Legacy's model prompt template and deprecated system prompt are not carried
 (the rewrite's models have no prompt).
+
+Sprout: an old Ollama credential's `sproutEnabled`/`sproutUrl`/`sproutApiKey`
+config keys become its `ProviderConfig::Ollama` Sprout settings in both the
+legacy database and the legacy backup paths, and the plain-text key becomes a
+`SproutApiKey` secret (pending source kind `provider_sprout_api_key`); a URL
+that is not http(s) is left out with a lossy notice. Provider backups list and
+rebind the Sprout secret with the account's other secrets.

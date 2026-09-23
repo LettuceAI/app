@@ -11,7 +11,6 @@ use lettuce_settings::{SecretPurpose, SecretRef, SecretStore};
 use lettuce_transfer::{
     BackupRestoreAdmission, BackupRestoreAdmissionRepository, BackupRestoreAdmissionRequest,
     BackupRestoreWorkspace, LegacyImportAssignment, LegacyImportRunStatus,
-    LegacyPendingProviderSecret,
 };
 use lettuce_types::{LegacyImportRunId, OperationId, TimestampMillis};
 
@@ -278,17 +277,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                         source,
                         destination_ref,
                     } => owners.get(&source.provider_account_id).map(|owner| {
-                        let purpose = match &source.secret {
-                            LegacyPendingProviderSecret::ApiKey => {
-                                SecretPurpose::ProviderApiKey { owner: *owner }
-                            }
-                            LegacyPendingProviderSecret::Header { name } => {
-                                SecretPurpose::ProviderSecretHeader {
-                                    owner: *owner,
-                                    name: name.clone(),
-                                }
-                            }
-                        };
+                        let purpose = source.secret.purpose(*owner);
                         (*destination_ref, purpose)
                     }),
                     _ => None,

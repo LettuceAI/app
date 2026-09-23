@@ -1239,6 +1239,16 @@ pub fn rebind_provider_backup_secrets(
         for header in &mut account.secret_headers {
             rebind(&mut header.secret_ref);
         }
+        if let lettuce_models::ProviderConfig::Ollama(lettuce_models::OllamaConfig {
+            sprout:
+                Some(lettuce_models::SproutConfig {
+                    api_key_ref: Some(reference),
+                    ..
+                }),
+        }) = &mut account.config
+        {
+            rebind(reference);
+        }
     }
     for provider in &mut graph.audio_providers {
         if let Some(reference) = provider.api_key_ref.as_mut() {
@@ -1256,7 +1266,9 @@ pub fn rebind_provider_backup_secrets(
             .filter(|row| {
                 matches!(
                     crate::backup_sql_text(row, "source_kind"),
-                    Some("provider_api_key" | "provider_secret_header")
+                    Some(
+                        "provider_api_key" | "provider_secret_header" | "provider_sprout_api_key"
+                    )
                 )
             })
             .map(|row| (row, "destination_id"))
@@ -1423,6 +1435,22 @@ pub(crate) fn expected_secrets(
                 SecretPurpose::ProviderSecretHeader {
                     owner: account.secret_owner_id,
                     name: header.name.clone(),
+                },
+            )?;
+        }
+        if let lettuce_models::ProviderConfig::Ollama(lettuce_models::OllamaConfig {
+            sprout:
+                Some(lettuce_models::SproutConfig {
+                    api_key_ref: Some(reference),
+                    ..
+                }),
+        }) = &account.config
+        {
+            insert_secret(
+                &mut expected,
+                *reference,
+                SecretPurpose::SproutApiKey {
+                    owner: account.secret_owner_id,
                 },
             )?;
         }
@@ -1606,6 +1634,49 @@ mod tests {
                 runs: Vec::new(),
             },
         }
+    }
+
+    #[test]
+    fn an_ollama_accounts_sprout_key_is_backed_up_and_rebound() {
+        let key = SecretRef::new();
+        let sprout = SecretRef::new();
+        let mut graph = graph(key);
+        let account = &mut graph.accounts[0];
+        account.provider_kind = "ollama".into();
+        account.protocol = ProviderProtocol::Ollama;
+        account.config = ProviderConfig::Ollama(lettuce_models::OllamaConfig {
+            sprout: Some(lettuce_models::SproutConfig {
+                enabled: true,
+                url: "http://host:7777".into(),
+                api_key_ref: Some(sprout),
+            }),
+        });
+        let owner = account.secret_owner_id;
+        let expected = expected_secrets(&graph).expect("expected");
+        assert_eq!(
+            expected.get(&sprout),
+            Some(&SecretPurpose::SproutApiKey { owner })
+        );
+        let secrets = expected
+            .into_iter()
+            .map(|(reference, purpose)| ProviderBackupSecret {
+                reference,
+                purpose,
+                generation: 1,
+                value: SecretValue::new("v").expect("value"),
+            })
+            .collect();
+        let rebound = rebind_provider_backup_secrets(&mut graph, secrets).expect("rebind");
+        let ProviderConfig::Ollama(lettuce_models::OllamaConfig {
+            sprout: Some(config),
+        }) = &graph.accounts[0].config
+        else {
+            panic!("ollama config");
+        };
+        let fresh = config.api_key_ref.expect("sprout ref");
+        assert_ne!(fresh, sprout);
+        assert!(rebound.iter().any(|secret| secret.reference == fresh
+            && secret.purpose == SecretPurpose::SproutApiKey { owner }));
     }
 
     #[test]

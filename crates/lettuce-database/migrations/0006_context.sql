@@ -195,7 +195,7 @@ WHEN NOT EXISTS (
            AND completion.source_detail = assignment.source_detail
            AND completion.destination_ref = assignment.destination_id
           WHERE assignment.run_id = NEW.run_id
-            AND assignment.source_kind IN ('provider_api_key','provider_secret_header')
+            AND assignment.source_kind IN ('provider_api_key','provider_secret_header','provider_sprout_api_key')
             AND completion.run_id IS NULL
       )
 )

@@ -72,6 +72,75 @@ pub fn local_runnability_hardware() -> RunnabilityHardware {
     }
 }
 
+/// The hardware models downloaded for `destination` would run on: this
+/// machine for a local download, the remote machine behind an Ollama
+/// account's active Sprout probe; `None` for an Ollama account without one,
+/// whose hardware the app cannot see.
+pub async fn runnability_hardware<S: SecretStore + ?Sized>(
+    client: &lettuce_network::JsonClient,
+    secrets: &S,
+    destination: Option<&lettuce_models::ProviderAccount>,
+) -> Result<Option<RunnabilityHardware>, String> {
+    match destination {
+        None => Ok(Some(local_runnability_hardware())),
+        Some(account) => sprout_runnability_hardware(client, secrets, account).await,
+    }
+}
+
+/// The hardware behind an Ollama account's Sprout probe; `None` when the
+/// account has no active probe.
+pub async fn sprout_runnability_hardware<S: SecretStore + ?Sized>(
+    client: &lettuce_network::JsonClient,
+    secrets: &S,
+    account: &lettuce_models::ProviderAccount,
+) -> Result<Option<RunnabilityHardware>, String> {
+    let Some(sprout) = account.config.active_sprout() else {
+        return Ok(None);
+    };
+    let base = sprout.url.trim().trim_end_matches('/');
+    let endpoint = lettuce_model_hub::sprout_specs_url(base);
+    let auth = match sprout.api_key_ref {
+        Some(reference) => {
+            let purpose = lettuce_settings::SecretPurpose::SproutApiKey {
+                owner: account.secret_owner_id,
+            };
+            match secrets.load(&reference, &purpose).await {
+                Ok(key) if key.with(|key| !key.trim().is_empty()) => {
+                    lettuce_network::JsonAuth::Bearer(key)
+                }
+                Ok(_) | Err(lettuce_settings::SecretStoreError::Missing) => {
+                    lettuce_network::JsonAuth::None
+                }
+                Err(error) => {
+                    return Err(format!("The Sprout API key could not be read: {error}"));
+                }
+            }
+        }
+        None => lettuce_network::JsonAuth::None,
+    };
+    let response = client
+        .get_json(
+            base,
+            "/specs",
+            &[lettuce_network::JsonStaticHeader {
+                name: "user-agent",
+                value: "LettuceAI/1.0",
+            }],
+            auth,
+            Vec::new(),
+            lettuce_network::RequestPolicy::GENERATION,
+        )
+        .await
+        .map_err(|error| format!("Failed to reach Sprout at {endpoint}: {error}"))?;
+    if !(200..300).contains(&response.status) {
+        return Err(format!(
+            "Sprout at {endpoint} returned {}",
+            lettuce_network::status_text(response.status)
+        ));
+    }
+    lettuce_model_hub::sprout_hardware(&endpoint, &response.body).map(Some)
+}
+
 impl HuggingFaceBrowser {
     async fn remote_gguf_meta<S, H>(
         secrets: &S,
@@ -353,6 +422,88 @@ mod tests {
                 .await
                 .expect("empty"),
             RecommendationData::empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_ollama_account_reads_its_hardware_from_sprout() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut buffer = [0_u8; 4096];
+            let read = stream.read(&mut buffer).await.expect("read");
+            let body = r#"{"schemaVersion": 1, "availableMemoryBytes": 64, "gpus": [{"memoryFree": 24, "deviceType": "Gpu"}]}"#;
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .expect("write");
+            String::from_utf8_lossy(&buffer[..read]).into_owned()
+        });
+        let secrets = InMemorySecretStore::default();
+        let owner = lettuce_settings::SecretOwnerId::new();
+        let key_ref = lettuce_settings::SecretRef::new();
+        lettuce_settings::SecretStore::put(
+            &secrets,
+            lettuce_settings::SecretRecord::new(
+                key_ref,
+                lettuce_settings::SecretPurpose::SproutApiKey { owner },
+            ),
+            SecretValue::new("sprout-key").expect("key"),
+            None,
+        )
+        .await
+        .expect("put");
+        let mut account = lettuce_models::ProviderAccount {
+            id: lettuce_types::ProviderAccountId::new(),
+            secret_owner_id: owner,
+            provider_kind: "ollama".to_owned(),
+            protocol: lettuce_models::ProviderProtocol::Ollama,
+            label: "Remote".to_owned(),
+            endpoint: None,
+            enabled: true,
+            streaming_enabled: true,
+            allow_invalid_tls: false,
+            api_key_ref: None,
+            secret_headers: Vec::new(),
+            config: lettuce_models::ProviderConfig::Ollama(lettuce_models::OllamaConfig {
+                sprout: Some(lettuce_models::SproutConfig {
+                    enabled: true,
+                    url: format!("http://{address}/"),
+                    api_key_ref: Some(key_ref),
+                }),
+            }),
+            revision: lettuce_types::Revision::INITIAL,
+            created_at: lettuce_types::TimestampMillis::new(1),
+            updated_at: lettuce_types::TimestampMillis::new(1),
+        };
+        let client = lettuce_network::JsonClient::new().expect("client");
+        let hardware = sprout_runnability_hardware(&client, &secrets, &account)
+            .await
+            .expect("hardware")
+            .expect("active");
+        assert_eq!(hardware.available_ram, Some(64));
+        assert_eq!(hardware.available_vram, Some(24));
+        let request = server.await.expect("request");
+        assert!(request.starts_with("GET /specs HTTP/1.1"));
+        assert!(
+            request
+                .to_lowercase()
+                .contains("authorization: bearer sprout-key")
+        );
+        account.config = lettuce_models::ProviderConfig::Standard;
+        assert_eq!(
+            runnability_hardware(&client, &secrets, Some(&account)).await,
+            Ok(None)
         );
     }
 

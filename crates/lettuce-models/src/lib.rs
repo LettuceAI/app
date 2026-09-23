@@ -60,6 +60,40 @@ pub enum ProviderConfig {
     Custom(CustomProviderConfig),
     #[serde(rename = "comfyui")]
     ComfyUi(ComfyUiConfig),
+    Ollama(OllamaConfig),
+}
+
+/// An Ollama account's settings beyond the standard ones (legacy credential
+/// config `sproutEnabled` / `sproutUrl` / `sproutApiKey`).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OllamaConfig {
+    #[serde(default)]
+    pub sprout: Option<SproutConfig>,
+}
+
+/// The Sprout hardware probe next to a remote Ollama server; its API key is
+/// the account's `SproutApiKey` secret.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SproutConfig {
+    pub enabled: bool,
+    pub url: String,
+    #[serde(default)]
+    pub api_key_ref: Option<SecretRef>,
+}
+
+impl ProviderConfig {
+    /// The account's Sprout probe when it is switched on and has a URL.
+    #[must_use]
+    pub fn active_sprout(&self) -> Option<&SproutConfig> {
+        match self {
+            Self::Ollama(OllamaConfig {
+                sprout: Some(sprout),
+            }) if sprout.enabled && !sprout.url.trim().is_empty() => Some(sprout),
+            _ => None,
+        }
+    }
 }
 
 /// The API-format ComfyUI workflows a ComfyUI account runs (legacy
@@ -326,6 +360,7 @@ pub enum ProviderConnectionValidationError {
     Authentication,
     SecretHeaders,
     Workflow,
+    Sprout,
 }
 
 /// Validates the non-secret connection metadata shared by storage and
@@ -349,6 +384,20 @@ pub fn validate_provider_connection(
                 .any(|workflow| workflow.len() > MAX_COMFYUI_WORKFLOW_BYTES))
     {
         return Err(ProviderConnectionValidationError::Workflow);
+    }
+    if let ProviderConfig::Ollama(config) = &account.config {
+        if !account.provider_kind.eq_ignore_ascii_case("ollama") {
+            return Err(ProviderConnectionValidationError::Sprout);
+        }
+        if let Some(sprout) = &config.sprout {
+            let url = sprout.url.trim();
+            if !url.is_empty() {
+                validate_endpoint(url).map_err(|_| ProviderConnectionValidationError::Sprout)?;
+            }
+            if sprout.api_key_ref.is_some() && sprout.api_key_ref == account.api_key_ref {
+                return Err(ProviderConnectionValidationError::Sprout);
+            }
+        }
     }
     if let ProviderConfig::Custom(CustomProviderConfig {
         chat_path,
@@ -405,6 +454,7 @@ fn validate_secret_headers(
     let standard_or_bearer = matches!(
         &account.config,
         ProviderConfig::Standard
+            | ProviderConfig::Ollama(_)
             | ProviderConfig::Custom(CustomProviderConfig {
                 auth: CustomAuth::Bearer,
                 ..
@@ -423,6 +473,17 @@ fn validate_secret_headers(
         {
             return Err(ProviderConnectionValidationError::SecretHeaders);
         }
+    }
+    if let ProviderConfig::Ollama(OllamaConfig {
+        sprout:
+            Some(SproutConfig {
+                api_key_ref: Some(sprout_ref),
+                ..
+            }),
+    }) = &account.config
+        && refs.contains(sprout_ref)
+    {
+        return Err(ProviderConnectionValidationError::Sprout);
     }
     Ok(())
 }
@@ -450,6 +511,12 @@ fn matches_ignore_ascii_case<const N: usize>(value: &str, candidates: [&str; N])
     candidates
         .into_iter()
         .any(|candidate| value.eq_ignore_ascii_case(candidate))
+}
+
+/// Whether a provider (or Sprout) URL passes the connection rules.
+#[must_use]
+pub fn is_valid_provider_endpoint(endpoint: &str) -> bool {
+    validate_endpoint(endpoint).is_ok()
 }
 
 fn validate_endpoint(endpoint: &str) -> Result<(), ProviderConnectionValidationError> {

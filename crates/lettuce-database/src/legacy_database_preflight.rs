@@ -792,6 +792,22 @@ impl LegacyProviderSecretSource for LegacyDatabaseProviderSecretSource {
                 .optional()
                 .map_err(|_| LegacyProviderSecretSourceError::Invalid)?
                 .flatten(),
+            LegacyPendingProviderSecret::SproutApiKey => connection
+                .query_row(
+                    "SELECT config FROM provider_credentials WHERE id=?1",
+                    [source.provider_account_id.to_string()],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map_err(|_| LegacyProviderSecretSourceError::Invalid)?
+                .flatten()
+                .and_then(|config| serde_json::from_str::<Value>(&config).ok())
+                .and_then(|config| {
+                    config
+                        .as_object()
+                        .and_then(|object| lettuce_transfer::legacy_sprout_config("ollama", object))
+                })
+                .and_then(|sprout| sprout.key),
             LegacyPendingProviderSecret::Header { name } => connection
                 .query_row(
                     "SELECT type,value FROM json_each((SELECT headers FROM provider_credentials WHERE id=?1)) WHERE key=?2 ORDER BY id DESC LIMIT 1",
@@ -922,6 +938,19 @@ fn plan_legacy_provider_models_with_limits(
         if headers_present {
             pending_secrets.extend(read_pending_headers(connection, &source_id)?);
         }
+        if let Some(sprout) = lettuce_transfer::legacy_sprout_config(&provider_kind, &config_value)
+        {
+            if sprout.key.is_some() {
+                pending_secrets.push(LegacyPendingProviderSecret::SproutApiKey);
+            }
+            if sprout.url_rejected {
+                skipped.push(legacy_value_skip(
+                    "provider_credentials.config.sproutUrl",
+                    &source_id,
+                    lettuce_transfer::LegacyImportSkipReason::MalformedLegacyValue,
+                ));
+            }
+        }
         let deferred_config_fields = deferred_fields(&config_value, &mapped_config_fields);
         let secret_headers = pending_secrets
             .iter()
@@ -930,7 +959,9 @@ fn plan_legacy_provider_models_with_limits(
                     name: name.clone(),
                     secret_ref: SecretRef::new(),
                 }),
-                LegacyPendingProviderSecret::ApiKey => None,
+                LegacyPendingProviderSecret::ApiKey | LegacyPendingProviderSecret::SproutApiKey => {
+                    None
+                }
             })
             .collect();
         validate_provider_connection(&ProviderAccount {
@@ -1800,6 +1831,10 @@ fn legacy_provider_config(
     object: &Map<String, Value>,
 ) -> Result<(ProviderConfig, Vec<&'static str>), LegacyDatabasePreflightError> {
     let mut mapped = vec!["streamingEnabled", "allowInvalidTls"];
+    if let Some(sprout) = lettuce_transfer::legacy_sprout_config(provider_kind, object) {
+        mapped.extend(lettuce_transfer::LEGACY_SPROUT_CONFIG_KEYS);
+        return Ok((sprout.config, mapped));
+    }
     if provider_kind.eq_ignore_ascii_case("comfyui") {
         mapped.extend(["txt2imgWorkflow", "img2imgWorkflow"]);
         let workflow = |key: &'static str| -> Result<Option<String>, LegacyDatabasePreflightError> {
@@ -2454,6 +2489,52 @@ mod tests {
                 table: "characters"
             })
         );
+    }
+
+    #[test]
+    fn an_ollama_credentials_sprout_settings_and_key_are_planned() {
+        let path = provider_model_database();
+        let ollama_id =
+            ProviderAccountId::from_str("00000000-0000-0000-0000-000000000030").expect("id");
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute("INSERT INTO settings VALUES (1,NULL,NULL,92,100,120)", [])
+            .expect("insert settings");
+        connection
+            .execute(
+                "INSERT INTO provider_credentials (id,provider_id,label,api_key,base_url,headers,config) VALUES (?1,'ollama','Remote',NULL,'http://gpu-box:11434',NULL,?2)",
+                rusqlite::params![
+                    ollama_id.to_string(),
+                    r#"{"sproutEnabled":true,"sproutUrl":"http://gpu-box:7777","sproutApiKey":"sprout-secret"}"#
+                ],
+            )
+            .expect("insert ollama");
+        drop(connection);
+        let plan = plan_legacy_provider_models(&path).expect("plan provider models");
+        let ollama = plan
+            .provider_accounts
+            .iter()
+            .find(|account| account.id == ollama_id)
+            .expect("ollama account");
+        assert!(ollama.deferred_config_fields.is_empty());
+        assert_eq!(
+            ollama
+                .config
+                .active_sprout()
+                .map(|sprout| sprout.url.as_str()),
+            Some("http://gpu-box:7777")
+        );
+        assert_eq!(
+            ollama.pending_secrets,
+            vec![LegacyPendingProviderSecret::SproutApiKey]
+        );
+        let key = LegacyDatabaseProviderSecretSource::new(&path)
+            .load(&LegacyImportProviderSecretSource {
+                provider_account_id: ollama_id,
+                secret: LegacyPendingProviderSecret::SproutApiKey,
+            })
+            .expect("load Sprout key");
+        assert!(key.with(|value| value == "sprout-secret"));
     }
 
     #[test]

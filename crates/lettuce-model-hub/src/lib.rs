@@ -10,6 +10,7 @@ mod kokoro;
 mod kokoro_install;
 mod kokoro_voice;
 mod pinned_artifact;
+mod sprout;
 mod whisper;
 
 pub use companion_emotion::*;
@@ -20,4 +21,5 @@ pub use kokoro::*;
 pub use kokoro_install::*;
 pub use kokoro_voice::*;
 pub use pinned_artifact::*;
+pub use sprout::*;
 pub use whisper::*;

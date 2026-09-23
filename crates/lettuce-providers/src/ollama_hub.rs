@@ -58,7 +58,10 @@ async fn connect<'a, S: SecretStore + ?Sized>(
 ) -> Result<Connection<'a>, OllamaHubError> {
     if account.protocol != ProviderProtocol::Ollama
         || !account.provider_kind.eq_ignore_ascii_case("ollama")
-        || !matches!(account.config, ProviderConfig::Standard)
+        || !matches!(
+            account.config,
+            ProviderConfig::Standard | ProviderConfig::Ollama(_)
+        )
     {
         return Err(OllamaHubError::NotOllama);
     }

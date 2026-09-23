@@ -45,6 +45,7 @@ mod legacy_backup_images;
 mod legacy_backup_usage;
 mod playground_history_backup;
 mod legacy_import_backup;
+mod legacy_sprout;
 mod memory_backup;
 mod memory_projection_backup;
 mod restore_admission;
@@ -90,6 +91,7 @@ pub use legacy_backup_images::*;
 pub use legacy_backup_usage::*;
 pub use playground_history_backup::*;
 pub use legacy_import_backup::*;
+pub use legacy_sprout::*;
 pub use memory_backup::*;
 pub use memory_projection_backup::*;
 pub use restore_admission::*;
@@ -387,6 +389,26 @@ pub enum LegacyProviderAccountOrigin {
 pub enum LegacyPendingProviderSecret {
     ApiKey,
     Header { name: HeaderName },
+    /// An Ollama account's Sprout probe key (legacy config `sproutApiKey`).
+    SproutApiKey,
+}
+
+impl LegacyPendingProviderSecret {
+    /// The secret-store purpose of this secret on the account `owner` owns.
+    #[must_use]
+    pub fn purpose(
+        &self,
+        owner: lettuce_settings::SecretOwnerId,
+    ) -> lettuce_settings::SecretPurpose {
+        match self {
+            Self::ApiKey => lettuce_settings::SecretPurpose::ProviderApiKey { owner },
+            Self::Header { name } => lettuce_settings::SecretPurpose::ProviderSecretHeader {
+                owner,
+                name: name.clone(),
+            },
+            Self::SproutApiKey => lettuce_settings::SecretPurpose::SproutApiKey { owner },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

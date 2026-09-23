@@ -340,13 +340,15 @@ fn validate_identity(
 
 fn validate_credentials(account: &ProviderAccount) -> Result<(), ChatProfileResolutionError> {
     let required = match &account.config {
-        ProviderConfig::Standard | ProviderConfig::ComfyUi(_) => matches!(
-            account.protocol,
-            ProviderProtocol::OpenAiCompatible
-                | ProviderProtocol::Anthropic
-                | ProviderProtocol::Gemini
-        )
-        .then_some(CredentialRequirement::ApiKey),
+        ProviderConfig::Standard | ProviderConfig::ComfyUi(_) | ProviderConfig::Ollama(_) => {
+            matches!(
+                account.protocol,
+                ProviderProtocol::OpenAiCompatible
+                    | ProviderProtocol::Anthropic
+                    | ProviderProtocol::Gemini
+            )
+            .then_some(CredentialRequirement::ApiKey)
+        }
         ProviderConfig::Custom(CustomProviderConfig { auth, .. }) => match auth {
             crate::CustomAuth::None => None,
             crate::CustomAuth::Bearer

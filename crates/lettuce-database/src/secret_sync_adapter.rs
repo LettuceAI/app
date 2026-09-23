@@ -27,7 +27,7 @@ impl SyncSecretRepository for Database {
         let mut records = Vec::new();
         let accounts = connection
             .prepare(
-                "SELECT api_key_secret_ref, secret_owner_id, secret_headers_json FROM provider_accounts ORDER BY id",
+                "SELECT api_key_secret_ref, secret_owner_id, secret_headers_json, config_json FROM provider_accounts ORDER BY id",
             )
             .and_then(|mut statement| {
                 statement
@@ -36,12 +36,13 @@ impl SyncSecretRepository for Database {
                             row.get::<_, Option<String>>(0)?,
                             row.get::<_, String>(1)?,
                             row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
                         ))
                     })?
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(storage)?;
-        for (api_key, owner, headers) in accounts {
+        for (api_key, owner, headers, config) in accounts {
             let Ok(owner) = uuid(&owner).map(SecretOwnerId::from_uuid) else {
                 continue;
             };
@@ -60,6 +61,19 @@ impl SyncSecretRepository for Database {
                         owner,
                         name: header.name,
                     },
+                ));
+            }
+            if let Ok(lettuce_models::ProviderConfig::Ollama(lettuce_models::OllamaConfig {
+                sprout:
+                    Some(lettuce_models::SproutConfig {
+                        api_key_ref: Some(reference),
+                        ..
+                    }),
+            })) = crate::decode_provider_config(&config)
+            {
+                records.push(SecretRecord::new(
+                    reference,
+                    SecretPurpose::SproutApiKey { owner },
                 ));
             }
         }
