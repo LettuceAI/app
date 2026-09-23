@@ -123,6 +123,13 @@ pub(crate) fn legacy_companion(
         }),
         prompt_source_id: None,
     };
+    let value = match value {
+        Some(Value::String(text)) => match serde_json::from_str::<Value>(&text) {
+            Ok(decoded) => Some(decoded),
+            Err(_) => Some(Value::String(text)),
+        },
+        other => other,
+    };
     let Some(value) = value.filter(|value| !value.is_null()) else {
         return if companion_mode {
             private_memory()
@@ -822,6 +829,40 @@ mod tests {
             },
             skipped,
         )
+    }
+
+    #[test]
+    fn legacy_companion_reads_the_json_text_legacy_stored() {
+        let mut skipped = Vec::new();
+        let companion = legacy_companion(
+            Some(json!(
+                json!({"soul": {"essence": "Kind"}, "memory": {"sharedAcrossSessions": true}})
+                    .to_string()
+            )),
+            "character-9",
+            true,
+            TimestampMillis::new(1),
+            &mut skipped,
+        );
+        let soul = companion.soul.expect("companion soul");
+        assert_eq!(soul.soul.essence, "Kind");
+        assert!(soul.share_memory_across_chats);
+        assert!(skipped.is_empty(), "{skipped:?}");
+        let mut broken = Vec::new();
+        let fallback = legacy_companion(
+            Some(json!("{not json")),
+            "character-10",
+            true,
+            TimestampMillis::new(1),
+            &mut broken,
+        );
+        assert!(
+            !fallback
+                .soul
+                .expect("default soul")
+                .share_memory_across_chats
+        );
+        assert_eq!(broken.len(), 1);
     }
 
     #[test]
