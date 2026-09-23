@@ -132,6 +132,7 @@ pub(crate) fn failed_as_interrupted(job: &JobSnapshot) -> bool {
 pub struct StartupRecoveryReport {
     pub jobs: Vec<RecoveredStartupJob>,
     pub cancelled_generation_jobs: Vec<lettuce_types::JobId>,
+    pub settled_requested_jobs: Vec<lettuce_types::JobId>,
     pub turns: Vec<(
         lettuce_types::GenerationTurnId,
         crate::ConversationGenerationRestartSettlement,
@@ -139,6 +140,252 @@ pub struct StartupRecoveryReport {
 }
 
 const STARTUP_RECOVERY_PAGE: u32 = 200;
+
+const STAGED_LOREBOOK_WRITER_KEYS: [&str; 2] =
+    ["staged-lorebook-writer-", "staged-lorebook-refine-"];
+const STAGED_LOREBOOK_COHERENCE_KEY: &str = "staged-lorebook-coherence-";
+const STAGED_LOREBOOK_PLANNER_KEYS: [&str; 2] = ["staged-lorebook-", "staged-planner-retry-"];
+
+impl crate::AppBackend {
+    /// Work a user asked for is not run again after a restart: a staged
+    /// lorebook planner or writer without a saved attempt fails through its
+    /// own settlement so the project can be retried (one with a saved attempt
+    /// stays queued to finish from it), other creation, speech and image jobs
+    /// are cancelled, and ended image generations settle their records.
+    fn settle_requested_work_after_restart(
+        &self,
+        now: Timestamp,
+        report: &mut StartupRecoveryReport,
+    ) {
+        use lettuce_jobs::JobKind;
+        for kind in [
+            JobKind::CreationRun,
+            JobKind::SpeechTranscribe,
+            JobKind::SpeechSynthesize,
+            JobKind::ImageGenerate,
+        ] {
+            for job in self.pending_jobs(kind) {
+                let settled = if kind == JobKind::CreationRun {
+                    self.settle_creation_job(&job, now)
+                } else {
+                    self.cancel_waiting_job(&job, now)
+                };
+                match settled {
+                    Ok(true) => report.settled_requested_jobs.push(job.id),
+                    Ok(false) => {}
+                    Err(error) => {
+                        tracing::warn!(job_id = %job.id, %error, "startup could not settle requested work");
+                    }
+                }
+            }
+        }
+        let images = self.image_generations();
+        let mut interrupted = Vec::new();
+        for state in [JobState::Interrupted, JobState::Cancelled] {
+            let mut cursor = None;
+            loop {
+                let Ok(page) = self.database().list(lettuce_jobs::JobQuery {
+                    state: Some(state),
+                    kind: Some(JobKind::ImageGenerate),
+                    subject: None,
+                    page: lettuce_types::PageRequest {
+                        cursor: cursor.take(),
+                        limit: lettuce_types::PageLimit::new(STARTUP_RECOVERY_PAGE as u16),
+                    },
+                }) else {
+                    tracing::warn!("startup could not list ended image generations");
+                    break;
+                };
+                interrupted.extend(page.items.into_iter().map(|job| job.id));
+                match page.next_cursor {
+                    Some(next) => cursor = Some(next),
+                    None => break,
+                }
+            }
+        }
+        for id in interrupted {
+            if let Err(error) = images.reconcile_after_restart(id) {
+                tracing::warn!(job_id = %id, %error, "startup could not settle an image generation");
+            }
+        }
+    }
+
+    fn settle_creation_job(&self, job: &JobSnapshot, now: Timestamp) -> Result<bool, String> {
+        use lettuce_creation::{StagedLorebookRepository, StagedLorebookWriterRunRepository};
+        let key = job
+            .idempotency_key
+            .as_ref()
+            .map_or("", lettuce_jobs::IdempotencyKey::as_str);
+        let writer = STAGED_LOREBOOK_WRITER_KEYS
+            .iter()
+            .any(|prefix| key.starts_with(prefix));
+        let planner = !writer
+            && !key.starts_with(STAGED_LOREBOOK_COHERENCE_KEY)
+            && STAGED_LOREBOOK_PLANNER_KEYS
+                .iter()
+                .any(|prefix| key.starts_with(prefix));
+        if (!writer && !planner) || job.state != JobState::Queued {
+            return self.cancel_waiting_job(job, now);
+        }
+        let Some(request_id) = self.request_input(job.id) else {
+            return self.cancel_waiting_job(job, now);
+        };
+        let worker_id = lettuce_jobs::WorkerId::new();
+        let lease = std::time::Duration::from_secs(60);
+        let allowed = lettuce_jobs::ResourceAvailability::all();
+        if writer {
+            let run = self
+                .database()
+                .load_staged_lorebook_writer_run(request_id)
+                .map_err(|error| error.to_string())?;
+            if run.attempt.is_some() {
+                return Ok(false);
+            }
+            if run.refinement.is_some() {
+                return self.cancel_waiting_job(job, now);
+            }
+            let dispatcher = self.staged_lorebook_writer_dispatcher();
+            let Some(work) = dispatcher
+                .claim(request_id, worker_id, now, lease, &allowed)
+                .map_err(|error| error.to_string())?
+            else {
+                return Ok(false);
+            };
+            let claim = work.claim.claim.clone();
+            if let Err(error) = dispatcher.settle(
+                work,
+                Err(crate::StagedLorebookWriterExecutionError::AppStopped),
+                lettuce_jobs::CancellationReason::Recovery,
+                now,
+            ) {
+                self.fail_claimed_job(claim, now)?;
+                return Err(error.to_string());
+            }
+        } else {
+            let run = self
+                .database()
+                .load_staged_lorebook(request_id)
+                .map_err(|error| error.to_string())?;
+            if run.project.stage != lettuce_creation::StagedLorebookStage::Planning
+                || run.planner_attempt.is_some()
+            {
+                return Ok(false);
+            }
+            let dispatcher = self.staged_lorebook_planner_dispatcher();
+            let Some(work) = dispatcher
+                .claim(request_id, worker_id, now, lease, &allowed)
+                .map_err(|error| error.to_string())?
+            else {
+                return Ok(false);
+            };
+            let claim = work.claim.claim.clone();
+            if let Err(error) = dispatcher.settle(
+                work,
+                Err(crate::StagedLorebookPlannerExecutionError::AppStopped),
+                lettuce_jobs::CancellationReason::Recovery,
+                now,
+            ) {
+                self.fail_claimed_job(claim, now)?;
+                return Err(error.to_string());
+            }
+        }
+        Ok(true)
+    }
+
+    fn fail_claimed_job(
+        &self,
+        claim: lettuce_jobs::ClaimRef,
+        now: Timestamp,
+    ) -> Result<(), String> {
+        let at = self
+            .database()
+            .get(claim.job_id)
+            .ok()
+            .flatten()
+            .map_or(now, |job| now.max(job.updated_at));
+        self.database()
+            .append_and_transition(lettuce_jobs::JobMutation::Fail {
+                claim,
+                error: lettuce_jobs::JobError::new(
+                    lettuce_jobs::JobErrorCode::LeaseLost,
+                    false,
+                    APP_STOPPED_DURING_JOB,
+                )
+                .expect("constant job error is valid"),
+                at,
+            })
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
+    fn cancel_waiting_job(&self, job: &JobSnapshot, now: Timestamp) -> Result<bool, String> {
+        let at = now.max(job.updated_at);
+        let job = match job.state {
+            JobState::Queued => self
+                .database()
+                .append_and_transition(lettuce_jobs::JobMutation::RequestCancellation {
+                    id: job.id,
+                    reason: lettuce_jobs::CancellationReason::Recovery,
+                    at,
+                })
+                .map_err(|error| error.to_string())?,
+            _ => job.clone(),
+        };
+        if job.state != JobState::CancellationRequested || job.claim.is_some() {
+            return Ok(false);
+        }
+        self.database()
+            .append_and_transition(lettuce_jobs::JobMutation::FinishQueuedCancellation {
+                id: job.id,
+                at: at.max(job.updated_at),
+            })
+            .map_err(|error| error.to_string())?;
+        Ok(true)
+    }
+
+    fn request_input(&self, job_id: lettuce_types::JobId) -> Option<lettuce_types::RequestId> {
+        match self
+            .database()
+            .events_since(job_id, None, 1)
+            .ok()?
+            .first()
+            .map(|event| &event.event)
+        {
+            Some(lettuce_jobs::events::JobEvent::Created {
+                input_ref: lettuce_jobs::OutcomeRef::Request(request_id),
+                ..
+            }) => Some(*request_id),
+            _ => None,
+        }
+    }
+
+    fn pending_jobs(&self, kind: lettuce_jobs::JobKind) -> Vec<JobSnapshot> {
+        let mut jobs = Vec::new();
+        for state in [JobState::Queued, JobState::CancellationRequested] {
+            let mut cursor = None;
+            loop {
+                let Ok(page) = self.database().list(lettuce_jobs::JobQuery {
+                    state: Some(state),
+                    kind: Some(kind),
+                    subject: None,
+                    page: lettuce_types::PageRequest {
+                        cursor: cursor.take(),
+                        limit: lettuce_types::PageLimit::new(STARTUP_RECOVERY_PAGE as u16),
+                    },
+                }) else {
+                    tracing::warn!(?kind, "startup could not list waiting jobs");
+                    break;
+                };
+                jobs.extend(page.items.into_iter().filter(|job| job.claim.is_none()));
+                match page.next_cursor {
+                    Some(next) => cursor = Some(next),
+                    None => break,
+                }
+            }
+        }
+        jobs
+    }
+}
 
 impl crate::AppBackend {
     /// Must run before any worker starts: every claim is released, every
@@ -208,6 +455,7 @@ impl crate::AppBackend {
                 }
             }
         }
+        self.settle_requested_work_after_restart(now, &mut report);
         let mut unsettled = std::collections::BTreeSet::new();
         loop {
             let limit = STARTUP_RECOVERY_PAGE
@@ -405,5 +653,52 @@ mod tests {
             .expect("unrelated job");
         assert_eq!(unrelated.job.state, JobState::Interrupted);
         assert_eq!(unrelated.requested_action, RecoveryAction::Compensate);
+    }
+
+    #[test]
+    fn requested_work_left_waiting_is_cancelled_on_restart() {
+        let backend = crate::AppBackend::open_in_memory(Timestamp::new(1)).expect("backend");
+        let queued = |kind, key: &str| {
+            let request = lettuce_types::RequestId::new();
+            backend
+                .job_store()
+                .create_or_get(
+                    JobSpec::new(
+                        kind,
+                        JobSubject::new(SubjectKind::Conversation, request.to_string())
+                            .expect("subject"),
+                        OutcomeRef::Request(request),
+                    )
+                    .with_resources(vec![ResourceClass::Network])
+                    .with_idempotency_key(IdempotencyKey::new(key).expect("key")),
+                )
+                .expect("queued job")
+                .job
+                .id
+        };
+        let reply = queued(JobKind::CreationRun, "reply-helper-restart");
+        let transcription = queued(JobKind::SpeechTranscribe, "speech-transcribe-restart");
+        let report = backend
+            .recover_after_restart(Timestamp::new(10))
+            .expect("recover");
+        for id in [reply, transcription] {
+            assert!(report.settled_requested_jobs.contains(&id));
+            assert_eq!(
+                backend
+                    .job_store()
+                    .get(id)
+                    .expect("get")
+                    .expect("job")
+                    .state,
+                JobState::Cancelled
+            );
+        }
+        assert!(
+            backend
+                .recover_after_restart(Timestamp::new(11))
+                .expect("recover again")
+                .settled_requested_jobs
+                .is_empty()
+        );
     }
 }

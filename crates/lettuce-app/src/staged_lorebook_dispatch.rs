@@ -242,6 +242,9 @@ fn job_error(error: &StagedLorebookPlannerExecutionError) -> JobError {
             JobErrorCode::StorageFailure,
             "staged-lorebook-planner-storage-failed",
         ),
+        StagedLorebookPlannerExecutionError::AppStopped => {
+            (JobErrorCode::LeaseLost, "app-stopped-during-job")
+        }
         StagedLorebookPlannerExecutionError::Cancelled => {
             unreachable!("cancellation settles separately")
         }

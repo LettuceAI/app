@@ -51,6 +51,8 @@ pub enum StagedLorebookWriterExecutionError {
     Run(StagedLorebookWriterRunRepositoryError),
     #[error("staged lorebook project persistence failed: {0}")]
     Project(StagedLorebookRepositoryError),
+    #[error("the app stopped during the staged lorebook writer")]
+    AppStopped,
 }
 
 #[derive(Debug)]

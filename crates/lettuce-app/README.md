@@ -1840,3 +1840,15 @@ run's resolved profile (DynamicMemory slot and memory sampler) where legacy used
 the CompanionMemory slot with its own defaults (temperature 0.3); with a shared
 memory pool, overlapping memory passes of two chats can count one chat's new
 memories as fresh for the other's growth.
+
+Requested work after a restart (2026-09-23): `recover_after_restart` also
+settles work a user asked for instead of running it again: a queued staged
+lorebook planner or writer without a saved attempt fails with `AppStopped`
+through its own settlement (the draft fails, so a new batch can start; a failed
+planner can be retried), one with a saved attempt stays queued so the user's
+next action finishes it without new inference, a planner not yet planning is
+left alone, refine runs without an attempt, coherence, lorebook entry/keyword
+and one-shot helper jobs, speech jobs and image jobs are cancelled, and every
+ended image generation whose record is still pending is settled (idempotent, so
+a failed reconcile retries on the next start). If a claimed settlement fails,
+the job is failed as `LeaseLost` so it never stays running.

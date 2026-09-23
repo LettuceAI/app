@@ -48,6 +48,8 @@ pub enum StagedLorebookPlannerExecutionError {
     ReplayCleanup,
     #[error("staged lorebook planner persistence failed: {0}")]
     Repository(StagedLorebookRepositoryError),
+    #[error("the app stopped during the staged lorebook planner")]
+    AppStopped,
 }
 
 #[derive(Debug)]

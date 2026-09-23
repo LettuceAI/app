@@ -407,6 +407,24 @@ impl<
         })
     }
 
+    /// Settles the record of an ended job left pending; `None` while the job
+    /// is still live.
+    pub fn reconcile_after_restart(
+        &self,
+        job_id: JobId,
+    ) -> Result<Option<ImageGenerationRecord>, ImageGenerationError> {
+        let record = self.generations.get(job_id)?;
+        let job = self
+            .jobs
+            .get(job_id)?
+            .ok_or(ImageGenerationError::InvalidWork)?;
+        validate_job_record(&job, &record)?;
+        if !job.state.is_terminal() {
+            return Ok(None);
+        }
+        self.reconcile(&job, record).map(Some)
+    }
+
     /// Settles the record of a job that ended without running to completion
     /// (interrupted by a crash or cancelled before it ran), together with any
     /// usage it admitted.
