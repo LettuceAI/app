@@ -1907,3 +1907,20 @@ cannot have). A companion character gets the chat as its next continuity
 episode, ending the open one; legacy saved it as a roleplay session, which the
 rewrite cannot represent for a companion character (the legacy backup import
 makes the same choice).
+`export(conversation_id, now)` writes a chat's active branch as JSONL (file
+name and text; the host saves it): the shown content of each message, an
+assistant message's candidates as swipes when there are two or more,
+speakers by their current character names, the user as the current persona
+title or `User`, a `{group: true}` header and the conversation title for group
+chats. Deleted (tombstoned) messages are left out; an edited assistant message
+shows its edit, with the other candidates as swipes after it.
+`import_group(raw, participants, now)` imports a transcript with several
+speakers: every named speaker must map to an existing character
+(`UNRESOLVED_PARTICIPANTS:<names>` otherwise, `GROUP_CHAT_IMPORT_REQUIRES_CHARACTER_MAPPING`
+without any), a new group of those characters is created with legacy's
+defaults (conversation mode, LLM speaker selection, manual memory) and named by
+the header's character name or `Imported Group Chat`, and its chat is written
+with each assistant line authored by its speaker. Every check runs before the
+group is created; an archived character counts as unresolved, and a transcript
+whose speakers all map to one character becomes a direct chat with it (legacy
+made a one-member group, which a group cannot be).

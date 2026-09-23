@@ -499,7 +499,11 @@ fn seed_prompt(
     .id
 }
 
-fn seed_model(database: &Database, protocol: ProviderProtocol, kind_label: &str) -> ModelProfileId {
+pub(crate) fn seed_model(
+    database: &Database,
+    protocol: ProviderProtocol,
+    kind_label: &str,
+) -> ModelProfileId {
     seed_model_with(database, protocol, kind_label, ModelKind::Chat, true)
 }
 
@@ -572,7 +576,7 @@ fn seed_model_with(
     .id
 }
 
-fn set_application_default_model(database: &Database, id: ModelProfileId) {
+pub(crate) fn set_application_default_model(database: &Database, id: ModelProfileId) {
     let stored = GlobalSettingsStore::load(database).expect("settings");
     GlobalSettingsStore::save(database, stored.settings, Some(id), stored.revision)
         .expect("save settings");

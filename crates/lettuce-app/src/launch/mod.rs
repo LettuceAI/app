@@ -24,4 +24,4 @@ pub use request::{
 };
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
