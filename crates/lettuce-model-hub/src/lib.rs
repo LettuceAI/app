@@ -4,6 +4,7 @@
 
 mod companion_emotion;
 mod embedding;
+mod hugging_face;
 mod kokoro;
 mod kokoro_install;
 mod kokoro_voice;
@@ -12,6 +13,7 @@ mod whisper;
 
 pub use companion_emotion::*;
 pub use embedding::*;
+pub use hugging_face::*;
 pub use kokoro::*;
 pub use kokoro_install::*;
 pub use kokoro_voice::*;

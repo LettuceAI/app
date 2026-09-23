@@ -107,3 +107,18 @@ identity, destination, digest and size; downloads resume; complete files are
 verified before an atomic rename; an installed file that fails verification
 (or an oversized partial) is replaced. A missing digest checks the size
 only, as legacy did for release assets without one.
+
+## Hugging Face browser
+
+`hugging_face` builds the browser's requests and reads its responses: model
+search (GGUF-filtered, with an unfiltered pass for `owner/name` queries; image
+mode merges text-to-image and image-to-image lists, sorted and cut to the
+limit), author models and overview (user, then organization), avatars
+(organization, then user), model files sized from the repository tree, the
+README without front matter, whoami, and the old error texts for unauthorized
+and gated responses. Quantization names follow the old list with Unsloth
+dynamic quants `UD-` prefixed; corrected: `BF16` files were labeled `F16`,
+`TQ1_0`/`TQ2_0`/`MXFP4` were unknown, and every file with `imatrix` in its
+name was hidden. Importance-matrix quants (`i1-`, `imat`, `imatrix` parts) are
+now listed and flagged `imatrix`; only the importance-matrix data file itself
+is dropped.

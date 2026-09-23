@@ -1944,3 +1944,11 @@ without credentials, which a model profile cannot be), returning the settings
 that were out of range or unknown, and exports a model as
 `model_<display name>_<date>.json` or `.usc`. Like legacy, every imported model
 is a chat model.
+
+Hugging Face browser: `HuggingFaceBrowser` searches models, lists an author's
+models, overview and avatars (cached for the browser's lifetime, six lookups
+at a time), a repository's files and its README, signed in with the token in
+the secret store. `save_token` stores a token only after whoami accepts it,
+`auth_status` reports a missing, invalid or valid token, and `clear_token`
+removes it. A token the secret store cannot read is an error rather than an
+unauthenticated request.
