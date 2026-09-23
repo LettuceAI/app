@@ -1,15 +1,16 @@
 use base64::Engine;
-use lettuce_characters::CharacterDetails;
+use lettuce_characters::{CharacterDetails, CharacterMediaSlot, SceneAssetSlot};
 use lettuce_media::{
     AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, LocalMediaBlobStore,
     MediaAssetRepository, MediaBlobRepository, RetentionClass,
 };
 use lettuce_transfer::{
-    CharacterFileAssets, CharacterFilePlanError, CharacterFileRepository,
-    CharacterFileRepositoryError, CharacterPackage, CharacterPlanError, EntityPackageError,
-    LegacyBackupConversionNotice, LegacyImportSkip,
+    CharacterExportError, CharacterExportSource, CharacterFileAssets, CharacterFileFormat,
+    CharacterFilePlanError, CharacterFileRepository, CharacterFileRepositoryError,
+    CharacterPackage, CharacterPlanError, EntityPackageError, LegacyBackupConversionNotice,
+    LegacyImportSkip,
 };
-use lettuce_types::{AssetId, TimestampMillis};
+use lettuce_types::{AssetId, CharacterId, TimestampMillis};
 use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
@@ -22,6 +23,10 @@ pub enum CharacterFileError {
     References(#[from] CharacterPlanError),
     #[error("character file storage failed: {0}")]
     Repository(#[from] CharacterFileRepositoryError),
+    #[error(transparent)]
+    Export(#[from] CharacterExportError),
+    #[error("Character not found")]
+    NotFound,
 }
 
 /// A character file written as a new character.
@@ -32,7 +37,7 @@ pub struct ImportedCharacterFile {
     pub notices: Vec<LegacyBackupConversionNotice>,
 }
 
-/// Character files read into new characters.
+/// Character files read into new characters and written from stored ones.
 #[derive(Debug)]
 pub struct CharacterFileCoordinator<'a, R: ?Sized, BR, AR> {
     repository: &'a R,
@@ -110,6 +115,74 @@ where
             skipped,
             notices: plan.notices,
         })
+    }
+
+    /// The character written as a file of `format`, its images inlined as
+    /// data URLs; an image that cannot be read is left out like legacy did.
+    pub fn export(
+        &self,
+        character_id: CharacterId,
+        format: CharacterFileFormat,
+        now: TimestampMillis,
+    ) -> Result<String, CharacterFileError> {
+        let record = self
+            .repository
+            .character_export_record(character_id)?
+            .ok_or(CharacterFileError::NotFound)?;
+        let character = &record.details.character;
+        let linked = |slot: CharacterMediaSlot| {
+            character
+                .media
+                .links
+                .iter()
+                .find(|link| link.slot == slot)
+                .and_then(|link| self.data_url(link.asset_id))
+        };
+        let source = CharacterExportSource {
+            avatar_data: linked(CharacterMediaSlot::AvatarOriginal),
+            background_image_data: linked(CharacterMediaSlot::Background),
+            scene_backgrounds: record
+                .details
+                .scenes
+                .iter()
+                .filter_map(|scene| {
+                    let link = scene
+                        .assets
+                        .iter()
+                        .find(|link| link.slot == SceneAssetSlot::Background)?;
+                    Some((scene.id, self.data_url(link.asset_id)?))
+                })
+                .collect(),
+            lorebooks: record.lorebooks,
+            scheduled_notes: record.scheduled_notes,
+            details: record.details,
+        };
+        let package = lettuce_transfer::character_package(&source, now.get());
+        let character = &source.details.character;
+        Ok(lettuce_transfer::export_character_file(
+            &package,
+            format,
+            &character.id.to_string(),
+            character.created_at.get(),
+            character.updated_at.get(),
+        )?)
+    }
+
+    fn data_url(&self, asset_id: AssetId) -> Option<String> {
+        let mut opened = self
+            .media_store
+            .open_ready(asset_id)
+            .map_err(|error| tracing::warn!(%error, "character image could not be read"))
+            .ok()?;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut opened.reader, &mut bytes)
+            .map_err(|error| tracing::warn!(%error, "character image could not be read"))
+            .ok()?;
+        Some(format!(
+            "data:{};base64,{}",
+            opened.blob.mime_type,
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        ))
     }
 
     fn store_image(&self, data: &str, kind: AssetKind) -> Option<AssetId> {
@@ -269,6 +342,55 @@ mod tests {
                 .iter()
                 .any(|skip| skip.source_key == "companion_scheduled_notes:late")
         );
+        let exported = files
+            .export(
+                character.character.id,
+                CharacterFileFormat::Uec,
+                TimestampMillis::new(60),
+            )
+            .expect("export");
+        let package = files
+            .read(&exported, TimestampMillis::new(70))
+            .expect("read export");
+        assert_eq!(package.avatar_data.as_deref(), Some(avatar.as_str()));
+        assert_eq!(package.character.lorebooks.len(), 1);
+        assert_eq!(package.character.companion_scheduled_notes.len(), 1);
+        let again = files
+            .import(&package, TimestampMillis::new(70))
+            .expect("import export")
+            .character;
+        assert_ne!(again.character.id, character.character.id);
+        assert_eq!(again.character.profile, character.character.profile);
+        assert_eq!(
+            again.character.defaults.companion_soul,
+            character.character.defaults.companion_soul
+        );
+        assert_eq!(
+            backend
+                .database()
+                .list_scheduled_notes(again.character.id)
+                .expect("notes")
+                .len(),
+            1
+        );
+        let card = files
+            .export(
+                character.character.id,
+                CharacterFileFormat::CharaCardV2,
+                TimestampMillis::new(60),
+            )
+            .expect("card");
+        assert!(card.contains("\"chara_card_v2\""));
+        assert!(matches!(
+            files.export(
+                character.character.id,
+                CharacterFileFormat::CharaCardV1,
+                TimestampMillis::new(60)
+            ),
+            Err(CharacterFileError::Export(
+                CharacterExportError::CardV1ReadOnly
+            ))
+        ));
         std::fs::remove_dir_all(&root).ok();
     }
 }

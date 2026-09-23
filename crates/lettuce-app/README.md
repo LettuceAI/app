@@ -1871,3 +1871,7 @@ written in one transaction. The host downloads a remote avatar (legacy's
 `autoDownloadCharacterCardAvatars`) and replaces `avatar_data` with the data
 URL before importing; a remote background is skipped like legacy. Images are
 stored as given instead of re-encoded to WebP.
+`export(character_id, format)` writes the character as UEC, Chara Card V3 or
+V2 with its avatar, background and scene backgrounds inlined as data URLs of
+their stored bytes and mime type; an image that cannot be read is left out,
+like legacy.

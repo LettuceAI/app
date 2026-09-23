@@ -842,4 +842,21 @@ and always dropped `default_model_id` (kept when the model exists); legacy
 overwrote `source` with `["lettuceai"]` (the file's source is kept); legacy
 stored scene background strings raw (data URLs become assets, other strings are
 dropped). `lorebook_details_from_candidate` is shared with the legacy import
-writer. Companion shared memory is not written yet.
+writer. Companion shared memory is not written yet. Bundled lorebook entries
+keep their packaged match mode (legacy forced literal, so a regex entry stopped
+matching after a round trip).
+
+Character export (`character_export`): `character_package` writes a stored
+character as the old app's package (definition stripped of legacy card prompt
+sections or else the description, active scenes and variants in order, starters
+as chat templates, enabled bound lorebooks in binding order, scheduled notes,
+mode and memory type always present, companion config in the legacy
+`CompanionConfig` shape with `memory.sharedAcrossSessions` and `timeAwareness`,
+user voices as `{source: "user", userVoiceId}`, provider voices as their stored
+legacy JSON). `export_character_file` writes UEC, Chara Card V3 or V2 from it;
+V1 and legacy JSON are refused with legacy's texts. Differences from legacy:
+scene backgrounds are exported as data URLs instead of local image ids, crops
+are written from their shortest decimal form, a default scene that is archived
+is left out, empty source/tag lists are omitted, lorebook avatars are not
+exported, and the deprecated character system prompt is not stored so it is
+never exported. Companion shared memory is not exported yet.

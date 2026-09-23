@@ -4,10 +4,10 @@ use lettuce_characters::{CharacterDetails, RepositoryError};
 use lettuce_companions::CompanionScheduledNoteError;
 use lettuce_context::LorebookRepositoryError;
 use lettuce_transfer::{
-    CharacterFileImport, CharacterFileReferences, CharacterFileRepository,
+    CharacterExportRecord, CharacterFileImport, CharacterFileReferences, CharacterFileRepository,
     CharacterFileRepositoryError,
 };
-use lettuce_types::{LorebookId, ModelProfileId, VoiceProfileId};
+use lettuce_types::{CharacterId, LorebookId, ModelProfileId, VoiceProfileId};
 use rusqlite::{Connection, TransactionBehavior, params};
 
 use crate::Database;
@@ -93,6 +93,61 @@ impl CharacterFileRepository for Database {
             .map_err(|_| CharacterFileRepositoryError::Storage)?;
         Ok(details)
     }
+
+    fn character_export_record(
+        &self,
+        id: CharacterId,
+    ) -> Result<Option<CharacterExportRecord>, CharacterFileRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| CharacterFileRepositoryError::Storage)?;
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(|_| CharacterFileRepositoryError::Storage)?;
+        let record =
+            load_export_record(&tx, id).map_err(|_| CharacterFileRepositoryError::Storage)?;
+        tx.commit()
+            .map_err(|_| CharacterFileRepositoryError::Storage)?;
+        Ok(record)
+    }
+}
+
+fn load_export_record(
+    connection: &Connection,
+    id: CharacterId,
+) -> rusqlite::Result<Option<CharacterExportRecord>> {
+    let Some(details) = crate::character_adapter::load_details(connection, id)? else {
+        return Ok(None);
+    };
+    let mut bindings = connection.prepare(
+        "SELECT lorebook_id FROM character_lorebook_bindings
+         WHERE character_id = ?1 AND enabled = 1 ORDER BY ordinal",
+    )?;
+    let mut lorebooks = Vec::new();
+    for lorebook_id in bindings.query_map([id.to_string()], |row| row.get::<_, String>(0))? {
+        let Ok(lorebook_id) = LorebookId::from_str(&lorebook_id?) else {
+            continue;
+        };
+        if let Some(lorebook) = crate::lorebook_adapter::load_details(connection, lorebook_id)? {
+            lorebooks.push(lorebook);
+        }
+    }
+    let mut notes = connection.prepare(
+        "SELECT id, character_id, label, content, available_at, expires_at, recurrence,
+                recurrence_window_ms, enabled, created_at, updated_at
+           FROM companion_scheduled_notes WHERE character_id = ?1
+           ORDER BY available_at ASC, id ASC",
+    )?;
+    let scheduled_notes = notes
+        .query_map([id.to_string()], |row| {
+            crate::scheduled_note_adapter::from_row(row).map_err(|_| rusqlite::Error::InvalidQuery)
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(CharacterExportRecord {
+        details,
+        lorebooks,
+        scheduled_notes,
+    }))
 }
 
 fn load_references(connection: &Connection) -> rusqlite::Result<CharacterFileReferences> {

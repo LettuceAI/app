@@ -20,7 +20,7 @@ use crate::{
     CharacterPackage, CompanionScheduledNotePackage, CompanionSharedMemoryPackage,
     LegacyBackupCharacterCandidate, LegacyBackupChatTemplateCandidate,
     LegacyBackupChatTemplateMessage, LegacyBackupConversionNotice, LegacyImportSkip,
-    LegacyLorebookCandidate, PackagedKeywordDetectionMode,
+    LegacyLorebookCandidate, PackagedKeywordDetectionMode, PackagedKeywordMatchMode,
 };
 use crate::{
     CharacterPlanError, CharacterPlanResolver, LegacyMediaUse, character_plan_from_candidate,
@@ -105,7 +105,10 @@ pub fn plan_character_file(
                     "always_active": entry.always_active,
                     "keywords": serde_json::to_string(&entry.keywords).unwrap_or_else(|_| "[]".to_owned()),
                     "case_sensitive": entry.case_sensitive,
-                    "keyword_match_mode": "literal",
+                    "keyword_match_mode": match entry.keyword_match_mode {
+                        PackagedKeywordMatchMode::Literal => "literal",
+                        PackagedKeywordMatchMode::Regex => "regex",
+                    },
                     "content": entry.content,
                     "priority": entry.priority,
                     "display_order": entry.display_order,
@@ -360,6 +363,11 @@ pub trait CharacterFileRepository: Send + Sync {
         &self,
         import: &CharacterFileImport,
     ) -> Result<CharacterDetails, CharacterFileRepositoryError>;
+
+    fn character_export_record(
+        &self,
+        id: CharacterId,
+    ) -> Result<Option<crate::CharacterExportRecord>, CharacterFileRepositoryError>;
 }
 
 impl CharacterFilePlan {
