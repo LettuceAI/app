@@ -401,6 +401,11 @@ impl AppBackend {
         crate::CharacterFileCoordinator::new(self.database.as_ref(), media_store)
     }
 
+    #[must_use]
+    pub fn chat_files(&self) -> crate::ChatFileCoordinator<'_, Database> {
+        crate::ChatFileCoordinator::new(self.database.as_ref())
+    }
+
     pub fn persona_files<'a, BR, AR>(
         &'a self,
         media_store: &'a lettuce_media::LocalMediaBlobStore<BR, AR>,

@@ -61,6 +61,20 @@ pub(crate) struct ImportContext {
 }
 
 impl ImportContext {
+    /// A context with no legacy references, for a file imported on its own.
+    pub(crate) fn fresh(scope: LegacyIdScope) -> Self {
+        Self {
+            models: BTreeMap::new(),
+            personas: BTreeMap::new(),
+            prompts: BTreeMap::new(),
+            lorebooks: BTreeMap::new(),
+            media: BTreeMap::new(),
+            backgrounds: BTreeMap::new(),
+            scope,
+            dynamic_memory_enabled: false,
+        }
+    }
+
     pub(crate) fn model_destination(&self, legacy: ModelProfileId) -> Option<ModelProfileId> {
         self.models.get(&legacy).map(|(model, _)| *model)
     }

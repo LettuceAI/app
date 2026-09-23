@@ -1893,3 +1893,17 @@ binding order (`export`). Personas are sync-journaled, so import goes through
 the persona and binding repositories step by step. The host downloads a remote
 avatar URL (legacy did so unconditionally for personas) and passes a data URL.
 Differences from legacy: lorebook ids that do not exist are not stored.
+
+Chat files: `AppBackend::chat_files().import_direct(raw, file_stem,
+character_id, now)` imports a SillyTavern JSONL transcript as a new chat with
+the chosen character (`TARGET_CHARACTER_REQUIRED` without one), titled by the
+header's character name, else the file stem, else `Imported Chat`: messages
+without content are skipped, swipes become the message's variants with
+`swipe_id` (else the first) selected, user and assistant lines keep their time
+as the effective time, and the conversation is written in one transaction
+through the same history writer the legacy import uses. A blank header name
+falls back to the file stem (legacy stored a blank title, which a conversation
+cannot have). A companion character gets the chat as its next continuity
+episode, ending the open one; legacy saved it as a roleplay session, which the
+rewrite cannot represent for a companion character (the legacy backup import
+makes the same choice).

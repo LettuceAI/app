@@ -344,6 +344,30 @@ impl ChatJsonl {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ChatImportRepositoryError {
+    #[error("the imported chat conflicts with stored data")]
+    Conflict,
+    #[error("the imported chat is invalid")]
+    InvalidInput,
+    #[error("chat import storage failed")]
+    Storage,
+}
+
+/// Writes an imported transcript as a finished conversation; a companion
+/// conversation starts the companion's next continuity episode at `now`.
+pub trait ChatImportRepository: Send + Sync {
+    fn import_chat(
+        &self,
+        record: crate::LegacyConversationRecord,
+        companion: Option<(
+            lettuce_companions::CompanionStateOwner,
+            lettuce_companions::CompanionRuntimeState,
+        )>,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<(), ChatImportRepositoryError>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

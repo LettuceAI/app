@@ -5,6 +5,7 @@
 mod backup_adapter;
 mod character_adapter;
 mod character_file_adapter;
+mod chat_import_adapter;
 mod consolidation_adapter;
 mod conversation_artifact_adapter;
 mod conversation_creator;
