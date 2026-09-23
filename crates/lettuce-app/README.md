@@ -1882,3 +1882,14 @@ stored as given instead of re-encoded to WebP.
 V2 with its avatar, background and scene backgrounds inlined as data URLs of
 their stored bytes and mime type; an image that cannot be read is left out,
 like legacy.
+
+Persona files: `AppBackend::persona_files(media_store)` reads a persona UEC or
+the pre-UEC persona package (`read`), imports it as a new persona (`import`:
+avatar data URL stored first and left off if it cannot be, the file's
+lorebooks bound in order when they are active here and recorded otherwise,
+made the default persona when the file says so) and exports a stored persona
+as a v2 persona UEC with its avatar inlined and its enabled lorebooks in
+binding order (`export`). Personas are sync-journaled, so import goes through
+the persona and binding repositories step by step. The host downloads a remote
+avatar URL (legacy did so unconditionally for personas) and passes a data URL.
+Differences from legacy: lorebook ids that do not exist are not stored.

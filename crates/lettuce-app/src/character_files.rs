@@ -172,51 +172,77 @@ where
     }
 
     fn data_url(&self, asset_id: AssetId) -> Option<String> {
-        let mut opened = self
-            .media_store
-            .open_ready(asset_id)
-            .map_err(|error| tracing::warn!(%error, "character image could not be read"))
-            .ok()?;
-        let mut bytes = Vec::new();
-        std::io::Read::read_to_end(&mut opened.reader, &mut bytes)
-            .map_err(|error| tracing::warn!(%error, "character image could not be read"))
-            .ok()?;
-        Some(format!(
-            "data:{};base64,{}",
-            opened.blob.mime_type,
-            base64::engine::general_purpose::STANDARD.encode(bytes)
-        ))
+        inline_image(self.media_store, asset_id)
     }
 
     fn store_image(&self, data: &str, kind: AssetKind) -> Option<AssetId> {
-        if data.starts_with("http://") || data.starts_with("https://") {
+        store_file_image(self.media_store, data, kind, "lettuceai-character-file")
+    }
+}
+
+/// A stored image as a data URL with its stored mime type.
+pub(crate) fn inline_image<BR, AR>(
+    media_store: &LocalMediaBlobStore<BR, AR>,
+    asset_id: AssetId,
+) -> Option<String>
+where
+    BR: MediaBlobRepository,
+    AR: MediaAssetRepository,
+{
+    let mut opened = media_store
+        .open_ready(asset_id)
+        .map_err(|error| tracing::warn!(%error, "file image could not be read"))
+        .ok()?;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut opened.reader, &mut bytes)
+        .map_err(|error| tracing::warn!(%error, "file image could not be read"))
+        .ok()?;
+    Some(format!(
+        "data:{};base64,{}",
+        opened.blob.mime_type,
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+/// Stores a file's inline image (base64 after the first comma); a remote URL
+/// or undecodable image is not stored.
+pub(crate) fn store_file_image<BR, AR>(
+    media_store: &LocalMediaBlobStore<BR, AR>,
+    data: &str,
+    kind: AssetKind,
+    imported_format: &str,
+) -> Option<AssetId>
+where
+    BR: MediaBlobRepository,
+    AR: MediaAssetRepository,
+{
+    if data.starts_with("http://") || data.starts_with("https://") {
+        return None;
+    }
+    let encoded = data.split_once(',').map_or(data, |(_, encoded)| encoded);
+    let bytes = match base64::engine::general_purpose::STANDARD.decode(encoded) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::warn!(%error, "file image is not base64");
             return None;
         }
-        let encoded = data.split_once(',').map_or(data, |(_, encoded)| encoded);
-        let bytes = match base64::engine::general_purpose::STANDARD.decode(encoded) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                tracing::warn!(%error, "character file image is not base64");
-                return None;
-            }
-        };
-        match self.media_store.ingest(
-            bytes.as_slice(),
-            IngestRequest::new(
-                kind,
-                AssetOrigin::Import,
-                RetentionClass::Persistent,
-                AssetProvenanceV1 {
-                    imported_format: Some("lettuceai-character-file".to_owned()),
-                    ..AssetProvenanceV1::default()
-                },
-            ),
-        ) {
-            Ok(ingested) => Some(ingested.asset.id),
-            Err(error) => {
-                tracing::warn!(%error, "character file image could not be stored");
-                None
-            }
+    };
+    match media_store.ingest(
+        bytes.as_slice(),
+        IngestRequest::new(
+            kind,
+            AssetOrigin::Import,
+            RetentionClass::Persistent,
+            AssetProvenanceV1 {
+                imported_format: Some(imported_format.to_owned()),
+                ..AssetProvenanceV1::default()
+            },
+        ),
+    ) {
+        Ok(ingested) => Some(ingested.asset.id),
+        Err(error) => {
+            tracing::warn!(%error, "file image could not be stored");
+            None
         }
     }
 }
