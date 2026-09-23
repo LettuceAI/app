@@ -4,10 +4,8 @@ use std::{
 };
 
 use lettuce_characters::{
-    Character, CharacterDefaults, CharacterMedia, CharacterMediaLink, CharacterMediaSlot,
-    CharacterPresentationV1, ConversationStarter, CreateCharacterPlan, Crop, ImageRecommendation,
-    LifecycleStatus, Persona, PersonaMedia, PersonaMediaLink, PersonaMediaSlot, Scene,
-    SceneAssetLink, SceneAssetSlot, SceneOwner, SceneVariant, Selection,
+    Crop, ImageRecommendation, LifecycleStatus, Persona, PersonaMedia, PersonaMediaLink,
+    PersonaMediaSlot, Scene, SceneAssetLink, SceneAssetSlot, SceneOwner, SceneVariant, Selection,
 };
 use lettuce_context::{
     DetectionPolicy, KeywordMatchMode, LifecycleStatus as LorebookLifecycleStatus,
@@ -30,8 +28,8 @@ use lettuce_transfer::{
     LegacyProviderModelReceipt,
 };
 use lettuce_transfer::{
-    LegacyBackupCharacterCandidate, LegacyCharacterMaterializationRequest, LegacyImportStage,
-    LegacyImportStageReceipt, LegacyMediaPlan,
+    LegacyCharacterMaterializationRequest, LegacyImportStage, LegacyImportStageReceipt,
+    LegacyMediaPlan,
 };
 use lettuce_types::{
     AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, AsrVoiceExampleId, AssetId,
@@ -736,7 +734,22 @@ impl LegacyImportRepository for Database {
             completed_media_assets(&transaction, request.run_id, &request.media, &assignments)?;
         let scope = lettuce_transfer::LegacyIdScope::new(&request.source_fingerprint);
         for candidate in &request.characters {
-            let plan = legacy_character_plan(candidate, &assignments, &media_by_use, scope)?;
+            let plan = lettuce_transfer::character_plan_from_candidate(
+                candidate,
+                &LegacyCharacterResolver {
+                    assignments: &assignments,
+                    media_by_use: &media_by_use,
+                    scope,
+                },
+            )
+            .map_err(|error| match error {
+                lettuce_transfer::CharacterPlanError::MissingReference => {
+                    LegacyImportRepositoryError::Conflict
+                }
+                lettuce_transfer::CharacterPlanError::InvalidInput => {
+                    LegacyImportRepositoryError::InvalidInput
+                }
+            })?;
             crate::character_adapter::insert_character_plan(&transaction, &plan)
                 .map_err(stage_insert_error)?;
         }
@@ -2133,230 +2146,81 @@ fn insert_persona_bindings(
     Ok(())
 }
 
-fn legacy_character_plan(
-    candidate: &LegacyBackupCharacterCandidate,
-    assignments: &AssignmentMaps,
-    media_by_use: &BTreeMap<LegacyMediaUse, AssetId>,
+struct LegacyCharacterResolver<'a> {
+    assignments: &'a AssignmentMaps,
+    media_by_use: &'a BTreeMap<LegacyMediaUse, AssetId>,
     scope: lettuce_transfer::LegacyIdScope,
-) -> Result<CreateCharacterPlan, LegacyImportRepositoryError> {
-    let character_id = candidate.id;
-    let destination_character =
-        lettuce_types::CharacterId::from_uuid(scope.uuid(character_id.as_uuid()));
-    let scene_id =
-        |id: lettuce_types::SceneId| lettuce_types::SceneId::from_uuid(scope.uuid(id.as_uuid()));
-    let variant_id = |id: lettuce_types::SceneVariantId| {
-        lettuce_types::SceneVariantId::from_uuid(scope.uuid(id.as_uuid()))
-    };
-    let asset = |media_use: LegacyMediaUse| {
-        media_by_use
-            .get(&media_use)
+}
+
+impl lettuce_transfer::CharacterPlanResolver for LegacyCharacterResolver<'_> {
+    fn character(&self, planned: lettuce_types::CharacterId) -> lettuce_types::CharacterId {
+        lettuce_types::CharacterId::from_uuid(self.scope.uuid(planned.as_uuid()))
+    }
+
+    fn scene(&self, planned: lettuce_types::SceneId) -> lettuce_types::SceneId {
+        lettuce_types::SceneId::from_uuid(self.scope.uuid(planned.as_uuid()))
+    }
+
+    fn variant(&self, planned: lettuce_types::SceneVariantId) -> lettuce_types::SceneVariantId {
+        lettuce_types::SceneVariantId::from_uuid(self.scope.uuid(planned.as_uuid()))
+    }
+
+    fn starter(
+        &self,
+        planned: lettuce_types::ConversationStarterId,
+    ) -> lettuce_types::ConversationStarterId {
+        lettuce_types::ConversationStarterId::from_uuid(self.scope.uuid(planned.as_uuid()))
+    }
+
+    fn starter_message(
+        &self,
+        planned: lettuce_types::StarterMessageId,
+    ) -> lettuce_types::StarterMessageId {
+        lettuce_types::StarterMessageId::from_uuid(self.scope.uuid(planned.as_uuid()))
+    }
+
+    fn voice_profile(
+        &self,
+        planned: lettuce_types::VoiceProfileId,
+    ) -> lettuce_types::VoiceProfileId {
+        lettuce_types::VoiceProfileId::from_uuid(self.scope.uuid(planned.as_uuid()))
+    }
+
+    fn model(
+        &self,
+        planned: ModelProfileId,
+    ) -> Result<ModelProfileId, lettuce_transfer::CharacterPlanError> {
+        self.assignments
+            .models
+            .get(&planned)
             .copied()
-            .ok_or(LegacyImportRepositoryError::Conflict)
-    };
-    let prompt = |source_id: &Option<String>| {
-        source_id
-            .as_ref()
-            .and_then(|source_id| assignments.prompts.get(source_id).copied())
-    };
-    let lorebook = |legacy_id: &LorebookId| {
-        assignments
+            .ok_or(lettuce_transfer::CharacterPlanError::MissingReference)
+    }
+
+    fn prompt(&self, source_id: &str) -> Option<PromptDocumentId> {
+        self.assignments.prompts.get(source_id).copied()
+    }
+
+    fn lorebook(
+        &self,
+        planned: LorebookId,
+    ) -> Result<LorebookId, lettuce_transfer::CharacterPlanError> {
+        self.assignments
             .lorebooks
-            .get(legacy_id)
+            .get(&planned)
             .copied()
-            .ok_or(LegacyImportRepositoryError::Conflict)
-    };
-    let mut links = Vec::new();
-    if candidate.media.avatar.is_some() {
-        links.push(CharacterMediaLink {
-            asset_id: asset(LegacyMediaUse::CharacterAvatar { character_id })?,
-            slot: CharacterMediaSlot::AvatarOriginal,
-            ordinal: 0,
-        });
+            .ok_or(lettuce_transfer::CharacterPlanError::MissingReference)
     }
-    if candidate.media.background.is_some() {
-        links.push(CharacterMediaLink {
-            asset_id: asset(LegacyMediaUse::CharacterBackground { character_id })?,
-            slot: CharacterMediaSlot::Background,
-            ordinal: 0,
-        });
+
+    fn asset(
+        &self,
+        media_use: &LegacyMediaUse,
+    ) -> Result<AssetId, lettuce_transfer::CharacterPlanError> {
+        self.media_by_use
+            .get(media_use)
+            .copied()
+            .ok_or(lettuce_transfer::CharacterPlanError::MissingReference)
     }
-    for (ordinal, _) in candidate.media.design_references.iter().enumerate() {
-        let ordinal =
-            u32::try_from(ordinal).map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
-        links.push(CharacterMediaLink {
-            asset_id: asset(LegacyMediaUse::CharacterDesignReference {
-                character_id,
-                ordinal,
-            })?,
-            slot: CharacterMediaSlot::DesignReference,
-            ordinal,
-        });
-    }
-    let model_profile_id = candidate
-        .defaults
-        .model_profile_id
-        .map(|legacy_id| {
-            assignments
-                .models
-                .get(&legacy_id)
-                .copied()
-                .ok_or(LegacyImportRepositoryError::Conflict)
-        })
-        .transpose()?;
-    let mut companion_soul = candidate.defaults.companion_soul.clone();
-    if let Some(soul) = &mut companion_soul {
-        soul.prompting.prompt_template_id = prompt(&candidate.defaults.companion_prompt_source_id);
-    }
-    let presentation = &candidate.presentation;
-    let character = Character {
-        id: destination_character,
-        status: LifecycleStatus::Active,
-        profile: candidate.profile.clone(),
-        provenance: candidate.provenance.clone(),
-        defaults: CharacterDefaults {
-            interaction_mode: candidate.defaults.interaction_mode,
-            memory_policy: candidate.defaults.memory_policy,
-            model_profile_id,
-            default_scene_id: candidate.defaults.default_scene_id.map(scene_id),
-            default_starter_id: candidate
-                .defaults
-                .default_starter_source_id
-                .as_ref()
-                .and_then(|source_id| {
-                    candidate
-                        .starters
-                        .iter()
-                        .find(|starter| &starter.source_id == source_id)
-                })
-                .map(|starter| {
-                    lettuce_types::ConversationStarterId::from_uuid(
-                        scope.uuid(starter.id.as_uuid()),
-                    )
-                }),
-            direct_prompt_id: prompt(&candidate.defaults.direct_prompt_source_id),
-            group_conversation_prompt_id: prompt(
-                &candidate.defaults.group_conversation_prompt_source_id,
-            ),
-            group_roleplay_prompt_id: prompt(&candidate.defaults.group_roleplay_prompt_source_id),
-            voice: candidate.defaults.voice.clone().map(|voice| match voice {
-                lettuce_characters::VoicePreference::VoiceProfile(id) => {
-                    lettuce_characters::VoicePreference::VoiceProfile(
-                        lettuce_types::VoiceProfileId::from_uuid(scope.uuid(id.as_uuid())),
-                    )
-                }
-                unresolved => unresolved,
-            }),
-            voice_autoplay: candidate.defaults.voice_autoplay,
-            companion_soul,
-        },
-        presentation: CharacterPresentationV1 {
-            format_version: 1,
-            card_style: presentation.card_style,
-            avatar_crop: presentation.avatar_crop,
-            banner_crop: presentation.banner_crop,
-            disable_gradient: presentation.disable_gradient,
-            gradient_source: presentation.gradient_source,
-            custom_gradient_enabled: presentation.custom_gradient_enabled,
-            custom_gradient_colors: presentation.custom_gradient_colors.clone(),
-            primary_text_color: presentation.primary_text_color.clone(),
-            secondary_text_color: presentation.secondary_text_color.clone(),
-            chat_appearance: presentation.chat_appearance.clone(),
-        },
-        image_recommendation: candidate.image_recommendation.as_ref().map(|value| {
-            ImageRecommendation {
-                artifact_id: None,
-                unresolved_legacy_name: Some(value.model_name.clone()),
-                strength: value.strength as f32,
-            }
-        }),
-        media: CharacterMedia { links },
-        revision: Revision::INITIAL,
-        created_at: candidate.created_at,
-        updated_at: candidate.updated_at,
-    };
-    let mut scenes = Vec::with_capacity(candidate.scenes.len());
-    let mut variants = Vec::new();
-    for scene in &candidate.scenes {
-        let mut assets = Vec::new();
-        if scene.background.is_some() {
-            assets.push(SceneAssetLink {
-                id: SceneAssetLinkId::from_uuid(uuid::Uuid::new_v5(
-                    &scene_id(scene.id).as_uuid(),
-                    b"legacy-background",
-                )),
-                asset_id: asset(LegacyMediaUse::CharacterSceneBackground {
-                    character_id,
-                    scene_id: scene.id,
-                })?,
-                slot: SceneAssetSlot::Background,
-                ordinal: 0,
-            });
-        }
-        scenes.push(Scene {
-            id: scene_id(scene.id),
-            owner: SceneOwner::Character(destination_character),
-            status: LifecycleStatus::Active,
-            ordinal: scene.ordinal,
-            content: scene.content.clone(),
-            direction: scene.direction.clone(),
-            selected_variant_id: scene.selected_variant_id.map(variant_id),
-            assets,
-            revision: Revision::INITIAL,
-            created_at: scene.created_at,
-            updated_at: scene.created_at,
-        });
-        variants.extend(scene.variants.iter().map(|variant| SceneVariant {
-            id: variant_id(variant.id),
-            scene_id: scene_id(scene.id),
-            ordinal: variant.ordinal,
-            content: variant.content.clone(),
-            direction: variant.direction.clone(),
-            revision: Revision::INITIAL,
-            created_at: variant.created_at,
-            updated_at: variant.created_at,
-        }));
-    }
-    let starters = candidate
-        .starters
-        .iter()
-        .map(|starter| {
-            Ok(ConversationStarter {
-                id: lettuce_types::ConversationStarterId::from_uuid(
-                    scope.uuid(starter.id.as_uuid()),
-                ),
-                character_id: destination_character,
-                name: starter.name.clone(),
-                ordinal: starter.ordinal,
-                messages: starter
-                    .messages
-                    .iter()
-                    .map(|message| lettuce_characters::StarterMessage {
-                        id: lettuce_types::StarterMessageId::from_uuid(
-                            scope.uuid(message.id.as_uuid()),
-                        ),
-                        ..message.clone()
-                    })
-                    .collect(),
-                scene_id: starter.scene_id.map(scene_id),
-                prompt_id: prompt(&starter.prompt_source_id),
-                lorebooks: match &starter.lorebook_ids {
-                    None => Selection::Inherit,
-                    Some(ids) => Selection::Explicit(
-                        ids.iter().map(lorebook).collect::<Result<Vec<_>, _>>()?,
-                    ),
-                },
-                revision: Revision::INITIAL,
-                created_at: starter.created_at,
-                updated_at: starter.created_at,
-            })
-        })
-        .collect::<Result<Vec<_>, LegacyImportRepositoryError>>()?;
-    Ok(CreateCharacterPlan {
-        character,
-        scenes,
-        variants,
-        starters,
-    })
 }
 
 fn insert_owner_lorebook_bindings(
