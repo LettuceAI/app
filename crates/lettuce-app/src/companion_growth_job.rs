@@ -35,6 +35,8 @@ pub enum CompanionGrowthJobAdmissionError {
     Job(StoreError),
     #[error("companion growth run persistence failed: {0}")]
     Run(CompanionGrowthRunRepositoryError),
+    #[error("companion growth model is unavailable")]
+    Model,
 }
 
 #[derive(Debug)]
@@ -55,6 +57,9 @@ impl<
         + CharacterRepository
         + SoulRepository
         + CompanionGrowthRunRepository
+        + lettuce_models::ModelProfileRepository
+        + lettuce_models::ProviderAccountRepository
+        + lettuce_models::GlobalModelSettingsRepository
         + ?Sized,
     J: JobStore + ?Sized,
 > CompanionGrowthJobAdmissionCoordinator<'_, R, J>
@@ -154,7 +159,7 @@ impl<
                 character_id,
                 memory_run_id: result.dispatch.run.id,
                 memory_attempt_id: result.dispatch.attempt.id,
-                profile: result.dispatch.run.profile.clone(),
+                profile: self.growth_profile(&result.dispatch.run.profile)?,
                 companion_name: character.character.profile.name,
                 authored_soul: config.soul,
                 soul,
@@ -180,5 +185,53 @@ impl<
             job: admitted.job,
             created: admitted.created,
         }))
+    }
+
+    /// Legacy ran growth on the summarisation model with its companion
+    /// memory slot and defaults, not the memory cycle's sampling.
+    fn growth_profile(
+        &self,
+        memory: &lettuce_conversations::ResolvedInferenceProfile,
+    ) -> Result<lettuce_conversations::ResolvedInferenceProfile, CompanionGrowthJobAdmissionError>
+    {
+        let model_id = memory.chat_profile.model_profile_id;
+        let model = lettuce_models::ModelProfileRepository::get(self.sources, model_id)
+            .map_err(|_| CompanionGrowthJobAdmissionError::Model)?
+            .ok_or(CompanionGrowthJobAdmissionError::Model)?;
+        let account =
+            lettuce_models::ProviderAccountRepository::get(self.sources, model.provider_account_id)
+                .map_err(|_| CompanionGrowthJobAdmissionError::Model)?
+                .ok_or(CompanionGrowthJobAdmissionError::Model)?;
+        let global =
+            lettuce_models::GlobalModelSettingsRepository::global_model_settings(self.sources)
+                .map_err(|_| CompanionGrowthJobAdmissionError::Model)?
+                .0;
+        let chat_profile = lettuce_models::resolve_chat_profile(
+            &lettuce_models::ExpectedModelIdentity {
+                model_profile_id: model.id,
+                model_revision: model.revision,
+                provider_account_id: account.id,
+                provider_account_revision: account.revision,
+                external_model_id: model.external_model_id.clone(),
+                display_name: model.display_name.clone(),
+                provider_protocol: account.protocol,
+                model_kind: model.kind,
+            },
+            &model,
+            &account,
+            &crate::feature_parameter_input(
+                &model.config.feature_parameters.companion_memory,
+                crate::COMPANION_MEMORY_DEFAULTS,
+                crate::FeatureRequestFields::Sampling,
+                account.protocol,
+                &global,
+            ),
+            &lettuce_models::ChatRequirements::default(),
+        )
+        .map_err(|_| CompanionGrowthJobAdmissionError::Model)?;
+        Ok(lettuce_conversations::ResolvedInferenceProfile {
+            chat_profile,
+            ..memory.clone()
+        })
     }
 }

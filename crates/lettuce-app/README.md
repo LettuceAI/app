@@ -1835,9 +1835,7 @@ per memory run or growth job, so nothing else is blocked). `resume_after_restart
 runs queued growth and consolidation jobs from their stored runs, fails one the
 app stopped during twice and cancels one that can no longer be claimed. Known
 gaps: a crash between growth success and consolidation admission loses the
-consolidation (legacy lost it too); growth and consolidation reuse the memory
-run's resolved profile (DynamicMemory slot and memory sampler) where legacy used
-the CompanionMemory slot with its own defaults (temperature 0.3); with a shared
+consolidation (legacy lost it too); with a shared
 memory pool, overlapping memory passes of two chats can count one chat's new
 memories as fresh for the other's growth.
 
@@ -1852,3 +1850,9 @@ and one-shot helper jobs, speech jobs and image jobs are cancelled, and every
 ended image generation whose record is still pending is settled (idempotent, so
 a failed reconcile retries on the next start). If a claimed settlement fails,
 the job is failed as `LeaseLost` so it never stays running.
+
+Growth (and consolidation, which reuses the growth run's profile) resolves the
+memory run's model with its CompanionMemory slot and the companion memory
+defaults (temperature 0.3, top_p 1.0, reasoning off, no memory sampler), as
+legacy's `feature_model_overrides(CompanionMemory, COMPANION_MEMORY_DEFAULTS)`
+did; before, it reused the memory cycle's DynamicMemory sampling.

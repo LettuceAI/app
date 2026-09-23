@@ -38,6 +38,9 @@ pub trait CompanionFollowUpSources:
     + lettuce_usage::JobUsageLedger
     + crate::runtime_text::RuntimeTextSource
     + PromptRepository
+    + lettuce_models::ModelProfileRepository
+    + lettuce_models::ProviderAccountRepository
+    + lettuce_models::GlobalModelSettingsRepository
     + JobStore
 {
 }
@@ -52,6 +55,9 @@ impl<T> CompanionFollowUpSources for T where
         + lettuce_usage::JobUsageLedger
         + crate::runtime_text::RuntimeTextSource
         + PromptRepository
+        + lettuce_models::ModelProfileRepository
+        + lettuce_models::ProviderAccountRepository
+        + lettuce_models::GlobalModelSettingsRepository
         + JobStore
 {
 }

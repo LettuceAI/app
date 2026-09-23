@@ -2378,7 +2378,17 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     assert_eq!(growth.job.kind, JobKind::CompanionGrowth);
     assert_eq!(growth.run.memory_run_id, result.dispatch.run.id);
     assert_eq!(growth.run.memory_attempt_id, result.dispatch.attempt.id);
-    assert_eq!(growth.run.profile, result.dispatch.run.profile);
+    assert_eq!(
+        growth.run.profile.chat_profile.model_profile_id,
+        result.dispatch.run.profile.chat_profile.model_profile_id
+    );
+    assert_eq!(growth.run.profile.chat_profile.parameters.temperature, Some(0.3));
+    assert_eq!(growth.run.profile.chat_profile.parameters.top_p, Some(1.0));
+    assert_eq!(
+        growth.run.profile.chat_profile.parameters.reasoning_mode,
+        Some(lettuce_models::ReasoningMode::Disabled)
+    );
+    assert_eq!(growth.run.profile.tool_policy, result.dispatch.run.profile.tool_policy);
     assert_eq!(growth.run.fresh_memories.len(), 1);
     assert_eq!(growth.run.fresh_memories[0].id, memory_id.to_string());
     let growth_dispatch = crate::CompanionGrowthDispatchCoordinator::new(&database, &database);
