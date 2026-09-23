@@ -252,9 +252,9 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
                 ),
             )?;
             validate_job(&admitted.job, &bundle)?;
-            if admitted.job.state != JobState::Succeeded
-                || self.installs.installed(&bundle.voices)?.is_some()
-            {
+            let installed = admitted.job.state == JobState::Succeeded
+                && self.installs.installed(&bundle.voices)?.is_some();
+            if !admitted.job.state.is_terminal() || installed {
                 return Ok(KokoroVoiceDownloadAdmission {
                     bundle,
                     job: admitted.job,

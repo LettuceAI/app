@@ -196,9 +196,9 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
                 ),
             )?;
             validate_job(&admitted.job, &model)?;
-            if admitted.job.state != JobState::Succeeded
-                || self.installs.installed(&model)?.is_some()
-            {
+            let installed = admitted.job.state == JobState::Succeeded
+                && self.installs.installed(&model)?.is_some();
+            if !admitted.job.state.is_terminal() || installed {
                 return Ok(KokoroDownloadAdmission {
                     model,
                     job: admitted.job,

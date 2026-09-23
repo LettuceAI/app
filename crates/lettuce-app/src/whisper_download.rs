@@ -175,33 +175,40 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
         let asset_id = download_asset_id(&model);
         let subject = JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string())
             .map_err(|_| WhisperDownloadError::InvalidWork)?;
-        let key = IdempotencyKey::new(format!("whisper-install-{asset_id}"))
-            .map_err(|_| WhisperDownloadError::InvalidWork)?;
-        let admitted = self.jobs.create_or_get(
-            lettuce_jobs::JobSpec::new(
-                JobKind::ArtifactInstall,
-                subject,
-                OutcomeRef::ArtifactInstallation(asset_id),
-            )
-            .with_idempotency_key(key)
-            .with_priority(JobPriority::Interactive)
-            .with_resources(vec![
-                ResourceClass::Network,
-                ResourceClass::DiskRead,
-                ResourceClass::DiskWrite,
-                ResourceClass::Cpu,
-            ])
-            .with_policies(
-                RecoveryPolicy::Resume,
-                CancellationPolicy::UntilIrreversibleStage,
-            ),
-        )?;
-        validate_job(&admitted.job, &model)?;
-        Ok(WhisperDownloadAdmission {
-            model,
-            job: admitted.job,
-            created: admitted.created,
-        })
+        let mut key = format!("whisper-install-{asset_id}");
+        for _ in 0..64 {
+            let admitted = self.jobs.create_or_get(
+                lettuce_jobs::JobSpec::new(
+                    JobKind::ArtifactInstall,
+                    subject.clone(),
+                    OutcomeRef::ArtifactInstallation(asset_id),
+                )
+                .with_idempotency_key(
+                    IdempotencyKey::new(key).map_err(|_| WhisperDownloadError::InvalidWork)?,
+                )
+                .with_priority(JobPriority::Interactive)
+                .with_resources(vec![
+                    ResourceClass::Network,
+                    ResourceClass::DiskRead,
+                    ResourceClass::DiskWrite,
+                    ResourceClass::Cpu,
+                ])
+                .with_policies(
+                    RecoveryPolicy::Resume,
+                    CancellationPolicy::UntilIrreversibleStage,
+                ),
+            )?;
+            validate_job(&admitted.job, &model)?;
+            if !admitted.job.state.is_terminal() || admitted.job.state == JobState::Succeeded {
+                return Ok(WhisperDownloadAdmission {
+                    model,
+                    job: admitted.job,
+                    created: admitted.created,
+                });
+            }
+            key = format!("whisper-install-{asset_id}-after-{}", admitted.job.id);
+        }
+        Err(WhisperDownloadError::InvalidWork)
     }
 
     pub fn claim(
@@ -778,6 +785,20 @@ mod tests {
         ));
         assert!(source.offsets.lock().expect("offsets").is_empty());
         assert!(!root.join("tiny/ggml-tiny.bin").exists());
-        std::fs::remove_dir_all(root).expect("cleanup");
+        let retried = coordinator
+            .admit(
+                RemoteWhisperModel::pinned(
+                    "ggml-tiny.bin",
+                    "ab".repeat(20),
+                    5,
+                    "9372c470eeadd5ecd9c3c74c2b3cb633f8e2f2fad799250a0f70d652b6b825e4",
+                )
+                .expect("remote model"),
+            )
+            .expect("admit again after cancellation");
+        assert!(retried.created);
+        assert_ne!(retried.job.id, admitted.job.id);
+        assert_eq!(retried.job.state, JobState::Queued);
+        let _ = std::fs::remove_dir_all(root);
     }
 }
