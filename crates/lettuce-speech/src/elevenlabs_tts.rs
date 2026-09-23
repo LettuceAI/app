@@ -90,12 +90,19 @@ struct ElevenLabsVoicesResponse {
     has_more: bool,
 }
 
+fn null_as_empty<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<BTreeMap<String, String>>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 #[derive(Deserialize)]
 struct ElevenLabsVoice {
     voice_id: String,
     name: String,
     preview_url: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_empty")]
     labels: BTreeMap<String, String>,
     category: Option<String>,
     description: Option<String>,
@@ -733,7 +740,8 @@ mod tests {
 
     #[tokio::test]
     async fn searches_the_voice_library_by_text() {
-        let body = br#"{"voices":[{"voice_id":"voice-2","name":"Deep"}],"has_more":true}"#;
+        let body =
+            br#"{"voices":[{"voice_id":"voice-2","name":"Deep","labels":null}],"has_more":true}"#;
         let headers = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
         let response = headers
             .into_bytes()
