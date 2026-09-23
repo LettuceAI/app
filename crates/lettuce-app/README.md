@@ -1712,6 +1712,23 @@ into one image prompt:
   render empty instead of leaking; usage is also recorded when the answer
   has no text at all.
 
+Design reference notes (2026-09-23): `DesignReferenceWriter` is legacy
+`chat_generate_design_reference_description`. The scene writer model (vision
+required, scene generation need not be on) reads the subject's avatar and
+reference images and drafts design notes from the active
+`prompt_app_design_reference` document: relative entries, then every other
+entry, each in template order (legacy placed none by depth or message
+count); condensing merges non-image entries. The images are assets the
+caller already stored (legacy took data URLs from the editor); at least one
+is required. The subject name defaults to the catalog's
+`design_reference_unnamed_subject`. It runs as a one-shot job with
+`SCENE_DESIGN_REFERENCE_DEFAULTS` over the scene writer slot, streams to the
+request id when asked and the model can, and cleans the answer like legacy
+(quotes, code fences, blank lines). Deviations: usage is recorded (legacy
+recorded none); image tokens left in a text entry are removed instead of
+sent. `feature_prompt_entries` holds the rendering it shares with the scene
+prompt writer.
+
 Scene tags in replies (2026-09-23): a direct chat reply's `<img>…</img>` tag
 (legacy `sceneImageProtocol.ts`, run by the old frontend) is handled when the
 reply is finalized. The tag always leaves the stored text, which is trimmed

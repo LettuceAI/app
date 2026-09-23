@@ -10,9 +10,8 @@ use std::time::Duration;
 use lettuce_characters::{CharacterRepository, PersonaRepository};
 use lettuce_context::{
     PromptConditionContext, PromptDocument, PromptEntryChatMode, PromptEntryImageSlot,
-    PromptEntryPayload, PromptEntryPosition, PromptEntryRole, PromptRenderContext,
-    PromptRenderValues, PromptRepository, PromptVariable as Variable, SceneImageProtocolKind,
-    render_prompt,
+    PromptEntryPosition, PromptEntryRole, PromptRenderContext, PromptRenderValues,
+    PromptRepository, PromptVariable as Variable, SceneImageProtocolKind,
 };
 use lettuce_conversations::{
     ConversationKind, ConversationReader, ConversationRepositoryError, GenerationOperation,
@@ -38,6 +37,9 @@ use lettuce_types::{
 };
 use lettuce_usage::JobUsageLedger;
 
+use crate::feature_prompt_entries::{
+    FeatureEntry, condense, message_role, render_feature_entries, strip_tokens,
+};
 use crate::job_inference_usage::{JobInferenceError, run_job_inference};
 use crate::runtime_text::RuntimeText;
 use crate::scene_image::{ReferenceSource, SceneReferences, SceneSubject, StoredSceneReferences};
@@ -225,28 +227,6 @@ impl<'a, R: ?Sized, D: ?Sized, I: ?Sized> ScenePromptWriter<'a, R, D, I> {
             media,
             inference,
         }
-    }
-}
-
-/// A rendered writer entry in template order, with the placement legacy gave
-/// it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct WriterEntry {
-    role: PromptEntryRole,
-    content: String,
-    slot: Option<PromptEntryImageSlot>,
-    position: PromptEntryPosition,
-    depth: u32,
-    conditional_min_messages: Option<u32>,
-    interval_turns: Option<u32>,
-}
-
-impl WriterEntry {
-    fn image_bound(&self) -> bool {
-        self.slot.is_some()
-            || SCENE_TOKENS
-                .iter()
-                .any(|token| self.content.contains(token))
     }
 }
 
@@ -847,92 +827,18 @@ fn has_reference_text(subject: &SceneSubject) -> bool {
     subject.design_notes.is_some() || subject.source.is_some()
 }
 
-/// Legacy `condense_prompt_whitespace`.
-fn condense(input: &str) -> String {
-    let mut output = input.to_owned();
-    while output.contains("\n\n\n") {
-        output = output.replace("\n\n\n", "\n\n");
-    }
-    output.trim().to_owned()
-}
-
-/// Legacy `render_scene_generation_prompt_entries`: the active entries in
-/// template order, each condensed, and merged into one system entry (image
-/// entries kept) when the template condenses.
+/// Legacy `render_scene_generation_prompt_entries`.
 fn render_entries(
     document: &PromptDocument,
     context: PromptRenderContext,
-) -> Result<Vec<WriterEntry>, ScenePromptError> {
-    let mut placed = document.clone();
-    for entry in &mut placed.entries {
-        if matches!(
-            entry.injection_position,
-            PromptEntryPosition::Conditional | PromptEntryPosition::Interval
-        ) {
-            entry.injection_position = PromptEntryPosition::InChat;
-        }
-    }
-    let rendered = render_prompt(&placed, &context).map_err(|_| ScenePromptError::InvalidPrompt)?;
-    let mut entries = rendered
-        .relative
-        .into_iter()
-        .chain(rendered.in_chat)
-        .filter_map(|message| {
-            let index = document
-                .entries
-                .iter()
-                .position(|entry| entry.id == message.entry_id)?;
-            let entry = &document.entries[index];
-            let content = condense(&message.content);
-            if content.is_empty() && message.payload.is_none() {
-                return None;
-            }
-            Some((
-                index,
-                WriterEntry {
-                    role: message.role,
-                    content,
-                    slot: message.payload.map(|payload| match payload {
-                        PromptEntryPayload::ImageSlot { slot } => slot,
-                    }),
-                    position: entry.injection_position,
-                    depth: entry.depth,
-                    conditional_min_messages: entry.conditional_min_messages,
-                    interval_turns: entry.interval_turns,
-                },
-            ))
-        })
-        .collect::<Vec<_>>();
-    entries.sort_by_key(|(index, _)| *index);
-    let entries = entries.into_iter().map(|(_, entry)| entry);
-    if !document.condense {
-        return Ok(entries.collect());
-    }
-    let (images, sections): (Vec<_>, Vec<_>) = entries.partition(WriterEntry::image_bound);
-    let merged = sections
-        .iter()
-        .map(|entry| entry.content.trim())
-        .filter(|content| !content.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    Ok((!merged.trim().is_empty())
-        .then_some(WriterEntry {
-            role: PromptEntryRole::System,
-            content: merged,
-            slot: None,
-            position: PromptEntryPosition::Relative,
-            depth: 0,
-            conditional_min_messages: None,
-            interval_turns: None,
-        })
-        .into_iter()
-        .chain(images)
-        .collect())
+) -> Result<Vec<FeatureEntry>, ScenePromptError> {
+    render_feature_entries(document, &context, &SCENE_TOKENS)
+        .map_err(|_| ScenePromptError::InvalidPrompt)
 }
 
 /// The images an entry carries: its payload slot's, else those its legacy
 /// tokens name.
-fn entry_images(entry: &WriterEntry, references: &SceneReferences) -> Vec<AssetId> {
+fn entry_images(entry: &FeatureEntry, references: &SceneReferences) -> Vec<AssetId> {
     let persona = || {
         references
             .persona
@@ -963,19 +869,13 @@ fn entry_images(entry: &WriterEntry, references: &SceneReferences) -> Vec<AssetI
     }
 }
 
-fn strip_tokens(content: &str, tokens: &[&str]) -> String {
-    tokens.iter().fold(content.to_owned(), |content, token| {
-        content.replace(token, "")
-    })
-}
-
 /// Legacy `scene_prompt_entry_to_message`. An entry with images becomes a
 /// user message with its text first; an image entry without images is
 /// dropped. Legacy replaced the tokens left in other entries with reference
 /// hints that were always empty there, so they are removed. A blank message
 /// is `Some(None)`: not sent, but still a position for in-chat placement.
 fn entry_message(
-    entry: &WriterEntry,
+    entry: &FeatureEntry,
     references: &SceneReferences,
 ) -> Option<Option<ProviderNeutralMessage>> {
     let images = entry_images(entry, references);
@@ -1005,18 +905,14 @@ fn entry_message(
     }
     let text = strip_tokens(&entry.content, &SCENE_TOKENS);
     Some((!text.trim().is_empty()).then(|| ProviderNeutralMessage {
-        role: match entry.role {
-            PromptEntryRole::System => MessageRole::System,
-            PromptEntryRole::User => MessageRole::User,
-            PromptEntryRole::Assistant => MessageRole::Assistant,
-        },
+        role: message_role(entry.role),
         parts: vec![ProviderContextPart::Text { text }],
     }))
 }
 
 /// Legacy `should_insert_in_chat_prompt_entry` against the number of
 /// relative messages.
-fn inserts_in_chat(entry: &WriterEntry, turn_count: usize) -> bool {
+fn inserts_in_chat(entry: &FeatureEntry, turn_count: usize) -> bool {
     match entry.position {
         PromptEntryPosition::InChat => true,
         PromptEntryPosition::Conditional => {
@@ -1035,7 +931,7 @@ fn inserts_in_chat(entry: &WriterEntry, turn_count: usize) -> bool {
 /// messages from the end, shifted by the entries placed before it (dropped
 /// ones included).
 fn writer_messages(
-    entries: &[WriterEntry],
+    entries: &[FeatureEntry],
     references: &SceneReferences,
 ) -> Vec<ProviderNeutralMessage> {
     let mut messages = entries
@@ -1372,8 +1268,8 @@ mod tests {
         position: PromptEntryPosition,
         depth: u32,
         slot: Option<PromptEntryImageSlot>,
-    ) -> WriterEntry {
-        WriterEntry {
+    ) -> FeatureEntry {
+        FeatureEntry {
             role: PromptEntryRole::System,
             content: content.to_owned(),
             slot,

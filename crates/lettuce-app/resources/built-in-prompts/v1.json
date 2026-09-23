@@ -3593,6 +3593,20 @@
           "systemPrompt": false,
           "conditions": null,
           "promptEntryPayload": null
+        },
+        {
+          "key": "design_reference_unnamed_subject",
+          "name": "Design Reference Unnamed Subject",
+          "role": "system",
+          "content": "Unnamed subject",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
         }
       ]
     },

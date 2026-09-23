@@ -258,10 +258,10 @@ pub fn scene_writer_model<C: ModelCatalog + ?Sized>(
     requires_vision: bool,
 ) -> Result<FeatureModel, ImageFeatureModelError> {
     let all = catalog(models)?;
-    if let Some(model) = preferred(
-        &all,
-        settings.image_generation.scene_writer_model_profile_id,
-    ) {
+    if let Some(id) = settings.image_generation.scene_writer_model_profile_id {
+        let model = preferred(&all, Some(id)).ok_or(ImageFeatureModelError::SceneWriter(
+            "Configured scene writer model could not be resolved",
+        ))?;
         return if writes_scenes(model, requires_vision) {
             Ok(model.clone())
         } else {

@@ -49,6 +49,8 @@ mod dynamic_memory;
 mod dynamic_memory_delete_after;
 mod embeddings;
 mod feature_parameters;
+mod design_reference_writer;
+mod feature_prompt_entries;
 mod image_feature_models;
 mod image_generation;
 mod image_providers;
@@ -221,6 +223,10 @@ pub use kokoro_voice_download::*;
 pub use provider_media::*;
 pub use provider_runtime::*;
 pub use scene_image::{SceneImageError, SceneImageRequest, generate_scene_image};
+pub use design_reference_writer::{
+    DesignReferenceError, DesignReferenceReply, DesignReferenceRequest, DesignReferenceSources,
+    DesignReferenceWriter,
+};
 pub use scene_prompt_writer::{
     ScenePromptError, ScenePromptReply, ScenePromptRequest, ScenePromptSources, ScenePromptWriter,
 };
