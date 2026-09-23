@@ -7,6 +7,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod backup;
+mod character_card;
 mod backup_graph;
 mod companion_state_backup;
 mod companion_effect_backup;
@@ -42,6 +43,7 @@ mod restore_plan;
 mod restore_workspace;
 mod usage_backup;
 
+pub use character_card::*;
 pub use backup::*;
 pub use backup_graph::*;
 pub use companion_state_backup::*;

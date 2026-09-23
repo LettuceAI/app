@@ -783,3 +783,14 @@ configured `sceneGenerationModelId` that is missing or cannot output images is
 cleared and recorded, and scene generation is turned off: legacy generated no
 scenes with it, where the rewrite would otherwise fall back to the first image
 model.
+
+Character cards (2026-09-23, `character_card`): Character Card V1/V2/V3 read
+from JSON or a PNG's `ccv3`/`chara`/`ccv2` text chunk (tEXt, zTXt, iTXt; raw or
+base64 JSON; CRCs unchecked) into a `CharacterCardDraft`, and V2/V3 written
+from a `CharacterCardSource`, with the old app's structs, field order, trimming,
+definition layout (`[Personality]`, `[Scenario]`, `<example_dialogue>`; system
+prompt and post-history instructions dropped on import) and detection order
+(UEC, V3, V2, V1, then the legacy package reader). `export_definition` strips
+old prompt sections and falls back to the description; a database export
+passes no embedded lorebook, a conversion may. Scene ids and materialization
+belong to the import use case.
