@@ -104,3 +104,8 @@ turns it on. The budget resolves even when reasoning is off (explicit, else
 low 2048 / medium 8192 / high 16384 from the effort) and the total output
 allowance is the visible cap plus the budget. Legacy imports keep effort and
 budget with reasoning off.
+
+Model paths: `rewrite_path_prefix` and `relocate_profile_paths` rewrite the
+absolute file paths a profile stores (a local model's own file, llama.cpp
+projector and MTP draft, stable-diffusion.cpp components and base LoRAs);
+`ModelPathRelocation` applies them to every profile in one transaction.

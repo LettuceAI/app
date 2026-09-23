@@ -173,7 +173,7 @@ fn read_prefix(path: &Path, length: u64) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
-fn local_gguf_meta(path: &Path) -> Option<GgufModelMeta> {
+pub(crate) fn local_gguf_meta(path: &Path) -> Option<GgufModelMeta> {
     let probe = read_prefix(path, GGUF_HEADER_PROBE_BYTES)?;
     lettuce_model_hub::gguf_meta_with_retry(&probe, || read_prefix(path, GGUF_HEADER_RETRY_BYTES))
 }

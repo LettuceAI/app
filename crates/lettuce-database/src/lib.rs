@@ -39,6 +39,7 @@ mod legacy_database_preflight;
 mod memory_adapter;
 mod memory_embedding_adapter;
 mod memory_sync_adapter;
+mod model_path_relocation_adapter;
 mod row_sync_adapter;
 mod secret_sync_adapter;
 mod persona_adapter;

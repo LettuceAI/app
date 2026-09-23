@@ -87,7 +87,11 @@ fn scopes(modalities: &ModalityCapabilities) -> Vec<String> {
 
 impl<R> ModelFileCoordinator<'_, R>
 where
-    R: ModelCatalog + ModelProfileRepository + ProviderAccountRepository + ?Sized,
+    R: ModelCatalog
+        + ModelProfileRepository
+        + ProviderAccountRepository
+        + lettuce_settings::GlobalSettingsStore
+        + ?Sized,
 {
     /// Creates a chat model from the file on the provider account of its
     /// provider and label, else the provider's only account.
@@ -96,7 +100,16 @@ where
         json: &str,
         now: TimestampMillis,
     ) -> Result<ImportedModelFile, ModelFileError> {
-        let imported = lettuce_transfer::parse_model_import(json)?;
+        self.create(lettuce_transfer::parse_model_import(json)?, now)
+    }
+
+    /// Creates a chat model from a model in the old app's shape; it becomes
+    /// the default model when none is set (the model is kept when that fails).
+    pub fn create(
+        &self,
+        imported: lettuce_transfer::ImportedModel,
+        now: TimestampMillis,
+    ) -> Result<ImportedModelFile, ModelFileError> {
         let account = self.account(&imported.provider_id, &imported.provider_label)?;
         let parameters = lettuce_transfer::legacy_model_parameters(
             &imported.provider_id,
@@ -149,6 +162,20 @@ where
             },
             None,
         )?;
+        match self.repository.load() {
+            Ok(stored) if stored.default_model_profile_id.is_none() => {
+                if let Err(error) =
+                    self.repository
+                        .save(stored.settings, Some(profile.id), stored.revision)
+                {
+                    tracing::warn!(%error, "the new model could not become the default model");
+                }
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(%error, "the default model could not be checked");
+            }
+        }
         Ok(ImportedModelFile {
             profile,
             lossy_fields: parameters.lossy_fields,

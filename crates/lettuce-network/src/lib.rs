@@ -423,9 +423,15 @@ fn valid_repository(repository: &str) -> bool {
 
 fn valid_artifact_filename(filename: &str) -> bool {
     filename.len() <= MAX_PATH_BYTES
-        && filename
-            .split('/')
-            .all(|segment| valid_path_segment(segment) && segment != "." && segment != "..")
+        && filename.split('/').all(|segment| {
+            !segment.is_empty()
+                && segment.len() <= MAX_METADATA_BYTES
+                && segment != "."
+                && segment != ".."
+                && !segment.contains(['\\', ':'])
+                && !segment.ends_with(['.', ' '])
+                && !segment.chars().any(char::is_control)
+        })
 }
 
 fn valid_path_segment(value: &str) -> bool {

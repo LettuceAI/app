@@ -1960,3 +1960,17 @@ requested prefix, signed in with the saved token), and
 `local_file_runnability` scores a downloaded file with its projector and GPU
 MTP draft model. Hardware comes from `local_runnability_hardware()` (nothing
 on mobile) or a remote host; the llama defaults are passed in.
+
+GGUF downloads: `HuggingFaceBrowser::gguf_install_plan` pins a model file
+with its optional projector and MTP draft model to the repository's current
+revision, sizes and SHA-256 digests as one `ArtifactInstall` plan below
+`llm_models_root` (`DeviceSettings.llm_models_dir`, else
+`<app folder>/models/gguf`), and `download_client` signs the downloads in
+with the saved token. `register_downloaded_gguf` then adds the llama.cpp
+model the old browser created (through the same advanced-settings mapping as
+model files; the first model becomes the default, as legacy's
+`addOrUpdateModel` did). `gguf_library` lists, deletes and adopts model
+files and moves the whole folder: files are copied, every stored model path
+inside it (llama.cpp and stable-diffusion.cpp, one transaction) is rewired,
+then the originals go. Corrected: legacy left stable-diffusion.cpp paths
+pointing at the old folder.

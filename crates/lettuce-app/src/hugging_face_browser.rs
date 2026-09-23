@@ -104,7 +104,7 @@ impl HuggingFaceBrowser {
         }
     }
 
-    async fn get(
+    pub(crate) async fn get(
         &self,
         request: &HfRequest,
         token: Option<&SecretValue>,

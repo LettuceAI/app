@@ -5,12 +5,14 @@
 mod capabilities;
 mod llama_resolution;
 mod local_runtime;
+mod model_paths;
 mod parameters;
 mod resolution;
 
 pub use capabilities::*;
 pub use llama_resolution::*;
 pub use local_runtime::*;
+pub use model_paths::*;
 pub use parameters::*;
 pub use resolution::*;
 
