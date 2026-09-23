@@ -2464,7 +2464,7 @@ mod tests {
                     "tags": "[\"adventure\"]",
                     "default_scene_id": scene_id,
                     "mode": "companion",
-                    "companion": {"legacyMood": "calm"},
+                    "companion": "{\"legacyMood\": \"calm\"}",
                     "memory_type": "dynamic",
                     "active_lorebook_ids": format!("[\"{lorebook_id}\"]"),
                     "system_prompt": "Keep watch",
