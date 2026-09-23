@@ -90,6 +90,7 @@ mod lorebook_keyword_job;
 mod memory_prompt;
 mod memory_tool_result;
 mod temporal_query;
+mod one_shot_job;
 mod reply_helper;
 mod kokoro_catalog;
 mod kokoro_native_synthesis;
@@ -105,6 +106,7 @@ mod provider_runtime;
 mod runtime_text;
 mod scene_image;
 mod scene_loras;
+mod scene_prompt_writer;
 mod staged_lorebook_coherence_dispatch;
 mod staged_lorebook_coherence_execution;
 mod staged_lorebook_dispatch;
@@ -217,6 +219,9 @@ pub use kokoro_voice_download::*;
 pub use provider_media::*;
 pub use provider_runtime::*;
 pub use scene_image::{SceneImageError, SceneImageRequest, generate_scene_image};
+pub use scene_prompt_writer::{
+    ScenePromptError, ScenePromptReply, ScenePromptRequest, ScenePromptSources, ScenePromptWriter,
+};
 pub use staged_lorebook_coherence_dispatch::*;
 pub use staged_lorebook_coherence_execution::*;
 pub use staged_lorebook_dispatch::*;

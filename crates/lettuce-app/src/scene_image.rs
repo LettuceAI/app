@@ -71,7 +71,7 @@ pub enum SceneImageError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ReferenceSource {
+pub(crate) enum ReferenceSource {
     Design,
     Avatar,
 }
@@ -79,11 +79,16 @@ enum ReferenceSource {
 /// A depicted subject of a remote scene image: its name, design notes and
 /// reference images (design references, else its avatar).
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SceneSubject {
-    name: String,
-    design_notes: Option<String>,
-    references: Vec<AssetId>,
-    source: Option<ReferenceSource>,
+pub(crate) struct SceneSubject {
+    pub(crate) name: String,
+    pub(crate) design_notes: Option<String>,
+    pub(crate) references: Vec<AssetId>,
+    pub(crate) source: Option<ReferenceSource>,
+    /// What the stored media alone suggest, before unreadable images are
+    /// skipped: legacy's writer hints counted the stored design ids and the
+    /// avatar path.
+    pub(crate) stored_design_count: usize,
+    pub(crate) stored_source: Option<ReferenceSource>,
 }
 
 impl SceneSubject {
@@ -106,6 +111,12 @@ impl SceneSubject {
                 .map(str::trim)
                 .filter(|notes| !notes.is_empty())
                 .map(str::to_owned),
+            stored_design_count: if source == Some(ReferenceSource::Design) {
+                references.len()
+            } else {
+                0
+            },
+            stored_source: source,
             references,
             source,
         }
@@ -359,70 +370,18 @@ where
     } else {
         let text = RuntimeText::load(repository, BuiltInPromptId::ChatRuntime)
             .map_err(|_| SceneImageError::Storage)?;
-        let media_of = |slot: CharacterMediaSlot| {
-            let mut links = character
-                .character
-                .media
-                .links
-                .iter()
-                .filter(|link| link.slot == slot)
-                .collect::<Vec<_>>();
-            links.sort_by_key(|link| link.ordinal);
-            links
-                .into_iter()
-                .map(|link| link.asset_id)
-                .collect::<Vec<_>>()
-        };
-        let readable = |assets: Vec<AssetId>| {
-            assets
-                .into_iter()
-                .filter(|asset| media.load_input(*asset).is_ok())
-                .collect::<Vec<_>>()
-        };
-        let character_subject = SceneSubject::new(
-            character.character.profile.name.clone(),
-            character.character.profile.design_description.as_deref(),
-            readable(media_of(CharacterMediaSlot::DesignReference)),
-            readable(media_of(CharacterMediaSlot::AvatarOriginal))
-                .first()
-                .copied(),
-        );
-        let persona_subject = persona.as_ref().map(|persona| {
-            let mut design = persona
-                .media
-                .links
-                .iter()
-                .filter(|link| link.slot == PersonaMediaSlot::DesignReference)
-                .collect::<Vec<_>>();
-            design.sort_by_key(|link| link.ordinal);
-            SceneSubject::new(
-                persona_scene_name(persona),
-                persona.design_description.as_deref(),
-                readable(design.into_iter().map(|link| link.asset_id).collect()),
-                readable(
-                    persona
-                        .media
-                        .links
-                        .iter()
-                        .filter(|link| link.slot == PersonaMediaSlot::Avatar)
-                        .map(|link| link.asset_id)
-                        .collect(),
-                )
-                .first()
-                .copied(),
-            )
-        });
-        let background = conversation_background(&aggregate.conversation, &character, &media_of)
-            .filter(|asset| media.load_input(*asset).is_ok());
+        let references =
+            StoredSceneReferences::new(&aggregate.conversation, &character, persona.as_ref())
+                .resolve(Some(media));
         let fallback_name = text
             .render_with("scene_image_persona_fallback_name", [])
             .unwrap_or_default();
         let (prompt, inputs) = remote_scene_prompt(
             &text,
             scene_prompt,
-            &character_subject,
-            background,
-            persona_subject.as_ref(),
+            &references.character,
+            references.background,
+            references.persona.as_ref(),
             &fallback_name,
         );
         (prompt, inputs, Vec::new())
@@ -517,6 +476,131 @@ where
     }
     let asset = asset.ok_or(SceneImageError::Generation(last_error))?;
     attach_image(repository, request, asset, now)
+}
+
+/// The references of a remote scene image: each subject's readable design
+/// references (else its readable avatar) and the readable chat background.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SceneReferences {
+    pub(crate) character: SceneSubject,
+    pub(crate) persona: Option<SceneSubject>,
+    pub(crate) background: Option<AssetId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StoredSubject {
+    name: String,
+    notes: Option<String>,
+    design: Vec<AssetId>,
+    avatars: Vec<AssetId>,
+}
+
+impl StoredSubject {
+    fn resolve<D: ImageMedia + ?Sized>(&self, media: Option<&D>) -> SceneSubject {
+        let stored = SceneSubject::new(
+            self.name.clone(),
+            self.notes.as_deref(),
+            self.design.clone(),
+            self.avatars.first().copied(),
+        );
+        let readable = |assets: &[AssetId]| {
+            media.map_or_else(Vec::new, |media| {
+                assets
+                    .iter()
+                    .copied()
+                    .filter(|asset| media.load_input(*asset).is_ok())
+                    .collect::<Vec<_>>()
+            })
+        };
+        SceneSubject {
+            stored_design_count: stored.stored_design_count,
+            stored_source: stored.stored_source,
+            ..SceneSubject::new(
+                self.name.clone(),
+                self.notes.as_deref(),
+                readable(&self.design),
+                readable(&self.avatars).first().copied(),
+            )
+        }
+    }
+}
+
+/// What a scene's subjects and chat background store, before any image is
+/// read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StoredSceneReferences {
+    character: StoredSubject,
+    persona: Option<StoredSubject>,
+    background: Option<AssetId>,
+}
+
+impl StoredSceneReferences {
+    pub(crate) fn new(
+        conversation: &lettuce_conversations::Conversation,
+        character: &lettuce_characters::CharacterDetails,
+        persona: Option<&lettuce_characters::Persona>,
+    ) -> Self {
+        let media_of = |slot: CharacterMediaSlot| {
+            let mut links = character
+                .character
+                .media
+                .links
+                .iter()
+                .filter(|link| link.slot == slot)
+                .collect::<Vec<_>>();
+            links.sort_by_key(|link| link.ordinal);
+            links
+                .into_iter()
+                .map(|link| link.asset_id)
+                .collect::<Vec<_>>()
+        };
+        let notes = |notes: Option<&str>| notes.map(str::to_owned);
+        let persona = persona.map(|persona| {
+            let mut design = persona
+                .media
+                .links
+                .iter()
+                .filter(|link| link.slot == PersonaMediaSlot::DesignReference)
+                .collect::<Vec<_>>();
+            design.sort_by_key(|link| link.ordinal);
+            StoredSubject {
+                name: persona_scene_name(persona),
+                notes: notes(persona.design_description.as_deref()),
+                design: design.into_iter().map(|link| link.asset_id).collect(),
+                avatars: persona
+                    .media
+                    .links
+                    .iter()
+                    .filter(|link| link.slot == PersonaMediaSlot::Avatar)
+                    .map(|link| link.asset_id)
+                    .collect(),
+            }
+        });
+        Self {
+            character: StoredSubject {
+                name: character.character.profile.name.clone(),
+                notes: notes(character.character.profile.design_description.as_deref()),
+                design: media_of(CharacterMediaSlot::DesignReference),
+                avatars: media_of(CharacterMediaSlot::AvatarOriginal),
+            },
+            persona,
+            background: conversation_background(conversation, character, &media_of),
+        }
+    }
+
+    /// The references with only the images `media` can read; without media
+    /// (a local image model) no image is sent, as legacy's local scenes had
+    /// none.
+    pub(crate) fn resolve<D: ImageMedia + ?Sized>(&self, media: Option<&D>) -> SceneReferences {
+        SceneReferences {
+            character: self.character.resolve(media),
+            persona: self.persona.as_ref().map(|persona| persona.resolve(media)),
+            background: media.and_then(|media| {
+                self.background
+                    .filter(|asset| media.load_input(*asset).is_ok())
+            }),
+        }
+    }
 }
 
 /// Legacy's effective chat background: the conversation's own (none when it

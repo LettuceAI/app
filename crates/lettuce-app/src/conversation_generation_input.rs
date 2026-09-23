@@ -1527,7 +1527,7 @@ where
     }
 }
 
-fn modality_scopes(capabilities: lettuce_models::ModalityCapabilities) -> Vec<String> {
+pub(crate) fn modality_scopes(capabilities: lettuce_models::ModalityCapabilities) -> Vec<String> {
     [
         ("text", capabilities.text),
         ("image", capabilities.image),

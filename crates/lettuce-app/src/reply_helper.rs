@@ -14,10 +14,8 @@ use lettuce_conversations::{
     ResolvedInferenceProfile, SafetyContext, ToolPolicy, effective_persona,
 };
 use lettuce_jobs::{
-    CancellationPolicy, CancellationReason, FiniteFraction, IdempotencyKey, JobError, JobErrorCode,
-    JobKind, JobMutation, JobOutcome, JobPriority, JobSnapshot, JobSpec, JobStore, JobSubject,
-    OutcomeRef, ProgressSnapshot, RecoveryPolicy, ResourceAvailability, ResourceClass,
-    StageSnapshot, StoreError, SubjectKind, WorkerId, handle::JobHandle,
+    JobError, JobErrorCode, JobSnapshot, JobStore, ResourceAvailability, StoreError, SubjectKind,
+    WorkerId, handle::JobHandle,
 };
 use lettuce_models::{
     ChatParameterResolutionInput, ChatRequirements, ExpectedModelIdentity, ModelProfileRepository,
@@ -119,6 +117,26 @@ pub enum ReplyHelperError {
     Cancelled,
     #[error("reply helper replay cleanup failed")]
     ReplayCleanup,
+}
+
+impl From<crate::one_shot_job::OneShotJobError> for ReplyHelperError {
+    fn from(error: crate::one_shot_job::OneShotJobError) -> Self {
+        match error {
+            crate::one_shot_job::OneShotJobError::Jobs(error) => Self::Jobs(error),
+            crate::one_shot_job::OneShotJobError::AlreadySettled => Self::AlreadySettled,
+            crate::one_shot_job::OneShotJobError::NotClaimed => Self::NotClaimed,
+        }
+    }
+}
+
+impl crate::one_shot_job::OneShotFailure for ReplyHelperError {
+    fn is_cancelled(&self) -> bool {
+        matches!(self, Self::Cancelled)
+    }
+
+    fn job_error(&self) -> JobError {
+        job_error(self)
+    }
 }
 
 /// Every port the reply helper reads; the composition root's database is one.
@@ -227,64 +245,26 @@ where
         if !stored.settings.help_me_reply.enabled {
             return Err(ReplyHelperError::Disabled);
         }
-        let job = self.admit(request)?;
-        let at = now.max(job.updated_at);
-        let Some(claim) = self
-            .repository
-            .claim(job.id, worker_id, at, lease_for, allowed)?
-        else {
-            if job.is_terminal() {
-                return Err(ReplyHelperError::AlreadySettled);
-            }
-            if job.state == lettuce_jobs::JobState::Queued {
-                self.repository
-                    .append_and_transition(JobMutation::RequestCancellation {
-                        id: job.id,
-                        reason: CancellationReason::User,
-                        at,
-                    })?;
-                self.repository
-                    .append_and_transition(JobMutation::FinishQueuedCancellation {
-                        id: job.id,
-                        at,
-                    })?;
-            }
-            return Err(ReplyHelperError::NotClaimed);
-        };
-        let handle = JobHandle::new(job.id);
-        self.repository.append_and_transition(JobMutation::Start {
-            claim: claim.claim.clone(),
-            at,
-        })?;
-        self.repository
-            .append_and_transition(JobMutation::StageChanged {
-                claim: claim.claim.clone(),
-                stage: StageSnapshot::new(HELP_ME_REPLY_STAGE, false)
-                    .expect("constant job stage is valid"),
-                at,
-            })?;
-        let result = self.run(&stored, request, &handle, now).await;
-        self.settle(claim.claim, request.request_id, result, at)
-    }
-
-    fn admit(&self, request: &ReplyHelperRequest) -> Result<JobSnapshot, ReplyHelperError> {
-        let key = IdempotencyKey::new(format!("reply-helper-{}", request.request_id))
-            .expect("request ids are safe idempotency keys");
-        let spec = JobSpec::new(
-            JobKind::CreationRun,
-            JobSubject::new(
-                SubjectKind::Conversation,
-                request.conversation_id.to_string(),
-            )
-            .expect("conversation ids are safe job subjects"),
-            OutcomeRef::Request(request.request_id),
+        let stored = &stored;
+        let (text, job) = crate::one_shot_job::run_one_shot_job(
+            self.repository,
+            crate::one_shot_job::OneShotJob {
+                name: "reply-helper",
+                stage: HELP_ME_REPLY_STAGE,
+                subject_kind: SubjectKind::Conversation,
+                subject: &request.conversation_id.to_string(),
+                request_id: request.request_id,
+            },
+            crate::one_shot_job::OneShotLease {
+                worker_id,
+                now,
+                lease_for,
+                allowed,
+            },
+            |handle| async move { self.run(stored, request, &handle, now).await },
         )
-        .with_idempotency_key(key)
-        .with_resources(vec![ResourceClass::Network])
-        .with_priority(JobPriority::Interactive)
-        .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
-        let admitted = self.repository.create_or_get(spec)?;
-        Ok(admitted.job)
+        .await?;
+        Ok(ReplyHelperReply { text, job })
     }
 
     async fn run(
@@ -568,64 +548,6 @@ where
         }
         recent.reverse();
         Ok(recent)
-    }
-
-    fn settle(
-        &self,
-        claim: lettuce_jobs::ClaimRef,
-        request_id: RequestId,
-        result: Result<String, ReplyHelperError>,
-        at: TimestampMillis,
-    ) -> Result<ReplyHelperReply, ReplyHelperError> {
-        match result {
-            Ok(text) => {
-                self.repository
-                    .append_and_transition(JobMutation::Progress {
-                        claim: claim.clone(),
-                        progress: ProgressSnapshot {
-                            fraction: Some(
-                                FiniteFraction::new(1.0).expect("constant job progress is valid"),
-                            ),
-                            ..ProgressSnapshot::default()
-                        },
-                        at,
-                    })?;
-                let job = self
-                    .repository
-                    .append_and_transition(JobMutation::Succeed {
-                        outcome: JobOutcome::Success {
-                            result_ref: OutcomeRef::Request(request_id),
-                        },
-                        claim,
-                        at,
-                    })?;
-                Ok(ReplyHelperReply { text, job })
-            }
-            Err(ReplyHelperError::Cancelled) => {
-                self.repository
-                    .append_and_transition(JobMutation::RequestCancellation {
-                        id: claim.job_id,
-                        reason: CancellationReason::User,
-                        at,
-                    })?;
-                self.repository
-                    .append_and_transition(JobMutation::RequestCleanup {
-                        claim: claim.clone(),
-                        at,
-                    })?;
-                self.repository
-                    .append_and_transition(JobMutation::FinishCancellation { claim, at })?;
-                Err(ReplyHelperError::Cancelled)
-            }
-            Err(error) => {
-                self.repository.append_and_transition(JobMutation::Fail {
-                    claim,
-                    error: job_error(&error),
-                    at,
-                })?;
-                Err(error)
-            }
-        }
     }
 }
 

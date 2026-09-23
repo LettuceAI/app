@@ -1524,6 +1524,14 @@ impl PromptRenderValues {
                 "{{key_memories}}" => self.key_memories.as_str(),
                 "{{content_rules}}" => self.content_rules.as_str(),
                 "{{rules}}" | "{{ai_rules}}" => "",
+                "{{reference[chat_background]}}" => self
+                    .purpose_values
+                    .get(&PromptVariable::ChatBackgroundReferenceText)
+                    .map_or("", String::as_str),
+                "{{image[chat_background]}}" => self
+                    .purpose_values
+                    .get(&PromptVariable::ChatBackgroundImage)
+                    .map_or("", String::as_str),
                 _ => PromptVariable::ALL
                     .iter()
                     .find(|variable| variable.placeholder() == placeholder)
@@ -2420,6 +2428,37 @@ mod tests {
         .expect("valid compatibility render");
         assert_eq!(rendered.relative[0].content, "messages  ");
         assert!(!rendered.relative[0].content.contains("{{"));
+    }
+
+    #[test]
+    fn snake_case_chat_background_placeholders_are_legacy_aliases() {
+        let mut scene = document(PromptEntry {
+            id: PromptEntryId::new(),
+            name: "background".into(),
+            content: "{{reference[chat_background]}}|{{image[chat_background]}}".into(),
+            ..PromptEntry::default()
+        });
+        scene.purpose = PromptPurpose::ScenePromptWriter;
+        let mut values = PromptRenderValues::default();
+        values
+            .purpose_values
+            .insert(PromptVariable::ChatBackgroundReferenceText, "notes".into());
+        values
+            .purpose_values
+            .insert(PromptVariable::ChatBackgroundImage, "image".into());
+        assert_eq!(
+            render_prompt(
+                &scene,
+                &PromptRenderContext {
+                    conditions: PromptConditionContext::default(),
+                    values,
+                },
+            )
+            .expect("scene render")
+            .relative[0]
+                .content,
+            "notes|image"
+        );
     }
 
     #[test]

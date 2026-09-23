@@ -1681,8 +1681,36 @@ Deviations from legacy:
   limit.
 - The scene prompt is not kept as the attachment's filename (legacy's seed for
   "regenerate"). The image job keeps the request prompt.
-- Optimistic placeholders, askFirst approval and the prompt writer belong to
-  the next slices.
+- Optimistic placeholders and askFirst approval belong to the next slices.
+
+Scene prompts (2026-09-23): `ScenePromptWriter` is legacy
+`chat_generate_scene_prompt`. A writer model (`scene_writer_model`, vision
+required unless the scene image model is local) turns a direct chat message
+into one image prompt:
+- The context is the message and the two positions before it in legacy's
+  loaded window (latest 120 messages plus older pinned ones, any visibility),
+  user, assistant and scene lines only, `{{image:…}}` spans removed.
+- The active `prompt_app_scene_prompt_writer` document renders with legacy's
+  placeholder values and condition facts; writer-side text (scene request,
+  reference notes, hints, background notes, role labels) is the
+  `scene_writer_*` catalog runtime text. Reference hints count the stored
+  design images; condition flags follow the images that can be read. A remote
+  scene model sends those images as multimodal user messages; a local one
+  sends the subjects' LoRA bindings and no images.
+- Conditional and interval entries are placed by the number of relative
+  messages, in-chat entries `depth` from the end with legacy's offsets, and a
+  condensing template merges every non-image entry into one system message.
+- It runs as a one-shot job (`one_shot_job`, shared with the reply helper):
+  non-streaming, `SCENE_WRITER_DEFAULTS` over the model's scene writer slot,
+  usage recorded before the answer is cleaned like legacy.
+- Deviations: image tokens left in a system or assistant entry are removed
+  (legacy's hints there were always empty, and assistant entries leaked the
+  raw token); blank messages are not sent, though they still count for
+  in-chat placement; `{{char}}`-style names inside descriptions are
+  substituted by the shared renderer, where legacy sent them raw;
+  `{{image[avatar]}}` / `{{image[references]}}` in a scene writer template
+  render empty instead of leaking; usage is also recorded when the answer
+  has no text at all.
 
 Soul growth edits (2026-09-23): `clear_companion_soul_growth` (count of
 entries removed), `remove_companion_soul_growth` and
