@@ -3,6 +3,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod catalog;
+mod civitai;
+mod hf_bundle;
 mod media;
 mod playground;
 mod port;
@@ -12,6 +14,8 @@ mod request;
 pub mod sd_runtime;
 
 pub use catalog::*;
+pub use civitai::*;
+pub use hf_bundle::*;
 pub use media::*;
 pub use playground::*;
 pub use port::*;

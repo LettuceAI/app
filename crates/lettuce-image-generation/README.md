@@ -122,3 +122,17 @@ full request) once it is; `remote_bundle_runnability` estimates a bundle by
 its file sizes before download. Verdict strings, reason texts, check order
 and the probe payload are legacy's; transport errors carry the shared HTTP
 client's texts and limits (64 MiB requests, a poll URL must be a plain path).
+
+Hugging Face bundles: `hf_bundle` holds the legacy rules for assembling a
+local image model from Hugging Face files (repository compatibility with
+declared base-model ancestry, role default queries and listing matches, file
+format/quantization, training-artifact exclusion, role compatibility, the GGUF
+encoder hint markers, image-role inference) and the bundle manifest in the old
+JSON format under `<image root>/huggingface/bundles`, including hard-linking a
+verified identical file from another bundle.
+
+CivitAI: `civitai` holds the legacy LoRA browsing rules: the `/api/v1/models`
+query (LoRA only, sort/period/base-model filters, Pure mode asks for no NSFW),
+what a page and a model show (supported base models only, NSFW models and
+images hidden in Pure mode), the status texts and the checks on a download
+(single safetensors file name, https URL on civitai.com or a subdomain).

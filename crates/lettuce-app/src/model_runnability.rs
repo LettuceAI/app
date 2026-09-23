@@ -21,6 +21,7 @@ pub trait GgufHeaderSource: Send + Sync {
     async fn read_prefix(
         &self,
         model_id: &str,
+        revision: &str,
         filename: &str,
         length: u64,
         token: Option<&SecretValue>,
@@ -32,11 +33,12 @@ impl GgufHeaderSource for ArtifactDownloadClient {
     async fn read_prefix(
         &self,
         model_id: &str,
+        revision: &str,
         filename: &str,
         length: u64,
         token: Option<&SecretValue>,
     ) -> Option<Vec<u8>> {
-        self.read_hugging_face_prefix(model_id, filename, length, token)
+        self.read_hugging_face_prefix(model_id, revision, filename, length, token)
             .await
             .ok()
     }
@@ -162,8 +164,15 @@ impl HuggingFaceBrowser {
         let Ok(token) = Self::saved_token(secrets).await else {
             return Ok(None);
         };
-        let read =
-            |length| source.read_prefix(model_id, &representative.filename, length, token.as_ref());
+        let read = |length| {
+            source.read_prefix(
+                model_id,
+                "main",
+                &representative.filename,
+                length,
+                token.as_ref(),
+            )
+        };
         let Some(probe) = read(GGUF_HEADER_PROBE_BYTES).await else {
             return Ok(None);
         };
@@ -311,6 +320,7 @@ mod tests {
         async fn read_prefix(
             &self,
             model_id: &str,
+            _revision: &str,
             filename: &str,
             length: u64,
             _token: Option<&SecretValue>,

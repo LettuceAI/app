@@ -328,6 +328,57 @@ fn capabilities(profile: &DiffusionProfile, now: TimestampMillis) -> ModelCapabi
     }
 }
 
+/// The managed stable-diffusion.cpp account, created or re-enabled.
+fn local_diffusion_account<R>(
+    repository: &R,
+    now: TimestampMillis,
+) -> Result<ProviderAccount, LocalDiffusionInstallError>
+where
+    R: ModelLookup + ProviderAccountRepository + ?Sized,
+{
+    Ok(
+        match repository.account_by_kind_and_label(
+            LOCAL_DIFFUSION_PROVIDER_KIND,
+            LOCAL_DIFFUSION_PROVIDER_LABEL,
+        )? {
+            Some(account) if account.enabled => account,
+            Some(account) => {
+                let revision = account.revision;
+                ProviderAccountRepository::upsert(
+                    repository,
+                    ProviderAccount {
+                        enabled: true,
+                        updated_at: now,
+                        ..account
+                    },
+                    Some(revision),
+                )?
+            }
+            None => ProviderAccountRepository::upsert(
+                repository,
+                ProviderAccount {
+                    id: ProviderAccountId::new(),
+                    secret_owner_id: SecretOwnerId::new(),
+                    provider_kind: LOCAL_DIFFUSION_PROVIDER_KIND.to_owned(),
+                    protocol: ProviderProtocol::StableDiffusion,
+                    label: LOCAL_DIFFUSION_PROVIDER_LABEL.to_owned(),
+                    endpoint: None,
+                    enabled: true,
+                    streaming_enabled: true,
+                    allow_invalid_tls: false,
+                    api_key_ref: None,
+                    secret_headers: Vec::new(),
+                    config: ProviderConfig::Standard,
+                    revision: Revision::INITIAL,
+                    created_at: now,
+                    updated_at: now,
+                },
+                None,
+            )?,
+        },
+    )
+}
+
 /// Registers an installed catalog variant as a model on the managed
 /// stable-diffusion.cpp account, updating the model an earlier install (or
 /// legacy's `sdcpp:<profile>:<variant>` name) created. The binding keys are
@@ -347,45 +398,7 @@ where
     let (profile, variant) = diffusion_catalog()
         .find_variant(profile_id, variant_id)
         .map_err(|error| error.to_string())?;
-    let account = match repository.account_by_kind_and_label(
-        LOCAL_DIFFUSION_PROVIDER_KIND,
-        LOCAL_DIFFUSION_PROVIDER_LABEL,
-    )? {
-        Some(account) if account.enabled => account,
-        Some(account) => {
-            let revision = account.revision;
-            ProviderAccountRepository::upsert(
-                repository,
-                ProviderAccount {
-                    enabled: true,
-                    updated_at: now,
-                    ..account
-                },
-                Some(revision),
-            )?
-        }
-        None => ProviderAccountRepository::upsert(
-            repository,
-            ProviderAccount {
-                id: ProviderAccountId::new(),
-                secret_owner_id: SecretOwnerId::new(),
-                provider_kind: LOCAL_DIFFUSION_PROVIDER_KIND.to_owned(),
-                protocol: ProviderProtocol::StableDiffusion,
-                label: LOCAL_DIFFUSION_PROVIDER_LABEL.to_owned(),
-                endpoint: None,
-                enabled: true,
-                streaming_enabled: true,
-                allow_invalid_tls: false,
-                api_key_ref: None,
-                secret_headers: Vec::new(),
-                config: ProviderConfig::Standard,
-                revision: Revision::INITIAL,
-                created_at: now,
-                updated_at: now,
-            },
-            None,
-        )?,
-    };
+    let account = local_diffusion_account(repository, now)?;
     let path_of = |role| {
         profile
             .components(variant)
@@ -465,6 +478,156 @@ where
             provider_account_id: account.id,
             external_model_id: diffusion,
             display_name: profile.installed_display_name(variant),
+            kind: ModelKind::Image,
+            config,
+            revision: revision.unwrap_or(Revision::INITIAL),
+            created_at,
+            updated_at: now,
+        },
+        revision,
+    )?)
+}
+
+/// The files of a bundle assembled from Hugging Face, as downloaded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HfBundleRegistration<'a> {
+    pub profile_id: &'a str,
+    pub display_name: &'a str,
+    pub diffusion_path: &'a str,
+    pub text_encoder_path: &'a str,
+    pub vae_path: &'a str,
+    pub vision_encoder_path: Option<&'a str>,
+    pub runtime_release: &'a str,
+    pub runtime_asset: &'a str,
+}
+
+/// Registers a downloaded bundle as a model on the managed
+/// stable-diffusion.cpp account. A model already registered for the same
+/// diffusion file keeps its name, settings and every binding value it
+/// already has; only missing ones are filled in.
+pub fn register_hf_bundle_model<R>(
+    repository: &R,
+    paths: &DiffusionPaths,
+    registration: HfBundleRegistration<'_>,
+    now: TimestampMillis,
+) -> Result<ModelProfile, LocalDiffusionInstallError>
+where
+    R: ModelLookup + ModelProfileRepository + ProviderAccountRepository + ?Sized,
+{
+    let profile = diffusion_catalog()
+        .profile(registration.profile_id)
+        .map_err(|_| {
+            format!(
+                "Unknown local image architecture: {}",
+                registration.profile_id
+            )
+        })?;
+    profile
+        .check_runtime(registration.runtime_release)
+        .map_err(|error| error.to_string())?;
+    if !lettuce_image_generation::sd_runtime::layout::runtime_is_installed(
+        paths,
+        registration.runtime_release,
+        registration.runtime_asset,
+    ) {
+        return Err(
+            "The selected stable-diffusion.cpp engine is no longer installed."
+                .to_owned()
+                .into(),
+        );
+    }
+    let display_name = registration.display_name.trim();
+    let account = local_diffusion_account(repository, now)?;
+    let existing = repository.profile_by_external_id(account.id, registration.diffusion_path)?;
+    let (id, revision, created_at, name, mut config) = match existing {
+        Some(existing) => (
+            existing.id,
+            Some(existing.revision),
+            existing.created_at,
+            existing.display_name,
+            existing.config,
+        ),
+        None if display_name.is_empty() => {
+            return Err("The model display name cannot be empty.".to_owned().into());
+        }
+        None => (
+            ModelProfileId::new(),
+            None,
+            now,
+            display_name.to_owned(),
+            ModelProfileConfig {
+                chat_parameters: Default::default(),
+                feature_parameters: Default::default(),
+                capabilities: capabilities(profile, now),
+                llama_cpp: Default::default(),
+                stable_diffusion: Default::default(),
+            },
+        ),
+    };
+    let binding = &mut config.stable_diffusion.cpp;
+    fn fill<T>(slot: &mut Option<T>, value: T) {
+        if slot.is_none() {
+            *slot = Some(value);
+        }
+    }
+    fill(&mut binding.profile_id, profile.id.clone());
+    fill(
+        &mut binding.text_encoder_path,
+        registration.text_encoder_path.to_owned(),
+    );
+    fill(&mut binding.vae_path, registration.vae_path.to_owned());
+    if let Some(vision) = registration.vision_encoder_path {
+        fill(&mut binding.vision_encoder_path, vision.to_owned());
+    }
+    fill(
+        &mut binding.runtime_release,
+        registration.runtime_release.to_owned(),
+    );
+    fill(
+        &mut binding.runtime_asset,
+        registration.runtime_asset.to_owned(),
+    );
+    if let Some(backend) = runtime_backend(
+        registration.runtime_asset,
+        lettuce_image_generation::sd_runtime::releases::RuntimePlatform::current(),
+    ) {
+        fill(&mut binding.runtime_backend, backend.to_owned());
+    }
+    if let Some(maximum) = profile.max_reference_images {
+        fill(&mut binding.max_reference_images, u32::from(maximum));
+    }
+    fill(&mut binding.supports_lora, true);
+    fill(
+        &mut binding.supports_text_to_image,
+        profile.supports_text_to_image,
+    );
+    fill(
+        &mut binding.supports_image_edit,
+        profile.supports_image_edit,
+    );
+    fill(
+        &mut binding.recommended_for_scenes,
+        profile.recommended_for_scenes,
+    );
+    fill(
+        &mut binding.requires_reference_image,
+        profile.requires_reference_image,
+    );
+    binding.variant_id = None;
+    let settings = &mut config.stable_diffusion;
+    fill(
+        &mut settings.size,
+        format!("{}x{}", profile.default_width, profile.default_height),
+    );
+    fill(&mut settings.steps, u32::from(profile.default_steps));
+    fill(&mut settings.cfg_scale, f64::from(profile.default_cfg));
+    Ok(ModelProfileRepository::upsert(
+        repository,
+        ModelProfile {
+            id,
+            provider_account_id: account.id,
+            external_model_id: registration.diffusion_path.to_owned(),
+            display_name: name,
             kind: ModelKind::Image,
             config,
             revision: revision.unwrap_or(Revision::INITIAL),

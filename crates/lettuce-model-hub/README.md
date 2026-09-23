@@ -138,3 +138,7 @@ an earlier file had no size.
 Sprout: `sprout_hardware` reads a Sprout `/specs` report (schema 1) into the
 runnability hardware: the largest free VRAM of a discrete GPU, else of the
 integrated GPUs, which then count as unified memory.
+
+A pinned artifact's partial file is downloaded by one install at a time per
+store: a second concurrent install of the same file fails with `Busy`
+("this file is already being downloaded") instead of appending to it.

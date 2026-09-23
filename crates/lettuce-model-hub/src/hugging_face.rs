@@ -377,6 +377,147 @@ pub fn model_detail_request(model_id: &str) -> HfRequest {
     HfRequest::new(format!("/api/models/{model_id}"))
 }
 
+/// A bundle role search: the 100 top models for `sort`, optionally by
+/// author, query and library filter.
+#[must_use]
+pub fn bundle_search_request(
+    sort: &str,
+    author: Option<&str>,
+    query: &str,
+    filter: Option<&str>,
+) -> HfRequest {
+    let request = HfRequest::new("/api/models")
+        .with("limit", "100")
+        .with("sort", sort)
+        .with("direction", "-1")
+        .with_author_and_search(author, query);
+    match filter {
+        Some(filter) => request.with("filter", filter),
+        None => request,
+    }
+}
+
+/// A repository's metadata as bundle assembly reads it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HfRepoDetail {
+    pub model_id: String,
+    pub sha: Option<String>,
+    pub gated: bool,
+    pub tags: Vec<String>,
+    pub pipeline_tag: Option<String>,
+    pub card_data: serde_json::Value,
+    pub likes: i64,
+    pub downloads: i64,
+    pub last_modified: Option<String>,
+    pub trending_score: Option<f64>,
+}
+
+impl HfRepoDetail {
+    #[must_use]
+    pub fn search_result(&self) -> HfSearchResult {
+        HfSearchResult {
+            model_id: self.model_id.clone(),
+            author: self
+                .model_id
+                .split('/')
+                .next()
+                .unwrap_or("unknown")
+                .to_owned(),
+            likes: self.likes,
+            downloads: self.downloads,
+            tags: self.tags.clone(),
+            pipeline_tag: self.pipeline_tag.clone(),
+            last_modified: self.last_modified.clone(),
+            trending_score: self.trending_score,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct RepoDetail {
+    #[serde(rename = "modelId")]
+    model_id: String,
+    #[serde(default)]
+    sha: Option<String>,
+    #[serde(default)]
+    gated: serde_json::Value,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    pipeline_tag: Option<String>,
+    #[serde(default, rename = "cardData")]
+    card_data: serde_json::Value,
+    #[serde(default)]
+    likes: i64,
+    #[serde(default)]
+    downloads: i64,
+    #[serde(default, rename = "lastModified")]
+    last_modified: Option<String>,
+    #[serde(default, rename = "trendingScore")]
+    trending_score: Option<f64>,
+}
+
+pub fn parse_repo_detail(body: &[u8]) -> Result<HfRepoDetail, serde_json::Error> {
+    let detail: RepoDetail = serde_json::from_slice(body)?;
+    Ok(HfRepoDetail {
+        model_id: detail.model_id,
+        sha: detail.sha,
+        gated: !detail.gated.is_null() && detail.gated != serde_json::Value::Bool(false),
+        tags: detail.tags,
+        pipeline_tag: detail.pipeline_tag,
+        card_data: detail.card_data,
+        likes: detail.likes,
+        downloads: detail.downloads,
+        last_modified: detail.last_modified,
+        trending_score: detail.trending_score,
+    })
+}
+
+/// Every file of a repository at a revision.
+#[must_use]
+pub fn repo_tree_request(model_id: &str, revision: &str) -> HfRequest {
+    HfRequest::new(format!("/api/models/{model_id}/tree/{revision}")).with("recursive", "true")
+}
+
+/// A repository tree entry; `sha256` is the LFS object id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HfTreeEntry {
+    pub is_file: bool,
+    pub path: String,
+    pub size: u64,
+    pub sha256: Option<String>,
+}
+
+pub fn parse_repo_tree(body: &[u8]) -> Result<Vec<HfTreeEntry>, serde_json::Error> {
+    #[derive(Deserialize)]
+    struct Entry {
+        #[serde(rename = "type")]
+        entry_type: String,
+        path: String,
+        #[serde(default)]
+        size: u64,
+        #[serde(default)]
+        lfs: Option<Lfs>,
+    }
+    #[derive(Deserialize)]
+    struct Lfs {
+        #[serde(default)]
+        oid: Option<String>,
+        #[serde(default)]
+        size: u64,
+    }
+    let entries: Vec<Entry> = serde_json::from_slice(body)?;
+    Ok(entries
+        .into_iter()
+        .map(|entry| HfTreeEntry {
+            is_file: entry.entry_type == "file",
+            size: entry.lfs.as_ref().map_or(entry.size, |lfs| lfs.size),
+            sha256: entry.lfs.and_then(|lfs| lfs.oid),
+            path: entry.path,
+        })
+        .collect())
+}
+
 /// The repository's current revision with every file's size and digest.
 #[must_use]
 pub fn model_pin_request(model_id: &str) -> HfRequest {

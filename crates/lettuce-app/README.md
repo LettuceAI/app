@@ -1979,3 +1979,22 @@ Sprout: `sprout_runnability_hardware` asks an Ollama account's active Sprout
 probe for the remote machine's memory (bearer key from the secret store), so
 Hugging Face runnability and recommendations for that account are judged
 against the remote hardware, as legacy did.
+
+Image bundles: `HuggingFaceBrowser::bundle_role_search`, `bundle_files`
+(files pinned to the repository's revision; GGUF text encoders checked by
+their header), `bundle_install` (engine estimate gate, every asset re-checked
+against Hugging Face, manifest written, one pinned install below
+`<image root>/huggingface/<author>/<repo>/<revision>`) and
+`bundle_retry_downloads`; `finish_hf_bundle` marks files in and registers the
+model through `register_hf_bundle_model` (existing models keep their name,
+settings and binding values), `retry_hf_bundle_registration`,
+`downloaded_image_models` and `component_library` follow legacy. The old
+in-memory selection map is gone: callers pass the checked assets back and they
+are re-verified.
+
+CivitAI: `CivitaiBrowser` searches (up to five fetches per page) and opens
+models with the saved token, validates, saves and clears the token like
+legacy; `civitai_lora_install_plan` sizes the file with a one-byte ranged
+request (the install checks exact size and the listed SHA-256) and
+`record_civitai_lora` stores its trained words and base model afterwards.
+Pure mode is passed in until the content filter is ported.

@@ -185,10 +185,19 @@ pub enum ArtifactDownloadError {
     Transport,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ArtifactProbeError {
+    #[error(transparent)]
+    Download(#[from] ArtifactDownloadError),
+    #[error("artifact request was refused with status {0}")]
+    Refused(u16),
+}
+
 #[derive(Clone)]
 pub struct ArtifactDownloadClient {
     client: reqwest::Client,
     hugging_face_token: Option<std::sync::Arc<SecretValue>>,
+    civitai_token: Option<std::sync::Arc<SecretValue>>,
 }
 
 impl fmt::Debug for ArtifactDownloadClient {
@@ -236,6 +245,7 @@ impl ArtifactDownloadClient {
         Ok(Self {
             client,
             hugging_face_token: None,
+            civitai_token: None,
         })
     }
 
@@ -244,6 +254,58 @@ impl ArtifactDownloadClient {
     pub fn with_hugging_face_token(mut self, token: SecretValue) -> Self {
         self.hugging_face_token = Some(std::sync::Arc::new(token));
         self
+    }
+
+    /// Signs downloads from civitai.com in with `token`; it is not sent on to
+    /// the host a redirect leads to.
+    #[must_use]
+    pub fn with_civitai_token(mut self, token: SecretValue) -> Self {
+        self.civitai_token = Some(std::sync::Arc::new(token));
+        self
+    }
+
+    fn civitai_token_for(&self, url: &Url) -> Option<std::sync::Arc<SecretValue>> {
+        url.host_str()
+            .filter(|host| *host == "civitai.com" || host.ends_with(".civitai.com"))
+            .and(self.civitai_token.clone())
+    }
+
+    /// The size of an HTTPS artifact, from a one-byte ranged request; a
+    /// refusal carries the HTTP status.
+    pub async fn probe_https_size(&self, url: &str) -> Result<u64, ArtifactProbeError> {
+        let url = Url::parse(url).map_err(|_| ArtifactDownloadError::InvalidRequest)?;
+        if url.scheme() != "https"
+            || url.host_str().is_none_or(str::is_empty)
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(ArtifactDownloadError::InvalidRequest.into());
+        }
+        let token = self.civitai_token_for(&url);
+        let mut request = self.client.get(url).header(header::RANGE, "bytes=0-0");
+        if let Some(token) = token.as_deref() {
+            request = request.header(header::AUTHORIZATION, Self::bearer(token)?);
+        }
+        let response = tokio::time::timeout(ARTIFACT_IDLE_TIMEOUT, request.send())
+            .await
+            .map_err(|_| ArtifactDownloadError::Transport)?
+            .map_err(|_| ArtifactDownloadError::Transport)?;
+        match response.status().as_u16() {
+            206 => response
+                .headers()
+                .get(header::CONTENT_RANGE)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.rsplit_once('/'))
+                .and_then(|(_, total)| total.parse::<u64>().ok())
+                .filter(|total| *total > 0)
+                .ok_or(ArtifactDownloadError::InvalidResponse.into()),
+            200 => response
+                .content_length()
+                .filter(|length| *length > 0)
+                .ok_or(ArtifactDownloadError::InvalidResponse.into()),
+            status => Err(ArtifactProbeError::Refused(status)),
+        }
     }
 
     fn bearer(token: &SecretValue) -> Result<header::HeaderValue, ArtifactDownloadError> {
@@ -284,17 +346,22 @@ impl ArtifactDownloadClient {
             .await
     }
 
-    /// Up to `length` leading bytes of a file on a Hugging Face repository's
-    /// main branch, signed in with `token` when one is given; the token is not
-    /// sent on to another host a redirect leads to.
+    /// Up to `length` leading bytes of a file of a Hugging Face repository at
+    /// `revision` (a branch or commit), signed in with `token` when one is
+    /// given; the token is not sent on to another host a redirect leads to.
     pub async fn read_hugging_face_prefix(
         &self,
         repository: &str,
+        revision: &str,
         filename: &str,
         length: u64,
         token: Option<&SecretValue>,
     ) -> Result<Vec<u8>, ArtifactDownloadError> {
-        if !valid_repository(repository) || !valid_artifact_filename(filename) || length == 0 {
+        if !valid_repository(repository)
+            || !valid_path_segment(revision)
+            || !valid_artifact_filename(filename)
+            || length == 0
+        {
             return Err(ArtifactDownloadError::InvalidRequest);
         }
         let limit = usize::try_from(length).map_err(|_| ArtifactDownloadError::InvalidRequest)?;
@@ -304,7 +371,7 @@ impl ArtifactDownloadClient {
             .map_err(|_| ArtifactDownloadError::InvalidRequest)?
             .extend(repository.split('/'))
             .push("resolve")
-            .push("main")
+            .push(revision)
             .extend(filename.split('/'));
         let mut request = self
             .client
@@ -355,7 +422,8 @@ impl ArtifactDownloadClient {
         {
             return Err(ArtifactDownloadError::InvalidRequest);
         }
-        self.open(url, offset, expected_size, None).await
+        let token = self.civitai_token_for(&url);
+        self.open(url, offset, expected_size, token.as_deref()).await
     }
 
     async fn open(

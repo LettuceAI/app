@@ -32,6 +32,38 @@ pub enum PinnedArtifactError {
     Mismatch,
     #[error("artifact is unreadable")]
     Unreadable,
+    #[error("this file is already being downloaded")]
+    Busy,
+}
+
+static DOWNLOADS_IN_PROGRESS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashSet<String>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
+/// Holds a partial file for one download at a time in this process.
+#[derive(Debug)]
+struct DownloadClaim(String);
+
+impl DownloadClaim {
+    fn take(key: String) -> Result<Self, PinnedArtifactError> {
+        let mut claimed = DOWNLOADS_IN_PROGRESS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if claimed.insert(key.clone()) {
+            Ok(Self(key))
+        } else {
+            Err(PinnedArtifactError::Busy)
+        }
+    }
+}
+
+impl Drop for DownloadClaim {
+    fn drop(&mut self) {
+        DOWNLOADS_IN_PROGRESS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.0);
+    }
 }
 
 #[derive(Debug)]
@@ -43,12 +75,14 @@ pub enum PinnedArtifactPreparation {
 #[derive(Debug)]
 pub struct PinnedArtifactStore {
     inner: ConfinedInstallStore,
+    root: PathBuf,
 }
 
 #[derive(Debug)]
 pub struct PinnedDownload {
     inner: ResumableInstall,
     artifact: PinnedArtifact,
+    _claim: DownloadClaim,
 }
 
 impl PinnedArtifact {
@@ -93,7 +127,9 @@ impl PinnedArtifact {
 impl PinnedArtifactStore {
     pub fn open(root: impl AsRef<Path>) -> Result<Self, PinnedArtifactError> {
         Ok(Self {
-            inner: ConfinedInstallStore::open(root).map_err(PinnedArtifactError::Platform)?,
+            inner: ConfinedInstallStore::open(root.as_ref())
+                .map_err(PinnedArtifactError::Platform)?,
+            root: root.as_ref().to_path_buf(),
         })
     }
 
@@ -105,6 +141,7 @@ impl PinnedArtifactStore {
     ) -> Result<PinnedArtifactPreparation, PinnedArtifactError> {
         let target = artifact.validate()?;
         let partial = artifact.partial_key()?;
+        let claim = DownloadClaim::take(format!("{}\0{target}", self.root.display()))?;
         match self
             .inner
             .prepare(partial.clone(), target.clone(), artifact.byte_size)
@@ -125,6 +162,7 @@ impl PinnedArtifactStore {
                 return Ok(PinnedArtifactPreparation::Download(PinnedDownload {
                     inner,
                     artifact,
+                    _claim: claim,
                 }));
             }
             Err(lettuce_platform::PlatformError::LimitExceeded) => {
@@ -146,6 +184,7 @@ impl PinnedArtifactStore {
                 Ok(PinnedArtifactPreparation::Download(PinnedDownload {
                     inner,
                     artifact,
+                    _claim: claim,
                 }))
             }
             InstallPreparation::Installed(_) => Err(PinnedArtifactError::Mismatch),
@@ -278,6 +317,21 @@ mod tests {
             byte_size: bytes.len() as u64,
             sha256: Some(sha256(bytes)),
         }
+    }
+
+    #[test]
+    fn a_file_is_downloaded_by_one_install_at_a_time() {
+        let root = std::env::temp_dir().join(format!("pinned-busy-{}", OperationId::new()));
+        let store = PinnedArtifactStore::open(&root).expect("store");
+        let expected = artifact(b"shared bytes");
+        let first = store.prepare(expected.clone()).expect("first");
+        assert!(matches!(
+            store.prepare(expected.clone()),
+            Err(PinnedArtifactError::Busy)
+        ));
+        drop(first);
+        assert!(store.prepare(expected).is_ok());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
