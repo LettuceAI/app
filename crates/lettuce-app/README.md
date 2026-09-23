@@ -1856,3 +1856,8 @@ memory run's model with its CompanionMemory slot and the companion memory
 defaults (temperature 0.3, top_p 1.0, reasoning off, no memory sampler), as
 legacy's `feature_model_overrides(CompanionMemory, COMPANION_MEMORY_DEFAULTS)`
 did; before, it reused the memory cycle's DynamicMemory sampling.
+
+Lorebook files: `AppBackend::lorebook_files()` imports a World Info file as a
+new `LegacyV1` lorebook (entries in file order, literal matching) and exports a
+lorebook as World Info or a USC card, entries in their order. The old app's
+frontend named a nameless file after its filename; the command layer does that.

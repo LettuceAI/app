@@ -774,6 +774,11 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn lorebook_files(&self) -> crate::LorebookFileCoordinator<'_, Database> {
+        crate::LorebookFileCoordinator::new(self.database.as_ref())
+    }
+
+    #[must_use]
     pub fn staged_lorebook_coordinator(
         &self,
     ) -> crate::StagedLorebookCoordinator<'_, Database, Database> {
