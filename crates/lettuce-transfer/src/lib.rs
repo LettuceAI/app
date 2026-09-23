@@ -8,6 +8,7 @@
 
 mod backup;
 mod character_card;
+mod character_file_plan;
 mod character_plan;
 mod chat_jsonl;
 mod entity_package;
@@ -48,6 +49,7 @@ mod restore_workspace;
 mod usage_backup;
 
 pub use character_card::*;
+pub use character_file_plan::*;
 pub use character_plan::*;
 pub use chat_jsonl::*;
 pub use entity_package::*;

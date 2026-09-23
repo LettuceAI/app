@@ -58,6 +58,15 @@ pub(crate) struct LegacyJsonContext {
 }
 
 impl LegacyJsonContext {
+    /// The context of a single imported file: default chat appearance and
+    /// the voices the app already has.
+    pub(crate) fn for_file(user_voice_ids: BTreeSet<VoiceProfileId>) -> Self {
+        Self {
+            base_chat_appearance: default_appearance(),
+            user_voice_ids,
+        }
+    }
+
     pub(crate) fn new(
         configuration: &LegacyBackupConfigurationPlan,
         skipped: &mut Vec<LegacyImportSkip>,

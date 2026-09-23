@@ -193,7 +193,7 @@ struct PersonaRow {
 }
 
 #[derive(Deserialize)]
-struct LorebookRow {
+pub(crate) struct LorebookRow {
     id: String,
     name: String,
     avatar_path: Option<String>,
@@ -690,7 +690,7 @@ fn map_personas(
     })
 }
 
-fn map_lorebooks(
+pub(crate) fn map_lorebooks(
     rows: Vec<LorebookRow>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<LegacyLorebookPlan, LegacyBackupAuthoredError> {
