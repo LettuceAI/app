@@ -20,3 +20,9 @@ without ANSI escape sequences.
 Daily rotation is enabled, but retention and cleanup are intentionally not
 implemented yet. They belong to a later filesystem-coordinated slice; callers
 must not treat the current writer as a bounded retention policy.
+
+Panic reports (2026-09-23): `install_panic_reports(directory)` chains a panic
+hook that writes each panic's report (time, thread, location, payload, forced
+backtrace) to its own `panic-{local time}-p{pid}-{thread}-{counter}.log` in the
+host's log directory and logs where it went, as legacy's bootstrap did; the
+host installs it after `install`.

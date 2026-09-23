@@ -1668,6 +1668,7 @@ dependencies = [
 name = "lettuce-observability"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "lettuce-types",
  "thiserror 2.0.20",
  "tracing",

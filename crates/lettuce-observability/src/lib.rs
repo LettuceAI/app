@@ -9,6 +9,7 @@
 mod config;
 mod correlation;
 mod init;
+mod panic;
 mod redaction;
 
 pub use config::{ConfigError, LocalOutputConfig, ObservabilityConfig, StderrFormat};
@@ -17,6 +18,7 @@ pub use correlation::{
     OPERATION_FIELD, OPERATION_ID_FIELD, REQUEST_ID_FIELD,
 };
 pub use init::{InitError, install};
+pub use panic::install_panic_reports;
 pub use redaction::{REDACTED, Sensitive, UserContent};
 
 #[cfg(test)]
