@@ -224,3 +224,11 @@ providers' remote result URLs are not kept beside the stored bytes.
 Image, audio and total token counts are read the way legacy `usage_from_value`
 did (OpenAI `usage`, Gemini `usageMetadata` incl. AUDIO modality details) for
 chat and image responses; Anthropic, Ollama and llama.cpp never reported them.
+
+Ollama model store: `RemoteProviders::ollama_inventory`, `ollama_delete` and
+`ollama_pull` (NDJSON progress per line, cancelled by dropping the future)
+talk to an Ollama account's server with its credentials. A pull is sent once
+with only an idle timeout (legacy had none; a 30-minute total limit would kill
+large pulls), a delete is never retried, pull lines are split on bytes so a
+character across chunks survives (legacy corrupted it), and a single progress
+line is capped at 1 MiB.

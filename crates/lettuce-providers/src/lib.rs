@@ -31,6 +31,7 @@ mod moonshot;
 mod nanogpt;
 mod nvidia;
 mod ollama;
+mod ollama_hub;
 mod openai;
 mod openai_compatible;
 mod openrouter;
@@ -66,6 +67,7 @@ use lettuce_settings::SecretStore;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use llama_cpp::{LocalLlama, LocalRuntimeExclusion};
 pub use media::{ProviderMedia, ProviderMediaError, ProviderMediaSource};
+pub use ollama_hub::{OllamaHubError, OllamaInstalledModel, OllamaPullProgress};
 use openai_compatible::OpenAiWireProvider;
 
 /// Explicit dispatch over every remote chat provider the legacy app shipped.
@@ -112,6 +114,43 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
             _ => return Err(ProviderRequestError::Unsupported),
         };
         result.map_err(Into::into)
+    }
+
+    /// The models an Ollama account's server has (legacy
+    /// `ollama_inventory_list`).
+    pub async fn ollama_inventory(
+        &self,
+        account: &ProviderAccount,
+    ) -> Result<Vec<OllamaInstalledModel>, OllamaHubError> {
+        ollama_hub::inventory(&*self.secret_store, &self.network, account).await
+    }
+
+    /// Deletes a model from an Ollama account's server.
+    pub async fn ollama_delete(
+        &self,
+        account: &ProviderAccount,
+        model_name: &str,
+    ) -> Result<(), OllamaHubError> {
+        ollama_hub::delete(&*self.secret_store, &self.network, account, model_name).await
+    }
+
+    /// Pulls a model (`hf.co/<repo>:<quant>` for Hugging Face files) into an
+    /// Ollama account's server, reporting each progress line; dropping the
+    /// future cancels the pull.
+    pub async fn ollama_pull(
+        &self,
+        account: &ProviderAccount,
+        model_ref: &str,
+        on_progress: &mut (dyn FnMut(OllamaPullProgress) + Send),
+    ) -> Result<(), OllamaHubError> {
+        ollama_hub::pull(
+            &*self.secret_store,
+            &self.network,
+            account,
+            model_ref,
+            on_progress,
+        )
+        .await
     }
 
     /// Probes the account's credential the way the legacy settings page did
@@ -2753,6 +2792,44 @@ mod integration_tests {
                 .openrouter_endpoint_pricing(&account, "author/model")
                 .await
                 .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_ollama_pull_streams_progress_until_success() {
+        let (store, owner, key_ref) = keyed_store().await;
+        let network = Arc::new(JsonClient::new().expect("client"));
+        let providers = RemoteProviders::new(Arc::clone(&store), Arc::clone(&network));
+        let body = "{\"status\":\"pulling ab\",\"completed\":4,\"total\":8}\n{\"status\":\"success\"}\n";
+        let (endpoint, request_receiver) = test_server(http_json(body)).await;
+        let ollama = account(
+            "ollama",
+            ProviderProtocol::Ollama,
+            Some(endpoint),
+            ProviderConfig::Standard,
+            Some(key_ref),
+            owner,
+        );
+        let mut seen = Vec::new();
+        providers
+            .ollama_pull(&ollama, " hf.co/org/m:Q4_K_M ", &mut |progress| {
+                seen.push((progress.status, progress.completed, progress.total));
+            })
+            .await
+            .expect("pull");
+        let raw = String::from_utf8(request_receiver.await.expect("request")).expect("HTTP");
+        assert!(raw.starts_with("POST /api/pull HTTP/1.1"));
+        assert!(raw.ends_with(r#"{"model":"hf.co/org/m:Q4_K_M","stream":true}"#));
+        assert_eq!(seen, [("downloading", 4, 8), ("complete", 4, 8)]);
+        assert_eq!(
+            providers.ollama_pull(&ollama, " ", &mut |_| {}).await,
+            Err(crate::OllamaHubError::EmptyReference)
+        );
+        let mut other = ollama.clone();
+        other.provider_kind = "openai".into();
+        assert_eq!(
+            providers.ollama_inventory(&other).await,
+            Err(crate::OllamaHubError::NotOllama)
         );
     }
 

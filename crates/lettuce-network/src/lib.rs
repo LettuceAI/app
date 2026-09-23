@@ -17,6 +17,7 @@ const MAX_ENDPOINT_BYTES: usize = 4096;
 const MAX_PATH_BYTES: usize = 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const GENERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const TRANSFER_TIMEOUT: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RETRIES: u32 = 2;
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
@@ -96,6 +97,7 @@ pub struct JsonResponseStream {
     pub request_id: Option<String>,
     pub retry_after: Option<String>,
     received_bytes: usize,
+    size_limit: Option<usize>,
     idle_timeout: Duration,
 }
 
@@ -112,6 +114,14 @@ impl fmt::Debug for JsonResponseStream {
 }
 
 impl JsonResponseStream {
+    /// Lifts the cumulative size bound, for long progress streams whose
+    /// lines are consumed as they arrive.
+    #[must_use]
+    pub fn without_size_limit(mut self) -> Self {
+        self.size_limit = None;
+        self
+    }
+
     /// Reads the next response chunk with an idle timeout and a cumulative
     /// response-size bound. `None` is a clean end of stream.
     pub async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, JsonClientError> {
@@ -126,7 +136,10 @@ impl JsonResponseStream {
             .received_bytes
             .checked_add(chunk.len())
             .ok_or(JsonClientError::ResponseTooLarge)?;
-        if self.received_bytes > MAX_RESPONSE_BYTES {
+        if self
+            .size_limit
+            .is_some_and(|limit| self.received_bytes > limit)
+        {
             return Err(JsonClientError::ResponseTooLarge);
         }
         Ok(Some(chunk.to_vec()))
@@ -487,6 +500,9 @@ pub enum RequestTimeout {
     Generation,
     /// Legacy 10-second key-verification probe.
     Probe,
+    /// A long streamed transfer such as a model pull: sent once, with no
+    /// practical total deadline; only the stream's idle timeout applies.
+    Transfer,
 }
 
 /// Per-request transport choices owned by the caller's provider policy.
@@ -661,6 +677,39 @@ impl JsonClient {
             .await
     }
 
+    /// Sends a JSON DELETE with a body, as some local servers expect; it is
+    /// never retried, since a lost response may hide a completed delete.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is a distinct transport concern; bundling them hides the policy"
+    )]
+    pub async fn delete_json(
+        &self,
+        endpoint: &str,
+        path: &str,
+        body: Vec<u8>,
+        static_headers: &[JsonStaticHeader],
+        auth: JsonAuth,
+        secret_headers: Vec<JsonSecretHeader>,
+        policy: RequestPolicy,
+    ) -> Result<JsonResponse, JsonClientError> {
+        if body.len() > MAX_REQUEST_BYTES {
+            return Err(JsonClientError::RequestTooLarge);
+        }
+        let url = build_url(endpoint, path)?;
+        validate_header_collection(static_headers, &auth, &secret_headers)?;
+        let request = self
+            .client(policy)
+            .delete(url)
+            .timeout(timeout_for(policy))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(body);
+        let request = apply_static_headers(request, static_headers)?;
+        let request = apply_auth(request, auth)?;
+        self.send_with_headers(request, secret_headers, 0)
+            .await
+    }
+
     /// Starts a JSON POST while leaving the response body attached to the
     /// caller. Retries only happen before any body bytes become observable.
     #[expect(
@@ -726,7 +775,7 @@ impl JsonClient {
         let request = apply_static_headers(request, static_headers)?;
         let request = apply_auth(request, auth)?;
         let request = apply_secret_headers(request, secret_headers)?;
-        self.send_stream(request, retries_for(policy), timeout_for(policy))
+        self.send_stream(request, retries_for(policy), idle_timeout_for(policy))
             .await
     }
 
@@ -1065,6 +1114,7 @@ fn response_stream(
         retry_after: bounded_header(&response, "retry-after"),
         response,
         received_bytes: 0,
+        size_limit: Some(MAX_RESPONSE_BYTES),
         idle_timeout,
     })
 }
@@ -1138,7 +1188,7 @@ fn build_client(
 fn retries_for(policy: RequestPolicy) -> u32 {
     match policy.timeout {
         RequestTimeout::Generation => MAX_RETRIES,
-        RequestTimeout::Probe => 0,
+        RequestTimeout::Probe | RequestTimeout::Transfer => 0,
     }
 }
 
@@ -1146,6 +1196,14 @@ fn timeout_for(policy: RequestPolicy) -> Duration {
     match policy.timeout {
         RequestTimeout::Generation => GENERATION_TIMEOUT,
         RequestTimeout::Probe => PROBE_TIMEOUT,
+        RequestTimeout::Transfer => TRANSFER_TIMEOUT,
+    }
+}
+
+fn idle_timeout_for(policy: RequestPolicy) -> Duration {
+    match policy.timeout {
+        RequestTimeout::Transfer => GENERATION_TIMEOUT,
+        RequestTimeout::Generation | RequestTimeout::Probe => timeout_for(policy),
     }
 }
 
