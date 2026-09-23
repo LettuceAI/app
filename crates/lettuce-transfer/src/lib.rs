@@ -8,6 +8,7 @@
 
 mod backup;
 mod character_card;
+mod chat_jsonl;
 mod entity_package;
 mod lorebook_transfer;
 mod backup_graph;
@@ -46,6 +47,7 @@ mod restore_workspace;
 mod usage_backup;
 
 pub use character_card::*;
+pub use chat_jsonl::*;
 pub use entity_package::*;
 pub use lorebook_transfer::*;
 pub use backup::*;

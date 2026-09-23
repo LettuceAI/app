@@ -815,3 +815,13 @@ uses `keys`, else `key`, ignores secondary keys, skips empty content, orders by
 `insertion_order`, then `displayIndex - 1`, then the map key - 1, and matches
 literally) and the USC 1.0 lorebook card written (no lorebook id or match mode
 per entry; the old app had no USC lorebook reader).
+
+Chat transcripts (`chat_jsonl`): SillyTavern JSONL written and read like the
+old app: a compact header (`user_name`, `character_name`, `create_date`,
+`chat_metadata`, `{group: true}` for groups), then one compact line per message
+with blank content left out (`send_date` in UTC RFC 3339 with milliseconds,
+`swipes`/`swipe_id` for alternatives; direct chats mark the selected variant,
+else the shown content, else prepend it; groups show the selected or first
+variant). Reading detects the header, takes `mes|content|text|message`, times
+from `send_date|createdAt|timestamp|time` (seconds below 1e10), and treats more
+than one named assistant speaker as a group chat.
