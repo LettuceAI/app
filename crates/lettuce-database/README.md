@@ -164,7 +164,15 @@ fails instead of merging when the target already holds any of those rows.
 
 The legacy migration boundary can open an old `app.db` read-only, require the
 actual version-92 schema roots, and return a bounded typed import inventory.
-It performs no source migration or destination writes during preflight.
+It performs no source migration or destination writes during preflight. It accepts
+`LEGACY_DATABASE_SCHEMA_VERSIONS` (92 to 96, user decision 2026-09-23): the
+released 2.2.0 stored 92 or 94, 2.2.1 stored 95 and 2.2.2 to 2.2.5 stored 96.
+Those versions keep the 92 table layout the reader expects: 93 and 94 only
+repaired group columns, 95 repaired group session overrides the importer does
+not read, and 96 reordered columns and renamed leftover tables. Older
+databases are refused: the old app migrates them to its current version when
+opened once, and pre-SQLite `.bin` stores are not read (legacy imported them
+itself on startup).
 
 `read_legacy_database_documents` reproduces the 22 documents the legacy backup
 exporter writes, with the exporter's exact column lists, ordering, COALESCE

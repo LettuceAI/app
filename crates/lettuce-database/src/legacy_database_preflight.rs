@@ -1239,10 +1239,13 @@ pub(crate) fn open_validated(
         .optional()
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
     let version = version.ok_or(LegacyDatabasePreflightError::MissingSettings)?;
-    if version != i64::from(LEGACY_DATABASE_SCHEMA_VERSION) {
+    if !u32::try_from(version)
+        .is_ok_and(|version| lettuce_transfer::LEGACY_DATABASE_SCHEMA_VERSIONS.contains(&version))
+    {
         return Err(LegacyDatabasePreflightError::UnsupportedVersion {
             found: version,
-            supported: LEGACY_DATABASE_SCHEMA_VERSION,
+            minimum: *lettuce_transfer::LEGACY_DATABASE_SCHEMA_VERSIONS.start(),
+            maximum: *lettuce_transfer::LEGACY_DATABASE_SCHEMA_VERSIONS.end(),
         });
     }
     Ok(connection)
@@ -2407,10 +2410,27 @@ mod tests {
             preflight_legacy_database(&unsupported),
             Err(LegacyDatabasePreflightError::UnsupportedVersion {
                 found: 91,
-                supported: LEGACY_DATABASE_SCHEMA_VERSION,
+                minimum: 92,
+                maximum: 96,
             })
         );
         std::fs::remove_file(unsupported).expect("remove unsupported database");
+        let newer = legacy_database(97);
+        assert!(matches!(
+            preflight_legacy_database(&newer),
+            Err(LegacyDatabasePreflightError::UnsupportedVersion { found: 97, .. })
+        ));
+        std::fs::remove_file(newer).expect("remove newer database");
+        for version in [94, 95, 96] {
+            let released = legacy_database(version);
+            assert_eq!(
+                preflight_legacy_database(&released)
+                    .expect("released legacy schema")
+                    .schema_version,
+                LEGACY_DATABASE_SCHEMA_VERSION
+            );
+            std::fs::remove_file(released).expect("remove released database");
+        }
 
         let incomplete = std::env::temp_dir().join(format!(
             "lettuce-legacy-incomplete-{}.db",

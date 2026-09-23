@@ -91,7 +91,14 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
+/// The legacy table layout the importer reads: schema 92, which releases up to
+/// 2.2.5 kept (93-94 only repaired group columns 2.2.0 already created, 95
+/// repaired group session overrides the importer does not read, 96 reordered
+/// columns and renamed tables outside the schema).
 pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
+/// Every legacy schema version the importer accepts (user decision
+/// 2026-09-23): 2.2.0 stored 92 or 94, 2.2.1 stored 95, 2.2.2-2.2.5 96.
+pub const LEGACY_DATABASE_SCHEMA_VERSIONS: std::ops::RangeInclusive<u32> = 92..=96;
 pub const ASR_LEARNING_DOCUMENT_VERSION: u32 = 3;
 pub const ASR_LEARNING_RECORD_LIMIT: usize = 40_000;
 pub const ASR_LEARNING_TABLE_LIMIT: usize = 10_000;
@@ -796,7 +803,8 @@ pub enum LegacyDatabasePreflightError {
     InvalidSchema,
     UnsupportedVersion {
         found: i64,
-        supported: u32,
+        minimum: u32,
+        maximum: u32,
     },
     CountOutOfRange {
         table: &'static str,
@@ -844,9 +852,13 @@ impl fmt::Display for LegacyDatabasePreflightError {
             Self::MissingTable { table } => write!(formatter, "legacy table is missing: {table}"),
             Self::MissingSettings => formatter.write_str("legacy settings row is missing"),
             Self::InvalidSchema => formatter.write_str("legacy database schema is invalid"),
-            Self::UnsupportedVersion { found, supported } => write!(
+            Self::UnsupportedVersion {
+                found,
+                minimum,
+                maximum,
+            } => write!(
                 formatter,
-                "legacy schema version {found} is unsupported; expected {supported}"
+                "legacy schema version {found} is unsupported; expected {minimum} to {maximum}"
             ),
             Self::CountOutOfRange { table } => {
                 write!(formatter, "legacy record count is out of range: {table}")
