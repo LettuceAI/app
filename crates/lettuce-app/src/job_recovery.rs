@@ -40,7 +40,7 @@ impl<'a, J: JobStore + ?Sized> StartupJobRecoveryCoordinator<'a, J> {
         now: Timestamp,
         limit: u32,
     ) -> Result<StartupJobRecoveryReport, StartupJobRecoveryError> {
-        let expired = self.jobs.expired_claims(now, limit)?;
+        let expired = self.jobs.orphaned_claims(now, limit)?;
         let mut jobs = Vec::with_capacity(expired.len());
         for expired_claim in expired {
             let job = self
@@ -54,6 +54,126 @@ impl<'a, J: JobStore + ?Sized> StartupJobRecoveryCoordinator<'a, J> {
             });
         }
         Ok(StartupJobRecoveryReport { jobs })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StartupRecoveryReport {
+    pub jobs: Vec<RecoveredStartupJob>,
+    pub cancelled_generation_jobs: Vec<lettuce_types::JobId>,
+    pub turns: Vec<(
+        lettuce_types::GenerationTurnId,
+        crate::ConversationGenerationRestartSettlement,
+    )>,
+}
+
+const STARTUP_RECOVERY_PAGE: u32 = 200;
+
+impl crate::AppBackend {
+    /// Must run before any worker starts: every claim is released, every
+    /// generation job still waiting is cancelled and every live turn settled.
+    /// A job or turn that cannot be settled is reported and skipped.
+    pub fn recover_after_restart(
+        &self,
+        now: Timestamp,
+    ) -> Result<StartupRecoveryReport, StartupJobRecoveryError> {
+        use crate::ConversationGenerationRestartSettlement as Settlement;
+        let mut report = StartupRecoveryReport::default();
+        loop {
+            let page = self
+                .startup_job_recovery()
+                .recover(now, STARTUP_RECOVERY_PAGE)?;
+            let done = page.jobs.len() < STARTUP_RECOVERY_PAGE as usize;
+            report.jobs.extend(page.jobs);
+            if done {
+                break;
+            }
+        }
+        let dispatcher = self.conversation_generation_dispatcher();
+        let mut skipped = std::collections::BTreeSet::new();
+        for state in [
+            lettuce_jobs::JobState::Queued,
+            lettuce_jobs::JobState::CancellationRequested,
+        ] {
+            let mut cursor = None;
+            loop {
+                let page = self.database().list(lettuce_jobs::JobQuery {
+                    state: Some(state),
+                    kind: Some(lettuce_jobs::JobKind::ConversationGeneration),
+                    subject: None,
+                    page: lettuce_types::PageRequest {
+                        cursor: cursor.take(),
+                        limit: lettuce_types::PageLimit::new(STARTUP_RECOVERY_PAGE as u16),
+                    },
+                })?;
+                let pending = page
+                    .items
+                    .into_iter()
+                    .filter(|job| !skipped.contains(&job.id))
+                    .collect::<Vec<_>>();
+                if pending.is_empty() {
+                    match page.next_cursor {
+                        Some(next) => {
+                            cursor = Some(next);
+                            continue;
+                        }
+                        None => break,
+                    }
+                }
+                for job in pending {
+                    let id = job.id;
+                    match dispatcher.cancel_job_after_restart(job, now) {
+                        Ok(job) if job.state.is_terminal() => {
+                            report.cancelled_generation_jobs.push(id);
+                        }
+                        Ok(_) => {
+                            skipped.insert(id);
+                        }
+                        Err(error) => {
+                            tracing::warn!(job_id = %id, %error, "startup could not cancel a generation job");
+                            skipped.insert(id);
+                        }
+                    }
+                }
+            }
+        }
+        let mut unsettled = std::collections::BTreeSet::new();
+        loop {
+            let limit = STARTUP_RECOVERY_PAGE
+                .saturating_add(u32::try_from(unsettled.len()).unwrap_or(u32::MAX));
+            let turns =
+                match lettuce_conversations::LiveTurnReader::live_turns(self.database(), limit) {
+                    Ok(turns) => turns,
+                    Err(error) => {
+                        tracing::warn!(%error, "startup could not list live generation turns");
+                        break;
+                    }
+                };
+            let pending = turns
+                .into_iter()
+                .filter(|turn_id| !unsettled.contains(turn_id))
+                .collect::<Vec<_>>();
+            if pending.is_empty() {
+                break;
+            }
+            for turn_id in pending {
+                let settlement = lettuce_conversations::ConversationReader::get_turn(
+                    self.database(),
+                    turn_id,
+                )
+                .map_err(crate::ConversationGenerationDispatchError::from)
+                .and_then(|turn| dispatcher.settle_after_restart(&turn, now))
+                .unwrap_or_else(|error| {
+                    tracing::warn!(%turn_id, %error, "startup could not settle a generation turn");
+                    Settlement::Unsettled
+                });
+                if settlement == Settlement::Unsettled {
+                    unsettled.insert(turn_id);
+                }
+                report.turns.push((turn_id, settlement));
+            }
+        }
+        Ok(report)
     }
 }
 

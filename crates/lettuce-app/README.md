@@ -1758,3 +1758,16 @@ concurrent growth or consolidation run is prepared again on the newer Soul, up
 to three times. Deviation: legacy's clear emptied the shared Soul but other
 sessions of the character re-persisted their own copies on their next save;
 the rewrite's clear really clears the companion's Soul.
+
+Startup recovery (2026-09-23): `AppBackend::recover_after_restart(now)` must
+run before any worker starts. It releases every claim the previous process
+held (`orphaned_claims`), cancels every waiting conversation generation job
+(reason `Recovery`), then settles each live turn so its conversation accepts
+new turns again: a turn that had not started or was being cancelled is
+cancelled, a recovering turn fails with `RecoveryUnavailable`, any other is
+interrupted (usage outcome `Interrupted`); running tools are interrupted and
+requested or validated ones cancelled. Nothing is run again, as legacy lost
+in-flight generation on a crash and a restore settles it the same way. A job
+or turn that cannot be settled is logged, reported and skipped. Other job
+kinds keep their recovery policy (`Restart`/`Resume` jobs are queued again)
+and wait for their feature drivers.

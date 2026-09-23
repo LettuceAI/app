@@ -990,6 +990,11 @@ pub trait ConversationReader: Send + Sync {
     ) -> Result<KeysetPage<ConversationOutboxRecord>, ConversationRepositoryError>;
 }
 
+/// Unsettled turns of every conversation, oldest first.
+pub trait LiveTurnReader: Send + Sync {
+    fn live_turns(&self, limit: u32) -> Result<Vec<GenerationTurnId>, ConversationRepositoryError>;
+}
+
 /// Materializes one protected launch snapshot through the conversation's
 /// ownership reference. Implementations must read the reference and artifact
 /// from the same storage snapshot and must never resolve live source rows.

@@ -363,6 +363,10 @@ impl JobStore for Database {
         self.write_jobs(|store| store.expired_claims(now, limit))
     }
 
+    fn orphaned_claims(&self, now: Timestamp, limit: u32) -> Result<Vec<ExpiredClaim>, StoreError> {
+        self.write_jobs(|store| store.orphaned_claims(now, limit))
+    }
+
     /// Prunes terminal jobs except those a speech transcription or synthesis
     /// or an image generation still binds (their evidence rows forbid deleting the job), together with
     /// every ancestor such a kept job points at.

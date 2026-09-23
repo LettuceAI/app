@@ -71,6 +71,9 @@ cancellation as cleanup/recovery work rather than illegally moving it back to
 `Queued`. If a lease expires after cleanup has started, the store records
 `Interrupted` and does not claim that cleanup or domain compensation completed;
 `RecoveryAction::Compensate` tells the application to perform that follow-up.
+`orphaned_claims` scavenges every claim the same way whatever its lease (at
+startup no worker of the previous process is alive), each job at `now` or its
+last update if later.
 Retention with `keep_terminal_for: None` retains records indefinitely. With a
 finite retention window, an old terminal parent/child graph may be pruned
 together, while any node referenced by a nonterminal, too-new, or otherwise

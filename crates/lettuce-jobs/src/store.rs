@@ -966,6 +966,25 @@ impl InMemoryJobStore {
         now: Timestamp,
         limit: u32,
     ) -> Result<Vec<ExpiredClaim>, StoreError> {
+        self.release_claims(now, limit, false)
+    }
+
+    /// Releases every claim regardless of its lease, each at `now` or the
+    /// job's last update if later.
+    pub fn orphaned_claims(
+        &self,
+        now: Timestamp,
+        limit: u32,
+    ) -> Result<Vec<ExpiredClaim>, StoreError> {
+        self.release_claims(now, limit, true)
+    }
+
+    fn release_claims(
+        &self,
+        now: Timestamp,
+        limit: u32,
+        orphaned: bool,
+    ) -> Result<Vec<ExpiredClaim>, StoreError> {
         if limit == 0 || limit > 1_000 {
             return Err(StoreError::InvalidLimit);
         }
@@ -977,13 +996,18 @@ impl InMemoryJobStore {
             .filter_map(|record| {
                 let claim = record.snapshot.claim.clone()?;
                 let expiry = record.snapshot.lease_expires_at?;
-                (now > expiry).then_some((record.snapshot.id, claim, expiry))
+                let at = if orphaned {
+                    now.max(record.snapshot.updated_at)
+                } else {
+                    now
+                };
+                (orphaned || now > expiry).then_some((record.snapshot.id, claim, expiry, at))
             })
             .take(limit as usize)
             .collect();
-        for (id, _, _) in &ids {
+        for (id, _, _, at) in &ids {
             let record = inner.jobs.get(id).ok_or(StoreError::NotFound)?;
-            Self::check_timestamp(record, now)?;
+            Self::check_timestamp(record, *at)?;
             let required_events = if record.snapshot.state == JobState::CleaningUp {
                 // Cleanup has already started. Expiry must finish it as an
                 // interruption, never requeue work that may have performed
@@ -1035,7 +1059,7 @@ impl InMemoryJobStore {
                     .map_err(|_| StoreError::IllegalTransition)?;
             }
         }
-        for (id, claim, expired_at) in ids {
+        for (id, claim, expired_at, now) in ids {
             let record = inner.jobs.get_mut(&id).ok_or(StoreError::NotFound)?;
             let old_state = record.snapshot.state;
             if !matches!(
@@ -1329,6 +1353,7 @@ pub trait JobStore: Send + Sync {
     ) -> Result<Claim, StoreError>;
     fn append_and_transition(&self, mutation: JobMutation) -> Result<JobSnapshot, StoreError>;
     fn expired_claims(&self, now: Timestamp, limit: u32) -> Result<Vec<ExpiredClaim>, StoreError>;
+    fn orphaned_claims(&self, now: Timestamp, limit: u32) -> Result<Vec<ExpiredClaim>, StoreError>;
     fn prune(
         &self,
         policy: crate::retention::RetentionPolicy,
@@ -1394,6 +1419,9 @@ impl JobStore for InMemoryJobStore {
 
     fn expired_claims(&self, now: Timestamp, limit: u32) -> Result<Vec<ExpiredClaim>, StoreError> {
         Self::expired_claims(self, now, limit)
+    }
+    fn orphaned_claims(&self, now: Timestamp, limit: u32) -> Result<Vec<ExpiredClaim>, StoreError> {
+        Self::orphaned_claims(self, now, limit)
     }
     fn prune(
         &self,
@@ -2220,6 +2248,53 @@ mod tests {
                 .any(|event| matches!(event.event, JobEvent::CleanupStarted))
         );
         assert_eq!(claim.claim.attempt, AttemptNo::new(1));
+    }
+
+    #[test]
+    fn orphaned_claims_release_live_leases_at_their_last_update() {
+        let clock = Arc::new(FakeClock::new(Timestamp::new(0)));
+        let store = InMemoryJobStore::with_clock(clock.clone());
+        let id = store
+            .create_or_get(spec("orphaned"))
+            .expect("create job")
+            .job
+            .id;
+        let claim = store
+            .claim_next(
+                WorkerId::new(),
+                Timestamp::new(10),
+                Duration::from_secs(3_600),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim")
+            .expect("claim exists");
+        store
+            .append_and_transition(JobMutation::Start {
+                claim: claim.claim,
+                at: Timestamp::new(20),
+            })
+            .expect("start");
+        assert!(
+            store
+                .expired_claims(Timestamp::new(30), 10)
+                .expect("expiry")
+                .is_empty()
+        );
+        let released = store
+            .orphaned_claims(Timestamp::new(5), 10)
+            .expect("orphaned claims");
+        assert_eq!(released.len(), 1);
+        assert_eq!(released[0].job_id, id);
+        let job = store.get(id).expect("get").expect("job");
+        assert_eq!(job.state, JobState::Queued);
+        assert_eq!(job.claim, None);
+        assert_eq!(job.updated_at, Timestamp::new(20));
+        assert!(
+            store
+                .orphaned_claims(Timestamp::new(30), 10)
+                .expect("nothing left")
+                .is_empty()
+        );
     }
 
     #[test]

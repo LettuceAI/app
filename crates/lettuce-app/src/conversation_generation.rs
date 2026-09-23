@@ -127,6 +127,29 @@ pub struct ConversationGenerationClaimedWork {
     pub job: JobSnapshot,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct GenerationWorkTarget {
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+    job_id: JobId,
+    job_created_at: TimestampMillis,
+    bound: bool,
+}
+
+impl ConversationGenerationClaimedWork {
+    fn target(&self) -> GenerationWorkTarget {
+        GenerationWorkTarget {
+            conversation_id: self.conversation_id,
+            turn_id: self.turn_id,
+            attempt_id: self.attempt_id,
+            job_id: self.handle.id(),
+            job_created_at: self.job.created_at,
+            bound: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ConversationGenerationClaimContext {
     pub worker_id: WorkerId,
@@ -347,6 +370,14 @@ pub struct ConversationGenerationRunResult {
     pub replayed: bool,
     /// The scene image the reply asks for; none for a replayed turn.
     pub scene_image: Option<crate::SceneImageFollowUp>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConversationGenerationRestartSettlement {
+    Cancelled,
+    Failed,
+    Interrupted,
+    Unsettled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1342,7 +1373,7 @@ impl<
         match error.terminal_failure() {
             Some(ConversationGenerationTerminalFailure::Cancelled) => {
                 if self
-                    .turn_side(self.cancel_turn(&work, error.evidence(), at))?
+                    .turn_side(self.cancel_turn(&work.target(), error.evidence(), at))?
                     .is_none()
                 {
                     return self.retry(work, error, at);
@@ -1368,7 +1399,7 @@ impl<
             }
             Some(ConversationGenerationTerminalFailure::Failed(code)) => {
                 if self
-                    .turn_side(self.fail_turn(&work, code, error.evidence(), at))?
+                    .turn_side(self.fail_turn(&work.target(), code, error.evidence(), at))?
                     .is_none()
                 {
                     return self.retry(work, error, at);
@@ -1413,13 +1444,16 @@ impl<
                 })
             }
             Some(ConversationGenerationTerminalFailure::Invalid) => {
-                let settled = match self.current(&work) {
+                let settled = match self.current(&work.target()) {
                     Ok((_, turn, _)) if turn.status == GenerationTurnStatus::Created => {
-                        self.cancel_turn(&work, error.evidence(), at)
+                        self.cancel_turn(&work.target(), error.evidence(), at)
                     }
-                    Ok(_) => {
-                        self.fail_turn(&work, GenerationFailureCode::Internal, error.evidence(), at)
-                    }
+                    Ok(_) => self.fail_turn(
+                        &work.target(),
+                        GenerationFailureCode::Internal,
+                        error.evidence(),
+                        at,
+                    ),
                     Err(error) => Err(error),
                 };
                 match settled {
@@ -1478,7 +1512,7 @@ impl<
 
     fn current(
         &self,
-        work: &ConversationGenerationClaimedWork,
+        work: &GenerationWorkTarget,
     ) -> Result<
         (lettuce_types::Revision, GenerationTurn, GenerationAttempt),
         ConversationGenerationDispatchError,
@@ -1491,7 +1525,8 @@ impl<
             .find(|attempt| attempt.id == work.attempt_id)
             .cloned()
             .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
-        if turn.conversation_id != work.conversation_id || attempt.job_id != Some(work.handle.id())
+        if turn.conversation_id != work.conversation_id
+            || (work.bound && attempt.job_id != Some(work.job_id))
         {
             return Err(ConversationGenerationDispatchError::InvalidWork);
         }
@@ -1500,7 +1535,7 @@ impl<
 
     fn attempt_usage_event(
         &self,
-        work: &ConversationGenerationClaimedWork,
+        work: &GenerationWorkTarget,
         turn: &GenerationTurn,
         attempt: &GenerationAttempt,
         evidence: GenerationUsageEvidence,
@@ -1514,12 +1549,12 @@ impl<
             GenerationUsageEvidence::Dispatch(id) => Some(id),
             GenerationUsageEvidence::None => None,
         };
-        let records = self.conversations.job_usage(work.handle.id())?;
+        let records = self.conversations.job_usage(work.job_id)?;
         let (usage, recorded_at, provenance) = match records.first() {
             Some(first) => {
                 if expected_dispatch.is_some_and(|id| !records.iter().any(|record| record.id == id))
                     || records.iter().any(|record| {
-                        record.job_id != work.handle.id()
+                        record.job_id != work.job_id
                             || record.logical_attempt_id != attempt.id
                             || record.model_profile_id != first.model_profile_id
                             || record.model_revision != first.model_revision
@@ -1575,7 +1610,7 @@ impl<
                 };
                 (
                     UsageCounters::Unavailable(reason),
-                    work.job.created_at,
+                    work.job_created_at,
                     turn.resolved_model.as_ref().map(|model| {
                         (
                             model.source_id,
@@ -1615,7 +1650,7 @@ impl<
 
     fn cancel_turn(
         &self,
-        work: &ConversationGenerationClaimedWork,
+        work: &GenerationWorkTarget,
         evidence: GenerationUsageEvidence,
         at: TimestampMillis,
     ) -> Result<(), ConversationGenerationDispatchError> {
@@ -1630,7 +1665,7 @@ impl<
                 work.conversation_id,
                 work.turn_id,
                 work.attempt_id,
-                work.handle.id(),
+                work.job_id,
                 operation,
             )
         };
@@ -1669,7 +1704,7 @@ impl<
 
     fn fail_turn(
         &self,
-        work: &ConversationGenerationClaimedWork,
+        work: &GenerationWorkTarget,
         code: GenerationFailureCode,
         evidence: GenerationUsageEvidence,
         at: TimestampMillis,
@@ -1689,7 +1724,7 @@ impl<
                 work.conversation_id,
                 work.turn_id,
                 work.attempt_id,
-                work.handle.id(),
+                work.job_id,
                 ConversationGenerationOperation::Fail,
             ),
             code,
@@ -1699,26 +1734,158 @@ impl<
         Ok(())
     }
 
-    fn interrupt_and_recover(
+    /// Cancels a turn that had not started or was being cancelled, fails a
+    /// recovering one and interrupts any other, after cancelling its job and
+    /// settling its pending tools; nothing runs again.
+    pub fn settle_after_restart(
         &self,
-        work: &ConversationGenerationClaimedWork,
-        evidence: GenerationUsageEvidence,
-        at: TimestampMillis,
-    ) -> Result<(GenerationAttemptId, JobSnapshot), ConversationGenerationDispatchError> {
-        let token = |operation| {
-            operation_token(
-                work.conversation_id,
-                work.turn_id,
-                work.attempt_id,
-                work.handle.id(),
-                operation,
-            )
+        turn: &GenerationTurn,
+        now: TimestampMillis,
+    ) -> Result<ConversationGenerationRestartSettlement, ConversationGenerationDispatchError> {
+        use ConversationGenerationRestartSettlement as Settlement;
+        let Some(attempt) = turn
+            .attempts
+            .iter()
+            .rev()
+            .find(|attempt| !is_terminal_attempt(attempt.status))
+        else {
+            return Ok(Settlement::Unsettled);
         };
-        let (conversation_revision, turn, attempt) = self.current(work)?;
-        if attempt.status != GenerationAttemptStatus::Interrupted {
-            if is_terminal_attempt(attempt.status) {
-                return Err(ConversationGenerationDispatchError::InvalidWork);
+        let job = match attempt.job_id {
+            Some(job_id) => self.jobs.get(job_id)?,
+            None => None,
+        };
+        if job
+            .as_ref()
+            .is_some_and(|job| job.kind != JobKind::ConversationGeneration)
+        {
+            return Err(ConversationGenerationDispatchError::InvalidWork);
+        }
+        let job = job
+            .map(|job| self.cancel_job_after_restart(job, now))
+            .transpose()?;
+        let target = match &job {
+            Some(job) if !job.state.is_terminal() => return Ok(Settlement::Unsettled),
+            Some(job) => GenerationWorkTarget {
+                conversation_id: turn.conversation_id,
+                turn_id: turn.id,
+                attempt_id: attempt.id,
+                job_id: job.id,
+                job_created_at: job.created_at,
+                bound: true,
+            },
+            None => GenerationWorkTarget {
+                conversation_id: turn.conversation_id,
+                turn_id: turn.id,
+                attempt_id: attempt.id,
+                job_id: JobId::from_uuid(uuid::Uuid::new_v5(
+                    &attempt.id.as_uuid(),
+                    b"restart-settlement",
+                )),
+                job_created_at: turn.created_at,
+                bound: false,
+            },
+        };
+        let at = job.as_ref().map_or(now, |job| now.max(job.updated_at));
+        self.settle_tools_after_restart(&target, at)?;
+        Ok(match turn.status {
+            GenerationTurnStatus::Created | GenerationTurnStatus::CancellationRequested => {
+                self.cancel_turn(&target, GenerationUsageEvidence::None, at)?;
+                Settlement::Cancelled
             }
+            GenerationTurnStatus::Recovering => {
+                self.fail_turn(
+                    &target,
+                    GenerationFailureCode::RecoveryUnavailable,
+                    GenerationUsageEvidence::None,
+                    at,
+                )?;
+                Settlement::Failed
+            }
+            _ => {
+                self.interrupt_attempt(&target, GenerationUsageEvidence::None, true, at)?;
+                Settlement::Interrupted
+            }
+        })
+    }
+
+    /// Ends a queued or unclaimed cancelling generation job as cancelled;
+    /// any other job is returned unchanged.
+    pub fn cancel_job_after_restart(
+        &self,
+        job: JobSnapshot,
+        now: TimestampMillis,
+    ) -> Result<JobSnapshot, ConversationGenerationDispatchError> {
+        let job = match job.state {
+            JobState::Queued => {
+                self.jobs
+                    .append_and_transition(JobMutation::RequestCancellation {
+                        id: job.id,
+                        reason: CancellationReason::Recovery,
+                        at: now.max(job.updated_at),
+                    })?
+            }
+            _ => job,
+        };
+        if job.state != JobState::CancellationRequested || job.claim.is_some() {
+            return Ok(job);
+        }
+        Ok(self
+            .jobs
+            .append_and_transition(JobMutation::FinishQueuedCancellation {
+                id: job.id,
+                at: now.max(job.updated_at),
+            })?)
+    }
+
+    fn settle_tools_after_restart(
+        &self,
+        work: &GenerationWorkTarget,
+        at: TimestampMillis,
+    ) -> Result<(), ConversationGenerationDispatchError> {
+        let transitions = self
+            .conversations
+            .list_tool_executions(work.conversation_id, work.turn_id, work.attempt_id)?
+            .into_iter()
+            .filter_map(|execution| {
+                let next = match execution.status {
+                    ToolExecutionStatus::Running => ToolExecutionStatus::Interrupted,
+                    ToolExecutionStatus::Requested | ToolExecutionStatus::Validated => {
+                        ToolExecutionStatus::Cancelled
+                    }
+                    _ => return None,
+                };
+                Some(ToolExecutionTransition {
+                    id: execution.id,
+                    expected_revision: execution.revision,
+                    next,
+                    output: None,
+                    failure: None,
+                })
+            })
+            .collect::<Vec<_>>();
+        if !transitions.is_empty() {
+            self.conversations
+                .transition_tool_execution_batch(&transitions, at)?;
+        }
+        Ok(())
+    }
+
+    fn interrupt_attempt(
+        &self,
+        work: &GenerationWorkTarget,
+        evidence: GenerationUsageEvidence,
+        tools_settled: bool,
+        at: TimestampMillis,
+    ) -> Result<(), ConversationGenerationDispatchError> {
+        let (conversation_revision, turn, attempt) = self.current(work)?;
+        if attempt.status == GenerationAttemptStatus::Interrupted {
+            return Ok(());
+        }
+        if is_terminal_attempt(attempt.status) {
+            return Err(ConversationGenerationDispatchError::InvalidWork);
+        }
+        if !tools_settled {
             let executions = self.conversations.list_tool_executions(
                 work.conversation_id,
                 work.turn_id,
@@ -1753,24 +1920,44 @@ impl<
                     return Err(ConversationGenerationDispatchError::InvalidWork);
                 }
             }
-            let usage_event_id = self.attempt_usage_event(
-                work,
-                &turn,
-                &attempt,
-                evidence,
-                UsageOutcome::Interrupted,
-            )?;
-            self.conversations.interrupt_generation(
+        }
+        let usage_event_id =
+            self.attempt_usage_event(work, &turn, &attempt, evidence, UsageOutcome::Interrupted)?;
+        self.conversations.interrupt_generation(
+            work.turn_id,
+            work.attempt_id,
+            conversation_revision,
+            turn.revision,
+            &operation_token(
+                work.conversation_id,
                 work.turn_id,
                 work.attempt_id,
-                conversation_revision,
-                turn.revision,
-                &token(ConversationGenerationOperation::Interrupt),
-                usage_event_id,
-                at,
-            )?;
-        }
-        let (conversation_revision, turn, _) = self.current(work)?;
+                work.job_id,
+                ConversationGenerationOperation::Interrupt,
+            ),
+            usage_event_id,
+            at,
+        )?;
+        Ok(())
+    }
+
+    fn interrupt_and_recover(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        evidence: GenerationUsageEvidence,
+        at: TimestampMillis,
+    ) -> Result<(GenerationAttemptId, JobSnapshot), ConversationGenerationDispatchError> {
+        let token = |operation| {
+            operation_token(
+                work.conversation_id,
+                work.turn_id,
+                work.attempt_id,
+                work.handle.id(),
+                operation,
+            )
+        };
+        self.interrupt_attempt(&work.target(), evidence, false, at)?;
+        let (conversation_revision, turn, _) = self.current(&work.target())?;
         let child_attempt_id = if turn.status == GenerationTurnStatus::Interrupted {
             self.conversations
                 .recover_generation(

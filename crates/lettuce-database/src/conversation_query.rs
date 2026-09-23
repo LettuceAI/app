@@ -2370,6 +2370,29 @@ fn read_candidate_page(
     })
 }
 
+impl lettuce_conversations::LiveTurnReader for Database {
+    fn live_turns(&self, limit: u32) -> Result<Vec<GenerationTurnId>, ConversationRepositoryError> {
+        let connection = open_read(self)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT id FROM conversation_turns WHERE status NOT IN ('succeeded','failed','cancelled','interrupted') ORDER BY created_at, id LIMIT ?1",
+            )
+            .map_err(slice::db)?;
+        let mut ids = Vec::new();
+        for id in statement
+            .query_map([i64::from(limit)], |row| row.get::<_, String>(0))
+            .map_err(slice::db)?
+        {
+            ids.push(
+                id.map_err(slice::db)?
+                    .parse::<GenerationTurnId>()
+                    .map_err(|_| ConversationRepositoryError::Storage)?,
+            );
+        }
+        Ok(ids)
+    }
+}
+
 impl ConversationReader for Database {
     fn get(
         &self,

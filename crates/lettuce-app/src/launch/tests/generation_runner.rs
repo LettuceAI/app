@@ -779,6 +779,136 @@ async fn app_backend_cancels_queued_and_running_generation_jobs_by_id() {
 }
 
 #[tokio::test]
+async fn restart_recovery_settles_every_turn_the_previous_process_left_live() {
+    let path = std::env::temp_dir().join(format!(
+        "lettuce-generation-restart-{}.db",
+        ConversationId::new()
+    ));
+    let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+    let engine = ScenarioEmbeddingEngine;
+    let clock = FakeClock::new(TimestampMillis::new(1_020));
+
+    let unstarted =
+        scenario_with_resolvable_profile(backend.database(), false, "restart-unstarted", true);
+
+    let stopping =
+        scenario_with_resolvable_profile(backend.database(), false, "restart-stopping", true);
+    let stopping_job = backend
+        .conversation_generation_dispatcher()
+        .admit(
+            stopping.conversation_id,
+            stopping.turn_id,
+            stopping.attempt_id,
+            TimestampMillis::new(1_010),
+        )
+        .expect("admit stopping generation")
+        .job;
+    claim(backend.database(), &stopping, stopping.attempt_id, 1_011);
+    assert!(matches!(
+        backend
+            .conversation_generation_cancellation()
+            .cancel(
+                stopping_job.id,
+                CancellationReason::User,
+                TimestampMillis::new(1_012),
+            )
+            .expect("request cancellation"),
+        ConversationGenerationCancellationOutcome::Requested { .. }
+    ));
+
+    let running =
+        scenario_with_resolvable_profile(backend.database(), false, "restart-running", true);
+    let running_job = backend
+        .conversation_generation_dispatcher()
+        .admit(
+            running.conversation_id,
+            running.turn_id,
+            running.attempt_id,
+            TimestampMillis::new(1_015),
+        )
+        .expect("admit running generation")
+        .job;
+    let inference = BlockingInference::new(text_outcome("lost", "Lost reply", 9, 4));
+    let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+    tokio::select! {
+        _ = runner.execute(execution_request(&running, CancellationToken::new()), &clock) => {
+            panic!("the blocked generation must not finish");
+        }
+        () = inference.entered.notified() => {}
+    }
+    drop(backend);
+
+    let backend = AppBackend::open(&path, TimestampMillis::new(1_030)).expect("reopen backend");
+    let report = backend
+        .recover_after_restart(TimestampMillis::new(1_030))
+        .expect("restart recovery");
+    let settled = |turn_id| {
+        report
+            .turns
+            .iter()
+            .find(|(id, _)| *id == turn_id)
+            .map(|(_, settlement)| *settlement)
+    };
+    assert_eq!(
+        settled(unstarted.turn_id),
+        Some(crate::ConversationGenerationRestartSettlement::Cancelled)
+    );
+    assert_eq!(
+        settled(stopping.turn_id),
+        Some(crate::ConversationGenerationRestartSettlement::Cancelled)
+    );
+    assert_eq!(
+        settled(running.turn_id),
+        Some(crate::ConversationGenerationRestartSettlement::Interrupted)
+    );
+    let turn = |turn_id| {
+        ConversationReader::get_turn(backend.database(), turn_id).expect("settled turn")
+    };
+    assert_eq!(
+        turn(unstarted.turn_id).status,
+        GenerationTurnStatus::Cancelled
+    );
+    assert_eq!(turn(stopping.turn_id).status, GenerationTurnStatus::Cancelled);
+    let interrupted = turn(running.turn_id);
+    assert_eq!(interrupted.status, GenerationTurnStatus::Interrupted);
+    assert_eq!(
+        interrupted.attempts[0].status,
+        GenerationAttemptStatus::Interrupted
+    );
+    assert_eq!(
+        attempt_usage(backend.database(), running.turn_id, 0)
+            .record
+            .outcome,
+        UsageOutcome::Interrupted
+    );
+    assert_eq!(
+        persisted_job(backend.database(), running_job.id).state,
+        JobState::Cancelled
+    );
+    assert!(report.cancelled_generation_jobs.contains(&running_job.id));
+    assert!(
+        persisted_job(backend.database(), stopping_job.id)
+            .state
+            .is_terminal()
+    );
+    assert!(
+        lettuce_conversations::LiveTurnReader::live_turns(backend.database(), 10)
+            .expect("live turns")
+            .is_empty()
+    );
+    let again = backend
+        .recover_after_restart(TimestampMillis::new(1_031))
+        .expect("second recovery");
+    assert!(
+        again.jobs.is_empty()
+            && again.cancelled_generation_jobs.is_empty()
+            && again.turns.is_empty()
+    );
+    drop(backend);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
 async fn app_backend_worker_executes_one_durable_generation_job() {
     let path = std::env::temp_dir().join(format!(
         "lettuce-generation-worker-{}.db",
