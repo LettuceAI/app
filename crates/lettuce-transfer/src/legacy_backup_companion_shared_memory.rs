@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lettuce_characters::InteractionMode;
-use lettuce_companions::{RelationshipState, SoulFact, SoulState, validate_state};
-use lettuce_types::{CharacterId, PersonaId, Revision};
+use lettuce_companions::{RelationshipState, SoulFact};
+use lettuce_types::{CharacterId, PersonaId};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -244,7 +244,6 @@ fn map_states(
         validate_text(row.memory_error.as_deref(), &format!("{path}.memory_error"))?;
         let soul_value = validate_json_array(&row.soul_growth, &format!("{path}.soul_growth"))?;
         validate_soul_shape(&soul_value, &format!("{path}.soul_growth"))?;
-        let soul_facts = exact_soul_facts(&soul_value);
         let relationship_value = validate_json_object(
             &row.relationship_states,
             &format!("{path}.relationship_states"),
@@ -284,6 +283,19 @@ fn map_states(
         let updated_at = count(row.updated_at, &format!("{path}.updated_at"))?;
         if created_at > updated_at {
             return Err(malformed(format!("{path}.updated_at")));
+        }
+        let mut repaired = Vec::new();
+        let soul_facts = crate::legacy_backup_json_values::legacy_soul_growth(
+            &soul_value,
+            &character_id.to_string(),
+            lettuce_types::TimestampMillis::new(row.updated_at),
+            &mut repaired,
+        );
+        if !repaired.is_empty() {
+            notices.push(notice(
+                LegacyBackupConversionNoticeKind::Lossy,
+                &format!("{path}.soul_growth"),
+            ));
         }
         let soul_materialization = if soul_facts.is_some() {
             LegacyBackupCompanionMaterialization::ExactInitialSnapshot
@@ -465,15 +477,6 @@ pub(crate) fn legacy_relationship_state(value: &Value) -> Option<RelationshipSta
         last_interaction_at: lettuce_types::TimestampMillis::new(legacy.last_interaction_at),
     };
     valid_relationship(&state).then_some(state)
-}
-
-pub(crate) fn exact_soul_facts(value: &Value) -> Option<Vec<SoulFact>> {
-    let facts = serde_json::from_value::<Vec<SoulFact>>(value.clone()).ok()?;
-    let state = SoulState {
-        revision: Revision::INITIAL,
-        facts: facts.clone(),
-    };
-    validate_state(&state).ok().map(|()| facts)
 }
 
 fn validate_soul_shape(

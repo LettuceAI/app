@@ -539,16 +539,12 @@ fn companion_memory(
         .as_array()
         .filter(|facts| !facts.is_empty())
         .and_then(|_| {
-            let facts =
-                crate::legacy_backup_companion_shared_memory::exact_soul_facts(&shared.soul_growth);
-            if facts.is_none() {
-                skipped.push(crate::legacy_value_skip(
-                    "companion_shared_memory.soul_growth",
-                    "character",
-                    crate::LegacyImportSkipReason::MalformedLegacyValue,
-                ));
-            }
-            facts
+            crate::legacy_backup_json_values::legacy_soul_growth(
+                &shared.soul_growth,
+                "character",
+                updated_at,
+                skipped,
+            )
         });
     let mut relationships = Vec::new();
     for (key, value) in shared.relationship_states.as_object().into_iter().flatten() {

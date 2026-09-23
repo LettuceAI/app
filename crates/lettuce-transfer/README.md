@@ -874,3 +874,10 @@ conversation is bound to (a pool from a character file before its first chat,
 or one whose chats were all deleted); they validate as pools and restore
 before conversations with their items and projections. Corrected: such a pool
 made the whole backup fail.
+
+Soul growth (backup, legacy database and character files): each fact is
+repaired the way legacy normalized it before storing (blank id, policy and
+slot filled, confidence and weight clamped to 0..1, a zero evidence count
+taken from its sources, zero creation and validity times set to the state's
+time); only a fact that still cannot be represented is dropped and recorded.
+Corrected: one bad fact used to drop the whole soul growth.

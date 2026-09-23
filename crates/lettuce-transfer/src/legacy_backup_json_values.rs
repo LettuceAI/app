@@ -259,8 +259,14 @@ pub(crate) fn legacy_companion(
         Some(Value::Array(items)) => {
             let mut ids = BTreeSet::new();
             for (index, item) in items.into_iter().enumerate() {
-                let Some(fact) = legacy_soul_fact(item, character_key, index, created_at, skipped)
-                else {
+                let Some(fact) = legacy_soul_fact(
+                    item,
+                    ("characters.companion.authoredFacts", "soul-fact"),
+                    character_key,
+                    index,
+                    created_at,
+                    skipped,
+                ) else {
                     continue;
                 };
                 if ids.insert(fact.id.clone()) {
@@ -322,14 +328,73 @@ fn valid_companion(config: &CompanionSoulConfig, created_at: TimestampMillis) ->
         && initial_soul_state(Some(config), created_at).is_ok()
 }
 
+/// Legacy soul growth repaired fact by fact: confidence and weight clamped, a missing evidence count taken from its
+/// sources, and missing creation and validity times set to `at`.
+pub(crate) fn legacy_soul_growth(
+    value: &Value,
+    owner_key: &str,
+    at: TimestampMillis,
+    skipped: &mut Vec<LegacyImportSkip>,
+) -> Option<Vec<SoulFact>> {
+    const FIELD: &str = "companion_shared_memory.soul_growth";
+    let mut ids = BTreeSet::new();
+    let mut facts = Vec::new();
+    for (index, item) in value.as_array().into_iter().flatten().enumerate() {
+        let mut item = item.clone();
+        if let Value::Object(object) = &mut item {
+            for key in ["confidence", "weight"] {
+                if let Some(number) = object.get(key).and_then(Value::as_f64) {
+                    object.insert(key.into(), json!(number.clamp(0.0, 1.0)));
+                }
+            }
+            if object
+                .get("evidenceCount")
+                .and_then(Value::as_u64)
+                .is_none_or(|count| count == 0)
+            {
+                let sources = object
+                    .get("sourceMemoryIds")
+                    .and_then(Value::as_array)
+                    .map_or(0, Vec::len);
+                object.insert("evidenceCount".into(), json!(sources));
+            }
+            let created = object
+                .get("createdAt")
+                .and_then(Value::as_i64)
+                .filter(|value| *value > 0)
+                .unwrap_or(at.get());
+            object.insert("createdAt".into(), json!(created));
+            if object
+                .get("validFrom")
+                .and_then(Value::as_i64)
+                .is_none_or(|value| value == 0)
+            {
+                object.insert("validFrom".into(), json!(created));
+            }
+        }
+        let Some(fact) =
+            legacy_soul_fact(item, (FIELD, "soul-growth"), owner_key, index, at, skipped)
+        else {
+            continue;
+        };
+        if ids.insert(fact.id.clone()) {
+            facts.push(fact);
+        } else {
+            skipped.push(malformed(&format!("{FIELD}[{index}].id"), owner_key));
+        }
+    }
+    (!facts.is_empty()).then_some(facts)
+}
+
 fn legacy_soul_fact(
     item: Value,
+    (field, identity): (&str, &str),
     character_key: &str,
     index: usize,
     created_at: TimestampMillis,
     skipped: &mut Vec<LegacyImportSkip>,
 ) -> Option<SoulFact> {
-    let field = format!("characters.companion.authoredFacts[{index}]");
+    let field = format!("{field}[{index}]");
     let Value::Object(mut object) = item else {
         skipped.push(malformed(&field, character_key));
         return None;
@@ -399,7 +464,7 @@ fn legacy_soul_fact(
         .and_then(Value::as_str)
         .is_none_or(|id| id.trim().is_empty())
     {
-        let identity = format!("soul-fact:{character_key}:{index}");
+        let identity = format!("{identity}:{character_key}:{index}");
         object.insert(
             "id".into(),
             json!(Uuid::new_v5(&LEGACY_ID_NAMESPACE, identity.as_bytes()).to_string()),
@@ -1163,5 +1228,34 @@ mod tests {
         assert_eq!(soul.authored_facts[2].supersedes, ["fact-0"]);
         assert!(companion.prompt_source_id.is_none());
         assert_eq!(skipped.len(), 5);
+    }
+
+    #[test]
+    fn soul_growth_facts_are_repaired_one_by_one() {
+        let mut skipped = Vec::new();
+        let facts = legacy_soul_growth(
+            &json!([
+                {"category": "likes", "value": "Tea", "kind": "add", "slot": "", "confidence": 1.2,
+                 "sourceMemoryIds": ["a", "b"], "createdAt": 0},
+                {"category": "nonsense", "value": "Lost"},
+                {"id": "kept", "category": "traits", "value": "Patient", "kind": "adjust",
+                 "policy": "adaptive", "slot": "temperament", "weight": -3.0, "createdAt": 7}
+            ]),
+            "owner",
+            TimestampMillis::new(50),
+            &mut skipped,
+        )
+        .expect("facts");
+        assert_eq!(facts.len(), 2);
+        assert_eq!(facts[0].slot, "likes");
+        assert_eq!(facts[0].confidence, 1.0);
+        assert_eq!(facts[0].evidence_count, 2);
+        assert_eq!(facts[0].created_at, TimestampMillis::new(50));
+        assert_eq!(facts[0].valid_from, TimestampMillis::new(50));
+        assert!(!facts[0].id.is_empty());
+        assert_eq!(facts[1].id, "kept");
+        assert_eq!(facts[1].weight, 0.0);
+        assert_eq!(facts[1].valid_from, TimestampMillis::new(7));
+        assert_eq!(skipped.len(), 1);
     }
 }
