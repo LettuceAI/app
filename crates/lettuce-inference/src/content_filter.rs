@@ -1,10 +1,14 @@
 //! Pure mode: scoring model output against the content dictionaries and
 //! blocking it above the level's threshold, for whole texts and for streams.
+//! The English dictionary always applies; the lexicon of the language the
+//! text is detected in is added to it.
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{LazyLock, Mutex};
 
 use serde::Deserialize;
+
+use crate::content_lexicons;
 
 /// How strictly model output is filtered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +47,13 @@ impl PureModeLevel {
             Self::Low => "low",
             Self::Standard => "standard",
             Self::Strict => "strict",
+        }
+    }
+
+    pub(crate) const fn min_weight(self) -> f32 {
+        match self {
+            Self::Low => 0.8,
+            _ => 0.0,
         }
     }
 
@@ -101,7 +112,7 @@ pub struct StreamFilterContext {
     accumulated: String,
 }
 
-const STREAM_WINDOW_BYTES: usize = 500;
+pub(crate) const STREAM_WINDOW_BYTES: usize = 500;
 
 /// A redacted record of a check that scored above zero.
 #[derive(Debug, Clone, PartialEq)]
@@ -201,7 +212,15 @@ impl ContentFilter {
         let normalized = Self::normalize_leet(&unicode_norm);
         let has_context = Self::has_allowlist_context(&normalized);
         let words = Self::tokenize(&normalized);
-        let (score, matched_terms) = Self::score_text(&words, &normalized, has_context, level);
+        let (mut score, mut matched_terms) =
+            Self::score_text(&words, &normalized, has_context, level);
+        content_lexicons::score(
+            &lower,
+            level,
+            if has_context { 0.5 } else { 1.0 },
+            &mut score,
+            &mut matched_terms,
+        );
         FilterResult {
             blocked: score >= level.threshold(),
             score,
@@ -250,9 +269,7 @@ impl ContentFilter {
         let mut result = String::with_capacity(text.len());
         for ch in text.chars() {
             match ch {
-                '\u{200B}' | '\u{200C}' | '\u{200D}' | '\u{FEFF}' | '\u{00AD}' | '\u{200E}'
-                | '\u{200F}' | '\u{2060}' | '\u{2061}' | '\u{2062}' | '\u{2063}' | '\u{2064}' => {}
-                '\u{FE00}'..='\u{FE0F}' => {}
+                ch if is_invisible(ch) => {}
 
                 '\u{0430}' | '\u{0410}' => result.push('a'),
                 '\u{0435}' | '\u{0415}' => result.push('e'),
@@ -470,7 +487,7 @@ impl ContentFilter {
                     normalized_text,
                     collapsed_words,
                     &dictionary().explicit_sexual,
-                    Some(0.8),
+                    Some(PureModeLevel::Low.min_weight()),
                     context_factor,
                     &mut total_score,
                     &mut matched,
@@ -576,6 +593,26 @@ impl ContentFilter {
             }
         }
     }
+}
+
+/// Characters that render as nothing and are dropped before matching.
+pub(crate) const fn is_invisible(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{200B}'
+            | '\u{200C}'
+            | '\u{200D}'
+            | '\u{FEFF}'
+            | '\u{00AD}'
+            | '\u{200E}'
+            | '\u{200F}'
+            | '\u{2060}'
+            | '\u{2061}'
+            | '\u{2062}'
+            | '\u{2063}'
+            | '\u{2064}'
+            | '\u{FE00}'..='\u{FE0F}'
+    )
 }
 
 #[cfg(test)]

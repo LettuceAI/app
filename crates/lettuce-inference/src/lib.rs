@@ -3,6 +3,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod content_filter;
+mod content_lexicons;
 pub mod pure_mode;
 pub mod thinking;
 
