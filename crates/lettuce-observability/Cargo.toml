@@ -16,6 +16,7 @@ workspace = true
 [dependencies]
 chrono.workspace = true
 lettuce-types.workspace = true
+regex.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tracing-appender.workspace = true

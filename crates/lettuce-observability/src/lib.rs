@@ -9,6 +9,8 @@
 mod config;
 mod correlation;
 mod init;
+mod line_layer;
+mod log_files;
 mod panic;
 mod redaction;
 
@@ -17,7 +19,12 @@ pub use correlation::{
     CONVERSATION_ID_FIELD, Correlation, CorrelationContext, GENERATION_TURN_ID_FIELD, JOB_ID_FIELD,
     OPERATION_FIELD, OPERATION_ID_FIELD, REQUEST_ID_FIELD,
 };
-pub use init::{InitError, install};
+pub use init::{InitError, LocalOutput, LogSink, install};
+pub use line_layer::LineLayer;
+pub use log_files::{
+    DailyLogWriter, LogDirectory, LogEntry, LogFileError, LogPage, LogSearchOptions,
+    LogSearchResult, daily_file_name, sanitize_message,
+};
 pub use panic::install_panic_reports;
 pub use redaction::{REDACTED, Sensitive, UserContent};
 
@@ -199,38 +206,66 @@ mod tests {
         assert!(fs::create_dir(&directory).is_ok());
 
         let (writer, guard) = super::init::local_output_writer(
-            super::LocalOutputConfig::new(&directory)
-                .with_file_prefix("canary")
-                .with_queue_capacity(8),
+            super::LocalOutputConfig::new(&directory).with_queue_capacity(8),
         )
         .expect("isolated temporary output directory should be writable");
+        let sink = super::LogSink::new(writer.clone());
         let subscriber = registry()
             .with(tracing_subscriber::EnvFilter::new("trace"))
-            .with(fmt::layer().with_ansi(false).with_writer(writer));
+            .with(super::LineLayer::new(writer));
 
         tracing::subscriber::with_default(subscriber, || {
+            let span = tracing::info_span!("sync_run");
+            let _entered = span.enter();
             tracing::error!(
                 secret = %Sensitive::new("file-canary-secret"),
                 content = ?UserContent::new("file-private-content"),
-                "local-output-canary"
+                "local-output-canary\nsecond line"
             );
+            tracing::warn!(
+                component = "api_request",
+                "sent full_url=https://h/p?key=abc"
+            );
+            tracing::info!(api_key = ?"sk-123", token = ?Some("abc"), model = "gpt", "request body: {}", "{\"a\":1}");
+            tracing::info!(msg = "aliased");
+            tracing::trace!("not written");
         });
+        sink.append(&super::LogEntry {
+            timestamp: "t".to_owned(),
+            level: "INFO".to_owned(),
+            component: "frontend".to_owned(),
+            function: None,
+            message: "raw key=kept".to_owned(),
+        })
+        .expect("append");
         drop(guard);
 
-        let entries = fs::read_dir(&directory).expect("daily appender should create a file");
-        let files = entries
-            .map(|entry| entry.expect("directory entry should be readable").path())
-            .filter(|path| {
-                path.file_name()
-                    .is_some_and(|name| name.to_string_lossy().starts_with("canary"))
-            })
-            .collect::<Vec<_>>();
+        let logs = super::LogDirectory::new(directory.clone());
+        let files = logs.list().expect("the daily file exists");
         assert_eq!(files.len(), 1);
-        let output = fs::read_to_string(&files[0]).expect("flushed log file should be readable");
-        assert!(output.contains("local-output-canary"));
+        assert!(files[0].starts_with("app-") && files[0].ends_with(".log"));
+        let output = logs
+            .read(&files[0])
+            .expect("flushed log file should be readable");
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lines.len(), 5);
+        assert!(lines[0].starts_with('['));
+        assert!(lines[0].contains(
+            "] ERROR lettuce_observability::tests at=crates/lettuce-observability/src/lib.rs:"
+        ));
+        assert!(lines[0].contains(" | local-output-canary\\nsecond line secret="));
+        assert!(lines[0].ends_with(" [span=sync_run]"));
         assert!(output.contains(REDACTED));
         assert!(!output.contains("file-canary-secret"));
         assert!(!output.contains("file-private-content"));
+        assert!(lines[1].contains("] WARN api_request at="));
+        assert!(lines[1].contains(" | sent url=https://h/p?key=*** [span=sync_run]"));
+        assert!(lines[2].ends_with(
+            " | request body: <redacted body len=8> api_key=*** token=*** model=gpt [span=sync_run]"
+        ));
+        assert!(!output.contains("sk-123"));
+        assert!(lines[3].contains(" | aliased [span=sync_run]"));
+        assert_eq!(lines[4], "[t] INFO frontend | raw key=kept");
 
         fs::remove_dir_all(directory).expect("test output directory should be removable");
     }

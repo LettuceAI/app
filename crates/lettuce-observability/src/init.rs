@@ -1,13 +1,12 @@
-use std::io;
+use std::io::{self, Write as _};
 
 use thiserror::Error;
-use tracing_appender::{
-    non_blocking::{NonBlocking, WorkerGuard},
-    rolling,
-};
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::{EnvFilter, Registry, layer::SubscriberExt};
 
 use crate::config::{ConfigError, LocalOutputConfig, ObservabilityConfig, StderrFormat};
+use crate::line_layer::LineLayer;
+use crate::log_files::{DailyLogWriter, LogEntry};
 
 pub(crate) fn build_filter(directives: &str) -> EnvFilter {
     EnvFilter::try_new(directives).unwrap_or_else(|_| EnvFilter::new("info"))
@@ -18,8 +17,6 @@ pub(crate) fn build_filter(directives: &str) -> EnvFilter {
 pub enum InitError {
     #[error("invalid observability configuration: {0}")]
     InvalidConfig(#[from] ConfigError),
-    #[error("the local observability output could not be opened")]
-    LocalOutput(#[source] rolling::InitError),
     #[error("the global tracing subscriber is already installed")]
     AlreadyInstalled,
 }
@@ -28,25 +25,48 @@ pub(crate) fn local_output_writer(
     config: LocalOutputConfig,
 ) -> Result<(NonBlocking, WorkerGuard), InitError> {
     config.validate()?;
-    let appender = rolling::Builder::new()
-        .rotation(rolling::Rotation::DAILY)
-        .filename_prefix(config.file_prefix)
-        .build(config.directory)
-        .map_err(InitError::LocalOutput)?;
-
     Ok(
         tracing_appender::non_blocking::NonBlockingBuilder::default()
             .buffered_lines_limit(config.queue_capacity)
             .lossy(true)
-            .finish(appender),
+            .finish(DailyLogWriter::new(config.directory)),
     )
 }
 
-/// Installs the single process-wide subscriber.
-///
-/// The returned guard must be retained for as long as local file output is
-/// needed. `None` is returned when local output is not configured.
-pub fn install(config: ObservabilityConfig) -> Result<Option<WorkerGuard>, InitError> {
+/// Appends records that do not come from `tracing`, such as the frontend's,
+/// to the same daily files.
+#[derive(Clone)]
+pub struct LogSink {
+    writer: NonBlocking,
+}
+
+impl std::fmt::Debug for LogSink {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_struct("LogSink").finish_non_exhaustive()
+    }
+}
+
+impl LogSink {
+    pub(crate) const fn new(writer: NonBlocking) -> Self {
+        Self { writer }
+    }
+
+    pub fn append(&self, entry: &LogEntry) -> io::Result<()> {
+        self.writer.clone().write_all(entry.line().as_bytes())
+    }
+}
+
+/// The daily log files' writer: the guard flushes queued lines when dropped
+/// and must be kept for as long as the files are written.
+#[derive(Debug)]
+pub struct LocalOutput {
+    pub guard: WorkerGuard,
+    pub sink: LogSink,
+}
+
+/// Installs the single process-wide subscriber. `None` is returned when
+/// local output is not configured.
+pub fn install(config: ObservabilityConfig) -> Result<Option<LocalOutput>, InitError> {
     config.validate()?;
 
     let filter = build_filter(&config.filter);
@@ -68,19 +88,18 @@ pub fn install(config: ObservabilityConfig) -> Result<Option<WorkerGuard>, InitE
         )),
     }
 
-    let mut worker_guard = None;
+    let mut output = None;
     if let Some(local_output) = config.local_output {
         let (writer, guard) = local_output_writer(local_output)?;
-        let file_layer = tracing_subscriber::fmt::layer()
-            .compact()
-            .with_ansi(false)
-            .with_writer(writer);
-        layers.push(Box::new(file_layer));
-        worker_guard = Some(guard);
+        layers.push(Box::new(LineLayer::new(writer.clone())));
+        output = Some(LocalOutput {
+            guard,
+            sink: LogSink::new(writer),
+        });
     }
 
     let subscriber = Registry::default().with(layers);
     tracing::subscriber::set_global_default(subscriber).map_err(|_| InitError::AlreadyInstalled)?;
 
-    Ok(worker_guard)
+    Ok(output)
 }

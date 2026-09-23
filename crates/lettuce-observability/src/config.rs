@@ -1,8 +1,7 @@
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-const DEFAULT_FILE_PREFIX: &str = "lettuce";
 const DEFAULT_QUEUE_CAPACITY: usize = 1_024;
 const MAX_QUEUE_CAPACITY: usize = 1_000_000;
 
@@ -16,13 +15,11 @@ pub enum StderrFormat {
     Pretty,
 }
 
-/// Explicit configuration for optional local rolling output.
+/// Explicit configuration for the optional daily log files.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalOutputConfig {
     /// Directory supplied by the composition root.
     pub directory: PathBuf,
-    /// Prefix for the daily rolling files.
-    pub file_prefix: String,
     /// Maximum number of queued records before the lossy writer drops them.
     pub queue_capacity: usize,
 }
@@ -32,15 +29,8 @@ impl LocalOutputConfig {
     pub fn new(directory: impl Into<PathBuf>) -> Self {
         Self {
             directory: directory.into(),
-            file_prefix: DEFAULT_FILE_PREFIX.to_owned(),
             queue_capacity: DEFAULT_QUEUE_CAPACITY,
         }
-    }
-
-    #[must_use]
-    pub fn with_file_prefix(mut self, file_prefix: impl Into<String>) -> Self {
-        self.file_prefix = file_prefix.into();
-        self
     }
 
     #[must_use]
@@ -51,14 +41,6 @@ impl LocalOutputConfig {
 
     pub(crate) fn validate(&self) -> Result<(), ConfigError> {
         validate_output_directory(&self.directory)?;
-
-        if self.file_prefix.is_empty()
-            || Path::new(&self.file_prefix)
-                .components()
-                .any(|component| !matches!(component, Component::Normal(_)))
-        {
-            return Err(ConfigError::InvalidFilePrefix);
-        }
 
         if self.queue_capacity == 0 || self.queue_capacity > MAX_QUEUE_CAPACITY {
             return Err(ConfigError::InvalidQueueCapacity);
@@ -125,8 +107,6 @@ pub enum ConfigError {
     OutputDirectoryMissing,
     #[error("the local observability output path is not a directory")]
     OutputPathNotDirectory,
-    #[error("the local observability file prefix is invalid")]
-    InvalidFilePrefix,
     #[error("the local observability queue capacity is outside its bounded range")]
     InvalidQueueCapacity,
 }
