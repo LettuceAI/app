@@ -1823,3 +1823,20 @@ read-modify-write; the import writes `appActiveUsageByDayMs` into the table
 (max per day, so replays and earlier usage are kept), records an unreadable
 day or a total above the days' sum as lost, and drops the two timestamps,
 which the table's days and `updated_at` replace.
+
+Companion follow-ups (2026-09-23): after each post-turn memory cycle that
+succeeds with fresh memories, `CompanionFollowUpHost` (called by `drive`)
+admits and runs the growth cycle with the built-in growth prompt and, when
+growth applied changes, the consolidation (legacy ran both inline after the
+memory cycle; nothing admitted them in the rewrite before). The prompt is
+resolved before admission, so a missing prompt creates no job. As in legacy a
+failed follow-up is not retried: a retry-scheduled one is cancelled (its key is
+per memory run or growth job, so nothing else is blocked). `resume_after_restart`
+runs queued growth and consolidation jobs from their stored runs, fails one the
+app stopped during twice and cancels one that can no longer be claimed. Known
+gaps: a crash between growth success and consolidation admission loses the
+consolidation (legacy lost it too); growth and consolidation reuse the memory
+run's resolved profile (DynamicMemory slot and memory sampler) where legacy used
+the CompanionMemory slot with its own defaults (temperature 0.3); with a shared
+memory pool, overlapping memory passes of two chats can count one chat's new
+memories as fresh for the other's growth.

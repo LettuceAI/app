@@ -501,12 +501,13 @@ where
         worker_id: WorkerId,
         lease_for: Duration,
         clock: &dyn lettuce_jobs::Clock,
+        follow_ups: &dyn crate::CompanionFollowUps,
     ) {
         let guard = crate::post_turn_memory_scheduler::DriveGuard::new(scheduler, conversation_id);
         loop {
             scheduler.begin(conversation_id);
             if !self
-                .run_pass(conversation_id, worker_id, lease_for, clock)
+                .run_pass(conversation_id, worker_id, lease_for, clock, follow_ups)
                 .await
             {
                 return;
@@ -526,6 +527,7 @@ where
         worker_id: WorkerId,
         lease_for: Duration,
         clock: &dyn lettuce_jobs::Clock,
+        follow_ups: &dyn crate::CompanionFollowUps,
     ) -> Result<Vec<lettuce_types::JobId>, CompanionMemoryHostError> {
         let mut queued = Vec::new();
         let mut held = std::collections::BTreeSet::new();
@@ -549,7 +551,7 @@ where
             .filter_map(|job| job.subject.id.as_str().parse::<ConversationId>().ok())
             .collect::<std::collections::BTreeSet<_>>();
         for conversation_id in conversations {
-            self.run_pass(conversation_id, worker_id, lease_for, clock)
+            self.run_pass(conversation_id, worker_id, lease_for, clock, follow_ups)
                 .await;
         }
         let mut cancelled = Vec::new();
@@ -589,6 +591,7 @@ where
         worker_id: WorkerId,
         lease_for: Duration,
         clock: &dyn lettuce_jobs::Clock,
+        follow_ups: &dyn crate::CompanionFollowUps,
     ) -> bool {
         let works = match self.after_turn(
             conversation_id,
@@ -608,11 +611,18 @@ where
             }
         };
         for work in works {
-            if let Err(error) = self
+            match self
                 .run_claimed(work, CancellationReason::User, clock.now())
                 .await
             {
-                tracing::warn!(%conversation_id, %error, "post-turn memory pass failed");
+                Ok(settled) => {
+                    follow_ups
+                        .after_memory(&settled, worker_id, lease_for, clock)
+                        .await;
+                }
+                Err(error) => {
+                    tracing::warn!(%conversation_id, %error, "post-turn memory pass failed");
+                }
             }
         }
         true

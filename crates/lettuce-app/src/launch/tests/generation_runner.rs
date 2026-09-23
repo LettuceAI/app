@@ -3038,6 +3038,7 @@ async fn post_turn_memory_driver_runs_the_due_cycle_and_releases_the_conversatio
         WorkerId::new(),
         LEASE,
         &clock,
+        &crate::CompanionFollowUpHost::new(backend.database(), &memory),
     )
     .await;
     assert!(!scheduler.is_active(scenario.conversation_id));
@@ -3089,6 +3090,7 @@ async fn restart_resumes_a_memory_job_whose_window_is_still_due() {
             WorkerId::new(),
             LEASE,
             &FakeClock::new(TimestampMillis::new(1_041)),
+            &crate::CompanionFollowUpHost::new(backend.database(), &memory),
         )
         .await
         .expect("resume memory jobs");
@@ -3142,6 +3144,7 @@ async fn a_memory_job_the_app_keeps_stopping_during_is_not_run_again() {
             WorkerId::new(),
             LEASE,
             &FakeClock::new(TimestampMillis::new(1_051)),
+            &crate::CompanionFollowUpHost::new(backend.database(), &memory),
         )
         .await
         .expect("resume memory jobs");
@@ -3190,6 +3193,7 @@ async fn restart_cancels_a_memory_job_its_conversation_would_no_longer_admit() {
             WorkerId::new(),
             LEASE,
             &FakeClock::new(TimestampMillis::new(1_041)),
+            &crate::CompanionFollowUpHost::new(backend.database(), &memory),
         )
         .await
         .expect("resume memory jobs");
