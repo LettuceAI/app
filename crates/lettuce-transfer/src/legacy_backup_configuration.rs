@@ -472,6 +472,11 @@ pub fn plan_legacy_backup_configuration(
         secret_rows,
         &mut notices,
     )?);
+    secrets.extend(map_app_secrets(
+        &source,
+        settings.advanced_settings.as_ref(),
+        &mut notices,
+    ));
     for secret in &secrets {
         let (owner, pending) = match &secret.purpose {
             SecretPurpose::ProviderApiKey { owner } => {
@@ -1031,7 +1036,6 @@ fn map_device_settings(
             _ => lossy_fields.push(field),
         }
     }
-    let mut token_unsupported = false;
     if let Some(host) = host.as_ref().and_then(Value::as_object) {
         settings.host_api.enabled = host_enabled
             .as_ref()
@@ -1051,10 +1055,6 @@ fn map_device_settings(
                 _ => lossy_fields.push("advanced_settings.hostApi.port".to_owned()),
             }
         }
-        token_unsupported = host
-            .get("token")
-            .and_then(Value::as_str)
-            .is_some_and(|token| !token.trim().is_empty());
         for (index, value) in exposed
             .as_ref()
             .and_then(Value::as_array)
@@ -1123,13 +1123,6 @@ fn map_device_settings(
             field,
         )
     }));
-    if token_unsupported {
-        notices.push(notice(
-            LegacyBackupConversionNoticeKind::Unsupported,
-            LegacyBackupDocumentKind::Settings,
-            "advanced_settings.hostApi.token",
-        ));
-    }
     settings
 }
 
@@ -3590,6 +3583,74 @@ impl crate::LegacyProviderSecretSource for LegacyBackupConfigurationPlan {
     }
 }
 
+/// Legacy's app-wide tokens: the Hugging Face and CivitAI tokens it kept in
+/// `meta` and the host API bearer token in `advanced_settings.hostApi`. Each
+/// goes to the rewrite's fixed reference for its purpose; a blank one is
+/// dropped, as legacy treated it as unset.
+fn map_app_secrets(
+    source: &LegacyBackupInventory,
+    advanced: Option<&Value>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> Vec<ProviderBackupSecret> {
+    let meta = source
+        .documents
+        .iter()
+        .find(|document| document.kind == LegacyBackupDocumentKind::Meta)
+        .and_then(|document| serde_json::from_slice::<Vec<Value>>(&document.bytes).ok())
+        .unwrap_or_default();
+    let meta_value = |key: &str| {
+        meta.iter()
+            .find(|row| row.get("key").and_then(Value::as_str) == Some(key))
+            .and_then(|row| row.get("value")?.as_str())
+            .map(str::to_owned)
+    };
+    let host_token = advanced
+        .and_then(|advanced| advanced.get("hostApi")?.get("token")?.as_str())
+        .map(str::to_owned);
+    [
+        (
+            SecretPurpose::HuggingFaceAccessToken,
+            meta_value("hugging_face_access_token"),
+            LegacyBackupDocumentKind::Meta,
+            "hugging_face_access_token",
+        ),
+        (
+            SecretPurpose::CivitaiAccessToken,
+            meta_value("civitai_access_token"),
+            LegacyBackupDocumentKind::Meta,
+            "civitai_access_token",
+        ),
+        (
+            SecretPurpose::HostApiBearerToken,
+            host_token,
+            LegacyBackupDocumentKind::Settings,
+            "advanced_settings.hostApi.token",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(purpose, value, document, field)| {
+        let value = value.filter(|value| !value.trim().is_empty())?;
+        let reference = purpose.app_secret_ref()?;
+        match SecretValue::new(value) {
+            Ok(value) => Some(ProviderBackupSecret {
+                reference,
+                purpose,
+                generation: 1,
+                value,
+            }),
+            Err(_) => {
+                notices.push(notice(
+                    LegacyBackupConversionNoticeKind::Lossy,
+                    document,
+                    field,
+                ));
+                None
+            }
+        }
+    })
+    .collect()
+}
+
 fn deterministic_secret_ref(value: &str) -> SecretRef {
     SecretRef::from_uuid(Uuid::new_v5(&LEGACY_ID_NAMESPACE, value.as_bytes()))
 }
@@ -3766,6 +3827,27 @@ mod tests {
             documents,
             media: Vec::<LegacyBackupMedia>::new(),
         }
+    }
+
+    #[test]
+    fn legacy_meta_tokens_become_app_secrets() {
+        let mut notices = Vec::new();
+        let secrets = map_app_secrets(
+            &inventory(vec![document(
+                LegacyBackupDocumentKind::Meta,
+                json!([
+                    {"key": "hugging_face_access_token", "value": "hf_abc"},
+                    {"key": "civitai_access_token", "value": "  "},
+                    {"key": "schema_version", "value": "90"}
+                ]),
+            )]),
+            None,
+            &mut notices,
+        );
+        assert!(notices.is_empty());
+        assert_eq!(secrets.len(), 1);
+        assert_eq!(secrets[0].purpose, SecretPurpose::HuggingFaceAccessToken);
+        assert!(secrets[0].value.with(|value| value == "hf_abc"));
     }
 
     #[test]
@@ -4587,7 +4669,7 @@ mod tests {
             plan.chat_templates[0].scene_source_id.as_deref(),
             Some("scene-one")
         );
-        assert_eq!(plan.secrets.len(), 3);
+        assert_eq!(plan.secrets.len(), 4);
         assert!(
             plan.secrets
                 .iter()
@@ -4694,7 +4776,17 @@ mod tests {
             Some("768x768")
         );
         let field_notice = |field: &str| plan.notices.iter().any(|notice| notice.field == field);
-        assert!(field_notice("advanced_settings.hostApi.token"));
+        assert!(!field_notice("advanced_settings.hostApi.token"));
+        let host_token = plan
+            .secrets
+            .iter()
+            .find(|secret| secret.purpose == SecretPurpose::HostApiBearerToken)
+            .expect("host API token");
+        assert_eq!(
+            Some(host_token.reference),
+            SecretPurpose::HostApiBearerToken.app_secret_ref()
+        );
+        assert!(host_token.value.with(|value| value == "secret-token"));
         assert!(field_notice("app_state.trustedCertificates[1]"));
         assert!(!field_notice("advanced_settings.hostApi"));
         assert!(plan.provider_models.skipped.iter().any(|skip| {

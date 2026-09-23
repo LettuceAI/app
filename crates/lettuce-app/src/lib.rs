@@ -58,6 +58,7 @@ mod playground;
 mod job_recovery;
 mod kokoro_assets;
 mod kokoro_download;
+mod legacy_app_secret_import;
 mod legacy_asr_learning_transfer;
 mod legacy_audio_import;
 mod legacy_character_import;

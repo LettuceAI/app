@@ -353,6 +353,13 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .execute_database_import(&admission, import, at)
             .await
             .map_err(stage("audio"))?;
+        crate::legacy_app_secret_import::store_legacy_app_secrets(
+            self.secrets,
+            &source.authored_plan().configuration.secrets,
+            written,
+        )
+        .await
+        .map_err(stage("app secrets"))?;
         backend
             .legacy_settings_importer()
             .execute_database_import(&admission, import, at)
