@@ -449,7 +449,14 @@ where
         let dispatcher = CompanionMemoryDispatchCoordinator::new(self.repository, self.repository);
         let inputs = match self.resolve_runtime_inputs(&work.admission) {
             Ok(inputs) => inputs,
-            Err(CompanionMemoryHostError::RuntimeInputs(error)) => {
+            Err(error) => {
+                let error = match error {
+                    CompanionMemoryHostError::RuntimeInputs(error) => error,
+                    other => {
+                        tracing::warn!(error = %other, "post-turn memory inputs could not be read");
+                        CompanionMemoryRuntimeInputError::Storage
+                    }
+                };
                 return Ok(dispatcher.settle_run(
                     work,
                     Err(CompanionMemoryJobRunError::RuntimeInputs(error)),
@@ -457,7 +464,6 @@ where
                     now,
                 )?);
             }
-            Err(error) => return Err(error),
         };
         let engine = self.engine;
         let result = CompanionMemoryJobRunner::new(
@@ -484,6 +490,159 @@ where
         )
         .await;
         Ok(dispatcher.settle_run(work, result, cancellation_reason, now)?)
+    }
+
+    /// Runs passes until no turn asked for another or the conversation is
+    /// gone; a failed pass is logged.
+    pub async fn drive(
+        &self,
+        scheduler: &crate::PostTurnMemoryScheduler,
+        conversation_id: ConversationId,
+        worker_id: WorkerId,
+        lease_for: Duration,
+        clock: &dyn lettuce_jobs::Clock,
+    ) {
+        let guard = crate::post_turn_memory_scheduler::DriveGuard::new(scheduler, conversation_id);
+        loop {
+            scheduler.begin(conversation_id);
+            if !self
+                .run_pass(conversation_id, worker_id, lease_for, clock)
+                .await
+            {
+                return;
+            }
+            if !scheduler.finish(conversation_id) {
+                guard.release();
+                return;
+            }
+        }
+    }
+
+    /// Must run before any pass: runs each queued memory job whose window is
+    /// still due, fails one the app stopped during too often and cancels the
+    /// rest.
+    pub async fn resume_after_restart(
+        &self,
+        worker_id: WorkerId,
+        lease_for: Duration,
+        clock: &dyn lettuce_jobs::Clock,
+    ) -> Result<Vec<lettuce_types::JobId>, CompanionMemoryHostError> {
+        let mut queued = Vec::new();
+        let mut held = std::collections::BTreeSet::new();
+        for job in self.queued_memory_jobs()? {
+            let interrupted = crate::job_recovery::interrupted_runs(self.repository, job.id)
+                .map_err(|error| CompanionMemoryHostError::Dispatch(error.into()))?;
+            if interrupted < crate::job_recovery::MAX_INTERRUPTED_RUNS {
+                queued.push(job);
+                continue;
+            }
+            tracing::warn!(job_id = %job.id, interrupted, "memory job stopped the app too often; not running it again");
+            if let Err(error) =
+                crate::job_recovery::fail_interrupted_job(self.repository, &job, clock.now())
+            {
+                tracing::warn!(job_id = %job.id, %error, "could not fail an interrupted memory job");
+                held.insert(job.id);
+            }
+        }
+        let conversations = queued
+            .iter()
+            .filter_map(|job| job.subject.id.as_str().parse::<ConversationId>().ok())
+            .collect::<std::collections::BTreeSet<_>>();
+        for conversation_id in conversations {
+            self.run_pass(conversation_id, worker_id, lease_for, clock)
+                .await;
+        }
+        let mut cancelled = Vec::new();
+        for job in self.queued_memory_jobs()? {
+            if held.contains(&job.id) {
+                continue;
+            }
+            let at = clock.now().max(job.updated_at);
+            let result = self
+                .repository
+                .append_and_transition(lettuce_jobs::JobMutation::RequestCancellation {
+                    id: job.id,
+                    reason: CancellationReason::Recovery,
+                    at,
+                })
+                .and_then(|requested| {
+                    self.repository.append_and_transition(
+                        lettuce_jobs::JobMutation::FinishQueuedCancellation {
+                            id: job.id,
+                            at: at.max(requested.updated_at),
+                        },
+                    )
+                });
+            match result {
+                Ok(_) => cancelled.push(job.id),
+                Err(error) => {
+                    tracing::warn!(job_id = %job.id, %error, "could not cancel a stale memory job");
+                }
+            }
+        }
+        Ok(cancelled)
+    }
+
+    async fn run_pass(
+        &self,
+        conversation_id: ConversationId,
+        worker_id: WorkerId,
+        lease_for: Duration,
+        clock: &dyn lettuce_jobs::Clock,
+    ) -> bool {
+        let works = match self.after_turn(
+            conversation_id,
+            GenerationOperation::Send,
+            worker_id,
+            clock.now(),
+            lease_for,
+            &ResourceAvailability::all(),
+        ) {
+            Ok(works) => works,
+            Err(CompanionMemoryHostError::Conversation(ConversationRepositoryError::NotFound)) => {
+                return false;
+            }
+            Err(error) => {
+                tracing::warn!(%conversation_id, %error, "post-turn memory pass could not start");
+                return true;
+            }
+        };
+        for work in works {
+            if let Err(error) = self
+                .run_claimed(work, CancellationReason::User, clock.now())
+                .await
+            {
+                tracing::warn!(%conversation_id, %error, "post-turn memory pass failed");
+            }
+        }
+        true
+    }
+
+    fn queued_memory_jobs(
+        &self,
+    ) -> Result<Vec<lettuce_jobs::JobSnapshot>, CompanionMemoryHostError> {
+        let mut jobs = Vec::new();
+        let mut cursor = None;
+        loop {
+            let page = JobStore::list(
+                self.repository,
+                lettuce_jobs::JobQuery {
+                    state: Some(lettuce_jobs::JobState::Queued),
+                    kind: Some(lettuce_jobs::JobKind::MemoryExtraction),
+                    subject: None,
+                    page: lettuce_types::PageRequest {
+                        cursor: cursor.take(),
+                        limit: lettuce_types::PageLimit::new(200),
+                    },
+                },
+            )
+            .map_err(|error| CompanionMemoryHostError::Dispatch(error.into()))?;
+            jobs.extend(page.items);
+            match page.next_cursor {
+                Some(next) => cursor = Some(next),
+                None => return Ok(jobs),
+            }
+        }
     }
 
     fn is_companion(

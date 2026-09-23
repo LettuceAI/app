@@ -1,5 +1,5 @@
 use lettuce_jobs::{
-    ExpiredClaim, JobSnapshot, JobStore, StoreError, Timestamp, recovery::RecoveryAction,
+    ExpiredClaim, JobSnapshot, JobState, JobStore, StoreError, Timestamp, recovery::RecoveryAction,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +55,77 @@ impl<'a, J: JobStore + ?Sized> StartupJobRecoveryCoordinator<'a, J> {
         }
         Ok(StartupJobRecoveryReport { jobs })
     }
+}
+
+/// Runs of one job the app may stop during before it no longer runs on its
+/// own.
+pub(crate) const MAX_INTERRUPTED_RUNS: usize = 2;
+
+const APP_STOPPED_DURING_JOB: &str = "app-stopped-during-job";
+
+/// How many times a claim on the job ended without its worker settling it.
+pub(crate) fn interrupted_runs<J: JobStore + ?Sized>(
+    jobs: &J,
+    job_id: lettuce_types::JobId,
+) -> Result<usize, StoreError> {
+    let mut count = 0;
+    let mut after = None;
+    loop {
+        let events = jobs.events_since(job_id, after, 500)?;
+        let Some(last) = events.last() else {
+            return Ok(count);
+        };
+        after = Some(last.seq);
+        count += events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event.event,
+                    lettuce_jobs::events::JobEvent::LeaseExpired { .. }
+                )
+            })
+            .count();
+    }
+}
+
+/// Fails a queued job the app stopped during too often.
+pub(crate) fn fail_interrupted_job<J: JobStore + ?Sized>(
+    jobs: &J,
+    job: &JobSnapshot,
+    now: Timestamp,
+) -> Result<JobSnapshot, StoreError> {
+    let at = now.max(job.updated_at);
+    let claim = jobs
+        .claim(
+            job.id,
+            lettuce_jobs::WorkerId::new(),
+            at,
+            std::time::Duration::from_secs(60),
+            &lettuce_jobs::ResourceAvailability::all(),
+        )?
+        .ok_or(StoreError::IllegalTransition)?;
+    jobs.append_and_transition(lettuce_jobs::JobMutation::Start {
+        claim: claim.claim.clone(),
+        at,
+    })?;
+    jobs.append_and_transition(lettuce_jobs::JobMutation::Fail {
+        claim: claim.claim,
+        error: lettuce_jobs::JobError::new(
+            lettuce_jobs::JobErrorCode::LeaseLost,
+            false,
+            APP_STOPPED_DURING_JOB,
+        )
+        .expect("constant job error is valid"),
+        at,
+    })
+}
+
+/// Whether the job ended because the app stopped during it too often.
+pub(crate) fn failed_as_interrupted(job: &JobSnapshot) -> bool {
+    job.state == JobState::Failed
+        && job.error.as_ref().is_some_and(|error| {
+            error.code == lettuce_jobs::JobErrorCode::LeaseLost && !error.retryable
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

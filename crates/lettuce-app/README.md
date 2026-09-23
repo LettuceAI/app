@@ -1771,3 +1771,31 @@ in-flight generation on a crash and a restore settles it the same way. A job
 or turn that cannot be settled is logged, reported and skipped. Other job
 kinds keep their recovery policy (`Restart`/`Resume` jobs are queued again)
 and wait for their feature drivers.
+
+Post-turn memory driver (2026-09-23): `PostTurnMemoryScheduler` coalesces
+cycles per conversation like legacy's scheduler (`enqueue` returns true when
+the caller must start `CompanionMemoryHostCoordinator::drive`; turns finishing
+during a pass ask for exactly one more). Deviation: legacy slept 1200 ms
+before every pass; a finished turn rarely follows another within that time and
+the running pass already coalesces later turns, so the rewrite does not wait.
+`drive` runs `after_turn` + `run_claimed` per pass, logs a failed pass and
+continues, and stops when the conversation is gone; group conversations use
+the same driver (legacy awaited group memory inside send/continue).
+`resume_after_restart` runs, after `recover_after_restart`, each queued memory
+job whose conversation still admits the same window (a processing run attempt
+of the same job resumes) and cancels the rest, which would otherwise block the
+conversation's next cycle; manually triggered cycles are not resumed, as
+legacy lost them on a crash too. A queued job the app stopped during twice
+(`LeaseExpired` events) is failed as `LeaseLost`/non-retryable instead of run,
+so a job that brings the app down cannot crash every start; its window is then
+held (no automatic re-admission) until the user runs memory by hand (a manual
+run uses its own key chain); the held companion effects stay processing and
+the frontend must say why memory paused. Known limits: a pruned terminal
+memory job would restart its key chain onto a stale run id (no memory job is
+pruned today); an input error that never clears (settings, missing model)
+keeps its job retrying each turn.
+Correction: a window whose job failed or was cancelled is admitted again under
+a key chained to that job (`retry_idempotency_key`), as legacy retried a
+failed cycle on the next turn; before, the terminal job kept the window's key
+and the conversation's automatic memory stopped for good. Every input error of
+`run_claimed` now settles the job (retry scheduled) instead of keeping the claim.

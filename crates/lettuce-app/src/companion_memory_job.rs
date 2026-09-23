@@ -681,30 +681,40 @@ impl<
             update_dynamic_memory_model_on_success,
             &source,
         )?;
-        let spec = job_spec(conversation_id, idempotency_key.clone())?;
+        let subject = job_spec(conversation_id, idempotency_key.clone())?.subject;
+        let mut jobs = Vec::new();
         let mut cursor = None;
-        let active = loop {
+        loop {
             let page = self
                 .jobs
                 .list(JobQuery {
                     state: None,
                     kind: Some(JobKind::MemoryExtraction),
-                    subject: Some(spec.subject.id.clone()),
+                    subject: Some(subject.id.clone()),
                     page: PageRequest {
                         cursor: cursor.take(),
                         limit: PageLimit::new(200),
                     },
                 })
                 .map_err(CompanionPostTurnMemoryAdmissionError::Jobs)?;
-            if let Some(job) = page.items.into_iter().find(|job| !job.is_terminal()) {
-                break Some(job);
-            }
+            jobs.extend(page.items);
             match page.next_cursor {
                 Some(next) => cursor = Some(next),
-                None => break None,
+                None => break,
             }
-        };
-        let admitted = match active {
+        }
+        let mut idempotency_key = idempotency_key;
+        while let Some(ended) = jobs.iter().find(|job| {
+            job.idempotency_key.as_ref() == Some(&idempotency_key)
+                && job.is_terminal()
+                && job.state != lettuce_jobs::JobState::Succeeded
+        }) {
+            if crate::job_recovery::failed_as_interrupted(ended) {
+                return Ok(None);
+            }
+            idempotency_key = retry_idempotency_key(&idempotency_key, ended.id)?;
+        }
+        let admitted = match jobs.into_iter().find(|job| !job.is_terminal()) {
             Some(job) if job.idempotency_key.as_ref() == Some(&idempotency_key) => {
                 lettuce_jobs::CreateJobResult {
                     job,
@@ -714,7 +724,7 @@ impl<
             Some(_) => return Ok(None),
             None => self
                 .jobs
-                .create_or_get(spec)
+                .create_or_get(job_spec(conversation_id, idempotency_key.clone())?)
                 .map_err(CompanionPostTurnMemoryAdmissionError::Jobs)?,
         };
         Ok(Some(CompanionPostTurnMemoryAdmission {
@@ -846,6 +856,18 @@ fn batch_idempotency_key(
             }
         }
     }
+    IdempotencyKey::new(format!("companion-memory-{}", digest.finalize().to_hex()))
+        .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)
+}
+
+/// Key for retrying a window whose job failed or was cancelled.
+fn retry_idempotency_key(
+    key: &IdempotencyKey,
+    ended: lettuce_types::JobId,
+) -> Result<IdempotencyKey, CompanionPostTurnMemoryAdmissionError> {
+    let mut digest = blake3::Hasher::new();
+    digest.update(key.as_str().as_bytes());
+    digest.update(ended.to_string().as_bytes());
     IdempotencyKey::new(format!("companion-memory-{}", digest.finalize().to_hex()))
         .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)
 }

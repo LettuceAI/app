@@ -2967,6 +2967,274 @@ async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
     );
 }
 
+fn finalized_dynamic_turn(backend: &AppBackend, prefix: &str) -> impl Future<Output = Scenario> {
+    let database = backend.database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = true;
+    settings.dynamic_memory.summary_message_interval = 2;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("save dynamic memory settings");
+    let scenario = scenario_with_resolvable_profile(database, true, prefix, true);
+    let generation = admit_and_claim(database, &scenario, 1_015);
+    async move {
+        let engine = ScenarioEmbeddingEngine;
+        let reply = scripted(vec![text_outcome("reply", "Tea it is.", 5, 3)]);
+        backend
+            .prepared_conversation_generation_runner(&engine, &reply)
+            .run(
+                &generation,
+                ConversationGenerationRuntimeInput::default(),
+                TimestampMillis::new(1_020),
+            )
+            .await
+            .expect("finalize dynamic turn");
+        scenario
+    }
+}
+
+fn successful_memory_cycle() -> ScriptedInference {
+    scripted(vec![
+        call_outcome(
+            "drive-summary",
+            "write_summary",
+            serde_json::json!({"summary": "The user chose tea."}),
+            (6, 2),
+        ),
+        call_outcome(
+            "drive-create",
+            "create_memory",
+            serde_json::json!({"text": "The user prefers tea", "category": "preference"}),
+            (7, 2),
+        ),
+    ])
+}
+
+fn stored_summary(database: &Database, scenario: &Scenario) -> Option<String> {
+    MemorySummaryRepository::get_summary(database, scenario.space_id.expect("memory space"))
+        .expect("summary")
+        .map(|summary| summary.text)
+}
+
+#[tokio::test]
+async fn post_turn_memory_driver_runs_the_due_cycle_and_releases_the_conversation() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let scenario = finalized_dynamic_turn(&backend, "driver").await;
+    let engine = ScenarioEmbeddingEngine;
+    let memory = successful_memory_cycle();
+    let host = backend.companion_memory_host(&engine, &memory);
+    let scheduler = crate::PostTurnMemoryScheduler::new();
+    let clock = FakeClock::new(TimestampMillis::new(1_030));
+    assert!(scheduler.enqueue(scenario.conversation_id));
+    assert!(!scheduler.enqueue(scenario.conversation_id));
+    host.drive(
+        &scheduler,
+        scenario.conversation_id,
+        WorkerId::new(),
+        LEASE,
+        &clock,
+    )
+    .await;
+    assert!(!scheduler.is_active(scenario.conversation_id));
+    assert_eq!(
+        stored_summary(backend.database(), &scenario).as_deref(),
+        Some("The user chose tea.")
+    );
+    assert_eq!(memory.requests.lock().expect("memory requests").len(), 2);
+}
+
+async fn crash_during_memory_cycle(prefix: &str) -> (std::path::PathBuf, Scenario, JobId) {
+    let path = std::env::temp_dir().join(format!("lettuce-{prefix}-{}.db", ConversationId::new()));
+    let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+    let scenario = finalized_dynamic_turn(&backend, prefix).await;
+    let engine = ScenarioEmbeddingEngine;
+    let idle = scripted(Vec::new());
+    let work = backend
+        .companion_memory_host(&engine, &idle)
+        .after_turn(
+            scenario.conversation_id,
+            lettuce_conversations::GenerationOperation::Send,
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("admit the due window")
+        .into_iter()
+        .next()
+        .expect("claimed memory work");
+    let job_id = work.handle.id();
+    drop(backend);
+    (path, scenario, job_id)
+}
+
+#[tokio::test]
+async fn restart_resumes_a_memory_job_whose_window_is_still_due() {
+    let (path, scenario, job_id) = crash_during_memory_cycle("memory-resume").await;
+    let backend = AppBackend::open(&path, TimestampMillis::new(1_040)).expect("reopen");
+    backend
+        .recover_after_restart(TimestampMillis::new(1_040))
+        .expect("release claims");
+    assert_eq!(persisted_job(backend.database(), job_id).state, JobState::Queued);
+    let engine = ScenarioEmbeddingEngine;
+    let memory = successful_memory_cycle();
+    let cancelled = backend
+        .companion_memory_host(&engine, &memory)
+        .resume_after_restart(
+            WorkerId::new(),
+            LEASE,
+            &FakeClock::new(TimestampMillis::new(1_041)),
+        )
+        .await
+        .expect("resume memory jobs");
+    assert!(cancelled.is_empty());
+    assert_eq!(
+        persisted_job(backend.database(), job_id).state,
+        JobState::Succeeded
+    );
+    assert_eq!(
+        stored_summary(backend.database(), &scenario).as_deref(),
+        Some("The user chose tea.")
+    );
+    drop(backend);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn a_memory_job_the_app_keeps_stopping_during_is_not_run_again() {
+    let (path, scenario, job_id) = crash_during_memory_cycle("memory-crash-loop").await;
+    let engine = ScenarioEmbeddingEngine;
+    let backend = AppBackend::open(&path, TimestampMillis::new(1_040)).expect("reopen");
+    backend
+        .recover_after_restart(TimestampMillis::new(1_040))
+        .expect("release claims");
+    let idle = scripted(Vec::new());
+    let reclaimed = backend
+        .companion_memory_host(&engine, &idle)
+        .after_turn(
+            scenario.conversation_id,
+            lettuce_conversations::GenerationOperation::Send,
+            WorkerId::new(),
+            TimestampMillis::new(1_041),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("reclaim the resumed job")
+        .into_iter()
+        .next()
+        .expect("the same job");
+    assert_eq!(reclaimed.handle.id(), job_id);
+    drop(backend);
+
+    let backend = AppBackend::open(&path, TimestampMillis::new(1_050)).expect("reopen again");
+    backend
+        .recover_after_restart(TimestampMillis::new(1_050))
+        .expect("release claims again");
+    let memory = successful_memory_cycle();
+    let host = backend.companion_memory_host(&engine, &memory);
+    let cancelled = host
+        .resume_after_restart(
+            WorkerId::new(),
+            LEASE,
+            &FakeClock::new(TimestampMillis::new(1_051)),
+        )
+        .await
+        .expect("resume memory jobs");
+    assert!(cancelled.is_empty());
+    assert_eq!(persisted_job(backend.database(), job_id).state, JobState::Failed);
+    assert!(memory.requests.lock().expect("memory requests").is_empty());
+    assert!(
+        host.after_turn(
+            scenario.conversation_id,
+            lettuce_conversations::GenerationOperation::Send,
+            WorkerId::new(),
+            TimestampMillis::new(1_052),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("the held window admits nothing")
+        .is_empty()
+    );
+    drop(backend);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn restart_cancels_a_memory_job_its_conversation_would_no_longer_admit() {
+    let (path, scenario, job_id) = crash_during_memory_cycle("memory-stale").await;
+    let backend = AppBackend::open(&path, TimestampMillis::new(1_040)).expect("reopen");
+    backend
+        .recover_after_restart(TimestampMillis::new(1_040))
+        .expect("release claims");
+    let database = backend.database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = false;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("disable dynamic memory");
+    let engine = ScenarioEmbeddingEngine;
+    let memory = scripted(Vec::new());
+    let cancelled = backend
+        .companion_memory_host(&engine, &memory)
+        .resume_after_restart(
+            WorkerId::new(),
+            LEASE,
+            &FakeClock::new(TimestampMillis::new(1_041)),
+        )
+        .await
+        .expect("resume memory jobs");
+    assert_eq!(cancelled, vec![job_id]);
+    assert_eq!(persisted_job(database, job_id).state, JobState::Cancelled);
+    assert!(memory.requests.lock().expect("memory requests").is_empty());
+    assert_eq!(stored_summary(database, &scenario), None);
+
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = true;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("enable dynamic memory again");
+    let memory = successful_memory_cycle();
+    let host = backend.companion_memory_host(&engine, &memory);
+    let retried = host
+        .after_turn(
+            scenario.conversation_id,
+            lettuce_conversations::GenerationOperation::Send,
+            WorkerId::new(),
+            TimestampMillis::new(1_050),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("the cancelled window is admitted again")
+        .into_iter()
+        .next()
+        .expect("a fresh job for the same window");
+    assert_ne!(retried.handle.id(), job_id);
+    host.run_claimed(retried, CancellationReason::User, TimestampMillis::new(1_051))
+        .await
+        .expect("run the retried window");
+    assert_eq!(
+        stored_summary(database, &scenario).as_deref(),
+        Some("The user chose tea.")
+    );
+    drop(backend);
+    let _ = std::fs::remove_file(&path);
+}
+
 #[tokio::test]
 async fn post_turn_memory_host_answers_ask_first_with_skip_and_trigger() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
