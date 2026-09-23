@@ -42,7 +42,7 @@ use crate::{
 };
 
 pub const GENERATION_CANCELLED_MESSAGE: &str = "Local image generation was cancelled.";
-const DESKTOP_ONLY_MESSAGE: &str = "Local stable-diffusion.cpp image generation is desktop-only.";
+pub(super) const DESKTOP_ONLY_MESSAGE: &str = "Local stable-diffusion.cpp image generation is desktop-only.";
 const READINESS_ATTEMPTS: u32 = 300;
 const POLL_ATTEMPTS: u32 = 1_200;
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -99,8 +99,8 @@ enum GenerationJobError {
 pub struct LocalDiffusionEngine {
     paths: DiffusionPaths,
     platform: RuntimePlatform,
-    http: BulkHttpClient,
-    host: Arc<dyn EngineHost>,
+    pub(super) http: BulkHttpClient,
+    pub(super) host: Arc<dyn EngineHost>,
     progress: Arc<dyn GenerationProgressSink>,
     server: tokio::sync::Mutex<Option<ManagedServer>>,
     active: Mutex<Option<ActiveGeneration>>,
@@ -139,7 +139,7 @@ fn data_url(image: &ImageInput) -> String {
     )
 }
 
-fn split_endpoint(url: &str) -> Option<(&str, &str)> {
+pub(super) fn split_endpoint(url: &str) -> Option<(&str, &str)> {
     let authority_start = url.find("://")? + 3;
     let path_start = url[authority_start..].find('/')? + authority_start;
     Some((&url[..path_start], &url[path_start..]))
@@ -360,7 +360,7 @@ impl LocalDiffusionEngine {
         }
     }
 
-    async fn ensure_server(
+    pub(super) async fn ensure_server(
         &self,
         model: &EngineModel,
         runtime: &ActiveRuntime,

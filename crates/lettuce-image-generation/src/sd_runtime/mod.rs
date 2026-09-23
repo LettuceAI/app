@@ -10,5 +10,6 @@ pub mod output;
 pub mod payload;
 pub mod policy;
 pub mod releases;
+pub mod runnability;
 pub mod server;
 pub mod upscale;

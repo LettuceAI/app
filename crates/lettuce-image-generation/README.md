@@ -114,3 +114,11 @@ legacy adapters and ComfyUI); the app's `AppImageProviders` routes sdcpp
 accounts to the embedded engine and every other kind there.
 
 Next: the scene, playground and creation-helper callers.
+
+Runnability: `LocalDiffusionEngine::catalog_runnability` (legacy
+`sdcpp_runnability`) gives a catalog variant a compute-policy placement
+estimate before it is installed and a real generation probe (one step, or the
+full request) once it is; `remote_bundle_runnability` estimates a bundle by
+its file sizes before download. Verdict strings, reason texts, check order
+and the probe payload are legacy's; transport errors carry the shared HTTP
+client's texts and limits (64 MiB requests, a poll URL must be a plain path).
