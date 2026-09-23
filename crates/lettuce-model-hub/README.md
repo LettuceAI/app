@@ -122,3 +122,15 @@ dynamic quants `UD-` prefixed; corrected: `BF16` files were labeled `F16`,
 name was hidden. Importance-matrix quants (`i1-`, `imat`, `imatrix` parts) are
 now listed and flagged `imatrix`; only the importance-matrix data file itself
 is dropped.
+
+## Runnability
+
+`gguf_runnability` reads the model shape from a GGUF header (two passes, the
+architecture first; keys past the read bytes stay unset) and ports the frozen
+runnability formulas: per-file scores at the app's default context and KV
+type, a downloaded file's score with its GPU sidecars, and the recommendation
+(per-file context limits, optimal GPU/RAM contexts, the best file, context and
+KV type). A parity test pins every output against the legacy functions run on
+the same fixtures (`tests/fixtures/legacy_runnability.txt`). Corrected: the
+GPU-candidate pass paired files with the wrong file's context limits whenever
+an earlier file had no size.

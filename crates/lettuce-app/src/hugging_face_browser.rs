@@ -84,7 +84,7 @@ impl HuggingFaceBrowser {
         }
     }
 
-    async fn saved_token<S: SecretStore + ?Sized>(
+    pub(crate) async fn saved_token<S: SecretStore + ?Sized>(
         secrets: &S,
     ) -> Result<Option<SecretValue>, HfBrowseError> {
         let (reference, purpose) = token_reference();

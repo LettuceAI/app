@@ -175,6 +175,7 @@ pub enum ArtifactDownloadError {
 #[derive(Clone)]
 pub struct ArtifactDownloadClient {
     client: reqwest::Client,
+    hugging_face_token: Option<std::sync::Arc<SecretValue>>,
 }
 
 impl fmt::Debug for ArtifactDownloadClient {
@@ -219,7 +220,25 @@ impl ArtifactDownloadClient {
             .connect_timeout(CONNECT_TIMEOUT)
             .build()
             .map_err(|_| ArtifactDownloadError::Transport)?;
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            hugging_face_token: None,
+        })
+    }
+
+    /// Signs Hugging Face downloads in with `token`, for gated repositories.
+    #[must_use]
+    pub fn with_hugging_face_token(mut self, token: SecretValue) -> Self {
+        self.hugging_face_token = Some(std::sync::Arc::new(token));
+        self
+    }
+
+    fn bearer(token: &SecretValue) -> Result<header::HeaderValue, ArtifactDownloadError> {
+        let mut value = token
+            .with(|token| header::HeaderValue::from_str(&format!("Bearer {token}")))
+            .map_err(|_| ArtifactDownloadError::InvalidRequest)?;
+        value.set_sensitive(true);
+        Ok(value)
     }
 
     pub async fn open_hugging_face(
@@ -247,7 +266,61 @@ impl ArtifactDownloadClient {
             .push("resolve")
             .push(revision)
             .extend(filename.split('/'));
-        self.open(url, offset, expected_size).await
+        let token = self.hugging_face_token.clone();
+        self.open(url, offset, expected_size, token.as_deref())
+            .await
+    }
+
+    /// Up to `length` leading bytes of a file on a Hugging Face repository's
+    /// main branch, signed in with `token` when one is given; the token is not
+    /// sent on to another host a redirect leads to.
+    pub async fn read_hugging_face_prefix(
+        &self,
+        repository: &str,
+        filename: &str,
+        length: u64,
+        token: Option<&SecretValue>,
+    ) -> Result<Vec<u8>, ArtifactDownloadError> {
+        if !valid_repository(repository) || !valid_artifact_filename(filename) || length == 0 {
+            return Err(ArtifactDownloadError::InvalidRequest);
+        }
+        let limit = usize::try_from(length).map_err(|_| ArtifactDownloadError::InvalidRequest)?;
+        let mut url = Url::parse("https://huggingface.co")
+            .map_err(|_| ArtifactDownloadError::InvalidRequest)?;
+        url.path_segments_mut()
+            .map_err(|_| ArtifactDownloadError::InvalidRequest)?
+            .extend(repository.split('/'))
+            .push("resolve")
+            .push("main")
+            .extend(filename.split('/'));
+        let mut request = self
+            .client
+            .get(url)
+            .header(header::USER_AGENT, "LettuceAI/1.0")
+            .header(header::RANGE, format!("bytes=0-{}", length - 1));
+        if let Some(token) = token {
+            request = request.header(header::AUTHORIZATION, Self::bearer(token)?);
+        }
+        let mut response = tokio::time::timeout(ARTIFACT_IDLE_TIMEOUT, request.send())
+            .await
+            .map_err(|_| ArtifactDownloadError::Transport)?
+            .map_err(|_| ArtifactDownloadError::Transport)?;
+        if !response.status().is_success() {
+            return Err(ArtifactDownloadError::InvalidResponse);
+        }
+        let mut bytes = Vec::with_capacity(limit.min(1 << 20));
+        while bytes.len() < limit {
+            let chunk = tokio::time::timeout(ARTIFACT_IDLE_TIMEOUT, response.chunk())
+                .await
+                .map_err(|_| ArtifactDownloadError::Transport)?
+                .map_err(|_| ArtifactDownloadError::Transport)?;
+            let Some(chunk) = chunk else {
+                break;
+            };
+            let take = chunk.len().min(limit - bytes.len());
+            bytes.extend_from_slice(&chunk[..take]);
+        }
+        Ok(bytes)
     }
 
     /// Opens a pinned HTTPS artifact, such as a GitHub release asset, whose
@@ -269,7 +342,7 @@ impl ArtifactDownloadClient {
         {
             return Err(ArtifactDownloadError::InvalidRequest);
         }
-        self.open(url, offset, expected_size).await
+        self.open(url, offset, expected_size, None).await
     }
 
     async fn open(
@@ -277,8 +350,12 @@ impl ArtifactDownloadClient {
         url: Url,
         offset: u64,
         expected_size: u64,
+        token: Option<&SecretValue>,
     ) -> Result<ArtifactDownloadStream, ArtifactDownloadError> {
         let mut request = self.client.get(url);
+        if let Some(token) = token {
+            request = request.header(header::AUTHORIZATION, Self::bearer(token)?);
+        }
         if offset > 0 {
             request = request.header(header::RANGE, format!("bytes={offset}-"));
         }

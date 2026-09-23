@@ -1952,3 +1952,11 @@ the secret store. `save_token` stores a token only after whoami accepts it,
 `auth_status` reports a missing, invalid or valid token, and `clear_token`
 removes it. A token the secret store cannot read is an error rather than an
 unauthenticated request.
+
+Runnability: `HuggingFaceBrowser::runnability` and `recommendation` read the
+smallest file's GGUF header (512 KiB, then 10 MiB when the essentials were
+missing) through `GgufHeaderSource` (`ArtifactDownloadClient` reads only the
+requested prefix, signed in with the saved token), and
+`local_file_runnability` scores a downloaded file with its projector and GPU
+MTP draft model. Hardware comes from `local_runnability_hardware()` (nothing
+on mobile) or a remote host; the llama defaults are passed in.

@@ -377,6 +377,95 @@ pub fn model_detail_request(model_id: &str) -> HfRequest {
     HfRequest::new(format!("/api/models/{model_id}"))
 }
 
+/// The repository's current revision with every file's size and digest.
+#[must_use]
+pub fn model_pin_request(model_id: &str) -> HfRequest {
+    model_detail_request(model_id).with("blobs", "true")
+}
+
+/// A repository file pinned for download.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HfPinnedFile {
+    pub path: String,
+    pub size: u64,
+    pub sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HfPinnedFiles {
+    pub revision: String,
+    pub files: Vec<HfPinnedFile>,
+}
+
+#[derive(Deserialize)]
+struct PinDetail {
+    sha: String,
+    #[serde(default)]
+    siblings: Vec<PinSibling>,
+}
+
+#[derive(Deserialize)]
+struct PinSibling {
+    rfilename: String,
+    #[serde(default)]
+    size: Option<u64>,
+    #[serde(default)]
+    lfs: Option<PinLfs>,
+}
+
+#[derive(Deserialize)]
+struct PinLfs {
+    size: u64,
+    sha256: String,
+}
+
+/// `filenames` of `model_id` at the revision the pin response names, with the
+/// size and SHA-256 Hugging Face lists for each.
+pub fn pinned_files(
+    model_id: &str,
+    body: &[u8],
+    filenames: &[&str],
+) -> Result<HfPinnedFiles, HfBrowseError> {
+    let detail: PinDetail = serde_json::from_slice(body).map_err(|error| {
+        HfBrowseError::Message(format!("Failed to parse model detail: {error}"))
+    })?;
+    if detail.sha.len() != 40 || !detail.sha.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(HfBrowseError::Message(format!(
+            "Hugging Face returned no revision for {model_id}."
+        )));
+    }
+    let files = filenames
+        .iter()
+        .map(|filename| {
+            let sibling = detail
+                .siblings
+                .iter()
+                .find(|sibling| sibling.rfilename == *filename)
+                .ok_or_else(|| {
+                    HfBrowseError::Message(format!("{filename} is not in {model_id}."))
+                })?;
+            let (size, sha256) = match &sibling.lfs {
+                Some(lfs) => (lfs.size, Some(lfs.sha256.to_ascii_lowercase())),
+                None => (sibling.size.unwrap_or(0), None),
+            };
+            if size == 0 {
+                return Err(HfBrowseError::Message(format!(
+                    "Hugging Face lists no size for {filename}."
+                )));
+            }
+            Ok(HfPinnedFile {
+                path: (*filename).to_owned(),
+                size,
+                sha256,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(HfPinnedFiles {
+        revision: detail.sha.to_ascii_lowercase(),
+        files,
+    })
+}
+
 #[must_use]
 pub fn model_tree_request(model_id: &str, mode: HfBrowseMode) -> HfRequest {
     HfRequest::new(format!("/api/models/{model_id}/tree/main")).with(
@@ -909,6 +998,26 @@ mod tests {
             assert_eq!(extract_quantization(filename), quantization, "{filename}");
             assert_eq!(is_imatrix_quant(filename), imatrix, "{filename}");
         }
+    }
+
+    #[test]
+    fn downloads_are_pinned_to_the_listed_revision_size_and_digest() {
+        let body = br#"{"sha": "D24C4CF2A0CD98A42F23467E27E3D76EE9438B8E", "siblings": [
+            {"rfilename": "m-Q4_K_M.gguf", "size": 5, "lfs": {"size": 5, "sha256": "AB"}},
+            {"rfilename": "config.json", "size": 12}
+        ]}"#;
+        let pinned =
+            pinned_files("org/m", body, &["m-Q4_K_M.gguf", "config.json"]).expect("pinned");
+        assert_eq!(pinned.revision, "d24c4cf2a0cd98a42f23467e27e3d76ee9438b8e");
+        assert_eq!(pinned.files[0].sha256.as_deref(), Some("ab"));
+        assert_eq!(pinned.files[1].sha256, None);
+        assert_eq!(
+            pinned_files("org/m", body, &["missing.gguf"]),
+            Err(HfBrowseError::Message(
+                "missing.gguf is not in org/m.".to_owned()
+            ))
+        );
+        assert_eq!(query(&model_pin_request("org/m")), vec![("blobs", "true")]);
     }
 
     #[test]
