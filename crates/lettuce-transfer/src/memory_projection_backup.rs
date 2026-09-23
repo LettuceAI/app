@@ -60,6 +60,7 @@ impl MemoryProjectionBackup {
             .spaces
             .iter()
             .map(|space| space.snapshot.id)
+            .chain(memory.unbound_pools.iter().map(|space| space.id))
             .collect::<BTreeSet<_>>();
         let mut identities = BTreeSet::new();
         for projection in &self.projections {

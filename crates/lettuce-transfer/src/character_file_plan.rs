@@ -5,11 +5,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lettuce_characters::{CharacterDetails, CreateCharacterPlan, InteractionMode};
-use lettuce_companions::{CompanionScheduledNote, ScheduledNoteRecurrence};
+use lettuce_companions::{
+    CompanionScheduledNote, RelationshipState, ScheduledNoteRecurrence, SoulFact,
+};
 use lettuce_context::{LorebookBinding, LorebookDetails, PromptPurpose};
+use lettuce_memory::{
+    MAX_MEMORY_ITEMS, MAX_MEMORY_TEXT_BYTES, MemoryItem, MemoryShortId, MemorySpaceSnapshot,
+};
 use lettuce_types::{
-    AssetId, CharacterId, ConversationStarterId, LorebookId, ModelProfileId, PromptDocumentId,
-    Revision, SceneId, SceneVariantId, StarterMessageId, TimestampMillis, VoiceProfileId,
+    AssetId, CharacterId, ConversationStarterId, LorebookId, MemoryId, MemorySpaceId,
+    ModelProfileId, PersonaId, PromptDocumentId, Revision, SceneId, SceneVariantId,
+    StarterMessageId, TimestampMillis, VoiceProfileId,
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -35,6 +41,7 @@ pub struct CharacterFileReferences {
     pub prompt_purposes: BTreeMap<String, PromptPurpose>,
     pub lorebook_ids: BTreeSet<LorebookId>,
     pub voice_ids: BTreeSet<VoiceProfileId>,
+    pub persona_ids: BTreeSet<PersonaId>,
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -341,7 +348,26 @@ pub struct CharacterFileImport {
     pub character: CreateCharacterPlan,
     pub lorebook_bindings: Vec<LorebookBinding>,
     pub scheduled_notes: Vec<CompanionScheduledNote>,
+    pub companion_memory: Option<CharacterFileCompanionMemory>,
     pub skipped: Vec<LegacyImportSkip>,
+    pub notices: Vec<LegacyBackupConversionNotice>,
+}
+
+/// A companion's shared memory from its file: the memory pool its chats
+/// share, its grown soul and its relationship with each persona.
+#[derive(Debug, Clone)]
+pub struct CharacterFileCompanionMemory {
+    pub pool: Option<MemorySpaceSnapshot>,
+    pub soul_facts: Option<Vec<SoulFact>>,
+    pub relationships: Vec<CharacterFileRelationship>,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone)]
+pub struct CharacterFileRelationship {
+    pub persona_id: Option<PersonaId>,
+    pub state: RelationshipState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -431,13 +457,142 @@ impl CharacterFilePlan {
                 }
             }
         }
+        let mut notices = Vec::new();
+        let companion_memory = if character.defaults.interaction_mode == InteractionMode::Companion
+        {
+            self.shared_memory.as_ref().map(|shared| {
+                companion_memory(
+                    shared,
+                    references,
+                    now,
+                    &mut new_id,
+                    &mut skipped,
+                    &mut notices,
+                )
+            })
+        } else {
+            None
+        };
         Ok(CharacterFileImport {
             lorebooks,
             character: plan,
             lorebook_bindings,
             scheduled_notes,
+            companion_memory,
             skipped,
+            notices,
         })
+    }
+}
+
+fn companion_memory(
+    shared: &CompanionSharedMemoryPackage,
+    references: &CharacterFileReferences,
+    now: i64,
+    new_id: &mut impl FnMut() -> Uuid,
+    skipped: &mut Vec<LegacyImportSkip>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> CharacterFileCompanionMemory {
+    let positive_or_now = |value: i64| TimestampMillis::new(if value > 0 { value } else { now });
+    let created_at = positive_or_now(shared.created_at);
+    let updated_at = positive_or_now(shared.updated_at).max(created_at);
+    let mut items: Vec<MemoryItem> = Vec::new();
+    for (index, text) in shared.memories.as_array().into_iter().flatten().enumerate() {
+        let Some(text) = text
+            .as_str()
+            .map(str::trim)
+            .filter(|text| !text.is_empty() && text.len() <= MAX_MEMORY_TEXT_BYTES)
+        else {
+            skipped.push(crate::legacy_value_skip(
+                "companion_shared_memory.memories",
+                &index.to_string(),
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+            continue;
+        };
+        if items.len() == MAX_MEMORY_ITEMS {
+            skipped.push(crate::legacy_value_skip(
+                "companion_shared_memory.memories",
+                &index.to_string(),
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+            continue;
+        }
+        let id = MemoryId::from_uuid(new_id());
+        let short_id = MemoryShortId::allocate(id, |candidate| {
+            items.iter().any(|item| item.short_id == candidate)
+        });
+        items.push(MemoryItem::written(
+            id,
+            short_id,
+            text.to_owned(),
+            updated_at,
+        ));
+    }
+    let pool = (!items.is_empty()).then(|| MemorySpaceSnapshot {
+        id: MemorySpaceId::from_uuid(new_id()),
+        revision: Revision::INITIAL,
+        items,
+    });
+    let soul_facts = shared
+        .soul_growth
+        .as_array()
+        .filter(|facts| !facts.is_empty())
+        .and_then(|_| {
+            let facts =
+                crate::legacy_backup_companion_shared_memory::exact_soul_facts(&shared.soul_growth);
+            if facts.is_none() {
+                skipped.push(crate::legacy_value_skip(
+                    "companion_shared_memory.soul_growth",
+                    "character",
+                    crate::LegacyImportSkipReason::MalformedLegacyValue,
+                ));
+            }
+            facts
+        });
+    let mut relationships = Vec::new();
+    for (key, value) in shared.relationship_states.as_object().into_iter().flatten() {
+        let persona_id = if key == "__default__" {
+            None
+        } else {
+            match key.parse::<PersonaId>() {
+                Ok(id) if references.persona_ids.contains(&id) => Some(id),
+                _ => {
+                    skipped.push(crate::LegacyImportSkip {
+                        kind: crate::LegacyImportSkipKind::PersonaReference,
+                        source_key: format!("companion_shared_memory.relationship_states:{key}"),
+                        reason: crate::LegacyImportSkipReason::MissingPersona,
+                    });
+                    continue;
+                }
+            }
+        };
+        match crate::legacy_backup_companion_shared_memory::legacy_relationship_state(value) {
+            Some(state) => relationships.push(CharacterFileRelationship { persona_id, state }),
+            None => skipped.push(crate::legacy_value_skip(
+                "companion_shared_memory.relationship_states",
+                key,
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            )),
+        }
+    }
+    if shared
+        .memory_summary
+        .as_deref()
+        .is_some_and(|summary| !summary.trim().is_empty())
+    {
+        notices.push(LegacyBackupConversionNotice {
+            kind: crate::LegacyBackupConversionNoticeKind::Lossy,
+            document: crate::LegacyBackupDocumentKind::CompanionSharedMemory,
+            field: "memory_summary".to_owned(),
+        });
+    }
+    CharacterFileCompanionMemory {
+        pool,
+        soul_facts,
+        relationships,
+        created_at,
+        updated_at,
     }
 }
 

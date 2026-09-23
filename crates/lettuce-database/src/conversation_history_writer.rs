@@ -325,9 +325,27 @@ fn insert_memory_state(
     projections: &[BackupMemoryProjection],
 ) -> Result<(), ConversationRepositoryError> {
     let space_id = space.snapshot.id;
+    if created {
+        insert_projections_in(transaction, space_id, projections)?;
+    }
+    if space.conversation_id == conversation_id
+        && let Some(summary) = &space.summary
+    {
+        crate::memory_adapter::replace_summary_in(transaction, space_id, Some(summary))
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+    }
+    Ok(())
+}
+
+/// Writes the backed-up projections of one memory space.
+pub(crate) fn insert_projections_in(
+    transaction: &Transaction<'_>,
+    space_id: lettuce_types::MemorySpaceId,
+    projections: &[BackupMemoryProjection],
+) -> Result<(), ConversationRepositoryError> {
     for projection in projections
         .iter()
-        .filter(|projection| created && projection.space_id == space_id)
+        .filter(|projection| projection.space_id == space_id)
     {
         let (status, vector) = match &projection.state {
             BackupMemoryProjectionState::Ready { vector_le_hex } => (
@@ -354,12 +372,6 @@ fn insert_memory_state(
                 ],
             )
             .map_err(kernel::map_constraint)?;
-    }
-    if space.conversation_id == conversation_id
-        && let Some(summary) = &space.summary
-    {
-        crate::memory_adapter::replace_summary_in(transaction, space_id, Some(summary))
-            .map_err(|_| ConversationRepositoryError::Storage)?;
     }
     Ok(())
 }

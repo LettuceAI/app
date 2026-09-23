@@ -110,10 +110,12 @@ where
         let character = self.repository.import_character_file(&import)?;
         let mut skipped = plan.skipped;
         skipped.extend(import.skipped);
+        let mut notices = plan.notices;
+        notices.extend(import.notices);
         Ok(ImportedCharacterFile {
             character,
             skipped,
-            notices: plan.notices,
+            notices,
         })
     }
 
@@ -155,6 +157,7 @@ where
                 .collect(),
             lorebooks: record.lorebooks,
             scheduled_notes: record.scheduled_notes,
+            companion_memory: record.companion_memory,
             details: record.details,
         };
         let package = lettuce_transfer::character_package(&source, now.get());
@@ -288,6 +291,22 @@ mod tests {
                             {"label": "Blank", "content": "  ", "availableAt": 10},
                             {"id": "late", "label": "Late", "content": "Too late", "availableAt": 10, "expiresAt": 5}
                         ],
+                        "companionSharedMemory": {
+                            "memories": [" Ada loves tea ", 3],
+                            "memorySummary": "They met at the harbour",
+                            "soulGrowth": [{
+                                "id": "fact-1", "category": "traits", "value": "Patient",
+                                "kind": "add", "policy": "adaptive", "slot": "temperament",
+                                "confidence": 0.9, "evidenceCount": 2, "weight": 0.8,
+                                "validFrom": 10, "locked": false, "createdAt": 10
+                            }],
+                            "relationshipStates": {
+                                "__default__": {"closeness": 0.6, "trust": 0.5, "affection": 0.3, "tension": 0.1, "stability": 0.6, "interactionCount": 3, "lastInteractionAt": 90},
+                                "00000000-0000-0000-0000-0000000000aa": {"closeness": 0.1, "trust": 0.1, "affection": 0.1, "tension": 0.0, "stability": 0.5, "interactionCount": 1, "lastInteractionAt": 5}
+                            },
+                            "createdAt": 20,
+                            "updatedAt": 30
+                        },
                         "disableAvatarGradient": false
                     },
                     "avatarData": avatar
@@ -342,6 +361,14 @@ mod tests {
                 .iter()
                 .any(|skip| skip.source_key == "companion_scheduled_notes:late")
         );
+        assert!(imported.skipped.iter().any(|skip| skip.reason
+            == lettuce_transfer::LegacyImportSkipReason::MissingPersona));
+        assert!(
+            imported
+                .notices
+                .iter()
+                .any(|notice| notice.field == "memory_summary")
+        );
         let exported = files
             .export(
                 character.character.id,
@@ -355,6 +382,17 @@ mod tests {
         assert_eq!(package.avatar_data.as_deref(), Some(avatar.as_str()));
         assert_eq!(package.character.lorebooks.len(), 1);
         assert_eq!(package.character.companion_scheduled_notes.len(), 1);
+        let shared = package
+            .character
+            .companion_shared_memory
+            .as_ref()
+            .expect("shared memory");
+        assert_eq!(shared.memories, serde_json::json!(["Ada loves tea"]));
+        assert_eq!(shared.soul_growth.as_array().map(Vec::len), Some(1));
+        assert_eq!(
+            shared.relationship_states["__default__"]["closeness"],
+            serde_json::json!(0.6)
+        );
         let again = files
             .import(&package, TimestampMillis::new(70))
             .expect("import export")

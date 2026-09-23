@@ -26,6 +26,7 @@ pub struct CharacterExportRecord {
     pub details: CharacterDetails,
     pub lorebooks: Vec<LorebookDetails>,
     pub scheduled_notes: Vec<CompanionScheduledNote>,
+    pub companion_memory: Option<crate::CharacterFileCompanionMemory>,
 }
 
 /// A stored character with what its file carries alongside it.
@@ -35,6 +36,7 @@ pub struct CharacterExportSource {
     /// The character's enabled lorebooks in binding order.
     pub lorebooks: Vec<LorebookDetails>,
     pub scheduled_notes: Vec<CompanionScheduledNote>,
+    pub companion_memory: Option<crate::CharacterFileCompanionMemory>,
     pub avatar_data: Option<String>,
     pub background_image_data: Option<String>,
     pub scene_backgrounds: BTreeMap<SceneId, String>,
@@ -158,7 +160,7 @@ pub fn character_package(source: &CharacterExportSource, exported_at: i64) -> Ch
                 .iter()
                 .map(scheduled_note_package)
                 .collect(),
-            companion_shared_memory: None,
+            companion_shared_memory: source.companion_memory.as_ref().map(shared_memory_package),
             memory_type: Some(
                 match defaults.memory_policy {
                     MemoryPolicy::Manual => "manual",
@@ -235,6 +237,56 @@ fn legacy_companion_value(config: &CompanionSoulConfig) -> Value {
     );
     object.insert("timeAwareness".into(), Value::Bool(config.time_awareness));
     Value::Object(object)
+}
+
+fn shared_memory_package(
+    memory: &crate::CharacterFileCompanionMemory,
+) -> crate::CompanionSharedMemoryPackage {
+    let memories = memory
+        .pool
+        .iter()
+        .flat_map(|pool| &pool.items)
+        .filter(|item| item.superseded_by.is_none())
+        .map(|item| Value::String(item.text.clone()))
+        .collect();
+    let relationship_states = memory
+        .relationships
+        .iter()
+        .map(|relationship| {
+            let state = &relationship.state;
+            (
+                relationship
+                    .persona_id
+                    .map_or_else(|| "__default__".to_owned(), |id| id.to_string()),
+                json!({
+                    "closeness": state.closeness,
+                    "trust": state.trust,
+                    "affection": state.affection,
+                    "tension": state.tension,
+                    "stability": state.stability,
+                    "interactionCount": state.interaction_count,
+                    "lastInteractionAt": state.last_interaction_at.get(),
+                }),
+            )
+        })
+        .collect::<Map<_, _>>();
+    crate::CompanionSharedMemoryPackage {
+        memories: Value::Array(memories),
+        memory_summary: None,
+        memory_summary_token_count: 0,
+        memory_tool_events: Value::Array(Vec::new()),
+        memory_status: None,
+        memory_error: None,
+        memory_progress_step: None,
+        soul_growth: memory
+            .soul_facts
+            .as_ref()
+            .and_then(|facts| serde_json::to_value(facts).ok())
+            .unwrap_or_else(|| Value::Array(Vec::new())),
+        relationship_states: Value::Object(relationship_states),
+        created_at: memory.created_at.get(),
+        updated_at: memory.updated_at.get(),
+    }
 }
 
 fn scheduled_note_package(note: &CompanionScheduledNote) -> CompanionScheduledNotePackage {

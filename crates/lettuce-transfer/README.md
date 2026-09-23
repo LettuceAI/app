@@ -842,7 +842,13 @@ and always dropped `default_model_id` (kept when the model exists); legacy
 overwrote `source` with `["lettuceai"]` (the file's source is kept); legacy
 stored scene background strings raw (data URLs become assets, other strings are
 dropped). `lorebook_details_from_candidate` is shared with the legacy import
-writer. Companion shared memory is not written yet. Bundled lorebook entries
+writer. A companion's shared memory becomes `CharacterFileCompanionMemory`:
+its memory texts (trimmed, blank or oversized ones recorded) a memory pool of
+written memories the companion's chats share, its soul growth the character's
+soul facts when they parse exactly, and its relationship states rows for the
+default persona and for personas that exist here (others recorded); the
+memory summary is recorded as lossy because a pool summary belongs to a chat,
+and tool events and run status are not carried. Bundled lorebook entries
 keep their packaged match mode (legacy forced literal, so a regex entry stopped
 matching after a round trip).
 
@@ -859,4 +865,12 @@ scene backgrounds are exported as data URLs instead of local image ids, crops
 are written from their shortest decimal form, a default scene that is archived
 is left out, empty source/tag lists are omitted, lorebook avatars are not
 exported, and the deprecated character system prompt is not stored so it is
-never exported. Companion shared memory is not exported yet.
+never exported. A companion's shared memory is exported from its pool (active
+memories only), its character soul facts and its relationship states, without
+a summary or tool events.
+
+Memory backup: `MemoryBackup.unbound_pools` carries companion pool spaces no
+conversation is bound to (a pool from a character file before its first chat,
+or one whose chats were all deleted); they validate as pools and restore
+before conversations with their items and projections. Corrected: such a pool
+made the whole backup fail.

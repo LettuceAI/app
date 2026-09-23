@@ -1591,6 +1591,7 @@ mod tests {
             },
             memory: crate::MemoryBackup {
                 pools: Vec::new(),
+                unbound_pools: Vec::new(),
                 version: crate::MEMORY_BACKUP_VERSION,
                 spaces: Vec::new(),
                 retrieval_accesses: Vec::new(),

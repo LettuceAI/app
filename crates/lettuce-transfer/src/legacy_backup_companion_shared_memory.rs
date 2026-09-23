@@ -349,20 +349,7 @@ fn map_relationships(
             }
             Some(id)
         };
-        let legacy: LegacyRelationshipState =
-            serde_json::from_value(value.clone()).map_err(|_| malformed(&field))?;
-        let state = RelationshipState {
-            closeness: legacy.closeness,
-            trust: legacy.trust,
-            affection: legacy.affection,
-            tension: legacy.tension,
-            stability: legacy.stability,
-            interaction_count: legacy.interaction_count,
-            last_interaction_at: lettuce_types::TimestampMillis::new(legacy.last_interaction_at),
-        };
-        if !valid_relationship(&state) {
-            return Err(malformed(field));
-        }
+        let state = legacy_relationship_state(value).ok_or_else(|| malformed(&field))?;
         relationships.push(LegacyBackupRelationshipState {
             persona_id,
             state,
@@ -465,7 +452,22 @@ fn map_episodes(
     Ok(episodes)
 }
 
-fn exact_soul_facts(value: &Value) -> Option<Vec<SoulFact>> {
+/// One stored legacy relationship state, when it is in range.
+pub(crate) fn legacy_relationship_state(value: &Value) -> Option<RelationshipState> {
+    let legacy: LegacyRelationshipState = serde_json::from_value(value.clone()).ok()?;
+    let state = RelationshipState {
+        closeness: legacy.closeness,
+        trust: legacy.trust,
+        affection: legacy.affection,
+        tension: legacy.tension,
+        stability: legacy.stability,
+        interaction_count: legacy.interaction_count,
+        last_interaction_at: lettuce_types::TimestampMillis::new(legacy.last_interaction_at),
+    };
+    valid_relationship(&state).then_some(state)
+}
+
+pub(crate) fn exact_soul_facts(value: &Value) -> Option<Vec<SoulFact>> {
     let facts = serde_json::from_value::<Vec<SoulFact>>(value.clone()).ok()?;
     let state = SoulState {
         revision: Revision::INITIAL,

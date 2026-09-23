@@ -274,6 +274,34 @@ impl ProviderBackupRestoreWriter for Database {
                 history.aggregate.conversation.id,
             )
         });
+        for space in &graph.memory.unbound_pools {
+            let pool = graph
+                .memory
+                .pools
+                .iter()
+                .find(|pool| pool.space_id == space.id)
+                .ok_or(Error::InvalidData)?;
+            transaction
+                .execute(
+                    "INSERT INTO memory_spaces (id, revision) VALUES (?1, ?2)",
+                    params![space.id.to_string(), sql_revision(space.revision)?],
+                )
+                .map_err(invalid)?;
+            crate::memory_adapter::insert_items(&transaction, space.id, &space.items)
+                .map_err(invalid)?;
+            transaction
+                .execute(
+                    "INSERT INTO companion_memory_pools (character_id, space_id) VALUES (?1, ?2)",
+                    params![pool.character_id.to_string(), space.id.to_string()],
+                )
+                .map_err(invalid)?;
+            crate::conversation_history_writer::insert_projections_in(
+                &transaction,
+                space.id,
+                &graph.memory_projections.projections,
+            )
+            .map_err(invalid)?;
+        }
         let mut tombstoned = Vec::new();
         for history in histories {
             let conversation_id = history.aggregate.conversation.id;

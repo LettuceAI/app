@@ -367,11 +367,25 @@ fn read_memory(
             })
         })
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
+    let unbound_pools = pools
+        .iter()
+        .filter(|pool| {
+            !spaces
+                .iter()
+                .any(|space| space.snapshot.id == pool.space_id)
+        })
+        .map(|pool| {
+            crate::memory_adapter::get_in(transaction, pool.space_id)
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?
+                .ok_or(ProviderBackupSourceError::InvalidData)
+        })
+        .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
     Ok(MemoryBackup {
         version: MEMORY_BACKUP_VERSION,
         spaces,
         retrieval_accesses,
         pools,
+        unbound_pools,
     })
 }
 

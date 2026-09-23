@@ -17,6 +17,9 @@ pub struct MemoryBackup {
     /// The companion character that owns each shared memory pool.
     #[serde(default)]
     pub pools: Vec<BackupCompanionMemoryPool>,
+    /// Pool spaces no conversation is bound to yet or anymore.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unbound_pools: Vec<MemorySpaceSnapshot>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,11 +58,16 @@ impl MemoryBackup {
         self.spaces
             .sort_by_key(|space| (space.conversation_id, space.snapshot.id));
         self.pools.sort_by_key(|pool| pool.character_id);
+        self.unbound_pools.sort_by_key(|space| space.id);
         let space_ids = self
             .spaces
             .iter()
             .map(|space| space.snapshot.id)
+            .chain(self.unbound_pools.iter().map(|space| space.id))
             .collect::<BTreeSet<_>>();
+        if space_ids.len() != self.spaces.len() + self.unbound_pools.len() {
+            return Err(MemoryBackupError::InvalidData);
+        }
         let mut pool_characters = BTreeSet::new();
         let mut pool_spaces = BTreeSet::new();
         if self.pools.iter().any(|pool| {
@@ -142,15 +150,31 @@ impl MemoryBackup {
                 return Err(MemoryBackupError::InvalidData);
             }
         }
-        for space in &self.spaces {
-            if space.snapshot.items.iter().any(|item| {
+        for space in &self.unbound_pools {
+            if !pool_spaces.contains(&space.id)
+                || space.validate().is_err()
+                || space
+                    .items
+                    .iter()
+                    .any(|item| memory_owners.insert(item.id, space.id).is_some())
+            {
+                return Err(MemoryBackupError::InvalidData);
+            }
+        }
+        for space in self
+            .spaces
+            .iter()
+            .map(|space| &space.snapshot)
+            .chain(&self.unbound_pools)
+        {
+            if space.items.iter().any(|item| {
                 item.superseded_by
                     .into_iter()
                     .chain(item.supersedes.iter().copied())
                     .any(|id| {
                         memory_owners
                             .get(&id)
-                            .is_some_and(|owner| *owner != space.snapshot.id)
+                            .is_some_and(|owner| *owner != space.id)
                     })
                     || item
                         .supersedes
