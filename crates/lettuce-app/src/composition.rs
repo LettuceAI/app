@@ -402,6 +402,16 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn chat_template_files(&self) -> crate::ChatTemplateFileCoordinator<'_, Database> {
+        crate::ChatTemplateFileCoordinator::new(self.database.as_ref())
+    }
+
+    #[must_use]
+    pub fn prompt_files(&self) -> crate::PromptFileCoordinator<'_, Database> {
+        crate::PromptFileCoordinator::new(self.database.as_ref())
+    }
+
+    #[must_use]
     pub fn chat_files(&self) -> crate::ChatFileCoordinator<'_, Database> {
         crate::ChatFileCoordinator::new(self.database.as_ref())
     }

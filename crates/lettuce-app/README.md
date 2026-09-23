@@ -1924,3 +1924,15 @@ with each assistant line authored by its speaker. Every check runs before the
 group is created; an archived character counts as unresolved, and a transcript
 whose speakers all map to one character becomes a direct chat with it (legacy
 made a one-member group, which a group cannot be).
+
+Prompt files: `AppBackend::prompt_files()` imports a USC card or SillyTavern
+preset as a new user prompt (the host passes its localized names for an
+unnamed entry and preset) and exports a template as `system_prompts_<name>_<date>.usc`
+or `.json`; built-in entries export under their catalog keys.
+
+Chat template files: `AppBackend::chat_template_files()` adds a USC or JSON
+chat template file as the character's last starter (a scene of another
+character, a prompt that is missing or not the character's chat purpose, and
+lorebooks that are missing or archived are left off; legacy copied the ids
+as they were) and exports a starter as `chat_template_<name>_<date>.usc` or
+`.json`.

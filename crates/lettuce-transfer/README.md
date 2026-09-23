@@ -881,3 +881,30 @@ slot filled, confidence and weight clamped to 0..1, a zero evidence count
 taken from its sources, zero creation and validity times set to the state's
 time); only a fact that still cannot be represented is dropped and recorded.
 Corrected: one bad fact used to drop the whole soul growth.
+
+Prompt files (`prompt_transfer`): a template is written as a USC 1.0
+`system_prompt_template` card (legacy field order, empty `content`, entries in
+the legacy `SystemPromptEntry` shape) or as a SillyTavern prompt-manager preset
+(entries with `{{scenario}}`/`{{personality}}` rewritten to `{{scene}}`/
+`{{char.desc}}`, legacy position codes, the eight SillyTavern markers, one
+prompt order with character id 100001, and the preset-level texts legacy wrote,
+kept in `resources/sillytavern-preset.json` because they are SillyTavern's
+prompts, not this app's). Reading follows the old import page: a USC card needs
+a non-blank name, a prompt type this app knows (else it becomes a direct chat
+prompt, as `undefined` could not run; legacy's page accepted only 17 types, the
+rest are kept so this app's own cards round-trip), entries without content are
+dropped, depths clamp at 0 and message/turn counts at 1, image slots keep the
+five legacy slots, the scene image protocol entries get their scene protocol
+gate from their legacy id, an interval entry without a turn count (legacy never
+fired it) is kept disabled, and content without entries becomes one system
+entry; a preset takes the prompt order block matching the
+most identifiers (then the longest), skips markers and blank prompts, lets the
+order's `enabled` win, marks nothing as a system prompt, drops conditions and
+the chat background slot, and is named after the file. The SillyTavern preset
+JSON is written with sorted keys (legacy kept insertion order).
+
+Chat template files (`chat_template_transfer`): a starter is written as a USC
+1.0 `chat_template` card or the old app's `{version: 1, kind: "chat_template",
+template}` JSON; reading accepts a USC card, that JSON or a bare template
+object with a non-blank name and keeps user and assistant messages with string
+content. References are resolved by the caller.
