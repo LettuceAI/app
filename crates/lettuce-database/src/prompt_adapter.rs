@@ -153,7 +153,7 @@ fn purpose_name(value: PromptPurpose) -> Option<&'static str> {
     })
 }
 
-fn purpose_from_name(value: &str) -> Result<PromptPurpose, rusqlite::Error> {
+pub(crate) fn purpose_from_name(value: &str) -> Result<PromptPurpose, rusqlite::Error> {
     match value {
         "direct_chat" => Ok(PromptPurpose::DirectChat),
         "companion_chat" => Ok(PromptPurpose::CompanionChat),

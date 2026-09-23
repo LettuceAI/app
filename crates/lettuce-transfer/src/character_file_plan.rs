@@ -4,8 +4,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use lettuce_context::PromptPurpose;
-use lettuce_types::{LorebookId, ModelProfileId, VoiceProfileId};
+use lettuce_characters::{CharacterDetails, CreateCharacterPlan, InteractionMode};
+use lettuce_companions::{CompanionScheduledNote, ScheduledNoteRecurrence};
+use lettuce_context::{LorebookBinding, LorebookDetails, PromptPurpose};
+use lettuce_types::{
+    AssetId, CharacterId, ConversationStarterId, LorebookId, ModelProfileId, PromptDocumentId,
+    Revision, SceneId, SceneVariantId, StarterMessageId, TimestampMillis, VoiceProfileId,
+};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -16,6 +21,10 @@ use crate::{
     LegacyBackupCharacterCandidate, LegacyBackupChatTemplateCandidate,
     LegacyBackupChatTemplateMessage, LegacyBackupConversionNotice, LegacyImportSkip,
     LegacyLorebookCandidate, PackagedKeywordDetectionMode,
+};
+use crate::{
+    CharacterPlanError, CharacterPlanResolver, LegacyMediaUse, character_plan_from_candidate,
+    lorebook_details_from_candidate,
 };
 
 /// What already exists in the app a file's references can point at.
@@ -44,7 +53,7 @@ pub struct CharacterFilePlan {
     pub lorebooks: Vec<LegacyLorebookCandidate>,
     pub avatar_data: Option<String>,
     pub background_image_data: Option<String>,
-    pub scene_backgrounds: BTreeMap<lettuce_types::SceneId, String>,
+    pub scene_backgrounds: BTreeMap<SceneId, String>,
     pub scheduled_notes: Vec<CompanionScheduledNotePackage>,
     pub shared_memory: Option<CompanionSharedMemoryPackage>,
     pub skipped: Vec<LegacyImportSkip>,
@@ -128,10 +137,11 @@ pub fn plan_character_file(
             if index == 0 {
                 default_scene_id = Some(id);
             }
-            if let Some(background) = scene
+            let background = scene
                 .background_image_path
                 .as_deref()
-                .filter(|value| is_data_url(value))
+                .filter(|value| is_data_url(value));
+            if let Some(background) = background
                 && let Ok(scene_id) = id.to_string().parse()
             {
                 scene_backgrounds.insert(scene_id, background.to_owned());
@@ -155,7 +165,7 @@ pub fn plan_character_file(
                 "id": id.to_string(),
                 "content": scene.content,
                 "direction": scene.direction,
-                "background_image_path": Value::Null,
+                "background_image_path": background.map(|_| "background"),
                 "selected_variant_id": scene
                     .selected_variant_id
                     .as_ref()
@@ -313,6 +323,209 @@ pub fn plan_character_file(
     })
 }
 
+/// The stored images a plan's data URLs became.
+#[derive(Debug, Clone, Default)]
+pub struct CharacterFileAssets {
+    pub avatar: Option<AssetId>,
+    pub background: Option<AssetId>,
+    pub scene_backgrounds: BTreeMap<SceneId, AssetId>,
+}
+
+/// Everything a character file writes, in one transaction.
+#[derive(Debug, Clone)]
+pub struct CharacterFileImport {
+    pub lorebooks: Vec<LorebookDetails>,
+    pub character: CreateCharacterPlan,
+    pub lorebook_bindings: Vec<LorebookBinding>,
+    pub scheduled_notes: Vec<CompanionScheduledNote>,
+    pub skipped: Vec<LegacyImportSkip>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum CharacterFileRepositoryError {
+    #[error("the character file conflicts with stored data")]
+    Conflict,
+    #[error("the character file is invalid")]
+    InvalidInput,
+    #[error("character file storage failed")]
+    Storage,
+}
+
+pub trait CharacterFileRepository: Send + Sync {
+    fn character_file_references(
+        &self,
+    ) -> Result<CharacterFileReferences, CharacterFileRepositoryError>;
+
+    fn import_character_file(
+        &self,
+        import: &CharacterFileImport,
+    ) -> Result<CharacterDetails, CharacterFileRepositoryError>;
+}
+
+impl CharacterFilePlan {
+    /// What the plan writes once its images are stored as `assets`; an image
+    /// that was not stored is left off the character.
+    pub fn import(
+        &self,
+        references: &CharacterFileReferences,
+        assets: &CharacterFileAssets,
+        now: i64,
+        mut new_id: impl FnMut() -> Uuid,
+    ) -> Result<CharacterFileImport, CharacterPlanError> {
+        let mut character = self.character.clone();
+        if assets.avatar.is_none() {
+            character.media.avatar = None;
+        }
+        if assets.background.is_none() {
+            character.media.background = None;
+        }
+        for scene in &mut character.scenes {
+            if !assets.scene_backgrounds.contains_key(&scene.id) {
+                scene.background = None;
+            }
+        }
+        let plan = character_plan_from_candidate(&character, &FileResolver { references, assets })?;
+        let lorebooks = self
+            .lorebooks
+            .iter()
+            .map(|lorebook| lorebook_details_from_candidate(lorebook, lorebook.id, None, Some))
+            .collect::<Result<Vec<_>, _>>()?;
+        let lorebook_bindings = character
+            .active_lorebook_ids
+            .iter()
+            .enumerate()
+            .map(|(ordinal, lorebook_id)| {
+                Ok(LorebookBinding {
+                    lorebook_id: *lorebook_id,
+                    enabled: true,
+                    ordinal: u32::try_from(ordinal)
+                        .map_err(|_| CharacterPlanError::InvalidInput)?,
+                    revision: Revision::INITIAL,
+                    created_at: character.created_at,
+                    updated_at: character.updated_at,
+                })
+            })
+            .collect::<Result<Vec<_>, CharacterPlanError>>()?;
+        let mut skipped = Vec::new();
+        let mut scheduled_notes = Vec::new();
+        if character.defaults.interaction_mode == InteractionMode::Companion {
+            for (index, note) in self.scheduled_notes.iter().enumerate() {
+                if note.content.trim().is_empty() {
+                    continue;
+                }
+                match scheduled_note(note, plan.character.id, now, new_id()) {
+                    Some(note) => scheduled_notes.push(note),
+                    None => skipped.push(crate::legacy_value_skip(
+                        "companion_scheduled_notes",
+                        note.id.as_deref().unwrap_or(&index.to_string()),
+                        crate::LegacyImportSkipReason::MalformedLegacyValue,
+                    )),
+                }
+            }
+        }
+        Ok(CharacterFileImport {
+            lorebooks,
+            character: plan,
+            lorebook_bindings,
+            scheduled_notes,
+            skipped,
+        })
+    }
+}
+
+fn scheduled_note(
+    note: &CompanionScheduledNotePackage,
+    character_id: CharacterId,
+    now: i64,
+    id: Uuid,
+) -> Option<CompanionScheduledNote> {
+    let positive_or_now = |value: i64| TimestampMillis::new(if value > 0 { value } else { now });
+    CompanionScheduledNote {
+        id,
+        character_id,
+        label: note.label.clone(),
+        content: note.content.clone(),
+        available_at: TimestampMillis::new(note.available_at.max(0)),
+        expires_at: note
+            .expires_at
+            .map(|value| TimestampMillis::new(value.max(0))),
+        recurrence: match note.recurrence.trim().to_ascii_lowercase().as_str() {
+            "daily" => ScheduledNoteRecurrence::Daily,
+            "weekly" => ScheduledNoteRecurrence::Weekly,
+            "monthly" => ScheduledNoteRecurrence::Monthly,
+            "yearly" => ScheduledNoteRecurrence::Yearly,
+            _ => ScheduledNoteRecurrence::None,
+        },
+        recurrence_window_ms: note
+            .recurrence_window_ms
+            .map(|value| u64::try_from(value.max(0)).unwrap_or(0)),
+        enabled: note.enabled,
+        created_at: positive_or_now(note.created_at),
+        updated_at: positive_or_now(note.updated_at),
+    }
+    .normalize()
+    .ok()
+}
+
+struct FileResolver<'a> {
+    references: &'a CharacterFileReferences,
+    assets: &'a CharacterFileAssets,
+}
+
+impl CharacterPlanResolver for FileResolver<'_> {
+    fn character(&self, planned: CharacterId) -> CharacterId {
+        planned
+    }
+
+    fn scene(&self, planned: SceneId) -> SceneId {
+        planned
+    }
+
+    fn variant(&self, planned: SceneVariantId) -> SceneVariantId {
+        planned
+    }
+
+    fn starter(&self, planned: ConversationStarterId) -> ConversationStarterId {
+        planned
+    }
+
+    fn starter_message(&self, planned: StarterMessageId) -> StarterMessageId {
+        planned
+    }
+
+    fn voice_profile(&self, planned: VoiceProfileId) -> VoiceProfileId {
+        planned
+    }
+
+    fn model(&self, planned: ModelProfileId) -> Result<ModelProfileId, CharacterPlanError> {
+        Ok(planned)
+    }
+
+    fn prompt(&self, source_id: &str) -> Option<PromptDocumentId> {
+        self.references
+            .prompt_purposes
+            .contains_key(source_id)
+            .then(|| source_id.parse().ok())
+            .flatten()
+    }
+
+    fn lorebook(&self, planned: LorebookId) -> Result<LorebookId, CharacterPlanError> {
+        Ok(planned)
+    }
+
+    fn asset(&self, media_use: &LegacyMediaUse) -> Result<AssetId, CharacterPlanError> {
+        match media_use {
+            LegacyMediaUse::CharacterAvatar { .. } => self.assets.avatar,
+            LegacyMediaUse::CharacterBackground { .. } => self.assets.background,
+            LegacyMediaUse::CharacterSceneBackground { scene_id, .. } => {
+                self.assets.scene_backgrounds.get(scene_id).copied()
+            }
+            _ => None,
+        }
+        .ok_or(CharacterPlanError::MissingReference)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -427,6 +640,7 @@ mod tests {
         assert!(character.media.background.is_none());
         assert_eq!(plan.background_image_data, None);
         assert_eq!(plan.scene_backgrounds.len(), 1);
+        assert!(character.scenes[1].background.is_some());
         assert!(
             plan.skipped
                 .iter()

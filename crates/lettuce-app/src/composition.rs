@@ -390,6 +390,17 @@ impl AppBackend {
         crate::LegacyMediaImportCoordinator::new(self.database.as_ref(), media_store)
     }
 
+    pub fn character_files<'a, BR, AR>(
+        &'a self,
+        media_store: &'a lettuce_media::LocalMediaBlobStore<BR, AR>,
+    ) -> crate::CharacterFileCoordinator<'a, Database, BR, AR>
+    where
+        BR: lettuce_media::MediaBlobRepository,
+        AR: lettuce_media::MediaAssetRepository,
+    {
+        crate::CharacterFileCoordinator::new(self.database.as_ref(), media_store)
+    }
+
     pub fn legacy_asr_learning_transfer<'a, BR, AR>(
         &'a self,
         media_store: &'a lettuce_media::LocalMediaBlobStore<BR, AR>,

@@ -8,10 +8,8 @@ use lettuce_characters::{
     PersonaMediaSlot, Scene, SceneAssetLink, SceneAssetSlot, SceneOwner, SceneVariant, Selection,
 };
 use lettuce_context::{
-    DetectionPolicy, KeywordMatchMode, LifecycleStatus as LorebookLifecycleStatus,
-    LifecycleStatus as PromptLifecycleStatus, Lorebook, LorebookBehaviorVersion, LorebookBinding,
-    LorebookDetails, LorebookEntry, PromptBehaviorVersion, PromptDocument, PromptEntry,
-    PromptProvenance,
+    LifecycleStatus as PromptLifecycleStatus, LorebookBinding, PromptBehaviorVersion,
+    PromptDocument, PromptEntry, PromptProvenance,
 };
 use lettuce_models::{ModelProfile, ProviderAccount, SecretHeader};
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
@@ -23,7 +21,7 @@ use lettuce_transfer::{
     LegacyImportMediaSource, LegacyImportProviderSecretSource, LegacyImportReceipt,
     LegacyImportRepository, LegacyImportRepositoryError, LegacyImportRunStatus,
     LegacyImportSecretCompletion, LegacyImportSecretCompletionRequest, LegacyImportSources,
-    LegacyKeywordMatchMode, LegacyLorebookDetectionPolicy, LegacyMediaUse,
+    LegacyMediaUse,
     LegacyPendingProviderSecret, LegacyProviderModelMaterializationRequest,
     LegacyProviderModelReceipt,
 };
@@ -342,57 +340,20 @@ impl LegacyImportRepository for Database {
                         .ok_or(LegacyImportRepositoryError::Conflict)
                 })
                 .transpose()?;
-            let entries = candidate
-                .entries
-                .iter()
-                .enumerate()
-                .map(|(ordinal, entry)| {
-                    Ok(LorebookEntry {
-                        id: *assignments
-                            .entries
-                            .get(&entry.id)
-                            .ok_or(LegacyImportRepositoryError::Conflict)?,
-                        lorebook_id: destination_id,
-                        title: entry.title.clone(),
-                        enabled: entry.enabled,
-                        always_active: entry.always_active,
-                        keywords: entry.keywords.clone(),
-                        case_sensitive: entry.case_sensitive,
-                        match_mode: match entry.match_mode {
-                            LegacyKeywordMatchMode::Literal => KeywordMatchMode::Literal,
-                            LegacyKeywordMatchMode::Regex => KeywordMatchMode::Regex,
-                        },
-                        content: entry.content.clone(),
-                        priority: entry.priority,
-                        ordinal: u32::try_from(ordinal)
-                            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
-                        revision: Revision::INITIAL,
-                        created_at: entry.created_at,
-                        updated_at: entry.updated_at,
-                    })
-                })
-                .collect::<Result<Vec<_>, LegacyImportRepositoryError>>()?;
-            let details = LorebookDetails {
-                book: Lorebook {
-                    id: destination_id,
-                    status: LorebookLifecycleStatus::Active,
-                    name: candidate.name.clone(),
-                    detection_policy: match candidate.detection_policy {
-                        LegacyLorebookDetectionPolicy::RecentMessageWindow => {
-                            DetectionPolicy::RecentMessageWindow
-                        }
-                        LegacyLorebookDetectionPolicy::LatestUserMessage => {
-                            DetectionPolicy::LatestUserMessage
-                        }
-                    },
-                    icon_asset_id,
-                    behavior_version: LorebookBehaviorVersion::LegacyV1,
-                    revision: Revision::INITIAL,
-                    created_at: candidate.created_at,
-                    updated_at: candidate.updated_at,
-                },
-                entries,
-            };
+            let details = lettuce_transfer::lorebook_details_from_candidate(
+                candidate,
+                destination_id,
+                icon_asset_id,
+                |entry| assignments.entries.get(&entry).copied(),
+            )
+            .map_err(|error| match error {
+                lettuce_transfer::CharacterPlanError::MissingReference => {
+                    LegacyImportRepositoryError::Conflict
+                }
+                lettuce_transfer::CharacterPlanError::InvalidInput => {
+                    LegacyImportRepositoryError::InvalidInput
+                }
+            })?;
             crate::lorebook_adapter::insert_lorebook_details(&transaction, &details)
                 .map_err(|_| LegacyImportRepositoryError::Conflict)?;
         }

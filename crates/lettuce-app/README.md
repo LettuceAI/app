@@ -1861,3 +1861,13 @@ Lorebook files: `AppBackend::lorebook_files()` imports a World Info file as a
 new `LegacyV1` lorebook (entries in file order, literal matching) and exports a
 lorebook as World Info or a USC card, entries in their order. The old app's
 frontend named a nameless file after its filename; the command layer does that.
+
+Character files: `AppBackend::character_files(media_store)` reads any character
+file into a package (`read`) and imports it as a new character (`import`):
+avatar, background and scene background data URLs are stored as media assets
+first (a failure only leaves that image off, like legacy), then the bundled
+lorebooks, the character, its lorebook bindings and its scheduled notes are
+written in one transaction. The host downloads a remote avatar (legacy's
+`autoDownloadCharacterCardAvatars`) and replaces `avatar_data` with the data
+URL before importing; a remote background is skipped like legacy. Images are
+stored as given instead of re-encoded to WebP.

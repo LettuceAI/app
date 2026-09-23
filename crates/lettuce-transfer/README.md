@@ -825,3 +825,21 @@ else the shown content, else prepend it; groups show the selected or first
 variant). Reading detects the header, takes `mes|content|text|message`, times
 from `send_date|createdAt|timestamp|time` (seconds below 1e10), and treats more
 than one named assistant speaker as a group chat.
+
+Character files (`character_file_plan`): a package from any character file is
+planned as a new character through the backup's row mapper
+(`map_character_row`, `map_lorebooks`) with fresh ids: bundled lorebooks get
+new ids and literal matching, active lorebook ids are remapped to them,
+references to models, prompts, lorebooks and user voices are kept only when
+they exist in this app (`CharacterFileReferences`). `CharacterFilePlan::import`
+turns it into one `CharacterFileImport` (lorebooks, character plan, bindings in
+active-lorebook order, companion scheduled notes) once its images are stored;
+an image that was not stored is left off. Scheduled notes follow legacy (trim,
+empty content skipped, times clamped at 0, recurrence normalized, missing
+created/updated times become now) and are kept only for companion characters,
+like the backup import. Corrections: legacy's insert misaligned a placeholder
+and always dropped `default_model_id` (kept when the model exists); legacy
+overwrote `source` with `["lettuceai"]` (the file's source is kept); legacy
+stored scene background strings raw (data URLs become assets, other strings are
+dropped). `lorebook_details_from_candidate` is shared with the legacy import
+writer. Companion shared memory is not written yet.

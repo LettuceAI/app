@@ -6,12 +6,20 @@ use lettuce_characters::{
     CharacterPresentationV1, ConversationStarter, CreateCharacterPlan, ImageRecommendation,
     LifecycleStatus, Scene, SceneAssetLink, SceneAssetSlot, SceneOwner, SceneVariant, Selection,
 };
+use lettuce_context::{
+    DetectionPolicy, KeywordMatchMode, Lorebook, LorebookBehaviorVersion, LorebookDetails,
+    LorebookEntry,
+};
 use lettuce_types::{
-    AssetId, CharacterId, ConversationStarterId, LorebookId, ModelProfileId, PromptDocumentId,
-    Revision, SceneAssetLinkId, SceneId, SceneVariantId, StarterMessageId, VoiceProfileId,
+    AssetId, CharacterId, ConversationStarterId, LorebookEntryId, LorebookId, ModelProfileId,
+    PromptDocumentId, Revision, SceneAssetLinkId, SceneId, SceneVariantId, StarterMessageId,
+    VoiceProfileId,
 };
 
-use crate::{LegacyBackupCharacterCandidate, LegacyMediaUse};
+use crate::{
+    LegacyBackupCharacterCandidate, LegacyKeywordMatchMode, LegacyLorebookCandidate,
+    LegacyLorebookDetectionPolicy, LegacyMediaUse,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CharacterPlanError {
@@ -226,5 +234,62 @@ pub fn character_plan_from_candidate<R: CharacterPlanResolver + ?Sized>(
         scenes,
         variants,
         starters,
+    })
+}
+
+/// The lorebook a planned candidate becomes under `id`, its entries renamed
+/// by `entry_id` and ordered as planned.
+pub fn lorebook_details_from_candidate(
+    candidate: &LegacyLorebookCandidate,
+    id: LorebookId,
+    icon_asset_id: Option<AssetId>,
+    entry_id: impl Fn(LorebookEntryId) -> Option<LorebookEntryId>,
+) -> Result<LorebookDetails, CharacterPlanError> {
+    let entries = candidate
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(ordinal, entry)| {
+            Ok(LorebookEntry {
+                id: entry_id(entry.id).ok_or(CharacterPlanError::MissingReference)?,
+                lorebook_id: id,
+                title: entry.title.clone(),
+                enabled: entry.enabled,
+                always_active: entry.always_active,
+                keywords: entry.keywords.clone(),
+                case_sensitive: entry.case_sensitive,
+                match_mode: match entry.match_mode {
+                    LegacyKeywordMatchMode::Literal => KeywordMatchMode::Literal,
+                    LegacyKeywordMatchMode::Regex => KeywordMatchMode::Regex,
+                },
+                content: entry.content.clone(),
+                priority: entry.priority,
+                ordinal: u32::try_from(ordinal).map_err(|_| CharacterPlanError::InvalidInput)?,
+                revision: Revision::INITIAL,
+                created_at: entry.created_at,
+                updated_at: entry.updated_at,
+            })
+        })
+        .collect::<Result<Vec<_>, CharacterPlanError>>()?;
+    Ok(LorebookDetails {
+        book: Lorebook {
+            id,
+            status: lettuce_context::LifecycleStatus::Active,
+            name: candidate.name.clone(),
+            detection_policy: match candidate.detection_policy {
+                LegacyLorebookDetectionPolicy::RecentMessageWindow => {
+                    DetectionPolicy::RecentMessageWindow
+                }
+                LegacyLorebookDetectionPolicy::LatestUserMessage => {
+                    DetectionPolicy::LatestUserMessage
+                }
+            },
+            icon_asset_id,
+            behavior_version: LorebookBehaviorVersion::LegacyV1,
+            revision: Revision::INITIAL,
+            created_at: candidate.created_at,
+            updated_at: candidate.updated_at,
+        },
+        entries,
     })
 }
