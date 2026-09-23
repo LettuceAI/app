@@ -132,6 +132,7 @@ fn scenario_with_resolvable_profile(
 fn input(scenario: &Scenario) -> ConversationGenerationInput {
     ConversationGenerationInput {
         strip_time_stamps: false,
+        reply_images: None,
         model: scenario.model.clone(),
         attributions: Default::default(),
         profile: ResolvedInferenceProfile {
@@ -4257,6 +4258,40 @@ async fn time_aware_generation_strips_echoed_time_stamps_before_finalizing() {
         vec![lettuce_conversations::MessagePart::Text {
             text: "Hey, you're up late.".into(),
         }]
+    );
+}
+
+#[tokio::test]
+async fn direct_replies_hand_back_their_scene_tag_before_finalizing() {
+    let database = database();
+    let scenario = scenario(&database, false, "scene-tag");
+    let work = admit_and_claim(&database, &scenario, 1_015);
+    let inference = scripted(vec![text_outcome(
+        "scene-tag-response",
+        "She smiles. <img>a harbor at dusk</img>",
+        9,
+        3,
+    )]);
+    let mut tagged_input = input(&scenario);
+    tagged_input.reply_images = Some(crate::ReplyImageFacts {
+        scene_mode: Some(lettuce_settings::SceneGenerationMode::AskFirst),
+    });
+    let result = ConversationGenerationJobRunner::new(&database, &inference)
+        .run(&work, tagged_input, TimestampMillis::new(1_020))
+        .await
+        .expect("run with a scene tag");
+    assert_eq!(
+        result.candidate.parts,
+        vec![lettuce_conversations::MessagePart::Text {
+            text: "She smiles.".into(),
+        }]
+    );
+    assert_eq!(
+        result.scene_image,
+        Some(crate::SceneImageFollowUp {
+            prompt: "a harbor at dusk".into(),
+            ask_first: true,
+        })
     );
 }
 

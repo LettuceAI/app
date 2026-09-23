@@ -334,6 +334,8 @@ pub struct ConversationGenerationInput {
     pub media_grants: Vec<AssetId>,
     pub stream_sink: Option<RequestId>,
     pub strip_time_stamps: bool,
+    /// Set for direct chats, whose replies may carry a scene tag.
+    pub reply_images: Option<crate::ReplyImageFacts>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -343,6 +345,8 @@ pub struct ConversationGenerationRunResult {
     pub usage_event_id: UsageEventId,
     pub outcomes: Vec<InferenceOutcome>,
     pub replayed: bool,
+    /// The scene image the reply asks for; none for a replayed turn.
+    pub scene_image: Option<crate::SceneImageFollowUp>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -747,6 +751,9 @@ impl<
                 evidence,
             });
         }
+        let scene_image = input
+            .reply_images
+            .and_then(|facts| crate::reply_images::take_scene_image(&mut candidate.parts, facts));
         let usage = self.attempt_job_usage(work, &attempt)?;
         if work.handle.cancellation_token().is_cancelled() {
             return Err(ConversationGenerationRunError::Cancelled { evidence });
@@ -792,6 +799,7 @@ impl<
             usage_event_id: finalized.value.usage_event_id,
             outcomes: vec![outcome],
             replayed: false,
+            scene_image,
         })
     }
 
@@ -945,6 +953,7 @@ impl<
             candidate,
             outcomes: Vec::new(),
             replayed: true,
+            scene_image: None,
         })
     }
 

@@ -459,6 +459,16 @@ where
                 ));
             }
         };
+        let reply_images = match aggregate.conversation.kind {
+            ConversationKind::Direct(_) => crate::reply_images::reply_image_facts(
+                self.repository,
+                &lettuce_settings::GlobalSettingsStore::load(self.repository)
+                    .map_err(ConversationGenerationInputError::Settings)?
+                    .settings,
+                &aggregate.conversation,
+            ),
+            ConversationKind::Group(_) => None,
+        };
         let mut request = record.request;
         request.attempt_id = work.attempt_id;
         request.cancellation = Some(work.handle.id());
@@ -471,6 +481,7 @@ where
             media_grants: request.media_grants,
             stream_sink: request.stream_sink,
             strip_time_stamps,
+            reply_images,
         }))
     }
 
@@ -1118,6 +1129,11 @@ where
             media_grants,
             stream_sink: runtime.stream_sink,
             strip_time_stamps: clock.time_awareness_enabled(),
+            reply_images: crate::reply_images::reply_image_facts(
+                self.repository,
+                &global_settings,
+                &aggregate.conversation,
+            ),
         })
     }
 

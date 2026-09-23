@@ -1712,6 +1712,19 @@ into one image prompt:
   render empty instead of leaking; usage is also recorded when the answer
   has no text at all.
 
+Scene tags in replies (2026-09-23): a direct chat reply's `<img>…</img>` tag
+(legacy `sceneImageProtocol.ts`, run by the old frontend) is handled when the
+reply is finalized. The tag always leaves the stored text, which is trimmed
+as legacy persisted it; it closes at `</img>`, `[continue]` or `[/continue]`
+in any case, and an unclosed tag drops the rest of the reply. The first
+non-blank prompt comes back as `ConversationGenerationRunResult::scene_image`
+when scene generation is on, its model resolves and the mode is not manual
+(`ask_first` for the askFirst mode); the caller then runs
+`generate_scene_image` or asks the user. A replayed turn returns none.
+Group chats never had the tag. Hiding the tag while a reply streams stays a
+frontend job. The legacy `<<image:{json}>>` directive is dropped by user
+decision; only the scene tag remains.
+
 Soul growth edits (2026-09-23): `clear_companion_soul_growth` (count of
 entries removed), `remove_companion_soul_growth` and
 `set_companion_soul_growth_lock` (true when the entry exists) edit the
