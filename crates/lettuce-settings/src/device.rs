@@ -2,23 +2,20 @@
 //! or enter backups, and a restore keeps the previous file's unless an
 //! imported legacy install brought its own.
 
-use lettuce_types::ModelProfileId;
 use serde::{Deserialize, Serialize};
 
 use crate::GlobalSettingsStoreError;
 
 const MAX_TRUSTED_CERTIFICATES: usize = 64;
 const MAX_CERTIFICATE_PEM_BYTES: usize = 1024 * 1024;
-/// The longest certificate name, exposed-model id or label and bind address.
+/// The longest certificate name.
 pub const MAX_DEVICE_NAME_BYTES: usize = 256;
-const MAX_EXPOSED_MODELS: usize = 256;
 const MAX_PATH_BYTES: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DeviceSettings {
     pub trusted_certificates: Vec<TrustedCertificate>,
-    pub host_api: HostApiSettings,
     pub embedding: DeviceEmbeddingSettings,
     /// Legacy `customLlmModelsDir`: where GGUF downloads go (image models in
     /// its `image` folder); unset means the app's own models folder.
@@ -35,38 +32,6 @@ pub struct TrustedCertificate {
     pub name: String,
     pub pem: String,
     pub imported_at: i64,
-}
-
-/// Legacy `hostApi` without its bearer token, which belongs in the secret
-/// store with the host API runtime.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct HostApiSettings {
-    pub enabled: bool,
-    pub bind_address: String,
-    pub port: u16,
-    pub exposed_models: Vec<HostApiExposedModel>,
-}
-
-impl Default for HostApiSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            bind_address: "0.0.0.0".to_owned(),
-            port: 3333,
-            exposed_models: Vec::new(),
-        }
-    }
-}
-
-/// A model the host API serves under `id` (legacy `exposedModels`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HostApiExposedModel {
-    pub id: String,
-    pub model_profile_id: ModelProfileId,
-    pub enabled: bool,
-    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,22 +68,11 @@ impl DeviceSettings {
                     && ids.insert(certificate.id)
                     && pems.insert(certificate.pem.trim())
             });
-        let host = &self.host_api;
-        let host_valid = host.port != 0
-            && text(&host.bind_address, MAX_DEVICE_NAME_BYTES)
-            && host.exposed_models.len() <= MAX_EXPOSED_MODELS
-            && host.exposed_models.iter().all(|model| {
-                text(&model.id, MAX_DEVICE_NAME_BYTES)
-                    && model
-                        .label
-                        .as_deref()
-                        .is_none_or(|label| label.len() <= MAX_DEVICE_NAME_BYTES)
-            });
         let folder = self
             .llm_models_dir
             .as_deref()
             .is_none_or(|folder| text(folder, MAX_PATH_BYTES));
-        if certificates && host_valid && folder && self.embedding.max_tokens != Some(0) {
+        if certificates && folder && self.embedding.max_tokens != Some(0) {
             Ok(())
         } else {
             Err(GlobalSettingsStoreError::InvalidData)
@@ -161,8 +115,6 @@ mod tests {
     fn device_settings_follow_the_legacy_import_checks() {
         let pem = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----";
         let mut settings = DeviceSettings::default();
-        assert_eq!(settings.host_api.port, 3333);
-        assert_eq!(settings.host_api.bind_address, "0.0.0.0");
         settings.trusted_certificates.push(certificate(pem));
         assert!(settings.validate().is_ok());
         assert_eq!(settings.trusted_roots_pem(), vec![pem.to_owned()]);

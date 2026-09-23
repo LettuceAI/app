@@ -429,8 +429,6 @@ fn session_cast<S: DirectLaunchSources>(
     Ok(authors)
 }
 
-/// A session's own starting scene as a group-owned scene with ids derived
-/// from the session, since legacy kept it on the session.
 fn session_scene(
     scope: lettuce_transfer::LegacyIdScope,
     session: &LegacyBackupGroupSession,

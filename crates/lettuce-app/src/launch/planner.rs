@@ -846,8 +846,6 @@ where
         self.prepare_group_with(request, &GroupLaunchOverrides::default(), now)
     }
 
-    /// A group launch whose conversation keeps its own values for some of the
-    /// group's settings, as a legacy group session kept its overrides.
     pub(crate) fn prepare_group_with(
         &self,
         request: &GroupConversationLaunchRequest,
@@ -1613,7 +1611,6 @@ fn check_display(field: &'static str, value: &str) -> Result<(), ConversationLau
     }
     Ok(())
 }
-/// A group conversation's own values for some of the group's settings.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct GroupLaunchOverrides {
     pub(crate) chat_mode: Option<lettuce_characters::ChatMode>,
@@ -1622,7 +1619,6 @@ pub(crate) struct GroupLaunchOverrides {
     /// Each member's own model; a member missing here keeps the group's.
     pub(crate) member_models:
         Option<std::collections::BTreeMap<lettuce_types::CharacterId, Option<ModelProfileId>>>,
-    /// The conversation's own starting scene, owned by the group.
     pub(crate) starting_scene: Option<Option<lettuce_characters::GroupStartingScene>>,
 }
 

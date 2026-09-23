@@ -4,8 +4,9 @@ Memory structured fallback and summary fallback preserve cache-read/reasoning
 details when both responses supply them. Missing or overflowing detail sums stay
 unknown. Input/output aggregation retains the existing fallback behavior.
 
-The sole composition root, application workflows, desktop IPC boundary, and
-optional local OpenAI-compatible host API.
+The sole composition root, application workflows and desktop IPC boundary.
+The legacy OpenAI-compatible host API is not ported (user decision
+2026-09-23).
 
 `AppBackend::preflight_legacy_database` exposes the read-only legacy SQLite
 inventory boundary before any import is attempted. Compatibility types live in
@@ -208,8 +209,7 @@ wiring remains pending.
 Writer batches validate prompt and text modalities before changing the project
 or creating jobs, so invalid inputs leave the draft checkpoint unchanged.
 
-May wire all crates; no crate may depend on it. Host API handlers reuse the
-model and inference services without constructing product conversations.
+May wire all crates; no crate may depend on it.
 
 The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
 

@@ -60,7 +60,6 @@ pub(crate) struct ImportContext {
 }
 
 impl ImportContext {
-    /// The imported model profile a legacy model id became.
     pub(crate) fn model_destination(&self, legacy: ModelProfileId) -> Option<ModelProfileId> {
         self.models.get(&legacy).map(|(model, _)| *model)
     }

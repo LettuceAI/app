@@ -161,21 +161,18 @@ pub enum SecretPurpose {
     },
     HuggingFaceAccessToken,
     CivitaiAccessToken,
-    HostApiBearerToken,
 }
 
 const APP_SECRET_NAMESPACE: Uuid = Uuid::from_u128(0x6c65_7474_7563_6541_7070_5365_6372_6574);
 
 impl SecretPurpose {
     /// The fixed reference of an app-wide secret (one per install, not owned
-    /// by a provider): the Hugging Face and CivitAI tokens and the host API
-    /// bearer token.
+    /// by a provider): the Hugging Face and CivitAI tokens.
     #[must_use]
     pub fn app_secret_ref(&self) -> Option<SecretRef> {
         let name = match self {
             Self::HuggingFaceAccessToken => "hugging-face-access-token",
             Self::CivitaiAccessToken => "civitai-access-token",
-            Self::HostApiBearerToken => "host-api-bearer-token",
             Self::ProviderApiKey { .. }
             | Self::ProviderSecretHeader { .. }
             | Self::AudioApiKey { .. } => return None,

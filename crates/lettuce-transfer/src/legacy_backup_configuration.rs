@@ -113,9 +113,8 @@ pub struct LegacyBackupSettingsCandidate {
     /// This install's legacy onboarding, hint, last-seen-version and
     /// active-usage state, verbatim under its legacy keys.
     pub device_ui_state: Map<String, Value>,
-    /// This install's legacy trusted certificates, host API (without its
-    /// token), embedding preferences and models folder; exposed host API
-    /// models still name their source model ids.
+    /// This install's legacy trusted certificates, embedding preferences and
+    /// models folder.
     pub device_settings: DeviceSettings,
     pub feature_model_profile_ids: FeatureModelSources,
     pub feature_prompt_source_ids: FeaturePromptSources,
@@ -472,11 +471,7 @@ pub fn plan_legacy_backup_configuration(
         secret_rows,
         &mut notices,
     )?);
-    secrets.extend(map_app_secrets(
-        &source,
-        settings.advanced_settings.as_ref(),
-        &mut notices,
-    ));
+    secrets.extend(map_app_secrets(&source, &mut notices));
     for secret in &secrets {
         let (owner, pending) = match &secret.purpose {
             SecretPurpose::ProviderApiKey { owner } => {
@@ -751,7 +746,6 @@ fn map_settings(
     ]);
     mapped_advanced.extend(UI_PREFERENCE_ADVANCED_KEYS);
     mapped_advanced.extend([
-        "hostApi",
         "embeddingModelVersion",
         "embeddingMaxTokens",
         "embeddingKeepModelLoaded",
@@ -934,8 +928,7 @@ const DEVICE_UI_STATE_KEYS: [&str; 7] = [
 /// Legacy device settings: entries that cannot be kept are dropped and
 /// recorded, display names and labels past the bound are shortened and
 /// recorded, and a value of the wrong type is recorded, so the result always
-/// validates. The host API bearer token is recorded as not yet imported; it
-/// belongs in the secret store with the host API runtime.
+/// validates.
 fn map_device_settings(
     app: &Map<String, Value>,
     advanced: &Map<String, Value>,
@@ -959,11 +952,6 @@ fn map_device_settings(
         "app_state.trustedCertificates",
         Value::is_array,
     );
-    let host = typed(
-        present(advanced, "hostApi"),
-        "advanced_settings.hostApi",
-        Value::is_object,
-    );
     let version = typed(
         present(advanced, "embeddingModelVersion"),
         "advanced_settings.embeddingModelVersion",
@@ -984,24 +972,6 @@ fn map_device_settings(
         "advanced_settings.customLlmModelsDir",
         Value::is_string,
     );
-    let host_enabled = host.as_ref().and_then(|host| {
-        typed(
-            host.get("enabled")
-                .filter(|value| !value.is_null())
-                .cloned(),
-            "advanced_settings.hostApi.enabled",
-            Value::is_boolean,
-        )
-    });
-    let exposed = host.as_ref().and_then(|host| {
-        typed(
-            host.get("exposedModels")
-                .filter(|value| !value.is_null())
-                .cloned(),
-            "advanced_settings.hostApi.exposedModels",
-            Value::is_array,
-        )
-    });
     let mut settings = DeviceSettings::default();
     for (index, value) in certificates
         .as_ref()
@@ -1034,57 +1004,6 @@ fn map_device_settings(
                 settings.trusted_certificates.push(certificate);
             }
             _ => lossy_fields.push(field),
-        }
-    }
-    if let Some(host) = host.as_ref().and_then(Value::as_object) {
-        settings.host_api.enabled = host_enabled
-            .as_ref()
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        if let Some(address) = host.get("bindAddress").and_then(Value::as_str) {
-            if address.trim().is_empty() || address.len() > lettuce_settings::MAX_DEVICE_NAME_BYTES
-            {
-                lossy_fields.push("advanced_settings.hostApi.bindAddress".to_owned());
-            } else {
-                settings.host_api.bind_address = address.to_owned();
-            }
-        }
-        if let Some(port) = host.get("port").filter(|value| !value.is_null()) {
-            match port.as_u64().and_then(|port| u16::try_from(port).ok()) {
-                Some(port) if port != 0 => settings.host_api.port = port,
-                _ => lossy_fields.push("advanced_settings.hostApi.port".to_owned()),
-            }
-        }
-        for (index, value) in exposed
-            .as_ref()
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .enumerate()
-        {
-            let field = format!("advanced_settings.hostApi.exposedModels[{index}]");
-            let model = (|| {
-                Some(lettuce_settings::HostApiExposedModel {
-                    id: value.get("id")?.as_str()?.to_owned(),
-                    model_profile_id: ModelProfileId::from_str(value.get("modelId")?.as_str()?)
-                        .ok()?,
-                    enabled: value
-                        .get("enabled")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(true),
-                    label: value.get("label").and_then(Value::as_str).map(|label| {
-                        shorten_name(label, format!("{field}.label"), &mut lossy_fields)
-                    }),
-                })
-            })();
-            let mut candidate = settings.clone();
-            candidate.host_api.exposed_models.extend(model.clone());
-            match model {
-                Some(model) if candidate.validate().is_ok() => {
-                    settings.host_api.exposed_models.push(model);
-                }
-                _ => lossy_fields.push(field),
-            }
         }
     }
     settings.embedding.model_version = match version.as_ref().and_then(Value::as_str) {
@@ -2746,22 +2665,6 @@ fn reconcile_selections(
             reason,
         ));
     }
-    settings
-        .device_settings
-        .host_api
-        .exposed_models
-        .retain(|exposed| {
-            let present = model_ids.contains(&exposed.model_profile_id);
-            if !present {
-                providers.skipped.push(reference(
-                    LegacyImportSkipKind::ModelReference,
-                    "settings.advanced_settings.hostApi.exposedModels",
-                    &exposed.model_profile_id.to_string(),
-                    LegacyImportSkipReason::MissingModelProfile,
-                ));
-            }
-            present
-        });
     let supported = |status: CapabilityStatus| status == CapabilityStatus::Supported;
     let image_model = |model: &crate::LegacyModelProfileCandidate| {
         supported(model.config.capabilities.output_modalities.image)
@@ -3584,12 +3487,10 @@ impl crate::LegacyProviderSecretSource for LegacyBackupConfigurationPlan {
 }
 
 /// Legacy's app-wide tokens: the Hugging Face and CivitAI tokens it kept in
-/// `meta` and the host API bearer token in `advanced_settings.hostApi`. Each
-/// goes to the rewrite's fixed reference for its purpose; a blank one is
-/// dropped, as legacy treated it as unset.
+/// `meta`. Each goes to the rewrite's fixed reference for its purpose; a blank
+/// one is dropped, as legacy treated it as unset.
 fn map_app_secrets(
     source: &LegacyBackupInventory,
-    advanced: Option<&Value>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Vec<ProviderBackupSecret> {
     let meta = source
@@ -3604,9 +3505,6 @@ fn map_app_secrets(
             .and_then(|row| row.get("value")?.as_str())
             .map(str::to_owned)
     };
-    let host_token = advanced
-        .and_then(|advanced| advanced.get("hostApi")?.get("token")?.as_str())
-        .map(str::to_owned);
     [
         (
             SecretPurpose::HuggingFaceAccessToken,
@@ -3619,12 +3517,6 @@ fn map_app_secrets(
             meta_value("civitai_access_token"),
             LegacyBackupDocumentKind::Meta,
             "civitai_access_token",
-        ),
-        (
-            SecretPurpose::HostApiBearerToken,
-            host_token,
-            LegacyBackupDocumentKind::Settings,
-            "advanced_settings.hostApi.token",
         ),
     ]
     .into_iter()
@@ -3841,7 +3733,6 @@ mod tests {
                     {"key": "schema_version", "value": "90"}
                 ]),
             )]),
-            None,
             &mut notices,
         );
         assert!(notices.is_empty());
@@ -4669,7 +4560,7 @@ mod tests {
             plan.chat_templates[0].scene_source_id.as_deref(),
             Some("scene-one")
         );
-        assert_eq!(plan.secrets.len(), 4);
+        assert_eq!(plan.secrets.len(), 3);
         assert!(
             plan.secrets
                 .iter()
@@ -4752,18 +4643,6 @@ mod tests {
         let device = &plan.settings.device_settings;
         assert_eq!(device.trusted_certificates.len(), 1);
         assert_eq!(device.trusted_certificates[0].imported_at, 5);
-        assert!(device.host_api.enabled);
-        assert_eq!(device.host_api.bind_address, "127.0.0.1");
-        assert_eq!(device.host_api.port, 4444);
-        assert_eq!(device.host_api.exposed_models.len(), 1);
-        assert_eq!(device.host_api.exposed_models[0].model_profile_id, model_id);
-        assert_eq!(
-            device.host_api.exposed_models[0]
-                .label
-                .as_deref()
-                .map(str::len),
-            Some(256)
-        );
         assert_eq!(device.embedding.max_tokens, Some(4096));
         assert!(device.embedding.keep_model_loaded);
         assert_eq!(device.llm_models_dir.as_deref(), Some("/models/gguf"));
@@ -4776,23 +4655,12 @@ mod tests {
             Some("768x768")
         );
         let field_notice = |field: &str| plan.notices.iter().any(|notice| notice.field == field);
-        assert!(!field_notice("advanced_settings.hostApi.token"));
-        let host_token = plan
-            .secrets
-            .iter()
-            .find(|secret| secret.purpose == SecretPurpose::HostApiBearerToken)
-            .expect("host API token");
-        assert_eq!(
-            Some(host_token.reference),
-            SecretPurpose::HostApiBearerToken.app_secret_ref()
-        );
-        assert!(host_token.value.with(|value| value == "secret-token"));
         assert!(field_notice("app_state.trustedCertificates[1]"));
-        assert!(!field_notice("advanced_settings.hostApi"));
-        assert!(plan.provider_models.skipped.iter().any(|skip| {
-            skip.source_key
-                .starts_with("settings.advanced_settings.hostApi.exposedModels")
+        assert!(plan.notices.iter().any(|notice| {
+            notice.kind == LegacyBackupConversionNoticeKind::Unsupported
+                && notice.field == "advanced_settings.hostApi"
         }));
+        assert!(!field_notice("advanced_settings.hostApi.token"));
         assert!(
             !plan
                 .notices

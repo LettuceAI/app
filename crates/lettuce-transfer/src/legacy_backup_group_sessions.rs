@@ -46,7 +46,6 @@ pub struct LegacyBackupGroupSession {
     pub starting_scene_override: Option<Option<crate::LegacyBackupSceneCandidate>>,
     pub background_image_locator: Option<String>,
     pub lorebook_source_ids: Vec<String>,
-    /// Whether the session chose its own lorebooks instead of reading the group's.
     pub lorebooks_overridden: bool,
     pub disable_character_lorebooks: bool,
     pub author_note: Option<String>,
@@ -1259,8 +1258,6 @@ fn validate_starting_scene(
         .is_some_and(|id| !variant_ids.contains(id)))
 }
 
-/// Legacy could store scene and variant ids that are not UUIDs; they become
-/// stable UUIDv5 ids so the scene maps like one that had UUIDs.
 fn canonical_scene_ids(raw: &str) -> String {
     let Ok(mut scene) = serde_json::from_str::<Value>(raw) else {
         return raw.to_owned();

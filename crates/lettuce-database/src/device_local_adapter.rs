@@ -117,7 +117,7 @@ mod tests {
         previous
             .save_device_settings(device.clone())
             .expect("save device settings");
-        device.host_api.port = 0;
+        device.llm_models_dir = Some("  ".into());
         assert!(previous.save_device_settings(device).is_err());
         let restored = Database::open(root.join("restored.sqlite3")).expect("restored database");
         restored

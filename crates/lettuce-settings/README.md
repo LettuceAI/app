@@ -92,14 +92,10 @@ CERTIFICATE` markers, no duplicate PEM, up to 1 MiB each so CA bundles fit;
 over-long names are shortened, not dropped; `AppBackend::tls_policy` builds
 the `TlsPolicy` the host passes to provider clients, and a root the TLS stack
 cannot parse is tried alone and skipped with a warning, where legacy's rustls
-build failed every client), `hostApi` without its bearer token (the token
-goes to the secret store, see below; exposed models point at the imported
-model profiles, and like legacy
-an exposure whose model is later deleted or absent after a restore stays and
-is refused when requested),
+build failed every client),
 `embeddingModelVersion`/`embeddingMaxTokens`/`embeddingKeepModelLoaded` and
 `customLlmModelsDir`. Legacy synced and backed these up with its settings row;
-they describe one machine (paths, network trust, listeners, installed files),
+they describe one machine (paths, network trust, installed files),
 so the rewrite keeps them per device. `image_generation.scene_default_size` is
 legacy `sdDefaultSize` (portable, used by scene generation only).
 An optional group-chat policy lives beside the direct policy in global settings,
@@ -160,10 +156,11 @@ successful retry can update only that feature route without rewriting unrelated
 preferences.
 
 App-wide secrets (2026-09-23): `SecretPurpose::app_secret_ref` gives the
-Hugging Face token, the CivitAI token and the host API bearer token a fixed
-reference each (one per install). A legacy import stores legacy's
-`meta.hugging_face_access_token`, `meta.civitai_access_token` and
-`advanced_settings.hostApi.token` there (blank ones are unset, as legacy read
+Hugging Face token and the CivitAI token a fixed reference each (one per
+install). A legacy import stores legacy's `meta.hugging_face_access_token` and
+`meta.civitai_access_token` there (blank ones are unset, as legacy read
 them), only where the store has none, so a token already set in the new app
 is kept; a failed restore removes the ones it wrote. Nothing reads them yet:
-the Hugging Face browser, CivitAI and host API slices use these references.
+the Hugging Face browser and CivitAI slices use these references. The host
+API (legacy `hostApi` and its token) is not ported (user decision 2026-09-23);
+an import records `advanced_settings.hostApi` as unsupported.

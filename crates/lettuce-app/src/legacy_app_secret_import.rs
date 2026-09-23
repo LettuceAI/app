@@ -1,4 +1,4 @@
-//! Legacy's app-wide tokens (Hugging Face, CivitAI, host API) go to their
+//! Legacy's app-wide tokens (Hugging Face, CivitAI) go to their
 //! fixed references in the secret store. A token the new install already has
 //! is kept, so importing never replaces one the user set here.
 
@@ -64,7 +64,7 @@ mod tests {
     #[tokio::test]
     async fn legacy_app_tokens_fill_only_missing_app_secrets() {
         let store = InMemorySecretStore::default();
-        let host = SecretPurpose::HostApiBearerToken;
+        let host = SecretPurpose::CivitaiAccessToken;
         let hugging_face = SecretPurpose::HuggingFaceAccessToken;
         store
             .put(
