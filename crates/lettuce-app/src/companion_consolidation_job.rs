@@ -1,8 +1,7 @@
 use lettuce_companions::{
     CompanionConsolidationRun, CompanionConsolidationRunRepository,
     CompanionConsolidationRunRepositoryError, CompanionGrowthRunRepository,
-    CompanionGrowthRunRepositoryError, SoulOwner, SoulRepository, SoulRepositoryError,
-    consolidation_ready,
+    CompanionGrowthRunRepositoryError, SoulRepository, SoulRepositoryError, consolidation_ready,
 };
 use lettuce_jobs::{
     CancellationPolicy, IdempotencyKey, JobKind, JobPriority, JobSnapshot, JobSpec, JobState,
@@ -70,7 +69,7 @@ impl<
             .load_companion_growth_run(growth_job_id)
             .map_err(CompanionConsolidationJobAdmissionError::Growth)?;
         if growth_run.job_id != growth_job_id
-            || receipt.owner != SoulOwner::Character(growth_run.character_id)
+            || receipt.owner != growth_run.soul_owner()
             || receipt.operation_id != growth_run.operation_id
             || receipt.expected_revision != growth_run.soul.revision
         {
@@ -109,7 +108,7 @@ impl<
             Err(CompanionConsolidationRunRepositoryError::NotFound) => {}
             Err(error) => return Err(CompanionConsolidationJobAdmissionError::Run(error)),
         }
-        let soul = SoulRepository::get(self.sources, SoulOwner::Character(growth_run.character_id))
+        let soul = SoulRepository::get(self.sources, growth_run.soul_owner())
             .map_err(CompanionConsolidationJobAdmissionError::Soul)?
             .ok_or(CompanionConsolidationJobAdmissionError::InvalidSource)?;
         if soul.revision != receipt.resulting_revision
@@ -178,6 +177,7 @@ impl<
                 )),
                 created_at: receipt.applied_at,
                 proposal_checkpoint: None,
+                soul_conversation_id: growth_run.soul_conversation_id,
             })
             .map_err(CompanionConsolidationJobAdmissionError::Run)?;
         Ok(Some(CompanionConsolidationJobAdmission {

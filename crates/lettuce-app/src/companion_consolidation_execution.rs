@@ -1,7 +1,7 @@
 use lettuce_companions::{
     CompanionConsolidationProposalCheckpoint, CompanionConsolidationRun,
     CompanionConsolidationRunRepository, CompanionConsolidationRunRepositoryError,
-    SoulApplyReceipt, SoulOwner, SoulPolicyError, SoulRepository, SoulRepositoryError,
+    SoulApplyReceipt, SoulPolicyError, SoulRepository, SoulRepositoryError,
     consolidation_prompt_facts, consolidation_tool_request, parse_consolidation_proposal,
     prepare_consolidation_change_set,
 };
@@ -188,11 +188,7 @@ impl<
         let applied_changes = change_set.additions.len() + change_set.supersessions.len();
         let receipt = self
             .repository
-            .apply(
-                SoulOwner::Character(run.character_id),
-                run.operation_id,
-                change_set,
-            )
+            .apply(run.soul_owner(), run.operation_id, change_set)
             .map_err(CompanionConsolidationExecutionError::Soul)?;
         Ok(CompanionConsolidationExecutionResult {
             receipt: Some(receipt),

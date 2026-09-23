@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use lettuce_companions::{
-    CompanionGrowthRun, CompanionGrowthRunRepository, CompanionGrowthRunRepositoryError, SoulOwner,
+    CompanionGrowthRun, CompanionGrowthRunRepository, CompanionGrowthRunRepositoryError,
     SoulRepositoryError,
 };
 use lettuce_conversations::{PortError, ProviderFailureKind};
@@ -129,7 +129,7 @@ impl<R: CompanionGrowthRunRepository + ?Sized, J: JobStore + ?Sized>
         match result {
             Ok(result) => {
                 if result.receipt.as_ref().is_some_and(|receipt| {
-                    receipt.owner != SoulOwner::Character(work.run.character_id)
+                    receipt.owner != work.run.soul_owner()
                         || receipt.operation_id != work.run.operation_id
                 }) {
                     return Err(CompanionGrowthDispatchError::InvalidWork);

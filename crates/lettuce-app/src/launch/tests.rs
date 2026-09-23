@@ -860,6 +860,130 @@ fn the_share_memory_toggle_picks_the_pool_or_each_conversations_own_memory() {
 }
 
 #[test]
+fn the_share_soul_growth_toggle_copies_out_and_takes_back_the_latest_soul() {
+    use lettuce_companions::SoulOwner;
+    let database = database_with_builtins();
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let launch = |key: &str| {
+        ConversationLaunchPlanner::new(&database)
+            .launch_direct(&request(character_id, key), NOW)
+            .expect("launch companion")
+            .value
+            .conversation
+            .id
+    };
+    let (first, second) = (launch("soul-first"), launch("soul-second"));
+    let shared = SoulOwner::Character(character_id);
+    let own = |conversation_id| SoulOwner::Conversation {
+        character_id,
+        conversation_id,
+    };
+    let facts = |owner| {
+        SoulRepository::get(&database, owner)
+            .expect("soul")
+            .map(|soul| soul.facts.iter().map(|fact| fact.id.clone()).collect::<Vec<_>>())
+    };
+    let grow = |owner, id: &str, at: i64| {
+        let soul = SoulRepository::get(&database, owner)
+            .expect("soul")
+            .expect("present");
+        let change = lettuce_companions::prepare_growth_change_set(
+            &soul,
+            soul.revision,
+            vec![lettuce_companions::ProposedSoulFact {
+                id: id.to_owned(),
+                category: lettuce_companions::SoulCategory::Likes,
+                value: format!("Likes {id}"),
+                kind: lettuce_companions::SoulFactKind::Add,
+                policy: lettuce_companions::SoulFactPolicy::Adaptive,
+                slot: id.to_owned(),
+                confidence: 0.75,
+                weight: 0.8,
+                valid_until: None,
+                locked: false,
+                source_memory_ids: vec!["memory-a".to_owned()],
+                supersedes: Vec::new(),
+            }],
+            TimestampMillis::new(at),
+        )
+        .expect("growth");
+        SoulRepository::apply(&database, owner, OperationRecordId::new(), change)
+            .expect("grow soul");
+    };
+    let set_shared = |shared: bool, at: i64| {
+        let character = CharacterRepository::get(&database, character_id)
+            .expect("character")
+            .expect("exists")
+            .character;
+        let mut defaults = character.defaults.clone();
+        defaults
+            .companion_soul
+            .as_mut()
+            .expect("companion config")
+            .share_soul_growth_across_chats = shared;
+        CharacterRepository::update_defaults(
+            &database,
+            character_id,
+            character.revision,
+            defaults,
+            TimestampMillis::new(at),
+        )
+        .expect("update defaults");
+    };
+    grow(shared, "tea", NOW.get() + 1);
+    assert_eq!(facts(own(first)), None);
+    set_shared(false, NOW.get() + 2);
+    assert_eq!(facts(own(first)), Some(vec!["tea".to_owned()]));
+    assert_eq!(facts(own(second)), Some(vec!["tea".to_owned()]));
+    grow(own(first), "rain", NOW.get() + 3);
+    grow(own(second), "snow", NOW.get() + 4);
+    assert_eq!(facts(shared), Some(vec!["tea".to_owned()]));
+    let third = launch("soul-third");
+    assert_eq!(facts(own(third)), Some(vec!["tea".to_owned()]));
+    set_shared(true, NOW.get() + 5);
+    assert_eq!(
+        facts(shared),
+        Some(vec!["tea".to_owned(), "snow".to_owned()])
+    );
+    assert_eq!(
+        facts(own(first)),
+        Some(vec!["tea".to_owned(), "rain".to_owned()])
+    );
+    set_shared(true, NOW.get() + 6);
+    assert_eq!(
+        facts(shared),
+        Some(vec!["tea".to_owned(), "snow".to_owned()])
+    );
+    set_shared(false, NOW.get() + 7);
+    assert_eq!(
+        facts(own(first)),
+        Some(vec!["tea".to_owned(), "rain".to_owned()])
+    );
+    let character = CharacterRepository::get(&database, character_id)
+        .expect("character")
+        .expect("exists")
+        .character;
+    let mut roleplay = character.defaults.clone();
+    roleplay.interaction_mode = InteractionMode::Roleplay;
+    roleplay.companion_soul = None;
+    CharacterRepository::update_defaults(
+        &database,
+        character_id,
+        character.revision,
+        roleplay,
+        TimestampMillis::new(NOW.get() + 8),
+    )
+    .expect("switch to roleplay");
+    assert_eq!(
+        facts(shared),
+        Some(vec!["tea".to_owned(), "snow".to_owned()])
+    );
+}
+
+#[test]
 fn companion_character_launch_seeds_normalized_runtime_state() {
     let database = database_with_builtins();
     let persona_id = seed_persona(&database, "Mira");

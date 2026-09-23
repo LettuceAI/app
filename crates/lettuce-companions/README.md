@@ -194,8 +194,20 @@ imports it off, as legacy read it; a null or mistyped `memory` or
 Legacy companion sessions keep their own memories beside the imported pool.
 `share_soul_growth_across_chats` is new
 (default on). The other legacy `memory` keys were never read and are recorded
-as dropped. Memory follows the memory toggle (`lettuce-database` README); the soul
-growth toggle has no runtime effect yet.
+as dropped. Memory follows the memory toggle (`lettuce-database` README). Soul growth
+follows `SoulOwner::for_conversation`: the character's Soul while it shares,
+else `SoulOwner::Conversation`, the conversation's own. Growth and
+consolidation runs record the owner they started with
+(`soul_conversation_id`), the prompt reads the owner the toggle picks now, and
+the user edits take the owner from their caller. Turning the toggle off gives
+every companion conversation without a Soul of its own (and one created while
+it is off) a copy of the shared Soul, while a conversation that kept its Soul
+from an earlier off period resumes it; turning it back on makes the most
+recently updated Soul of a conversation that still exists the shared one when
+it is newer and differs, keeping the conversation Souls (user decisions
+2026-09-23). Leaving or entering companion mode changes nothing, and a synced
+toggle change only seeds. Known gap: a growth run admitted before a flip
+still applies to the owner it started with.
 
 Typed companion turn effects copy their relationship, felt/expressed/blocked,
 and ordered signal changes directly from the existing legacy-math transition;

@@ -694,6 +694,15 @@ The writer also restores a conversation's memory space with its own id,
 revision and items (`memory_adapter::insert_space_in`), its summary and its
 embedding projections, after the messages the summary cites.
 
+Companion Soul tables are keyed by `(character_id, scope)`: an empty scope is
+the character's shared Soul, a conversation id that conversation's own Soul.
+`soul_adapter::apply_sharing_change_in` runs in the same transaction as a
+character defaults write (`update_defaults`, a synced character root) and
+performs the share-Soul-growth transitions; `seed_conversation_soul_in` seeds a
+companion conversation created while sharing is off. Soul sync ids are the
+character id, or `character:conversation` for a conversation Soul; backups
+carry the conversation id.
+
 A companion character has one shared memory pool (`companion_memory_pools`,
 user decision 2026-09-14), and each companion conversation also keeps its own
 space (user decision 2026-09-23, legacy's two stores): `conversation_memory_spaces`

@@ -37,6 +37,9 @@ pub struct CompanionStateBackup {
 #[serde(deny_unknown_fields)]
 pub struct BackupCompanionSoul {
     pub character_id: CharacterId,
+    /// Set for a conversation's own Soul.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<lettuce_types::ConversationId>,
     pub revision: Revision,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
@@ -214,7 +217,8 @@ impl CompanionStateBackup {
                 return Err(CompanionStateBackupError::InvalidData);
             }
         }
-        self.souls.sort_by_key(|soul| soul.character_id);
+        self.souls
+            .sort_by_key(|soul| (soul.character_id, soul.conversation_id));
         for soul in &mut self.souls {
             soul.receipts
                 .sort_by_key(|receipt| (receipt.applied_at, receipt.operation_id));
@@ -227,10 +231,13 @@ impl CompanionStateBackup {
                 facts: soul.facts.clone(),
             };
             if !character_ids.contains(&soul.character_id)
+                || soul
+                    .conversation_id
+                    .is_some_and(|id| !conversations.contains_key(&id))
                 || soul.revision.get() == 0
                 || soul.created_at > soul.updated_at
                 || lettuce_companions::validate_state(&state).is_err()
-                || !soul_ids.insert(soul.character_id)
+                || !soul_ids.insert((soul.character_id, soul.conversation_id))
                 || soul.receipts.iter().any(|receipt| {
                     receipt.expected_revision.get() == 0
                         || receipt.expected_revision.next().ok() != Some(receipt.resulting_revision)

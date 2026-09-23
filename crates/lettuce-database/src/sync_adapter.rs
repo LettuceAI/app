@@ -1879,6 +1879,20 @@ fn parse_character(id: &str) -> Result<lettuce_types::CharacterId, ApplyOneError
     id.parse().map_err(|_| ApplyOneError::Corrupt)
 }
 
+/// A Soul sync id: the character id for its shared Soul, or
+/// `character:conversation` for a conversation's own Soul.
+fn parse_soul_owner(id: &str) -> Result<lettuce_companions::SoulOwner, ApplyOneError> {
+    match id.split_once(':') {
+        None => Ok(lettuce_companions::SoulOwner::Character(parse_character(
+            id,
+        )?)),
+        Some((character, conversation)) => Ok(lettuce_companions::SoulOwner::Conversation {
+            character_id: parse_character(character)?,
+            conversation_id: conversation.parse().map_err(|_| ApplyOneError::Corrupt)?,
+        }),
+    }
+}
+
 const COMPANION_SOUL_CODEC: SnapshotCodec = SnapshotCodec {
     kind: lettuce_sync::COMPANION_SOUL_SYNC_KIND,
     assets: no_assets,
@@ -1892,13 +1906,13 @@ const COMPANION_SOUL_CODEC: SnapshotCodec = SnapshotCodec {
         })
     }),
     decode: |id, bytes| {
-        parse_character(id)?;
+        parse_soul_owner(id)?;
         serde_json::from_slice::<Vec<lettuce_companions::SoulFact>>(bytes)
             .map(|_| ())
             .map_err(|_| ApplyOneError::Corrupt)
     },
     current: |tx, id| {
-        crate::companion_sync_adapter::sync_load_soul(tx, parse_character(id)?)
+        crate::companion_sync_adapter::sync_load_soul(tx, parse_soul_owner(id)?)
             .map_err(conversation_apply_error)?
             .map(|facts| {
                 json_payload(
@@ -1912,7 +1926,7 @@ const COMPANION_SOUL_CODEC: SnapshotCodec = SnapshotCodec {
     materialize: |tx, id, bytes| {
         let facts: Vec<lettuce_companions::SoulFact> =
             serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
-        crate::companion_sync_adapter::sync_replace_soul(tx, parse_character(id)?, &facts)
+        crate::companion_sync_adapter::sync_replace_soul(tx, parse_soul_owner(id)?, &facts)
             .map_err(conversation_apply_error)?;
         Ok(true)
     },

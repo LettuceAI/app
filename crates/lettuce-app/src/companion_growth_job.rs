@@ -133,7 +133,12 @@ impl<
                 Err(error) => return Err(CompanionGrowthJobAdmissionError::Run(error)),
             }
         }
-        let soul = SoulRepository::get(self.sources, SoulOwner::Character(character_id))
+        let owner = SoulOwner::for_conversation(
+            character_id,
+            conversation.conversation.id,
+            config.share_soul_growth_across_chats,
+        );
+        let soul = SoulRepository::get(self.sources, owner)
             .map_err(CompanionGrowthJobAdmissionError::Soul)?
             .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?;
         let created_at = result
@@ -167,6 +172,7 @@ impl<
                 )),
                 created_at,
                 proposal_checkpoint: None,
+                soul_conversation_id: owner.conversation_id(),
             })
             .map_err(CompanionGrowthJobAdmissionError::Run)?;
         Ok(Some(CompanionGrowthJobAdmission {

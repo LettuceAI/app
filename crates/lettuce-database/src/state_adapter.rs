@@ -824,6 +824,17 @@ impl CompanionConversationCreator for Database {
         crate::conversation_creator::create_with_hook(self, conversation, now, memory, |tx, _| {
             create_in(tx, owner, &initial, now).map_err(conversation_state_error)?;
             ensure_continuity_episode_in(tx, owner, now).map_err(conversation_state_error)?;
+            if !crate::character_adapter::companion_soul_shared_in(tx, owner.character_id)
+                .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?
+            {
+                crate::soul_adapter::seed_conversation_soul_in(
+                    tx,
+                    owner.character_id,
+                    owner.conversation_id,
+                    now,
+                )
+                .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
+            }
             if time_awareness {
                 let settings = lettuce_conversations::CurrentConversationSettingsPatch {
                     companion_clock: lettuce_conversations::PatchValue::Set(

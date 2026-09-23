@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use lettuce_types::{CharacterId, OperationRecordId, PromptDocumentId, Revision, TimestampMillis};
+use lettuce_types::{
+    CharacterId, ConversationId, OperationRecordId, PromptDocumentId, Revision, TimestampMillis,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::state::{EmotionVector, RegulationStyle, RelationshipDefaults};
@@ -346,18 +348,53 @@ pub struct SoulState {
     pub facts: Vec<SoulFact>,
 }
 
-/// Durable Soul continuity follows the legacy character-wide ownership rule.
-/// It is intentionally not session- or persona-scoped.
+/// Whose Soul grows: the character's, shared by all of its conversations
+/// (legacy), or one conversation's own while the character does not share
+/// Soul growth across chats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SoulOwner {
     Character(CharacterId),
+    Conversation {
+        character_id: CharacterId,
+        conversation_id: ConversationId,
+    },
 }
 
 impl SoulOwner {
+    /// The Soul a conversation grows given its character's toggle.
+    #[must_use]
+    pub const fn for_conversation(
+        character_id: CharacterId,
+        conversation_id: ConversationId,
+        shared: bool,
+    ) -> Self {
+        if shared {
+            Self::Character(character_id)
+        } else {
+            Self::Conversation {
+                character_id,
+                conversation_id,
+            }
+        }
+    }
+
     #[must_use]
     pub const fn character_id(self) -> CharacterId {
         match self {
-            Self::Character(id) => id,
+            Self::Character(id)
+            | Self::Conversation {
+                character_id: id, ..
+            } => id,
+        }
+    }
+
+    #[must_use]
+    pub const fn conversation_id(self) -> Option<ConversationId> {
+        match self {
+            Self::Character(_) => None,
+            Self::Conversation {
+                conversation_id, ..
+            } => Some(conversation_id),
         }
     }
 }

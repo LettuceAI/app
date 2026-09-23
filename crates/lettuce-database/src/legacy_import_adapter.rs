@@ -2667,7 +2667,7 @@ fn materialize_conversations(
     for (character_id, facts) in &request.companion_souls {
         crate::soul_adapter::replace_facts_in(
             &transaction,
-            *character_id,
+            lettuce_companions::SoulOwner::Character(*character_id),
             facts,
             request.completed_at,
         )

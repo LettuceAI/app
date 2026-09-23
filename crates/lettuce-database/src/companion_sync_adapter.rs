@@ -61,45 +61,57 @@ fn persona_key(persona_id: Option<PersonaId>) -> String {
 pub(crate) fn sync_soul_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
     ids(
         connection,
-        "SELECT character_id FROM companion_soul_states ORDER BY character_id",
+        "SELECT CASE WHEN scope = '' THEN character_id ELSE character_id || ':' || scope END
+           FROM companion_soul_states ORDER BY 1",
     )
 }
 
 pub(crate) fn sync_load_soul(
     transaction: &Transaction<'_>,
-    character_id: CharacterId,
+    owner: SoulOwner,
 ) -> Result<Option<Vec<SoulFact>>, ConversationRepositoryError> {
-    Ok(
-        soul_adapter::get_in(transaction, SoulOwner::Character(character_id))
-            .map_err(storage)?
-            .map(|state| state.facts),
-    )
+    Ok(soul_adapter::get_in(transaction, owner)
+        .map_err(storage)?
+        .map(|state| state.facts))
 }
 
 pub(crate) fn sync_replace_soul(
     transaction: &Transaction<'_>,
-    character_id: CharacterId,
+    owner: SoulOwner,
     facts: &[SoulFact],
 ) -> Result<(), ConversationRepositoryError> {
+    let character_id = owner.character_id();
     require_character(transaction, character_id)?;
-    if sync_load_soul(transaction, character_id)?.as_deref() == Some(facts) {
+    if let Some(conversation_id) = owner.conversation_id() {
+        let present: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
+                [conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if !present {
+            return Err(ConversationRepositoryError::NotFound);
+        }
+    }
+    if sync_load_soul(transaction, owner)?.as_deref() == Some(facts) {
         return Ok(());
     }
     let now = TimestampMillis::now().map_err(storage)?;
-    soul_adapter::replace_facts_in(transaction, character_id, facts, now).map_err(|error| {
-        match error {
+    soul_adapter::replace_facts_in(transaction, owner, facts, now).map_err(
+        |error| match error {
             lettuce_companions::SoulRepositoryError::Invalid(_) => {
                 ConversationRepositoryError::Invalid(
                     lettuce_conversations::ValidationError::InvalidValue { field: "sync.soul" },
                 )
             }
             _ => ConversationRepositoryError::Storage,
-        }
-    })?;
+        },
+    )?;
     transaction
         .execute(
-            "UPDATE companion_soul_states SET revision = revision + 1, updated_at = max(updated_at, ?2) WHERE character_id = ?1",
-            params![character_id.to_string(), now.get()],
+            "UPDATE companion_soul_states SET revision = revision + 1, updated_at = max(updated_at, ?2) WHERE character_id = ?1 AND scope = ?3",
+            params![character_id.to_string(), now.get(), soul_adapter::scope(owner)],
         )
         .map_err(storage)?;
     Ok(())

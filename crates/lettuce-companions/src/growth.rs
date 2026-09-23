@@ -41,6 +41,22 @@ pub struct CompanionGrowthRun {
     pub operation_id: OperationRecordId,
     pub created_at: TimestampMillis,
     pub proposal_checkpoint: Option<CompanionGrowthProposalCheckpoint>,
+    /// Set when the run grows the conversation's own Soul.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soul_conversation_id: Option<ConversationId>,
+}
+
+impl CompanionGrowthRun {
+    #[must_use]
+    pub const fn soul_owner(&self) -> crate::SoulOwner {
+        match self.soul_conversation_id {
+            Some(conversation_id) => crate::SoulOwner::Conversation {
+                character_id: self.character_id,
+                conversation_id,
+            },
+            None => crate::SoulOwner::Character(self.character_id),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

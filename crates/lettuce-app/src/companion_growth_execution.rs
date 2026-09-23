@@ -1,8 +1,8 @@
 use lettuce_companions::{
     CompanionGrowthProposalCheckpoint, CompanionGrowthRun, CompanionGrowthRunRepository,
-    CompanionGrowthRunRepositoryError, SoulApplyReceipt, SoulOwner, SoulPolicyError,
-    SoulRepository, SoulRepositoryError, growth_prompt_facts, growth_tool_request,
-    parse_growth_proposals, prepare_growth_change_set,
+    CompanionGrowthRunRepositoryError, SoulApplyReceipt, SoulPolicyError, SoulRepository,
+    SoulRepositoryError, growth_prompt_facts, growth_tool_request, parse_growth_proposals,
+    prepare_growth_change_set,
 };
 use lettuce_context::{
     LifecycleStatus, PromptDocument, PromptEntryChatMode, PromptEntryInfoSource, PromptPurpose,
@@ -194,11 +194,7 @@ impl<
         let applied_facts = change_set.additions.len();
         let receipt = self
             .repository
-            .apply(
-                SoulOwner::Character(run.character_id),
-                run.operation_id,
-                change_set,
-            )
+            .apply(run.soul_owner(), run.operation_id, change_set)
             .map_err(CompanionGrowthExecutionError::Soul)?;
         Ok(CompanionGrowthExecutionResult {
             receipt: Some(receipt),

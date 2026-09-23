@@ -71,6 +71,52 @@ fn invalid() -> rusqlite::Error {
     rusqlite::Error::InvalidQuery
 }
 
+/// Whether the character's companion conversations grow its shared Soul; a
+/// companion without companion settings shares.
+pub(crate) fn companion_soul_shared_in(
+    connection: &Connection,
+    character_id: CharacterId,
+) -> Result<bool, rusqlite::Error> {
+    Ok(companion_soul_sharing_in(connection, character_id)?.unwrap_or(true))
+}
+
+fn companion_soul_sharing_in(
+    connection: &Connection,
+    character_id: CharacterId,
+) -> Result<Option<bool>, rusqlite::Error> {
+    let defaults: String = connection.query_row(
+        "SELECT defaults_json FROM characters WHERE id = ?1",
+        [character_id.to_string()],
+        |row| row.get(0),
+    )?;
+    let defaults: CharacterDefaults = decode(defaults, DEFAULTS_VERSION)?;
+    Ok(soul_sharing(&defaults))
+}
+
+/// The toggle of a companion with settings; a character in another mode has
+/// none, and leaving or entering companion mode changes nothing.
+fn soul_sharing(defaults: &CharacterDefaults) -> Option<bool> {
+    (defaults.interaction_mode == lettuce_characters::InteractionMode::Companion)
+        .then_some(defaults.companion_soul.as_ref())
+        .flatten()
+        .map(|config| config.share_soul_growth_across_chats)
+}
+
+fn follow_soul_sharing(
+    tx: &Transaction<'_>,
+    character_id: CharacterId,
+    was_shared: Option<bool>,
+    defaults: &CharacterDefaults,
+    synced: bool,
+    now: TimestampMillis,
+) -> Result<(), RepositoryError> {
+    let (Some(was_shared), Some(shared)) = (was_shared, soul_sharing(defaults)) else {
+        return Ok(());
+    };
+    crate::soul_adapter::apply_sharing_change_in(tx, character_id, was_shared, shared, synced, now)
+        .map_err(|_| RepositoryError::Storage)
+}
+
 /// Whether the character's companion conversations use its memory pool: only
 /// a companion does, and one without companion settings shares, as a new
 /// companion does.
@@ -853,6 +899,7 @@ fn update_character_root(
         }
         None => (None, None),
     };
+    let was_shared = companion_soul_sharing_in(tx, character.id).map_err(db_error)?;
     tx.execute(
         "UPDATE characters SET status=?2,name=?3,nickname=?4,normalized_name=?5,normalized_nickname=?6,profile_json=?7,provenance_json=?8,defaults_json=?9,interaction_mode=?10,memory_policy=?11,model_profile_id=?12,default_scene_id=?13,default_starter_id=?14,direct_prompt_id=?15,group_conversation_prompt_id=?16,group_roleplay_prompt_id=?17,voice_profile_id=?18,voice_legacy_locator=?19,voice_autoplay=?20,presentation_json=?21,image_recommendation_json=?22,revision=?23,created_at=?24,updated_at=?25 WHERE id=?1",
         params![
@@ -867,7 +914,14 @@ fn update_character_root(
             presentation, recommendation, sql_u64(character.revision.get())?, character.created_at.get(), character.updated_at.get()
         ],
     ).map_err(db_error)?;
-    Ok(())
+    follow_soul_sharing(
+        tx,
+        character.id,
+        was_shared,
+        &character.defaults,
+        true,
+        character.updated_at,
+    )
 }
 
 fn replace_character_media(
@@ -1497,7 +1551,9 @@ impl CharacterRepository for Database {
             }
             None => (None, None),
         };
+        let was_shared = companion_soul_sharing_in(&tx, id).map_err(db_error)?;
         tx.execute("UPDATE characters SET defaults_json=?2,interaction_mode=?3,memory_policy=?4,model_profile_id=?5,default_scene_id=?6,default_starter_id=?7,direct_prompt_id=?8,group_conversation_prompt_id=?9,group_roleplay_prompt_id=?10,voice_profile_id=?11,voice_legacy_locator=?12,voice_autoplay=?13 WHERE id=?1", params![id.to_string(), encode(&defaults, DEFAULTS_VERSION)?, interaction_name(defaults.interaction_mode), memory_name(defaults.memory_policy), id_text(defaults.model_profile_id), id_text(defaults.default_scene_id), id_text(defaults.default_starter_id), id_text(defaults.direct_prompt_id), id_text(defaults.group_conversation_prompt_id), id_text(defaults.group_roleplay_prompt_id), voice_profile_id, voice_legacy_locator, defaults.voice_autoplay]).map_err(db_error)?;
+        follow_soul_sharing(&tx, id, was_shared, &defaults, false, now)?;
         bump_root(&tx, id, expected_revision, now)?;
         let character = load_character(&tx, id)?;
         tx.commit().map_err(db_error)?;

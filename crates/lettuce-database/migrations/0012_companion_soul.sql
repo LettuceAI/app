@@ -1,13 +1,18 @@
+-- scope is '' for the character's shared Soul, else the conversation whose
+-- own Soul it is (the character does not share Soul growth across chats).
 CREATE TABLE companion_soul_states (
-    character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+    character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    scope TEXT NOT NULL DEFAULT '',
     revision INTEGER NOT NULL CHECK (revision >= 1),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
+    PRIMARY KEY (character_id, scope),
     CHECK (created_at <= updated_at)
 ) STRICT;
 
 CREATE TABLE companion_soul_facts (
-    character_id TEXT NOT NULL REFERENCES companion_soul_states(character_id) ON DELETE CASCADE,
+    character_id TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT '',
     id TEXT NOT NULL,
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     category TEXT NOT NULL CHECK (category IN (
@@ -27,43 +32,50 @@ CREATE TABLE companion_soul_facts (
     created_at INTEGER NOT NULL,
     superseded_by TEXT,
     superseded_at INTEGER,
-    PRIMARY KEY (character_id, id),
-    UNIQUE (character_id, ordinal),
+    PRIMARY KEY (character_id, scope, id),
+    UNIQUE (character_id, scope, ordinal),
+    FOREIGN KEY (character_id, scope)
+        REFERENCES companion_soul_states(character_id, scope) ON DELETE CASCADE,
     CHECK (valid_until IS NULL OR valid_until > valid_from),
     CHECK ((superseded_by IS NULL) = (superseded_at IS NULL))
 ) STRICT;
 
 CREATE TABLE companion_soul_fact_sources (
     character_id TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT '',
     fact_id TEXT NOT NULL,
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     memory_id TEXT NOT NULL CHECK (length(trim(memory_id)) > 0),
-    PRIMARY KEY (character_id, fact_id, ordinal),
-    FOREIGN KEY (character_id, fact_id)
-        REFERENCES companion_soul_facts(character_id, id) ON DELETE CASCADE
+    PRIMARY KEY (character_id, scope, fact_id, ordinal),
+    FOREIGN KEY (character_id, scope, fact_id)
+        REFERENCES companion_soul_facts(character_id, scope, id) ON DELETE CASCADE
 ) STRICT;
 
 CREATE TABLE companion_soul_fact_supersedes (
     character_id TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT '',
     fact_id TEXT NOT NULL,
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     superseded_fact_id TEXT NOT NULL CHECK (length(trim(superseded_fact_id)) > 0),
-    PRIMARY KEY (character_id, fact_id, ordinal),
-    FOREIGN KEY (character_id, fact_id)
-        REFERENCES companion_soul_facts(character_id, id) ON DELETE CASCADE
+    PRIMARY KEY (character_id, scope, fact_id, ordinal),
+    FOREIGN KEY (character_id, scope, fact_id)
+        REFERENCES companion_soul_facts(character_id, scope, id) ON DELETE CASCADE
 ) STRICT;
 
 CREATE TABLE companion_soul_apply_receipts (
     operation_id TEXT PRIMARY KEY,
-    character_id TEXT NOT NULL REFERENCES companion_soul_states(character_id) ON DELETE RESTRICT,
+    character_id TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT '',
     expected_revision INTEGER NOT NULL CHECK (expected_revision >= 1),
     resulting_revision INTEGER NOT NULL CHECK (resulting_revision = expected_revision + 1),
     applied_at INTEGER NOT NULL,
-    change_hash BLOB NOT NULL CHECK (length(change_hash) = 32)
+    change_hash BLOB NOT NULL CHECK (length(change_hash) = 32),
+    FOREIGN KEY (character_id, scope)
+        REFERENCES companion_soul_states(character_id, scope) ON DELETE RESTRICT
 ) STRICT;
 
 CREATE INDEX companion_soul_receipts_owner_idx
-    ON companion_soul_apply_receipts(character_id, applied_at, operation_id);
+    ON companion_soul_apply_receipts(character_id, scope, applied_at, operation_id);
 
 CREATE TRIGGER companion_soul_receipts_immutable_update
 BEFORE UPDATE ON companion_soul_apply_receipts

@@ -88,19 +88,45 @@ fn parse_policy(value: &str) -> Result<SoulFactPolicy, SoulRepositoryError> {
     }
 }
 
+/// The `scope` column of an owner's rows: empty for the character's shared
+/// Soul, else the conversation id.
+pub(crate) fn scope(owner: SoulOwner) -> String {
+    owner
+        .conversation_id()
+        .map(|id| id.to_string())
+        .unwrap_or_default()
+}
+
+pub(crate) fn owner_of(
+    character_id: CharacterId,
+    scope: &str,
+) -> Result<SoulOwner, SoulRepositoryError> {
+    Ok(if scope.is_empty() {
+        SoulOwner::Character(character_id)
+    } else {
+        SoulOwner::Conversation {
+            character_id,
+            conversation_id: scope.parse().map_err(corrupt)?,
+        }
+    })
+}
+
 fn load_strings(
     tx: &Transaction<'_>,
     table: &str,
     column: &str,
-    character_id: CharacterId,
+    owner: SoulOwner,
     fact_id: &str,
 ) -> Result<Vec<String>, SoulRepositoryError> {
     let sql = format!(
-        "SELECT {column} FROM {table} WHERE character_id = ?1 AND fact_id = ?2 ORDER BY ordinal"
+        "SELECT {column} FROM {table} WHERE character_id = ?1 AND scope = ?2 AND fact_id = ?3 ORDER BY ordinal"
     );
     let mut statement = tx.prepare(&sql).map_err(corrupt)?;
     statement
-        .query_map(params![character_id.to_string(), fact_id], |row| row.get(0))
+        .query_map(
+            params![owner.character_id().to_string(), scope(owner), fact_id],
+            |row| row.get(0),
+        )
         .map_err(corrupt)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(corrupt)
@@ -113,8 +139,8 @@ pub(crate) fn get_in(
     let character_id = owner.character_id();
     let revision = tx
         .query_row(
-            "SELECT revision FROM companion_soul_states WHERE character_id = ?1",
-            [character_id.to_string()],
+            "SELECT revision FROM companion_soul_states WHERE character_id = ?1 AND scope = ?2",
+            params![character_id.to_string(), scope(owner)],
             |row| row.get::<_, i64>(0),
         )
         .optional()
@@ -129,12 +155,12 @@ pub(crate) fn get_in(
                         weight, valid_from, valid_until, locked, created_at, superseded_by,
                         superseded_at
                    FROM companion_soul_facts
-                  WHERE character_id = ?1
+                  WHERE character_id = ?1 AND scope = ?2
                   ORDER BY ordinal",
             )
             .map_err(corrupt)?;
         let rows = statement
-            .query_map([character_id.to_string()], |row| {
+            .query_map(params![character_id.to_string(), scope(owner)], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -176,7 +202,7 @@ pub(crate) fn get_in(
                     tx,
                     "companion_soul_fact_sources",
                     "memory_id",
-                    character_id,
+                    owner,
                     &row.0,
                 )?,
                 created_at: TimestampMillis::new(row.12),
@@ -184,7 +210,7 @@ pub(crate) fn get_in(
                     tx,
                     "companion_soul_fact_supersedes",
                     "superseded_fact_id",
-                    character_id,
+                    owner,
                     &row.0,
                 )?,
                 superseded_by: row.13,
@@ -203,16 +229,18 @@ pub(crate) fn get_in(
 
 pub(crate) fn insert_facts(
     tx: &Transaction<'_>,
-    character_id: CharacterId,
+    owner: SoulOwner,
     facts: &[SoulFact],
 ) -> Result<(), SoulRepositoryError> {
+    let character_id = owner.character_id();
+    let scope = scope(owner);
     for (ordinal, fact) in facts.iter().enumerate() {
         tx.execute(
             "INSERT INTO companion_soul_facts (
                 character_id, id, ordinal, category, value, kind, policy, slot, confidence,
                 evidence_count, weight, valid_from, valid_until, locked, created_at,
-                superseded_by, superseded_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                superseded_by, superseded_at, scope
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             params![
                 character_id.to_string(),
                 fact.id,
@@ -231,27 +259,29 @@ pub(crate) fn insert_facts(
                 fact.created_at.get(),
                 fact.superseded_by,
                 fact.superseded_at.map(TimestampMillis::get),
+                scope,
             ],
         )
         .map_err(failure)?;
         for (source_ordinal, memory_id) in fact.source_memory_ids.iter().enumerate() {
             tx.execute(
-                "INSERT INTO companion_soul_fact_sources (character_id, fact_id, ordinal, memory_id)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![character_id.to_string(), fact.id, i64::try_from(source_ordinal).map_err(corrupt)?, memory_id],
+                "INSERT INTO companion_soul_fact_sources (character_id, fact_id, ordinal, memory_id, scope)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![character_id.to_string(), fact.id, i64::try_from(source_ordinal).map_err(corrupt)?, memory_id, scope],
             )
             .map_err(failure)?;
         }
         for (supersedes_ordinal, superseded_id) in fact.supersedes.iter().enumerate() {
             tx.execute(
                 "INSERT INTO companion_soul_fact_supersedes
-                    (character_id, fact_id, ordinal, superseded_fact_id)
-                 VALUES (?1, ?2, ?3, ?4)",
+                    (character_id, fact_id, ordinal, superseded_fact_id, scope)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![
                     character_id.to_string(),
                     fact.id,
                     i64::try_from(supersedes_ordinal).map_err(corrupt)?,
-                    superseded_id
+                    superseded_id,
+                    scope
                 ],
             )
             .map_err(failure)?;
@@ -260,30 +290,142 @@ pub(crate) fn insert_facts(
     Ok(())
 }
 
-/// Replaces a companion character's Soul facts with an imported snapshot,
-/// creating its Soul state when the character has none yet.
+/// Replaces an owner's Soul facts with an imported or synced snapshot,
+/// creating its Soul state when it has none yet.
 pub(crate) fn replace_facts_in(
     tx: &Transaction<'_>,
-    character_id: CharacterId,
+    owner: SoulOwner,
     facts: &[SoulFact],
     now: TimestampMillis,
 ) -> Result<(), SoulRepositoryError> {
+    let character_id = owner.character_id();
     validate_state(&SoulState {
         revision: Revision::INITIAL,
         facts: facts.to_vec(),
     })
     .map_err(SoulRepositoryError::Invalid)?;
     tx.execute(
-        "INSERT OR IGNORE INTO companion_soul_states (character_id, revision, created_at, updated_at) VALUES (?1, 1, ?2, ?2)",
-        params![character_id.to_string(), now.get()],
+        "INSERT OR IGNORE INTO companion_soul_states (character_id, scope, revision, created_at, updated_at) VALUES (?1, ?2, 1, ?3, ?3)",
+        params![character_id.to_string(), scope(owner), now.get()],
     )
     .map_err(failure)?;
     tx.execute(
-        "DELETE FROM companion_soul_facts WHERE character_id = ?1",
-        [character_id.to_string()],
+        "DELETE FROM companion_soul_facts WHERE character_id = ?1 AND scope = ?2",
+        params![character_id.to_string(), scope(owner)],
     )
     .map_err(failure)?;
-    insert_facts(tx, character_id, facts)
+    insert_facts(tx, owner, facts)
+}
+
+/// Writes `facts` as an owner's Soul as one new revision, creating the Soul
+/// when the owner has none.
+fn overwrite_in(
+    tx: &Transaction<'_>,
+    owner: SoulOwner,
+    facts: &[SoulFact],
+    now: TimestampMillis,
+) -> Result<(), SoulRepositoryError> {
+    let existed = get_in(tx, owner)?.is_some();
+    replace_facts_in(tx, owner, facts, now)?;
+    if existed {
+        tx.execute(
+            "UPDATE companion_soul_states SET revision = revision + 1, updated_at = max(updated_at, ?3)
+              WHERE character_id = ?1 AND scope = ?2",
+            params![owner.character_id().to_string(), scope(owner), now.get()],
+        )
+        .map_err(failure)?;
+    }
+    Ok(())
+}
+
+/// Seeds a companion conversation that has no Soul of its own with a copy of
+/// its character's shared Soul; one that has kept its own Soul resumes it
+/// (user decisions 2026-09-23).
+pub(crate) fn seed_conversation_soul_in(
+    tx: &Transaction<'_>,
+    character_id: CharacterId,
+    conversation_id: lettuce_types::ConversationId,
+    now: TimestampMillis,
+) -> Result<(), SoulRepositoryError> {
+    let owner = SoulOwner::Conversation {
+        character_id,
+        conversation_id,
+    };
+    if get_in(tx, owner)?.is_some() {
+        return Ok(());
+    }
+    let Some(shared) = get_in(tx, SoulOwner::Character(character_id))? else {
+        return Ok(());
+    };
+    replace_facts_in(tx, owner, &shared.facts, now)
+}
+
+/// Follows a change of the character's share-Soul-growth toggle (user
+/// decisions 2026-09-23): turned off, each companion conversation without a
+/// Soul of its own starts from a copy of the shared Soul, and the others
+/// resume theirs; turned on, the most recently updated Soul of a conversation
+/// that still exists becomes the shared one when it is newer and differs. The
+/// conversation Souls are kept. A synced toggle change only seeds: the Souls
+/// the other device promoted arrive by sync themselves.
+pub(crate) fn apply_sharing_change_in(
+    tx: &Transaction<'_>,
+    character_id: CharacterId,
+    was_shared: bool,
+    shared: bool,
+    synced: bool,
+    now: TimestampMillis,
+) -> Result<(), SoulRepositoryError> {
+    match (was_shared, shared) {
+        (true, false) => {
+            let conversations = tx
+                .prepare(
+                    "SELECT conversation_id FROM companion_session_states
+                      WHERE character_id = ?1 ORDER BY conversation_id",
+                )
+                .map_err(failure)?
+                .query_map([character_id.to_string()], |row| row.get::<_, String>(0))
+                .map_err(failure)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(failure)?;
+            for conversation_id in conversations {
+                seed_conversation_soul_in(
+                    tx,
+                    character_id,
+                    conversation_id.parse().map_err(corrupt)?,
+                    now,
+                )?;
+            }
+        }
+        (false, true) if !synced => {
+            let latest = tx
+                .query_row(
+                    "SELECT soul.scope FROM companion_soul_states soul
+                       JOIN conversations conversation ON conversation.id = soul.scope
+                      WHERE soul.character_id = ?1 AND conversation.lifecycle <> 'tombstoned'
+                        AND soul.updated_at > coalesce(
+                            (SELECT updated_at FROM companion_soul_states
+                              WHERE character_id = ?1 AND scope = ''),
+                            -9223372036854775808)
+                      ORDER BY soul.updated_at DESC, soul.scope DESC LIMIT 1",
+                    [character_id.to_string()],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(failure)?;
+            if let Some(scope) = latest {
+                let facts = get_in(tx, owner_of(character_id, &scope)?)?
+                    .ok_or(SoulRepositoryError::Corrupt)?
+                    .facts;
+                if get_in(tx, SoulOwner::Character(character_id))?
+                    .is_none_or(|current| current.facts != facts)
+                {
+                    overwrite_in(tx, SoulOwner::Character(character_id), &facts, now)?;
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 pub(crate) fn create_in(
@@ -299,15 +441,15 @@ pub(crate) fn create_in(
     let character_id = owner.character_id();
     let inserted = tx
         .execute(
-            "INSERT OR IGNORE INTO companion_soul_states (character_id, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
-            params![character_id.to_string(), sql_revision(state.revision)?, now.get()],
+            "INSERT OR IGNORE INTO companion_soul_states (character_id, scope, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)",
+            params![character_id.to_string(), scope(owner), sql_revision(state.revision)?, now.get()],
         )
         .map_err(failure)?;
     if inserted != 1 {
         let created_at = tx
             .query_row(
-                "SELECT created_at FROM companion_soul_states WHERE character_id = ?1",
-                [character_id.to_string()],
+                "SELECT created_at FROM companion_soul_states WHERE character_id = ?1 AND scope = ?2",
+                params![character_id.to_string(), scope(owner)],
                 |row| row.get::<_, i64>(0),
             )
             .map_err(corrupt)?;
@@ -316,7 +458,7 @@ pub(crate) fn create_in(
         }
         return Err(SoulRepositoryError::AlreadyExists);
     }
-    insert_facts(tx, character_id, &state.facts)
+    insert_facts(tx, owner, &state.facts)
 }
 
 fn put_hash_part(hasher: &mut blake3::Hasher, bytes: &[u8]) {
@@ -395,7 +537,7 @@ fn load_receipt(
     operation_id: OperationRecordId,
 ) -> Result<Option<(SoulApplyReceipt, Vec<u8>)>, SoulRepositoryError> {
     tx.query_row(
-        "SELECT character_id, expected_revision, resulting_revision, applied_at, change_hash
+        "SELECT character_id, expected_revision, resulting_revision, applied_at, change_hash, scope
            FROM companion_soul_apply_receipts WHERE operation_id = ?1",
         [operation_id.to_string()],
         |row| {
@@ -405,6 +547,7 @@ fn load_receipt(
                 row.get::<_, i64>(2)?,
                 row.get::<_, i64>(3)?,
                 row.get::<_, Vec<u8>>(4)?,
+                row.get::<_, String>(5)?,
             ))
         },
     )
@@ -414,7 +557,7 @@ fn load_receipt(
         let character_id = CharacterId::from_str(&row.0).map_err(corrupt)?;
         let receipt = SoulApplyReceipt {
             operation_id,
-            owner: SoulOwner::Character(character_id),
+            owner: owner_of(character_id, &row.5)?,
             expected_revision: parse_revision(row.1)?,
             resulting_revision: parse_revision(row.2)?,
             applied_at: TimestampMillis::new(row.3),
@@ -485,21 +628,21 @@ impl SoulRepository for Database {
         })?;
         let character_id = owner.character_id();
         tx.execute(
-            "DELETE FROM companion_soul_facts WHERE character_id = ?1",
-            [character_id.to_string()],
+            "DELETE FROM companion_soul_facts WHERE character_id = ?1 AND scope = ?2",
+            params![character_id.to_string(), scope(owner)],
         )
         .map_err(failure)?;
-        insert_facts(&tx, character_id, &next.facts)?;
+        insert_facts(&tx, owner, &next.facts)?;
         let updated = tx.execute(
-            "UPDATE companion_soul_states SET revision = ?2, updated_at = ?3 WHERE character_id = ?1 AND revision = ?4",
-            params![character_id.to_string(), sql_revision(next.revision)?, change_set.applied_at.get(), sql_revision(change_set.expected_revision)?],
+            "UPDATE companion_soul_states SET revision = ?2, updated_at = ?3 WHERE character_id = ?1 AND revision = ?4 AND scope = ?5",
+            params![character_id.to_string(), sql_revision(next.revision)?, change_set.applied_at.get(), sql_revision(change_set.expected_revision)?, scope(owner)],
         ).map_err(failure)?;
         if updated != 1 {
             return Err(SoulRepositoryError::Conflict);
         }
         tx.execute(
-            "INSERT INTO companion_soul_apply_receipts (operation_id, character_id, expected_revision, resulting_revision, applied_at, change_hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![operation_id.to_string(), character_id.to_string(), sql_revision(change_set.expected_revision)?, sql_revision(change_set.resulting_revision)?, change_set.applied_at.get(), hash.as_slice()],
+            "INSERT INTO companion_soul_apply_receipts (operation_id, character_id, expected_revision, resulting_revision, applied_at, change_hash, scope) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![operation_id.to_string(), character_id.to_string(), sql_revision(change_set.expected_revision)?, sql_revision(change_set.resulting_revision)?, change_set.applied_at.get(), hash.as_slice(), scope(owner)],
         ).map_err(failure)?;
         let receipt = SoulApplyReceipt {
             operation_id,

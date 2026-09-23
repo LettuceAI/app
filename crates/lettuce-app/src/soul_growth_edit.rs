@@ -1,21 +1,21 @@
 //! The user's direct Soul growth edits (legacy `companion_clear_soul_growth`,
-//! `companion_remove_soul_growth` and `companion_set_soul_growth_lock`). Soul
-//! growth is the companion's, shared by all of its conversations, so the
-//! edits name the character.
+//! `companion_remove_soul_growth` and `companion_set_soul_growth_lock`, which
+//! named a session). The edits act on the Soul the conversation grows: its
+//! character's shared Soul, or its own while the character does not share
+//! Soul growth ([`SoulOwner::for_conversation`]).
 
 use lettuce_companions::{SoulOwner, SoulRepository, SoulRepositoryError, SoulUserEdit};
-use lettuce_types::{CharacterId, OperationRecordId, TimestampMillis};
+use lettuce_types::{OperationRecordId, TimestampMillis};
 
 /// Applies `edit` to the current Soul. A growth or consolidation run that
 /// lands between the read and the write makes the write conflict; the edit is
 /// then prepared again on the newer Soul, as legacy's last save simply won.
 fn edit<R: SoulRepository + ?Sized>(
     repository: &R,
-    character_id: CharacterId,
+    owner: SoulOwner,
     edit: SoulUserEdit,
     now: TimestampMillis,
 ) -> Result<Option<lettuce_companions::SoulState>, SoulRepositoryError> {
-    let owner = SoulOwner::Character(character_id);
     for _ in 0..3 {
         let Some(state) = repository.get(owner)? else {
             return Ok(None);
@@ -38,11 +38,11 @@ fn edit<R: SoulRepository + ?Sized>(
 /// answers how many there were.
 pub fn clear_companion_soul_growth<R: SoulRepository + ?Sized>(
     repository: &R,
-    character_id: CharacterId,
+    owner: SoulOwner,
     now: TimestampMillis,
 ) -> Result<u32, SoulRepositoryError> {
     Ok(
-        edit(repository, character_id, SoulUserEdit::ClearAll, now)?.map_or(0, |state| {
+        edit(repository, owner, SoulUserEdit::ClearAll, now)?.map_or(0, |state| {
             u32::try_from(state.facts.len()).unwrap_or(u32::MAX)
         }),
     )
@@ -52,13 +52,13 @@ pub fn clear_companion_soul_growth<R: SoulRepository + ?Sized>(
 /// Legacy removed by list position; entries now have stable ids.
 pub fn remove_companion_soul_growth<R: SoulRepository + ?Sized>(
     repository: &R,
-    character_id: CharacterId,
+    owner: SoulOwner,
     fact_id: &str,
     now: TimestampMillis,
 ) -> Result<bool, SoulRepositoryError> {
     Ok(edit(
         repository,
-        character_id,
+        owner,
         SoulUserEdit::Remove {
             fact_id: fact_id.to_owned(),
         },
@@ -71,14 +71,14 @@ pub fn remove_companion_soul_growth<R: SoulRepository + ?Sized>(
 /// the lock changed.
 pub fn set_companion_soul_growth_lock<R: SoulRepository + ?Sized>(
     repository: &R,
-    character_id: CharacterId,
+    owner: SoulOwner,
     fact_id: &str,
     locked: bool,
     now: TimestampMillis,
 ) -> Result<bool, SoulRepositoryError> {
     Ok(edit(
         repository,
-        character_id,
+        owner,
         SoulUserEdit::SetLocked {
             fact_id: fact_id.to_owned(),
             locked,

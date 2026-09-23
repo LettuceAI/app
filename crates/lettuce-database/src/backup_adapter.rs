@@ -856,7 +856,7 @@ fn read_companion_state(
         .collect::<Result<Vec<_>, _>>()?;
     let soul_rows = transaction
         .prepare(
-            "SELECT character_id, created_at, updated_at FROM companion_soul_states ORDER BY character_id",
+            "SELECT character_id, created_at, updated_at, scope FROM companion_soul_states ORDER BY character_id, scope",
         )
         .and_then(|mut statement| {
             statement
@@ -865,29 +865,29 @@ fn read_companion_state(
                         row.get::<_, String>(0)?,
                         row.get::<_, i64>(1)?,
                         row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
                     ))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
     let mut souls = Vec::with_capacity(soul_rows.len());
-    for (character_id, created_at, updated_at) in soul_rows {
+    for (character_id, created_at, updated_at, scope) in soul_rows {
         let character_id: CharacterId = character_id
             .parse()
             .map_err(|_| ProviderBackupSourceError::InvalidData)?;
-        let state = crate::soul_adapter::get_in(
-            transaction,
-            lettuce_companions::SoulOwner::Character(character_id),
-        )
-        .map_err(|_| ProviderBackupSourceError::InvalidData)?
-        .ok_or(ProviderBackupSourceError::InvalidData)?;
+        let owner = crate::soul_adapter::owner_of(character_id, &scope)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+        let state = crate::soul_adapter::get_in(transaction, owner)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?
+            .ok_or(ProviderBackupSourceError::InvalidData)?;
         let receipts = transaction
             .prepare(
-                "SELECT operation_id, expected_revision, resulting_revision, applied_at, change_hash FROM companion_soul_apply_receipts WHERE character_id = ?1 ORDER BY applied_at, operation_id",
+                "SELECT operation_id, expected_revision, resulting_revision, applied_at, change_hash FROM companion_soul_apply_receipts WHERE character_id = ?1 AND scope = ?2 ORDER BY applied_at, operation_id",
             )
             .and_then(|mut statement| {
                 statement
-                    .query_map([character_id.to_string()], |row| {
+                    .query_map(rusqlite::params![character_id.to_string(), scope], |row| {
                         Ok((
                             row.get::<_, String>(0)?,
                             row.get::<_, i64>(1)?,
@@ -915,6 +915,7 @@ fn read_companion_state(
             .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
         souls.push(lettuce_transfer::BackupCompanionSoul {
             character_id,
+            conversation_id: owner.conversation_id(),
             revision: state.revision,
             created_at: TimestampMillis::new(created_at),
             updated_at: TimestampMillis::new(updated_at),

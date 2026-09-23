@@ -531,9 +531,16 @@ where
             episode.character_id == character.character.id && episode.persona_id == persona_id
         })
         .ok_or(ContextAssemblyError::ConversationUnavailable)?;
-        let soul = SoulRepository::get(self.sources, SoulOwner::Character(character.character.id))
-            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
-            .ok_or(ContextAssemblyError::ConversationUnavailable)?;
+        let soul = SoulRepository::get(
+            self.sources,
+            SoulOwner::for_conversation(
+                character.character.id,
+                aggregate.conversation.id,
+                config.share_soul_growth_across_chats,
+            ),
+        )
+        .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+        .ok_or(ContextAssemblyError::ConversationUnavailable)?;
         let partner_name = persona_id
             .map(|id| PersonaRepository::get(self.sources, id))
             .transpose()
