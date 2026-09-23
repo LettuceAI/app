@@ -28,8 +28,8 @@ pub enum CharacterCardError {
     InvalidUtf8,
     #[error("Invalid JSON")]
     InvalidJson,
-    #[error("Invalid chara card {0}")]
-    InvalidCard(&'static str),
+    #[error("Invalid chara card {0}: {1}")]
+    InvalidCard(&'static str, String),
 }
 
 /// A card read into the fields a character is created from. `greetings`
@@ -337,7 +337,7 @@ pub fn parse_character_card(
     let draft = match format {
         CharacterFileFormat::CharaCardV1 => {
             let card: CharaCardV1 = serde_json::from_value(value.clone())
-                .map_err(|_| CharacterCardError::InvalidCard("v1"))?;
+                .map_err(|error| CharacterCardError::InvalidCard("v1", error.to_string()))?;
             CharacterCardDraft {
                 format,
                 definition: build_definition_from_fields(
@@ -363,7 +363,7 @@ pub fn parse_character_card(
         }
         CharacterFileFormat::CharaCardV2 => {
             let data = serde_json::from_value::<CharaCardV2>(value.clone())
-                .map_err(|_| CharacterCardError::InvalidCard("v2"))?
+                .map_err(|error| CharacterCardError::InvalidCard("v2", error.to_string()))?
                 .data;
             CharacterCardDraft {
                 format,
@@ -390,7 +390,7 @@ pub fn parse_character_card(
         }
         CharacterFileFormat::CharaCardV3 => {
             let data = serde_json::from_value::<CharaCardV3>(value.clone())
-                .map_err(|_| CharacterCardError::InvalidCard("v3"))?
+                .map_err(|error| CharacterCardError::InvalidCard("v3", error.to_string()))?
                 .data;
             let icon = data
                 .assets

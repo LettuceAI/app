@@ -794,3 +794,24 @@ prompt and post-history instructions dropped on import) and detection order
 old prompt sections and falls back to the description; a database export
 passes no embedded lorebook, a conversion may. Scene ids and materialization
 belong to the import use case.
+
+Entity packages (2026-09-23, `entity_package`, crate `unified-entity-card`
+0.2.0 like the old app): every character file reads into a `CharacterPackage`
+(the old app's export package, same serde layout): UEC v1, UEC v2 (read through
+its v1 downgrade, v2 scene variants expanded into scenes), Character Cards (a
+new scene id per greeting) or the pre-UEC package JSON. `build_character_uec`,
+`build_persona_uec` (database export) and `build_persona_package_uec`
+(conversion) write v2 cards (v1 built, then upgraded: other scenes merged into
+the picked scene's variants, `_ID:` prompt templates, asset locators). Error
+texts match the old app's. Correction: a v2 import keeps nickname, creator,
+creator notes (and multilingual), source and the embedded lorebook, and a
+persona keeps its nickname; the old app lost them in the downgrade. The
+workspace serde_json has `float_roundtrip`, so a rare float may print a
+different last digit than the old app on re-export.
+
+Lorebook files (`lorebook_transfer`): SillyTavern World Info read and written
+with the old app's layout (entries keyed "1", "2", … in lexical order; import
+uses `keys`, else `key`, ignores secondary keys, skips empty content, orders by
+`insertion_order`, then `displayIndex - 1`, then the map key - 1, and matches
+literally) and the USC 1.0 lorebook card written (no lorebook id or match mode
+per entry; the old app had no USC lorebook reader).

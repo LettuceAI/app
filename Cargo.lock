@@ -1798,6 +1798,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "unified-entity-card",
  "uuid",
  "zeroize",
  "zip",
@@ -3380,6 +3381,16 @@ name = "unicode_categories"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39ec24b3121d976906ece63c9daad25b85969647682eee313cb5779fdd69e14e"
+
+[[package]]
+name = "unified-entity-card"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd1b0027b73480f16a2f1b31e583dac88b85530cad580f1438b71df0ddc3c2e4"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "universal-hash"
