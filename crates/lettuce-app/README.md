@@ -47,8 +47,11 @@ Each assistant variant becomes a candidate of its own succeeded turn (send or
 continue for the first, regenerate for the rest), with a usage event that keeps
 the legacy prompt/completion tokens when both are present, and the selected
 variant stays active. Without a parent message or a chat model the variants are
-kept as ordered revisions instead. An opening scene row becomes a scene message
-with its selected-scene origin; template rows stay plain messages; hidden system
+kept as ordered revisions instead. The session's selected scene is the
+conversation's scene whether or not the chat opens with it (its background,
+direction and prompt follow it as in legacy); an opening scene row becomes a
+scene message with its selected-scene origin; template rows stay plain
+messages; hidden system
 rows stay hidden. A blank legacy title falls back to the character name, the
 launch key is derived from the session id's UUID, the message reasoning goes to
 the active variant (legacy kept it only on the message), and without a selected

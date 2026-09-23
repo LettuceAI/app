@@ -327,20 +327,16 @@ where
     ) -> Result<(LegacyConversationRecord, Option<PendingCompanion>), Error> {
         let mut rows = session.messages.iter().collect::<Vec<_>>();
         rows.sort_by_key(|message| message.ordinal);
-        let opens_with_scene = opens_with_scene(
-            rows.first()
-                .map(|row| (row.role.as_str(), row.content.as_str())),
-        );
         let persona = persona_selection(
             session.persona_disabled,
             session.persona_source_id.as_deref(),
             context,
         )?;
-        let scene = match (&session.selected_scene_source_id, opens_with_scene) {
-            (Some(id), true) => LaunchSelection::Explicit(SceneId::from_uuid(
+        let scene = match &session.selected_scene_source_id {
+            Some(id) => LaunchSelection::Explicit(SceneId::from_uuid(
                 context.scope.uuid(parse::<SceneId>(id)?.as_uuid()),
             )),
-            _ => LaunchSelection::Disabled,
+            None => LaunchSelection::Disabled,
         };
         let legacy_character = parse::<CharacterId>(&session.character_source_id)?;
         let character_id = CharacterId::from_uuid(context.scope.uuid(legacy_character.as_uuid()));

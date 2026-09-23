@@ -332,6 +332,7 @@ mod tests {
             }],
         }];
         let second_id = CharacterId::new();
+        let second_scene_id = SceneId::new();
         let second = LegacyBackupCharacterCandidate {
             id: second_id,
             defaults: LegacyBackupCharacterDefaults {
@@ -343,7 +344,16 @@ mod tests {
                 ..character.defaults.clone()
             },
             active_lorebook_ids: Vec::new(),
-            scenes: Vec::new(),
+            scenes: vec![LegacyBackupSceneCandidate {
+                id: second_scene_id,
+                ordinal: 0,
+                content: scene_text("A night office"),
+                direction: None,
+                background: None,
+                selected_variant_id: None,
+                variants: Vec::new(),
+                created_at: TimestampMillis::new(5),
+            }],
             starters: Vec::new(),
             ..character.clone()
         };
@@ -757,8 +767,28 @@ mod tests {
         };
         let legacy_state = r#"{"emotionalState":{"felt":{"warmth":0.4},"confidence":0.7,"updatedAt":100},"relationshipState":{"closeness":0.6,"trust":0.5,"affection":0.3,"tension":0.1,"stability":0.6,"interactionCount":3,"lastInteractionAt":90},"activeSignals":["curious"],"updatedAt":120}"#;
         let companion_third_id = lettuce_types::ConversationId::new();
+        let scene_session_id = lettuce_types::ConversationId::new();
+        let scene_session = lettuce_transfer::LegacyBackupDirectSession {
+            source_id: scene_session_id.to_string(),
+            character_source_id: second_id.to_string(),
+            root_session_source_id: scene_session_id.to_string(),
+            selected_scene_source_id: Some(second_scene_id.to_string()),
+            lorebook_source_ids_override: None,
+            created_at: 600,
+            updated_at: 610,
+            messages: vec![message(
+                "user",
+                0,
+                "Back at the dock",
+                601,
+                Vec::new(),
+                None,
+            )],
+            ..session.clone()
+        };
         let direct_sessions = vec![
             session.clone(),
+            scene_session,
             companion_session(companion_first_id, 300, Some(legacy_state.to_owned())),
             companion_session(companion_second_id, 400, None),
             companion_session(companion_third_id, 500, None),
@@ -810,7 +840,7 @@ mod tests {
                 TimestampMillis::new(57),
             )
             .expect("materialize direct conversations");
-        assert_eq!(conversation_receipt.record_count, 4);
+        assert_eq!(conversation_receipt.record_count, 5);
         let graph =
             lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(backend.database())
                 .expect("backup graph");
@@ -865,6 +895,20 @@ mod tests {
         assert_eq!(space.snapshot.items[0].text, "The user likes night shifts");
         assert!(space.snapshot.items[0].is_pinned);
         assert_eq!(graph.memory_projections.projections.len(), 3);
+        let scene_conversation = lettuce_conversations::ConversationReader::get(
+            backend.database(),
+            conv(scene_session_id),
+        )
+        .expect("scene conversation")
+        .conversation;
+        assert_eq!(
+            lettuce_conversations::resolve_effective_settings(&scene_conversation, None)
+                .expect("effective settings")
+                .scene
+                .map(|scene| scene.source_id),
+            Some(SceneId::from_uuid(scope.uuid(second_scene_id.as_uuid()))),
+            "a selected scene survives when the chat does not open with it"
+        );
         let episodes = [companion_first_id, companion_second_id, companion_third_id]
             .map(conv)
             .map(|id| {
