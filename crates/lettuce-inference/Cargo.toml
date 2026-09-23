@@ -18,5 +18,7 @@ async-trait.workspace = true
 lettuce-conversations.workspace = true
 lettuce-jobs.workspace = true
 lettuce-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

@@ -1998,3 +1998,10 @@ legacy; `civitai_lora_install_plan` sizes the file with a one-byte ranged
 request (the install checks exact size and the listed SHA-256) and
 `record_civitai_lora` stores its trained words and base model afterwards.
 Pure mode is passed in until the content filter is ported.
+
+Pure mode: `ProviderRuntime` reads the saved level on every request and runs
+every provider answer through the Pure mode guard, as legacy's API layer did.
+Chat and group prompts get the level's `{{content_rules}}` text and
+`default_character_rules` gives a new character the old base and level rules;
+both texts live in the chat runtime catalog. The Low level is kept (it was
+imported as Standard before).

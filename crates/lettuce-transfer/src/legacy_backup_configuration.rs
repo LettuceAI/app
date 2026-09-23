@@ -580,14 +580,7 @@ fn map_settings(
     let pure_mode = match app.get("pureModeLevel").and_then(Value::as_str) {
         Some("off") => PureMode::Off,
         Some("strict") => PureMode::Strict,
-        Some("low") => {
-            notices.push(notice(
-                LegacyBackupConversionNoticeKind::Lossy,
-                LegacyBackupDocumentKind::Settings,
-                "app_state.pureModeLevel",
-            ));
-            PureMode::Standard
-        }
+        Some("low") => PureMode::Low,
         Some("standard") => PureMode::Standard,
         None => match app.get("pureModeEnabled").and_then(Value::as_bool) {
             Some(false) => {

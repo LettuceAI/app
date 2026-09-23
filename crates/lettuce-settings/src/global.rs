@@ -478,6 +478,8 @@ pub enum PureMode {
     Off,
     Standard,
     Strict,
+    /// Blocks explicit sexual content and slurs only.
+    Low,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

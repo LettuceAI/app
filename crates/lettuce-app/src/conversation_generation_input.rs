@@ -1075,6 +1075,10 @@ where
             prompt_values.persona_scene_lora =
                 persona_lora.map(|lora| crate::scene_loras::subject_binding(lora.as_ref()));
         }
+        prompt_values.content_rules = Some(crate::pure_mode_rules::content_rules(
+            self.repository,
+            global_settings.pure_mode,
+        ));
         crate::companion_clock::fill_time_values(&mut prompt_values, reference_now);
         let context = ConversationContextAssembler::new(self.repository)
             .assemble(ContextRequest {

@@ -9,6 +9,8 @@ use lettuce_contracts::{
 };
 use lettuce_conversations::{InferenceOutcome, InferencePort, InferenceRequest, PortError};
 use lettuce_database::Database;
+use lettuce_inference::content_filter::{ContentFilter, PureModeLevel};
+use lettuce_inference::pure_mode::{PureModeGuard, PureModeRuntime};
 use lettuce_inference::{InferenceRuntime, InferenceRuntimePort};
 use lettuce_models::{ModelRepositoryError, ProviderAccountRepository, ProviderProtocol};
 use lettuce_network::{JsonClient, JsonClientError, TlsPolicy};
@@ -23,6 +25,7 @@ use lettuce_settings::SecretStore;
 pub struct ProviderRuntime<S: ?Sized> {
     database: Arc<Database>,
     inference_runtime: Arc<InferenceRuntime>,
+    pure_mode: Arc<PureModeGuard>,
     remote: RemoteProviders<S>,
 }
 
@@ -61,7 +64,13 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
             JsonClient::with_tls(tls_policy)
                 .map_err(ProviderRuntimeInitializationError::Network)?,
         );
-        let runtime_port: Arc<dyn InferenceRuntimePort> = inference_runtime.clone();
+        let pure_mode = Arc::new(PureModeGuard::new(Arc::new(ContentFilter::new(
+            PureModeLevel::Standard,
+        ))));
+        let runtime_port: Arc<dyn InferenceRuntimePort> = Arc::new(PureModeRuntime::new(
+            inference_runtime.clone(),
+            Arc::clone(&pure_mode),
+        ));
         let remote = RemoteProviders::with_runtime_and_replay(
             secret_store,
             network,
@@ -76,6 +85,7 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
         Ok(Self {
             database: database.clone(),
             inference_runtime,
+            pure_mode,
             remote,
         })
     }
@@ -88,6 +98,13 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
     ) -> Self {
         self.remote = self.remote.with_media_source(media);
         self
+    }
+
+    /// The Pure mode filter every provider answer passes; its hit log is
+    /// what the security page lists.
+    #[must_use]
+    pub fn content_filter(&self) -> Arc<ContentFilter> {
+        Arc::clone(self.pure_mode.filter())
     }
 
     /// Runtime registry used by generation flows to attach a bounded stream
@@ -239,7 +256,25 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
 #[async_trait]
 impl<S: SecretStore + ?Sized> InferencePort for ProviderRuntime<S> {
     async fn run(&self, request: InferenceRequest) -> Result<InferenceOutcome, PortError> {
-        self.remote.run(request).await
+        self.pure_mode
+            .filter()
+            .set_level(pure_mode_level(self.database.as_ref()));
+        let sink = request.stream_sink;
+        let result = self.remote.run(request).await;
+        self.pure_mode.settle(sink, result)
+    }
+}
+
+/// The saved Pure mode level; legacy fell back to Standard when settings
+/// could not be read.
+fn pure_mode_level(database: &Database) -> PureModeLevel {
+    match lettuce_settings::GlobalSettingsStore::load(database)
+        .map(|stored| stored.settings.pure_mode)
+    {
+        Ok(lettuce_settings::PureMode::Off) => PureModeLevel::Off,
+        Ok(lettuce_settings::PureMode::Low) => PureModeLevel::Low,
+        Ok(lettuce_settings::PureMode::Strict) => PureModeLevel::Strict,
+        Ok(lettuce_settings::PureMode::Standard) | Err(_) => PureModeLevel::Standard,
     }
 }
 

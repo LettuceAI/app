@@ -2,6 +2,8 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+pub mod content_filter;
+pub mod pure_mode;
 pub mod thinking;
 
 use std::{collections::HashMap, sync::Mutex};
@@ -207,6 +209,8 @@ pub enum InferenceRuntimeError {
     ConsumerClosed,
     #[error("stream event is invalid")]
     InvalidEvent,
+    #[error("stream text was blocked by Pure Mode")]
+    ContentBlocked,
 }
 
 #[cfg(test)]
