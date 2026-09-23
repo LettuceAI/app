@@ -755,7 +755,12 @@ whole import as unsafe. A session's own background is planned as a
 `ConversationBackground` use: a direct session's `background_image_path`, a
 group session's `config_overrides.backgroundImagePath` (legacy resolved every
 other group session value from its group, which the conversation now follows
-live). Conversation import sets the image, or `Hidden` when the value was
+live). A linked session reads each value from its `config_overrides`, else
+from the group row (2.2.1 repair encodings included); a starting scene other
+than the group's and a model override for a member the group row does not list
+are recorded `Lossy`, session model ids go through the same canonical model id
+mapping as the group, and `lorebooks_overridden` says whether the session chose
+its own lorebooks. Conversation import sets the image, or `Hidden` when the value was
 empty or its image could not be imported, as legacy then showed none.
 
 Old playground history (2026-09-22; `playground_generations`, live database

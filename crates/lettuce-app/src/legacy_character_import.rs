@@ -1055,16 +1055,17 @@ mod tests {
             parent_session_source_id: None,
             branched_from_message_source_id: None,
             root_session_source_id: group_session_id.to_string(),
-            chat_mode: "roleplay".to_owned(),
+            chat_mode: "conversation".to_owned(),
             speaker_selection: "director".to_owned(),
-            memory_policy: "manual".to_owned(),
+            memory_policy: "dynamic".to_owned(),
             character_model_overrides: std::collections::BTreeMap::new(),
             group_conversation_prompt_source_id: None,
             group_roleplay_prompt_source_id: None,
             starting_scene_json: None,
             background_image_locator: None,
             lorebook_source_ids: Vec::new(),
-            disable_character_lorebooks: false,
+            lorebooks_overridden: false,
+            disable_character_lorebooks: true,
             author_note: None,
             config_overrides_json: "{}".to_owned(),
             memories_json: "[]".to_owned(),
@@ -1121,6 +1122,23 @@ mod tests {
             .conversations
             .iter()
             .find(|history| history.aggregate.conversation.id == conv(group_session_id))
+            .inspect(|history| {
+                let lettuce_conversations::ConversationKind::Group(details) =
+                    &history.aggregate.conversation.kind
+                else {
+                    panic!("group conversation");
+                };
+                assert_eq!(
+                    details.group.chat_mode,
+                    lettuce_conversations::GroupChatModeSnapshot::Conversation,
+                    "the session's own chat type wins over the group's"
+                );
+                assert!(details.group.disable_character_lorebook);
+                assert!(!matches!(
+                    details.group.memory,
+                    lettuce_conversations::SnapshotSelection::Disabled
+                ));
+            })
             .expect("group conversation");
         let cast = &group_history.aggregate.conversation.participants;
         assert_eq!(cast.len(), 4);

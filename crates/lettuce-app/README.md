@@ -66,7 +66,9 @@ A group launch accepts companion characters as ordinary members (user decision
 2026-09-14); companion state, prompt state, scheduled notes and the companion
 clock stay direct-conversation only. `AppBackend::legacy_group_conversation_importer`
 does the same for group sessions after the groups stage: it launches from the
-imported group profile and rewrites the cast to the session's members, reusing
+imported group profile patched with the session's chat mode, memory policy,
+character lorebook switch and member model overrides (`GroupLaunchOverrides`),
+passes the session lorebooks only when the session overrode them, and rewrites the cast to the session's members, reusing
 planned member snapshots, snapshotting members the profile no longer lists, and
 turning speakers whose character is gone into disabled, muted "Unknown" members
 (user decision 2026-09-11) so their messages keep an author. Group sessions

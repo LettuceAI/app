@@ -843,6 +843,17 @@ where
         request: &GroupConversationLaunchRequest,
         now: TimestampMillis,
     ) -> Result<PreparedConversationLaunch, ConversationLaunchError> {
+        self.prepare_group_with(request, &GroupLaunchOverrides::default(), now)
+    }
+
+    /// A group launch whose conversation keeps its own values for some of the
+    /// group's settings, as a legacy group session kept its overrides.
+    pub(crate) fn prepare_group_with(
+        &self,
+        request: &GroupConversationLaunchRequest,
+        overrides: &GroupLaunchOverrides,
+        now: TimestampMillis,
+    ) -> Result<PreparedConversationLaunch, ConversationLaunchError> {
         if request.format_version != GROUP_LAUNCH_REQUEST_FORMAT_V1 {
             return Err(ConversationLaunchError::InvalidRequest {
                 field: "format_version",
@@ -854,9 +865,10 @@ where
         let identities = LaunchIdentities::new(conversation_id);
         let group_id = request.group_id;
 
-        let group = GroupRepository::get(self.sources, group_id)
+        let mut group = GroupRepository::get(self.sources, group_id)
             .map_err(LaunchSourceError::Group)?
             .ok_or(ConversationLaunchError::GroupNotFound { group_id })?;
+        overrides.apply(&mut group.group);
         if group.group.status == lettuce_characters::LifecycleStatus::Archived {
             return Err(ConversationLaunchError::GroupArchived { group_id });
         }
@@ -1600,4 +1612,33 @@ fn check_display(field: &'static str, value: &str) -> Result<(), ConversationLau
         return Err(ConversationLaunchError::InvalidRequest { field });
     }
     Ok(())
+}
+/// A group conversation's own values for some of the group's settings.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct GroupLaunchOverrides {
+    pub(crate) chat_mode: Option<lettuce_characters::ChatMode>,
+    pub(crate) memory_policy: Option<lettuce_characters::MemoryPolicy>,
+    pub(crate) disable_character_lorebooks: Option<bool>,
+    /// Each member's own model; a member missing here keeps the group's.
+    pub(crate) member_models:
+        Option<std::collections::BTreeMap<lettuce_types::CharacterId, Option<ModelProfileId>>>,
+}
+
+impl GroupLaunchOverrides {
+    fn apply(&self, group: &mut GroupProfile) {
+        if let Some(chat_mode) = self.chat_mode {
+            group.chat_mode = chat_mode;
+        }
+        if let Some(memory_policy) = self.memory_policy {
+            group.memory_policy = memory_policy;
+        }
+        if let Some(disable) = self.disable_character_lorebooks {
+            group.disable_character_lorebooks = disable;
+        }
+        if let Some(models) = &self.member_models {
+            for member in &mut group.members {
+                member.model_profile_override = models.get(&member.character_id).copied().flatten();
+            }
+        }
+    }
 }

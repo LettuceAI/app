@@ -43,6 +43,8 @@ pub struct LegacyBackupGroupSession {
     pub starting_scene_json: Option<String>,
     pub background_image_locator: Option<String>,
     pub lorebook_source_ids: Vec<String>,
+    /// Whether the session chose its own lorebooks instead of reading the group's.
+    pub lorebooks_overridden: bool,
     pub disable_character_lorebooks: bool,
     pub author_note: Option<String>,
     pub config_overrides_json: String,
@@ -309,7 +311,8 @@ pub fn plan_legacy_backup_group_sessions(
 /// from its own columns. Values legacy 2.2.1's repair migration rewrote (a
 /// string-encoded `startingScene`, a numeric `disableCharacterLorebooks`) are
 /// read the way the repair left them.
-fn resolve_group_session_config(row: &mut SessionRow, group: &Value) {
+/// Returns whether the session chose a starting scene other than the group's.
+fn resolve_group_session_config(row: &mut SessionRow, group: &Value) -> bool {
     let overrides = serde_json::from_str::<Value>(&row.config_overrides)
         .ok()
         .and_then(|value| value.as_object().cloned());
@@ -341,6 +344,9 @@ fn resolve_group_session_config(row: &mut SessionRow, group: &Value) {
         Some(value) => value.as_str().unwrap_or("conversation").to_owned(),
         None => text("chat_type").unwrap_or_else(|| "conversation".to_owned()),
     };
+    let group_scene = text("starting_scene")
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .filter(|value| !value.is_null());
     row.starting_scene = match value("startingScene") {
         Some(Value::Null) => None,
         Some(Value::String(encoded)) => serde_json::from_str::<Value>(&encoded)
@@ -387,6 +393,10 @@ fn resolve_group_session_config(row: &mut SessionRow, group: &Value) {
         Some(value) => value.as_str().map(str::to_owned),
         None => text("group_chat_roleplay_prompt_template_id"),
     };
+    row.starting_scene
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        != group_scene
 }
 
 fn map_sessions(
@@ -428,6 +438,14 @@ fn map_sessions(
         .iter()
         .map(|value| value.id.to_string())
         .collect::<BTreeSet<_>>();
+    let chat_model_ids = authored
+        .configuration
+        .provider_models
+        .model_profiles
+        .iter()
+        .filter(|value| value.kind == lettuce_models::ModelKind::Chat)
+        .map(|value| value.id.to_string())
+        .collect::<BTreeSet<_>>();
     let prompt_ids = authored
         .configuration
         .prompts
@@ -452,14 +470,32 @@ fn map_sessions(
         .and_then(|document| serde_json::from_slice::<Vec<Value>>(&document.bytes).ok())
         .unwrap_or_default();
     for (session_index, mut row) in rows.into_iter().enumerate() {
-        if let Some(group) = row.group_character_id.as_deref().and_then(|group_id| {
+        let path = format!("[{session_index}]");
+        let group = row.group_character_id.as_deref().and_then(|group_id| {
             group_rows
                 .iter()
                 .find(|group| group.get("id").and_then(Value::as_str) == Some(group_id))
-        }) {
-            resolve_group_session_config(&mut row, group);
+        });
+        if let Some(group) = group
+            && resolve_group_session_config(&mut row, group)
+        {
+            notices.push(LegacyBackupConversionNotice {
+                kind: LegacyBackupConversionNoticeKind::Lossy,
+                document: LegacyBackupDocumentKind::GroupSessions,
+                field: format!("{path}.config_overrides.startingScene"),
+            });
         }
-        let path = format!("[{session_index}]");
+        let lorebooks_overridden = group.is_none()
+            || serde_json::from_str::<Value>(&row.config_overrides)
+                .ok()
+                .is_some_and(|value| value.get("lorebookIds").is_some());
+        let group_members = group.map(|group| {
+            group
+                .get("character_ids")
+                .and_then(Value::as_str)
+                .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok())
+                .unwrap_or_default()
+        });
         report_extra(&path, &row.extra, notices);
         validate_identifier(&row.id, &format!("{path}.id"))?;
         if !session_ids.insert(row.id.clone()) {
@@ -572,13 +608,37 @@ fn map_sessions(
                 ));
                 return false;
             }
-            if !contains_case_insensitive(&model_ids, model_id) {
+            *model_id = crate::legacy_backup_configuration::canonical_model_id(
+                model_id,
+                notices,
+                "group_sessions.character_model_overrides",
+            )
+            .to_string();
+            if !model_ids.contains(model_id.as_str()) {
                 skipped.push(reference(
                     crate::LegacyImportSkipKind::ModelReference,
                     key,
                     crate::LegacyImportSkipReason::MissingModelProfile,
                 ));
                 return false;
+            }
+            if !chat_model_ids.contains(model_id.as_str()) {
+                skipped.push(reference(
+                    crate::LegacyImportSkipKind::ModelReference,
+                    key,
+                    crate::LegacyImportSkipReason::IncompatibleReference,
+                ));
+                return false;
+            }
+            if group_members
+                .as_ref()
+                .is_some_and(|group| !contains_case_insensitive_slice(group, character_id))
+            {
+                notices.push(LegacyBackupConversionNotice {
+                    kind: LegacyBackupConversionNoticeKind::Lossy,
+                    document: LegacyBackupDocumentKind::GroupSessions,
+                    field: format!("{path}.config_overrides.characterModelOverrides"),
+                });
             }
             true
         });
@@ -688,6 +748,7 @@ fn map_sessions(
             starting_scene_json,
             background_image_locator: row.background_image_path,
             lorebook_source_ids: lorebooks,
+            lorebooks_overridden,
             disable_character_lorebooks: row.disable_character_lorebooks,
             author_note: row.author_note,
             config_overrides_json: row.config_overrides,
@@ -1460,6 +1521,16 @@ mod tests {
     }
 
     fn source(rows: Value, characters: &[String], group_id: &str) -> LegacyBackupDirectSessionPlan {
+        source_with(rows, characters, characters, group_id, Vec::new())
+    }
+
+    fn source_with(
+        rows: Value,
+        characters: &[String],
+        group_members: &[String],
+        group_id: &str,
+        extra: Vec<LegacyBackupDocument>,
+    ) -> LegacyBackupDirectSessionPlan {
         let character_rows = characters
             .iter()
             .map(|character| {
@@ -1476,14 +1547,14 @@ mod tests {
             created_at: 1,
             app_version: "legacy".into(),
             source_hash: ContentHash::parse("88".repeat(32)).expect("source hash"),
-            documents: vec![
+            documents: [
                 document(LegacyBackupDocumentKind::Characters, json!(character_rows)),
                 document(
                     LegacyBackupDocumentKind::GroupCharacters,
                     json!([{
                         "id": group_id,
                         "name": "Writers Room",
-                        "character_ids": serde_json::to_string(characters).expect("members"),
+                        "character_ids": serde_json::to_string(group_members).expect("members"),
                         "muted_character_ids": "[]",
                         "created_at": 1,
                         "updated_at": 1,
@@ -1492,7 +1563,10 @@ mod tests {
                     }]),
                 ),
                 document(LegacyBackupDocumentKind::GroupSessions, rows),
-            ],
+            ]
+            .into_iter()
+            .chain(extra)
+            .collect(),
             media: Vec::new(),
         };
         let configuration =
@@ -1726,6 +1800,13 @@ mod tests {
         assert!(session.muted_member_source_ids.is_empty());
         assert!(session.starting_scene_json.is_none());
         assert!(!session.disable_character_lorebooks);
+        assert!(!session.lorebooks_overridden);
+        let scene_notice = |plan: &LegacyBackupGroupSessionPlan| {
+            plan.notices
+                .iter()
+                .any(|notice| notice.field == "[0].config_overrides.startingScene")
+        };
+        assert!(!scene_notice(&plan));
 
         let scene = row["starting_scene"].as_str().expect("scene").to_owned();
         set_override(&mut row, "startingScene", json!(scene));
@@ -1737,9 +1818,88 @@ mod tests {
         assert!(session.starting_scene_json.is_some());
         assert!(session.disable_character_lorebooks);
         assert_eq!(session.persona_source_id, None);
+        assert!(scene_notice(&plan));
         assert!(plan.skipped.iter().any(|skip| {
             skip.reason == crate::LegacyImportSkipReason::MissingPersona
                 && skip.source_key == format!("group_sessions.persona_id:{root}")
+        }));
+    }
+
+    #[test]
+    fn session_model_overrides_map_legacy_model_ids_like_the_group() {
+        let characters = vec![id(90), id(91), id(92)];
+        let group_members = characters[..2].to_vec();
+        let group = id(93);
+        let root = id(94);
+        let provider = id(95);
+        let mut row = session(
+            &root,
+            &group,
+            &group_members,
+            None,
+            &root,
+            None,
+            vec![message(&id(96), None, None, None)],
+        );
+        set_override(&mut row, "characterIds", json!(characters));
+        set_override(
+            &mut row,
+            "characterModelOverrides",
+            json!({ characters[0].clone(): "legacy-gpt", characters[2].clone(): "legacy-gpt" }),
+        );
+        let models = vec![
+            document(
+                LegacyBackupDocumentKind::ProviderCredentials,
+                json!([{
+                    "id": provider,
+                    "provider_id": "openai",
+                    "label": "OpenAI",
+                    "api_key": "sk-test",
+                    "config": "{}"
+                }]),
+            ),
+            document(
+                LegacyBackupDocumentKind::Models,
+                json!([{
+                    "id": "legacy-gpt",
+                    "name": "gpt-4o",
+                    "provider_id": "openai",
+                    "provider_credential_id": provider,
+                    "provider_label": "OpenAI",
+                    "display_name": "GPT-4o",
+                    "created_at": 1,
+                    "model_type": "chat",
+                    "input_scopes": "[\"text\"]",
+                    "output_scopes": "[\"text\"]"
+                }]),
+            ),
+        ];
+        let plan = plan_legacy_backup_group_sessions(source_with(
+            json!([row]),
+            &characters,
+            &group_members,
+            &group,
+            models,
+        ))
+        .expect("session overrides with a legacy model id");
+        let model = crate::legacy_backup_configuration::canonical_model_id(
+            "legacy-gpt",
+            &mut Vec::new(),
+            "model",
+        )
+        .to_string();
+        let session = &plan.sessions[0];
+        assert_eq!(
+            session.character_model_overrides,
+            BTreeMap::from([
+                (characters[0].clone(), model.clone()),
+                (characters[2].clone(), model),
+            ])
+        );
+        assert!(plan.skipped.is_empty(), "{:?}", plan.skipped);
+        assert!(plan.notices.iter().any(|notice| {
+            notice.kind == LegacyBackupConversionNoticeKind::Lossy
+                && notice.field == "[0].config_overrides.characterModelOverrides"
         }));
     }
 
@@ -1820,6 +1980,7 @@ mod tests {
             Some("deleted-prompt")
         );
         assert!(session.lorebook_source_ids.is_empty());
+        assert!(session.lorebooks_overridden);
         assert!(session.character_model_overrides.is_empty());
         let message = &session.messages[0];
         assert_eq!(message.model_source_id, None);

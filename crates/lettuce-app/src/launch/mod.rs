@@ -16,6 +16,7 @@ mod request;
 
 pub use error::{ConversationLaunchError, LaunchSourceError};
 pub use identity::launch_conversation_id;
+pub(crate) use planner::GroupLaunchOverrides;
 pub use planner::{ConversationLaunchPlanner, DirectLaunchSources, GroupLaunchSources};
 pub use request::{
     DIRECT_LAUNCH_REQUEST_FORMAT_V1, DirectConversationLaunchRequest, DirectUserParticipant,

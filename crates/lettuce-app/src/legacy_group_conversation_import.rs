@@ -133,8 +133,30 @@ where
             persona: persona_selection(false, session.persona_source_id.as_deref(), context)?,
             operation_key: launch_key(context.scope, &session.source_id)?,
         };
+        let overrides = crate::launch::GroupLaunchOverrides {
+            chat_mode: Some(match session.chat_mode.as_str() {
+                "roleplay" => lettuce_characters::ChatMode::Roleplay,
+                _ => lettuce_characters::ChatMode::Conversation,
+            }),
+            memory_policy: Some(match session.memory_policy.as_str() {
+                "dynamic" => lettuce_characters::MemoryPolicy::Dynamic,
+                _ => lettuce_characters::MemoryPolicy::Manual,
+            }),
+            disable_character_lorebooks: Some(session.disable_character_lorebooks),
+            member_models: Some(
+                session
+                    .character_model_overrides
+                    .iter()
+                    .filter_map(|(character, model)| {
+                        let character = parse_character(context.scope, character).ok()?;
+                        let model = model.parse::<lettuce_types::ModelProfileId>().ok()?;
+                        Some((character, Some(context.model_destination(model)?)))
+                    })
+                    .collect(),
+            ),
+        };
         let (mut plan, mut snapshots) = ConversationLaunchPlanner::new(self.sources)
-            .prepare_group(&request, now)
+            .prepare_group_with(&request, &overrides, now)
             .map_err(|_| Error::Conflict)?
             .into_parts();
         let authors = session_cast(
@@ -180,7 +202,9 @@ where
                 prompt_source_id,
                 prompt_purposes: &[prompt_purpose],
                 prompt_snapshot_purpose,
-                lorebook_source_ids: Some(&session.lorebook_source_ids),
+                lorebook_source_ids: session
+                    .lorebooks_overridden
+                    .then_some(session.lorebook_source_ids.as_slice()),
                 speaker_selection: (speaker_selection != details.group.speaker_selection)
                     .then_some(speaker_selection),
                 model_settings: &lettuce_models::ModelSettingsLayer::default(),

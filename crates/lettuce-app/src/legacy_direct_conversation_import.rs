@@ -60,6 +60,11 @@ pub(crate) struct ImportContext {
 }
 
 impl ImportContext {
+    /// The imported model profile a legacy model id became.
+    pub(crate) fn model_destination(&self, legacy: ModelProfileId) -> Option<ModelProfileId> {
+        self.models.get(&legacy).map(|(model, _)| *model)
+    }
+
     /// A session's own legacy background: `value` is what it set, `None` when
     /// it followed its scene, character or group. A background whose image
     /// did not import (recorded) shows none, as legacy did.
