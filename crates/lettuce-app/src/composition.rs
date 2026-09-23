@@ -53,6 +53,15 @@ impl AppBackend {
             .map_err(AppInitializationError::BuiltInPrompts)?
             .bootstrap(now)
             .map_err(AppInitializationError::BuiltInPrompts)?;
+        match database.clear_llama_layer_caches() {
+            Ok(0) => {}
+            Ok(cleared) => {
+                tracing::info!(cleared, "cleared stale llama smart-offload layer caches")
+            }
+            Err(error) => {
+                tracing::warn!(%error, "could not clear llama smart-offload layer caches");
+            }
+        }
         let database = Arc::new(database);
         Ok(Self {
             whisper_runtime: Arc::new(WhisperCppRuntime::new(database.clone())),

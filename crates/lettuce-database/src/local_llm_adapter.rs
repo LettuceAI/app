@@ -34,6 +34,18 @@ impl Database {
         Ok(report.and_then(|report| serde_json::from_str(&report).ok()))
     }
 
+    /// Drops the cached smart-offload layer count from every llama.cpp
+    /// runtime report, keeping the rest of each report; returns how many
+    /// reports had one.
+    pub fn clear_llama_layer_caches(&self) -> Result<usize, DatabaseError> {
+        Ok(self.connection()?.execute(
+            "UPDATE llama_runtime_reports
+             SET report_json = json_remove(report_json, '$.actualGpuLayersUsed')
+             WHERE json_extract(report_json, '$.actualGpuLayersUsed') IS NOT NULL",
+            [],
+        )?)
+    }
+
     /// Stores the report on the newest llama.cpp model using this file;
     /// `false` when no such model exists.
     pub fn store_llama_runtime_report(
@@ -186,6 +198,14 @@ mod tests {
             )
             .expect("owner");
         assert_eq!(owner, "new");
+        assert_eq!(database.clear_llama_layer_caches().expect("clear"), 1);
+        assert_eq!(
+            database
+                .llama_runtime_report("/models/a.gguf")
+                .expect("load"),
+            Some(json!({"status": "succeeded"}))
+        );
+        assert_eq!(database.clear_llama_layer_caches().expect("clear again"), 0);
         database
             .connection()
             .expect("connection")

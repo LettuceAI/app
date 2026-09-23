@@ -1799,3 +1799,8 @@ a key chained to that job (`retry_idempotency_key`), as legacy retried a
 failed cycle on the next turn; before, the terminal job kept the window's key
 and the conversation's automatic memory stopped for good. Every input error of
 `run_claimed` now settles the job (retry scheduled) instead of keeping the claim.
+
+Every open clears the cached smart-offload layer count
+(`actualGpuLayersUsed`) from each llama.cpp runtime report, keeping the rest of
+the report, as legacy did on every start (free VRAM differs between sessions);
+a failure is logged and the open continues.
