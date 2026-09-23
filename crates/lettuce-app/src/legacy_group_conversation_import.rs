@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use lettuce_characters::{CharacterRepository, LifecycleStatus};
+use lettuce_characters::{
+    CharacterRepository, GroupStartingScene, LifecycleStatus, Scene, SceneOwner, SceneVariant,
+};
 use lettuce_conversations::{
     CharacterLaunchSnapshot, CharacterSnapshotBodyV1, ConversationKind,
     ConversationParticipantDraft, GroupMemberLaunchSnapshot, GroupParticipantPolicySnapshot,
@@ -13,7 +15,8 @@ use lettuce_transfer::{
     LegacyImportStageReceipt,
 };
 use lettuce_types::{
-    CharacterId, ConversationParticipantId, GroupId, Revision, SnapshotArtifactId, TimestampMillis,
+    CharacterId, ConversationParticipantId, GroupId, Revision, SceneId, SceneVariantId,
+    SnapshotArtifactId, TimestampMillis,
 };
 
 use crate::launch::documents;
@@ -154,6 +157,11 @@ where
                     })
                     .collect(),
             ),
+            starting_scene: session.starting_scene_override.as_ref().map(|scene| {
+                scene
+                    .as_ref()
+                    .map(|scene| session_scene(context.scope, session, group_id, scene))
+            }),
         };
         let (mut plan, mut snapshots) = ConversationLaunchPlanner::new(self.sources)
             .prepare_group_with(&request, &overrides, now)
@@ -419,6 +427,51 @@ fn session_cast<S: DirectLaunchSources>(
     let referenced = referenced_artifacts(kind, participants);
     snapshots.retain(|draft| referenced.contains(&draft.artifact_id));
     Ok(authors)
+}
+
+/// A session's own starting scene as a group-owned scene with ids derived
+/// from the session, since legacy kept it on the session.
+fn session_scene(
+    scope: lettuce_transfer::LegacyIdScope,
+    session: &LegacyBackupGroupSession,
+    group_id: GroupId,
+    scene: &lettuce_transfer::LegacyBackupSceneCandidate,
+) -> GroupStartingScene {
+    let scene_id = SceneId::from_uuid(scope.derived(&session.source_id, "starting_scene"));
+    let variant_id = |id: SceneVariantId| {
+        SceneVariantId::from_uuid(
+            scope.derived(&session.source_id, &format!("starting_scene_variant:{id}")),
+        )
+    };
+    GroupStartingScene {
+        scene: Scene {
+            id: scene_id,
+            owner: SceneOwner::Group(group_id),
+            status: LifecycleStatus::Active,
+            ordinal: 0,
+            content: scene.content.clone(),
+            direction: scene.direction.clone(),
+            selected_variant_id: scene.selected_variant_id.map(variant_id),
+            assets: Vec::new(),
+            revision: Revision::INITIAL,
+            created_at: scene.created_at,
+            updated_at: scene.created_at,
+        },
+        variants: scene
+            .variants
+            .iter()
+            .map(|variant| SceneVariant {
+                id: variant_id(variant.id),
+                scene_id,
+                ordinal: variant.ordinal,
+                content: variant.content.clone(),
+                direction: variant.direction.clone(),
+                revision: Revision::INITIAL,
+                created_at: variant.created_at,
+                updated_at: variant.created_at,
+            })
+            .collect(),
+    }
 }
 
 const UNKNOWN_NAME: &str = "Unknown";

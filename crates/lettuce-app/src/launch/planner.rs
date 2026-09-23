@@ -868,7 +868,7 @@ where
         let mut group = GroupRepository::get(self.sources, group_id)
             .map_err(LaunchSourceError::Group)?
             .ok_or(ConversationLaunchError::GroupNotFound { group_id })?;
-        overrides.apply(&mut group.group);
+        overrides.apply(&mut group);
         if group.group.status == lettuce_characters::LifecycleStatus::Archived {
             return Err(ConversationLaunchError::GroupArchived { group_id });
         }
@@ -1614,7 +1614,7 @@ fn check_display(field: &'static str, value: &str) -> Result<(), ConversationLau
     Ok(())
 }
 /// A group conversation's own values for some of the group's settings.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct GroupLaunchOverrides {
     pub(crate) chat_mode: Option<lettuce_characters::ChatMode>,
     pub(crate) memory_policy: Option<lettuce_characters::MemoryPolicy>,
@@ -1622,10 +1622,17 @@ pub(crate) struct GroupLaunchOverrides {
     /// Each member's own model; a member missing here keeps the group's.
     pub(crate) member_models:
         Option<std::collections::BTreeMap<lettuce_types::CharacterId, Option<ModelProfileId>>>,
+    /// The conversation's own starting scene, owned by the group.
+    pub(crate) starting_scene: Option<Option<lettuce_characters::GroupStartingScene>>,
 }
 
 impl GroupLaunchOverrides {
-    fn apply(&self, group: &mut GroupProfile) {
+    fn apply(&self, details: &mut lettuce_characters::GroupDetails) {
+        if let Some(scene) = &self.starting_scene {
+            details.group.starting_scene_id = scene.as_ref().map(|scene| scene.scene.id);
+            details.starting_scene = scene.clone();
+        }
+        let group = &mut details.group;
         if let Some(chat_mode) = self.chat_mode {
             group.chat_mode = chat_mode;
         }

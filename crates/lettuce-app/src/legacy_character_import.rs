@@ -1062,6 +1062,7 @@ mod tests {
             group_conversation_prompt_source_id: None,
             group_roleplay_prompt_source_id: None,
             starting_scene_json: None,
+            starting_scene_override: None,
             background_image_locator: None,
             lorebook_source_ids: Vec::new(),
             lorebooks_overridden: false,

@@ -9504,6 +9504,51 @@ fn a_roleplay_group_materializes_one_trimmed_scene_message_from_the_selected_var
 }
 
 #[test]
+fn a_group_launch_override_replaces_or_clears_the_group_starting_scene() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        Some(group_starting_scene("A quiet harbour at dawn.")),
+        |_| {},
+    );
+    let mut own = group_starting_scene("A rainy library.");
+    own.scene.owner = SceneOwner::Group(group_id);
+    let own_id = own.scene.id;
+    let prepare = |key: &str, starting_scene| {
+        ConversationLaunchPlanner::new(database)
+            .prepare_group_with(
+                &group_request(group_id, key),
+                &crate::launch::GroupLaunchOverrides {
+                    chat_mode: Some(ChatMode::Roleplay),
+                    starting_scene,
+                    ..Default::default()
+                },
+                NOW,
+            )
+            .expect("prepare group launch")
+            .into_parts()
+            .0
+    };
+    let plan = prepare("group-own-scene", Some(Some(own)));
+    match &group_details(&plan).group.scene {
+        SnapshotSelection::Inherited(scene) => assert_eq!(scene.source_id, own_id),
+        other => panic!("expected the conversation's own scene, got {other:?}"),
+    }
+    assert_eq!(plan.initial_timeline.entries.len(), 1);
+    assert_eq!(
+        message_text(&plan.initial_timeline.entries[0].parts[0]),
+        "A rainy library."
+    );
+    let plan = prepare("group-no-scene", Some(None));
+    assert_eq!(group_details(&plan).group.scene, SnapshotSelection::Disabled);
+    assert!(plan.initial_timeline.entries.is_empty());
+}
+
+#[test]
 fn a_blank_group_scene_is_selected_without_a_timeline_entry() {
     let backend = backend();
     let database = backend.database();

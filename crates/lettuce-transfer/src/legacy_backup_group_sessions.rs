@@ -41,6 +41,9 @@ pub struct LegacyBackupGroupSession {
     pub group_conversation_prompt_source_id: Option<String>,
     pub group_roleplay_prompt_source_id: Option<String>,
     pub starting_scene_json: Option<String>,
+    /// The session's own starting scene when it chose one other than its
+    /// group's (`Some(None)` when it chose none); `None` follows the group.
+    pub starting_scene_override: Option<Option<crate::LegacyBackupSceneCandidate>>,
     pub background_image_locator: Option<String>,
     pub lorebook_source_ids: Vec<String>,
     /// Whether the session chose its own lorebooks instead of reading the group's.
@@ -476,15 +479,8 @@ fn map_sessions(
                 .iter()
                 .find(|group| group.get("id").and_then(Value::as_str) == Some(group_id))
         });
-        if let Some(group) = group
-            && resolve_group_session_config(&mut row, group)
-        {
-            notices.push(LegacyBackupConversionNotice {
-                kind: LegacyBackupConversionNoticeKind::Lossy,
-                document: LegacyBackupDocumentKind::GroupSessions,
-                field: format!("{path}.config_overrides.startingScene"),
-            });
-        }
+        let scene_overridden =
+            group.is_some_and(|group| resolve_group_session_config(&mut row, group));
         let lorebooks_overridden = group.is_none()
             || serde_json::from_str::<Value>(&row.config_overrides)
                 .ok()
@@ -694,6 +690,35 @@ fn map_sessions(
                 crate::LegacyImportSkipReason::MissingSceneVariant,
             ));
         }
+        let lossy = |field: &str| LegacyBackupConversionNotice {
+            kind: LegacyBackupConversionNoticeKind::Lossy,
+            document: LegacyBackupDocumentKind::GroupSessions,
+            field: format!("{path}.config_overrides.{field}"),
+        };
+        let starting_scene_override = match scene_overridden
+            .then(|| {
+                crate::legacy_backup_authored::map_group_starting_scene(
+                    starting_scene_json.as_deref().map(canonical_scene_ids),
+                    &session_key,
+                    &mut Vec::new(),
+                    &mut Vec::new(),
+                )
+            })
+            .transpose()
+        {
+            Ok(scene) => scene.map(|scene| {
+                scene.map(|mut scene| {
+                    if scene.background.take().is_some() {
+                        notices.push(lossy("startingScene.backgroundImagePath"));
+                    }
+                    scene
+                })
+            }),
+            Err(_) => {
+                notices.push(lossy("startingScene"));
+                Some(None)
+            }
+        };
         let created_at = timestamp(row.created_at, &format!("{path}.created_at"))?;
         let updated_at = timestamp(row.updated_at, &format!("{path}.updated_at"))?;
         if created_at > updated_at || row.memory_summary_token_count < 0 {
@@ -746,6 +771,7 @@ fn map_sessions(
             group_conversation_prompt_source_id,
             group_roleplay_prompt_source_id,
             starting_scene_json,
+            starting_scene_override,
             background_image_locator: row.background_image_path,
             lorebook_source_ids: lorebooks,
             lorebooks_overridden,
@@ -1231,6 +1257,43 @@ fn validate_starting_scene(
         .selected_variant_id
         .as_deref()
         .is_some_and(|id| !variant_ids.contains(id)))
+}
+
+/// Legacy could store scene and variant ids that are not UUIDs; they become
+/// stable UUIDv5 ids so the scene maps like one that had UUIDs.
+fn canonical_scene_ids(raw: &str) -> String {
+    let Ok(mut scene) = serde_json::from_str::<Value>(raw) else {
+        return raw.to_owned();
+    };
+    let canonical = |value: &mut Value, kind: &str| {
+        if let Some(id) = value.as_str()
+            && uuid::Uuid::parse_str(id).is_err()
+        {
+            *value = Value::String(
+                uuid::Uuid::new_v5(
+                    &crate::legacy_backup_configuration::LEGACY_ID_NAMESPACE,
+                    format!("{kind}:{id}").as_bytes(),
+                )
+                .to_string(),
+            );
+        }
+    };
+    if let Some(id) = scene.get_mut("id") {
+        canonical(id, "scene");
+    }
+    for key in ["selectedVariantId", "selected_variant_id"] {
+        if let Some(id) = scene.get_mut(key) {
+            canonical(id, "scene_variant");
+        }
+    }
+    if let Some(variants) = scene.get_mut("variants").and_then(Value::as_array_mut) {
+        for variant in variants {
+            if let Some(id) = variant.get_mut("id") {
+                canonical(id, "scene_variant");
+            }
+        }
+    }
+    scene.to_string()
 }
 
 #[derive(Clone, Copy)]
@@ -1801,12 +1864,7 @@ mod tests {
         assert!(session.starting_scene_json.is_none());
         assert!(!session.disable_character_lorebooks);
         assert!(!session.lorebooks_overridden);
-        let scene_notice = |plan: &LegacyBackupGroupSessionPlan| {
-            plan.notices
-                .iter()
-                .any(|notice| notice.field == "[0].config_overrides.startingScene")
-        };
-        assert!(!scene_notice(&plan));
+        assert_eq!(session.starting_scene_override, None);
 
         let scene = row["starting_scene"].as_str().expect("scene").to_owned();
         set_override(&mut row, "startingScene", json!(scene));
@@ -1818,7 +1876,24 @@ mod tests {
         assert!(session.starting_scene_json.is_some());
         assert!(session.disable_character_lorebooks);
         assert_eq!(session.persona_source_id, None);
-        assert!(scene_notice(&plan));
+        let scene = session
+            .starting_scene_override
+            .as_ref()
+            .expect("the session chose a scene")
+            .as_ref()
+            .expect("a scene, not none");
+        assert_eq!(scene.background, None);
+        assert_eq!(scene.variants.len(), 1);
+        assert!(scene.selected_variant_id.is_some());
+        assert!(plan.notices.iter().any(|notice| {
+            notice.field == "[0].config_overrides.startingScene.backgroundImagePath"
+        }));
+        assert!(
+            !plan
+                .notices
+                .iter()
+                .any(|notice| notice.field == "[0].config_overrides.startingScene")
+        );
         assert!(plan.skipped.iter().any(|skip| {
             skip.reason == crate::LegacyImportSkipReason::MissingPersona
                 && skip.source_key == format!("group_sessions.persona_id:{root}")
@@ -1901,6 +1976,47 @@ mod tests {
             notice.kind == LegacyBackupConversionNoticeKind::Lossy
                 && notice.field == "[0].config_overrides.characterModelOverrides"
         }));
+    }
+
+    #[test]
+    fn a_session_scene_with_legacy_non_uuid_ids_is_still_its_own() {
+        let characters = vec![id(100), id(101)];
+        let group = id(102);
+        let root = id(103);
+        let mut row = session(
+            &root,
+            &group,
+            &characters,
+            None,
+            &root,
+            None,
+            vec![message(&id(104), None, None, None)],
+        );
+        set_override(
+            &mut row,
+            "startingScene",
+            json!({
+                "id": "1700000000000-0.5",
+                "content": "A tavern",
+                "createdAt": 1,
+                "selectedVariantId": "1700000000001-0.5",
+                "variants": [{"id": "1700000000001-0.5", "content": "A loud tavern", "createdAt": 2}]
+            }),
+        );
+        let plan = plan_legacy_backup_group_sessions(source(json!([row]), &characters, &group))
+            .expect("non-UUID scene ids");
+        let scene = plan.sessions[0]
+            .starting_scene_override
+            .clone()
+            .expect("own scene")
+            .expect("a scene");
+        assert_eq!(scene.selected_variant_id, Some(scene.variants[0].id));
+        assert!(
+            !plan
+                .notices
+                .iter()
+                .any(|notice| notice.field == "[0].config_overrides.startingScene")
+        );
     }
 
     #[test]

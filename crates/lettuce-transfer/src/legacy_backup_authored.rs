@@ -1706,7 +1706,7 @@ fn reference_skip(
     }
 }
 
-fn map_group_starting_scene(
+pub(crate) fn map_group_starting_scene(
     value: Option<String>,
     group_key: &str,
     skipped: &mut Vec<crate::LegacyImportSkip>,
