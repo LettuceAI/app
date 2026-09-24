@@ -28,8 +28,8 @@ use lettuce_conversations::{
     ConversationReader, ConversationSnapshotMaterializer, EffectiveConversationSettings,
     GenerationOperation, LorebookAttribution, MemoryPromptLine, MessagePart, MessageRenderSource,
     MessageRole, PromptAttribution, ProviderContextPart, ProviderNeutralContext,
-    ProviderNeutralMessage, SnapshotDocumentBody, SnapshotDocumentKind, SnapshotSelection,
-    TimelineItem,
+    ProviderNeutralMessage, SettingProvenance, SnapshotDocumentBody, SnapshotDocumentKind,
+    SnapshotSelection, TimelineItem,
 };
 use lettuce_conversations::{
     CharacterSnapshotBodyV1, ConversationParticipant, LorebookLaunchSnapshot,
@@ -98,8 +98,8 @@ where
             }
         })?;
 
-        let companion_prompt = self.companion_prompt(&aggregate.conversation)?;
-        if companion_prompt.is_some() {
+        let direct = matches!(aggregate.conversation.kind, ConversationKind::Direct(_));
+        if direct {
             settings.prompt = None;
         }
         let mut snapshot = SnapshotBundle::load(
@@ -112,8 +112,8 @@ where
                 .as_ref()
                 .map(|speaker| speaker.participant_id),
         )?;
-        if let Some(prompt) = companion_prompt {
-            snapshot.prompt = Some(prompt);
+        if direct {
+            snapshot.prompt = self.live_direct_prompt(&aggregate.conversation, &snapshot)?;
         }
         let TimelineSelection {
             window: selected_window,
@@ -294,6 +294,11 @@ where
                 _ if group => String::new(),
                 _ => key_lines.clone(),
             };
+            if direct {
+                values
+                    .purpose_values
+                    .retain(|variable, _| variable.is_allowed_for(document.purpose));
+            }
             let render_context = PromptRenderContext { conditions, values };
             let rendered = render_prompt_snapshot(document, &render_context).map_err(|error| {
                 tracing::warn!(?error, "prompt snapshot rendering failed");
@@ -448,23 +453,29 @@ where
         + PromptRepository
         + lettuce_settings::GlobalSettingsStore,
 {
-    /// The prompt of a companion chat, resolved from the live character and
-    /// app settings on every turn through the launch's companion chain; a
-    /// conversation prompt override never applies. `None` when the chat is
-    /// not a companion chat.
-    fn companion_prompt(
+    /// The system prompt of a direct chat, resolved from live sources on
+    /// every turn (legacy `build_system_prompt_entries`); the stored launch
+    /// and override snapshots only record which prompt the chat selected.
+    /// A companion chat follows `policy::companion_prompt` and ignores the
+    /// selection. Any other direct chat follows `policy::direct_prompt`: the
+    /// chat's selection, then the live character's direct prompt, then the app
+    /// default chain; a prompt the chat disabled yields none. The selection is
+    /// a current override, else the launch prompt when the launch pinned one
+    /// like legacy's session template: a starter's explicit prompt, or an
+    /// inherited prompt that is the character's direct prompt in the launch
+    /// character snapshot. A launch that fell back to the app default chain
+    /// pinned nothing, as legacy left the session template empty.
+    fn live_direct_prompt(
         &self,
         conversation: &lettuce_conversations::Conversation,
+        snapshot: &SnapshotBundle,
     ) -> Result<Option<PromptSnapshot>, ContextAssemblyError> {
         let ConversationKind::Direct(details) = &conversation.kind else {
             return Ok(None);
         };
-        if !crate::companion_clock::companion_clock_context(self.sources, conversation)
+        let companion = crate::companion_clock::companion_clock_context(self.sources, conversation)
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
-            .companion
-        {
-            return Ok(None);
-        }
+            .companion;
         let character = CharacterRepository::get(self.sources, details.character.source_id)
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
             .ok_or(ContextAssemblyError::ConversationUnavailable)?;
@@ -474,19 +485,56 @@ where
         let app_default = lettuce_settings::GlobalSettingsStore::load(self.sources)
             .map_err(|_| unavailable)?
             .default_prompt_document_id;
-        let document = crate::launch::policy::companion_prompt(
-            self.sources,
-            character.character.defaults.companion_soul.as_ref(),
-            app_default,
-        )
-        .map_err(|_| unavailable)?
-        .ok_or(unavailable)?;
-        prompt_document(
-            document.id,
-            document.revision,
-            &crate::launch::documents::prompt_body(&document),
-        )
-        .map(Some)
+        let defaults = &character.character.defaults;
+        let document = if companion {
+            Some(
+                crate::launch::policy::companion_prompt(
+                    self.sources,
+                    defaults.companion_soul.as_ref(),
+                    app_default,
+                )
+                .map_err(|_| unavailable)?
+                .ok_or(unavailable)?,
+            )
+        } else {
+            let current = conversation
+                .current_settings
+                .as_ref()
+                .map(|settings| (settings.prompt_provenance, settings.prompt.as_ref()));
+            let selected = match current {
+                Some((SettingProvenance::Disabled, _)) => return Ok(None),
+                Some((SettingProvenance::CurrentOverride, prompt)) => {
+                    prompt.map(|prompt| prompt.source_id)
+                }
+                _ => match &details.prompt {
+                    SnapshotSelection::Explicit(prompt) => Some(prompt.source_id),
+                    SnapshotSelection::Inherited(prompt)
+                        if snapshot.characters.first().is_some_and(|(_, character)| {
+                            character.direct_prompt_id == Some(prompt.source_id)
+                        }) =>
+                    {
+                        Some(prompt.source_id)
+                    }
+                    SnapshotSelection::Inherited(_) | SnapshotSelection::Disabled => None,
+                },
+            };
+            crate::launch::policy::direct_prompt(
+                self.sources,
+                selected,
+                defaults.direct_prompt_id,
+                app_default,
+            )
+            .map_err(|_| unavailable)?
+        };
+        document
+            .map(|document| {
+                prompt_document(
+                    document.id,
+                    document.revision,
+                    &crate::launch::documents::prompt_body(&document),
+                )
+            })
+            .transpose()
     }
 
     fn companion_prompt_state(

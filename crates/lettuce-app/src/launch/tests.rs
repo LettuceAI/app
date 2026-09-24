@@ -3396,13 +3396,9 @@ fn override_conversation_prompt(
     prompt_id: lettuce_types::PromptDocumentId,
     operation_key: &str,
 ) {
-    let document =
-        match PromptRepository::lookup_exact(database, prompt_id, PromptPurpose::DirectChat)
-            .expect("lookup override prompt")
-        {
-            lettuce_context::PromptLookupResult::Available { document } => document,
-            other => panic!("expected an available override prompt, got {other:?}"),
-        };
+    let document = PromptRepository::get(database, prompt_id)
+        .expect("read override prompt")
+        .expect("override prompt exists");
     let draft = super::documents::draft(
         lettuce_types::SnapshotArtifactId::new(),
         document.revision,
@@ -3633,6 +3629,468 @@ async fn a_chat_launched_before_its_character_became_a_companion_uses_the_compan
 }
 
 #[test]
+fn text_entry(text: &str) -> lettuce_context::PromptEntryDraft {
+    lettuce_context::PromptEntryDraft {
+        built_in_entry_key: None,
+        name: "Voice".into(),
+        role: lettuce_context::PromptEntryRole::System,
+        content: text.into(),
+        enabled: true,
+        injection_position: lettuce_context::PromptEntryPosition::Relative,
+        depth: 0,
+        conditional_min_messages: None,
+        interval_turns: None,
+        system_prompt: true,
+        conditions: None,
+        payload: None,
+    }
+}
+
+fn prompt_with_text(
+    database: &Database,
+    name: &str,
+    purpose: PromptPurpose,
+    text: &str,
+) -> lettuce_types::PromptDocumentId {
+    PromptRepository::create_user_draft(
+        database,
+        PromptMetadataDraft {
+            name: name.into(),
+            purpose,
+            condense: false,
+            behavior_version: PromptBehaviorVersion::LegacyV1,
+        },
+        vec![text_entry(text)],
+        TimestampMillis::new(1),
+    )
+    .expect("prompt")
+    .id
+}
+
+fn rewrite_prompt(database: &Database, prompt_id: lettuce_types::PromptDocumentId, text: &str) {
+    let document = PromptRepository::get(database, prompt_id)
+        .expect("read prompt")
+        .expect("prompt exists");
+    let entry = document.entries.first().expect("prompt entry");
+    PromptRepository::mutate_entries(
+        database,
+        prompt_id,
+        document.revision,
+        lettuce_context::PromptEntryMutation::Update {
+            entry_id: entry.id,
+            draft: lettuce_context::PromptEntryDraft {
+                built_in_entry_key: entry.built_in_entry_key.clone(),
+                name: entry.name.clone(),
+                role: entry.role,
+                content: text.into(),
+                enabled: entry.enabled,
+                injection_position: entry.injection_position,
+                depth: entry.depth,
+                conditional_min_messages: entry.conditional_min_messages,
+                interval_turns: entry.interval_turns,
+                system_prompt: entry.system_prompt,
+                conditions: None,
+                payload: entry.payload.clone(),
+            },
+        },
+        NOW,
+    )
+    .expect("rewrite prompt");
+}
+
+fn set_direct_prompt(
+    database: &Database,
+    character_id: CharacterId,
+    prompt_id: Option<lettuce_types::PromptDocumentId>,
+) {
+    let character = CharacterRepository::get(database, character_id)
+        .expect("character")
+        .expect("exists")
+        .character;
+    let mut defaults = character.defaults.clone();
+    defaults.direct_prompt_id = prompt_id;
+    CharacterRepository::update_defaults(database, character_id, character.revision, defaults, NOW)
+        .expect("update direct prompt");
+}
+
+async fn assembled_prompt_with_text(
+    database: &Database,
+    request: ContextRequest,
+) -> (Option<(lettuce_types::PromptDocumentId, Revision)>, String) {
+    let context = crate::ConversationContextAssembler::new(database)
+        .assemble(request)
+        .await
+        .expect("assemble context");
+    let text = context
+        .messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .filter_map(|part| match part {
+            ProviderContextPart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    (
+        context
+            .attributions
+            .prompt
+            .map(|prompt| (prompt.document_id, prompt.revision)),
+        text,
+    )
+}
+
+fn disable_conversation_prompt(
+    database: &Database,
+    conversation_id: lettuce_types::ConversationId,
+) {
+    database
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id,
+                    expected_settings_revision: None,
+                    operation: OperationToken {
+                        key: IdempotencyKey::new("disable-prompt").expect("key"),
+                        request_digest: ContentHash::parse("ce".repeat(32)).expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        prompt: lettuce_conversations::PatchValue::Clear,
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                Vec::new(),
+            )
+            .expect("prepared prompt disable"),
+            TimestampMillis::new(NOW.get() + 5),
+        )
+        .expect("disable conversation prompt");
+}
+
+fn set_app_default_prompt(database: &Database, prompt_id: Option<lettuce_types::PromptDocumentId>) {
+    let revision = GlobalSettingsStore::load(database)
+        .expect("settings")
+        .revision;
+    database
+        .set_default_prompt_document(prompt_id, revision)
+        .expect("set app default prompt");
+}
+
+struct LiveTurn {
+    conversation_id: lettuce_types::ConversationId,
+    source_message_id: MessageId,
+}
+
+impl LiveTurn {
+    fn start(database: &Database, launch: &DirectConversationLaunchRequest) -> Self {
+        let conversation = ConversationLaunchPlanner::new(database)
+            .launch_direct(launch, NOW)
+            .expect("launch direct")
+            .value
+            .conversation;
+        let sent = ConversationRepository::begin_send(
+            database,
+            &direct_send_command(
+                &conversation,
+                &format!("{}-send", conversation.id),
+                "Hello.",
+            ),
+            TimestampMillis::new(NOW.get() + 10),
+        )
+        .expect("send direct message");
+        let source_message_id = match sent.value.turn.input {
+            GenerationInput::UserMessage { message_id } => message_id,
+            ref other => panic!("expected user-message input, got {other:?}"),
+        };
+        Self {
+            conversation_id: conversation.id,
+            source_message_id,
+        }
+    }
+
+    async fn prompt(
+        &self,
+        database: &Database,
+    ) -> (Option<(lettuce_types::PromptDocumentId, Revision)>, String) {
+        assembled_prompt_with_text(
+            database,
+            context_request_for(database, self.conversation_id, self.source_message_id),
+        )
+        .await
+    }
+}
+
+#[tokio::test]
+async fn a_direct_turn_reads_its_pinned_prompt_live_and_ignores_a_reassigned_character() {
+    let database = database_with_builtins();
+    let first = prompt_with_text(&database, "First", PromptPurpose::DirectChat, "First voice");
+    let second = prompt_with_text(
+        &database,
+        "Second",
+        PromptPurpose::DirectChat,
+        "Second voice",
+    );
+    let selected = prompt_with_text(
+        &database,
+        "Selected",
+        PromptPurpose::DirectChat,
+        "Chosen voice",
+    );
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.direct_prompt_id = Some(first);
+    });
+    let turn = LiveTurn::start(&database, &request(character_id, "pinned-launch"));
+
+    let (prompt, text) = turn.prompt(&database).await;
+    assert_eq!(prompt, Some((first, Revision::INITIAL)));
+    assert!(text.contains("First voice"));
+
+    rewrite_prompt(&database, first, "First voice, edited");
+    let (prompt, text) = turn.prompt(&database).await;
+    assert_eq!(
+        prompt,
+        Some((first, Revision::INITIAL.next().expect("next")))
+    );
+    assert!(
+        text.contains("First voice, edited"),
+        "the pinned prompt's edit is read live"
+    );
+
+    set_direct_prompt(&database, character_id, Some(second));
+    let (prompt, text) = turn.prompt(&database).await;
+    assert_eq!(
+        prompt.map(|(id, _)| id),
+        Some(first),
+        "a chat keeps the character prompt it launched with"
+    );
+    assert!(!text.contains("Second voice"));
+
+    override_conversation_prompt(&database, turn.conversation_id, selected, "pinned-select");
+    let (prompt, text) = turn.prompt(&database).await;
+    assert_eq!(prompt.map(|(id, _)| id), Some(selected));
+    assert!(text.contains("Chosen voice"));
+    rewrite_prompt(&database, selected, "Chosen voice, edited");
+    let (_, text) = turn.prompt(&database).await;
+    assert!(
+        text.contains("Chosen voice, edited"),
+        "the chat's selected prompt is read live"
+    );
+    let revision = PromptRepository::get(&database, selected)
+        .expect("read selected")
+        .expect("selected exists")
+        .revision;
+    PromptRepository::archive(&database, selected, revision, NOW).expect("archive selected");
+    let (prompt, text) = turn.prompt(&database).await;
+    assert_eq!(
+        prompt.map(|(id, _)| id),
+        Some(second),
+        "an archived selection falls through to the live character's prompt"
+    );
+    assert!(!text.contains("Chosen voice"));
+}
+
+#[tokio::test]
+async fn a_direct_turn_without_a_pinned_prompt_follows_the_character_and_app_default_live() {
+    let database = database_with_builtins();
+    let bundled = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(NOW)
+        .expect("prompt ids")
+        .get(BuiltInPromptId::AppDefault);
+    let character_prompt = prompt_with_text(
+        &database,
+        "Character",
+        PromptPurpose::DirectChat,
+        "Character voice",
+    );
+    let app_default = prompt_with_text(&database, "App", PromptPurpose::DirectChat, "App voice");
+    let character_id = plain_character(&database);
+    let turn = LiveTurn::start(&database, &request(character_id, "unpinned-launch"));
+    let (prompt, _) = turn.prompt(&database).await;
+    assert_eq!(prompt.map(|(id, _)| id), Some(bundled));
+
+    set_direct_prompt(&database, character_id, Some(character_prompt));
+    let (prompt, text) = turn.prompt(&database).await;
+    assert_eq!(
+        prompt.map(|(id, _)| id),
+        Some(character_prompt),
+        "a chat that launched on the app default follows the character's new prompt"
+    );
+    assert!(text.contains("Character voice"));
+
+    set_direct_prompt(&database, character_id, None);
+    set_app_default_prompt(&database, Some(app_default));
+    let (prompt, text) = turn.prompt(&database).await;
+    assert_eq!(prompt.map(|(id, _)| id), Some(app_default));
+    assert!(text.contains("App voice"));
+    rewrite_prompt(&database, app_default, "App voice, edited");
+    let (_, text) = turn.prompt(&database).await;
+    assert!(
+        text.contains("App voice, edited"),
+        "the app default prompt is read live"
+    );
+
+    set_app_default_prompt(&database, None);
+    let (prompt, _) = turn.prompt(&database).await;
+    let (_, bundled_revision) = prompt.expect("bundled app default");
+    rewrite_prompt(&database, bundled, "Bundled voice");
+    let (prompt, text) = turn.prompt(&database).await;
+    assert_eq!(prompt.map(|(id, _)| id), Some(bundled));
+    assert!(prompt.is_some_and(|(_, revision)| revision > bundled_revision));
+    assert!(
+        text.contains("Bundled voice"),
+        "the bundled prompt's edit is read live"
+    );
+}
+
+#[tokio::test]
+async fn a_direct_turn_follows_a_starter_prompt_live_and_honors_selection_states() {
+    let database = database_with_builtins();
+    let starter_prompt = prompt_with_text(
+        &database,
+        "Starter",
+        PromptPurpose::DirectChat,
+        "Starter voice",
+    );
+    let character_prompt = prompt_with_text(
+        &database,
+        "Character",
+        PromptPurpose::DirectChat,
+        "Character voice",
+    );
+    let companion_prompt = prompt_with_text(
+        &database,
+        "Companion",
+        PromptPurpose::CompanionChat,
+        "Companion voice",
+    );
+    let mut starter = starter_with(CharacterId::new(), 0, "Greeting", Vec::new());
+    starter.prompt_id = Some(starter_prompt);
+    let starter_id = starter.id;
+    let character_id = seed_character(
+        &database,
+        Vec::new(),
+        Vec::new(),
+        vec![starter],
+        |defaults| defaults.direct_prompt_id = Some(character_prompt),
+    );
+
+    let started = LiveTurn::start(
+        &database,
+        &request_with_starter(character_id, "starter-launch", starter_id),
+    );
+    let (prompt, _) = started.prompt(&database).await;
+    assert_eq!(prompt.map(|(id, _)| id), Some(starter_prompt));
+    rewrite_prompt(&database, starter_prompt, "Starter voice, edited");
+    set_direct_prompt(&database, character_id, None);
+    let (prompt, text) = started.prompt(&database).await;
+    assert_eq!(prompt.map(|(id, _)| id), Some(starter_prompt));
+    assert!(
+        text.contains("Starter voice, edited"),
+        "the starter's prompt is read live"
+    );
+
+    let disabled = LiveTurn::start(&database, &request(character_id, "disabled-launch"));
+    disable_conversation_prompt(&database, disabled.conversation_id);
+    assert_eq!(
+        disabled.prompt(&database).await.0,
+        None,
+        "a disabled prompt yields none"
+    );
+
+    let companion = LiveTurn::start(&database, &request(character_id, "companion-select-launch"));
+    override_conversation_prompt(
+        &database,
+        companion.conversation_id,
+        companion_prompt,
+        "companion-select",
+    );
+    let (prompt, text) = companion.prompt(&database).await;
+    assert_eq!(prompt.map(|(id, _)| id), Some(companion_prompt));
+    assert!(
+        text.contains("Companion voice"),
+        "a companion-chat selection is used"
+    );
+    let group_prompt = prompt_with_text(
+        &database,
+        "Group",
+        PromptPurpose::GroupChatRoleplay,
+        "Group voice",
+    );
+    let group = LiveTurn::start(&database, &request(character_id, "group-select-launch"));
+    override_conversation_prompt(
+        &database,
+        group.conversation_id,
+        group_prompt,
+        "group-select",
+    );
+    let (prompt, text) = group.prompt(&database).await;
+    assert_eq!(prompt.map(|(id, _)| id), Some(group_prompt));
+    assert!(
+        text.contains("Group voice"),
+        "a group-chat selection is used"
+    );
+}
+
+#[tokio::test]
+async fn a_group_turn_keeps_its_launch_prompt_snapshot() {
+    let database = database_with_builtins();
+    let group_prompt = prompt_with_text(
+        &database,
+        "Group",
+        PromptPurpose::GroupChatConversational,
+        "Group voice",
+    );
+    let first = seed_named_character(&database, "Ada");
+    let second = seed_named_character(&database, "Bea");
+    let group_id = seed_group(
+        &database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| {
+            group.chat_mode = ChatMode::Conversation;
+            group.group_conversation_prompt_id = Some(group_prompt);
+        },
+    );
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_group(&group_request(group_id, "group-snapshot-launch"), NOW)
+        .expect("launch group");
+    let conversation = launched.value.conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(&conversation, "group-snapshot-send", "Hello cast."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send group message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let speaker = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.role == ParticipantRole::Character)
+        .expect("speaker")
+        .id;
+    let turn = || {
+        let mut request = context_request_for(&database, conversation.id, source_message_id);
+        request.selected_speaker = Some(lettuce_conversations::SelectedSpeakerDecision {
+            participant_id: speaker,
+            method: lettuce_conversations::SpeakerDecisionMethod::Explicit,
+            fallback: lettuce_conversations::SpeakerFallback::None,
+            reference: None,
+            rationale_summary: None,
+            decision_model: None,
+            usage_event_id: None,
+        });
+        request
+    };
+    rewrite_prompt(&database, group_prompt, "Group voice, edited");
+    let (prompt, text) = assembled_prompt_with_text(&database, turn()).await;
+    assert_eq!(prompt, Some((group_prompt, Revision::INITIAL)));
+    assert!(text.contains("Group voice") && !text.contains("Group voice, edited"));
+}
+
 fn scene_only_launch_materializes_one_trimmed_scene_message() {
     let database = database();
     let scene = text_scene(CharacterId::new(), 0, "  A quiet harbour at dawn.  ");
@@ -4357,6 +4815,26 @@ fn the_direct_chain_ends_in_the_app_default_then_the_bundled_prompt() {
     );
     assert_eq!(resolve(None), Some(built_in));
     PromptRepository::archive(&database, app_default, Revision::INITIAL, NOW)
+    let group = seed_prompt(&database, "Group prompt", PromptPurpose::GroupChatConversational);
+    let summarizer = seed_prompt(
+        &database,
+        "Summarizer",
+        PromptPurpose::DynamicMemorySummarizer,
+    );
+    let chain = |selected, character| {
+        policy::direct_prompt(&database, selected, character, None)
+            .expect("direct chain")
+            .map(|document| document.id)
+    };
+    assert_eq!(
+        chain(Some(lettuce_types::PromptDocumentId::new()), Some(app_default)),
+        Some(app_default),
+        "a missing selection falls through to the character's prompt"
+    );
+    assert_eq!(chain(Some(companion), Some(app_default)), Some(companion));
+    assert_eq!(chain(Some(group), Some(app_default)), Some(group));
+    assert_eq!(chain(Some(summarizer), Some(app_default)), Some(app_default));
+    assert_eq!(chain(None, Some(companion)), Some(built_in));
         .expect("archive app default");
     assert_eq!(resolve(Some(app_default)), Some(built_in));
     assert_eq!(

@@ -943,6 +943,48 @@ impl GlobalSettingsStore for Database {
     }
 }
 
+impl Database {
+    /// Selects the app default prompt (legacy `settings.prompt_template_id`)
+    /// under the settings revision; a prompt that does not exist is rejected
+    /// as `InvalidData`.
+    pub fn set_default_prompt_document(
+        &self,
+        prompt_id: Option<lettuce_types::PromptDocumentId>,
+        expected_revision: Revision,
+    ) -> Result<StoredGlobalSettings, GlobalSettingsStoreError> {
+        let current = self.load()?;
+        if current.revision != expected_revision {
+            return Err(GlobalSettingsStoreError::StaleRevision);
+        }
+        if current.default_prompt_document_id == prompt_id {
+            return Ok(current);
+        }
+        let changed = self
+            .connection()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?
+            .execute(
+                "UPDATE app_settings SET default_prompt_document_id=?1, revision=revision+1, updated_at=?2 WHERE id=1 AND revision=?3",
+                params![
+                    prompt_id.map(|id| id.to_string()),
+                    now().map_err(|_| GlobalSettingsStoreError::Storage)?.get(),
+                    to_i64(expected_revision.get()).map_err(|_| GlobalSettingsStoreError::Storage)?,
+                ],
+            )
+            .map_err(|error| match error {
+                rusqlite::Error::SqliteFailure(code, _)
+                    if code.code == rusqlite::ErrorCode::ConstraintViolation =>
+                {
+                    GlobalSettingsStoreError::InvalidData
+                }
+                _ => GlobalSettingsStoreError::Storage,
+            })?;
+        if changed == 0 {
+            return Err(GlobalSettingsStoreError::StaleRevision);
+        }
+        self.load()
+    }
+}
+
 fn provider_protocol_name(value: ProviderProtocol) -> &'static str {
     match value {
         ProviderProtocol::OpenAiCompatible => "open_ai_compatible",

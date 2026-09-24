@@ -113,6 +113,46 @@ pub(crate) fn companion_prompt<S: PromptRepository + ?Sized>(
     crate::built_in_prompts::active_built_in_prompt(sources, crate::BuiltInPromptId::Companion)
 }
 
+/// The purposes a one-to-one chat's own prompt selection admits: legacy set a
+/// session template from a chat template, whose picker offered direct and
+/// group chat templates, or from a companion template, and rendered it
+/// whatever its type.
+pub(crate) const DIRECT_SELECTION_PURPOSES: [PromptPurpose; 4] = [
+    PromptPurpose::DirectChat,
+    PromptPurpose::CompanionChat,
+    PromptPurpose::GroupChatConversational,
+    PromptPurpose::GroupChatRoleplay,
+];
+
+/// The direct-chat chain (legacy `build_system_prompt_entries` outside
+/// companion mode): the chat's selected prompt when it is an active document of
+/// a chat purpose (`DIRECT_SELECTION_PURPOSES`), then the character's direct
+/// prompt when it is an active direct-chat document, then
+/// `direct_app_default_prompt`.
+pub(crate) fn direct_prompt<S: PromptRepository + ?Sized>(
+    sources: &S,
+    selected: Option<PromptDocumentId>,
+    character: Option<PromptDocumentId>,
+    app_default: Option<PromptDocumentId>,
+) -> Result<Option<PromptDocument>, PromptRepositoryError> {
+    let candidates = selected
+        .into_iter()
+        .flat_map(|id| {
+            DIRECT_SELECTION_PURPOSES
+                .into_iter()
+                .map(move |purpose| (id, purpose))
+        })
+        .chain(character.map(|id| (id, PromptPurpose::DirectChat)));
+    for (prompt_id, purpose) in candidates {
+        if let PromptLookupResult::Available { document } =
+            sources.lookup_exact(prompt_id, purpose)?
+        {
+            return Ok(Some(document));
+        }
+    }
+    direct_app_default_prompt(sources, app_default)
+}
+
 /// The tail of the direct-chat chain (legacy `get_app_default_template_content`
 /// outside companion mode): the app default prompt when it is an active
 /// direct-chat document, else the bundled app default prompt. `None` only when

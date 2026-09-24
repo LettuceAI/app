@@ -797,10 +797,39 @@ mod tests {
             messages: vec![message("user", 0, "Still on shift", 701, Vec::new(), None)],
             ..session.clone()
         };
+        let unpinned_session = |id: lettuce_types::ConversationId,
+                                prompt_source_id: Option<String>,
+                                created_at: u64| {
+            lettuce_transfer::LegacyBackupDirectSession {
+                source_id: id.to_string(),
+                root_session_source_id: id.to_string(),
+                prompt_source_id,
+                lorebook_source_ids_override: None,
+                created_at,
+                updated_at: created_at + 10,
+                messages: vec![message(
+                    "user",
+                    0,
+                    "Any news?",
+                    created_at + 1,
+                    Vec::new(),
+                    None,
+                )],
+                ..session.clone()
+            }
+        };
+        let null_template_session_id = lettuce_types::ConversationId::new();
+        let dropped_template_session_id = lettuce_types::ConversationId::new();
         let direct_sessions = vec![
             session.clone(),
             scene_session,
             mode_only_session,
+            unpinned_session(null_template_session_id, None, 800),
+            unpinned_session(
+                dropped_template_session_id,
+                Some("deleted-session-prompt".to_owned()),
+                900,
+            ),
             companion_session(companion_first_id, 300, Some(legacy_state.to_owned())),
             companion_session(companion_second_id, 400, None),
             companion_session(companion_third_id, 500, None),
@@ -855,7 +884,7 @@ mod tests {
                 TimestampMillis::new(57),
             )
             .expect("materialize direct conversations");
-        assert_eq!(conversation_receipt.record_count, 6);
+        assert_eq!(conversation_receipt.record_count, 8);
         let graph =
             lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(backend.database())
                 .expect("backup graph");
@@ -901,6 +930,99 @@ mod tests {
             Some(prompt_id),
             "a companion-mode session of a roleplay character runs as a direct chat and keeps its prompt"
         );
+        let live_prompt = |id: lettuce_types::ConversationId| {
+            let database = backend.database();
+            async move {
+                let aggregate =
+                    lettuce_conversations::ConversationReader::get(database, id).expect("read");
+                let branch_id = aggregate.conversation.active_branch_id;
+                let mut timeline = lettuce_conversations::ConversationReader::timeline_page(
+                    database,
+                    id,
+                    branch_id,
+                    &lettuce_types::PageRequest::default(),
+                )
+                .expect("timeline")
+                .items;
+                let source = timeline
+                    .iter()
+                    .position(|item| item.message.role == lettuce_conversations::MessageRole::User)
+                    .expect("user message");
+                timeline.drain(..source);
+                let source_message_id = timeline[0].message.id;
+                lettuce_conversations::ContextAssembler::assemble(
+                    &crate::ConversationContextAssembler::new(database),
+                    lettuce_conversations::ContextRequest {
+                        conversation_id: id,
+                        branch_id,
+                        branch_path: vec![branch_id],
+                        source_message_id,
+                        operation: lettuce_conversations::GenerationOperation::Send,
+                        swap_roles: false,
+                        guidance: None,
+                        window: lettuce_conversations::ContextWindowPolicy::default(),
+                        selected_speaker: None,
+                        capabilities: lettuce_models::ModelCapabilities::default(),
+                        safety: lettuce_conversations::SafetyContext::Standard,
+                        prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
+                        prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
+                        memory: None,
+                        timeline,
+                    },
+                )
+                .await
+                .expect("assemble imported context")
+                .attributions
+                .prompt
+                .map(|prompt| prompt.document_id)
+            }
+        };
+        let pinned = [session_id, scene_session_id, mode_only_session_id];
+        let unpinned = [null_template_session_id, dropped_template_session_id];
+        for id in pinned.into_iter().chain(unpinned) {
+            assert_eq!(live_prompt(conv(id)).await, Some(prompt_id));
+        }
+        let reassigned = lettuce_context::PromptRepository::create_user_draft(
+            backend.database(),
+            lettuce_context::PromptMetadataDraft {
+                name: "Reassigned".to_owned(),
+                purpose: PromptPurpose::DirectChat,
+                condense: false,
+                behavior_version: lettuce_context::PromptBehaviorVersion::LegacyV1,
+            },
+            Vec::new(),
+            TimestampMillis::new(60),
+        )
+        .expect("reassigned prompt")
+        .id;
+        let night = CharacterRepository::get(backend.database(), character(second_id))
+            .expect("read character")
+            .expect("character exists")
+            .character;
+        let mut night_defaults = night.defaults.clone();
+        night_defaults.direct_prompt_id = Some(reassigned);
+        CharacterRepository::update_defaults(
+            backend.database(),
+            night.id,
+            night.revision,
+            night_defaults,
+            TimestampMillis::new(61),
+        )
+        .expect("reassign character prompt");
+        for id in pinned {
+            assert_eq!(
+                live_prompt(conv(id)).await,
+                Some(prompt_id),
+                "an imported session template stays pinned"
+            );
+        }
+        for id in unpinned {
+            assert_eq!(
+                live_prompt(conv(id)).await,
+                Some(reassigned),
+                "an imported session without a usable template follows the character live"
+            );
+        }
         for id in [companion_first_id, companion_second_id, companion_third_id] {
             let companion_settings = graph
                 .conversation_history

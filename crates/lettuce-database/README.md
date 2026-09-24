@@ -1058,3 +1058,8 @@ legacy generation re-keyed under an attempt id derived from a changed source
 fingerprint), and a LoRA path both files have keeps the more recently updated
 row, the rule the legacy images stage uses. Metrics of messages imported without candidates keep their legacy id and
 lose the message link.
+
+`Database::set_default_prompt_document` selects the app default prompt
+(`app_settings.default_prompt_document_id`, legacy `settings.prompt_template_id`)
+under the settings revision like the other selection setters; a prompt that does
+not exist is rejected as `InvalidData` by the foreign key.

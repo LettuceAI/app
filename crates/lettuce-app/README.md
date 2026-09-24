@@ -360,18 +360,59 @@ starter prompt fails on any resolution error and an inherited direct prompt
 fails when dangling or of another purpose, while an archived inherited one now
 falls through to the app default like legacy's not-found fallback instead of
 disabling the prompt. Legacy used an app-wide template of any type in a direct
-chat; only a direct-chat document is used here. Context assembly resolves the
-companion chain from the live character and app settings on every turn of a
-companion chat (`companion_clock` decides companion mode), so a chat launched
-before its character became a companion and a template changed after launch
-both follow the current template; the conversation prompt override and the
-launch prompt snapshot are not used, while the stored override is left in place.
-The live document goes through the launch snapshot conversion, and prompt
-attribution carries its current id and revision. Because the companion prompt is
-live, a companion turn whose template (or the app default it fell back to)
-changed between its first context assembly and inference admission is
-reassembled with a different context, conflicts with the admitted request and
-fails closed, as a turn does when its model profile changed; this is intended.
+chat; only a direct-chat document is used here. Launch only chooses and
+validates: context assembly resolves the system prompt of every one-to-one turn
+from live sources (`live_direct_prompt`), so each turn uses the current content
+and revision of the current documents. A companion chat (`companion_clock`
+decides companion mode) follows the companion chain from the live character and
+app settings, ignoring any chat selection, so a chat launched before its
+character became a companion and a template changed after launch both follow the
+current template. Any other direct chat follows `launch::policy::direct_prompt`,
+legacy's non-companion order: the chat's selection when it is an active
+document of a chat purpose, then the live character's direct prompt, then the app default
+chain; a selection that is missing, archived or of another purpose falls through,
+and a prompt the chat disabled yields none. The selection is a current prompt
+override, else the prompt the launch pinned the way legacy pinned
+`session.promptTemplateId` at creation (`repo.ts` 1586-1609): a starter's
+explicit prompt, or an inherited launch prompt that is the character's direct
+prompt. Editing a pinned prompt's content therefore reaches existing chats, while
+pointing the character at another prompt does not; a chat whose launch fell back
+to the app default chain pinned nothing (legacy's null session template) and
+keeps following the character live. Whether an inherited launch prompt is the
+character's pin is derived from stored fields, not a new flag: it is when its
+source equals `direct_prompt_id` in the conversation's frozen launch character
+snapshot, which the launch planner only inherits from that field and otherwise
+fills from the app default chain. Branches are forks inside one conversation and
+share its launch and settings, so they keep the pin as legacy's branch copy did;
+the rewrite has no branch-to-another-character flow. The legacy direct importer
+pins only what legacy pinned: a session template that imports becomes the
+current override, and a session whose template was null or did not import gets a
+disabled launch prompt (its launch snapshot draft is dropped), which is "no
+selection", so its turns follow the live character like legacy's null session
+template; that is distinct from a disabled current-settings prompt, which means
+no prompt. A session template imports, and a chat selection resolves, when it
+is an active direct-chat, companion-chat, group-conversational or group-roleplay
+document (`policy::DIRECT_SELECTION_PURPOSES`): legacy set the session template
+from a chat template, whose picker (`ChatTemplateEditorPage.tsx` 276-281) offered
+direct and group chat templates, and rendered it whatever its type, so a group
+prompt selected by a one-to-one chat renders there and render values its purpose
+does not admit (scene LoRA keywords) are left out instead of failing the turn,
+like legacy's placeholder replacement. Feature prompts (memory, reply helper,
+lorebook, image) could never be a session template and still fall through.
+The frontend's "reset chat prompt" must send `PatchValue::UseLaunchDefault`
+(back to the launch pin or the live chain), not `Clear`: `Clear` stores a
+disabled prompt, a state legacy never had. The launch and override snapshots now
+only record which prompt the chat selected: their content is never rendered for
+a one-to-one turn, the stored override stays as the chat's selection, and a
+legacy session override still imports that way. `Database::set_default_prompt_document`
+selects the app default prompt under the settings revision. Group chats keep rendering their launch
+and override snapshots unchanged. The live document goes through the launch
+snapshot conversion, and prompt attribution carries its current id and
+revision. Because the prompt is live, a one-to-one turn whose prompt (or any
+document its chain fell back to) changed between its first context assembly and
+inference admission is reassembled with a different context, conflicts with the
+admitted request and fails closed, as a turn does when its model profile
+changed; this is intended.
 Context assembly reads the current authored Soul/prompting config, character-owned
 Soul state, conversation/persona-scoped runtime state, and current persona
 name, then renders the legacy prompt-state block with the stored continuity
@@ -381,6 +422,9 @@ episode at the source message's effective clock through the existing typed
 condition when no scheduled notes exist, where legacy stripped the rendered
 heading from the string afterwards (`prompt_engine.rs` 4349-4350) and left four
 newlines behind; that whitespace-only difference is deliberate.
+A group-purpose prompt selected in a direct chat renders `{{group_characters}}`
+as empty text; the old direct engine left the literal placeholder in the prompt
+(corrected).
 
 `companion_clock` resolves legacy `is_companion_mode` and the session clock for a
 conversation: a direct chat is a companion chat when its live character is a
