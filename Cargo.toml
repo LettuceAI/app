@@ -91,6 +91,7 @@ ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dy
 tokenizers = { version = "0.20", default-features = false, features = ["unstable_wasm"] }
 quick-xml = "0.38.4"
 regex = "1"
+tiktoken-rs = "0.11.0"
 
 [profile.dev.package.argon2]
 opt-level = 3

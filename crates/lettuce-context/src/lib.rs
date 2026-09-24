@@ -9,7 +9,9 @@
 mod bindings;
 mod lorebook;
 mod prompt;
+mod token_count;
 
 pub use bindings::*;
 pub use lorebook::*;
 pub use prompt::*;
+pub use token_count::{TokenizerUnavailable, count_tokens_batch};

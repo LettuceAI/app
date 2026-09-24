@@ -91,3 +91,7 @@ size limits, matching the legacy matcher (which silently treated an
 uncompilable keyword as never matching). Earlier explicit 256 KiB limits and
 raw-keyword validation rejected patterns legacy matched (`\w{100}`, a
 case-insensitive `hero\Z`) and accepted ones the matcher could never compile.
+
+Token counts: `count_tokens_batch` measures each text with the o200k encoding
+(`tiktoken-rs` 0.11, special tokens read as plain text), as the old
+`tokens_count_batch` did for the lorebook trigger preview.
